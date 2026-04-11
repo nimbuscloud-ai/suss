@@ -1,21 +1,21 @@
 import { describe, it, expect } from "vitest";
 import {
   diffSummaries,
-  BehavioralSummary,
-  Transition,
-  Predicate,
-  Output,
+  type BehavioralSummary,
+  type Transition,
+  type Predicate,
+  type Output,
 } from "./index.js";
 
 function makeSummary(transitions: Transition[]): BehavioralSummary {
   return {
     kind: "handler",
     location: { file: "src/test.ts", range: { start: 1, end: 10 }, exportName: "test" },
-    identity: { name: "test", exportPath: ["test"] },
+    identity: { name: "test", exportPath: ["test"], boundaryBinding: null },
     inputs: [],
     transitions,
     gaps: [],
-    confidence: { source: "test", level: "high" },
+    confidence: { source: "inferred_static", level: "high" },
   };
 }
 
@@ -32,7 +32,12 @@ function makeTransition(id: string, output: Output): Transition {
 
 describe("diffSummaries", () => {
   it("returns empty arrays for identical summaries", () => {
-    const t = makeTransition("t1", { type: "response", statusCode: 200, body: null });
+    const t = makeTransition("t1", {
+      type: "response",
+      statusCode: { type: "literal", value: 200 },
+      body: null,
+      headers: {},
+    });
     const summary = makeSummary([t]);
     const diff = diffSummaries(summary, summary);
     expect(diff.addedTransitions).toHaveLength(0);
@@ -41,8 +46,8 @@ describe("diffSummaries", () => {
   });
 
   it("detects an added transition", () => {
-    const t1 = makeTransition("t1", { type: "response", statusCode: 200, body: null });
-    const t2 = makeTransition("t2", { type: "response", statusCode: 404, body: null });
+    const t1 = makeTransition("t1", { type: "response", statusCode: { type: "literal", value: 200 }, body: null, headers: {} });
+    const t2 = makeTransition("t2", { type: "response", statusCode: { type: "literal", value: 404 }, body: null, headers: {} });
     const before = makeSummary([t1]);
     const after = makeSummary([t1, t2]);
     const diff = diffSummaries(before, after);
@@ -53,8 +58,8 @@ describe("diffSummaries", () => {
   });
 
   it("detects a removed transition", () => {
-    const t1 = makeTransition("t1", { type: "response", statusCode: 200, body: null });
-    const t2 = makeTransition("t2", { type: "response", statusCode: 404, body: null });
+    const t1 = makeTransition("t1", { type: "response", statusCode: { type: "literal", value: 200 }, body: null, headers: {} });
+    const t2 = makeTransition("t2", { type: "response", statusCode: { type: "literal", value: 404 }, body: null, headers: {} });
     const before = makeSummary([t1, t2]);
     const after = makeSummary([t1]);
     const diff = diffSummaries(before, after);
@@ -65,8 +70,8 @@ describe("diffSummaries", () => {
   });
 
   it("detects a changed transition (same id, different output)", () => {
-    const t1 = makeTransition("t1", { type: "response", statusCode: 200, body: null });
-    const t1changed = makeTransition("t1", { type: "response", statusCode: 201, body: null });
+    const t1 = makeTransition("t1", { type: "response", statusCode: { type: "literal", value: 200 }, body: null, headers: {} });
+    const t1changed = makeTransition("t1", { type: "response", statusCode: { type: "literal", value: 201 }, body: null, headers: {} });
     const before = makeSummary([t1]);
     const after = makeSummary([t1changed]);
     const diff = diffSummaries(before, after);
@@ -77,8 +82,12 @@ describe("diffSummaries", () => {
     expect(diff.removedTransitions).toHaveLength(0);
   });
 
-  it("discriminated union Predicate narrows correctly in switch", () => {
-    const pred: Predicate = { type: "nullCheck", subject: { type: "unresolved", sourceText: "x" }, negated: false };
+  it("Predicate discriminated union narrows correctly in switch", () => {
+    const pred: Predicate = {
+      type: "nullCheck",
+      subject: { type: "unresolved", sourceText: "x" },
+      negated: false,
+    };
     switch (pred.type) {
       case "nullCheck":
         expect(pred.negated).toBe(false);
@@ -86,22 +95,36 @@ describe("diffSummaries", () => {
       case "truthinessCheck":
         expect(pred.negated).toBeDefined();
         break;
-      default:
-        // other variants
     }
   });
 
-  it("discriminated union Output narrows correctly in switch", () => {
-    const output: Output = { type: "response", statusCode: 200, body: { ok: true } };
+  it("Output discriminated union narrows correctly in switch", () => {
+    const output: Output = {
+      type: "response",
+      statusCode: { type: "literal", value: 200 },
+      body: null,
+      headers: {},
+    };
     switch (output.type) {
       case "response":
-        expect(output.statusCode).toBe(200);
+        expect(output.statusCode).toBeDefined();
         break;
       case "throw":
         expect(output.exceptionType).toBeDefined();
         break;
-      default:
-        // other variants
+    }
+  });
+
+  it("Output.response statusCode can be a dynamic ValueRef", () => {
+    const output: Output = {
+      type: "response",
+      statusCode: { type: "unresolved", sourceText: "statusVar" },
+      body: null,
+      headers: {},
+    };
+    expect(output.type).toBe("response");
+    if (output.type === "response") {
+      expect(output.statusCode?.type).toBe("unresolved");
     }
   });
 });

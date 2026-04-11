@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assembleSummary, RawCodeStructure } from "./index.js";
+import { assembleSummary, type RawCodeStructure } from "./index.js";
 
 const twoPathRaw: RawCodeStructure = {
   identity: {
@@ -79,7 +79,56 @@ describe("assembleSummary", () => {
     expect(summary.confidence.level).toBe("high");
   });
 
-  it("degrades confidence to low when predicates are all opaque", () => {
+  it("wraps null-structured conditions as opaque predicates — never drops them", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      branches: [
+        {
+          ...twoPathRaw.branches[0],
+          conditions: [
+            {
+              sourceText: "someComplexCheck()",
+              structured: null, // adapter couldn't parse this
+              polarity: "positive",
+              source: "explicit",
+            },
+          ],
+        },
+        twoPathRaw.branches[1],
+      ],
+    };
+    const summary = assembleSummary(raw);
+    // The condition must appear in the transition as an opaque predicate, not be dropped
+    expect(summary.transitions[0].conditions).toHaveLength(1);
+    expect(summary.transitions[0].conditions[0].type).toBe("opaque");
+  });
+
+  it("wraps negative polarity null-structured conditions as negation of opaque", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      branches: [
+        {
+          ...twoPathRaw.branches[0],
+          conditions: [
+            {
+              sourceText: "!complexCheck()",
+              structured: null,
+              polarity: "negative",
+              source: "earlyReturn",
+            },
+          ],
+        },
+        twoPathRaw.branches[1],
+      ],
+    };
+    const summary = assembleSummary(raw);
+    expect(summary.transitions[0].conditions[0].type).toBe("negation");
+    if (summary.transitions[0].conditions[0].type === "negation") {
+      expect(summary.transitions[0].conditions[0].operand.type).toBe("opaque");
+    }
+  });
+
+  it("degrades confidence to low when all conditions are opaque", () => {
     const raw: RawCodeStructure = {
       ...twoPathRaw,
       branches: [
@@ -105,26 +154,29 @@ describe("assembleSummary", () => {
     expect(summary.confidence.level).toBe("low");
   });
 
-  it("detects a gap when declared contract has status not produced", () => {
+  it("detects a gap when declared contract declares a status never produced", () => {
     const raw: RawCodeStructure = {
       ...twoPathRaw,
       declaredContract: {
+        framework: "ts-rest",
         responses: [
           { statusCode: 200 },
           { statusCode: 404 },
-          { statusCode: 500 }, // not produced
+          { statusCode: 500 }, // never produced
         ],
       },
     };
     const summary = assembleSummary(raw, { gapHandling: "strict" });
     expect(summary.gaps).toHaveLength(1);
-    expect(summary.gaps[0].consequence).toContain("500");
+    expect(summary.gaps[0].description).toContain("500");
+    expect(summary.gaps[0].consequence).toBe("frameworkDefault");
   });
 
   it("returns no gaps when gapHandling is silent", () => {
     const raw: RawCodeStructure = {
       ...twoPathRaw,
       declaredContract: {
+        framework: "ts-rest",
         responses: [{ statusCode: 200 }, { statusCode: 500 }],
       },
     };
@@ -134,8 +186,20 @@ describe("assembleSummary", () => {
 
   it("marks the default transition (empty conditions array)", () => {
     const summary = assembleSummary(twoPathRaw);
-    const defaultTransition = summary.transitions.find((t) => t.isDefault);
-    expect(defaultTransition).toBeDefined();
-    expect(defaultTransition!.conditions).toHaveLength(0);
+    const def = summary.transitions.find((t) => t.isDefault);
+    expect(def).toBeDefined();
+    expect(def!.conditions).toHaveLength(0);
+  });
+
+  it("output statusCode is a ValueRef literal, not a raw number", () => {
+    const summary = assembleSummary(twoPathRaw);
+    const t = summary.transitions[0];
+    expect(t.output.type).toBe("response");
+    if (t.output.type === "response") {
+      expect(t.output.statusCode?.type).toBe("literal");
+      if (t.output.statusCode?.type === "literal") {
+        expect(t.output.statusCode.value).toBe(404);
+      }
+    }
   });
 });

@@ -5,28 +5,31 @@ import type { FrameworkPack } from "@suss/extractor";
 export function expressFramework(): FrameworkPack {
   return {
     name: "express",
-    languages: ["typescript"],
+    languages: ["typescript", "javascript"],
+
     discovery: [
       {
-        kind: "registrationCall",
+        kind: "handler",
         match: {
-          kind: "registrationCall",
+          type: "registrationCall",
           importModule: "express",
-          registrationChain: ["app.get", "app.post", "app.put", "app.delete", "app.patch",
-            "router.get", "router.post", "router.put", "router.delete", "router.patch"],
+          importName: "Router",
+          registrationChain: [".get", ".post", ".put", ".delete", ".patch"],
         },
         bindingExtraction: {
-          methodSource: "registrationMethod",
-          pathSource: "firstArgument",
+          method: { type: "fromRegistration", position: "methodName" },
+          path: { type: "fromRegistration", position: 0 },
         },
       },
     ],
+
     terminals: [
       {
-        kind: "parameterMethodCall",
+        // res.status(N).json(body)
+        kind: "response",
         match: {
-          kind: "parameterMethodCall",
-          paramPosition: 1,
+          type: "parameterMethodCall",
+          parameterPosition: 1,
           methodChain: ["status", "json"],
         },
         extraction: {
@@ -35,40 +38,41 @@ export function expressFramework(): FrameworkPack {
         },
       },
       {
-        kind: "parameterMethodCall",
+        // res.json(body) — implicit 200
+        kind: "response",
         match: {
-          kind: "parameterMethodCall",
-          paramPosition: 1,
+          type: "parameterMethodCall",
+          parameterPosition: 1,
           methodChain: ["json"],
         },
         extraction: {
-          statusCode: { from: "argument", position: 0 },
           body: { from: "argument", position: 0 },
         },
       },
       {
-        kind: "parameterMethodCall",
+        // res.send(body)
+        kind: "response",
         match: {
-          kind: "parameterMethodCall",
-          paramPosition: 1,
+          type: "parameterMethodCall",
+          parameterPosition: 1,
           methodChain: ["send"],
         },
         extraction: {
-          statusCode: { from: "argument", position: 0 },
           body: { from: "argument", position: 0 },
         },
       },
       {
-        kind: "throwExpression",
-        match: { kind: "throwExpression" },
+        // throw new SomeError(...)
+        kind: "throw",
+        match: { type: "throwExpression" },
         extraction: {
           statusCode: { from: "property", name: "status" },
-          body: { from: "property", name: "message" },
         },
       },
     ],
+
     inputMapping: {
-      style: "positionalParams",
+      type: "positionalParams",
       params: [
         { position: 0, role: "request" },
         { position: 1, role: "response" },

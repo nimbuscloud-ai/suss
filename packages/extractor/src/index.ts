@@ -11,15 +11,20 @@ import type {
   Output,
   Effect,
   ValueRef,
+  TypeShape,
 } from "@suss/behavioral-ir";
 
-export type { FrameworkPack, DiscoveryPattern, TerminalPattern } from "./framework.js";
+export type { FrameworkPack, DiscoveryPattern, TerminalPattern, InputMappingPattern } from "./framework.js";
+
+// =============================================================================
+// RawCodeStructure — the interface between language adapters and the engine
+// =============================================================================
 
 export interface RawParameter {
   name: string;
   position: number;
-  role: "request" | "response" | "next" | "context" | "param" | "body" | "query" | "generic";
-  typeText: string;
+  role: string;
+  typeText: string | null;
 }
 
 export interface RawCondition {
@@ -44,6 +49,7 @@ export interface RawEffect {
   callee?: string;
   event?: string;
   variable?: string;
+  async?: boolean;
 }
 
 export interface RawBranch {
@@ -63,7 +69,9 @@ export interface RawDependencyCall {
 }
 
 export interface RawDeclaredContract {
+  framework: string;
   responses: Array<{ statusCode: number; schemaName?: string; shape?: unknown }>;
+  params?: Record<string, { type: string; required: boolean }>;
 }
 
 export interface RawCodeStructure {
@@ -72,20 +80,24 @@ export interface RawCodeStructure {
     kind: CodeUnitKind;
     file: string;
     range: { start: number; end: number };
-    exportName: string;
-    exportPath: string[];
+    exportName: string | null;
+    exportPath: string[] | null;
   };
-  boundaryBinding?: {
+  boundaryBinding: {
     protocol: string;
     method?: string;
     path?: string;
     framework: string;
-  };
+  } | null;
   parameters: RawParameter[];
   branches: RawBranch[];
   dependencyCalls: RawDependencyCall[];
   declaredContract: RawDeclaredContract | null;
 }
+
+// =============================================================================
+// Extractor options
+// =============================================================================
 
 export interface ExtractorOptions {
   gapHandling: "strict" | "permissive" | "silent";
@@ -93,105 +105,29 @@ export interface ExtractorOptions {
 
 const DEFAULT_OPTIONS: ExtractorOptions = { gapHandling: "permissive" };
 
-export function terminalToOutput(terminal: RawTerminal): Output {
-  if (terminal.kind === "response") {
-    const statusCode =
-      terminal.statusCode?.type === "literal" ? terminal.statusCode.value : null;
-    return { type: "response", statusCode, body: terminal.body };
-  }
-  if (terminal.kind === "throw") {
-    return { type: "throw", exceptionType: terminal.exceptionType, message: terminal.message };
-  }
-  if (terminal.kind === "void") {
-    return { type: "void" };
-  }
-  return { type: "return", value: terminal.body };
-}
-
-export function effectToIR(effect: RawEffect): Effect {
-  if (effect.type === "mutation") {
-    return { type: "mutation", target: effect.target ?? "unknown", operation: "write" };
-  }
-  if (effect.type === "invocation") {
-    return { type: "invocation", callee: effect.callee ?? "unknown", args: [] };
-  }
-  if (effect.type === "emission") {
-    return { type: "emission", event: effect.event ?? "unknown" };
-  }
-  return { type: "stateChange", variable: effect.variable ?? "unknown" };
-}
-
-export function paramToInput(param: RawParameter): Input {
-  return { type: "parameter", name: param.name, position: param.position };
-}
-
-export function mapKind(kind: CodeUnitKind): CodeUnitKind {
-  return kind;
-}
-
-export function detectGaps(
-  raw: RawCodeStructure,
-  transitions: Transition[],
-  options: ExtractorOptions
-): Gap[] {
-  if (options.gapHandling === "silent") return [];
-
-  const gaps: Gap[] = [];
-
-  if (raw.declaredContract) {
-    const producedStatuses = new Set(
-      transitions
-        .map((t) => (t.output.type === "response" ? (t.output as { type: "response"; statusCode: number | null }).statusCode : null))
-        .filter((s): s is number => s !== null)
-    );
-
-    for (const declared of raw.declaredContract.responses) {
-      if (!producedStatuses.has(declared.statusCode)) {
-        gaps.push({
-          type: "unhandledCase",
-          conditions: [],
-          consequence: `HTTP ${declared.statusCode}`,
-          description: `Declared response ${declared.statusCode} is never produced by the handler`,
-        });
-      }
-    }
-  }
-
-  return gaps;
-}
-
-export function assessConfidence(
-  raw: RawCodeStructure,
-  transitions: Transition[]
-): ConfidenceInfo {
-  let totalPredicates = 0;
-  let opaquePredicates = 0;
-
-  for (const branch of raw.branches) {
-    for (const condition of branch.conditions) {
-      totalPredicates++;
-      if (!condition.structured || condition.structured.type === "opaque") {
-        opaquePredicates++;
-      }
-    }
-  }
-
-  const ratio = totalPredicates === 0 ? 0 : opaquePredicates / totalPredicates;
-  const level: "high" | "medium" | "low" = ratio === 0 ? "high" : ratio < 0.5 ? "medium" : "low";
-
-  return { source: "predicate-analysis", level };
-}
-
-let _transitionCounter = 0;
+// =============================================================================
+// Core assembly function
+// =============================================================================
 
 export function assembleSummary(
   raw: RawCodeStructure,
   options: ExtractorOptions = DEFAULT_OPTIONS
 ): BehavioralSummary {
   const transitions: Transition[] = raw.branches.map((branch, i) => {
-    const conditions: Predicate[] = branch.conditions
-      .map((c) => c.structured)
-      .filter((p): p is Predicate => p !== null);
+    // Conditions with structured: null become opaque predicates — never silently dropped.
+    const conditions: Predicate[] = branch.conditions.map((c) => {
+      const pred: Predicate = c.structured !== null
+        ? c.structured
+        : {
+            type: "opaque",
+            sourceText: c.sourceText,
+            reason: "complexExpression",
+          };
+
+      return c.polarity === "negative"
+        ? { type: "negation", operand: pred }
+        : pred;
+    });
 
     return {
       id: `${raw.identity.name}:${i}`,
@@ -204,7 +140,7 @@ export function assembleSummary(
   });
 
   const gaps = detectGaps(raw, transitions, options);
-  const confidence = assessConfidence(raw, transitions);
+  const confidence = assessConfidence(raw);
   const inputs: Input[] = raw.parameters.map(paramToInput);
 
   return {
@@ -217,18 +153,129 @@ export function assembleSummary(
     identity: {
       name: raw.identity.name,
       exportPath: raw.identity.exportPath,
-      boundaryBinding: raw.boundaryBinding
-        ? {
-            protocol: raw.boundaryBinding.protocol,
-            method: raw.boundaryBinding.method,
-            path: raw.boundaryBinding.path,
-            framework: raw.boundaryBinding.framework,
-          }
-        : undefined,
+      boundaryBinding: raw.boundaryBinding ?? null,
     },
     inputs,
     transitions,
     gaps,
     confidence,
+    metadata: raw.declaredContract
+      ? { declaredContract: raw.declaredContract }
+      : undefined,
+  };
+}
+
+// =============================================================================
+// Gap detection
+// =============================================================================
+
+export function detectGaps(
+  raw: RawCodeStructure,
+  transitions: Transition[],
+  options: ExtractorOptions
+): Gap[] {
+  if (options.gapHandling === "silent") return [];
+
+  const gaps: Gap[] = [];
+
+  if (raw.declaredContract) {
+    const producedStatuses = new Set(
+      transitions.flatMap((t) => {
+        if (t.output.type !== "response") return [];
+        const sc = t.output.statusCode;
+        if (sc?.type === "literal") return [sc.value as number];
+        return [];
+      })
+    );
+
+    for (const declared of raw.declaredContract.responses) {
+      if (!producedStatuses.has(declared.statusCode)) {
+        gaps.push({
+          type: "unhandledCase",
+          conditions: [],
+          consequence: "frameworkDefault",
+          description: `Declared response ${declared.statusCode} is never produced by the handler`,
+        });
+      }
+    }
+  }
+
+  return gaps;
+}
+
+// =============================================================================
+// Confidence
+// =============================================================================
+
+export function assessConfidence(raw: RawCodeStructure): ConfidenceInfo {
+  let total = 0;
+  let opaque = 0;
+
+  for (const branch of raw.branches) {
+    for (const condition of branch.conditions) {
+      total++;
+      if (!condition.structured || condition.structured.type === "opaque") {
+        opaque++;
+      }
+    }
+  }
+
+  const ratio = total === 0 ? 0 : opaque / total;
+  const level: "high" | "medium" | "low" =
+    ratio === 0 ? "high" : ratio < 0.5 ? "medium" : "low";
+
+  return { source: "inferred_static", level };
+}
+
+// =============================================================================
+// Mapping helpers
+// =============================================================================
+
+export function terminalToOutput(terminal: RawTerminal): Output {
+  switch (terminal.kind) {
+    case "response": {
+      const statusCode: ValueRef | null = terminal.statusCode
+        ? terminal.statusCode.type === "literal"
+          ? { type: "literal", value: terminal.statusCode.value }
+          : { type: "unresolved", sourceText: terminal.statusCode.sourceText }
+        : null;
+      const body: TypeShape | null = terminal.body?.typeText
+        ? { type: "ref", name: terminal.body.typeText }
+        : null;
+      return { type: "response", statusCode, body, headers: {} };
+    }
+    case "throw":
+      return {
+        type: "throw",
+        exceptionType: terminal.exceptionType,
+        message: terminal.message,
+      };
+    case "void":
+      return { type: "void" };
+    default:
+      return { type: "return", value: null };
+  }
+}
+
+export function effectToIR(effect: RawEffect): Effect {
+  switch (effect.type) {
+    case "mutation":
+      return { type: "mutation", target: effect.target ?? "unknown", operation: "update" };
+    case "invocation":
+      return { type: "invocation", callee: effect.callee ?? "unknown", args: [], async: effect.async ?? false };
+    case "emission":
+      return { type: "emission", event: effect.event ?? "unknown" };
+    default:
+      return { type: "stateChange", variable: effect.variable ?? "unknown" };
+  }
+}
+
+export function paramToInput(param: RawParameter): Input {
+  return {
+    type: "parameter",
+    name: param.name,
+    position: param.position,
+    role: param.role,
+    shape: param.typeText ? { type: "ref", name: param.typeText } : null,
   };
 }

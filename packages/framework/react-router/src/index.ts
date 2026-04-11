@@ -5,43 +5,62 @@ import type { FrameworkPack } from "@suss/extractor";
 export function reactRouterFramework(): FrameworkPack {
   return {
     name: "react-router",
-    languages: ["typescript"],
+    languages: ["typescript", "javascript"],
+
     discovery: [
       {
-        kind: "namedExport",
-        match: { kind: "namedExport", names: ["loader"] },
-      },
-      {
-        kind: "namedExport",
-        match: { kind: "namedExport", names: ["action"] },
-      },
-      {
-        kind: "namedExport",
-        match: { kind: "namedExport", names: ["default"] },
-      },
-    ],
-    terminals: [
-      {
-        kind: "returnShape",
-        match: { kind: "returnShape" },
-        extraction: {
-          statusCode: { from: "property", name: "status" },
-          body: { from: "property", name: "body" },
+        kind: "loader",
+        match: { type: "namedExport", names: ["loader"] },
+        bindingExtraction: {
+          method: { type: "literal", value: "GET" },
+          path: { type: "fromFilename" },
         },
       },
       {
-        kind: "throwExpression",
-        match: { kind: "throwExpression", constructorPattern: "httpErrorJson" },
+        kind: "action",
+        match: { type: "namedExport", names: ["action"] },
+        bindingExtraction: {
+          method: { type: "literal", value: "POST" },
+          path: { type: "fromFilename" },
+        },
+      },
+      {
+        kind: "component",
+        match: { type: "namedExport", names: ["default"] },
+      },
+    ],
+
+    terminals: [
+      {
+        // Loaders return data directly
+        kind: "return",
+        match: { type: "returnShape" },
+        extraction: {
+          body: { from: "argument", position: 0 },
+        },
+      },
+      {
+        // Loaders can throw httpErrorJson(statusCode, body)
+        kind: "throw",
+        match: {
+          type: "throwExpression",
+          constructorPattern: "httpErrorJson",
+        },
         extraction: {
           statusCode: { from: "argument", position: 0 },
           body: { from: "argument", position: 1 },
         },
       },
     ],
+
     inputMapping: {
-      style: "singleObjectParam",
-      position: 0,
-      fields: ["request", "params", "context"],
+      type: "singleObjectParam",
+      paramPosition: 0,
+      knownProperties: {
+        request: "request",
+        params: "pathParams",
+        context: "context",
+      },
     },
   };
 }
