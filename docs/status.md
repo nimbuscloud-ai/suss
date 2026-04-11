@@ -93,3 +93,4 @@ Runs in a couple of seconds via `turbo test`.
 6. **ts-morph is the TypeScript foundation.** Public, stable, AST + symbol table + type checker in one package. No SCIP, no LSP.
 7. **`RawCodeStructure` is the adapter/extractor boundary.** Extractor never sees AST. Adapter never runs assembly logic.
 8. **Maps over switch statements** for dispatch on discriminated unions. `Record<Kind, converter>` enforces exhaustiveness at the type level, no fall-through risk.
+9. **Biome 2.x for linting and formatting.** No ESLint, no Prettier. Pre-commit hook (husky + lint-staged) runs `biome check --write` on staged files. `turbo lint` / `turbo lint:fix` available at the root. See `docs/style.md` for the full style guide.

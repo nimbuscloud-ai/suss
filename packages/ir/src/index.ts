@@ -46,13 +46,27 @@ export type Derivation =
   | { type: "indexAccess"; index: string | number };
 
 export type Input =
-  | { type: "parameter"; name: string; position: number; role: string; shape: TypeShape | null }
-  | { type: "injection"; name: string; mechanism: string; shape: TypeShape | null }
+  | {
+      type: "parameter";
+      name: string;
+      position: number;
+      role: string;
+      shape: TypeShape | null;
+    }
+  | {
+      type: "injection";
+      name: string;
+      mechanism: string;
+      shape: TypeShape | null;
+    }
   | { type: "hookReturn"; hook: string; destructuredFields: string[] }
   | { type: "contextValue"; context: string; accessedFields: string[] }
   | { type: "closure"; name: string };
 
-export type Literal = { type: "literal"; value: string | number | boolean | null };
+export type Literal = {
+  type: "literal";
+  value: string | number | boolean | null;
+};
 
 export type ValueRef =
   | { type: "input"; inputRef: string; path: string[] }
@@ -67,7 +81,12 @@ export type Predicate =
   | { type: "truthinessCheck"; subject: ValueRef; negated: boolean }
   | { type: "comparison"; left: ValueRef; op: ComparisonOp; right: ValueRef }
   | { type: "typeCheck"; subject: ValueRef; expectedType: string }
-  | { type: "propertyExists"; subject: ValueRef; property: string; negated: boolean }
+  | {
+      type: "propertyExists";
+      subject: ValueRef;
+      property: string;
+      negated: boolean;
+    }
   | { type: "compound"; op: "and" | "or"; operands: Predicate[] }
   | { type: "negation"; operand: Predicate }
   | { type: "call"; callee: string; args: ValueRef[] }
@@ -86,7 +105,12 @@ export type TypeShape =
   | { type: "unknown" };
 
 export type Output =
-  | { type: "response"; statusCode: ValueRef | null; body: TypeShape | null; headers: Record<string, ValueRef> }
+  | {
+      type: "response";
+      statusCode: ValueRef | null;
+      body: TypeShape | null;
+      headers: Record<string, ValueRef>;
+    }
   | { type: "throw"; exceptionType: string | null; message: string | null }
   | { type: "render"; component: string; props?: Record<string, unknown> }
   | { type: "return"; value: TypeShape | null }
@@ -95,7 +119,11 @@ export type Output =
   | { type: "void" };
 
 export type Effect =
-  | { type: "mutation"; target: string; operation: "create" | "update" | "delete" }
+  | {
+      type: "mutation";
+      target: string;
+      operation: "create" | "update" | "delete";
+    }
   | { type: "invocation"; callee: string; args: unknown[]; async: boolean }
   | { type: "emission"; event: string; payload?: unknown }
   | { type: "stateChange"; variable: string; newValue?: unknown };
@@ -141,14 +169,15 @@ export interface SummaryDiff {
 
 export function diffSummaries(
   before: BehavioralSummary,
-  after: BehavioralSummary
+  after: BehavioralSummary,
 ): SummaryDiff {
   const beforeById = new Map(before.transitions.map((t) => [t.id, t]));
   const afterById = new Map(after.transitions.map((t) => [t.id, t]));
 
   const addedTransitions: Transition[] = [];
   const removedTransitions: Transition[] = [];
-  const changedTransitions: Array<{ before: Transition; after: Transition }> = [];
+  const changedTransitions: Array<{ before: Transition; after: Transition }> =
+    [];
 
   for (const [id, afterT] of afterById) {
     if (!beforeById.has(id)) {

@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import { expressFramework } from "./index.js";
 
 describe("expressFramework", () => {
@@ -23,18 +24,21 @@ describe("expressFramework", () => {
   it("bindingExtraction reads method from registration method name and path from first arg", () => {
     const pack = expressFramework();
     const binding = pack.discovery[0].bindingExtraction;
-    expect(binding?.method).toEqual({ type: "fromRegistration", position: "methodName" });
+    expect(binding?.method).toEqual({
+      type: "fromRegistration",
+      position: "methodName",
+    });
     expect(binding?.path).toEqual({ type: "fromRegistration", position: 0 });
   });
 
   it("includes parameterMethodCall terminals for res.json and res.send", () => {
     const pack = expressFramework();
     const methodCallTerminals = pack.terminals.filter(
-      (t) => t.match.type === "parameterMethodCall"
+      (t) => t.match.type === "parameterMethodCall",
     );
     expect(methodCallTerminals.length).toBeGreaterThan(0);
     const methods = methodCallTerminals.map((t) =>
-      t.match.type === "parameterMethodCall" ? t.match.methodChain : []
+      t.match.type === "parameterMethodCall" ? t.match.methodChain : [],
     );
     expect(methods.some((m) => m.includes("json"))).toBe(true);
     expect(methods.some((m) => m.includes("send"))).toBe(true);
