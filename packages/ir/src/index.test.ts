@@ -82,36 +82,31 @@ describe("diffSummaries", () => {
     expect(diff.removedTransitions).toHaveLength(0);
   });
 
-  it("Predicate discriminated union narrows correctly in switch", () => {
+  it("Predicate discriminated union narrows correctly", () => {
     const pred: Predicate = {
       type: "nullCheck",
       subject: { type: "unresolved", sourceText: "x" },
       negated: false,
     };
-    switch (pred.type) {
-      case "nullCheck":
-        expect(pred.negated).toBe(false);
-        break;
-      case "truthinessCheck":
-        expect(pred.negated).toBeDefined();
-        break;
+    if (pred.type === "nullCheck") {
+      expect(pred.negated).toBe(false);
+    } else {
+      throw new Error("unexpected predicate type");
     }
   });
 
-  it("Output discriminated union narrows correctly in switch", () => {
+  it("Output discriminated union narrows correctly", () => {
     const output: Output = {
       type: "response",
       statusCode: { type: "literal", value: 200 },
       body: null,
       headers: {},
     };
-    switch (output.type) {
-      case "response":
-        expect(output.statusCode).toBeDefined();
-        break;
-      case "throw":
-        expect(output.exceptionType).toBeDefined();
-        break;
+    if (output.type === "response") {
+      expect(output.statusCode).toBeDefined();
+      expect(output.headers).toBeDefined();
+    } else {
+      throw new Error("unexpected output type");
     }
   });
 

@@ -231,43 +231,40 @@ export function assessConfidence(raw: RawCodeStructure): ConfidenceInfo {
 // Mapping helpers
 // =============================================================================
 
+const terminalConverters: Record<RawTerminal["kind"], (t: RawTerminal) => Output> = {
+  response: (t) => {
+    const statusCode: ValueRef | null = t.statusCode
+      ? t.statusCode.type === "literal"
+        ? { type: "literal", value: t.statusCode.value }
+        : { type: "unresolved", sourceText: t.statusCode.sourceText }
+      : null;
+    const body: TypeShape | null = t.body?.typeText
+      ? { type: "ref", name: t.body.typeText }
+      : null;
+    return { type: "response", statusCode, body, headers: {} };
+  },
+  throw: (t) => ({
+    type: "throw",
+    exceptionType: t.exceptionType,
+    message: t.message,
+  }),
+  void: (_t) => ({ type: "void" }),
+  return: (_t) => ({ type: "return", value: null }),
+};
+
 export function terminalToOutput(terminal: RawTerminal): Output {
-  switch (terminal.kind) {
-    case "response": {
-      const statusCode: ValueRef | null = terminal.statusCode
-        ? terminal.statusCode.type === "literal"
-          ? { type: "literal", value: terminal.statusCode.value }
-          : { type: "unresolved", sourceText: terminal.statusCode.sourceText }
-        : null;
-      const body: TypeShape | null = terminal.body?.typeText
-        ? { type: "ref", name: terminal.body.typeText }
-        : null;
-      return { type: "response", statusCode, body, headers: {} };
-    }
-    case "throw":
-      return {
-        type: "throw",
-        exceptionType: terminal.exceptionType,
-        message: terminal.message,
-      };
-    case "void":
-      return { type: "void" };
-    default:
-      return { type: "return", value: null };
-  }
+  return terminalConverters[terminal.kind](terminal);
 }
 
+const effectConverters: Record<RawEffect["type"], (e: RawEffect) => Effect> = {
+  mutation: (e) => ({ type: "mutation", target: e.target ?? "unknown", operation: "update" }),
+  invocation: (e) => ({ type: "invocation", callee: e.callee ?? "unknown", args: [], async: e.async ?? false }),
+  emission: (e) => ({ type: "emission", event: e.event ?? "unknown" }),
+  stateChange: (e) => ({ type: "stateChange", variable: e.variable ?? "unknown" }),
+};
+
 export function effectToIR(effect: RawEffect): Effect {
-  switch (effect.type) {
-    case "mutation":
-      return { type: "mutation", target: effect.target ?? "unknown", operation: "update" };
-    case "invocation":
-      return { type: "invocation", callee: effect.callee ?? "unknown", args: [], async: effect.async ?? false };
-    case "emission":
-      return { type: "emission", event: effect.event ?? "unknown" };
-    default:
-      return { type: "stateChange", variable: effect.variable ?? "unknown" };
-  }
+  return effectConverters[effect.type](effect);
 }
 
 export function paramToInput(param: RawParameter): Input {
