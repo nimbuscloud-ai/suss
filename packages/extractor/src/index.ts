@@ -14,7 +14,17 @@ import type {
   TypeShape,
 } from "@suss/behavioral-ir";
 
-export type { FrameworkPack, DiscoveryPattern, TerminalPattern, InputMappingPattern } from "./framework.js";
+export type {
+  FrameworkPack,
+  DiscoveryPattern,
+  DiscoveryMatch,
+  BindingExtraction,
+  TerminalPattern,
+  TerminalMatch,
+  TerminalExtraction,
+  ContractPattern,
+  InputMappingPattern,
+} from "./framework.js";
 
 // =============================================================================
 // RawCodeStructure — the interface between language adapters and the engine
@@ -35,22 +45,25 @@ export interface RawCondition {
 }
 
 export interface RawTerminal {
-  kind: "response" | "throw" | "return" | "void";
+  kind: "response" | "throw" | "return" | "render" | "delegate" | "emit" | "void";
   statusCode: { type: "literal"; value: number } | { type: "dynamic"; sourceText: string } | null;
   body: { typeText: string | null; shape: unknown } | null;
   exceptionType: string | null;
   message: string | null;
+  /** For render terminals: the component being rendered */
+  component: string | null;
+  /** For delegate terminals: where control is passed */
+  delegateTarget: string | null;
+  /** For emit terminals: the event/channel name */
+  emitEvent: string | null;
   location: { start: number; end: number };
 }
 
-export interface RawEffect {
-  type: "mutation" | "invocation" | "emission" | "stateChange";
-  target?: string;
-  callee?: string;
-  event?: string;
-  variable?: string;
-  async?: boolean;
-}
+export type RawEffect =
+  | { type: "mutation"; target: string; operation: "create" | "update" | "delete" }
+  | { type: "invocation"; callee: string; async: boolean }
+  | { type: "emission"; event: string }
+  | { type: "stateChange"; variable: string };
 
 export interface RawBranch {
   conditions: RawCondition[];
@@ -187,14 +200,30 @@ export function detectGaps(
         return [];
       })
     );
+    const declaredStatuses = new Set(
+      raw.declaredContract.responses.map((r) => r.statusCode)
+    );
 
-    for (const declared of raw.declaredContract.responses) {
-      if (!producedStatuses.has(declared.statusCode)) {
+    // Declared but never produced
+    for (const declared of declaredStatuses) {
+      if (!producedStatuses.has(declared)) {
         gaps.push({
           type: "unhandledCase",
           conditions: [],
           consequence: "frameworkDefault",
-          description: `Declared response ${declared.statusCode} is never produced by the handler`,
+          description: `Declared response ${declared} is never produced by the handler`,
+        });
+      }
+    }
+
+    // Produced but never declared — contract violation
+    for (const produced of producedStatuses) {
+      if (!declaredStatuses.has(produced)) {
+        gaps.push({
+          type: "unhandledCase",
+          conditions: [],
+          consequence: "unknown",
+          description: `Handler produces status ${produced} which is not declared in the ${raw.declaredContract.framework} contract`,
         });
       }
     }
@@ -248,23 +277,44 @@ const terminalConverters: Record<RawTerminal["kind"], (t: RawTerminal) => Output
     exceptionType: t.exceptionType,
     message: t.message,
   }),
+  render: (t) => ({
+    type: "render",
+    component: t.component ?? "unknown",
+  }),
+  delegate: (t) => ({
+    type: "delegate",
+    to: t.delegateTarget ?? "unknown",
+  }),
+  emit: (t) => ({
+    type: "emit",
+    event: t.emitEvent ?? "unknown",
+  }),
+  return: (t) => ({
+    type: "return",
+    value: t.body?.typeText ? { type: "ref", name: t.body.typeText } : null,
+  }),
   void: (_t) => ({ type: "void" }),
-  return: (_t) => ({ type: "return", value: null }),
 };
 
 export function terminalToOutput(terminal: RawTerminal): Output {
   return terminalConverters[terminal.kind](terminal);
 }
 
-const effectConverters: Record<RawEffect["type"], (e: RawEffect) => Effect> = {
-  mutation: (e) => ({ type: "mutation", target: e.target ?? "unknown", operation: "update" }),
-  invocation: (e) => ({ type: "invocation", callee: e.callee ?? "unknown", args: [], async: e.async ?? false }),
-  emission: (e) => ({ type: "emission", event: e.event ?? "unknown" }),
-  stateChange: (e) => ({ type: "stateChange", variable: e.variable ?? "unknown" }),
+type EffectConverters = {
+  [K in RawEffect["type"]]: (e: Extract<RawEffect, { type: K }>) => Effect;
+};
+
+const effectConverters: EffectConverters = {
+  mutation: (e) => ({ type: "mutation", target: e.target, operation: e.operation }),
+  invocation: (e) => ({ type: "invocation", callee: e.callee, args: [], async: e.async }),
+  emission: (e) => ({ type: "emission", event: e.event }),
+  stateChange: (e) => ({ type: "stateChange", variable: e.variable }),
 };
 
 export function effectToIR(effect: RawEffect): Effect {
-  return effectConverters[effect.type](effect);
+  // Narrow then dispatch — the Extract<...> in EffectConverters ensures
+  // each converter receives its exact variant.
+  return (effectConverters[effect.type] as (e: RawEffect) => Effect)(effect);
 }
 
 export function paramToInput(param: RawParameter): Input {

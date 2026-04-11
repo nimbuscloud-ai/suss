@@ -172,6 +172,21 @@ describe("assembleSummary", () => {
     expect(summary.gaps[0].consequence).toBe("frameworkDefault");
   });
 
+  it("detects a gap when handler produces a status not declared in the contract", () => {
+    // twoPathRaw produces 200 and 404. Declare only 200 — the 404 is a contract violation.
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: {
+        framework: "ts-rest",
+        responses: [{ statusCode: 200 }],
+      },
+    };
+    const summary = assembleSummary(raw, { gapHandling: "strict" });
+    const violation = summary.gaps.find((g) => g.description.includes("404"));
+    expect(violation).toBeDefined();
+    expect(violation!.description).toContain("not declared");
+  });
+
   it("returns no gaps when gapHandling is silent", () => {
     const raw: RawCodeStructure = {
       ...twoPathRaw,

@@ -43,6 +43,11 @@ These summaries are the input to downstream tools: contract checkers, documentat
 | `@suss/framework-express` | Framework pack for Express handlers. |
 | `@suss/cli` | CLI wrapper. |
 
+## Docs
+
+- [`docs/architecture.md`](docs/architecture.md) — how the pieces fit together, the vocabulary, the extraction algorithm, design decisions
+- [`docs/status.md`](docs/status.md) — phase-by-phase progress tracker, test counts, decisions log
+
 ## Status
 
-Early development.
+Phase 1 (foundation) complete. Phase 2 (TypeScript adapter) not yet started. See [`docs/status.md`](docs/status.md) for details.
