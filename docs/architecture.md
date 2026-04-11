@@ -2,6 +2,12 @@
 
 suss extracts **behavioral summaries** from source code — structured descriptions of every execution path through a function, mapping *conditions* to *outputs*. This document explains how the pieces fit together.
 
+> **Related reading:**
+> - [`motivation.md`](motivation.md) for the *why*
+> - [`extraction-algorithm.md`](extraction-algorithm.md) for the detailed algorithm
+> - [`ir-reference.md`](ir-reference.md) for the type-by-type walkthrough
+> - [`framework-packs.md`](framework-packs.md) for pattern-writing
+
 ## The core idea
 
 Most analysis tools describe *structure* (a function has these parameters, returns this type). suss describes *behavior*: "when `user` is null, this handler throws 404; otherwise it returns 200 with a `User` shape". Behavioral summaries are language- and framework-agnostic JSON, so downstream tools (contract checkers, doc generators, test enumerators, impact analyzers) can operate on them without caring whether the source was TypeScript, Python, or anything else.
