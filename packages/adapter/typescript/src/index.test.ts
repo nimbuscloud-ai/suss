@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
 describe("@suss/adapter-typescript", () => {
   it("is a placeholder until Phase 2", () => {

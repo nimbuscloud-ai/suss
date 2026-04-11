@@ -3,27 +3,27 @@
 import type {
   BehavioralSummary,
   CodeUnitKind,
-  Transition,
-  Gap,
   ConfidenceInfo,
-  Input,
-  Predicate,
-  Output,
   Effect,
-  ValueRef,
+  Gap,
+  Input,
+  Output,
+  Predicate,
+  Transition,
   TypeShape,
+  ValueRef,
 } from "@suss/behavioral-ir";
 
 export type {
-  FrameworkPack,
-  DiscoveryPattern,
-  DiscoveryMatch,
   BindingExtraction,
-  TerminalPattern,
-  TerminalMatch,
-  TerminalExtraction,
   ContractPattern,
+  DiscoveryMatch,
+  DiscoveryPattern,
+  FrameworkPack,
   InputMappingPattern,
+  TerminalExtraction,
+  TerminalMatch,
+  TerminalPattern,
 } from "./framework.js";
 
 // =============================================================================
@@ -45,8 +45,18 @@ export interface RawCondition {
 }
 
 export interface RawTerminal {
-  kind: "response" | "throw" | "return" | "render" | "delegate" | "emit" | "void";
-  statusCode: { type: "literal"; value: number } | { type: "dynamic"; sourceText: string } | null;
+  kind:
+    | "response"
+    | "throw"
+    | "return"
+    | "render"
+    | "delegate"
+    | "emit"
+    | "void";
+  statusCode:
+    | { type: "literal"; value: number }
+    | { type: "dynamic"; sourceText: string }
+    | null;
   body: { typeText: string | null; shape: unknown } | null;
   exceptionType: string | null;
   message: string | null;
@@ -60,7 +70,11 @@ export interface RawTerminal {
 }
 
 export type RawEffect =
-  | { type: "mutation"; target: string; operation: "create" | "update" | "delete" }
+  | {
+      type: "mutation";
+      target: string;
+      operation: "create" | "update" | "delete";
+    }
   | { type: "invocation"; callee: string; async: boolean }
   | { type: "emission"; event: string }
   | { type: "stateChange"; variable: string };
@@ -83,7 +97,11 @@ export interface RawDependencyCall {
 
 export interface RawDeclaredContract {
   framework: string;
-  responses: Array<{ statusCode: number; schemaName?: string; shape?: unknown }>;
+  responses: Array<{
+    statusCode: number;
+    schemaName?: string;
+    shape?: unknown;
+  }>;
   params?: Record<string, { type: string; required: boolean }>;
 }
 
@@ -124,18 +142,19 @@ const DEFAULT_OPTIONS: ExtractorOptions = { gapHandling: "permissive" };
 
 export function assembleSummary(
   raw: RawCodeStructure,
-  options: ExtractorOptions = DEFAULT_OPTIONS
+  options: ExtractorOptions = DEFAULT_OPTIONS,
 ): BehavioralSummary {
   const transitions: Transition[] = raw.branches.map((branch, i) => {
     // Conditions with structured: null become opaque predicates — never silently dropped.
     const conditions: Predicate[] = branch.conditions.map((c) => {
-      const pred: Predicate = c.structured !== null
-        ? c.structured
-        : {
-            type: "opaque",
-            sourceText: c.sourceText,
-            reason: "complexExpression",
-          };
+      const pred: Predicate =
+        c.structured !== null
+          ? c.structured
+          : {
+              type: "opaque",
+              sourceText: c.sourceText,
+              reason: "complexExpression",
+            };
 
       return c.polarity === "negative"
         ? { type: "negation", operand: pred }
@@ -172,9 +191,9 @@ export function assembleSummary(
     transitions,
     gaps,
     confidence,
-    metadata: raw.declaredContract
-      ? { declaredContract: raw.declaredContract }
-      : undefined,
+    ...(raw.declaredContract
+      ? { metadata: { declaredContract: raw.declaredContract } }
+      : {}),
   };
 }
 
@@ -185,23 +204,29 @@ export function assembleSummary(
 export function detectGaps(
   raw: RawCodeStructure,
   transitions: Transition[],
-  options: ExtractorOptions
+  options: ExtractorOptions,
 ): Gap[] {
-  if (options.gapHandling === "silent") return [];
+  if (options.gapHandling === "silent") {
+    return [];
+  }
 
   const gaps: Gap[] = [];
 
   if (raw.declaredContract) {
     const producedStatuses = new Set(
       transitions.flatMap((t) => {
-        if (t.output.type !== "response") return [];
+        if (t.output.type !== "response") {
+          return [];
+        }
         const sc = t.output.statusCode;
-        if (sc?.type === "literal") return [sc.value as number];
+        if (sc?.type === "literal") {
+          return [sc.value as number];
+        }
         return [];
-      })
+      }),
     );
     const declaredStatuses = new Set(
-      raw.declaredContract.responses.map((r) => r.statusCode)
+      raw.declaredContract.responses.map((r) => r.statusCode),
     );
 
     // Declared but never produced
@@ -260,7 +285,10 @@ export function assessConfidence(raw: RawCodeStructure): ConfidenceInfo {
 // Mapping helpers
 // =============================================================================
 
-const terminalConverters: Record<RawTerminal["kind"], (t: RawTerminal) => Output> = {
+const terminalConverters: Record<
+  RawTerminal["kind"],
+  (t: RawTerminal) => Output
+> = {
   response: (t) => {
     const statusCode: ValueRef | null = t.statusCode
       ? t.statusCode.type === "literal"
@@ -305,8 +333,17 @@ type EffectConverters = {
 };
 
 const effectConverters: EffectConverters = {
-  mutation: (e) => ({ type: "mutation", target: e.target, operation: e.operation }),
-  invocation: (e) => ({ type: "invocation", callee: e.callee, args: [], async: e.async }),
+  mutation: (e) => ({
+    type: "mutation",
+    target: e.target,
+    operation: e.operation,
+  }),
+  invocation: (e) => ({
+    type: "invocation",
+    callee: e.callee,
+    args: [],
+    async: e.async,
+  }),
   emission: (e) => ({ type: "emission", event: e.event }),
   stateChange: (e) => ({ type: "stateChange", variable: e.variable }),
 };

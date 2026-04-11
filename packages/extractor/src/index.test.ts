@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import { assembleSummary, type RawCodeStructure } from "./index.js";
 
 const twoPathRaw: RawCodeStructure = {
@@ -10,7 +11,12 @@ const twoPathRaw: RawCodeStructure = {
     exportName: "getUser",
     exportPath: ["getUser"],
   },
-  boundaryBinding: { protocol: "http", method: "GET", path: "/users/:id", framework: "express" },
+  boundaryBinding: {
+    protocol: "http",
+    method: "GET",
+    path: "/users/:id",
+    framework: "express",
+  },
   parameters: [
     { name: "req", position: 0, role: "request", typeText: "Request" },
     { name: "res", position: 1, role: "response", typeText: "Response" },
@@ -22,7 +28,11 @@ const twoPathRaw: RawCodeStructure = {
           sourceText: "!user",
           structured: {
             type: "truthinessCheck",
-            subject: { type: "dependency", name: "db.findById", accessChain: [] },
+            subject: {
+              type: "dependency",
+              name: "db.findById",
+              accessChain: [],
+            },
             negated: true,
           },
           polarity: "positive",
@@ -184,7 +194,7 @@ describe("assembleSummary", () => {
     const summary = assembleSummary(raw, { gapHandling: "strict" });
     const violation = summary.gaps.find((g) => g.description.includes("404"));
     expect(violation).toBeDefined();
-    expect(violation!.description).toContain("not declared");
+    expect(violation?.description).toContain("not declared");
   });
 
   it("returns no gaps when gapHandling is silent", () => {
@@ -203,7 +213,7 @@ describe("assembleSummary", () => {
     const summary = assembleSummary(twoPathRaw);
     const def = summary.transitions.find((t) => t.isDefault);
     expect(def).toBeDefined();
-    expect(def!.conditions).toHaveLength(0);
+    expect(def?.conditions).toHaveLength(0);
   });
 
   it("output statusCode is a ValueRef literal, not a raw number", () => {

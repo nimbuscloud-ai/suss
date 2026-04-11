@@ -11,6 +11,9 @@
     "packages/cli"
   ],
   "devDependencies": {
+    "@biomejs/biome": "2.0.6",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.1",
     "typescript": "^5.4.0",
     "vitest": "^2.0.0",
     "tsup": "^8.0.0",
@@ -19,6 +22,15 @@
   "packageManager": "npm@10.9.2",
   "scripts": {
     "build": "turbo build",
-    "test": "turbo test"
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "lint:fix": "turbo lint:fix",
+    "format": "biome format --write .",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*": [
+      "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
+    ]
   }
 }

@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import { tsRestFramework } from "./index.js";
 
 describe("tsRestFramework", () => {
@@ -37,8 +38,8 @@ describe("tsRestFramework", () => {
     const pack = tsRestFramework();
     expect(pack.inputMapping.type).toBe("destructuredObject");
     if (pack.inputMapping.type === "destructuredObject") {
-      expect(pack.inputMapping.knownProperties["params"]).toBe("pathParams");
-      expect(pack.inputMapping.knownProperties["body"]).toBe("requestBody");
+      expect(pack.inputMapping.knownProperties.params).toBe("pathParams");
+      expect(pack.inputMapping.knownProperties.body).toBe("requestBody");
     }
   });
 
@@ -46,7 +47,7 @@ describe("tsRestFramework", () => {
     const pack = tsRestFramework();
     const binding = pack.discovery[0].bindingExtraction;
     expect(binding).toBeDefined();
-    expect(binding!.method.type).toBe("fromContract");
-    expect(binding!.path.type).toBe("fromContract");
+    expect(binding?.method.type).toBe("fromContract");
+    expect(binding?.path.type).toBe("fromContract");
   });
 });

@@ -1,16 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import {
-  diffSummaries,
   type BehavioralSummary,
-  type Transition,
-  type Predicate,
+  diffSummaries,
   type Output,
+  type Predicate,
+  type Transition,
 } from "./index.js";
 
 function makeSummary(transitions: Transition[]): BehavioralSummary {
   return {
     kind: "handler",
-    location: { file: "src/test.ts", range: { start: 1, end: 10 }, exportName: "test" },
+    location: {
+      file: "src/test.ts",
+      range: { start: 1, end: 10 },
+      exportName: "test",
+    },
     identity: { name: "test", exportPath: ["test"], boundaryBinding: null },
     inputs: [],
     transitions,
@@ -46,8 +51,18 @@ describe("diffSummaries", () => {
   });
 
   it("detects an added transition", () => {
-    const t1 = makeTransition("t1", { type: "response", statusCode: { type: "literal", value: 200 }, body: null, headers: {} });
-    const t2 = makeTransition("t2", { type: "response", statusCode: { type: "literal", value: 404 }, body: null, headers: {} });
+    const t1 = makeTransition("t1", {
+      type: "response",
+      statusCode: { type: "literal", value: 200 },
+      body: null,
+      headers: {},
+    });
+    const t2 = makeTransition("t2", {
+      type: "response",
+      statusCode: { type: "literal", value: 404 },
+      body: null,
+      headers: {},
+    });
     const before = makeSummary([t1]);
     const after = makeSummary([t1, t2]);
     const diff = diffSummaries(before, after);
@@ -58,8 +73,18 @@ describe("diffSummaries", () => {
   });
 
   it("detects a removed transition", () => {
-    const t1 = makeTransition("t1", { type: "response", statusCode: { type: "literal", value: 200 }, body: null, headers: {} });
-    const t2 = makeTransition("t2", { type: "response", statusCode: { type: "literal", value: 404 }, body: null, headers: {} });
+    const t1 = makeTransition("t1", {
+      type: "response",
+      statusCode: { type: "literal", value: 200 },
+      body: null,
+      headers: {},
+    });
+    const t2 = makeTransition("t2", {
+      type: "response",
+      statusCode: { type: "literal", value: 404 },
+      body: null,
+      headers: {},
+    });
     const before = makeSummary([t1, t2]);
     const after = makeSummary([t1]);
     const diff = diffSummaries(before, after);
@@ -70,8 +95,18 @@ describe("diffSummaries", () => {
   });
 
   it("detects a changed transition (same id, different output)", () => {
-    const t1 = makeTransition("t1", { type: "response", statusCode: { type: "literal", value: 200 }, body: null, headers: {} });
-    const t1changed = makeTransition("t1", { type: "response", statusCode: { type: "literal", value: 201 }, body: null, headers: {} });
+    const t1 = makeTransition("t1", {
+      type: "response",
+      statusCode: { type: "literal", value: 200 },
+      body: null,
+      headers: {},
+    });
+    const t1changed = makeTransition("t1", {
+      type: "response",
+      statusCode: { type: "literal", value: 201 },
+      body: null,
+      headers: {},
+    });
     const before = makeSummary([t1]);
     const after = makeSummary([t1changed]);
     const diff = diffSummaries(before, after);

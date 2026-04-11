@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import { reactRouterFramework } from "./index.js";
 
 describe("reactRouterFramework", () => {
@@ -25,7 +26,10 @@ describe("reactRouterFramework", () => {
   it("loader binding extracts method as literal GET and path from filename", () => {
     const pack = reactRouterFramework();
     const loader = pack.discovery.find((d) => d.kind === "loader");
-    expect(loader?.bindingExtraction?.method).toEqual({ type: "literal", value: "GET" });
+    expect(loader?.bindingExtraction?.method).toEqual({
+      type: "literal",
+      value: "GET",
+    });
     expect(loader?.bindingExtraction?.path).toEqual({ type: "fromFilename" });
   });
 
@@ -46,8 +50,8 @@ describe("reactRouterFramework", () => {
     expect(pack.inputMapping.type).toBe("singleObjectParam");
     if (pack.inputMapping.type === "singleObjectParam") {
       expect(pack.inputMapping.paramPosition).toBe(0);
-      expect(pack.inputMapping.knownProperties["params"]).toBe("pathParams");
-      expect(pack.inputMapping.knownProperties["request"]).toBe("request");
+      expect(pack.inputMapping.knownProperties.params).toBe("pathParams");
+      expect(pack.inputMapping.knownProperties.request).toBe("request");
     }
   });
 });
