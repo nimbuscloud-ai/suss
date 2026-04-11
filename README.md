@@ -45,7 +45,12 @@ These summaries are the input to downstream tools: contract checkers, documentat
 
 ## Docs
 
-- [`docs/architecture.md`](docs/architecture.md) — how the pieces fit together, the vocabulary, the extraction algorithm, design decisions
+- [`docs/motivation.md`](docs/motivation.md) — the problem, why existing tools don't catch it, prior art, design principles
+- [`docs/architecture.md`](docs/architecture.md) — how the pieces fit together, the vocabulary (with examples), package dependency rules
+- [`docs/extraction-algorithm.md`](docs/extraction-algorithm.md) — the four extraction functions, pseudocode, edge cases, testing strategy
+- [`docs/ir-reference.md`](docs/ir-reference.md) — type-by-type walkthrough of `@suss/behavioral-ir`
+- [`docs/framework-packs.md`](docs/framework-packs.md) — how to write or modify a framework pack, pattern reference, worked Fastify example
+- [`docs/style.md`](docs/style.md) — code conventions (Biome, TypeScript, tests, monorepo)
 - [`docs/status.md`](docs/status.md) — phase-by-phase progress tracker, test counts, decisions log
 
 ## Status
