@@ -89,7 +89,13 @@ export interface TerminalPattern {
 // =============================================================================
 
 export interface ContractPattern {
-  discovery: DiscoveryPattern;
+  /** How to find the contract object. Contracts are data structures, not code units,
+   *  so this is a simpler shape than DiscoveryPattern. */
+  discovery: {
+    importModule: string; // e.g. "@ts-rest/core"
+    importName: string; // e.g. "initContract"
+    registrationChain: string[]; // e.g. [".router"]
+  };
   responseExtraction: {
     /** Property on the contract object that holds the responses map */
     property: string;

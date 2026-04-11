@@ -40,13 +40,9 @@ export function tsRestFramework(): FrameworkPack {
 
     contractReading: {
       discovery: {
-        kind: "contract",
-        match: {
-          type: "registrationCall",
-          importModule: "@ts-rest/core",
-          importName: "initContract",
-          registrationChain: [".router"],
-        },
+        importModule: "@ts-rest/core",
+        importName: "initContract",
+        registrationChain: [".router"],
       },
       responseExtraction: { property: "responses" },
       paramsExtraction: { property: "pathParams" },
