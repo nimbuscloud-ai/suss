@@ -14,7 +14,7 @@ export type CodeUnitKind =
 export interface SourceLocation {
   file: string;
   range: { start: number; end: number };
-  exportName: string;
+  exportName: string | null;
 }
 
 export interface BoundaryBinding {
@@ -27,8 +27,8 @@ export interface BoundaryBinding {
 
 export interface CodeUnitIdentity {
   name: string;
-  exportPath: string[];
-  boundaryBinding?: BoundaryBinding;
+  exportPath: string[] | null;
+  boundaryBinding: BoundaryBinding | null;
 }
 
 export type ComparisonOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
@@ -46,10 +46,10 @@ export type Derivation =
   | { type: "indexAccess"; index: string | number };
 
 export type Input =
-  | { type: "parameter"; name: string; position: number }
-  | { type: "injection"; name: string }
-  | { type: "hookReturn"; hook: string }
-  | { type: "contextValue"; context: string }
+  | { type: "parameter"; name: string; position: number; role: string; shape: TypeShape | null }
+  | { type: "injection"; name: string; mechanism: string; shape: TypeShape | null }
+  | { type: "hookReturn"; hook: string; destructuredFields: string[] }
+  | { type: "contextValue"; context: string; accessedFields: string[] }
   | { type: "closure"; name: string };
 
 export type Literal = { type: "literal"; value: string | number | boolean | null };
@@ -67,48 +67,11 @@ export type Predicate =
   | { type: "truthinessCheck"; subject: ValueRef; negated: boolean }
   | { type: "comparison"; left: ValueRef; op: ComparisonOp; right: ValueRef }
   | { type: "typeCheck"; subject: ValueRef; expectedType: string }
-  | { type: "propertyExists"; subject: ValueRef; property: string }
+  | { type: "propertyExists"; subject: ValueRef; property: string; negated: boolean }
   | { type: "compound"; op: "and" | "or"; operands: Predicate[] }
   | { type: "negation"; operand: Predicate }
-  | { type: "call"; callee: string; args: string[] }
+  | { type: "call"; callee: string; args: ValueRef[] }
   | { type: "opaque"; sourceText: string; reason: OpaqueReason };
-
-export type Output =
-  | { type: "response"; statusCode: number | null; body: unknown }
-  | { type: "throw"; exceptionType: string | null; message: string | null }
-  | { type: "render"; component: string; props?: Record<string, unknown> }
-  | { type: "return"; value: unknown }
-  | { type: "delegate"; to: string }
-  | { type: "emit"; event: string; payload?: unknown }
-  | { type: "void" };
-
-export type Effect =
-  | { type: "mutation"; target: string; operation: string }
-  | { type: "invocation"; callee: string; args: unknown[] }
-  | { type: "emission"; event: string; payload?: unknown }
-  | { type: "stateChange"; variable: string; newValue?: unknown };
-
-export interface Transition {
-  id: string;
-  conditions: Predicate[];
-  output: Output;
-  effects: Effect[];
-  location: { start: number; end: number };
-  isDefault: boolean;
-  confidence?: number;
-}
-
-export interface Gap {
-  type: "unhandledCase";
-  conditions: Predicate[];
-  consequence: string;
-  description: string;
-}
-
-export interface ConfidenceInfo {
-  source: string;
-  level: "high" | "medium" | "low";
-}
 
 export type TypeShape =
   | { type: "record"; properties: Record<string, TypeShape> }
@@ -121,6 +84,43 @@ export type TypeShape =
   | { type: "union"; variants: TypeShape[] }
   | { type: "ref"; name: string }
   | { type: "unknown" };
+
+export type Output =
+  | { type: "response"; statusCode: ValueRef | null; body: TypeShape | null; headers: Record<string, ValueRef> }
+  | { type: "throw"; exceptionType: string | null; message: string | null }
+  | { type: "render"; component: string; props?: Record<string, unknown> }
+  | { type: "return"; value: TypeShape | null }
+  | { type: "delegate"; to: string }
+  | { type: "emit"; event: string; payload?: TypeShape }
+  | { type: "void" };
+
+export type Effect =
+  | { type: "mutation"; target: string; operation: "create" | "update" | "delete" }
+  | { type: "invocation"; callee: string; args: unknown[]; async: boolean }
+  | { type: "emission"; event: string; payload?: unknown }
+  | { type: "stateChange"; variable: string; newValue?: unknown };
+
+export interface Transition {
+  id: string;
+  conditions: Predicate[];
+  output: Output;
+  effects: Effect[];
+  location: { start: number; end: number };
+  isDefault: boolean;
+  confidence?: ConfidenceInfo;
+}
+
+export interface Gap {
+  type: "unhandledCase";
+  conditions: Predicate[];
+  consequence: "frameworkDefault" | "implicitThrow" | "fallthrough" | "unknown";
+  description: string;
+}
+
+export interface ConfidenceInfo {
+  source: "inferred_static" | "inferred_ai" | "declared" | "stub";
+  level: "high" | "medium" | "low";
+}
 
 export interface BehavioralSummary {
   kind: CodeUnitKind;

@@ -6,25 +6,29 @@ export function tsRestFramework(): FrameworkPack {
   return {
     name: "ts-rest",
     languages: ["typescript"],
+
     discovery: [
       {
-        kind: "registrationCall",
+        kind: "handler",
         match: {
-          kind: "registrationCall",
+          type: "registrationCall",
           importModule: "@ts-rest/express",
-          registrationChain: ["initServer", "router"],
+          importName: "initServer",
+          registrationChain: [".router"],
         },
         bindingExtraction: {
-          methodSource: "contract.method",
-          pathSource: "contract.path",
+          method: { type: "fromContract" },
+          path: { type: "fromContract" },
         },
       },
     ],
+
     terminals: [
       {
-        kind: "returnShape",
+        // ts-rest handlers return { status: N, body: ... }
+        kind: "response",
         match: {
-          kind: "returnShape",
+          type: "returnShape",
           requiredProperties: ["status", "body"],
         },
         extraction: {
@@ -33,20 +37,29 @@ export function tsRestFramework(): FrameworkPack {
         },
       },
     ],
+
     contractReading: {
       discovery: {
-        kind: "registrationCall",
+        kind: "contract",
         match: {
-          kind: "registrationCall",
+          type: "registrationCall",
           importModule: "@ts-rest/core",
-          registrationChain: ["initContract", "router"],
+          importName: "initContract",
+          registrationChain: [".router"],
         },
       },
       responseExtraction: { property: "responses" },
+      paramsExtraction: { property: "pathParams" },
     },
+
     inputMapping: {
-      style: "destructuredObject",
-      fields: ["params", "body", "query", "headers"],
+      type: "destructuredObject",
+      knownProperties: {
+        params: "pathParams",
+        body: "requestBody",
+        query: "queryParams",
+        headers: "headers",
+      },
     },
   };
 }
