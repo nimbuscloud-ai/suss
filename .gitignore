@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+.env
+
+# Claude Code
+PLAN.md
+CLAUDE.md
+.claude/
