@@ -35,19 +35,140 @@ The split between adapter and extractor is deliberate. The extractor never sees 
 
 ## The vocabulary
 
-These terms are used consistently across the codebase.
+These terms are used consistently across the codebase. Most are illustrated with a running example: this ts-rest handler.
 
-- **Code unit** — a callable piece of code (handler, loader, component, resolver, consumer). The atomic unit of analysis. Every code unit has a **kind** that determines its behavioral model.
-- **Boundary** — an identifiable point of interaction (REST endpoint, GraphQL operation, message queue topic). Boundaries are where behavioral contracts matter.
-- **Transition** — `(conditions → output, effects)`. The atomic unit of behavioral description. A code unit's full behavior is its set of transitions.
-- **Terminal** — a point in a code unit where observable output is produced (`res.json()`, `return { status, body }`, `throw httpErrorJson()`, a JSX return).
-- **Predicate** — a structured condition gating a transition. Has a **subject** (what value is tested), a **test** (nullness, equality, etc.), and composes into `and`/`or`/`negation`.
-- **Subject** / **ValueRef** — a reference to a value with an origin (parameter, dependency call, import, context) and a path (property access chain). Shallow on purpose — identifies what's being tested without trying to understand its full semantics.
-- **Output** — what a terminal produces: `response`, `throw`, `render`, `return`, `delegate`, `emit`, or `void`.
-- **Gap** — a case the code unit doesn't explicitly handle. First-class in the summary, not an error.
-- **Declared contract** — a machine-readable behavioral declaration authored alongside the implementation (ts-rest contracts, OpenAPI). The checker compares declared vs. actual.
-- **Framework pack** — declarative patterns describing how to find code units, what terminals look like, and how inputs are delivered for a specific framework.
-- **Confidence** — how much of a code unit's behavior was structurally analyzed vs. opaque. Degrades gracefully when the extractor can't decompose something.
+```typescript
+// The running example for this section
+export const getUser = async ({ params }: { params: { id: string } }) => {
+  const user = await db.findById(params.id);
+  if (!user) {
+    return { status: 404, body: { error: "not found" } };
+  }
+  return { status: 200, body: user };
+};
+```
+
+**Code unit**: a callable piece of code (handler, loader, component, resolver, consumer). The atomic unit of analysis. Every code unit has a **kind** that determines its behavioral model. In the example above, `getUser` is a code unit of kind `"handler"`.
+
+**Boundary**: an identifiable point of interaction (REST endpoint, GraphQL operation, message queue topic). Boundaries are where behavioral contracts matter. For `getUser`, the boundary is `GET /users/:id` — the code unit is *bound* to that boundary via the framework's registration mechanism.
+
+**Terminal**: a point in a code unit where observable output is produced. Terminals are framework-specific but the *output type* is universal. In the running example there are two terminals — the highlighted lines below:
+
+```typescript
+if (!user) {
+  return { status: 404, body: { error: "not found" } };  // ← terminal 1
+}
+return { status: 200, body: user };                       // ← terminal 2
+```
+
+Other terminal shapes: `res.status(400).json(...)` in Express, `throw httpErrorJson(404)` in React Router, a JSX return in a React component.
+
+**Transition**: `(conditions → output, effects)`. The atomic unit of behavioral description. A code unit's full behavior is its set of transitions. `getUser` has two:
+
+```json
+[
+  {
+    "id": "getUser:0",
+    "conditions": [{ "type": "truthinessCheck", "subject": <user>, "negated": true }],
+    "output": { "type": "response", "statusCode": { "type": "literal", "value": 404 }, ... },
+    "isDefault": false
+  },
+  {
+    "id": "getUser:1",
+    "conditions": [],
+    "output": { "type": "response", "statusCode": { "type": "literal", "value": 200 }, ... },
+    "isDefault": true
+  }
+]
+```
+
+**Predicate**: a structured condition gating a transition. Has a **subject** (what value is tested), a **test** (nullness, equality, etc.), and composes into `and`/`or`/`negation`. The source expression `!user` becomes:
+
+```json
+{
+  "type": "truthinessCheck",
+  "subject": { "type": "dependency", "name": "db.findById", "accessChain": [] },
+  "negated": true
+}
+```
+
+When the extractor can't decompose an expression (complex function calls, dynamic computation), it falls back to an `opaque` predicate that preserves the source text.
+
+**Subject / ValueRef**: a reference to a value with an *origin* (parameter, dependency call, import, context) and a *path* (property access chain). Shallow on purpose: identifies what's being tested without trying to understand its full semantics. A deeper example — `container.repository.lastAnalyzedCommitHash`, where `container` came from `await prisma.containerV2.findUnique(...)`:
+
+```json
+{
+  "type": "derived",
+  "from": {
+    "type": "derived",
+    "from": { "type": "dependency", "name": "prisma.containerV2.findUnique", "accessChain": [] },
+    "derivation": { "type": "propertyAccess", "property": "repository" }
+  },
+  "derivation": { "type": "propertyAccess", "property": "lastAnalyzedCommitHash" }
+}
+```
+
+Two predicates that test the same subject — on different sides of a service boundary — should be recognizable as referring to the same thing. That's why the shape is structural, not a raw string.
+
+**Output**: what a terminal produces. One of: `response`, `throw`, `render`, `return`, `delegate`, `emit`, or `void`. The `response` variant from the running example:
+
+```json
+{
+  "type": "response",
+  "statusCode": { "type": "literal", "value": 200 },
+  "body": { "type": "ref", "name": "User" },
+  "headers": {}
+}
+```
+
+**Gap**: a case the code unit doesn't explicitly handle. First-class in the summary, not an error. If the declared contract for `getUser` says the endpoint can return `200 | 404 | 500`, but the handler never actually produces 500, that's a gap:
+
+```json
+{
+  "type": "unhandledCase",
+  "consequence": "frameworkDefault",
+  "description": "Declared response 500 is never produced by the handler"
+}
+```
+
+Gaps run both directions: *declared but not produced* (as above) and *produced but not declared* (contract violation).
+
+**Declared contract**: a machine-readable behavioral declaration authored alongside the implementation. For `getUser`, a ts-rest contract:
+
+```typescript
+const contract = c.router({
+  getUser: {
+    method: "GET",
+    path: "/users/:id",
+    pathParams: z.object({ id: z.string() }),
+    responses: {
+      200: UserSchema,
+      404: ErrorSchema,
+      500: ErrorSchema,
+    },
+  },
+});
+```
+
+The extractor reads both the declaration and the implementation, and the checker compares them.
+
+**Framework pack**: declarative patterns describing how to find code units, what terminals look like, and how inputs are delivered for a specific framework. They are data, not code — the adapter interprets them.
+
+```typescript
+tsRestFramework(): FrameworkPack {
+  return {
+    name: "ts-rest",
+    languages: ["typescript"],
+    discovery: [{ kind: "handler", match: { type: "registrationCall", ... } }],
+    terminals: [{ kind: "response", match: { type: "returnShape",
+                  requiredProperties: ["status", "body"] }, extraction: { ... } }],
+    contractReading: { ... },
+    inputMapping: { type: "destructuredObject", knownProperties: { ... } },
+  };
+}
+```
+
+**Confidence**: how much of a code unit's behavior was structurally analyzed vs. opaque. Computed as the ratio of opaque predicates to total predicates, bucketed into `high` / `medium` / `low`. Degrades gracefully when the extractor can't decompose something, so downstream consumers can treat low-confidence summaries with appropriate skepticism.
 
 ## Package layout
 
