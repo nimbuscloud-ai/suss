@@ -2,6 +2,7 @@
 # Typecheck first (fail fast on type errors before running tests)
 npm run typecheck
 # Run full test suite with coverage
-npm test
+# Bump heap for ts-morph-heavy adapter + CLI tests running in parallel
+NODE_OPTIONS="--max-old-space-size=8192" npm test
 # Normalize and format coverage-summary.json files (path relativization + biome format)
 npm run badges
