@@ -317,9 +317,12 @@ Export both a named function and a default for dynamic imports from the CLI.
 
 ### Step 4 — Write the tests
 
-A pack test asserts structural correctness of the returned `FrameworkPack`, not extraction behavior. See `packages/framework/ts-rest/src/index.test.ts` for the shape: check that `pack.discovery[0].kind` is right, that `pack.terminals[0].match.type` is the expected variant, that `inputMapping.knownProperties` has the right role mappings.
+A pack test has two layers:
 
-Full extraction-against-fixtures testing lives in the adapter's integration tests, not in the pack's own tests. A pack is validated against real code in Phase 4 fixtures.
+1. **Pack shape** — structural correctness of the returned `FrameworkPack`. Check `pack.discovery[i].kind`, `pack.terminals[i].match.type`, `inputMapping.knownProperties`.
+2. **Integration** — build an in-memory ts-morph project over `fixtures/<framework>/*.ts`, run `createTypeScriptAdapter({ project, frameworks: [yourPack()] }).extractAll()`, and assert on the resulting `BehavioralSummary[]`: transition counts, status codes, isDefault flags, input roles, gaps (if the pack has `contractReading`). Share the summaries via `beforeAll` so ts-morph setup runs once per file — raise the hook timeout to 30s under turbo concurrency.
+
+See `packages/framework/ts-rest/src/index.test.ts` for a pack with contract reading and `packages/framework/express/src/index.test.ts` for a pack without.
 
 ### What you don't need to know
 

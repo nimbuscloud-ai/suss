@@ -403,7 +403,7 @@ The five steps correspond to five independently testable units:
 | `predicates.test.ts` | Individual expression nodes (not full functions). Assert the parsed `Predicate`. One test per AST expression kind. |
 | `subjects.test.ts` | Fixture functions with parameter access, dependency call results, destructuring, property chains. Assert the resolved `ValueRef`. |
 
-Each test uses its own small fixture — no end-to-end runs for unit tests. Full adapter integration tests live in `fixtures/` and compare against hand-written `expected.json` files.
+Each test uses its own small fixture — no end-to-end runs for unit tests. Full extraction integration tests live in three places: the adapter's own integration test (`packages/adapter/typescript/src/*.test.ts` against `fixtures/ts-rest`), each framework pack's integration test (adapter-against-fixtures for its own framework), and the CLI test suite (deep-equal assertions on representative summaries per framework, plus `-o` round-trip).
 
 ## Correctness principles
 
