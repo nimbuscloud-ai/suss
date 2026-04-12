@@ -105,15 +105,15 @@ export function expressFramework(): FrameworkPack {
       },
       {
         // res.redirect(url) or res.redirect(status, url)
+        // The overload makes arg 0 ambiguous (URL vs status code), so we don't
+        // extract a status code here. Express defaults to 302.
         kind: "response",
         match: {
           type: "parameterMethodCall",
           parameterPosition: 1,
           methodChain: ["redirect"],
         },
-        extraction: {
-          statusCode: { from: "argument", position: 0 },
-        },
+        extraction: {},
       },
       {
         // throw new SomeError(...)
