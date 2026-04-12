@@ -67,7 +67,7 @@ Progress tracker. Updated as phases land.
 | 5.4 Consumer-satisfaction check | ✅ | Dead-branch detection; opaque provider statuses short-circuit to `lowConfidence`. |
 | 5.5 Contract-consistency check | ✅ | Provider gaps reformatted to `providerContractViolation`; consumer checked against declared contract for declared-but-unhandled and handled-but-undeclared cases. |
 | 5.6 `checkPair` entrypoint + fixture integration tests | ✅ | Composes all three checks; integration test exercises every finding kind in one pass. |
-| 5.7 `suss check` CLI command | ⬜ | JSON / human output; non-zero exit on `error` severity. |
+| 5.7 `suss check` CLI command | ✅ | `suss check <provider.json> <consumer.json>` with `--json` / `-o` output; non-zero exit when any finding has `error` severity. |
 
 ## Phase 6+ — Deferred
 
@@ -82,14 +82,15 @@ Progress tracker. Updated as phases land.
 
 | Package | Tests | Notes |
 |---------|-------|-------|
-| `@suss/behavioral-ir` | 7 | diff utility, type narrowing |
+| `@suss/behavioral-ir` | 8 | diff utility, type narrowing, Finding shape |
 | `@suss/extractor` | 52 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, transition ID stability, edge cases |
 | `@suss/adapter-typescript` | 218 | conditions, predicates, subjects, terminals, discovery, contract reading, integration |
 | `@suss/framework-ts-rest` | 10 | pack shape + integration (adapter against fixtures, boundary bindings, gaps, inputs) |
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
-| `@suss/cli` | 16 | deep-equal summary shape per framework, `-o` round-trip, inspect, error cases |
-| **Total** | **317** | |
+| `@suss/checker` | 45 | subject/predicate matchers, response-match helpers, provider coverage, consumer satisfaction, contract consistency, `checkPair` integration |
+| `@suss/cli` | 23 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check` (JSON + human output, exit codes, error cases) |
+| **Total** | **370** | |
 
 Runs via `turbo test`.
 

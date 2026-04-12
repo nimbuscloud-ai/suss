@@ -4,7 +4,7 @@ Given behavioral summaries for two sides of a boundary — a provider (the handl
 
 This document specifies the *pairwise* check: one provider summary, one consumer summary, a list of findings. It describes the algorithm `suss check` uses, the kinds of mismatches it surfaces, and how the IR supports cross-boundary reasoning. For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
 
-> **Status:** in progress. `@suss/checker` implements all three pairwise checks (provider coverage, consumer satisfaction, contract consistency — status-code matching; body-shape matching deferred). The `suss check` CLI is next. See [`status.md`](status.md). Broader analysis layers (cross-service graphs, historical tracking, continuous checking) are deliberately **out of scope** for this repository; see [§ Beyond pairwise](#beyond-pairwise).
+> **Status:** shipped (pairwise, status-code matching). `@suss/checker` implements all three pairwise checks and `suss check <provider.json> <consumer.json>` renders them as JSON or human-readable output with a non-zero exit on error-severity findings. Body-shape matching is deferred. See [`status.md`](status.md). Broader analysis layers (cross-service graphs, historical tracking, continuous checking) are deliberately **out of scope** for this repository; see [§ Beyond pairwise](#beyond-pairwise).
 
 ## What the check answers
 
