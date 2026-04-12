@@ -5,7 +5,9 @@ import {
   assessConfidence,
   detectGaps,
   effectToIR,
+  makeTransitionId,
   paramToInput,
+  type RawBranch,
   type RawCodeStructure,
   type RawEffect,
   type RawParameter,
@@ -257,6 +259,274 @@ describe("assembleSummary", () => {
         expect(t.output.statusCode.value).toBe(404);
       }
     }
+  });
+});
+
+describe("makeTransitionId", () => {
+  // Minimal branch builder — callers supply only the fields that matter.
+  const makeBranch = (overrides: Partial<RawBranch>): RawBranch => ({
+    conditions: [],
+    terminal: makeTerminal({ kind: "void" }),
+    effects: [],
+    location: { start: 0, end: 0 },
+    isDefault: false,
+    ...overrides,
+  });
+
+  it("is deterministic — same input, same ID", () => {
+    const branch = makeBranch({
+      conditions: [
+        {
+          sourceText: "!user",
+          structured: null,
+          polarity: "positive",
+          source: "explicit",
+        },
+      ],
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "literal", value: 404 },
+      }),
+    });
+    expect(makeTransitionId("getUser", branch)).toBe(
+      makeTransitionId("getUser", branch),
+    );
+  });
+
+  it("is stable under branch reordering — sibling branches do not affect each other's IDs", () => {
+    // The defining property: reshuffling the `branches` array does not
+    // change any individual branch's ID.
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      branches: [twoPathRaw.branches[0], twoPathRaw.branches[1]],
+    };
+    const reordered: RawCodeStructure = {
+      ...twoPathRaw,
+      branches: [twoPathRaw.branches[1], twoPathRaw.branches[0]],
+    };
+    const original = assembleSummary(raw);
+    const swapped = assembleSummary(reordered);
+
+    const originalIds = new Set(original.transitions.map((t) => t.id));
+    const swappedIds = new Set(swapped.transitions.map((t) => t.id));
+    expect(originalIds).toEqual(swappedIds);
+  });
+
+  it("adding a new branch leaves existing branches' IDs unchanged", () => {
+    const before = assembleSummary(twoPathRaw);
+    const withExtra = assembleSummary({
+      ...twoPathRaw,
+      branches: [
+        ...twoPathRaw.branches,
+        {
+          conditions: [
+            {
+              sourceText: "someOther",
+              structured: null,
+              polarity: "positive",
+              source: "explicit",
+            },
+          ],
+          terminal: makeTerminal({
+            kind: "response",
+            statusCode: { type: "literal", value: 500 },
+          }),
+          effects: [],
+          location: { start: 30, end: 32 },
+          isDefault: false,
+        },
+      ],
+    });
+    for (const original of before.transitions) {
+      const matching = withExtra.transitions.find((t) => t.id === original.id);
+      expect(matching).toBeDefined();
+    }
+  });
+
+  it("different terminal kind mints a different ID", () => {
+    const response = makeBranch({
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "literal", value: 200 },
+      }),
+    });
+    const thrown = makeBranch({
+      terminal: makeTerminal({ kind: "throw" }),
+    });
+    expect(makeTransitionId("f", response)).not.toBe(
+      makeTransitionId("f", thrown),
+    );
+  });
+
+  it("different literal status code mints a different ID", () => {
+    const ok = makeBranch({
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "literal", value: 200 },
+      }),
+    });
+    const notFound = makeBranch({
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "literal", value: 404 },
+      }),
+    });
+    expect(makeTransitionId("f", ok)).not.toBe(makeTransitionId("f", notFound));
+  });
+
+  it("different condition source text mints a different ID", () => {
+    const a = makeBranch({
+      conditions: [
+        {
+          sourceText: "!user",
+          structured: null,
+          polarity: "positive",
+          source: "explicit",
+        },
+      ],
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "literal", value: 404 },
+      }),
+    });
+    const b = makeBranch({
+      conditions: [
+        {
+          sourceText: "!admin",
+          structured: null,
+          polarity: "positive",
+          source: "explicit",
+        },
+      ],
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "literal", value: 404 },
+      }),
+    });
+    expect(makeTransitionId("f", a)).not.toBe(makeTransitionId("f", b));
+  });
+
+  it("different condition polarity mints a different ID", () => {
+    const positive = makeBranch({
+      conditions: [
+        {
+          sourceText: "user.active",
+          structured: null,
+          polarity: "positive",
+          source: "explicit",
+        },
+      ],
+      terminal: makeTerminal({ kind: "void" }),
+    });
+    const negative = makeBranch({
+      conditions: [
+        {
+          sourceText: "user.active",
+          structured: null,
+          polarity: "negative",
+          source: "explicit",
+        },
+      ],
+      terminal: makeTerminal({ kind: "void" }),
+    });
+    expect(makeTransitionId("f", positive)).not.toBe(
+      makeTransitionId("f", negative),
+    );
+  });
+
+  it("condition order is part of identity — short-circuit semantics differ", () => {
+    // `a && b` and `b && a` can have different evaluation side effects,
+    // so the IDs must differ.
+    const ab = makeBranch({
+      conditions: [
+        {
+          sourceText: "a",
+          structured: null,
+          polarity: "positive",
+          source: "explicit",
+        },
+        {
+          sourceText: "b",
+          structured: null,
+          polarity: "positive",
+          source: "explicit",
+        },
+      ],
+      terminal: makeTerminal({ kind: "void" }),
+    });
+    const ba = makeBranch({
+      conditions: [
+        {
+          sourceText: "b",
+          structured: null,
+          polarity: "positive",
+          source: "explicit",
+        },
+        {
+          sourceText: "a",
+          structured: null,
+          polarity: "positive",
+          source: "explicit",
+        },
+      ],
+      terminal: makeTerminal({ kind: "void" }),
+    });
+    expect(makeTransitionId("f", ab)).not.toBe(makeTransitionId("f", ba));
+  });
+
+  it("dynamic status codes keyed by source text (two distinct dynamics → different IDs)", () => {
+    const codeA = makeBranch({
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "dynamic", sourceText: "computeStatus(a)" },
+      }),
+    });
+    const codeB = makeBranch({
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "dynamic", sourceText: "computeStatus(b)" },
+      }),
+    });
+    expect(makeTransitionId("f", codeA)).not.toBe(makeTransitionId("f", codeB));
+  });
+
+  it("function name is part of identity — same branch in two functions mints distinct IDs", () => {
+    const branch = makeBranch({
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "literal", value: 200 },
+      }),
+    });
+    expect(makeTransitionId("getUser", branch)).not.toBe(
+      makeTransitionId("getAdmin", branch),
+    );
+  });
+
+  it("relocating a branch (changing its location range) leaves the ID intact", () => {
+    // Identity is content-addressable — editing whitespace that shifts the
+    // branch's start/end offsets should not re-mint the ID.
+    const original = makeBranch({
+      conditions: [
+        {
+          sourceText: "!user",
+          structured: null,
+          polarity: "positive",
+          source: "explicit",
+        },
+      ],
+      terminal: makeTerminal({
+        kind: "response",
+        statusCode: { type: "literal", value: 404 },
+        location: { start: 16, end: 16 },
+      }),
+      location: { start: 15, end: 17 },
+    });
+    const moved = makeBranch({
+      ...original,
+      terminal: { ...original.terminal, location: { start: 99, end: 99 } },
+      location: { start: 98, end: 100 },
+    });
+    expect(makeTransitionId("f", original)).toBe(makeTransitionId("f", moved));
   });
 });
 
