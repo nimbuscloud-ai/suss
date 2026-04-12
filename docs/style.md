@@ -60,6 +60,26 @@ Prefer `import type` for type-only imports — Biome enforces this and it keeps 
 - Prefer hand-crafted data fixtures over file-based fixtures when the data is small enough to read in one screen — it's easier to understand and update.
 - Tests describe *behavior*, not implementation: `it("wraps null-structured conditions as opaque")` not `it("assembleSummary works")`.
 
+## Commits
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/). Format:
+
+```
+<type>(<scope>): <short summary>
+
+<optional body — explain why, not what>
+```
+
+**Types:** `feat`, `fix`, `docs`, `test`, `chore`, `refactor`, `perf`
+
+**Scopes** (optional but encouraged in a monorepo): `ir`, `extractor`, `adapter`, `cli`, `express`, `react-router`, `ts-rest`. Omit scope for cross-cutting changes.
+
+**Guidelines:**
+- Each commit should have a single primary intent. Split mixed changes (e.g. a feature + a doc update + a test fix) into separate commits.
+- The summary line describes the change concisely (imperative mood, lowercase, no period).
+- Use the body for *why* this change was made, not a restatement of the diff.
+- Don't reference internal project management (phase numbers, task IDs, plan steps) — commit history is for contributors reading the log, not for tracking internal milestones.
+
 ## Monorepo conventions
 
 - All packages are `@suss/<name>`. Package directory names are either flat (`packages/ir/`) or nested under a category (`packages/framework/ts-rest/`). Category directories are not themselves packages.
