@@ -25,6 +25,9 @@
     "@suss/extractor": "*"
   },
   "devDependencies": {
+    "@suss/adapter-typescript": "*",
+    "@suss/behavioral-ir": "*",
+    "ts-morph": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
