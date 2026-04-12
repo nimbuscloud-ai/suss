@@ -112,7 +112,10 @@ describe("returnShape — basic matching", () => {
     });
     expect(terminals[0].terminal.body).toEqual({
       typeText: "{ id: 1 }",
-      shape: null,
+      shape: {
+        type: "record",
+        properties: { id: { type: "integer" } },
+      },
     });
   });
 
@@ -234,7 +237,10 @@ describe("returnShape — arrow expression body", () => {
     });
     expect(terminals[0].terminal.body).toEqual({
       typeText: "{ id: params.id }",
-      shape: null,
+      shape: {
+        type: "record",
+        properties: { id: { type: "ref", name: "params.id" } },
+      },
     });
   });
 
@@ -338,7 +344,10 @@ describe("nested function boundary", () => {
     expect(terminals).toHaveLength(1);
     expect(terminals[0].terminal.body).toEqual({
       typeText: "{ correct: true }",
-      shape: null,
+      shape: {
+        type: "record",
+        properties: { correct: { type: "boolean" } },
+      },
     });
   });
 
@@ -520,6 +529,8 @@ describe("parameterMethodCall — matching", () => {
     ]);
 
     expect(terminals).toHaveLength(1);
+    // Bare identifier — not a decomposable literal, so shape stays null
+    // and the source text is preserved as typeText.
     expect(terminals[0].terminal.body).toEqual({
       typeText: "data",
       shape: null,
@@ -560,7 +571,10 @@ describe("parameterMethodCall — matching", () => {
     });
     expect(terminals[0].terminal.body).toEqual({
       typeText: "{ ok: true }",
-      shape: null,
+      shape: {
+        type: "record",
+        properties: { ok: { type: "boolean" } },
+      },
     });
   });
 
@@ -769,7 +783,10 @@ describe("throwExpression — matching", () => {
     });
     expect(terminals[0].terminal.body).toEqual({
       typeText: '{ message: "Not found" }',
-      shape: null,
+      shape: {
+        type: "record",
+        properties: { message: { type: "text" } },
+      },
     });
   });
 
@@ -1025,7 +1042,15 @@ describe("functionCall — matching", () => {
     expect(terminals[0].terminal.kind).toBe("response");
     expect(terminals[0].terminal.body).toEqual({
       typeText: "{ user: { id: 1 } }",
-      shape: null,
+      shape: {
+        type: "record",
+        properties: {
+          user: {
+            type: "record",
+            properties: { id: { type: "integer" } },
+          },
+        },
+      },
     });
   });
 
@@ -1077,7 +1102,12 @@ describe("functionCall — matching", () => {
     expect(terminals).toHaveLength(1);
     expect(terminals[0].terminal.body).toEqual({
       typeText: "{ users: [] }",
-      shape: null,
+      shape: {
+        type: "record",
+        properties: {
+          users: { type: "array", items: { type: "unknown" } },
+        },
+      },
     });
   });
 
