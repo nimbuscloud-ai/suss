@@ -8,6 +8,8 @@ import {
   type ParameterDeclaration,
 } from "ts-morph";
 
+import { extractShape } from "./shapes.js";
+
 import type {
   RawTerminal,
   TerminalExtraction,
@@ -282,7 +284,7 @@ function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
         return null;
       }
 
-      return { typeText: val.getText(), shape: null };
+      return { typeText: val.getText(), shape: extractShape(val) };
     }
 
     return null;
@@ -305,7 +307,7 @@ function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
       return null;
     }
 
-    return { typeText: arg.getText(), shape: null };
+    return { typeText: arg.getText(), shape: extractShape(arg) };
   }
 
   if (ctx.throwCallArgs !== undefined) {
@@ -318,7 +320,7 @@ function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
       return null;
     }
 
-    return { typeText: arg.getText(), shape: null };
+    return { typeText: arg.getText(), shape: extractShape(arg) };
   }
 
   return null;
