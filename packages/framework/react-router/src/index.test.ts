@@ -1,72 +1,153 @@
-import { describe, expect, it } from "vitest";
+import path from "node:path";
+
+import { Project } from "ts-morph";
+import { beforeAll, describe, expect, it } from "vitest";
+
+import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 
 import { reactRouterFramework } from "./index.js";
 
-describe("reactRouterFramework", () => {
-  it("returns a valid FrameworkPack", () => {
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+// ---------------------------------------------------------------------------
+// Fixture project — adds fixtures/react-router/*.ts to an in-memory ts-morph project
+// ---------------------------------------------------------------------------
+
+const fixturesDir = path.resolve(
+  __dirname,
+  "../../../../fixtures/react-router",
+);
+
+function runAdapter(): BehavioralSummary[] {
+  const project = new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: {
+      strict: true,
+      target: 99, // ESNext
+      module: 99, // ESNext
+      moduleResolution: 100, // Bundler
+      skipLibCheck: true,
+    },
+  });
+  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
+
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: [reactRouterFramework()],
+  });
+
+  return adapter.extractAll();
+}
+
+// ---------------------------------------------------------------------------
+// Structural sanity checks
+// ---------------------------------------------------------------------------
+
+describe("reactRouterFramework — pack shape", () => {
+  it("exposes loader/action/component discovery entries", () => {
     const pack = reactRouterFramework();
     expect(pack.name).toBe("react-router");
-    expect(pack.languages).toContain("typescript");
-    expect(pack.discovery).toHaveLength(3);
-    expect(pack.terminals).toHaveLength(5);
+    expect(pack.discovery.map((d) => d.kind).sort()).toEqual([
+      "action",
+      "component",
+      "loader",
+    ]);
+    expect(pack.inputMapping.type).toBe("singleObjectParam");
     expect(pack.contractReading).toBeUndefined();
   });
+});
 
-  it("discovers loader, action, and component via namedExport match type", () => {
-    const pack = reactRouterFramework();
-    const kinds = pack.discovery.map((d) => d.kind);
-    expect(kinds).toContain("loader");
-    expect(kinds).toContain("action");
-    expect(kinds).toContain("component");
-    for (const disc of pack.discovery) {
-      expect(disc.match.type).toBe("namedExport");
+// ---------------------------------------------------------------------------
+// Integration — run the adapter against the react-router fixture
+// ---------------------------------------------------------------------------
+
+describe("reactRouterFramework — integration", () => {
+  // ts-morph project setup dominates — build the summaries once and reuse.
+  let summaries: BehavioralSummary[];
+  beforeAll(() => {
+    summaries = runAdapter();
+  }, 30_000);
+
+  it("discovers both loader and action kinds from named exports", () => {
+    // The fixture exports `loader` and `action`. No `default` export in this
+    // file, so we expect exactly those two code units.
+    expect(summaries).toHaveLength(2);
+    const kinds = summaries.map((s) => s.kind).sort();
+    expect(kinds).toEqual(["action", "loader"]);
+    for (const s of summaries) {
+      expect(s.identity.boundaryBinding).toEqual({
+        protocol: "http",
+        framework: "react-router",
+      });
     }
   });
 
-  it("loader binding extracts method as literal GET and path from filename", () => {
-    const pack = reactRouterFramework();
-    const loader = pack.discovery.find((d) => d.kind === "loader");
-    expect(loader?.bindingExtraction?.method).toEqual({
-      type: "literal",
-      value: "GET",
-    });
-    expect(loader?.bindingExtraction?.path).toEqual({ type: "fromFilename" });
+  it("loader assembles three response transitions from the json/redirect helpers", () => {
+    const loader = summaries.find((s) => s.kind === "loader");
+    expect(loader).toBeDefined();
+
+    // Three detected terminals (throw new Response is not currently
+    // matched — the pack's throw matcher targets `httpErrorJson`).
+    //   1. json({ error: "not found" }, { status: 404 })  → response, null status
+    //   2. redirect("/users")                             → response, null status
+    //   3. json({ user })                                 → default response
+    // json() today extracts body only (no init-arg status), so all three
+    // carry null statusCode — this test pins that behavior.
+    expect(loader!.transitions).toHaveLength(3);
+    for (const t of loader!.transitions) {
+      expect(t.output.type).toBe("response");
+      if (t.output.type === "response") {
+        expect(t.output.statusCode).toBeNull();
+      }
+    }
+    expect(loader!.transitions.map((t) => t.isDefault)).toEqual([
+      false,
+      false,
+      true,
+    ]);
   });
 
-  it("terminals cover json/data/redirect helpers, returnShape, and throw", () => {
-    const pack = reactRouterFramework();
-    const termKinds = pack.terminals.map((t) => t.kind);
-    expect(termKinds).toContain("response");
-    expect(termKinds).toContain("return");
-    expect(termKinds).toContain("throw");
-
-    // functionCall terminals for json(), data(), redirect()
-    const fnCallTerminals = pack.terminals.filter(
-      (t) => t.match.type === "functionCall",
-    );
-    expect(fnCallTerminals).toHaveLength(3);
-    const fnNames = fnCallTerminals.map((t) =>
-      t.match.type === "functionCall" ? t.match.functionName : "",
-    );
-    expect(fnNames).toContain("json");
-    expect(fnNames).toContain("data");
-    expect(fnNames).toContain("redirect");
-
-    // throwExpression terminal for httpErrorJson
-    const throwTerm = pack.terminals.find((t) => t.kind === "throw");
-    expect(throwTerm?.match.type).toBe("throwExpression");
-    if (throwTerm?.match.type === "throwExpression") {
-      expect(throwTerm.match.constructorPattern).toBe("httpErrorJson");
+  it("loader uses singleObjectParam mapping — params destructure is the sole input", () => {
+    const loader = summaries.find((s) => s.kind === "loader");
+    expect(loader).toBeDefined();
+    expect(loader!.inputs).toHaveLength(1);
+    const [input] = loader!.inputs;
+    expect(input.type).toBe("parameter");
+    if (input.type === "parameter") {
+      expect(input.position).toBe(0);
+      expect(input.role).toBe("request");
     }
   });
 
-  it("inputMapping type is 'singleObjectParam' with knownProperties", () => {
-    const pack = reactRouterFramework();
-    expect(pack.inputMapping.type).toBe("singleObjectParam");
-    if (pack.inputMapping.type === "singleObjectParam") {
-      expect(pack.inputMapping.paramPosition).toBe(0);
-      expect(pack.inputMapping.knownProperties.params).toBe("pathParams");
-      expect(pack.inputMapping.knownProperties.request).toBe("request");
+  it("action assembles two response transitions from the json/redirect helpers", () => {
+    const action = summaries.find((s) => s.kind === "action");
+    expect(action).toBeDefined();
+
+    // Two terminals:
+    //   1. json({ error: "name required" }, { status: 400 })  → response, null status
+    //   2. redirect(`/users/${params.id}`)                    → default response
+    expect(action!.transitions).toHaveLength(2);
+    expect(action!.transitions.map((t) => t.isDefault)).toEqual([false, true]);
+    for (const t of action!.transitions) {
+      expect(t.output.type).toBe("response");
+    }
+  });
+
+  it("has high confidence when all conditions resolve to structured predicates", () => {
+    for (const s of summaries) {
+      expect(s.confidence.level).toBe("high");
+      for (const t of s.transitions) {
+        for (const c of t.conditions) {
+          expect(c.type).not.toBe("opaque");
+        }
+      }
+    }
+  });
+
+  it("has no gaps when no contract reading is configured", () => {
+    for (const s of summaries) {
+      expect(s.gaps).toEqual([]);
+      expect(s.metadata).toBeUndefined();
     }
   });
 });
