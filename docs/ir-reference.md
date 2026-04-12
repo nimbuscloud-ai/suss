@@ -189,13 +189,18 @@ The universal set of output shapes. The framework pack determines which variants
 
 ```typescript
 type TypeShape =
-  | { type: "record"; properties: Record<string, TypeShape> }
+  | {
+      type: "record";
+      properties: Record<string, TypeShape>;
+      spreads?: Array<{ sourceText: string }>;
+    }
   | { type: "array"; items: TypeShape }
   | { type: "text" }
   | { type: "integer" }
   | { type: "number" }
   | { type: "boolean" }
   | { type: "null" }
+  | { type: "undefined" }
   | { type: "union"; variants: TypeShape[] }
   | { type: "ref"; name: string }
   | { type: "unknown" };

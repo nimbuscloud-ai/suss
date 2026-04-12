@@ -111,6 +111,7 @@ export type TypeShape =
   | { type: "number" }
   | { type: "boolean" }
   | { type: "null" }
+  | { type: "undefined" }
   | { type: "union"; variants: TypeShape[] }
   | { type: "ref"; name: string }
   | { type: "unknown" };
