@@ -105,6 +105,15 @@ function unwrapMethodChain(
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Unwrap `expr as const` / `expr as Type` to the inner expression. */
+function unwrapAs(node: Expression): Expression {
+  return Node.isAsExpression(node) ? unwrapAs(node.getExpression()) : node;
+}
+
+// ---------------------------------------------------------------------------
 // Status-code extraction
 // ---------------------------------------------------------------------------
 
@@ -143,11 +152,12 @@ function extractStatusCode(
         continue;
       }
 
-      const val = prop.getInitializer();
-      if (val === undefined) {
+      const raw = prop.getInitializer();
+      if (raw === undefined) {
         return null;
       }
 
+      const val = unwrapAs(raw);
       if (Node.isNumericLiteral(val)) {
         return { type: "literal", value: Number(val.getText()) };
       }
@@ -165,11 +175,12 @@ function extractStatusCode(
     // parameterMethodCall: statusCode comes from innermost call (calls[0])
     const innerCall = calls[0];
     const args = innerCall.getArguments();
-    const arg = args[pos] as Expression | undefined;
-    if (arg === undefined) {
+    const rawArg = args[pos] as Expression | undefined;
+    if (rawArg === undefined) {
       return null;
     }
 
+    const arg = unwrapAs(rawArg);
     if (Node.isNumericLiteral(arg)) {
       return { type: "literal", value: Number(arg.getText()) };
     }
@@ -178,11 +189,12 @@ function extractStatusCode(
   }
 
   if (throwCallArgs !== null) {
-    const arg = throwCallArgs[pos] as Expression | undefined;
-    if (arg === undefined) {
+    const rawArg = throwCallArgs[pos] as Expression | undefined;
+    if (rawArg === undefined) {
       return null;
     }
 
+    const arg = unwrapAs(rawArg);
     if (Node.isNumericLiteral(arg)) {
       return { type: "literal", value: Number(arg.getText()) };
     }

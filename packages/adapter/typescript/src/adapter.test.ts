@@ -1,0 +1,846 @@
+// adapter.test.ts — Integration tests for createTypeScriptAdapter (Task 2.5b)
+
+import path from "node:path";
+
+import { Project } from "ts-morph";
+import { describe, expect, it } from "vitest";
+
+import { createTypeScriptAdapter, extractCodeStructure } from "./adapter.js";
+import { readContract } from "./contract.js";
+import { discoverUnits } from "./discovery.js";
+
+import type { FrameworkPack } from "@suss/extractor";
+
+// ---------------------------------------------------------------------------
+// ts-rest framework pack (same as @suss/framework-ts-rest)
+// ---------------------------------------------------------------------------
+
+const tsRestPack: FrameworkPack = {
+  name: "ts-rest",
+  languages: ["typescript"],
+  discovery: [
+    {
+      kind: "handler",
+      match: {
+        type: "registrationCall",
+        importModule: "@ts-rest/express",
+        importName: "initServer",
+        registrationChain: [".router"],
+      },
+      bindingExtraction: {
+        method: { type: "fromContract" },
+        path: { type: "fromContract" },
+      },
+    },
+  ],
+  terminals: [
+    {
+      kind: "response",
+      match: {
+        type: "returnShape",
+        requiredProperties: ["status", "body"],
+      },
+      extraction: {
+        statusCode: { from: "property", name: "status" },
+        body: { from: "property", name: "body" },
+      },
+    },
+  ],
+  contractReading: {
+    discovery: {
+      importModule: "@ts-rest/core",
+      importName: "initContract",
+      registrationChain: [".router"],
+    },
+    responseExtraction: { property: "responses" },
+    paramsExtraction: { property: "pathParams" },
+  },
+  inputMapping: {
+    type: "destructuredObject",
+    knownProperties: {
+      params: "pathParams",
+      body: "requestBody",
+      query: "queryParams",
+      headers: "headers",
+    },
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function fixturesDir() {
+  return path.resolve(__dirname, "../../../../fixtures/ts-rest");
+}
+
+function createFixtureProject(): Project {
+  const project = new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: {
+      strict: true,
+      target: 99, // ESNext
+      module: 99, // ESNext
+      moduleResolution: 100, // Bundler
+      skipLibCheck: true,
+    },
+  });
+
+  project.addSourceFilesAtPaths(path.join(fixturesDir(), "*.ts"));
+  return project;
+}
+
+// ---------------------------------------------------------------------------
+// extractCodeStructure unit tests
+// ---------------------------------------------------------------------------
+
+describe("extractCodeStructure", () => {
+  it("extracts parameters from a destructured ts-rest handler", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        getUser: async ({ params, body }) => {
+          return { status: 200, body: {} };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+
+    expect(units).toHaveLength(1);
+
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    expect(raw.parameters).toEqual([
+      { name: "params", position: 0, role: "pathParams", typeText: null },
+      { name: "body", position: 0, role: "requestBody", typeText: null },
+    ]);
+    expect(raw.identity.name).toBe("getUser");
+    expect(raw.identity.kind).toBe("handler");
+  });
+
+  it("extracts dependency calls from function body", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      declare const db: { findById(id: string): Promise<any> };
+      const s = initServer();
+      export const router = s.router({} as any, {
+        getUser: async ({ params }) => {
+          const user = await db.findById(params.id);
+          if (!user) return { status: 404, body: { error: "not found" } };
+          return { status: 200, body: user };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    expect(raw.dependencyCalls).toHaveLength(1);
+    expect(raw.dependencyCalls[0].name).toBe("db.findById");
+    expect(raw.dependencyCalls[0].assignedTo).toBe("user");
+    expect(raw.dependencyCalls[0].async).toBe(true);
+  });
+
+  it("extracts branches with conditions and terminals", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      declare const db: { findById(id: string): Promise<any> };
+      const s = initServer();
+      export const router = s.router({} as any, {
+        getUser: async ({ params }) => {
+          const user = await db.findById(params.id);
+          if (!user) return { status: 404, body: { error: "not found" } };
+          return { status: 200, body: user };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    expect(raw.branches).toHaveLength(2);
+
+    // First branch: 404 with condition !user
+    expect(raw.branches[0].terminal.kind).toBe("response");
+    expect(raw.branches[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 404,
+    });
+    expect(raw.branches[0].isDefault).toBe(false);
+    expect(raw.branches[0].conditions.length).toBeGreaterThan(0);
+
+    // Second branch: 200 default
+    expect(raw.branches[1].terminal.kind).toBe("response");
+    expect(raw.branches[1].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
+    expect(raw.branches[1].isDefault).toBe(true);
+  });
+
+  it("extracts positional parameters (Express style)", () => {
+    const expressPack: FrameworkPack = {
+      ...tsRestPack,
+      name: "express",
+      inputMapping: {
+        type: "positionalParams",
+        params: [
+          { position: 0, role: "request" },
+          { position: 1, role: "response" },
+          { position: 2, role: "next" },
+        ],
+      },
+      discovery: [
+        {
+          kind: "handler",
+          match: { type: "namedExport", names: ["getUser"] },
+        },
+      ],
+    };
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      export function getUser(req: any, res: any, next: any) {
+        return { status: 200, body: {} };
+      }
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, expressPack.discovery);
+    const raw = extractCodeStructure(units[0], expressPack, "test.ts");
+
+    expect(raw.parameters).toEqual([
+      { name: "req", position: 0, role: "request", typeText: null },
+      { name: "res", position: 1, role: "response", typeText: null },
+      { name: "next", position: 2, role: "next", typeText: null },
+    ]);
+  });
+
+  it("extracts non-destructured object parameter", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        getUser: async (ctx) => {
+          return { status: 200, body: {} };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    expect(raw.parameters).toEqual([
+      { name: "ctx", position: 0, role: "request", typeText: null },
+    ]);
+  });
+
+  it("handles expression-body arrow with no dependency calls", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        health: async () => ({ status: 200, body: { ok: true } }),
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    expect(raw.dependencyCalls).toHaveLength(0);
+    expect(raw.branches).toHaveLength(1);
+    expect(raw.branches[0].isDefault).toBe(true);
+  });
+
+  it("extracts multiple dependency calls including sync", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      declare const db: { findById(id: string): Promise<any> };
+      declare function validate(x: any): boolean;
+      const s = initServer();
+      export const router = s.router({} as any, {
+        getUser: async ({ params }) => {
+          const isValid = validate(params.id);
+          const user = await db.findById(params.id);
+          if (!user) return { status: 404, body: { error: "not found" } };
+          return { status: 200, body: user };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    expect(raw.dependencyCalls).toHaveLength(2);
+    expect(raw.dependencyCalls[0].name).toBe("validate");
+    expect(raw.dependencyCalls[0].async).toBe(false);
+    expect(raw.dependencyCalls[1].name).toBe("db.findById");
+    expect(raw.dependencyCalls[1].async).toBe(true);
+  });
+
+  it("handles handler with no parameters", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        health: async () => {
+          return { status: 200, body: { ok: true } };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    expect(raw.parameters).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readContract unit tests
+// ---------------------------------------------------------------------------
+
+describe("readContract", () => {
+  it("reads contract responses from same-file contract definition", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: {
+            200: null as any,
+            404: null as any,
+          },
+        },
+      });
+
+      const s = initServer();
+      export const router = s.router(contract, {
+        getUser: async ({ params }) => {
+          return { status: 200, body: {} };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+
+    expect(units).toHaveLength(1);
+
+    const result = readContract(units[0], tsRestPack.contractReading!);
+
+    expect(result).not.toBeNull();
+    expect(result!.declaredContract.responses).toEqual([
+      { statusCode: 200 },
+      { statusCode: 404 },
+    ]);
+    expect(result!.boundaryBinding).toEqual({
+      protocol: "http",
+      method: "GET",
+      path: "/users/:id",
+      framework: "core",
+    });
+  });
+
+  it("returns null when handler is not in a router call", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      export async function standalone() {
+        return { status: 200, body: {} };
+      }
+    `;
+    const file = project.createSourceFile("test.ts", source);
+
+    // Manually create a DiscoveredUnit that's NOT inside a router call
+    const fn = file.getFunctions()[0];
+    const result = readContract(
+      { func: fn, kind: "handler", name: "standalone" },
+      tsRestPack.contractReading!,
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when handler name does not match any contract endpoint", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: { 200: null as any },
+        },
+      });
+
+      const s = initServer();
+      export const router = s.router(contract, {
+        deleteUser: async () => {
+          return { status: 200, body: {} };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("deleteUser");
+
+    // deleteUser has no matching contract entry
+    const result = readContract(units[0], tsRestPack.contractReading!);
+    expect(result).toBeNull();
+  });
+
+  it("reads contract for method-shorthand handlers", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: { 200: null as any, 404: null as any },
+        },
+      });
+
+      const s = initServer();
+      export const router = s.router(contract, {
+        async getUser({ params }) {
+          return { status: 200, body: {} };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+
+    expect(units).toHaveLength(1);
+
+    const result = readContract(units[0], tsRestPack.contractReading!);
+
+    expect(result).not.toBeNull();
+    expect(result!.declaredContract.responses).toHaveLength(2);
+    expect(result!.boundaryBinding!.method).toBe("GET");
+  });
+
+  it("returns null boundaryBinding when contract has no method or path", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+
+      const c = initContract();
+      const contract = c.router({
+        process: {
+          responses: { 200: null as any },
+        },
+      });
+
+      const s = initServer();
+      export const router = s.router(contract, {
+        process: async () => {
+          return { status: 200, body: {} };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const result = readContract(units[0], tsRestPack.contractReading!);
+
+    expect(result).not.toBeNull();
+    expect(result!.boundaryBinding).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Full integration: createTypeScriptAdapter with fixture files
+// ---------------------------------------------------------------------------
+
+describe("createTypeScriptAdapter — ts-rest fixtures", () => {
+  it("extracts summaries from fixture handler file", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const handlerPath = project
+      .getSourceFiles()
+      .find((f) => f.getFilePath().endsWith("handlers.ts"))
+      ?.getFilePath();
+
+    expect(handlerPath).toBeDefined();
+
+    const summaries = adapter.extractFromFiles([handlerPath!]);
+
+    // Should discover both getUser and createUser handlers
+    expect(summaries).toHaveLength(2);
+
+    const names = summaries.map((s) => s.identity.name).sort();
+    expect(names).toEqual(["createUser", "getUser"]);
+  });
+
+  it("getUser handler has correct transitions", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+
+    expect(getUser).toBeDefined();
+    expect(getUser!.kind).toBe("handler");
+
+    // getUser has 4 transitions:
+    //   1. !params.id → 404
+    //   2. !user → 404
+    //   3. user.deletedAt → 404
+    //   4. default → 200
+    expect(getUser!.transitions).toHaveLength(4);
+
+    // Check status codes
+    const statusCodes = getUser!.transitions.map((t) => {
+      if (
+        t.output.type === "response" &&
+        t.output.statusCode?.type === "literal"
+      ) {
+        return t.output.statusCode.value;
+      }
+      return null;
+    });
+    expect(statusCodes).toEqual([404, 404, 404, 200]);
+
+    // Last transition should be default
+    expect(getUser!.transitions[3].isDefault).toBe(true);
+
+    // First three should not be default
+    expect(getUser!.transitions[0].isDefault).toBe(false);
+    expect(getUser!.transitions[1].isDefault).toBe(false);
+    expect(getUser!.transitions[2].isDefault).toBe(false);
+  });
+
+  it("getUser handler has correct inputs", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+
+    expect(getUser).toBeDefined();
+
+    // params should be extracted with role "pathParams"
+    const paramsInput = getUser!.inputs.find(
+      (i) => i.type === "parameter" && i.name === "params",
+    );
+    expect(paramsInput).toBeDefined();
+    expect(paramsInput!.type).toBe("parameter");
+    if (paramsInput!.type === "parameter") {
+      expect(paramsInput!.role).toBe("pathParams");
+    }
+  });
+
+  it("getUser handler detects contract gap for undeclared 500", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+
+    expect(getUser).toBeDefined();
+
+    // The contract declares 500 but the handler never produces it
+    const gap500 = getUser!.gaps.find((g) => g.description.includes("500"));
+    expect(gap500).toBeDefined();
+    expect(gap500!.type).toBe("unhandledCase");
+    expect(gap500!.description).toContain("never produced");
+  });
+
+  it("getUser handler has dependency call for db.findById", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+
+    expect(getUser).toBeDefined();
+
+    // The metadata should include the declaredContract
+    expect(getUser!.metadata).toBeDefined();
+    expect(getUser!.metadata!.declaredContract).toBeDefined();
+  });
+
+  it("getUser handler has high confidence when all conditions are structured", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+
+    expect(getUser).toBeDefined();
+    expect(getUser!.confidence.level).toBe("high");
+  });
+
+  it("createUser handler has correct transitions", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const createUser = summaries.find((s) => s.identity.name === "createUser");
+
+    expect(createUser).toBeDefined();
+    expect(createUser!.kind).toBe("handler");
+
+    // createUser has 2 transitions:
+    //   1. !body.name || !body.email → 400
+    //   2. default → 201
+    expect(createUser!.transitions).toHaveLength(2);
+
+    const statusCodes = createUser!.transitions.map((t) => {
+      if (
+        t.output.type === "response" &&
+        t.output.statusCode?.type === "literal"
+      ) {
+        return t.output.statusCode.value;
+      }
+      return null;
+    });
+    expect(statusCodes).toEqual([400, 201]);
+  });
+
+  it("getUser handler has boundary binding from contract", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+
+    expect(getUser).toBeDefined();
+    expect(getUser!.identity.boundaryBinding).toBeDefined();
+    expect(getUser!.identity.boundaryBinding!.method).toBe("GET");
+    expect(getUser!.identity.boundaryBinding!.path).toBe("/users/:id");
+  });
+
+  it("extractAll skips declaration files", () => {
+    const project = createFixtureProject();
+
+    // Add a .d.ts file — should be skipped
+    project.createSourceFile(
+      "types.d.ts",
+      "export interface Foo { bar: string }",
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+
+    // Should still only find handlers from handlers.ts
+    const names = summaries.map((s) => s.identity.name).sort();
+    expect(names).toEqual(["createUser", "getUser"]);
+  });
+
+  it("getUser conditions are structured predicates, not opaque", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser).toBeDefined();
+
+    // None of the conditions should be opaque
+    for (const t of getUser!.transitions) {
+      for (const c of t.conditions) {
+        expect(c.type).not.toBe("opaque");
+      }
+    }
+
+    // Transition 0: the guard `if (!params.id)` — terminal is in the
+    // then-branch (positive polarity). parseConditionExpression folds
+    // the `!` into truthinessCheck.negated, so no wrapping negation node.
+    const t0 = getUser!.transitions[0];
+    expect(t0.conditions).toHaveLength(1);
+    expect(t0.conditions[0].type).toBe("truthinessCheck");
+    if (t0.conditions[0].type === "truthinessCheck") {
+      expect(t0.conditions[0].negated).toBe(true);
+      // params.id → derived(input(params), propertyAccess("id"))
+      expect(t0.conditions[0].subject.type).toBe("derived");
+    }
+
+    // Transition 1: `if (!user)` with prior early return for `!params.id`.
+    // The early return condition has polarity "negative" so assembleSummary
+    // wraps it in a negation node.
+    const t1 = getUser!.transitions[1];
+    expect(t1.conditions.length).toBeGreaterThanOrEqual(2);
+    // First condition: negation of the early return guard (!params.id)
+    expect(t1.conditions[0].type).toBe("negation");
+    // Last condition: the !user truthinessCheck (positive polarity, negated folded in)
+    const t1Last = t1.conditions[t1.conditions.length - 1];
+    expect(t1Last.type).toBe("truthinessCheck");
+    if (t1Last.type === "truthinessCheck") {
+      expect(t1Last.negated).toBe(true);
+      // user should resolve to a dependency (db.findById)
+      expect(t1Last.subject.type).toBe("dependency");
+    }
+
+    // Transition 2: `if (user.deletedAt)` with two prior early return guards.
+    const t2 = getUser!.transitions[2];
+    expect(t2.conditions.length).toBeGreaterThanOrEqual(3);
+    // Last condition: truthinessCheck on user.deletedAt (positive polarity)
+    const t2Last = t2.conditions[t2.conditions.length - 1];
+    expect(t2Last.type).toBe("truthinessCheck");
+    if (t2Last.type === "truthinessCheck") {
+      expect(t2Last.negated).toBe(false);
+      expect(t2Last.subject.type).toBe("derived");
+      if (t2Last.subject.type === "derived") {
+        expect(t2Last.subject.derivation.type).toBe("propertyAccess");
+        if (t2Last.subject.derivation.type === "propertyAccess") {
+          expect(t2Last.subject.derivation.property).toBe("deletedAt");
+        }
+      }
+    }
+  });
+
+  it("createUser guard condition has compound or predicate", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const createUser = summaries.find((s) => s.identity.name === "createUser");
+    expect(createUser).toBeDefined();
+
+    // The first transition has a guard: !body.name || !body.email
+    // This is an early return, so its polarity is "negative".
+    // The condition expression itself is `!body.name || !body.email`.
+    // The negation of that compound expression is the actual predicate.
+    const t0 = createUser!.transitions[0];
+    expect(t0.conditions.length).toBeGreaterThan(0);
+  });
+
+  it("produces reverse gap when handler returns undeclared status", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: {
+            200: null as any,
+          },
+        },
+      });
+
+      const s = initServer();
+      export const router = s.router(contract, {
+        getUser: async ({ params }) => {
+          if (!params.id) return { status: 400 as const, body: { error: "bad" } };
+          return { status: 200 as const, body: { id: params.id } };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+    const summaries = adapter.extractFromFiles([file.getFilePath()]);
+
+    expect(summaries).toHaveLength(1);
+
+    // 400 is produced but not declared → reverse gap
+    const reverseGap = summaries[0].gaps.find((g) =>
+      g.description.includes("400"),
+    );
+    expect(reverseGap).toBeDefined();
+    expect(reverseGap!.description).toContain("not declared");
+  });
+
+  it("gapHandling: silent suppresses all gaps", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+      extractorOptions: { gapHandling: "silent" },
+    });
+
+    const summaries = adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+
+    expect(getUser).toBeDefined();
+    expect(getUser!.gaps).toEqual([]);
+  });
+
+  it("file with no matching handlers produces empty result", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      export function helper(x: number) { return x + 1; }
+    `;
+    project.createSourceFile("utils.ts", source);
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    expect(summaries).toEqual([]);
+  });
+
+  it("extractFromFiles silently skips nonexistent paths", () => {
+    const project = createFixtureProject();
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractFromFiles(["/does/not/exist.ts"]);
+    expect(summaries).toEqual([]);
+  });
+});
