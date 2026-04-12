@@ -46,6 +46,18 @@ suss extracts:
 
 This is enough information for a downstream tool to say: "the consumer at this call site assumes `200` means `isActive`, but the provider's `200` branch fires when `user.deletedAt` is truthy — these don't match."
 
+## What suss produces (and what it doesn't)
+
+suss is an extraction tool. Its output is `BehavioralSummary[]` — structured JSON describing a codebase's behavior. The tool itself doesn't check, compare, aggregate, alert, or track changes over time. Those are separate concerns that take summaries as input.
+
+Natural consumers of summaries:
+
+- **Pairwise checkers** — compare a provider's summary against a consumer's summary and flag mismatches. `suss check` covers this locally; see [cross-boundary-checking.md](cross-boundary-checking.md).
+- **Diff tools** — given two summaries of the same code unit across commits, surface which behavioral cases a change added, removed, or altered.
+- **Aggregators** — ingest summaries from many services, maintain a cross-service view, track evolution over time, alert on regressions. Out of scope for this repository.
+
+The extraction tool is deliberately scoped small: produce clean, comparable, language-agnostic data and stop there. Any analysis layer — local pairwise, organizational, continuous — consumes summaries as input. That separation matters because the value of every analysis layer scales with how many projects produce summaries, so the priority for suss is that producing summaries is cheap, universal, and doesn't demand configuration.
+
 ## Relationship to prior work
 
 suss extends Bertrand Meyer's [Design by Contract (1986)](https://en.wikipedia.org/wiki/Design_by_contract) from single-process method calls to distributed, polyglot systems. DbC had three adoption failures that suss addresses:
@@ -54,7 +66,9 @@ suss extends Bertrand Meyer's [Design by Contract (1986)](https://en.wikipedia.o
 2. **Contracts live inside a single process.** DbC only worked when caller and callee shared a language runtime. suss operates across service boundaries, transports, and language boundaries — because `BehavioralSummary` is a language-agnostic JSON shape.
 3. **Contracts were absolute.** DbC assertions either hold or they don't. suss is explicit about uncertainty: opaque predicates, confidence levels, first-class gaps. A low-confidence summary is still useful.
 
-suss also borrows from compiler design (AST traversal, symbol resolution, control flow analysis) and formal verification (preconditions, postconditions). But it deliberately operates at a higher level of abstraction than either: it extracts *behavioral cases*, not execution paths. It doesn't build a complete control flow graph. It doesn't prove anything. It produces a structured description of what the code does, and lets downstream tools decide what to do with it.
+suss also borrows from **compiler design** (AST traversal, symbol resolution, control flow analysis) but operates at a higher level of abstraction: it extracts *behavioral cases*, not execution paths. It doesn't build a complete control flow graph or perform data flow analysis. It identifies terminals, traces their gating conditions, and composes transitions.
+
+It borrows from **formal verification** (preconditions, postconditions) but is deliberately less rigorous. Predicates can be opaque, confidence can be partial, and the system provides value with incomplete coverage. A behavioral summary isn't a proof of anything; it's a structured description that downstream tools can reason over.
 
 ## Design principles
 
