@@ -21,7 +21,7 @@ Depends only on `@suss/behavioral-ir`. The extractor, adapters, and framework pa
 
 ## Status
 
-In progress. See [`docs/status.md`](../../docs/status.md).
+Pairwise checker is shipped (status-code matching). `suss check` exposes it from the CLI. Body-shape matching is deferred. See [`docs/status.md`](../../docs/status.md).
 
 ## Coverage
 
