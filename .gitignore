@@ -3,6 +3,8 @@ dist/
 .turbo/
 *.tsbuildinfo
 .env
+**/coverage/*
+!**/coverage/coverage-summary.json
 
 # Claude Code
 PLAN.md

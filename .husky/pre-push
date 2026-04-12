@@ -1,0 +1,5 @@
+#!/bin/sh
+# Typecheck first (fail fast on type errors before running tests)
+npm run typecheck
+# Run full test suite with coverage
+npm test
