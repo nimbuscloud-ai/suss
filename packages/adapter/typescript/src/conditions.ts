@@ -69,7 +69,9 @@ export function collectAncestorConditionInfos(
   functionRoot: FunctionRoot,
 ): ConditionInfo[] {
   const result: ConditionInfo[] = [];
-  let current: Node | undefined = terminalNode.getParent();
+  // Start from the terminal node itself so that a direct parent
+  // ConditionalExpression (ternary) is detected on the first iteration.
+  let current: Node | undefined = terminalNode;
 
   while (current !== undefined && current !== functionRoot) {
     const parent = current.getParent();
@@ -92,14 +94,6 @@ export function collectAncestorConditionInfos(
           makeConditionInfo(expr.getText(), "negative", "explicit", expr),
         );
       }
-    } else if (
-      Node.isIfStatement(current) &&
-      current.getThenStatement() === terminalNode
-    ) {
-      const expr = current.getExpression();
-      result.unshift(
-        makeConditionInfo(expr.getText(), "positive", "explicit", expr),
-      );
     } else if (Node.isCaseClause(current)) {
       const switchStmt = current.getParent()?.getParent();
       if (switchStmt !== undefined && Node.isSwitchStatement(switchStmt)) {

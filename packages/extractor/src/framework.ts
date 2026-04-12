@@ -65,6 +65,10 @@ export type TerminalMatch =
   | {
       type: "throwExpression";
       constructorPattern?: string; // e.g. "httpErrorJson", "HttpError"
+    }
+  | {
+      type: "functionCall";
+      functionName: string; // e.g. "json", "redirect" — matches calls to a named function
     };
 
 export interface TerminalExtraction {

@@ -87,53 +87,64 @@ function extractParameters(
 function extractDependencyCalls(func: FunctionRoot): RawDependencyCall[] {
   const results: RawDependencyCall[] = [];
 
-  const body = func.getBody();
-  if (body === undefined || !Node.isBlock(body)) {
-    return results;
-  }
-
-  for (const stmt of body.getStatements()) {
-    if (!Node.isVariableStatement(stmt)) {
-      continue;
+  func.forEachDescendant((node, traversal) => {
+    // Don't descend into nested functions — their dep calls belong to them
+    if (
+      node !== func &&
+      (Node.isFunctionDeclaration(node) ||
+        Node.isFunctionExpression(node) ||
+        Node.isArrowFunction(node) ||
+        Node.isMethodDeclaration(node))
+    ) {
+      traversal.skip();
+      return;
     }
 
-    for (const decl of stmt.getDeclarationList().getDeclarations()) {
-      const init = decl.getInitializer();
-      if (init === undefined) {
-        continue;
-      }
-
-      let isAsync = false;
-      let callExpr = init;
-      if (Node.isAwaitExpression(init)) {
-        isAsync = true;
-        callExpr = init.getExpression();
-      }
-
-      if (!Node.isCallExpression(callExpr)) {
-        continue;
-      }
-
-      const calleeName = callExpr.getExpression().getText();
-
-      // assignedTo: simple identifier or destructured pattern
-      const nameNode = decl.getNameNode();
-      const assignedTo = Node.isIdentifier(nameNode)
-        ? nameNode.getText()
-        : null;
-
-      results.push({
-        name: calleeName,
-        assignedTo,
-        async: isAsync,
-        returnType: null,
-        location: {
-          start: stmt.getStartLineNumber(),
-          end: stmt.getEndLineNumber(),
-        },
-      });
+    if (!Node.isVariableDeclaration(node)) {
+      return;
     }
-  }
+
+    const init = node.getInitializer();
+    if (init === undefined) {
+      return;
+    }
+
+    let isAsync = false;
+    let callExpr = init;
+    if (Node.isAwaitExpression(init)) {
+      isAsync = true;
+      callExpr = init.getExpression();
+    }
+
+    if (!Node.isCallExpression(callExpr)) {
+      return;
+    }
+
+    const calleeName = callExpr.getExpression().getText();
+
+    // assignedTo: simple identifier or destructured pattern
+    const nameNode = node.getNameNode();
+    const assignedTo = Node.isIdentifier(nameNode) ? nameNode.getText() : null;
+
+    // VariableDeclaration → VariableDeclarationList → VariableStatement
+    const declList = node.getParent();
+    const varStmt = declList?.getParent();
+    const locationNode =
+      varStmt !== undefined && Node.isVariableStatement(varStmt)
+        ? varStmt
+        : node;
+
+    results.push({
+      name: calleeName,
+      assignedTo,
+      async: isAsync,
+      returnType: null,
+      location: {
+        start: locationNode.getStartLineNumber(),
+        end: locationNode.getEndLineNumber(),
+      },
+    });
+  });
 
   return results;
 }
