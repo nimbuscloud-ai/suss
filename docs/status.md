@@ -28,11 +28,10 @@ Progress tracker. Updated as phases land.
 |------|--------|-------|
 | 2.1 `collectAncestorBranches` + `collectEarlyReturns` | ✅ | Pure AST walk. if/else, switch, try/catch, ternary, &&/||, early-return guards. 24 tests. |
 | 2.2 `parseConditionExpression` + `resolveSubject` | ✅ | Condition → `Predicate`; identifier/property chain → `ValueRef`. Symbol resolution via ts-morph. 47 tests. |
-| 2.3 `findTerminals` | ⬜ | Interpret `TerminalPattern` against AST. |
-| 2.4 Discovery logic | ⬜ | `discoverByNamedExport`, `discoverByRegistrationCall`, `discoverByFileConvention`. |
-| 2.5 Assembly wiring | ⬜ | `extractRawBranches` — composes steps 1–4 into `RawBranch[]`. |
-| 2.6 Contract reading | ⬜ | Read ts-rest contracts via ts-morph. |
-| 2.7 `createTypeScriptAdapter` wiring | ⬜ | Public API: `extractFromFiles`, `extractAll`. |
+| 2.3 `findTerminals` | ✅ | returnShape, parameterMethodCall, throwExpression, functionCall matching. Ternary branch support. `as const` unwrapping. |
+| 2.4 Discovery logic | ✅ | `discoverByNamedExport`, `discoverByRegistrationCall`, `discoverByFileConvention`. Import tracing via symbol resolution. |
+| 2.5 Assembly wiring | ✅ | `extractRawBranches` + `extractDependencyCalls` (nested block traversal). Parameter extraction with input mapping. |
+| 2.5b Contract reading + adapter API | ✅ | `readContract` with cross-file import resolution. `createTypeScriptAdapter`: `extractFromFiles`, `extractAll`. Integration tests. |
 
 ## Phase 3 — Framework Packs
 
@@ -44,17 +43,17 @@ Progress tracker. Updated as phases land.
 | 3.2 `@suss/framework-react-router` | ✅ | Full pack, 5 tests. |
 | 3.3 `@suss/framework-express` | ✅ | Full pack, 5 tests. |
 
-*(Framework packs were implemented ahead of the adapter because they're declarative data. The adapter will validate them against real code in Phase 2.)*
+*(Framework packs were implemented ahead of the adapter as declarative data. Enhanced during Phase 2 with additional terminal patterns: Express gained res.status().send(), res.sendStatus(), res.redirect(); React Router gained json(), data(), redirect() functionCall terminals.)*
 
 ## Phase 4 — CLI + Fixtures
 
 | Task | Status | Notes |
 |------|--------|-------|
-| 4.1 `@suss/cli` — `extract` and `inspect` | ⬜ | Stub only. |
-| 4.2 ts-rest fixture set | ⬜ | Handler + contract + `expected.json`. |
-| 4.3 react-router fixture set | ⬜ | Loader + `expected.json`. |
-| 4.4 express fixture set | ⬜ | Handler + `expected.json`. |
-| 4.5 End-to-end integration test | ⬜ | Adapter run against fixtures, assert expected outputs. |
+| 4.1 `@suss/cli` — `extract` and `inspect` | ✅ | `suss extract` with dynamic framework resolution, `suss inspect` with human-readable output. 11 tests. |
+| 4.2 ts-rest fixture set | ✅ | Handler + contract. Gap exercise (500 declared but unproduced). |
+| 4.3 react-router fixture set | ✅ | Loader + action with json/redirect helpers. |
+| 4.4 express fixture set | ✅ | Handler with guards, dep calls, nested conditions. |
+| 4.5 End-to-end integration test | ✅ | CLI tests run live extraction against all 3 fixture sets. |
 
 ## Phase 5+ — Deferred
 
@@ -72,15 +71,15 @@ Progress tracker. Updated as phases land.
 | Package | Tests | Notes |
 |---------|-------|-------|
 | `@suss/behavioral-ir` | 7 | diff utility, type narrowing |
-| `@suss/extractor` | 9 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode |
-| `@suss/adapter-typescript` | 71 | ancestor branches, early returns, predicates, subjects |
+| `@suss/extractor` | 41 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, edge cases |
+| `@suss/adapter-typescript` | 213 | conditions, predicates, subjects, terminals, discovery, contract reading, integration |
 | `@suss/framework-ts-rest` | 5 | pack structure, discriminants, bindingExtraction |
 | `@suss/framework-react-router` | 5 | pack structure, discovery kinds, inputMapping |
-| `@suss/framework-express` | 5 | pack structure, registration, terminals, positional params |
-| `@suss/cli` | 1 (stub) | Phase 4 placeholder |
-| **Total** | **103** | |
+| `@suss/framework-express` | 6 | pack structure, registration, terminals, positional params |
+| `@suss/cli` | 11 | extract (3 frameworks), inspect, error cases, gap detection, file output |
+| **Total** | **288** | |
 
-Runs in a couple of seconds via `turbo test`.
+Runs in ~10s via `turbo test`.
 
 ## Decisions log
 
