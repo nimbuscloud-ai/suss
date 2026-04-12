@@ -453,6 +453,133 @@ describe("parseConditionExpression — typeof standalone returns null", () => {
 // Unknown / complex node → null
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Additional typeof variants
+// ---------------------------------------------------------------------------
+
+describe("parseConditionExpression — typeof variants", () => {
+  it("typeof x === 'number' → typeCheck { expectedType: 'number' }", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkTypeofNumber");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "typeCheck",
+      subject: { type: "input", inputRef: "x", path: [] },
+      expectedType: "number",
+    });
+  });
+
+  it("typeof x === 'boolean' → typeCheck { expectedType: 'boolean' }", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkTypeofBoolean");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "typeCheck",
+      subject: { type: "input", inputRef: "x", path: [] },
+      expectedType: "boolean",
+    });
+  });
+
+  it("typeof x === 'function' → typeCheck { expectedType: 'function' }", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkTypeofFunction");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "typeCheck",
+      subject: { type: "input", inputRef: "x", path: [] },
+      expectedType: "function",
+    });
+  });
+
+  it("'string' === typeof x (reversed) → typeCheck { expectedType: 'string' }", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkTypeofReversed");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "typeCheck",
+      subject: { type: "input", inputRef: "x", path: [] },
+      expectedType: "string",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-arg calls and complex compounds
+// ---------------------------------------------------------------------------
+
+describe("parseConditionExpression — multi-arg calls", () => {
+  it("compare(a, b) → call with 2 args", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkMultiArgCall");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "call",
+      callee: "compare",
+      args: [
+        { type: "input", inputRef: "a", path: [] },
+        { type: "input", inputRef: "b", path: [] },
+      ],
+    });
+  });
+});
+
+describe("parseConditionExpression — comparison with non-literal right", () => {
+  it("x > y → comparison { left: input(x), right: input(y) }", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkComparisonBothParams");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "comparison",
+      left: { type: "input", inputRef: "x", path: [] },
+      op: "gt",
+      right: { type: "input", inputRef: "y", path: [] },
+    });
+  });
+});
+
+describe("parseConditionExpression — deeply nested compound", () => {
+  it("(a && b) || (c && d) → compound(or, [compound(and, ...), compound(and, ...)])", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkMixedCompound");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "compound",
+      op: "or",
+      operands: [
+        {
+          type: "compound",
+          op: "and",
+          operands: [
+            {
+              type: "truthinessCheck",
+              subject: { type: "input", inputRef: "a", path: [] },
+              negated: false,
+            },
+            {
+              type: "truthinessCheck",
+              subject: { type: "input", inputRef: "b", path: [] },
+              negated: false,
+            },
+          ],
+        },
+        {
+          type: "compound",
+          op: "and",
+          operands: [
+            {
+              type: "truthinessCheck",
+              subject: { type: "input", inputRef: "c", path: [] },
+              negated: false,
+            },
+            {
+              type: "truthinessCheck",
+              subject: { type: "input", inputRef: "d", path: [] },
+              negated: false,
+            },
+          ],
+        },
+      ],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unknown / complex node → null
+// ---------------------------------------------------------------------------
+
 describe("parseConditionExpression — unknown nodes return null", () => {
   it("new expression condition → null", () => {
     const project = new Project({ useInMemoryFileSystem: false });
