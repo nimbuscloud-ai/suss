@@ -129,6 +129,8 @@ interface ExtractionContext {
   throwCallArgs?: Expression[];
   /** Method-chain calls (innermost → outermost) — supplied by parameterMethodCall. */
   calls?: CallExpression[];
+  /** Text of the thrown constructor — supplied by throwExpression only. */
+  exceptionType?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +144,24 @@ function extractStatusCode(ctx: ExtractionContext): RawTerminal["statusCode"] {
   }
 
   if (sc.from === "constructor") {
+    // Look up the thrown expression's constructor name in the pack-supplied
+    // mapping. Match against the full text (e.g. "HttpError.NotFound"), falling
+    // back to the last dot-segment so "NotFound" alone also resolves. Without
+    // a match we return null rather than guessing.
+    if (ctx.exceptionType === undefined) {
+      return null;
+    }
+    const fullMatch = sc.codes[ctx.exceptionType];
+    if (fullMatch !== undefined) {
+      return { type: "literal", value: fullMatch };
+    }
+    const lastSegment = ctx.exceptionType.split(".").pop();
+    if (lastSegment !== undefined && lastSegment !== ctx.exceptionType) {
+      const segMatch = sc.codes[lastSegment];
+      if (segMatch !== undefined) {
+        return { type: "literal", value: segMatch };
+      }
+    }
     return null;
   }
 
@@ -506,6 +526,7 @@ function tryMatchThrowExpression(
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
     ...(callArgs !== null ? { throwCallArgs: callArgs } : {}),
+    ...(exceptionType !== null ? { exceptionType } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);

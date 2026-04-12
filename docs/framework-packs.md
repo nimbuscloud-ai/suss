@@ -217,12 +217,12 @@ Once a terminal is matched, how to pull out the status code and body:
 ```typescript
 {
   statusCode?:
-    | { from: "property"; name: string }                        // { status: 200 } → "status"
-    | { from: "argument"; position: number; minArgs?: number }  // res.status(200) → position: 0
-    | { from: "constructor" };                                  // new HttpError.NotFound → 404
+    | { from: "property"; name: string }                              // { status: 200 } → "status"
+    | { from: "argument"; position: number; minArgs?: number }        // res.status(200) → position: 0
+    | { from: "constructor"; codes: Record<string, number> };         // throw new NotFound() → 404 via { NotFound: 404 }
   body?:
-    | { from: "property"; name: string }                        // { body: data } → "body"
-    | { from: "argument"; position: number; minArgs?: number }; // res.json(data) → position: 0
+    | { from: "property"; name: string }                              // { body: data } → "body"
+    | { from: "argument"; position: number; minArgs?: number };       // res.json(data) → position: 0
 }
 ```
 
@@ -230,7 +230,12 @@ Both fields are optional — not all terminals have a body (e.g., `void`), and n
 
 The **`minArgs`** field handles overloaded call signatures where the same argument position means different things depending on arity. For example, Express `res.redirect(url)` has a URL at position 0, but `res.redirect(301, url)` has a status code at position 0. Setting `minArgs: 2` tells the adapter to only extract from position 0 when the call has at least 2 arguments.
 
-The `{ from: "constructor" }` case is underspecified in v0 — it would need a mapping table of constructor names to status codes (`NotFound → 404`, `BadRequest → 400`). Left for when a framework actually needs it.
+The **`{ from: "constructor"; codes }`** case maps constructor names to status codes for HTTP error libraries that encode the code in the exception type. Matching is:
+
+1. **Full-text first.** Given `throw new HttpError.NotFound()`, the adapter looks up `codes["HttpError.NotFound"]`.
+2. **Last dot-segment fallback.** If the full name misses, it tries the final segment: `codes["NotFound"]`. This lets packs write `{ NotFound: 404 }` once and have it work for both bare `NotFoundError` and namespaced `createError.NotFound` styles.
+
+Only `throwExpression` matchers carry an exception type, so `from: "constructor"` is a no-op for other matcher types (it returns null rather than guessing).
 
 ### `InputMappingPattern` variants
 

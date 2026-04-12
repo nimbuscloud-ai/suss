@@ -69,7 +69,7 @@ Given a matched terminal node, apply the `extraction` rules to pull out status c
 
 - `{ from: "property", name: "status" }` — read the `status` property from the object literal. If it's a numeric literal, produce `{ type: "literal", value: N }`. Otherwise `{ type: "dynamic", sourceText }`.
 - `{ from: "argument", position: 0 }` — read the first argument of the matched call.
-- `{ from: "constructor" }` — infer from the constructor name (e.g., `HttpError.NotFound` → 404). *Not yet specified for v0.*
+- `{ from: "constructor", codes }` — look the thrown expression's constructor name up in the pack-supplied `codes` map (full text first, then last dot-segment). Only fires for `throwExpression` matchers.
 
 ## Step 2 — `collectAncestorBranches`
 
