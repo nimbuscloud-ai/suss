@@ -8,7 +8,7 @@ describe("reactRouterFramework", () => {
     expect(pack.name).toBe("react-router");
     expect(pack.languages).toContain("typescript");
     expect(pack.discovery).toHaveLength(3);
-    expect(pack.terminals).toHaveLength(2);
+    expect(pack.terminals).toHaveLength(5);
     expect(pack.contractReading).toBeUndefined();
   });
 
@@ -33,11 +33,26 @@ describe("reactRouterFramework", () => {
     expect(loader?.bindingExtraction?.path).toEqual({ type: "fromFilename" });
   });
 
-  it("terminals are 'return' and 'throw' kinds with correct match types", () => {
+  it("terminals cover json/data/redirect helpers, returnShape, and throw", () => {
     const pack = reactRouterFramework();
     const termKinds = pack.terminals.map((t) => t.kind);
+    expect(termKinds).toContain("response");
     expect(termKinds).toContain("return");
     expect(termKinds).toContain("throw");
+
+    // functionCall terminals for json(), data(), redirect()
+    const fnCallTerminals = pack.terminals.filter(
+      (t) => t.match.type === "functionCall",
+    );
+    expect(fnCallTerminals).toHaveLength(3);
+    const fnNames = fnCallTerminals.map((t) =>
+      t.match.type === "functionCall" ? t.match.functionName : "",
+    );
+    expect(fnNames).toContain("json");
+    expect(fnNames).toContain("data");
+    expect(fnNames).toContain("redirect");
+
+    // throwExpression terminal for httpErrorJson
     const throwTerm = pack.terminals.find((t) => t.kind === "throw");
     expect(throwTerm?.match.type).toBe("throwExpression");
     if (throwTerm?.match.type === "throwExpression") {

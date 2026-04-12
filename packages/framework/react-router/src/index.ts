@@ -32,6 +32,30 @@ export function reactRouterFramework(): FrameworkPack {
 
     terminals: [
       {
+        // json(data, init?) — e.g. return json({ user })
+        kind: "response",
+        match: { type: "functionCall", functionName: "json" },
+        extraction: {
+          body: { from: "argument", position: 0 },
+        },
+      },
+      {
+        // data(value, init?) — React Router v7 replacement for json()
+        kind: "response",
+        match: { type: "functionCall", functionName: "data" },
+        extraction: {
+          body: { from: "argument", position: 0 },
+        },
+      },
+      {
+        // redirect(url, status?) — e.g. return redirect("/login")
+        kind: "response",
+        match: { type: "functionCall", functionName: "redirect" },
+        extraction: {
+          statusCode: { from: "argument", position: 1 },
+        },
+      },
+      {
         // Loaders return data directly
         kind: "return",
         match: { type: "returnShape" },

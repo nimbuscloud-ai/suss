@@ -301,6 +301,105 @@ describe("extractCodeStructure", () => {
 
     expect(raw.parameters).toEqual([]);
   });
+
+  it("extracts dependency calls nested inside if/try blocks", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      declare const db: { findById(id: string): Promise<any>; log(msg: string): void };
+      declare function validate(x: any): boolean;
+      const s = initServer();
+      export const router = s.router({} as any, {
+        getUser: async ({ params }) => {
+          const isValid = validate(params.id);
+          if (isValid) {
+            const user = await db.findById(params.id);
+            if (user) {
+              return { status: 200, body: user };
+            }
+          }
+          try {
+            const fallback = db.log("miss");
+          } catch (e) {}
+          return { status: 404, body: { error: "not found" } };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    // Should find all 3 dep calls: top-level validate, nested db.findById, nested db.log
+    expect(raw.dependencyCalls).toHaveLength(3);
+    expect(raw.dependencyCalls.map((d) => d.name)).toEqual([
+      "validate",
+      "db.findById",
+      "db.log",
+    ]);
+    expect(raw.dependencyCalls[1].async).toBe(true);
+    expect(raw.dependencyCalls[2].async).toBe(false);
+  });
+
+  it("extracts ternary return branches as separate branches with conditions", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      declare const db: { findById(id: string): Promise<any> };
+      const s = initServer();
+      export const router = s.router({} as any, {
+        getUser: async ({ params }) => {
+          const user = await db.findById(params.id);
+          return user
+            ? { status: 200, body: user }
+            : { status: 404, body: { error: "not found" } };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    expect(raw.branches).toHaveLength(2);
+
+    // Branch 1: 200 with condition "user" positive
+    expect(raw.branches[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
+    expect(raw.branches[0].conditions.length).toBeGreaterThan(0);
+    expect(raw.branches[0].conditions[0].polarity).toBe("positive");
+
+    // Branch 2: 404 with condition "user" negative
+    expect(raw.branches[1].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 404,
+    });
+    expect(raw.branches[1].conditions.length).toBeGreaterThan(0);
+    expect(raw.branches[1].conditions[0].polarity).toBe("negative");
+  });
+
+  it("extracts destructured dependency call assignedTo as null", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      declare const db: { find(id: string): Promise<{ name: string; email: string }> };
+      const s = initServer();
+      export const router = s.router({} as any, {
+        getUser: async ({ params }) => {
+          const { name, email } = await db.find(params.id);
+          return { status: 200, body: { name, email } };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+
+    expect(raw.dependencyCalls).toHaveLength(1);
+    expect(raw.dependencyCalls[0].name).toBe("db.find");
+    expect(raw.dependencyCalls[0].assignedTo).toBeNull();
+    expect(raw.dependencyCalls[0].async).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -7,41 +7,68 @@ describe("expressFramework", () => {
     const pack = expressFramework();
     expect(pack.name).toBe("express");
     expect(pack.languages).toContain("typescript");
-    expect(pack.discovery).toHaveLength(1);
+    expect(pack.discovery).toHaveLength(2);
     expect(pack.terminals.length).toBeGreaterThan(0);
   });
 
-  it("discovery kind is 'handler' and match type is 'registrationCall'", () => {
+  it("discovers handlers via Router named import", () => {
     const pack = expressFramework();
-    const disc = pack.discovery[0];
-    expect(disc.kind).toBe("handler");
-    expect(disc.match.type).toBe("registrationCall");
-    if (disc.match.type === "registrationCall") {
-      expect(disc.match.importModule).toBe("express");
+    const routerDisc = pack.discovery.find(
+      (d) =>
+        d.match.type === "registrationCall" && d.match.importName === "Router",
+    );
+    expect(routerDisc).toBeDefined();
+    expect(routerDisc!.kind).toBe("handler");
+    if (routerDisc!.match.type === "registrationCall") {
+      expect(routerDisc!.match.importModule).toBe("express");
+    }
+  });
+
+  it("discovers handlers via express default import", () => {
+    const pack = expressFramework();
+    const appDisc = pack.discovery.find(
+      (d) =>
+        d.match.type === "registrationCall" && d.match.importName === "express",
+    );
+    expect(appDisc).toBeDefined();
+    expect(appDisc!.kind).toBe("handler");
+    if (appDisc!.match.type === "registrationCall") {
+      expect(appDisc!.match.importModule).toBe("express");
     }
   });
 
   it("bindingExtraction reads method from registration method name and path from first arg", () => {
     const pack = expressFramework();
-    const binding = pack.discovery[0].bindingExtraction;
-    expect(binding?.method).toEqual({
-      type: "fromRegistration",
-      position: "methodName",
-    });
-    expect(binding?.path).toEqual({ type: "fromRegistration", position: 0 });
+    for (const disc of pack.discovery) {
+      const binding = disc.bindingExtraction;
+      expect(binding?.method).toEqual({
+        type: "fromRegistration",
+        position: "methodName",
+      });
+      expect(binding?.path).toEqual({ type: "fromRegistration", position: 0 });
+    }
   });
 
-  it("includes parameterMethodCall terminals for res.json and res.send", () => {
+  it("includes parameterMethodCall terminals for common response patterns", () => {
     const pack = expressFramework();
     const methodCallTerminals = pack.terminals.filter(
       (t) => t.match.type === "parameterMethodCall",
     );
-    expect(methodCallTerminals.length).toBeGreaterThan(0);
-    const methods = methodCallTerminals.map((t) =>
+    const chains = methodCallTerminals.map((t) =>
       t.match.type === "parameterMethodCall" ? t.match.methodChain : [],
     );
-    expect(methods.some((m) => m.includes("json"))).toBe(true);
-    expect(methods.some((m) => m.includes("send"))).toBe(true);
+    // res.status(N).json(body)
+    expect(chains).toContainEqual(["status", "json"]);
+    // res.json(body)
+    expect(chains).toContainEqual(["json"]);
+    // res.status(N).send(body)
+    expect(chains).toContainEqual(["status", "send"]);
+    // res.send(body)
+    expect(chains).toContainEqual(["send"]);
+    // res.sendStatus(N)
+    expect(chains).toContainEqual(["sendStatus"]);
+    // res.redirect(url)
+    expect(chains).toContainEqual(["redirect"]);
   });
 
   it("inputMapping type is 'positionalParams' with 3 positions", () => {

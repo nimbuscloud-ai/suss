@@ -1,6 +1,6 @@
 // terminals.test.ts — exhaustive tests for findTerminals (Task 2.3)
 
-import { Project } from "ts-morph";
+import { Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { findTerminals } from "./terminals.js";
@@ -871,6 +871,298 @@ describe("throwExpression — non-match cases", () => {
     const terminals = findTerminals(func, [makeThrowPattern("httpErrorJson")]);
 
     expect(terminals).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// returnShape — ternary branches
+// ---------------------------------------------------------------------------
+
+describe("returnShape — ternary return branches", () => {
+  it("matches both branches of return x ? {...} : {...}", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      async function handler() {
+        const user = await db.findById(id);
+        return user ? { status: 200, body: user } : { status: 404, body: { error: "not found" } };
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [
+      makeReturnShapePattern(["status", "body"]),
+    ]);
+
+    expect(terminals).toHaveLength(2);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
+    expect(terminals[1].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 404,
+    });
+  });
+
+  it("handles nested ternary: return a ? {...} : b ? {...} : {...}", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function handler() {
+        return isAdmin
+          ? { status: 200, body: { admin: true } }
+          : isUser
+            ? { status: 200, body: { admin: false } }
+            : { status: 403, body: { error: "forbidden" } };
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [
+      makeReturnShapePattern(["status", "body"]),
+    ]);
+
+    expect(terminals).toHaveLength(3);
+    const statuses = terminals.map((t) => t.terminal.statusCode);
+    expect(statuses).toContainEqual({ type: "literal", value: 200 });
+    expect(statuses).toContainEqual({ type: "literal", value: 403 });
+  });
+
+  it("matches ternary in arrow expression body: () => (x ? {...} : {...})", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      const handler = (user: any) => (user ? { status: 200, body: user } : { status: 404, body: {} });
+    `,
+    );
+
+    const arrowFn = file
+      .getVariableDeclarations()[0]
+      .getInitializerIfKindOrThrow(
+        SyntaxKind.ArrowFunction,
+      ) as unknown as FunctionRoot;
+    const terminals = findTerminals(arrowFn, [
+      makeReturnShapePattern(["status", "body"]),
+    ]);
+
+    expect(terminals).toHaveLength(2);
+  });
+
+  it("does NOT duplicate simple return { ... } (no ternary)", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function handler() {
+        return { status: 200, body: {} };
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeReturnShapePattern()]);
+
+    // Must be exactly 1, not 2
+    expect(terminals).toHaveLength(1);
+  });
+
+  it("matches when only one ternary branch is an object literal", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function handler() {
+        return isOk ? { status: 200, body: data } : null;
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [
+      makeReturnShapePattern(["status", "body"]),
+    ]);
+
+    // Only the object literal branch matches
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// functionCall — matching
+// ---------------------------------------------------------------------------
+
+describe("functionCall — matching", () => {
+  it("matches json(data) call and extracts body", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function loader() {
+        return json({ user: { id: 1 } });
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "response",
+      match: { type: "functionCall", functionName: "json" },
+      extraction: { body: { from: "argument", position: 0 } },
+    };
+    const terminals = findTerminals(func, [pattern]);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.kind).toBe("response");
+    expect(terminals[0].terminal.body).toEqual({
+      typeText: "{ user: { id: 1 } }",
+      shape: null,
+    });
+  });
+
+  it("matches redirect(url, status) and extracts statusCode", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function loader() {
+        return redirect("/login", 301);
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "response",
+      match: { type: "functionCall", functionName: "redirect" },
+      extraction: { statusCode: { from: "argument", position: 1 } },
+    };
+    const terminals = findTerminals(func, [pattern]);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 301,
+    });
+  });
+
+  it("matches data() call (React Router v7 replacement for json)", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function loader() {
+        return data({ users: [] });
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "response",
+      match: { type: "functionCall", functionName: "data" },
+      extraction: { body: { from: "argument", position: 0 } },
+    };
+    const terminals = findTerminals(func, [pattern]);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.body).toEqual({
+      typeText: "{ users: [] }",
+      shape: null,
+    });
+  });
+
+  it("does not match property access calls (e.g., res.json)", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function handler(req: any, res: any) {
+        res.json({ ok: true });
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "response",
+      match: { type: "functionCall", functionName: "json" },
+      extraction: { body: { from: "argument", position: 0 } },
+    };
+    const terminals = findTerminals(func, [pattern]);
+
+    // res.json() callee is PropertyAccessExpression, not Identifier — should not match
+    expect(terminals).toHaveLength(0);
+  });
+
+  it("does not match wrong function name", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function loader() {
+        return json({ user: {} });
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "response",
+      match: { type: "functionCall", functionName: "redirect" },
+      extraction: {},
+    };
+    const terminals = findTerminals(func, [pattern]);
+
+    expect(terminals).toHaveLength(0);
+  });
+
+  it("finds multiple functionCall terminals in one handler", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      async function loader({ params }: any) {
+        if (!params.id) {
+          return redirect("/404");
+        }
+        const user = await getUser(params.id);
+        return json({ user });
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "response",
+        match: { type: "functionCall", functionName: "json" },
+        extraction: { body: { from: "argument", position: 0 } },
+      },
+      {
+        kind: "response",
+        match: { type: "functionCall", functionName: "redirect" },
+        extraction: {},
+      },
+    ];
+    const terminals = findTerminals(func, patterns);
+
+    expect(terminals).toHaveLength(2);
+    const names = terminals.map((t) => {
+      const n = t.node;
+      return n.getText();
+    });
+    expect(names.some((n) => n.includes("redirect"))).toBe(true);
+    expect(names.some((n) => n.includes("json"))).toBe(true);
   });
 });
 

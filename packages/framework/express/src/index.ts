@@ -9,11 +9,28 @@ export function expressFramework(): FrameworkPack {
 
     discovery: [
       {
+        // import { Router } from "express"; const router = Router();
+        // router.get("/path", handler)
         kind: "handler",
         match: {
           type: "registrationCall",
           importModule: "express",
           importName: "Router",
+          registrationChain: [".get", ".post", ".put", ".delete", ".patch"],
+        },
+        bindingExtraction: {
+          method: { type: "fromRegistration", position: "methodName" },
+          path: { type: "fromRegistration", position: 0 },
+        },
+      },
+      {
+        // import express from "express"; const app = express();
+        // app.get("/path", handler)
+        kind: "handler",
+        match: {
+          type: "registrationCall",
+          importModule: "express",
+          importName: "express",
           registrationChain: [".get", ".post", ".put", ".delete", ".patch"],
         },
         bindingExtraction: {
@@ -50,6 +67,19 @@ export function expressFramework(): FrameworkPack {
         },
       },
       {
+        // res.status(N).send(body)
+        kind: "response",
+        match: {
+          type: "parameterMethodCall",
+          parameterPosition: 1,
+          methodChain: ["status", "send"],
+        },
+        extraction: {
+          statusCode: { from: "argument", position: 0 },
+          body: { from: "argument", position: 0 },
+        },
+      },
+      {
         // res.send(body)
         kind: "response",
         match: {
@@ -59,6 +89,30 @@ export function expressFramework(): FrameworkPack {
         },
         extraction: {
           body: { from: "argument", position: 0 },
+        },
+      },
+      {
+        // res.sendStatus(N) — sends status code with status text as body
+        kind: "response",
+        match: {
+          type: "parameterMethodCall",
+          parameterPosition: 1,
+          methodChain: ["sendStatus"],
+        },
+        extraction: {
+          statusCode: { from: "argument", position: 0 },
+        },
+      },
+      {
+        // res.redirect(url) or res.redirect(status, url)
+        kind: "response",
+        match: {
+          type: "parameterMethodCall",
+          parameterPosition: 1,
+          methodChain: ["redirect"],
+        },
+        extraction: {
+          statusCode: { from: "argument", position: 0 },
         },
       },
       {

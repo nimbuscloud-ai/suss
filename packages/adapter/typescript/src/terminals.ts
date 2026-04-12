@@ -281,6 +281,40 @@ function extractBody(
 // Pattern matching + extraction per node
 // ---------------------------------------------------------------------------
 
+/**
+ * Check if an ObjectLiteralExpression is in a position that makes it a return
+ * value — direct return, arrow expression body, or branch of a ternary that
+ * itself is returned.
+ */
+function isInReturnPosition(ole: Node): boolean {
+  let current: Node | undefined = ole.getParent();
+  // Direct child of ReturnStatement is already handled by the ReturnStatement
+  // case in tryMatchReturnShape — skip to avoid duplicate terminals.
+  if (current !== undefined && Node.isReturnStatement(current)) {
+    return false;
+  }
+  while (current !== undefined) {
+    if (Node.isReturnStatement(current)) {
+      return true;
+    }
+    if (Node.isArrowFunction(current)) {
+      // Only match expression bodies, not OLEs inside a block body
+      const body = current.getBody();
+      return body !== undefined && !Node.isBlock(body);
+    }
+    // Walk through ternary branches and parens
+    if (
+      Node.isParenthesizedExpression(current) ||
+      Node.isConditionalExpression(current)
+    ) {
+      current = current.getParent();
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
 function tryMatchReturnShape(
   node: Node,
   pattern: TerminalPattern,
@@ -294,13 +328,8 @@ function tryMatchReturnShape(
       obj = arg;
     }
   } else if (Node.isObjectLiteralExpression(node)) {
-    // Arrow expression body: async () => ({ status: 200, body: {} })
-    const parent = node.getParent();
-    if (parent && Node.isParenthesizedExpression(parent)) {
-      const grandparent = parent.getParent();
-      if (grandparent && Node.isArrowFunction(grandparent)) {
-        obj = node;
-      }
+    if (isInReturnPosition(node)) {
+      obj = node;
     }
   }
 
@@ -479,6 +508,59 @@ function tryMatchThrowExpression(
   return { node, terminal };
 }
 
+function tryMatchFunctionCall(
+  node: Node,
+  pattern: TerminalPattern,
+  match: Extract<TerminalPattern["match"], { type: "functionCall" }>,
+): FoundTerminal | null {
+  if (!Node.isCallExpression(node)) {
+    return null;
+  }
+
+  const callee = node.getExpression();
+  if (!Node.isIdentifier(callee)) {
+    return null;
+  }
+
+  if (callee.getText() !== match.functionName) {
+    return null;
+  }
+
+  const callArgs = node.getArguments() as Expression[];
+
+  const statusCode = extractStatusCode(
+    pattern.extraction,
+    null,
+    callArgs,
+    null,
+  );
+  const body = extractBody(pattern.extraction, null, callArgs, null);
+
+  const terminal: RawTerminal = {
+    kind:
+      pattern.kind === "throw"
+        ? "throw"
+        : pattern.kind === "return"
+          ? "return"
+          : pattern.kind === "render"
+            ? "render"
+            : "response",
+    statusCode,
+    body,
+    exceptionType: null,
+    message: null,
+    component: null,
+    delegateTarget: null,
+    emitEvent: null,
+    location: {
+      start: node.getStartLineNumber(),
+      end: node.getEndLineNumber(),
+    },
+  };
+
+  return { node, terminal };
+}
+
 // ---------------------------------------------------------------------------
 // Main exported function
 // ---------------------------------------------------------------------------
@@ -516,6 +598,8 @@ export function findTerminals(
         found = tryMatchParameterMethodCall(node, func, pattern, pattern.match);
       } else if (pattern.match.type === "throwExpression") {
         found = tryMatchThrowExpression(node, pattern, pattern.match);
+      } else if (pattern.match.type === "functionCall") {
+        found = tryMatchFunctionCall(node, pattern, pattern.match);
       }
 
       if (found !== null) {
