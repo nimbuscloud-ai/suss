@@ -105,15 +105,17 @@ export function expressFramework(): FrameworkPack {
       },
       {
         // res.redirect(url) or res.redirect(status, url)
-        // The overload makes arg 0 ambiguous (URL vs status code), so we don't
-        // extract a status code here. Express defaults to 302.
+        // Arg 0 is a status code only in the 2-arg form; minArgs prevents
+        // extracting the URL string as a status code in the 1-arg form.
         kind: "response",
         match: {
           type: "parameterMethodCall",
           parameterPosition: 1,
           methodChain: ["redirect"],
         },
-        extraction: {},
+        extraction: {
+          statusCode: { from: "argument", position: 0, minArgs: 2 },
+        },
       },
       {
         // throw new SomeError(...)
