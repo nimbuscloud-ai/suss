@@ -470,6 +470,102 @@ describe("deduplication", () => {
 });
 
 // ---------------------------------------------------------------------------
+// namedExport — React Router discovery patterns
+// ---------------------------------------------------------------------------
+
+describe("namedExport — React Router style (loader, action, default)", () => {
+  function makeReactRouterPatterns(): DiscoveryPattern[] {
+    return [
+      { kind: "loader", match: { type: "namedExport", names: ["loader"] } },
+      { kind: "action", match: { type: "namedExport", names: ["action"] } },
+      {
+        kind: "component",
+        match: { type: "namedExport", names: ["default"] },
+      },
+    ];
+  }
+
+  it("discovers loader and action from the same file", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      export async function loader({ params }: any) {
+        return { user: "test" };
+      }
+      export async function action({ request }: any) {
+        return { ok: true };
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, makeReactRouterPatterns());
+    expect(units).toHaveLength(2);
+    const names = units.map((u) => u.name).sort();
+    expect(names).toEqual(["action", "loader"]);
+    expect(units.find((u) => u.name === "loader")!.kind).toBe("loader");
+    expect(units.find((u) => u.name === "action")!.kind).toBe("action");
+  });
+
+  it("discovers default export component", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      export default function UserPage() {
+        return null;
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, makeReactRouterPatterns());
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("default");
+    expect(units[0].kind).toBe("component");
+  });
+
+  it("discovers all three: loader, action, and default component", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      export async function loader({ params }: any) {
+        return { data: "loaded" };
+      }
+      export async function action({ request }: any) {
+        return { ok: true };
+      }
+      export default function Page() {
+        return null;
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, makeReactRouterPatterns());
+    expect(units).toHaveLength(3);
+    const kinds = units.map((u) => u.kind).sort();
+    expect(kinds).toEqual(["action", "component", "loader"]);
+  });
+
+  it("discovers arrow function loader", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      export const loader = async ({ params }: any) => {
+        return { data: params.id };
+      };
+    `,
+    );
+
+    const units = discoverUnits(file, makeReactRouterPatterns());
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("loader");
+    expect(units[0].kind).toBe("loader");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // multiple patterns combined
 // ---------------------------------------------------------------------------
 

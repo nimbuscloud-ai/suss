@@ -299,3 +299,36 @@ describe("resolveSubject — transparent nodes", () => {
     expect(result).toEqual({ type: "input", inputRef: "x", path: [] });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Deep dependency chains
+// ---------------------------------------------------------------------------
+
+describe("resolveSubject — deep dependency chain", () => {
+  it("services.db.users.findUser(id) → dependency with deep callee name", () => {
+    const cond = getFirstIfCondition(sourceFile, "deepDependencyChain");
+    const result = resolveSubject(cond);
+    expect(result).toEqual({
+      type: "dependency",
+      name: "services.db.users.findUser",
+      accessChain: [],
+    });
+  });
+});
+
+describe("resolveSubject — dependency then property access", () => {
+  it("db.findUser(id) then .name → derived(dependency, propertyAccess)", () => {
+    const cond = getFirstIfCondition(sourceFile, "dependencyThenProperty");
+    const result = resolveSubject(cond);
+    // user.name → user is dependency(db.findUser), .name is propertyAccess
+    expect(result).toEqual({
+      type: "derived",
+      from: {
+        type: "dependency",
+        name: "db.findUser",
+        accessChain: [],
+      },
+      derivation: { type: "propertyAccess", property: "name" },
+    });
+  });
+});

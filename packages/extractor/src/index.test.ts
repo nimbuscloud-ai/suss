@@ -577,4 +577,354 @@ describe("detectGaps", () => {
     );
     expect(unproduced).toHaveLength(2);
   });
+
+  it("detects multiple concurrent gaps (declared 200,404,500 but only produces 200)", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      branches: [
+        {
+          conditions: [],
+          terminal: makeTerminal({
+            kind: "response",
+            statusCode: { type: "literal", value: 200 },
+          }),
+          effects: [],
+          location: { start: 0, end: 0 },
+          isDefault: true,
+        },
+      ],
+      declaredContract: {
+        framework: "ts-rest",
+        responses: [
+          { statusCode: 200 },
+          { statusCode: 404 },
+          { statusCode: 500 },
+        ],
+      },
+    };
+    const summary = assembleSummary(raw, { gapHandling: "strict" });
+    const unproduced = summary.gaps.filter((g) =>
+      g.description.includes("never produced"),
+    );
+    expect(unproduced).toHaveLength(2);
+    const descriptions = unproduced.map((g) => g.description).join(", ");
+    expect(descriptions).toContain("404");
+    expect(descriptions).toContain("500");
+  });
+
+  it("detects both undeclared-production AND unproduced-declaration simultaneously", () => {
+    // Declares 200, 500. Produces 200, 404.
+    // → 500 never produced, 404 not declared.
+    const raw: RawCodeStructure = {
+      ...twoPathRaw, // produces 404 and 200
+      declaredContract: {
+        framework: "ts-rest",
+        responses: [{ statusCode: 200 }, { statusCode: 500 }],
+      },
+    };
+    const summary = assembleSummary(raw, { gapHandling: "strict" });
+    expect(summary.gaps).toHaveLength(2);
+    expect(
+      summary.gaps.some(
+        (g) =>
+          g.description.includes("500") &&
+          g.description.includes("never produced"),
+      ),
+    ).toBe(true);
+    expect(
+      summary.gaps.some(
+        (g) =>
+          g.description.includes("404") &&
+          g.description.includes("not declared"),
+      ),
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-condition branch assembly
+// ---------------------------------------------------------------------------
+
+describe("assembleSummary — multi-condition branches", () => {
+  it("assembles a branch with 3+ conditions correctly", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      branches: [
+        {
+          conditions: [
+            {
+              sourceText: "!id",
+              structured: {
+                type: "truthinessCheck",
+                subject: { type: "input", inputRef: "id", path: [] },
+                negated: true,
+              },
+              polarity: "negative",
+              source: "earlyReturn",
+            },
+            {
+              sourceText: "!user",
+              structured: {
+                type: "truthinessCheck",
+                subject: {
+                  type: "dependency",
+                  name: "db.findById",
+                  accessChain: [],
+                },
+                negated: true,
+              },
+              polarity: "negative",
+              source: "earlyThrow",
+            },
+            {
+              sourceText: "user.role === 'admin'",
+              structured: {
+                type: "comparison",
+                left: {
+                  type: "derived",
+                  from: {
+                    type: "dependency",
+                    name: "db.findById",
+                    accessChain: [],
+                  },
+                  derivation: { type: "propertyAccess", property: "role" },
+                },
+                op: "eq",
+                right: { type: "literal", value: "admin" },
+              },
+              polarity: "positive",
+              source: "explicit",
+            },
+          ],
+          terminal: makeTerminal({
+            kind: "response",
+            statusCode: { type: "literal", value: 200 },
+          }),
+          effects: [],
+          location: { start: 10, end: 15 },
+          isDefault: false,
+        },
+      ],
+    };
+    const summary = assembleSummary(raw);
+    const t = summary.transitions[0];
+    expect(t.conditions).toHaveLength(3);
+    // earlyReturn: negative polarity → negation wrapper
+    expect(t.conditions[0].type).toBe("negation");
+    // earlyThrow: negative polarity → negation wrapper
+    expect(t.conditions[1].type).toBe("negation");
+    // explicit: positive polarity → unwrapped comparison
+    expect(t.conditions[2].type).toBe("comparison");
+  });
+
+  it("handles negative polarity with structured predicate (not just null)", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      branches: [
+        {
+          conditions: [
+            {
+              sourceText: "user.active",
+              structured: {
+                type: "truthinessCheck",
+                subject: {
+                  type: "derived",
+                  from: { type: "input", inputRef: "user", path: [] },
+                  derivation: { type: "propertyAccess", property: "active" },
+                },
+                negated: false,
+              },
+              polarity: "negative",
+              source: "explicit",
+            },
+          ],
+          terminal: makeTerminal({
+            kind: "response",
+            statusCode: { type: "literal", value: 403 },
+          }),
+          effects: [],
+          location: { start: 5, end: 8 },
+          isDefault: false,
+        },
+      ],
+    };
+    const summary = assembleSummary(raw);
+    const t = summary.transitions[0];
+    // Negative polarity wraps the structured predicate in negation
+    expect(t.conditions[0].type).toBe("negation");
+    if (t.conditions[0].type === "negation") {
+      expect(t.conditions[0].operand.type).toBe("truthinessCheck");
+    }
+  });
+
+  it("preserves compound predicates through assembly", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      branches: [
+        {
+          conditions: [
+            {
+              sourceText: "a && b",
+              structured: {
+                type: "compound",
+                op: "and",
+                operands: [
+                  {
+                    type: "truthinessCheck",
+                    subject: { type: "input", inputRef: "a", path: [] },
+                    negated: false,
+                  },
+                  {
+                    type: "truthinessCheck",
+                    subject: { type: "input", inputRef: "b", path: [] },
+                    negated: false,
+                  },
+                ],
+              },
+              polarity: "positive",
+              source: "explicit",
+            },
+          ],
+          terminal: makeTerminal({
+            kind: "response",
+            statusCode: { type: "literal", value: 200 },
+          }),
+          effects: [],
+          location: { start: 0, end: 0 },
+          isDefault: false,
+        },
+      ],
+    };
+    const summary = assembleSummary(raw);
+    expect(summary.transitions[0].conditions[0].type).toBe("compound");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Confidence scoring edge cases
+// ---------------------------------------------------------------------------
+
+describe("assessConfidence — boundary cases", () => {
+  const baseRaw: RawCodeStructure = {
+    ...twoPathRaw,
+    branches: [],
+  };
+
+  it("returns 'low' at exactly 50% opaque (boundary)", () => {
+    const raw: RawCodeStructure = {
+      ...baseRaw,
+      branches: [
+        {
+          conditions: [
+            {
+              sourceText: "a",
+              structured: {
+                type: "truthinessCheck",
+                subject: { type: "input", inputRef: "a", path: [] },
+                negated: false,
+              },
+              polarity: "positive",
+              source: "explicit",
+            },
+            {
+              sourceText: "complex()",
+              structured: {
+                type: "opaque",
+                sourceText: "complex()",
+                reason: "complexExpression",
+              },
+              polarity: "positive",
+              source: "explicit",
+            },
+          ],
+          terminal: makeTerminal({ kind: "void" }),
+          effects: [],
+          location: { start: 0, end: 0 },
+          isDefault: false,
+        },
+      ],
+    };
+    // ratio = 1/2 = 0.5, which is >= 0.5, so "low"
+    expect(assessConfidence(raw).level).toBe("low");
+  });
+
+  it("returns 'medium' at just under 50% opaque", () => {
+    const raw: RawCodeStructure = {
+      ...baseRaw,
+      branches: [
+        {
+          conditions: [
+            {
+              sourceText: "a",
+              structured: {
+                type: "truthinessCheck",
+                subject: { type: "input", inputRef: "a", path: [] },
+                negated: false,
+              },
+              polarity: "positive",
+              source: "explicit",
+            },
+            {
+              sourceText: "b",
+              structured: {
+                type: "truthinessCheck",
+                subject: { type: "input", inputRef: "b", path: [] },
+                negated: false,
+              },
+              polarity: "positive",
+              source: "explicit",
+            },
+          ],
+          terminal: makeTerminal({ kind: "void" }),
+          effects: [],
+          location: { start: 0, end: 0 },
+          isDefault: false,
+        },
+        {
+          conditions: [
+            {
+              sourceText: "opaque()",
+              structured: null,
+              polarity: "positive",
+              source: "explicit",
+            },
+          ],
+          terminal: makeTerminal({ kind: "void" }),
+          effects: [],
+          location: { start: 0, end: 0 },
+          isDefault: false,
+        },
+      ],
+    };
+    // 3 total conditions, 1 opaque → ratio = 1/3 ≈ 0.33 < 0.5 → "medium"
+    expect(assessConfidence(raw).level).toBe("medium");
+  });
+
+  it("returns 'high' when all conditions are structured (zero opaque)", () => {
+    const raw: RawCodeStructure = {
+      ...baseRaw,
+      branches: [
+        {
+          conditions: [
+            {
+              sourceText: "x > 0",
+              structured: {
+                type: "comparison",
+                left: { type: "input", inputRef: "x", path: [] },
+                op: "gt",
+                right: { type: "literal", value: 0 },
+              },
+              polarity: "positive",
+              source: "explicit",
+            },
+          ],
+          terminal: makeTerminal({ kind: "void" }),
+          effects: [],
+          location: { start: 0, end: 0 },
+          isDefault: false,
+        },
+      ],
+    };
+    expect(assessConfidence(raw).level).toBe("high");
+  });
 });

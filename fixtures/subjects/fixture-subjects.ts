@@ -98,3 +98,18 @@ export function parenthesized(x: number) {
   if ((x)) return x;
   return 0;
 }
+
+// Deep dependency chain: a.b.c.findUser(id)
+declare const services: any;
+export function deepDependencyChain(id: string) {
+  const user = services.db.users.findUser(id);
+  if (user) return user;
+  return null;
+}
+
+// Dependency with property access: getUser().name
+export function dependencyThenProperty(id: string) {
+  const user = db.findUser(id);
+  if (user.name) return user.name;
+  return null;
+}

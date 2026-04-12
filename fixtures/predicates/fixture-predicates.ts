@@ -164,3 +164,46 @@ export function checkNegatedNullNeq(user: any) {
   if (!(user !== null)) return 1;
   return 0;
 }
+
+// typeof x === "number"
+export function checkTypeofNumber(x: any) {
+  if (typeof x === "number") return 1;
+  return 0;
+}
+
+// typeof x === "boolean"
+export function checkTypeofBoolean(x: any) {
+  if (typeof x === "boolean") return 1;
+  return 0;
+}
+
+// typeof x === "function"
+export function checkTypeofFunction(x: any) {
+  if (typeof x === "function") return 1;
+  return 0;
+}
+
+// Multi-arg call: compare(a, b)
+declare function compare(a: any, b: any): boolean;
+export function checkMultiArgCall(a: any, b: any) {
+  if (compare(a, b)) return 1;
+  return 0;
+}
+
+// Comparison with non-literal right: x > y
+export function checkComparisonBothParams(x: number, y: number) {
+  if (x > y) return 1;
+  return 0;
+}
+
+// Mixed compound: (a && b) || (c && d)
+export function checkMixedCompound(a: any, b: any, c: any, d: any) {
+  if ((a && b) || (c && d)) return 1;
+  return 0;
+}
+
+// Reversed typeof: "string" === typeof x
+export function checkTypeofReversed(x: any) {
+  if ("string" === typeof x) return 1;
+  return 0;
+}
