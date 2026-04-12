@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@suss/behavioral-ir": "*",
+    "@suss/checker": "*",
     "@suss/extractor": "*",
     "@suss/adapter-typescript": "*",
     "@suss/framework-ts-rest": "*",
