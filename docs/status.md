@@ -65,8 +65,8 @@ Progress tracker. Updated as phases land.
 | 5.2 `@suss/checker` package + structural matchers | ✅ | `subjectsMatch`, `predicatesMatch` with `match` / `nomatch` / `unknown` result; handles opaque/unresolved tree-walk. |
 | 5.3 Provider-coverage check | ✅ | Status-code matching; default consumer branch covers 2xx; opaque provider statuses emit `lowConfidence`. |
 | 5.4 Consumer-satisfaction check | ✅ | Dead-branch detection; opaque provider statuses short-circuit to `lowConfidence`. |
-| 5.5 Contract-consistency check | ⬜ | Reformat existing `detectGaps` output into `Finding`s; add consumer-side equivalents. |
-| 5.6 `checkPair` entrypoint + fixture integration tests | ⬜ | Hand-authored summary pairs per finding kind; deep-equal expected findings. |
+| 5.5 Contract-consistency check | ✅ | Provider gaps reformatted to `providerContractViolation`; consumer checked against declared contract for declared-but-unhandled and handled-but-undeclared cases. |
+| 5.6 `checkPair` entrypoint + fixture integration tests | ✅ | Composes all three checks; integration test exercises every finding kind in one pass. |
 | 5.7 `suss check` CLI command | ⬜ | JSON / human output; non-zero exit on `error` severity. |
 
 ## Phase 6+ — Deferred

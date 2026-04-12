@@ -4,7 +4,7 @@ Given behavioral summaries for two sides of a boundary — a provider (the handl
 
 This document specifies the *pairwise* check: one provider summary, one consumer summary, a list of findings. It describes the algorithm `suss check` uses, the kinds of mismatches it surfaces, and how the IR supports cross-boundary reasoning. For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
 
-> **Status:** in progress. Pairwise provider-coverage and consumer-satisfaction checks are implemented in `@suss/checker` (status-code matching; body-shape matching deferred). Contract-consistency and the `suss check` CLI are next. See [`status.md`](status.md). Broader analysis layers (cross-service graphs, historical tracking, continuous checking) are deliberately **out of scope** for this repository; see [§ Beyond pairwise](#beyond-pairwise).
+> **Status:** in progress. `@suss/checker` implements all three pairwise checks (provider coverage, consumer satisfaction, contract consistency — status-code matching; body-shape matching deferred). The `suss check` CLI is next. See [`status.md`](status.md). Broader analysis layers (cross-service graphs, historical tracking, continuous checking) are deliberately **out of scope** for this repository; see [§ Beyond pairwise](#beyond-pairwise).
 
 ## What the check answers
 
@@ -48,8 +48,8 @@ for each consumerTransition in consumer.transitions:
 
 If a declared contract exists at the boundary (ts-rest `responses`, an OpenAPI spec, a GraphQL schema), each side is checked independently:
 
-- **Provider vs contract** — does the provider produce every response the contract declares? Does it produce any response the contract doesn't declare? These are the same gap categories that `@suss/extractor`'s `detectGaps` already emits; the checker surfaces them as findings rather than summary-local metadata.
-- **Consumer vs contract** — does the consumer handle every declared response? Branches for undeclared responses are a contract violation in the consumer; unhandled declared responses are uncovered risk.
+- **Provider vs contract** — does the provider produce every response the contract declares? Does it produce any response the contract doesn't declare? These are the same gap categories that `@suss/extractor`'s `detectGaps` already emits; the checker reformats each entry in `provider.gaps` into a `providerContractViolation` finding (severity `error`). The gap data stays on the summary so other consumers still see it.
+- **Consumer vs contract** — does the consumer handle every declared response? Branches for undeclared responses are a contract violation in the consumer (severity `error`); unhandled declared responses are uncovered risk (severity `warning`). A consumer default branch implicitly covers declared 2xx statuses, mirroring the provider-coverage rule.
 
 Contract consistency can catch mismatches that `1`/`2` miss. If both provider and consumer have drifted away from the contract in the same direction, they'll agree with each other but disagree with the declared truth.
 
