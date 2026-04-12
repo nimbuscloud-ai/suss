@@ -194,7 +194,9 @@ type TypeShape =
       properties: Record<string, TypeShape>;
       spreads?: Array<{ sourceText: string }>;
     }
+  | { type: "dictionary"; values: TypeShape }
   | { type: "array"; items: TypeShape }
+  | { type: "literal"; value: string | number | boolean; raw?: string }
   | { type: "text" }
   | { type: "integer" }
   | { type: "number" }
@@ -208,7 +210,25 @@ type TypeShape =
 
 A simplified type shape, sufficient for describing response bodies and return values without trying to reproduce the full TypeScript or Python type system. `ref` is an escape hatch — "the extractor knows this is typed as `User` but doesn't inline the definition".
 
+**Record vs. dictionary.** `record` is a *closed struct*: a fixed set of named fields known statically. `dictionary` is an *index-signature* type (`Record<string, T>`, `{ [key: string]: T }`): the key set is open, every access returns a `T`. Consumers comparing two shapes must keep these distinct — a dictionary accepts any key, a record accepts only the listed ones.
+
 **Why not reuse the TypeScript type system directly.** `TypeShape` is language-agnostic. A Python adapter produces the same shape. Serializing actual compiler types would leak compiler-specific details and make cross-language comparison impossible.
+
+### Serialization semantics
+
+`TypeShape` describes values **as they cross a serialization boundary** — HTTP response bodies, messages on a queue, return values inspected by a caller. This is not the in-memory type system of the source language. Two consequences fall out of that:
+
+1. **Numeric precision.** JavaScript's `number` is IEEE 754 double. Integers beyond `Number.MAX_SAFE_INTEGER` (2^53 − 1), high-precision decimals, hex / scientific notation, and underscore separators all lose information through `number` coercion. For numeric `literal` shapes, the `raw` field carries the exact source text so a consumer needing precision or faithful wire representation never has to re-parse or guess. Strings and booleans roundtrip losslessly and have no `raw`.
+
+2. **Types without a native wire form.** `BigInt`, `Date`, `Map`, `Set`, `Buffer`, `Error`, regexes, etc. have no canonical JSON representation. The extractor surfaces them as `ref` with the declared type name (`"bigint"`, `"Date"`, …) rather than inventing a structural expansion. The wire format for these is **consumer-defined**: a `Date` may be serialized as an ISO 8601 string by `toJSON`, as an epoch number, or not at all — that contract lives between the producer and consumer, not in the IR.
+
+#### `undefined` on the wire
+
+`undefined` is modeled for source fidelity (optional fields, explicit `undefined` returns), but JSON omits it. A record with `email: undefined` serializes to a response body where `email` is simply absent. Downstream contract checkers should treat `{ value: T | undefined }` and `{ value?: T }` as equivalent at the wire boundary.
+
+#### Serde / codec contracts (open design space)
+
+The IR captures *what* data flows — not the codec that produced it. Two producers emitting a `Date` may put ISO strings, epoch numbers, or `{seconds, nanos}` records on the wire, and the IR can only say "some Date-shaped thing was referenced." This is deliberate for v0: codec contracts are a separate concern from shape contracts. A future direction is an explicit serde variant such as `{ type: "serialized"; wire: TypeShape; reconstructs: TypeShape }` so that cross-boundary tooling can reason about "the producer writes ISO string, the consumer expects Date — is that compatible?" without baking a specific codec into every producer's shape. For now, producers and consumers must agree on a codec out of band, and the IR treats `ref` values as opaque beyond the name.
 
 ## `Effect`
 
