@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type BehavioralSummary,
   diffSummaries,
+  type Finding,
   type Output,
   type Predicate,
   type Transition,
@@ -156,5 +157,34 @@ describe("diffSummaries", () => {
     if (output.type === "response") {
       expect(output.statusCode?.type).toBe("unresolved");
     }
+  });
+
+  it("Finding discriminated union narrows on kind and severity", () => {
+    const finding: Finding = {
+      kind: "unhandledProviderCase",
+      boundary: { protocol: "http", framework: "ts-rest" },
+      provider: {
+        summary: "src/handlers/users.ts::getUser",
+        transitionId: "t-200",
+        location: {
+          file: "src/handlers/users.ts",
+          range: { start: 1, end: 20 },
+          exportName: "getUser",
+        },
+      },
+      consumer: {
+        summary: "src/ui/user-page.ts::UserPage",
+        location: {
+          file: "src/ui/user-page.ts",
+          range: { start: 10, end: 40 },
+          exportName: "UserPage",
+        },
+      },
+      description: "Provider returns 200 but no consumer branch reads it",
+      severity: "error",
+    };
+    expect(finding.kind).toBe("unhandledProviderCase");
+    expect(finding.consumer.transitionId).toBeUndefined();
+    expect(finding.provider.transitionId).toBe("t-200");
   });
 });

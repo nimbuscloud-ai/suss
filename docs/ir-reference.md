@@ -280,6 +280,42 @@ Level is computed as the ratio of opaque predicates to total predicates:
 
 Consumers use confidence to decide how strictly to enforce findings. High-confidence provider/consumer mismatches are almost certainly real bugs. Low-confidence ones might be false positives from opaque predicates; they deserve review but not a broken build.
 
+## `Finding` — the unit of cross-boundary output
+
+```typescript
+type FindingKind =
+  | "unhandledProviderCase"
+  | "deadConsumerBranch"
+  | "providerContractViolation"
+  | "consumerContractViolation"
+  | "lowConfidence";
+
+type FindingSeverity = "error" | "warning" | "info";
+
+interface FindingSide {
+  summary: string;         // stable identifier, e.g., "src/handlers/users.ts::getUser"
+  transitionId?: string;   // omitted when the finding isn't tied to a single transition
+  location: SourceLocation;
+}
+
+interface Finding {
+  kind: FindingKind;
+  boundary: BoundaryBinding;
+  provider: FindingSide;
+  consumer: FindingSide;
+  description: string;
+  severity: FindingSeverity;
+}
+```
+
+What the pairwise checker emits. Each finding names the boundary, both sides of it, and a human-readable description. The full algorithm and each finding kind live in [`cross-boundary-checking.md`](cross-boundary-checking.md); this section is just the type surface.
+
+**Why both sides are always named.** Even when only one side is at fault (e.g., `providerContractViolation` is structurally about provider-vs-contract), the finding still points at the consumer summary it was checked against — so tooling can attribute the finding to a specific pairing rather than a free-floating provider. `transitionId` is the optional field; the two `summary` references are required.
+
+**Why findings live in `@suss/behavioral-ir`, not in the checker package.** Other tools (diff viewers, aggregation layers, the product) consume findings the same way they consume summaries. Keeping the shape in the IR package means no downstream consumer depends on `@suss/checker` just to read a finding.
+
+**Severity drives CLI exit codes.** `suss check` exits non-zero when any `error`-severity finding is present; `warning` and `info` are reported but don't fail the process. Contract violations and unhandled provider cases are errors; dead consumer branches are warnings; `lowConfidence` is informational.
+
 ## `RawCodeStructure` — the adapter-to-extractor interface
 
 Defined in `@suss/extractor`, not `@suss/behavioral-ir`, because it's an implementation boundary inside the pipeline rather than part of the public output.
