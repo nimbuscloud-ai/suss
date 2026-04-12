@@ -93,7 +93,18 @@ export type Predicate =
   | { type: "opaque"; sourceText: string; reason: OpaqueReason };
 
 export type TypeShape =
-  | { type: "record"; properties: Record<string, TypeShape> }
+  | {
+      type: "record";
+      properties: Record<string, TypeShape>;
+      /**
+       * Source-text of spread/rest expressions that merge additional fields
+       * into this record at runtime (e.g. `{ ...user, admin: true }`). Fields
+       * in `properties` are known statically; anything else may be contributed
+       * by a spread and is not enumerable here. Absent when the record has no
+       * spreads.
+       */
+      spreads?: Array<{ sourceText: string }>;
+    }
   | { type: "array"; items: TypeShape }
   | { type: "text" }
   | { type: "integer" }
