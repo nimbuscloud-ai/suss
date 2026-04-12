@@ -109,18 +109,29 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   }
 
   // Literal types come through before `isString`/`isNumber`/`isBoolean`
-  // (those also return true for literal types). Literal → base primitive.
+  // (those also return true for literal types). Preserve the literal —
+  // consumers can widen to `text`/`number`/`boolean` by inspecting `value`.
   if (type.isStringLiteral()) {
+    const v = type.getLiteralValue();
+    if (typeof v === "string") {
+      return { type: "literal", value: v };
+    }
     return { type: "text" };
   }
   if (type.isNumberLiteral()) {
     const v = type.getLiteralValue();
-    return typeof v === "number" && Number.isInteger(v)
-      ? { type: "integer" }
-      : { type: "number" };
+    if (typeof v === "number") {
+      // We only have the `number` form from the type checker; `String(v)`
+      // is a faithful `raw` for values that fit in double precision.
+      // Callers extracting from the AST populate `raw` from actual source
+      // text to preserve hex / scientific / big-integer notations.
+      return { type: "literal", value: v, raw: String(v) };
+    }
+    return { type: "number" };
   }
   if (type.isBooleanLiteral()) {
-    return { type: "boolean" };
+    const text = type.getText(ctx.enclosing);
+    return { type: "literal", value: text === "true" };
   }
 
   if (type.isString()) {
@@ -284,11 +295,30 @@ function objectToShape(type: Type, ctx: ConvertContext): TypeShape | null {
     return refFromType(type, ctx);
   }
 
-  const properties: Record<string, TypeShape> = {};
   const nextSeen = new Set(ctx.seen);
   nextSeen.add(key);
+  const childCtx: ConvertContext = {
+    enclosing: ctx.enclosing,
+    depth: ctx.depth + 1,
+    seen: nextSeen,
+  };
 
   const symbols = type.getProperties();
+
+  // Dictionary types: an index signature (`{ [key: string]: T }`,
+  // `Record<string, T>`) without named properties. The key set is open.
+  // If both a string and number index are present (rare — e.g. `Array`-like
+  // structural types), prefer the string index since JSON dictionaries are
+  // string-keyed on the wire.
+  const indexType = type.getStringIndexType() ?? type.getNumberIndexType();
+  if (symbols.length === 0 && indexType) {
+    const values: TypeShape = typeToShape(indexType, childCtx) ?? {
+      type: "unknown",
+    };
+    return { type: "dictionary", values };
+  }
+
+  const properties: Record<string, TypeShape> = {};
   for (const sym of symbols) {
     const name = sym.getName();
     const propType = propertyTypeOf(sym, ctx.enclosing);
@@ -296,20 +326,19 @@ function objectToShape(type: Type, ctx: ConvertContext): TypeShape | null {
       properties[name] = { type: "unknown" };
       continue;
     }
-    const propShape: TypeShape = typeToShape(propType, {
-      enclosing: ctx.enclosing,
-      depth: ctx.depth + 1,
-      seen: nextSeen,
-    }) ?? { type: "unknown" };
+    const propShape: TypeShape = typeToShape(propType, childCtx) ?? {
+      type: "unknown",
+    };
     properties[name] = sym.isOptional()
       ? addUndefinedVariant(propShape)
       : propShape;
   }
 
-  // Some "object" types have no enumerable properties (e.g. empty object
-  // literal type `{}`, or structural types we can't introspect). Emitting an
-  // empty record is misleading — it asserts "definitely no fields" when we
-  // really mean "we don't know." Surface as a ref in that case.
+  // Some "object" types have no enumerable properties AND no index signature
+  // (e.g. empty object literal type `{}`, structural types we can't
+  // introspect). Emitting an empty record is misleading — it asserts
+  // "definitely no fields" when we really mean "we don't know." Surface as a
+  // ref in that case.
   if (symbols.length === 0) {
     return refFromType(type, ctx);
   }
