@@ -167,6 +167,30 @@ export interface SummaryDiff {
   changedTransitions: Array<{ before: Transition; after: Transition }>;
 }
 
+export type FindingKind =
+  | "unhandledProviderCase"
+  | "deadConsumerBranch"
+  | "providerContractViolation"
+  | "consumerContractViolation"
+  | "lowConfidence";
+
+export type FindingSeverity = "error" | "warning" | "info";
+
+export interface FindingSide {
+  summary: string;
+  transitionId?: string;
+  location: SourceLocation;
+}
+
+export interface Finding {
+  kind: FindingKind;
+  boundary: BoundaryBinding;
+  provider: FindingSide;
+  consumer: FindingSide;
+  description: string;
+  severity: FindingSeverity;
+}
+
 export function diffSummaries(
   before: BehavioralSummary,
   after: BehavioralSummary,
