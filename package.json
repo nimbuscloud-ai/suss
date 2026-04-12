@@ -30,7 +30,7 @@
   "packageManager": "npm@10.9.2",
   "scripts": {
     "build": "turbo build",
-    "test": "turbo test",
+    "test": "turbo test --concurrency=3",
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
     "format": "biome format --write .",
