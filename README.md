@@ -33,15 +33,15 @@ These summaries are the input to downstream tools: contract checkers, documentat
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| `@suss/behavioral-ir` | Types and utilities. Zero dependencies. Install this to consume summaries. |
-| `@suss/extractor` | Assembly engine. Converts raw extracted structure into `BehavioralSummary`. |
-| `@suss/adapter-typescript` | TypeScript language adapter via ts-morph. |
-| `@suss/framework-ts-rest` | Framework pack for ts-rest. |
-| `@suss/framework-react-router` | Framework pack for React Router loaders/actions/components. |
-| `@suss/framework-express` | Framework pack for Express handlers. |
-| `@suss/cli` | CLI wrapper. |
+| Package | Description | Coverage |
+|---------|-------------|----------|
+| [`@suss/behavioral-ir`](packages/ir) | Types and utilities. Zero dependencies. Install this to consume summaries. | ![](.github/badges/coverage-ir.svg) |
+| [`@suss/extractor`](packages/extractor) | Assembly engine. Converts raw extracted structure into `BehavioralSummary`. | ![](.github/badges/coverage-extractor.svg) |
+| [`@suss/adapter-typescript`](packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](.github/badges/coverage-typescript.svg) |
+| [`@suss/framework-ts-rest`](packages/framework/ts-rest) | Framework pack for ts-rest. | ![](.github/badges/coverage-ts-rest.svg) |
+| [`@suss/framework-react-router`](packages/framework/react-router) | Framework pack for React Router loaders/actions/components. | ![](.github/badges/coverage-react-router.svg) |
+| [`@suss/framework-express`](packages/framework/express) | Framework pack for Express handlers. | ![](.github/badges/coverage-express.svg) |
+| [`@suss/cli`](packages/cli) | CLI wrapper. | ![](.github/badges/coverage-cli.svg) |
 
 ## Docs
 
