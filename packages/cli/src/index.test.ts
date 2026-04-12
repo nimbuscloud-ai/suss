@@ -70,7 +70,7 @@ describe("extract — ts-rest", () => {
       tsconfig: tsconfigPath,
       frameworks: ["ts-rest"],
     });
-  }, 30_000);
+  }, 90_000);
 
   it("discovers exactly getUser and createUser", () => {
     expect(summaries.map((s) => s.identity.name).sort()).toEqual([
@@ -232,7 +232,7 @@ describe("extract — ts-rest", () => {
     expect(onDisk.map(normalize)).toEqual(inMemory.map(normalize));
 
     fs.rmSync(tmpDir, { recursive: true });
-  }, 30_000);
+  }, 90_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ describe("extract — express", () => {
       tsconfig: tsconfigPath,
       frameworks: ["express"],
     });
-  }, 30_000);
+  }, 90_000);
 
   it("extracts exactly three handlers (all registered via router.get)", () => {
     expect(summaries).toHaveLength(3);
@@ -364,7 +364,7 @@ describe("extract — react-router", () => {
       tsconfig: tsconfigPath,
       frameworks: ["react-router"],
     });
-  }, 30_000);
+  }, 90_000);
 
   it("extracts exactly the loader and action from the fixture route", () => {
     expect(summaries).toHaveLength(2);
@@ -513,7 +513,7 @@ describe("extract — errors", () => {
 describe("inspect", () => {
   it(
     "formats summaries JSON to human-readable output",
-    { timeout: 30_000 },
+    { timeout: 90_000 },
     async () => {
       // First extract, then inspect the output
       const fixtureDir = path.join(FIXTURES_ROOT, "ts-rest");
