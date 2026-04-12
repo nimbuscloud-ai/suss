@@ -3,3 +3,5 @@
 npm run typecheck
 # Run full test suite with coverage
 npm test
+# Normalize and format coverage-summary.json files (path relativization + biome format)
+npm run badges
