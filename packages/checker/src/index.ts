@@ -1,17 +1,18 @@
-import type {
-  BehavioralSummary,
-  Finding,
-  Predicate,
-  ValueRef,
-} from "@suss/behavioral-ir";
+import { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
+import { checkProviderCoverage } from "./provider-coverage.js";
 
+import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+
+export { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
+export { checkProviderCoverage } from "./provider-coverage.js";
 
 export function checkPair(
-  _provider: BehavioralSummary,
-  _consumer: BehavioralSummary,
+  provider: BehavioralSummary,
+  consumer: BehavioralSummary,
 ): Finding[] {
-  return [];
+  return [
+    ...checkProviderCoverage(provider, consumer),
+    ...checkConsumerSatisfaction(provider, consumer),
+  ];
 }
-
-export type { BehavioralSummary, Finding, Predicate, ValueRef };
