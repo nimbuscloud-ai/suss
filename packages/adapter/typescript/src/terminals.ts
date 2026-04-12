@@ -170,11 +170,17 @@ function extractStatusCode(
 
   // from: "argument"
   const pos = sc.position;
+  const minArgs = sc.minArgs;
 
   if (calls !== null) {
     // parameterMethodCall: statusCode comes from innermost call (calls[0])
     const innerCall = calls[0];
     const args = innerCall.getArguments();
+    // minArgs guard: skip extraction when arg at `position` is ambiguous in
+    // short-form overloads (e.g. res.redirect(url) vs res.redirect(301, url))
+    if (minArgs !== undefined && args.length < minArgs) {
+      return null;
+    }
     const rawArg = args[pos] as Expression | undefined;
     if (rawArg === undefined) {
       return null;
@@ -189,6 +195,10 @@ function extractStatusCode(
   }
 
   if (throwCallArgs !== null) {
+    // minArgs guard (see above)
+    if (minArgs !== undefined && throwCallArgs.length < minArgs) {
+      return null;
+    }
     const rawArg = throwCallArgs[pos] as Expression | undefined;
     if (rawArg === undefined) {
       return null;
@@ -252,11 +262,16 @@ function extractBody(
 
   // from: "argument"
   const pos = b.position;
+  const minArgs = b.minArgs;
 
   if (calls !== null) {
     // parameterMethodCall: body comes from outermost call (calls[N-1])
     const outerCall = calls[calls.length - 1];
     const args = outerCall.getArguments();
+    // minArgs guard: skip when overload makes this position ambiguous
+    if (minArgs !== undefined && args.length < minArgs) {
+      return null;
+    }
     const arg = args[pos] as Expression | undefined;
     if (arg === undefined) {
       return null;
@@ -266,6 +281,10 @@ function extractBody(
   }
 
   if (throwCallArgs !== null) {
+    // minArgs guard (see above)
+    if (minArgs !== undefined && throwCallArgs.length < minArgs) {
+      return null;
+    }
     const arg = throwCallArgs[pos] as Expression | undefined;
     if (arg === undefined) {
       return null;

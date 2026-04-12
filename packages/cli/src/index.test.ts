@@ -137,6 +137,30 @@ describe("extract — express", () => {
       expect(s.transitions.length).toBeGreaterThan(0);
     }
   });
+
+  it("handles redirect overloads correctly (minArgs guard)", async () => {
+    const summaries = await extract({
+      tsconfig: tsconfigPath,
+      frameworks: ["express"],
+    });
+
+    // The fixture has 3 handlers all named "get" (from router.get).
+    // The redirect handlers have 1 transition each; the main handler has 4+.
+    const redirectHandlers = summaries.filter(
+      (s) => s.transitions.length === 1,
+    );
+    expect(redirectHandlers.length).toBe(2);
+
+    // Collect the status codes from the single transition of each
+    const statusCodes = redirectHandlers.map((s) => {
+      const out = s.transitions[0].output;
+      return out.type === "response" ? out.statusCode : undefined;
+    });
+
+    // One should have no status code (1-arg redirect), one should have 301
+    expect(statusCodes).toContainEqual(null);
+    expect(statusCodes).toContainEqual({ type: "literal", value: 301 });
+  });
 });
 
 // ---------------------------------------------------------------------------

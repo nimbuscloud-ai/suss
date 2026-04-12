@@ -38,4 +38,14 @@ router.get("/users/:id", async (req, res, next) => {
   res.json(user);
 });
 
+// GET /old-profile — exercises redirect (1-arg form, no status code extractable)
+router.get("/old-profile", (req, res) => {
+  res.redirect("/profile");
+});
+
+// GET /moved — exercises redirect (2-arg form, status code at arg 0)
+router.get("/moved", (req, res) => {
+  res.redirect(301, "/new-location");
+});
+
 export default router;
