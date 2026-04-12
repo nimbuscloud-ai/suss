@@ -62,12 +62,34 @@ function makeSvg(label, value, color) {
 </svg>`;
 }
 
-// Format all existing coverage-summary.json files with biome before reading.
-// vitest emits minified JSON; biome formatting produces human-readable diffs.
+// Normalize and format all existing coverage-summary.json files.
+// vitest emits minified JSON with absolute file paths as keys. We:
+//   1. Replace absolute path keys with paths relative to the package root
+//      so the committed file is machine-independent.
+//   2. Run biome format --write so PR diffs show field-level changes.
 const biome = resolve(root, "node_modules/.bin/biome");
-const summaryPaths = packageDirs
-  .map(([pkgPath]) => resolve(root, pkgPath, "coverage/coverage-summary.json"))
-  .filter((p) => existsSync(p));
+
+const summaryPaths = [];
+for (const [pkgPath] of packageDirs) {
+  const summaryPath = resolve(root, pkgPath, "coverage/coverage-summary.json");
+  if (!existsSync(summaryPath)) {
+    continue;
+  }
+  const pkgAbsPath = resolve(root, pkgPath);
+  const raw = readFileSync(summaryPath, "utf8");
+  const data = JSON.parse(raw);
+  const normalized = {};
+  for (const [key, value] of Object.entries(data)) {
+    // Replace absolute paths with relative-to-package-root paths.
+    // "total" and any other non-path keys are kept as-is.
+    const rel = key.startsWith(pkgAbsPath)
+      ? key.slice(pkgAbsPath.length + 1) // strip leading slash
+      : key;
+    normalized[rel] = value;
+  }
+  writeFileSync(summaryPath, JSON.stringify(normalized), "utf8");
+  summaryPaths.push(summaryPath);
+}
 
 if (summaryPaths.length > 0) {
   execFileSync(biome, ["format", "--write", ...summaryPaths], { cwd: root });
