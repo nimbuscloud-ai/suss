@@ -56,3 +56,7 @@ These summaries are the input to downstream tools: contract checkers, documentat
 ## Status
 
 Phase 1 (foundation) complete. Phase 2 (TypeScript adapter) not yet started. See [`docs/status.md`](docs/status.md) for details.
+
+## License
+
+This project is licensed under the [Apache 2.0 License](LICENSE).

@@ -6,7 +6,8 @@
       "!**/node_modules/**",
       "!**/public/**",
       "!**/build/**",
-      "!**/dist/**"
+      "!**/dist/**",
+      "!fixtures/**"
     ]
   },
   "vcs": {

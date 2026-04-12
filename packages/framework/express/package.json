@@ -2,6 +2,7 @@
   "name": "@suss/framework-express",
   "version": "0.0.1",
   "private": true,
+  "license": "Apache-2.0",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,9 +15,10 @@
   },
   "scripts": {
     "build": "tsup",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
     "lint": "biome check .",
-    "lint:fix": "biome check --write ."
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@suss/extractor": "*"

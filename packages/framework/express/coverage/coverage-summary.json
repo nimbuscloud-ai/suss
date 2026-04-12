@@ -1,0 +1,15 @@
+{
+  "total": {
+    "lines": { "total": 73, "covered": 73, "skipped": 0, "pct": 100 },
+    "statements": { "total": 73, "covered": 73, "skipped": 0, "pct": 100 },
+    "functions": { "total": 1, "covered": 1, "skipped": 0, "pct": 100 },
+    "branches": { "total": 1, "covered": 1, "skipped": 0, "pct": 100 },
+    "branchesTrue": { "total": 0, "covered": 0, "skipped": 0, "pct": "Unknown" }
+  },
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/framework/express/src/index.ts": {
+    "lines": { "total": 73, "covered": 73, "skipped": 0, "pct": 100 },
+    "functions": { "total": 1, "covered": 1, "skipped": 0, "pct": 100 },
+    "statements": { "total": 73, "covered": 73, "skipped": 0, "pct": 100 },
+    "branches": { "total": 1, "covered": 1, "skipped": 0, "pct": 100 }
+  }
+}

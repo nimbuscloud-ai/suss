@@ -1,6 +1,9 @@
 {
   "name": "suss",
+  "version": "0.0.1",
   "private": true,
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
   "workspaces": [
     "packages/ir",
     "packages/extractor",
@@ -15,6 +18,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^15.4.1",
     "typescript": "^5.4.0",
+    "@vitest/coverage-v8": "2.1.9",
     "vitest": "^2.0.0",
     "tsup": "^8.0.0",
     "turbo": "latest"
@@ -26,7 +30,10 @@
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
     "format": "biome format --write .",
-    "prepare": "husky"
+    "typecheck": "turbo typecheck",
+    "prepare": "husky",
+    "badges": "node scripts/generate-coverage-badges.mjs",
+    "test:badges": "npm test && npm run badges"
   },
   "lint-staged": {
     "*": [
