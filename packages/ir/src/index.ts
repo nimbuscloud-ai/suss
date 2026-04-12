@@ -105,7 +105,46 @@ export type TypeShape =
        */
       spreads?: Array<{ sourceText: string }>;
     }
+  | {
+      /**
+       * Index-signature / dictionary type: `{ [key: string]: T }` or
+       * `Record<string, T>`. Distinct from `record`: the key set is open and
+       * not statically known. Consumers reasoning about specific fields
+       * should expect any access to succeed at the value type.
+       */
+      type: "dictionary";
+      values: TypeShape;
+    }
   | { type: "array"; items: TypeShape }
+  | {
+      /**
+       * A literal value preserved with its exact narrow type. Emitted for
+       * syntactic literals (`"success"`, `42`, `true`) and literal types
+       * surfaced by the type checker.
+       *
+       * **Wire-format caveat (see "Serialization semantics" in the IR
+       * reference).** `value` uses the ergonomic JS representation:
+       * strings and booleans roundtrip exactly, but JS `number` is IEEE
+       * 754 double. Integers beyond `Number.MAX_SAFE_INTEGER` (2^53 - 1),
+       * high-precision decimals, and alternate notations (hex, scientific,
+       * numeric separators) would lose information through `number`
+       * coercion. For numeric literals, `raw` MUST be populated with the
+       * exact source text so consumers that care about precision or
+       * over-the-wire fidelity never have to guess.
+       *
+       * Consumers wanting a widened primitive can map `literal` →
+       * `text`/`integer`/`number`/`boolean` by inspecting `value`.
+       */
+      type: "literal";
+      value: string | number | boolean;
+      /**
+       * Source text of a numeric literal, carrying exact representation.
+       * Present iff `value` is a number. Absent for string/boolean
+       * literals because those roundtrip losslessly through JSON / JS
+       * strings.
+       */
+      raw?: string;
+    }
   | { type: "text" }
   | { type: "integer" }
   | { type: "number" }
