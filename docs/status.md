@@ -26,14 +26,13 @@ Progress tracker. Updated as phases land.
 
 | Task | Status | Notes |
 |------|--------|-------|
-| 2.1 `collectAncestorBranches` | ⬜ | Walk AST upward from terminal; record branching constructs. |
-| 2.2 `collectEarlyReturns` | ⬜ | Scan prior sibling statements for `if (cond) return/throw`. |
-| 2.3 `parseConditionExpression` | ⬜ | AST condition expression → structured `Predicate`. |
-| 2.4 `resolveSubject` | ⬜ | Symbol resolution via ts-morph's type checker. |
-| 2.5 `findTerminals` | ⬜ | Interpret `TerminalPattern` against AST. |
-| 2.6 Discovery logic | ⬜ | `discoverByNamedExport`, `discoverByRegistrationCall`, `discoverByFileConvention`. |
-| 2.7 Contract reading | ⬜ | Read ts-rest contracts via ts-morph. |
-| 2.8 `createTypeScriptAdapter` wiring | ⬜ | Public API: `extractFromFiles`, `extractAll`. |
+| 2.1 `collectAncestorBranches` + `collectEarlyReturns` | ✅ | Pure AST walk. if/else, switch, try/catch, ternary, &&/||, early-return guards. 24 tests. |
+| 2.2 `parseConditionExpression` + `resolveSubject` | ✅ | Condition → `Predicate`; identifier/property chain → `ValueRef`. Symbol resolution via ts-morph. 47 tests. |
+| 2.3 `findTerminals` | ⬜ | Interpret `TerminalPattern` against AST. |
+| 2.4 Discovery logic | ⬜ | `discoverByNamedExport`, `discoverByRegistrationCall`, `discoverByFileConvention`. |
+| 2.5 Assembly wiring | ⬜ | `extractRawBranches` — composes steps 1–4 into `RawBranch[]`. |
+| 2.6 Contract reading | ⬜ | Read ts-rest contracts via ts-morph. |
+| 2.7 `createTypeScriptAdapter` wiring | ⬜ | Public API: `extractFromFiles`, `extractAll`. |
 
 ## Phase 3 — Framework Packs
 
@@ -74,12 +73,12 @@ Progress tracker. Updated as phases land.
 |---------|-------|-------|
 | `@suss/behavioral-ir` | 7 | diff utility, type narrowing |
 | `@suss/extractor` | 9 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode |
-| `@suss/adapter-typescript` | 1 (stub) | Phase 2 placeholder |
+| `@suss/adapter-typescript` | 71 | ancestor branches, early returns, predicates, subjects |
 | `@suss/framework-ts-rest` | 5 | pack structure, discriminants, bindingExtraction |
 | `@suss/framework-react-router` | 5 | pack structure, discovery kinds, inputMapping |
 | `@suss/framework-express` | 5 | pack structure, registration, terminals, positional params |
 | `@suss/cli` | 1 (stub) | Phase 4 placeholder |
-| **Total** | **33** | |
+| **Total** | **103** | |
 
 Runs in a couple of seconds via `turbo test`.
 
