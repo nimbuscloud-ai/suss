@@ -117,16 +117,18 @@ describe("extract — ts-rest", () => {
     }
     // Each body is an object literal with statically-enumerable fields,
     // so the extractor produces a structured record shape. String literals
-    // become `{ type: "text" }`; property-access values (`user.id` etc.)
-    // resolve through the type checker to their declared primitive types
-    // (here, `string` → `text`).
+    // preserve their narrow type (`{ literal, value }`); property-access
+    // values (`user.id` etc.) resolve through the type checker to their
+    // declared primitive types (here, `string` → `text`).
     expect(getUser.transitions.map((t) => t.output)).toEqual([
       {
         type: "response",
         statusCode: { type: "literal", value: 404 },
         body: {
           type: "record",
-          properties: { error: { type: "text" } },
+          properties: {
+            error: { type: "literal", value: "missing id" },
+          },
         },
         headers: {},
       },
@@ -135,7 +137,9 @@ describe("extract — ts-rest", () => {
         statusCode: { type: "literal", value: 404 },
         body: {
           type: "record",
-          properties: { error: { type: "text" } },
+          properties: {
+            error: { type: "literal", value: "not found" },
+          },
         },
         headers: {},
       },
@@ -144,7 +148,9 @@ describe("extract — ts-rest", () => {
         statusCode: { type: "literal", value: 404 },
         body: {
           type: "record",
-          properties: { error: { type: "text" } },
+          properties: {
+            error: { type: "literal", value: "deleted" },
+          },
         },
         headers: {},
       },
@@ -214,7 +220,9 @@ describe("extract — ts-rest", () => {
         statusCode: { type: "literal", value: 400 },
         body: {
           type: "record",
-          properties: { error: { type: "text" } },
+          properties: {
+            error: { type: "literal", value: "missing fields" },
+          },
         },
         headers: {},
       },
@@ -329,7 +337,9 @@ describe("extract — express", () => {
         statusCode: { type: "literal", value: 400 },
         body: {
           type: "record",
-          properties: { error: { type: "text" } },
+          properties: {
+            error: { type: "literal", value: "missing id" },
+          },
         },
         headers: {},
       },
@@ -338,7 +348,9 @@ describe("extract — express", () => {
         statusCode: { type: "literal", value: 404 },
         body: {
           type: "record",
-          properties: { error: { type: "text" } },
+          properties: {
+            error: { type: "literal", value: "not found" },
+          },
         },
         headers: {},
       },
@@ -348,7 +360,7 @@ describe("extract — express", () => {
         body: {
           type: "record",
           properties: {
-            admin: { type: "boolean" },
+            admin: { type: "literal", value: true },
             id: { type: "text" },
             name: { type: "text" },
             role: { type: "text" },
@@ -455,7 +467,9 @@ describe("extract — react-router", () => {
         statusCode: null,
         body: {
           type: "record",
-          properties: { error: { type: "text" } },
+          properties: {
+            error: { type: "literal", value: "not found" },
+          },
         },
         headers: {},
       },
@@ -517,7 +531,9 @@ describe("extract — react-router", () => {
         statusCode: null,
         body: {
           type: "record",
-          properties: { error: { type: "text" } },
+          properties: {
+            error: { type: "literal", value: "name required" },
+          },
         },
         headers: {},
       },
