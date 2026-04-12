@@ -68,7 +68,7 @@ Progress tracker. Updated as phases land.
 | 5.5 Contract-consistency check | ✅ | Provider gaps reformatted to `providerContractViolation`; consumer checked against declared contract for declared-but-unhandled and handled-but-undeclared cases. |
 | 5.6 `checkPair` entrypoint + fixture integration tests | ✅ | Composes all three checks; integration test exercises every finding kind in one pass. |
 | 5.7 `suss check` CLI command | ✅ | `suss check <provider.json> <consumer.json>` with `--json` / `-o` output; non-zero exit when any finding has `error` severity. |
-| 5.8 Structured body-shape extraction (provider side) | ✅ | Adapter decomposes object/array/primitive literals into `TypeShape`; records capture spread source text for fields contributed at runtime. |
+| 5.8 Structured body-shape extraction (provider side) | ✅ | Three-pass extraction: syntactic decomposition preserves literal narrowness (`{ type: "literal", value }` with `raw` for numerics); AST resolution follows identifiers / destructurings / single-return calls back to their defining values; type-checker fallback covers the rest. `record` vs `dictionary` distinguishes closed structs from index signatures. Wire-format caveats documented in `ir-reference.md#serialization-semantics`. |
 | 5.9 Body-shape matching in the checker | ⏸ | `suss check` currently matches on status codes only. Comparing response body shapes across a boundary (missing fields, type mismatches, declared vs actual schema) is the next checker layer. |
 
 ## Phase 6+ — Deferred
@@ -86,13 +86,13 @@ Progress tracker. Updated as phases land.
 |---------|-------|-------|
 | `@suss/behavioral-ir` | 8 | diff utility, type narrowing, Finding shape |
 | `@suss/extractor` | 52 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, transition ID stability, edge cases |
-| `@suss/adapter-typescript` | 218 | conditions, predicates, subjects, terminals, discovery, contract reading, integration |
+| `@suss/adapter-typescript` | 278 | conditions, predicates, subjects, terminals, discovery, contract reading, shape extraction (literal preservation, AST resolution, wire-format fidelity, dictionary vs record), integration |
 | `@suss/framework-ts-rest` | 10 | pack shape + integration (adapter against fixtures, boundary bindings, gaps, inputs) |
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
 | `@suss/checker` | 45 | subject/predicate matchers, response-match helpers, provider coverage, consumer satisfaction, contract consistency, `checkPair` integration |
 | `@suss/cli` | 23 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check` (JSON + human output, exit codes, error cases) |
-| **Total** | **370** | |
+| **Total** | **430** | |
 
 Runs via `turbo test`.
 
