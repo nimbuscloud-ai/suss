@@ -55,7 +55,7 @@ These summaries are the input to downstream tools: contract checkers, documentat
 
 ## Status
 
-Phase 1 (foundation) complete. Phase 2 (TypeScript adapter) not yet started. See [`docs/status.md`](docs/status.md) for details.
+Phases 1–4 complete. Core extraction pipeline is functional end-to-end: IR, extractor, TypeScript adapter, three framework packs (ts-rest, React Router, Express), CLI, and fixture sets. 288 tests. See [`docs/status.md`](docs/status.md) for details.
 
 ## License
 
