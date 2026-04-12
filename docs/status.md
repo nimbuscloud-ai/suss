@@ -62,8 +62,6 @@ Progress tracker. Updated as phases land.
 | Cross-boundary checker | ⏸ | Downstream tool that consumes summaries and flags provider/consumer mismatches. |
 | Python adapter | ⏸ | Same `RawCodeStructure` interface, Pyright or ast-grep. |
 | React component support | ⏸ | `Input` types beyond `parameter` (hookReturn, contextValue) need `RawCodeStructure` surface. JSX-as-terminal pattern design. |
-| Transition ID stability | ⏸ | Current `${name}:${i}` shifts when branches are added. Will hurt `diffSummaries` quality. Fix when Phase 2 produces real data. |
-| `TerminalExtraction` constructor case | ⏸ | `{ from: "constructor" }` underspecified — no mapping rules for constructor name → status code. Fix when a framework actually needs it. |
 | GitHub Action / CI integration | ⏸ | PR-scoped extraction wrapper. |
 
 ## Test coverage

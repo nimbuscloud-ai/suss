@@ -75,7 +75,7 @@ export interface TerminalExtraction {
   statusCode?:
     | { from: "property"; name: string } // { status: 200 } → name: "status"
     | { from: "argument"; position: number; minArgs?: number } // res.status(200) → position: 0
-    | { from: "constructor" }; // new HttpError.NotFound → infer 404
+    | { from: "constructor"; codes: Record<string, number> }; // throw new NotFound() → 404 via { NotFound: 404 }
   body?:
     | { from: "property"; name: string } // { body: data } → name: "body"
     | { from: "argument"; position: number; minArgs?: number }; // res.json(data) → position: 0

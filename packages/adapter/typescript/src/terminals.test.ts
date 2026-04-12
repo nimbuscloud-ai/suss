@@ -1310,17 +1310,182 @@ describe("location tracking", () => {
 });
 
 // ---------------------------------------------------------------------------
-// extraction — from: "constructor" returns null
+// extraction — from: "constructor" maps exception type to status code
 // ---------------------------------------------------------------------------
 
-describe("extraction edge cases", () => {
-  it("statusCode from 'constructor' returns null", () => {
+describe("extraction — from: 'constructor'", () => {
+  it("resolves a bare constructor name via full-text match", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare class NotFoundError extends Error {}
+      function handler() {
+        throw new NotFoundError();
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "throw",
+      match: { type: "throwExpression" },
+      extraction: {
+        statusCode: {
+          from: "constructor",
+          codes: { NotFoundError: 404, BadRequestError: 400 },
+        },
+      },
+    };
+
+    const terminals = findTerminals(func, [pattern]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 404,
+    });
+    expect(terminals[0].terminal.exceptionType).toBe("NotFoundError");
+  });
+
+  it("resolves a dotted constructor name via full-text match", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare const HttpError: { NotFound: new () => Error };
+      function handler() {
+        throw new HttpError.NotFound();
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "throw",
+      match: { type: "throwExpression" },
+      extraction: {
+        statusCode: {
+          from: "constructor",
+          codes: { "HttpError.NotFound": 404 },
+        },
+      },
+    };
+
+    const terminals = findTerminals(func, [pattern]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 404,
+    });
+  });
+
+  it("falls back to the last dot-segment when the full name is not mapped", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare const createError: { NotFound: new () => Error };
+      function handler() {
+        throw new createError.NotFound();
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "throw",
+      match: { type: "throwExpression" },
+      extraction: {
+        statusCode: {
+          from: "constructor",
+          codes: { NotFound: 404 },
+        },
+      },
+    };
+
+    const terminals = findTerminals(func, [pattern]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 404,
+    });
+  });
+
+  it("returns null when the constructor name is not in the codes map", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare class WeirdError extends Error {}
+      function handler() {
+        throw new WeirdError();
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "throw",
+      match: { type: "throwExpression" },
+      extraction: {
+        statusCode: {
+          from: "constructor",
+          codes: { NotFound: 404, BadRequest: 400 },
+        },
+      },
+    };
+
+    const terminals = findTerminals(func, [pattern]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toBeNull();
+    expect(terminals[0].terminal.exceptionType).toBe("WeirdError");
+  });
+
+  it("works for throw of a call expression (not just new)", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare function notFound(): never;
+      function handler() {
+        throw notFound();
+      }
+    `,
+    );
+
+    // getFunctions() includes the `declare function`; pick the handler by name.
+    const func = file
+      .getFunctions()
+      .find((f) => f.getName() === "handler") as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "throw",
+      match: { type: "throwExpression" },
+      extraction: {
+        statusCode: {
+          from: "constructor",
+          codes: { notFound: 404 },
+        },
+      },
+    };
+
+    const terminals = findTerminals(func, [pattern]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 404,
+    });
+  });
+
+  it("is ignored for non-throw matchers (returnShape, parameterMethodCall, functionCall)", () => {
+    // Sanity check: 'constructor' only meaningfully fires for throws, since
+    // other matchers don't carry an exception type. A pack that mis-configures
+    // this should get null, not spurious status codes.
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
       `
       function handler() {
-        return { status: 200, body: {} };
+        return { status: 200 };
       }
     `,
     );
@@ -1330,8 +1495,10 @@ describe("extraction edge cases", () => {
       kind: "response",
       match: { type: "returnShape" },
       extraction: {
-        statusCode: { from: "constructor" },
-        body: { from: "property", name: "body" },
+        statusCode: {
+          from: "constructor",
+          codes: { NotFound: 404 },
+        },
       },
     };
 
@@ -1339,7 +1506,9 @@ describe("extraction edge cases", () => {
     expect(terminals).toHaveLength(1);
     expect(terminals[0].terminal.statusCode).toBeNull();
   });
+});
 
+describe("extraction edge cases", () => {
   it("throw with property extraction for statusCode returns null (v0 limitation)", () => {
     const project = createProject();
     const file = project.createSourceFile(
