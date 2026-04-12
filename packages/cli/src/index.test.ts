@@ -117,8 +117,9 @@ describe("extract — ts-rest", () => {
     }
     // Each body is an object literal with statically-enumerable fields,
     // so the extractor produces a structured record shape. String literals
-    // become `{ type: "text" }`; identifier / property-access values become
-    // refs so field identity survives without forcing subject resolution.
+    // become `{ type: "text" }`; property-access values (`user.id` etc.)
+    // resolve through the type checker to their declared primitive types
+    // (here, `string` → `text`).
     expect(getUser.transitions.map((t) => t.output)).toEqual([
       {
         type: "response",
@@ -153,9 +154,9 @@ describe("extract — ts-rest", () => {
         body: {
           type: "record",
           properties: {
-            id: { type: "ref", name: "user.id" },
-            name: { type: "ref", name: "user.name" },
-            email: { type: "ref", name: "user.email" },
+            id: { type: "text" },
+            name: { type: "text" },
+            email: { type: "text" },
           },
         },
         headers: {},
@@ -222,7 +223,7 @@ describe("extract — ts-rest", () => {
         statusCode: { type: "literal", value: 201 },
         body: {
           type: "record",
-          properties: { id: { type: "ref", name: "created.id" } },
+          properties: { id: { type: "text" } },
         },
         headers: {},
       },
@@ -317,11 +318,11 @@ describe("extract — express", () => {
     ]);
 
     // Four response transitions, last two implicit-200 (no status on res.json()).
-    // The admin branch spreads `user` — the known `admin` field is enumerated
-    // and the spread source is preserved so the checker can reason about
-    // "there are more fields, but we don't know which". The final branch is a
-    // bare identifier (`res.json(user)`) — not decomposable to a record, so
-    // it stays as a source-text ref.
+    // The admin branch spreads `user` — `user` has a declared type (id, name,
+    // role), so the spread resolves via the type checker and its fields
+    // inline alongside the explicit `admin: true`. The final branch is a
+    // bare identifier (`res.json(user)`) — same type resolution flattens it
+    // into a full record.
     expect(main.transitions.map((t) => t.output)).toEqual([
       {
         type: "response",
@@ -346,15 +347,26 @@ describe("extract — express", () => {
         statusCode: null,
         body: {
           type: "record",
-          properties: { admin: { type: "boolean" } },
-          spreads: [{ sourceText: "user" }],
+          properties: {
+            admin: { type: "boolean" },
+            id: { type: "text" },
+            name: { type: "text" },
+            role: { type: "text" },
+          },
         },
         headers: {},
       },
       {
         type: "response",
         statusCode: null,
-        body: { type: "ref", name: "user" },
+        body: {
+          type: "record",
+          properties: {
+            id: { type: "text" },
+            name: { type: "text" },
+            role: { type: "text" },
+          },
+        },
         headers: {},
       },
     ]);
@@ -434,7 +446,8 @@ describe("extract — react-router", () => {
     // and redirect() reads status from arg 1 — none are provided here, so
     // every statusCode is null. The redirect in the middle has no body
     // extraction, so only the two json() calls produce structured bodies.
-    // `{ user }` uses shorthand — `user` becomes a ref to the identifier.
+    // `{ user }` uses shorthand — `user` has a declared type, so the shorthand
+    // resolves through the type checker to a full nested record.
     expect(loader.transitions).toHaveLength(3);
     expect(loader.transitions.map((t) => t.output)).toEqual([
       {
@@ -452,7 +465,16 @@ describe("extract — react-router", () => {
         statusCode: null,
         body: {
           type: "record",
-          properties: { user: { type: "ref", name: "user" } },
+          properties: {
+            user: {
+              type: "record",
+              properties: {
+                id: { type: "text" },
+                name: { type: "text" },
+                active: { type: "boolean" },
+              },
+            },
+          },
         },
         headers: {},
       },
