@@ -181,15 +181,17 @@ tsRestFramework(): FrameworkPack {
 ```
 @suss/behavioral-ir          zero deps, types only. Install this to consume summaries.
     │
-@suss/extractor              assembly engine + FrameworkPack interface. No AST access.
+    ├─ @suss/extractor          assembly engine + FrameworkPack interface. No AST access.
+    │     │
+    │     ├─ @suss/adapter-typescript     ts-morph-based extraction
+    │     │
+    │     ├─ @suss/framework-ts-rest      declarative patterns
+    │     ├─ @suss/framework-react-router
+    │     └─ @suss/framework-express
     │
-    ├─ @suss/adapter-typescript     ts-morph-based extraction
-    │
-    ├─ @suss/framework-ts-rest      declarative patterns
-    ├─ @suss/framework-react-router
-    └─ @suss/framework-express
-    │
-@suss/cli                    thin wrapper
+    └─ @suss/checker            pairwise cross-boundary checker. IR-only consumer.
+          │
+@suss/cli                      thin wrapper over extractor + checker
 ```
 
 Dependency rules (enforced by the layout):
@@ -198,6 +200,7 @@ Dependency rules (enforced by the layout):
 - `@suss/extractor` — depends only on the IR. Defines `RawCodeStructure` and `FrameworkPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript` — depends on IR, extractor, ts-morph. This is the heavyweight package.
 - `@suss/framework-*` packs — depend only on `@suss/extractor` (for the `FrameworkPack` type). They're data, not logic.
+- `@suss/checker` — depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or framework packs — operates on the serialized IR.
 - `@suss/cli` — depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs.
 
 ## The extraction algorithm

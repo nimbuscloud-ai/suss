@@ -55,11 +55,25 @@ Progress tracker. Updated as phases land.
 | 4.4 express fixture set | ✅ | Handler with guards, dep calls, nested conditions. |
 | 4.5 End-to-end integration test | ✅ | CLI tests run live extraction against all 3 fixture sets. |
 
-## Phase 5+ — Deferred
+## Phase 5 — Cross-boundary checker
+
+*Pure function from two `BehavioralSummary`s to `Finding[]`. No AST dependency — operates on serialized IR.*
+
+| Task | Status | Notes |
+|------|--------|-------|
+| 5.1 `Finding` type in `@suss/behavioral-ir` | ✅ | Discriminated on `FindingKind`; shared across checker and downstream consumers. |
+| 5.2 `@suss/checker` package + structural matchers | 🚧 | `subjectsMatch`, `predicatesMatch` with `match` / `nomatch` / `unknown` result; handles opaque/unresolved tree-walk. |
+| 5.3 Provider-coverage check | ⬜ | For each provider transition, find matching consumer handler. |
+| 5.4 Consumer-satisfaction check | ⬜ | Inverse: dead consumer branches. |
+| 5.5 Contract-consistency check | ⬜ | Reformat existing `detectGaps` output into `Finding`s; add consumer-side equivalents. |
+| 5.6 `checkPair` entrypoint + fixture integration tests | ⬜ | Hand-authored summary pairs per finding kind; deep-equal expected findings. |
+| 5.7 `suss check` CLI command | ⬜ | JSON / human output; non-zero exit on `error` severity. |
+
+## Phase 6+ — Deferred
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Cross-boundary checker | ⏸ | Downstream tool that consumes summaries and flags provider/consumer mismatches. |
+| Consumer-side discovery | ⏸ | Extract `BehavioralSummary` for fetch/axios/ts-rest-client call sites — unlocks full cross-boundary checking against real code. |
 | Python adapter | ⏸ | Same `RawCodeStructure` interface, Pyright or ast-grep. |
 | React component support | ⏸ | `Input` types beyond `parameter` (hookReturn, contextValue) need `RawCodeStructure` surface. JSX-as-terminal pattern design. |
 | GitHub Action / CI integration | ⏸ | PR-scoped extraction wrapper. |

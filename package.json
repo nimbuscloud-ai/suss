@@ -12,6 +12,7 @@
     "packages/framework/ts-rest",
     "packages/framework/react-router",
     "packages/framework/express",
+    "packages/checker",
     "packages/cli"
   ],
   "devDependencies": {
