@@ -71,6 +71,20 @@ Given a matched terminal node, apply the `extraction` rules to pull out status c
 - `{ from: "argument", position: 0 }` — read the first argument of the matched call.
 - `{ from: "constructor", codes }` — look the thrown expression's constructor name up in the pack-supplied `codes` map (full text first, then last dot-segment). Only fires for `throwExpression` matchers.
 
+### Step 1b — `extractShape`: three-pass body-shape extraction
+
+Response bodies and return values are extracted into `TypeShape` (see `ir-reference.md#typeshape`). The adapter runs three passes in order, stopping at the first that succeeds:
+
+1. **Syntactic decomposition.** Object literals, array literals, and primitive literals decompose directly from the AST. This preserves *literal narrowness* that the type checker would widen: `return { status: "success" }` records `status` as `{ type: "literal", value: "success" }`, not `text`. Negative numerics (`-3`) and unary plus fold into the literal with signed `raw` text. Numeric literals carry `raw` so hex / scientific / separators / integers past `Number.MAX_SAFE_INTEGER` survive the IEEE 754 coercion.
+
+2. **AST resolution.** For terminal nodes that aren't literals — bare identifiers, property access chains, destructuring bindings, local single-return function calls — the adapter walks back to the defining value and re-enters `extractShape` on that. This lets `const kind = "success"; return { kind }` still produce a literal shape even though the use-site type checker would have widened `kind` to `string`. The walker only recurses into initializers that are *syntactically informative* — literals, aggregate literals, ternaries, identifier / property chains. Call / await / `new` initializers skip this pass, because their declaration-site type is typically wider than use-site flow narrowing (e.g. `const user = await db.find()` returns `T | null`, but past a null guard the use site is just `T`).
+
+3. **Type-checker fallback.** Anything the first two passes can't resolve is handed to ts-morph's type checker via `shapeFromNodeType`. This catches identifiers whose declarations live across module boundaries, generics, and types without literal initializers. The type checker sees flow narrowing at the reference site, so narrowed unions collapse correctly here. Opaque named types (`Date`, `Promise`, `Map`, `Error`, …) stop at `{ type: "ref", name: "Date" }` rather than expanding their structural properties, since the wire form is codec-dependent and the structural expansion would be misleading. Index-signature types (`Record<string, T>`, `{ [key: string]: T }`) with no named properties become `{ type: "dictionary", values: ... }`.
+
+**Spreads.** `{ ...user, admin: true }` runs the spread expression through the same three-pass pipeline. A resolvable `record` result is merged in source order (later keys / later spreads override); only unresolvable spreads fall through to the `record.spreads[]` escape hatch. `union` spreads (e.g. a value narrowed to `record | null` where the caller would have flow-narrowed to `record`) — we currently treat these as unresolvable, matching the conservative "some extra fields could be anything" semantics.
+
+**Recursion and cycles.** Both the type-checker walk and the AST walker bound recursion: the type walker caps at depth 6 and tracks already-expanded type identities; the AST walker caps at 8 hops and tracks node identities. Cyclic `const a = a` (and deeper variants) terminate at a `ref`.
+
 ## Step 2 — `collectAncestorBranches`
 
 **Input:** a terminal AST node + the function root
