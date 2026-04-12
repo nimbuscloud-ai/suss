@@ -1,8 +1,12 @@
 // generate-coverage-badges.mjs
 // Reads coverage-summary.json files from each package and writes SVG badges
 // to .github/badges/. Idempotent — no timestamps in output.
+//
+// Also runs `biome format --write` on each coverage-summary.json so that
+// biome lint passes and PR diffs show field-level changes, not minified blobs.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -56,6 +60,17 @@ function makeSvg(label, value, color) {
     <text x="${valueX}" y="14">${value}</text>
   </g>
 </svg>`;
+}
+
+// Format all existing coverage-summary.json files with biome before reading.
+// vitest emits minified JSON; biome formatting produces human-readable diffs.
+const biome = resolve(root, "node_modules/.bin/biome");
+const summaryPaths = packageDirs
+  .map(([pkgPath]) => resolve(root, pkgPath, "coverage/coverage-summary.json"))
+  .filter((p) => existsSync(p));
+
+if (summaryPaths.length > 0) {
+  execFileSync(biome, ["format", "--write", ...summaryPaths], { cwd: root });
 }
 
 const results = [];

@@ -1,4 +1,5 @@
-// @suss/adapter-typescript — stub
-// Full implementation in Phase 2
+// @suss/adapter-typescript — Phase 2 exports
 
-export {};
+export { collectAncestorBranches, collectEarlyReturns } from "./conditions.js";
+export { parseConditionExpression } from "./predicates.js";
+export { resolveSubject } from "./subjects.js";

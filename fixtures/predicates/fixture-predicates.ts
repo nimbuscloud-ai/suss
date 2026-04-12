@@ -1,0 +1,166 @@
+// Fixture file for predicate parsing tests.
+// Biome linting is disabled for fixtures/** so any patterns are fine here.
+
+// Simple identifier truthiness
+export function checkTruthinessId(x: any) {
+  if (x) return 1;
+  return 0;
+}
+
+// Negation of identifier (!x)
+export function checkNegationId(x: any) {
+  if (!x) return 1;
+  return 0;
+}
+
+// Double negation (!!x)
+export function checkDoubleNegation(x: any) {
+  if (!!x) return 1;
+  return 0;
+}
+
+// Strict equality: x === null
+export function checkStrictNullEq(x: any) {
+  if (x === null) return 1;
+  return 0;
+}
+
+// Strict inequality: x !== null
+export function checkStrictNullNeq(x: any) {
+  if (x !== null) return 1;
+  return 0;
+}
+
+// Strict equality: x === undefined
+export function checkStrictUndefinedEq(x: any) {
+  if (x === undefined) return 1;
+  return 0;
+}
+
+// Loose null check: x == null
+export function checkLooseNullEq(x: any) {
+  if (x == null) return 1;
+  return 0;
+}
+
+// Loose null inequality: x != null
+export function checkLooseNullNeq(x: any) {
+  if (x != null) return 1;
+  return 0;
+}
+
+// Numeric comparison: x > 5
+export function checkGt(x: number) {
+  if (x > 5) return 1;
+  return 0;
+}
+
+// Numeric comparison: x >= 5
+export function checkGte(x: number) {
+  if (x >= 5) return 1;
+  return 0;
+}
+
+// Numeric comparison: x < 5
+export function checkLt(x: number) {
+  if (x < 5) return 1;
+  return 0;
+}
+
+// Numeric comparison: x <= 5
+export function checkLte(x: number) {
+  if (x <= 5) return 1;
+  return 0;
+}
+
+// String equality: x === "hello"
+export function checkStrEq(x: string) {
+  if (x === "hello") return 1;
+  return 0;
+}
+
+// Logical and: x && y
+export function checkAnd(x: any, y: any) {
+  if (x && y) return 1;
+  return 0;
+}
+
+// Logical or: x || y
+export function checkOr(x: any, y: any) {
+  if (x || y) return 1;
+  return 0;
+}
+
+// Nested and: a && b && c
+export function checkNestedAnd(a: any, b: any, c: any) {
+  if (a && b && c) return 1;
+  return 0;
+}
+
+// Mixed and/or: a && b || c
+export function checkMixedAndOr(a: any, b: any, c: any) {
+  if (a && b || c) return 1;
+  return 0;
+}
+
+// Call expression: isActive(user)
+export function checkCallExpr(user: any) {
+  if (isActive(user)) return 1;
+  return 0;
+}
+declare function isActive(u: any): boolean;
+
+// typeof on its own (rare standalone — should return null)
+export function checkTypeof(x: any) {
+  // typeof x itself is not a typical standalone condition — we use it in comparison
+  if (typeof x === "string") return 1;
+  return 0;
+}
+
+// Negation of a null check: !(user === null)
+export function checkNegatedNullCheck(user: any) {
+  if (!(user === null)) return 1;
+  return 0;
+}
+
+// Negation of a truthiness check: !user.isActive
+export function checkNegatedPropertyAccess(user: any) {
+  if (!user.isActive) return 1;
+  return 0;
+}
+
+// Property access as condition
+export function checkPropertyAccess(user: any) {
+  if (user.isActive) return 1;
+  return 0;
+}
+
+// Element access as condition
+export function checkElementAccess(arr: any) {
+  if (arr[0]) return 1;
+  return 0;
+}
+
+// Unknown/complex node: comma expression is not handled
+export function checkComplexExpr(x: any, y: any) {
+  // We'll use an unsupported expression type in our test by getting the condition text
+  return x ? 1 : 0;
+}
+
+// And where left operand is null (so opaque wrapping of null is needed)
+export function checkAndWithCall(user: any, isValid: any) {
+  if (isActive(user) && isValid) return 1;
+  return 0;
+}
+
+// Comparison that is NOT null/undefined — normal comparison
+export function checkNonNullComparison(x: number) {
+  if (x === 5) return 1;
+  return 0;
+}
+
+// Negation of a nullCheck via !== null
+export function checkNegatedNullNeq(user: any) {
+  if (!(user !== null)) return 1;
+  return 0;
+}
