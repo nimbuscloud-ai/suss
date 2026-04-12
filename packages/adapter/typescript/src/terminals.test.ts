@@ -529,11 +529,16 @@ describe("parameterMethodCall — matching", () => {
     ]);
 
     expect(terminals).toHaveLength(1);
-    // Bare identifier — not a decomposable literal, so shape stays null
-    // and the source text is preserved as typeText.
+    // Bare identifier `data` resolves through the type checker to its
+    // declaration (a record containing `users: never[]`).
     expect(terminals[0].terminal.body).toEqual({
       typeText: "data",
-      shape: null,
+      shape: {
+        type: "record",
+        properties: {
+          users: { type: "array", items: { type: "unknown" } },
+        },
+      },
     });
   });
 
