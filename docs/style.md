@@ -46,6 +46,7 @@ Prefer `import type` for type-only imports — Biome enforces this and it keeps 
 - Block statements for all control flow (`useBlockStatements`) — no single-line `if (x) return;`.
 - Use `Number.parseInt` / `Number.isNaN` etc. (`useNumberNamespace`) instead of the globals.
 - `noUnusedImports` and `noUnusedVariables` are errors — clean up as you go.
+- **Object arguments for 4+ params.** Functions that take four or more parameters should accept a single options object so call sites are self-documenting. `extractStatusCode({ extraction, exceptionType, calls })` beats `extractStatusCode(extraction, null, null, calls, null)`. Three-or-fewer params is fine positional when the order is obvious (input → filter → label, left → op → right). Callback-style functions (`map`, reducers) are exempt — they have a natural positional contract.
 
 ## Comments and docs
 

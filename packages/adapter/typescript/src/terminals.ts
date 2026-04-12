@@ -114,16 +114,29 @@ function unwrapAs(node: Expression): Expression {
 }
 
 // ---------------------------------------------------------------------------
+// Extraction context
+//
+// All three matcher types feed extractStatusCode / extractBody, but each
+// supplies a different subset of source material. A single context object
+// keeps call sites self-documenting (see docs/style.md: 4+ params → object).
+// ---------------------------------------------------------------------------
+
+interface ExtractionContext {
+  extraction: TerminalExtraction;
+  /** Object literal — supplied by returnShape. */
+  returnedObj?: ObjectLiteralExpression;
+  /** Args of a throw's call expression — supplied by throwExpression / functionCall. */
+  throwCallArgs?: Expression[];
+  /** Method-chain calls (innermost → outermost) — supplied by parameterMethodCall. */
+  calls?: CallExpression[];
+}
+
+// ---------------------------------------------------------------------------
 // Status-code extraction
 // ---------------------------------------------------------------------------
 
-function extractStatusCode(
-  extraction: TerminalExtraction,
-  returnedObj: ObjectLiteralExpression | null,
-  throwCallArgs: Expression[] | null,
-  calls: CallExpression[] | null,
-): RawTerminal["statusCode"] {
-  const sc = extraction.statusCode;
+function extractStatusCode(ctx: ExtractionContext): RawTerminal["statusCode"] {
+  const sc = ctx.extraction.statusCode;
   if (sc === undefined) {
     return null;
   }
@@ -133,11 +146,11 @@ function extractStatusCode(
   }
 
   if (sc.from === "property") {
-    if (returnedObj === null) {
+    if (ctx.returnedObj === undefined) {
       return null;
     }
 
-    for (const prop of returnedObj.getProperties()) {
+    for (const prop of ctx.returnedObj.getProperties()) {
       if (!Node.isPropertyAssignment(prop)) {
         // Handle shorthand: ShorthandPropertyAssignment
         if (Node.isShorthandPropertyAssignment(prop)) {
@@ -172,9 +185,9 @@ function extractStatusCode(
   const pos = sc.position;
   const minArgs = sc.minArgs;
 
-  if (calls !== null) {
+  if (ctx.calls !== undefined) {
     // parameterMethodCall: statusCode comes from innermost call (calls[0])
-    const innerCall = calls[0];
+    const innerCall = ctx.calls[0];
     const args = innerCall.getArguments();
     // minArgs guard: skip extraction when arg at `position` is ambiguous in
     // short-form overloads (e.g. res.redirect(url) vs res.redirect(301, url))
@@ -194,12 +207,12 @@ function extractStatusCode(
     return { type: "dynamic", sourceText: arg.getText() };
   }
 
-  if (throwCallArgs !== null) {
+  if (ctx.throwCallArgs !== undefined) {
     // minArgs guard (see above)
-    if (minArgs !== undefined && throwCallArgs.length < minArgs) {
+    if (minArgs !== undefined && ctx.throwCallArgs.length < minArgs) {
       return null;
     }
-    const rawArg = throwCallArgs[pos] as Expression | undefined;
+    const rawArg = ctx.throwCallArgs[pos] as Expression | undefined;
     if (rawArg === undefined) {
       return null;
     }
@@ -219,23 +232,18 @@ function extractStatusCode(
 // Body extraction
 // ---------------------------------------------------------------------------
 
-function extractBody(
-  extraction: TerminalExtraction,
-  returnedObj: ObjectLiteralExpression | null,
-  throwCallArgs: Expression[] | null,
-  calls: CallExpression[] | null,
-): RawTerminal["body"] {
-  const b = extraction.body;
+function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
+  const b = ctx.extraction.body;
   if (b === undefined) {
     return null;
   }
 
   if (b.from === "property") {
-    if (returnedObj === null) {
+    if (ctx.returnedObj === undefined) {
       return null;
     }
 
-    for (const prop of returnedObj.getProperties()) {
+    for (const prop of ctx.returnedObj.getProperties()) {
       if (!Node.isPropertyAssignment(prop)) {
         if (Node.isShorthandPropertyAssignment(prop)) {
           if (prop.getName() === b.name) {
@@ -264,9 +272,9 @@ function extractBody(
   const pos = b.position;
   const minArgs = b.minArgs;
 
-  if (calls !== null) {
+  if (ctx.calls !== undefined) {
     // parameterMethodCall: body comes from outermost call (calls[N-1])
-    const outerCall = calls[calls.length - 1];
+    const outerCall = ctx.calls[ctx.calls.length - 1];
     const args = outerCall.getArguments();
     // minArgs guard: skip when overload makes this position ambiguous
     if (minArgs !== undefined && args.length < minArgs) {
@@ -280,12 +288,12 @@ function extractBody(
     return { typeText: arg.getText(), shape: null };
   }
 
-  if (throwCallArgs !== null) {
+  if (ctx.throwCallArgs !== undefined) {
     // minArgs guard (see above)
-    if (minArgs !== undefined && throwCallArgs.length < minArgs) {
+    if (minArgs !== undefined && ctx.throwCallArgs.length < minArgs) {
       return null;
     }
-    const arg = throwCallArgs[pos] as Expression | undefined;
+    const arg = ctx.throwCallArgs[pos] as Expression | undefined;
     if (arg === undefined) {
       return null;
     }
@@ -376,8 +384,12 @@ function tryMatchReturnShape(
     }
   }
 
-  const statusCode = extractStatusCode(pattern.extraction, obj, null, null);
-  const body = extractBody(pattern.extraction, obj, null, null);
+  const ctx: ExtractionContext = {
+    extraction: pattern.extraction,
+    returnedObj: obj,
+  };
+  const statusCode = extractStatusCode(ctx);
+  const body = extractBody(ctx);
 
   const terminal: RawTerminal = {
     kind: pattern.kind,
@@ -420,8 +432,12 @@ function tryMatchParameterMethodCall(
 
   const { calls } = result;
 
-  const statusCode = extractStatusCode(pattern.extraction, null, null, calls);
-  const body = extractBody(pattern.extraction, null, null, calls);
+  const ctx: ExtractionContext = {
+    extraction: pattern.extraction,
+    calls,
+  };
+  const statusCode = extractStatusCode(ctx);
+  const body = extractBody(ctx);
 
   const terminal: RawTerminal = {
     kind: pattern.kind,
@@ -487,13 +503,12 @@ function tryMatchThrowExpression(
     exceptionType = thrownExpr.getText();
   }
 
-  const statusCode = extractStatusCode(
-    pattern.extraction,
-    null,
-    callArgs,
-    null,
-  );
-  const body = extractBody(pattern.extraction, null, callArgs, null);
+  const ctx: ExtractionContext = {
+    extraction: pattern.extraction,
+    ...(callArgs !== null ? { throwCallArgs: callArgs } : {}),
+  };
+  const statusCode = extractStatusCode(ctx);
+  const body = extractBody(ctx);
 
   const terminal: RawTerminal = {
     kind: "throw",
@@ -533,13 +548,12 @@ function tryMatchFunctionCall(
 
   const callArgs = node.getArguments() as Expression[];
 
-  const statusCode = extractStatusCode(
-    pattern.extraction,
-    null,
-    callArgs,
-    null,
-  );
-  const body = extractBody(pattern.extraction, null, callArgs, null);
+  const ctx: ExtractionContext = {
+    extraction: pattern.extraction,
+    throwCallArgs: callArgs,
+  };
+  const statusCode = extractStatusCode(ctx);
+  const body = extractBody(ctx);
 
   const terminal: RawTerminal = {
     kind: pattern.kind,
