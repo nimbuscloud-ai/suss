@@ -1,9 +1,10 @@
 // conditions.ts — AST traversal for branch condition extraction (Task 2.1)
-// structured is always null here; Task 2.2 will fill it in.
+// Refactored in Task 2.5 to expose Expression nodes for assembly.
 
 import {
   type ArrowFunction,
   type CaseClause,
+  type Expression,
   type FunctionDeclaration,
   type FunctionExpression,
   type MethodDeclaration,
@@ -12,105 +13,136 @@ import {
 
 import type { RawCondition } from "@suss/extractor";
 
-type FunctionRoot =
+export type FunctionRoot =
   | FunctionDeclaration
   | FunctionExpression
   | ArrowFunction
   | MethodDeclaration;
 
-// Returns a RawCondition with structured: null (Task 2.2 fills this in).
-function makeCondition(
+/**
+ * A condition with its original AST Expression preserved.
+ * Used internally by the assembly step to call parseConditionExpression.
+ */
+export interface ConditionInfo {
+  sourceText: string;
+  polarity: "positive" | "negative";
+  source: RawCondition["source"];
+  /** The AST node for the condition. Null for catch clauses and synthetic switch conditions. */
+  expression: Expression | null;
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function makeConditionInfo(
   sourceText: string,
   polarity: "positive" | "negative",
   source: RawCondition["source"],
-): RawCondition {
-  return { sourceText, structured: null, polarity, source };
+  expression: Expression | null,
+): ConditionInfo {
+  return { sourceText, polarity, source, expression };
 }
+
+function conditionInfoToRaw(info: ConditionInfo): RawCondition {
+  return {
+    sourceText: info.sourceText,
+    structured: null,
+    polarity: info.polarity,
+    source: info.source,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ancestor branch collection (with Expression nodes)
+// ---------------------------------------------------------------------------
 
 /**
  * Walk from terminalNode up to (but not including) functionRoot, collecting
  * branch conditions imposed by ancestor control-flow nodes.
  * Result is ordered outermost → innermost.
+ *
+ * Returns ConditionInfo with the Expression node preserved for later parsing.
  */
-export function collectAncestorBranches(
+export function collectAncestorConditionInfos(
   terminalNode: Node,
   functionRoot: FunctionRoot,
-): RawCondition[] {
-  const result: RawCondition[] = [];
+): ConditionInfo[] {
+  const result: ConditionInfo[] = [];
   let current: Node | undefined = terminalNode.getParent();
 
   while (current !== undefined && current !== functionRoot) {
     const parent = current.getParent();
 
-    // IfStatement handling covers two cases:
-    //   A) current's parent is an IfStatement and current is inside then/else (braces case).
-    //   B) current IS directly the thenStatement of a parent IfStatement without braces
-    //      (e.g. `if (x) return y;` → return's parent is IfStatement, IfStatement's parent
-    //      is a block — detected by checking current === ifStmt.getThenStatement()).
-    // IfStatement: record condition + polarity.
-    // Works for both the braces case (current is a Block child of the IfStatement)
-    // and the no-braces case (current IS the IfStatement, terminal is directly its thenStatement).
     if (parent !== undefined && Node.isIfStatement(parent)) {
-      // Braces case: current is then-block, else-block, or a child thereof.
       const thenBranch = parent.getThenStatement();
       const elseBranch = parent.getElseStatement();
-      const condText = parent.getExpression().getText();
+      const expr = parent.getExpression();
 
       const inThen = isAncestorOrSelf(thenBranch, current);
       const inElse =
         elseBranch !== undefined && isAncestorOrSelf(elseBranch, current);
 
       if (inThen) {
-        result.unshift(makeCondition(condText, "positive", "explicit"));
+        result.unshift(
+          makeConditionInfo(expr.getText(), "positive", "explicit", expr),
+        );
       } else if (inElse) {
-        result.unshift(makeCondition(condText, "negative", "explicit"));
+        result.unshift(
+          makeConditionInfo(expr.getText(), "negative", "explicit", expr),
+        );
       }
     } else if (
       Node.isIfStatement(current) &&
       current.getThenStatement() === terminalNode
     ) {
-      // No-braces case: `if (cond) return/throw;` — the terminal is directly the thenStatement.
+      const expr = current.getExpression();
       result.unshift(
-        makeCondition(
-          current.getExpression().getText(),
-          "positive",
-          "explicit",
-        ),
+        makeConditionInfo(expr.getText(), "positive", "explicit", expr),
       );
     } else if (Node.isCaseClause(current)) {
-      // SwitchStatement → CaseClause: record `switchExpr === caseValue`
       const switchStmt = current.getParent()?.getParent();
       if (switchStmt !== undefined && Node.isSwitchStatement(switchStmt)) {
         const switchExpr = switchStmt.getExpression().getText();
         const caseExpr = (current as CaseClause).getExpression().getText();
         const condText = `${switchExpr} === ${caseExpr}`;
-        result.unshift(makeCondition(condText, "positive", "explicit"));
+        // Synthetic condition — no single Expression node to preserve
+        result.unshift(
+          makeConditionInfo(condText, "positive", "explicit", null),
+        );
       }
     } else if (Node.isCatchClause(current)) {
-      // TryCatchClause: opaque catch condition
-      result.unshift(makeCondition("catch", "positive", "catchBlock"));
+      result.unshift(
+        makeConditionInfo("catch", "positive", "catchBlock", null),
+      );
     } else if (parent !== undefined && Node.isConditionalExpression(parent)) {
-      // Ternary: positive if in whenTrue, negative if in whenFalse
-      const condText = parent.getCondition().getText();
+      const expr = parent.getCondition();
       const inTrue = isAncestorOrSelf(parent.getWhenTrue(), current);
       const inFalse = isAncestorOrSelf(parent.getWhenFalse(), current);
       if (inTrue) {
-        result.unshift(makeCondition(condText, "positive", "explicit"));
+        result.unshift(
+          makeConditionInfo(expr.getText(), "positive", "explicit", expr),
+        );
       } else if (inFalse) {
-        result.unshift(makeCondition(condText, "negative", "explicit"));
+        result.unshift(
+          makeConditionInfo(expr.getText(), "negative", "explicit", expr),
+        );
       }
     } else if (parent !== undefined && Node.isBinaryExpression(parent)) {
       const op = parent.getOperatorToken().getText();
       const left = parent.getLeft();
-      // Only record when current is the right side (left is the implicit condition)
       if (
         current === parent.getRight() ||
         isAncestorOrSelf(parent.getRight(), current)
       ) {
         if (op === "&&") {
-          result.unshift(makeCondition(left.getText(), "positive", "explicit"));
+          result.unshift(
+            makeConditionInfo(left.getText(), "positive", "explicit", left),
+          );
         } else if (op === "||") {
-          result.unshift(makeCondition(left.getText(), "negative", "explicit"));
+          result.unshift(
+            makeConditionInfo(left.getText(), "negative", "explicit", left),
+          );
         }
       }
     }
@@ -122,17 +154,32 @@ export function collectAncestorBranches(
 }
 
 /**
- * Find prior sibling statements that are guard clauses (if (...) { return/throw }).
- * Their conditions are recorded as polarity "negative".
- * Handles nested guards: if (a) { if (b) return; } → outer condition contributes too.
+ * Public API — returns RawCondition[] with structured: null.
+ * Use collectAncestorConditionInfos when you need the Expression nodes.
  */
-export function collectEarlyReturns(
+export function collectAncestorBranches(
   terminalNode: Node,
   functionRoot: FunctionRoot,
 ): RawCondition[] {
-  const result: RawCondition[] = [];
+  return collectAncestorConditionInfos(terminalNode, functionRoot).map(
+    conditionInfoToRaw,
+  );
+}
 
-  // Get the function body's direct statement list
+// ---------------------------------------------------------------------------
+// Early return collection (with Expression nodes)
+// ---------------------------------------------------------------------------
+
+/**
+ * Find prior sibling statements that are guard clauses (if (...) { return/throw }).
+ * Returns ConditionInfo with the Expression node preserved for later parsing.
+ */
+export function collectEarlyReturnConditionInfos(
+  terminalNode: Node,
+  functionRoot: FunctionRoot,
+): ConditionInfo[] {
+  const result: ConditionInfo[] = [];
+
   const body = functionRoot.getBody();
   if (body === undefined || !Node.isBlock(body)) {
     return result;
@@ -140,7 +187,6 @@ export function collectEarlyReturns(
 
   const statements = body.getStatements();
 
-  // Find which top-level statement contains our terminal node
   let containerIdx = -1;
   for (let i = 0; i < statements.length; i++) {
     if (isAncestorOrSelf(statements[i], terminalNode)) {
@@ -153,11 +199,10 @@ export function collectEarlyReturns(
     return result;
   }
 
-  // Walk all prior sibling statements
   for (let i = 0; i < containerIdx; i++) {
     const stmt = statements[i];
     if (Node.isIfStatement(stmt)) {
-      collectGuardConditions(stmt, result);
+      collectGuardConditionInfos(stmt, result);
     }
   }
 
@@ -165,30 +210,43 @@ export function collectEarlyReturns(
 }
 
 /**
- * Recursively collect conditions from guard if-statements.
- * An outer if(a) { if(b) return; } contributes [a, b] as negatives.
- * The outer condition is added first (outermost → innermost).
+ * Public API — returns RawCondition[] with structured: null.
+ * Use collectEarlyReturnConditionInfos when you need the Expression nodes.
  */
-function collectGuardConditions(ifStmt: Node, result: RawCondition[]): boolean {
+export function collectEarlyReturns(
+  terminalNode: Node,
+  functionRoot: FunctionRoot,
+): RawCondition[] {
+  return collectEarlyReturnConditionInfos(terminalNode, functionRoot).map(
+    conditionInfoToRaw,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Guard clause helpers
+// ---------------------------------------------------------------------------
+
+function collectGuardConditionInfos(
+  ifStmt: Node,
+  result: ConditionInfo[],
+): boolean {
   if (!Node.isIfStatement(ifStmt)) {
     return false;
   }
 
   const thenStmt = ifStmt.getThenStatement();
-  const condText = ifStmt.getExpression().getText();
+  const expr = ifStmt.getExpression();
 
-  // Check if the then-block itself contains a return/throw (possibly nested)
   if (thenBlockReturnsOrThrows(thenStmt)) {
-    // Determine source: "earlyReturn" or "earlyThrow"
-    const source = thenBlockThrows(thenStmt) ? "earlyThrow" : "earlyReturn";
-    result.push(makeCondition(condText, "negative", source));
+    const source: RawCondition["source"] = thenBlockThrows(thenStmt)
+      ? "earlyThrow"
+      : "earlyReturn";
+    result.push(makeConditionInfo(expr.getText(), "negative", source, expr));
 
-    // Also walk nested if-statements inside the then-block to collect deeper guards.
-    // e.g. if (a) { if (b) return; } → a is already recorded; now check if b is also a guard.
     if (Node.isBlock(thenStmt)) {
       for (const inner of thenStmt.getStatements()) {
         if (Node.isIfStatement(inner)) {
-          collectGuardConditions(inner, result);
+          collectGuardConditionInfos(inner, result);
         }
       }
     }
@@ -242,6 +300,3 @@ function isAncestorOrSelf(maybeAncestor: Node, node: Node): boolean {
   }
   return false;
 }
-
-// Re-export the FunctionRoot type so tests can use it.
-export type { FunctionRoot };

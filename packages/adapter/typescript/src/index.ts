@@ -1,5 +1,6 @@
 // @suss/adapter-typescript — Phase 2 exports
 
+export { extractRawBranches } from "./assembly.js";
 export { collectAncestorBranches, collectEarlyReturns } from "./conditions.js";
 export { discoverUnits } from "./discovery.js";
 export { parseConditionExpression } from "./predicates.js";
