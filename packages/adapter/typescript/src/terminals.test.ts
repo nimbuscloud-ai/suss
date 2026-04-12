@@ -114,7 +114,7 @@ describe("returnShape — basic matching", () => {
       typeText: "{ id: 1 }",
       shape: {
         type: "record",
-        properties: { id: { type: "integer" } },
+        properties: { id: { type: "literal", value: 1, raw: "1" } },
       },
     });
   });
@@ -346,7 +346,7 @@ describe("nested function boundary", () => {
       typeText: "{ correct: true }",
       shape: {
         type: "record",
-        properties: { correct: { type: "boolean" } },
+        properties: { correct: { type: "literal", value: true } },
       },
     });
   });
@@ -578,7 +578,7 @@ describe("parameterMethodCall — matching", () => {
       typeText: "{ ok: true }",
       shape: {
         type: "record",
-        properties: { ok: { type: "boolean" } },
+        properties: { ok: { type: "literal", value: true } },
       },
     });
   });
@@ -790,7 +790,7 @@ describe("throwExpression — matching", () => {
       typeText: '{ message: "Not found" }',
       shape: {
         type: "record",
-        properties: { message: { type: "text" } },
+        properties: { message: { type: "literal", value: "Not found" } },
       },
     });
   });
@@ -1052,7 +1052,9 @@ describe("functionCall — matching", () => {
         properties: {
           user: {
             type: "record",
-            properties: { id: { type: "integer" } },
+            properties: {
+              id: { type: "literal", value: 1, raw: "1" },
+            },
           },
         },
       },

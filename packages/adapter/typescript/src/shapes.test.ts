@@ -42,55 +42,115 @@ function parseExpressionWithPrelude(prelude: string, src: string): Expression {
 }
 
 describe("extractShape", () => {
-  describe("primitives", () => {
-    it("string literal → text", () => {
+  describe("primitive literals", () => {
+    it('string literal → { literal, value: "hello" }', () => {
       expect(extractShape(parseExpression('"hello"'))).toEqual({
-        type: "text",
+        type: "literal",
+        value: "hello",
       });
     });
 
-    it("template literal (no substitution) → text", () => {
+    it("template literal without substitution → literal with value", () => {
       expect(extractShape(parseExpression("`hello`"))).toEqual({
-        type: "text",
+        type: "literal",
+        value: "hello",
       });
     });
 
-    it("integer literal → integer", () => {
-      expect(extractShape(parseExpression("42"))).toEqual({ type: "integer" });
+    it("integer literal → literal with value + raw", () => {
+      expect(extractShape(parseExpression("42"))).toEqual({
+        type: "literal",
+        value: 42,
+        raw: "42",
+      });
     });
 
-    it("non-integer numeric → number", () => {
-      expect(extractShape(parseExpression("3.14"))).toEqual({ type: "number" });
+    it("non-integer numeric → literal with value + raw", () => {
+      expect(extractShape(parseExpression("3.14"))).toEqual({
+        type: "literal",
+        value: 3.14,
+        raw: "3.14",
+      });
     });
 
-    it("true / false → boolean", () => {
+    it("true → literal true; false → literal false", () => {
       expect(extractShape(parseExpression("true"))).toEqual({
-        type: "boolean",
+        type: "literal",
+        value: true,
       });
       expect(extractShape(parseExpression("false"))).toEqual({
-        type: "boolean",
+        type: "literal",
+        value: false,
       });
     });
 
-    it("null → null", () => {
+    it("null → null shape (no value field)", () => {
       expect(extractShape(parseExpression("null"))).toEqual({ type: "null" });
     });
 
-    it("bare identifier → null (not decomposable)", () => {
+    it("bare identifier with no declaration → null (not decomposable)", () => {
       expect(extractShape(parseExpression("user"))).toBeNull();
     });
 
-    it("property access → null (not decomposable)", () => {
+    it("property access with no declaration → null (not decomposable)", () => {
       expect(extractShape(parseExpression("user.id"))).toBeNull();
     });
   });
 
+  describe("wire-format fidelity", () => {
+    it("raw preserves integers beyond Number.MAX_SAFE_INTEGER", () => {
+      // 2^53 + 1 cannot be represented exactly as a JS number — `value`
+      // silently rounds down. `raw` must preserve the exact source text so
+      // consumers needing precision can parse it themselves.
+      const shape = extractShape(parseExpression("9007199254740993"));
+      expect(shape).toEqual({
+        type: "literal",
+        value: 9007199254740992, // number-coerced; lossy
+        raw: "9007199254740993",
+      });
+    });
+
+    it("raw preserves hex notation", () => {
+      expect(extractShape(parseExpression("0x10"))).toEqual({
+        type: "literal",
+        value: 16,
+        raw: "0x10",
+      });
+    });
+
+    it("raw preserves scientific notation", () => {
+      expect(extractShape(parseExpression("1e6"))).toEqual({
+        type: "literal",
+        value: 1_000_000,
+        raw: "1e6",
+      });
+    });
+
+    it("raw preserves numeric separators", () => {
+      expect(extractShape(parseExpression("1_000_000"))).toEqual({
+        type: "literal",
+        value: 1_000_000,
+        raw: "1_000_000",
+      });
+    });
+
+    it("negative numeric: raw carries the sign", () => {
+      expect(extractShape(parseExpression("-42"))).toEqual({
+        type: "literal",
+        value: -42,
+        raw: "-42",
+      });
+    });
+  });
+
   describe("object literals", () => {
-    it("flat record with literal values", () => {
+    it("flat record with string literal value", () => {
       expect(extractShape(parseExpression('({ error: "not found" })'))).toEqual(
         {
           type: "record",
-          properties: { error: { type: "text" } },
+          properties: {
+            error: { type: "literal", value: "not found" },
+          },
         },
       );
     });
@@ -125,7 +185,7 @@ describe("extractShape", () => {
           user: {
             type: "record",
             properties: {
-              id: { type: "text" },
+              id: { type: "literal", value: "u1" },
               email: { type: "ref", name: "user.email" },
             },
           },
@@ -133,14 +193,14 @@ describe("extractShape", () => {
       });
     });
 
-    it("mixed literals and refs", () => {
+    it("mixed literals and refs preserve discriminator values", () => {
       expect(
         extractShape(parseExpression("({ ok: true, count: 3, note: msg })")),
       ).toEqual({
         type: "record",
         properties: {
-          ok: { type: "boolean" },
-          count: { type: "integer" },
+          ok: { type: "literal", value: true },
+          count: { type: "literal", value: 3, raw: "3" },
           note: { type: "ref", name: "msg" },
         },
       });
@@ -151,7 +211,7 @@ describe("extractShape", () => {
         extractShape(parseExpression("({ ...user, admin: true })")),
       ).toEqual({
         type: "record",
-        properties: { admin: { type: "boolean" } },
+        properties: { admin: { type: "literal", value: true } },
         spreads: [{ sourceText: "user" }],
       });
     });
@@ -161,7 +221,7 @@ describe("extractShape", () => {
         extractShape(parseExpression("({ ...base, ...overrides, final: 1 })")),
       ).toEqual({
         type: "record",
-        properties: { final: { type: "integer" } },
+        properties: { final: { type: "literal", value: 1, raw: "1" } },
         spreads: [{ sourceText: "base" }, { sourceText: "overrides" }],
       });
     });
@@ -175,18 +235,24 @@ describe("extractShape", () => {
       });
     });
 
-    it("array items shape from first element", () => {
+    it("homogeneous string array collapses to one literal variant per distinct value", () => {
+      // Different string literals dedupe only structurally — three different
+      // values produce a union of three literals. Consumers widening for
+      // array summaries can collapse literal variants of the same kind.
       expect(extractShape(parseExpression('["a", "b", "c"]'))).toEqual({
         type: "array",
-        items: { type: "text" },
+        items: {
+          type: "union",
+          variants: [
+            { type: "literal", value: "a" },
+            { type: "literal", value: "b" },
+            { type: "literal", value: "c" },
+          ],
+        },
       });
     });
 
-    it("array of untyped bare identifiers falls back to per-element refs", () => {
-      // Neither `user` nor `admin` is declared in this stub program, so the
-      // type checker infers `any` and each element degrades to a source-text
-      // ref. Element shapes are deduped and collapsed — here they differ,
-      // producing a union.
+    it("array of untyped bare identifiers → union of per-element refs", () => {
       expect(extractShape(parseExpression("[user, admin]"))).toEqual({
         type: "array",
         items: {
@@ -206,29 +272,30 @@ describe("extractShape", () => {
         extractShape(parseExpression("({ status: 404 } as const)")),
       ).toEqual({
         type: "record",
-        properties: { status: { type: "integer" } },
+        properties: {
+          status: { type: "literal", value: 404, raw: "404" },
+        },
       });
     });
 
     it("parenthesized expression unwraps", () => {
       expect(extractShape(parseExpression("((({ ok: true })))"))).toEqual({
         type: "record",
-        properties: { ok: { type: "boolean" } },
+        properties: { ok: { type: "literal", value: true } },
       });
     });
 
     it("angle-bracket type assertion unwraps", () => {
-      // Parsed in a .ts file (no JSX), <T>x is a type assertion.
       expect(extractShape(parseExpression("<const>({ ok: true })"))).toEqual({
         type: "record",
-        properties: { ok: { type: "boolean" } },
+        properties: { ok: { type: "literal", value: true } },
       });
     });
 
     it("non-null assertion (`!`) unwraps", () => {
       expect(extractShape(parseExpression("({ ok: true }!)"))).toEqual({
         type: "record",
-        properties: { ok: { type: "boolean" } },
+        properties: { ok: { type: "literal", value: true } },
       });
     });
 
@@ -237,31 +304,29 @@ describe("extractShape", () => {
         extractShape(parseExpression("({ ok: true } satisfies object)")),
       ).toEqual({
         type: "record",
-        properties: { ok: { type: "boolean" } },
+        properties: { ok: { type: "literal", value: true } },
       });
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Expanded primitive / syntax coverage
-  // -------------------------------------------------------------------------
-
   describe("expression syntax", () => {
-    it("negative integer literal → integer", () => {
-      expect(extractShape(parseExpression("-42"))).toEqual({ type: "integer" });
-    });
-
-    it("negative float literal → number", () => {
-      expect(extractShape(parseExpression("-3.14"))).toEqual({
-        type: "number",
+    it("unary plus on integer preserves the literal", () => {
+      expect(extractShape(parseExpression("+42"))).toEqual({
+        type: "literal",
+        value: 42,
+        raw: "42",
       });
     });
 
-    it("unary plus on integer → integer", () => {
-      expect(extractShape(parseExpression("+42"))).toEqual({ type: "integer" });
+    it("negative float preserves the literal with signed raw", () => {
+      expect(extractShape(parseExpression("-3.14"))).toEqual({
+        type: "literal",
+        value: -3.14,
+        raw: "-3.14",
+      });
     });
 
-    it("template literal with substitution → text", () => {
+    it("template literal with substitution → text (can't narrow to value)", () => {
       // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional TS source
       expect(extractShape(parseExpression("`hello ${name}`"))).toEqual({
         type: "text",
@@ -281,43 +346,142 @@ describe("extractShape", () => {
       });
     });
 
-    it("ternary on literal branches → union", () => {
+    it("ternary with distinct literal branches → union of literals", () => {
       expect(extractShape(parseExpression('(flag ? "yes" : 42)'))).toEqual({
         type: "union",
-        variants: [{ type: "text" }, { type: "integer" }],
+        variants: [
+          { type: "literal", value: "yes" },
+          { type: "literal", value: 42, raw: "42" },
+        ],
       });
     });
 
-    it("ternary where both branches produce the same shape collapses", () => {
-      expect(extractShape(parseExpression('(flag ? "a" : "b")'))).toEqual({
-        type: "text",
+    it("ternary with identical branches collapses", () => {
+      expect(extractShape(parseExpression('(flag ? "a" : "a")'))).toEqual({
+        type: "literal",
+        value: "a",
       });
     });
 
-    it("heterogeneous array collapses to array<union>", () => {
+    it("heterogeneous array → union of distinct literal variants", () => {
       expect(extractShape(parseExpression('[1, "two", true]'))).toEqual({
         type: "array",
         items: {
           type: "union",
           variants: [
-            { type: "integer" },
-            { type: "text" },
-            { type: "boolean" },
+            { type: "literal", value: 1, raw: "1" },
+            { type: "literal", value: "two" },
+            { type: "literal", value: true },
           ],
         },
       });
     });
 
-    it("homogeneous array stays as single-item-type array", () => {
-      expect(extractShape(parseExpression("[1, 2, 3]"))).toEqual({
+    it("array with repeated literals dedupes", () => {
+      expect(extractShape(parseExpression("[1, 1, 1]"))).toEqual({
         type: "array",
-        items: { type: "integer" },
+        items: { type: "literal", value: 1, raw: "1" },
       });
     });
   });
 
   // -------------------------------------------------------------------------
-  // Type-checker fallback
+  // AST-based resolution (preserves literal narrowness the type checker would widen)
+  // -------------------------------------------------------------------------
+
+  describe("AST resolution", () => {
+    it('untyped `const x = "ok"; x` resolves to the literal via the AST', () => {
+      // The type checker at the reference site would give `string` (widened).
+      // The AST walker follows the declaration to the literal initializer and
+      // preserves `"ok"`. (Name chosen to avoid `status` — a DOM global in
+      // `lib.dom.d.ts` — which the type checker shadows over local decls in
+      // this in-memory test setup.)
+      const expr = parseExpressionWithPrelude(
+        'const greeting = "ok" as const;',
+        "greeting",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "literal",
+        value: "ok",
+      });
+    });
+
+    it("walks across a chain of assignments", () => {
+      const expr = parseExpressionWithPrelude(
+        'const a = "hello"; const b = a;',
+        "b",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "literal",
+        value: "hello",
+      });
+    });
+
+    it("reads a property through an initializer record", () => {
+      const expr = parseExpressionWithPrelude(
+        'const user = { id: "u1", name: "ada" };',
+        "user.id",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "literal",
+        value: "u1",
+      });
+    });
+
+    it("reads a property through a destructuring binding", () => {
+      const expr = parseExpressionWithPrelude(
+        'const { id } = { id: "u1", name: "ada" };',
+        "id",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "literal",
+        value: "u1",
+      });
+    });
+
+    it("follows a single-return function call", () => {
+      const expr = parseExpressionWithPrelude(
+        'function greet() { return "hello"; }',
+        "greet()",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "literal",
+        value: "hello",
+      });
+    });
+
+    it("follows an arrow-function expression body call", () => {
+      const expr = parseExpressionWithPrelude(
+        'const greet = () => "hi";',
+        "greet()",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "literal",
+        value: "hi",
+      });
+    });
+
+    it("stops at multi-statement function bodies (falls back to checker)", () => {
+      // Multi-statement function bodies aren't safely expandable at the AST
+      // level (branching returns, effects, etc). We hand off to the type
+      // checker, which returns the declared return type.
+      const expr = parseExpressionWithPrelude(
+        'function greet() { console.log("hi"); return "hi"; }',
+        "greet()",
+      );
+      expect(extractShape(expr)).toEqual({ type: "text" });
+    });
+
+    it("cyclic const declarations don't hang", () => {
+      // `const a = a` is invalid TS but the walker should still terminate.
+      const expr = parseExpressionWithPrelude("const a: string = a;", "a");
+      // Falls through to the checker, which gives `string`.
+      expect(extractShape(expr)).toEqual({ type: "text" });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Type-checker fallback (types without literal initializers)
   // -------------------------------------------------------------------------
 
   describe("type-checker resolution", () => {
@@ -396,8 +560,6 @@ describe("extractShape", () => {
         "root",
       );
       const shape = extractShape(expr);
-      // Outer: record with name, children. Children: array<Node> where Node
-      // is either re-expanded (depth-limited) or bottoms out at a ref.
       expect(shape?.type).toBe("record");
       if (shape?.type === "record") {
         expect(shape.properties.name).toEqual({ type: "text" });
@@ -414,9 +576,6 @@ describe("extractShape", () => {
     });
 
     it("declared union type becomes a TypeShape union", () => {
-      // Heterogeneous unions (string | number) survive widening at a
-      // `declare const` reference site. Same-kind literal unions (e.g.
-      // `"a" | "b"`) get widened to `string`, so they aren't useful here.
       const expr = parseExpressionWithPrelude(
         "declare const v: string | number;",
         "v",
@@ -428,6 +587,42 @@ describe("extractShape", () => {
           expect.arrayContaining([{ type: "text" }, { type: "number" }]),
         );
       }
+    });
+
+    it("Record<string, T> index signature → dictionary", () => {
+      const expr = parseExpressionWithPrelude(
+        "declare const users: Record<string, { id: string }>;",
+        "users",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "dictionary",
+        values: {
+          type: "record",
+          properties: { id: { type: "text" } },
+        },
+      });
+    });
+
+    it("inline index signature → dictionary", () => {
+      const expr = parseExpressionWithPrelude(
+        "declare const counts: { [k: string]: number };",
+        "counts",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "dictionary",
+        values: { type: "number" },
+      });
+    });
+
+    it("literal type inferred by const-narrowing surfaces as literal", () => {
+      const expr = parseExpressionWithPrelude(
+        'declare const greeting: "ok";',
+        "greeting",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "literal",
+        value: "ok",
+      });
     });
   });
 
@@ -446,7 +641,7 @@ describe("extractShape", () => {
         properties: {
           id: { type: "text" },
           name: { type: "text" },
-          admin: { type: "boolean" },
+          admin: { type: "literal", value: true },
         },
       });
     });
@@ -459,20 +654,21 @@ describe("extractShape", () => {
       const shape = extractShape(expr);
       expect(shape?.type).toBe("record");
       if (shape?.type === "record") {
-        expect(shape.properties.name).toEqual({ type: "text" });
+        expect(shape.properties.name).toEqual({
+          type: "literal",
+          value: "override",
+        });
         expect(shape.properties.id).toEqual({ type: "text" });
         expect(shape.spreads).toBeUndefined();
       }
     });
 
     it("unresolvable spread remains in spreads[]", () => {
-      // No declaration for `rest` — the type checker can't expand it, so the
-      // spread falls through to the escape hatch.
       expect(
         extractShape(parseExpression("({ ...rest, admin: true })")),
       ).toEqual({
         type: "record",
-        properties: { admin: { type: "boolean" } },
+        properties: { admin: { type: "literal", value: true } },
         spreads: [{ sourceText: "rest" }],
       });
     });
@@ -487,7 +683,7 @@ describe("extractShape", () => {
         properties: {
           role: { type: "text" },
           id: { type: "text" },
-          admin: { type: "boolean" },
+          admin: { type: "literal", value: true },
         },
       });
     });
