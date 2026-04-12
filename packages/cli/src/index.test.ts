@@ -115,33 +115,48 @@ describe("extract — ts-rest", () => {
     for (const t of getUser.transitions) {
       expect(t.id).toMatch(/^getUser:response:(200|404):[0-9a-f]{7}$/);
     }
-    // Body refs carry the source text of the body property — pinning this
-    // catches regressions in body extraction for the `from: "property"` path.
+    // Each body is an object literal with statically-enumerable fields,
+    // so the extractor produces a structured record shape. String literals
+    // become `{ type: "text" }`; identifier / property-access values become
+    // refs so field identity survives without forcing subject resolution.
     expect(getUser.transitions.map((t) => t.output)).toEqual([
       {
         type: "response",
         statusCode: { type: "literal", value: 404 },
-        body: { type: "ref", name: '{ error: "missing id" }' },
+        body: {
+          type: "record",
+          properties: { error: { type: "text" } },
+        },
         headers: {},
       },
       {
         type: "response",
         statusCode: { type: "literal", value: 404 },
-        body: { type: "ref", name: '{ error: "not found" }' },
+        body: {
+          type: "record",
+          properties: { error: { type: "text" } },
+        },
         headers: {},
       },
       {
         type: "response",
         statusCode: { type: "literal", value: 404 },
-        body: { type: "ref", name: '{ error: "deleted" }' },
+        body: {
+          type: "record",
+          properties: { error: { type: "text" } },
+        },
         headers: {},
       },
       {
         type: "response",
         statusCode: { type: "literal", value: 200 },
         body: {
-          type: "ref",
-          name: "{ id: user.id, name: user.name, email: user.email }",
+          type: "record",
+          properties: {
+            id: { type: "ref", name: "user.id" },
+            name: { type: "ref", name: "user.name" },
+            email: { type: "ref", name: "user.email" },
+          },
         },
         headers: {},
       },
@@ -196,13 +211,19 @@ describe("extract — ts-rest", () => {
       {
         type: "response",
         statusCode: { type: "literal", value: 400 },
-        body: { type: "ref", name: '{ error: "missing fields" }' },
+        body: {
+          type: "record",
+          properties: { error: { type: "text" } },
+        },
         headers: {},
       },
       {
         type: "response",
         statusCode: { type: "literal", value: 201 },
-        body: { type: "ref", name: "{ id: created.id }" },
+        body: {
+          type: "record",
+          properties: { id: { type: "ref", name: "created.id" } },
+        },
         headers: {},
       },
     ]);
@@ -296,24 +317,38 @@ describe("extract — express", () => {
     ]);
 
     // Four response transitions, last two implicit-200 (no status on res.json()).
-    // Body refs carry the source text of each terminal's body argument.
+    // The admin branch spreads `user` — the known `admin` field is enumerated
+    // and the spread source is preserved so the checker can reason about
+    // "there are more fields, but we don't know which". The final branch is a
+    // bare identifier (`res.json(user)`) — not decomposable to a record, so
+    // it stays as a source-text ref.
     expect(main.transitions.map((t) => t.output)).toEqual([
       {
         type: "response",
         statusCode: { type: "literal", value: 400 },
-        body: { type: "ref", name: '{ error: "missing id" }' },
+        body: {
+          type: "record",
+          properties: { error: { type: "text" } },
+        },
         headers: {},
       },
       {
         type: "response",
         statusCode: { type: "literal", value: 404 },
-        body: { type: "ref", name: '{ error: "not found" }' },
+        body: {
+          type: "record",
+          properties: { error: { type: "text" } },
+        },
         headers: {},
       },
       {
         type: "response",
         statusCode: null,
-        body: { type: "ref", name: "{ ...user, admin: true }" },
+        body: {
+          type: "record",
+          properties: { admin: { type: "boolean" } },
+          spreads: [{ sourceText: "user" }],
+        },
         headers: {},
       },
       {
@@ -398,20 +433,27 @@ describe("extract — react-router", () => {
     // Three response transitions. json() extracts body only (not status),
     // and redirect() reads status from arg 1 — none are provided here, so
     // every statusCode is null. The redirect in the middle has no body
-    // extraction, so only the two json() calls produce ref bodies.
+    // extraction, so only the two json() calls produce structured bodies.
+    // `{ user }` uses shorthand — `user` becomes a ref to the identifier.
     expect(loader.transitions).toHaveLength(3);
     expect(loader.transitions.map((t) => t.output)).toEqual([
       {
         type: "response",
         statusCode: null,
-        body: { type: "ref", name: '{ error: "not found" }' },
+        body: {
+          type: "record",
+          properties: { error: { type: "text" } },
+        },
         headers: {},
       },
       { type: "response", statusCode: null, body: null, headers: {} },
       {
         type: "response",
         statusCode: null,
-        body: { type: "ref", name: "{ user }" },
+        body: {
+          type: "record",
+          properties: { user: { type: "ref", name: "user" } },
+        },
         headers: {},
       },
     ]);
@@ -451,7 +493,10 @@ describe("extract — react-router", () => {
       {
         type: "response",
         statusCode: null,
-        body: { type: "ref", name: '{ error: "name required" }' },
+        body: {
+          type: "record",
+          properties: { error: { type: "text" } },
+        },
         headers: {},
       },
       // Final redirect has no body extraction — body is null.
