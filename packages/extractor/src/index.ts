@@ -1,5 +1,7 @@
 // @suss/extractor — assembly engine
 
+import { createHash } from "node:crypto";
+
 import type {
   BehavioralSummary,
   CodeUnitKind,
@@ -137,6 +139,52 @@ export interface ExtractorOptions {
 const DEFAULT_OPTIONS: ExtractorOptions = { gapHandling: "permissive" };
 
 // =============================================================================
+// Transition identity
+//
+// Transition IDs must survive branch reordering and the addition of unrelated
+// branches — otherwise `diffSummaries` devolves into "everything changed"
+// every time a handler is reshuffled.
+//
+// Identity is built from stable, content-addressable signals:
+//   - the enclosing function name,
+//   - the terminal kind (response / throw / return / ...),
+//   - the status code (literal value, dynamic source text, or "none"),
+//   - a short hash of the condition chain's source texts.
+//
+// Reordering branches leaves IDs intact. Editing a branch's body (without
+// changing its guards or status) also leaves the ID intact, so diffSummaries
+// correctly reports a "changed" transition rather than add+remove. Changing
+// any signal — status code, condition text, terminal kind — mints a new ID.
+// =============================================================================
+
+export function makeTransitionId(
+  functionName: string,
+  branch: RawBranch,
+): string {
+  const { terminal } = branch;
+
+  const statusKey =
+    terminal.statusCode === null
+      ? "none"
+      : terminal.statusCode.type === "literal"
+        ? String(terminal.statusCode.value)
+        : `dyn:${terminal.statusCode.sourceText}`;
+
+  // Order-preserving join: short-circuit semantics make condition order
+  // part of a branch's identity.
+  const conditionSig = branch.conditions
+    .map((c) => `${c.polarity}:${c.sourceText}`)
+    .join(";");
+
+  const conditionHash = createHash("sha1")
+    .update(conditionSig)
+    .digest("hex")
+    .slice(0, 7);
+
+  return `${functionName}:${terminal.kind}:${statusKey}:${conditionHash}`;
+}
+
+// =============================================================================
 // Core assembly function
 // =============================================================================
 
@@ -144,7 +192,7 @@ export function assembleSummary(
   raw: RawCodeStructure,
   options: ExtractorOptions = DEFAULT_OPTIONS,
 ): BehavioralSummary {
-  const transitions: Transition[] = raw.branches.map((branch, i) => {
+  const transitions: Transition[] = raw.branches.map((branch) => {
     // Conditions with structured: null become opaque predicates — never silently dropped.
     const conditions: Predicate[] = branch.conditions.map((c) => {
       const pred: Predicate =
@@ -162,7 +210,7 @@ export function assembleSummary(
     });
 
     return {
-      id: `${raw.identity.name}:${i}`,
+      id: makeTransitionId(raw.identity.name, branch),
       conditions,
       output: terminalToOutput(branch.terminal),
       effects: branch.effects.map(effectToIR),
