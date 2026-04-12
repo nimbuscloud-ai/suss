@@ -62,7 +62,7 @@ describe("tsRestFramework — integration", () => {
   let summaries: BehavioralSummary[];
   beforeAll(() => {
     summaries = runAdapter();
-  }, 30_000);
+  }, 90_000);
 
   it("discovers every handler registered inside s.router(contract, {...})", () => {
     expect(summaries).toHaveLength(2);

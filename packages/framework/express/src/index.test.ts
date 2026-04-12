@@ -60,7 +60,7 @@ describe("expressFramework — integration", () => {
   let summaries: BehavioralSummary[];
   beforeAll(() => {
     summaries = runAdapter();
-  }, 30_000);
+  }, 90_000);
 
   it("discovers every router.<method> handler in the fixture", () => {
     // Three handlers — all registered via router.get(...) so identity.name

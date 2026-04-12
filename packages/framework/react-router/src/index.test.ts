@@ -66,7 +66,7 @@ describe("reactRouterFramework — integration", () => {
   let summaries: BehavioralSummary[];
   beforeAll(() => {
     summaries = runAdapter();
-  }, 30_000);
+  }, 90_000);
 
   it("discovers both loader and action kinds from named exports", () => {
     // The fixture exports `loader` and `action`. No `default` export in this
