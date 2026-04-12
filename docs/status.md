@@ -69,15 +69,15 @@ Progress tracker. Updated as phases land.
 | Package | Tests | Notes |
 |---------|-------|-------|
 | `@suss/behavioral-ir` | 7 | diff utility, type narrowing |
-| `@suss/extractor` | 41 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, edge cases |
-| `@suss/adapter-typescript` | 213 | conditions, predicates, subjects, terminals, discovery, contract reading, integration |
-| `@suss/framework-ts-rest` | 5 | pack structure, discriminants, bindingExtraction |
-| `@suss/framework-react-router` | 5 | pack structure, discovery kinds, inputMapping |
-| `@suss/framework-express` | 6 | pack structure, registration, terminals, positional params |
-| `@suss/cli` | 11 | extract (3 frameworks), inspect, error cases, gap detection, file output |
-| **Total** | **288** | |
+| `@suss/extractor` | 52 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, transition ID stability, edge cases |
+| `@suss/adapter-typescript` | 218 | conditions, predicates, subjects, terminals, discovery, contract reading, integration |
+| `@suss/framework-ts-rest` | 10 | pack shape + integration (adapter against fixtures, boundary bindings, gaps, inputs) |
+| `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
+| `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
+| `@suss/cli` | 16 | deep-equal summary shape per framework, `-o` round-trip, inspect, error cases |
+| **Total** | **317** | |
 
-Runs in ~10s via `turbo test`.
+Runs via `turbo test`.
 
 ## Decisions log
 

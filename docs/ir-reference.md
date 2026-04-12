@@ -96,7 +96,7 @@ A transition says: "when all of these conditions hold, this output is produced a
 
 **`isDefault`** marks the fall-through transition — the case with no explicit conditions, or only early-return guards. It's the "everything else" case. Most handlers have exactly one default transition; some have none (all paths are explicitly gated) and some have multiple (each returning early from different guards).
 
-**`id` is a string**, not an incremental number. Right now IDs are generated as `${functionName}:${index}`, but this is known-fragile (inserting a transition in the middle shifts all later IDs and breaks `diffSummaries`). Phase 2 will revisit this with content-based IDs once we have real extraction data.
+**`id` is content-addressable**, not an index. It's generated as `${functionName}:${terminalKind}:${statusKey}:${hash7}`, where `hash7` is the first 7 hex chars of a SHA-1 over the ordered condition chain's canonical source text. This makes `diffSummaries` robust under branch reordering (identities survive) while semantic edits — changing a status code, a condition, or a terminal kind — mint a new ID as expected. Condition order is part of identity because short-circuit semantics make `a && b` and `b && a` observably different. Source-location offsets are deliberately excluded: whitespace shouldn't re-mint IDs.
 
 ## `Predicate` — conditions that gate transitions
 
