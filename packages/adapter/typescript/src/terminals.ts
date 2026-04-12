@@ -380,14 +380,7 @@ function tryMatchReturnShape(
   const body = extractBody(pattern.extraction, obj, null, null);
 
   const terminal: RawTerminal = {
-    kind:
-      pattern.kind === "throw"
-        ? "throw"
-        : pattern.kind === "return"
-          ? "return"
-          : pattern.kind === "render"
-            ? "render"
-            : "response",
+    kind: pattern.kind,
     statusCode,
     body,
     exceptionType: null,
@@ -431,14 +424,7 @@ function tryMatchParameterMethodCall(
   const body = extractBody(pattern.extraction, null, null, calls);
 
   const terminal: RawTerminal = {
-    kind:
-      pattern.kind === "throw"
-        ? "throw"
-        : pattern.kind === "return"
-          ? "return"
-          : pattern.kind === "render"
-            ? "render"
-            : "response",
+    kind: pattern.kind,
     statusCode,
     body,
     exceptionType: null,
@@ -556,14 +542,7 @@ function tryMatchFunctionCall(
   const body = extractBody(pattern.extraction, null, callArgs, null);
 
   const terminal: RawTerminal = {
-    kind:
-      pattern.kind === "throw"
-        ? "throw"
-        : pattern.kind === "return"
-          ? "return"
-          : pattern.kind === "render"
-            ? "render"
-            : "response",
+    kind: pattern.kind,
     statusCode,
     body,
     exceptionType: null,
