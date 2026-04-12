@@ -21,7 +21,7 @@ Depends only on `@suss/behavioral-ir`. The extractor, adapters, and framework pa
 
 ## Status
 
-Pairwise checker is shipped (status-code matching). `suss check` exposes it from the CLI. Body-shape matching is deferred. See [`docs/status.md`](../../docs/status.md).
+Pairwise checker is in progress. All three checks (provider coverage, consumer satisfaction, contract consistency) are wired up against status codes and exposed via `suss check`. Body-shape matching is the next layer — structured body shapes now flow through the IR from the adapter, but the checker does not yet compare them across a boundary. See [`docs/status.md`](../../docs/status.md).
 
 ## Coverage
 

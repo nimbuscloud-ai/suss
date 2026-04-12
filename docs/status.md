@@ -68,6 +68,8 @@ Progress tracker. Updated as phases land.
 | 5.5 Contract-consistency check | ✅ | Provider gaps reformatted to `providerContractViolation`; consumer checked against declared contract for declared-but-unhandled and handled-but-undeclared cases. |
 | 5.6 `checkPair` entrypoint + fixture integration tests | ✅ | Composes all three checks; integration test exercises every finding kind in one pass. |
 | 5.7 `suss check` CLI command | ✅ | `suss check <provider.json> <consumer.json>` with `--json` / `-o` output; non-zero exit when any finding has `error` severity. |
+| 5.8 Structured body-shape extraction (provider side) | ✅ | Adapter decomposes object/array/primitive literals into `TypeShape`; records capture spread source text for fields contributed at runtime. |
+| 5.9 Body-shape matching in the checker | ⏸ | `suss check` currently matches on status codes only. Comparing response body shapes across a boundary (missing fields, type mismatches, declared vs actual schema) is the next checker layer. |
 
 ## Phase 6+ — Deferred
 
