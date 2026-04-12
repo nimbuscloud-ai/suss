@@ -2,10 +2,8 @@
 // Reads coverage-summary.json files from each package and writes SVG badges
 // to .github/badges/. Idempotent — no timestamps in output.
 //
-// Also runs `biome format --write` on each coverage-summary.json so that
-// biome lint passes and PR diffs show field-level changes, not minified blobs.
+// Also normalizes coverage-summary.json: relativizes paths and pretty-prints.
 
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,9 +65,6 @@ function makeSvg(label, value, color) {
 //   1. Replace absolute path keys with paths relative to the package root
 //      so the committed file is machine-independent.
 //   2. Run biome format --write so PR diffs show field-level changes.
-const biome = resolve(root, "node_modules/.bin/biome");
-
-const summaryPaths = [];
 for (const [pkgPath] of packageDirs) {
   const summaryPath = resolve(root, pkgPath, "coverage/coverage-summary.json");
   if (!existsSync(summaryPath)) {
@@ -87,12 +82,11 @@ for (const [pkgPath] of packageDirs) {
       : key;
     normalized[rel] = value;
   }
-  writeFileSync(summaryPath, JSON.stringify(normalized), "utf8");
-  summaryPaths.push(summaryPath);
-}
-
-if (summaryPaths.length > 0) {
-  execFileSync(biome, ["format", "--write", ...summaryPaths], { cwd: root });
+  writeFileSync(
+    summaryPath,
+    `${JSON.stringify(normalized, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 const results = [];
