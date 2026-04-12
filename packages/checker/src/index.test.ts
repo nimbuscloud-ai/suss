@@ -6,6 +6,8 @@ import {
   response,
   statusEq,
   transition,
+  unhandledCaseGap,
+  withContract,
 } from "./__fixtures__/pairs.js";
 import { checkPair } from "./index.js";
 
@@ -70,5 +72,42 @@ describe("checkPair", () => {
     const findings = checkPair(p, c);
     const kinds = findings.map((f) => f.kind).sort();
     expect(kinds).toEqual(["deadConsumerBranch", "unhandledProviderCase"]);
+  });
+
+  it("composes all three check kinds when a declared contract is present", () => {
+    const p = withContract(
+      provider("getUser", [
+        transition("t-418", { output: response(418) }),
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      [200, 404, 500],
+      [
+        unhandledCaseGap(
+          "Declared response 500 is never produced by the handler",
+        ),
+      ],
+    );
+    const c = consumer("UserPage", [
+      transition("ct-500", {
+        conditions: [statusEq(500)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    const findings = checkPair(p, c);
+    const kindSummary = findings
+      .map((f) => f.kind)
+      .reduce<Record<string, number>>((acc, k) => {
+        acc[k] = (acc[k] ?? 0) + 1;
+        return acc;
+      }, {});
+
+    expect(kindSummary.unhandledProviderCase).toBe(1);
+    expect(kindSummary.deadConsumerBranch).toBe(1);
+    expect(kindSummary.providerContractViolation).toBe(1);
+    expect(kindSummary.consumerContractViolation).toBe(1);
   });
 });

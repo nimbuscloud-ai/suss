@@ -1,5 +1,6 @@
 import type {
   BehavioralSummary,
+  Gap,
   Output,
   Predicate,
   Transition,
@@ -87,6 +88,33 @@ export function provider(
     transitions,
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+export function withContract(
+  summary: BehavioralSummary,
+  declaredStatuses: number[],
+  gaps: Gap[] = [],
+): BehavioralSummary {
+  return {
+    ...summary,
+    gaps,
+    metadata: {
+      ...(summary.metadata ?? {}),
+      declaredContract: {
+        framework: "ts-rest",
+        responses: declaredStatuses.map((statusCode) => ({ statusCode })),
+      },
+    },
+  };
+}
+
+export function unhandledCaseGap(description: string): Gap {
+  return {
+    type: "unhandledCase",
+    conditions: [],
+    consequence: "frameworkDefault",
+    description,
   };
 }
 
