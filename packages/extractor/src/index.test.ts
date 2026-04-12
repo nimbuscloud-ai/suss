@@ -69,7 +69,13 @@ const twoPathRaw: RawCodeStructure = {
       terminal: {
         kind: "response",
         statusCode: { type: "literal", value: 404 },
-        body: { typeText: null, shape: { error: "not found" } },
+        body: {
+          typeText: null,
+          shape: {
+            type: "record",
+            properties: { error: { type: "text" } },
+          },
+        },
         exceptionType: null,
         message: null,
         component: null,

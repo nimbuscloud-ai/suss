@@ -59,7 +59,7 @@ export interface RawTerminal {
     | { type: "literal"; value: number }
     | { type: "dynamic"; sourceText: string }
     | null;
-  body: { typeText: string | null; shape: unknown } | null;
+  body: { typeText: string | null; shape: TypeShape | null } | null;
   exceptionType: string | null;
   message: string | null;
   /** For render terminals: the component being rendered */
@@ -333,6 +333,21 @@ export function assessConfidence(raw: RawCodeStructure): ConfidenceInfo {
 // Mapping helpers
 // =============================================================================
 
+function bodyToShape(
+  body: RawTerminal["body"] | null | undefined,
+): TypeShape | null {
+  if (!body) {
+    return null;
+  }
+  if (body.shape !== null) {
+    return body.shape;
+  }
+  if (body.typeText) {
+    return { type: "ref", name: body.typeText };
+  }
+  return null;
+}
+
 const terminalConverters: Record<
   RawTerminal["kind"],
   (t: RawTerminal) => Output
@@ -343,9 +358,7 @@ const terminalConverters: Record<
         ? { type: "literal", value: t.statusCode.value }
         : { type: "unresolved", sourceText: t.statusCode.sourceText }
       : null;
-    const body: TypeShape | null = t.body?.typeText
-      ? { type: "ref", name: t.body.typeText }
-      : null;
+    const body: TypeShape | null = bodyToShape(t.body);
     return { type: "response", statusCode, body, headers: {} };
   },
   throw: (t) => ({
@@ -367,7 +380,7 @@ const terminalConverters: Record<
   }),
   return: (t) => ({
     type: "return",
-    value: t.body?.typeText ? { type: "ref", name: t.body.typeText } : null,
+    value: bodyToShape(t.body),
   }),
   void: (_t) => ({ type: "void" }),
 };
