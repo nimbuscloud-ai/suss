@@ -71,11 +71,32 @@ Progress tracker. Updated as phases land.
 | 5.8 Structured body-shape extraction (provider side) | ✅ | Three-pass extraction: syntactic decomposition preserves literal narrowness (`{ type: "literal", value }` with `raw` for numerics); AST resolution follows identifiers / destructurings / single-return calls back to their defining values; type-checker fallback covers the rest. `record` vs `dictionary` distinguishes closed structs from index signatures. Wire-format caveats documented in `ir-reference.md#serialization-semantics`. |
 | 5.9 Body-shape matching in the checker | ✅ | `bodyShapesMatch(actual, declared)` returns `match` / `nomatch` / `unknown` with asymmetric subtyping semantics — literal widening (`"ok"` → `text`), integer ⊂ number, union variance, dictionary/array recursion, spreads and refs propagate `unknown`. ts-rest `c.type<T>()` is lifted into `RawDeclaredContract.responses[].body`, and `checkContractConsistency` now emits `providerContractViolation` for body mismatches and `lowConfidence` when the shape is indeterminate. |
 
-## Phase 6+ — Deferred
+## Phase 6 — Consumer-side discovery
+
+*Discover client call sites, extract the enclosing function's branches, produce consumer `BehavioralSummary`s for cross-boundary checking.*
+
+| Task | Status | Notes |
+|------|--------|-------|
+| 6.1 `clientCall` discovery match + consumer binding extractors | ✅ | New `DiscoveryMatch` variant `clientCall` in `FrameworkPack` interface. `BindingExtraction` gains `fromClientMethod`, `fromArgumentLiteral`, `fromArgumentProperty`. |
+| 6.2 `discoverByClientCall` in the TS adapter | ✅ | Finds matching call sites, walks to enclosing function, returns `DiscoveredUnit` with `callSite` metadata. Consumer binding extraction reads method/path from call args or contract. |
+| 6.3 `returnStatement` terminal match | ✅ | New `TerminalMatch` variant for any return statement (not just object-literal returns). Required because consumer functions return arbitrary values, not `{ status, body }` objects. |
+| 6.4 `readContractForClientCall` | ✅ | Traces from `client.getUser()` → `const client = initClient(contract)` → contract object → endpoint definition for the called method. Reuses existing `resolveContractObject` + `extractEndpointContract`. |
+| 6.5 ts-rest consumer discovery pattern | ✅ | `@suss/framework-ts-rest` now includes a `consumer` `DiscoveryPattern` matching `initClient` from `@ts-rest/core`, binding method/path via `fromClientMethod`. |
+| 6.6 `@suss/runtime-web` package | ✅ | New package (not "framework" — fetch is a runtime built-in). Discovers `fetch()` calls with literal URL paths, extracts method from options object, defaults to GET. |
+| 6.7 Consumer fixtures + end-to-end tests | ✅ | fetch consumer fixture, CLI integration test (`suss extract -f fetch`), end-to-end `extract + check` test. |
+
+### Deferred within consumer-side discovery
+
+- **Template-literal / URL-builder paths** → opaque boundary binding, `lowConfidence` finding.
+- **Multiple client calls per function** → first pass: one call site per consumer function, deduplicates on enclosing function.
+- **Range-based status matching** → `status >= 400`, `response.ok` conditions produce opaque status predicates today; could be resolved to status ranges in a follow-up.
+- **Recursive dependency extraction** → local function calls within the consumer are `invocation` effects, not recursively extracted into their own summaries.
+- **axios, tRPC, GraphQL clients** → additive; the mechanism is proven, more packs are data.
+
+## Phase 7+ — Deferred
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Consumer-side discovery | ⏸ | Extract `BehavioralSummary` for fetch/axios/ts-rest-client call sites — unlocks full cross-boundary checking against real code. |
 | Python adapter | ⏸ | Same `RawCodeStructure` interface, Pyright or ast-grep. |
 | React component support | ⏸ | `Input` types beyond `parameter` (hookReturn, contextValue) need `RawCodeStructure` surface. JSX-as-terminal pattern design. |
 | GitHub Action / CI integration | ⏸ | PR-scoped extraction wrapper. |
@@ -86,13 +107,14 @@ Progress tracker. Updated as phases land.
 |---------|-------|-------|
 | `@suss/behavioral-ir` | 8 | diff utility, type narrowing, Finding shape |
 | `@suss/extractor` | 52 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, transition ID stability, edge cases |
-| `@suss/adapter-typescript` | 280 | conditions, predicates, subjects, terminals, discovery, contract reading (incl. body schema extraction from `c.type<T>()`), shape extraction (literal preservation, AST resolution, wire-format fidelity, dictionary vs record), integration |
-| `@suss/framework-ts-rest` | 10 | pack shape + integration (adapter against fixtures, boundary bindings, gaps, inputs) |
+| `@suss/adapter-typescript` | 296 | conditions, predicates, subjects, terminals, discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction, consumer binding extraction, integration |
+| `@suss/framework-ts-rest` | 10 | pack shape (handler + consumer discovery) + integration |
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
+| `@suss/runtime-web` | 4 | pack shape + integration (fetch discovery, binding extraction, transitions) |
 | `@suss/checker` | 92 | subject/predicate matchers, body-shape matcher, response-match helpers, provider coverage, consumer satisfaction, contract consistency (status + body), `checkPair` integration |
-| `@suss/cli` | 23 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check` (JSON + human output, exit codes, error cases) |
-| **Total** | **479** | |
+| `@suss/cli` | 25 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check`, consumer extraction, end-to-end extract+check |
+| **Total** | **501** | |
 
 Runs via `turbo test`.
 
