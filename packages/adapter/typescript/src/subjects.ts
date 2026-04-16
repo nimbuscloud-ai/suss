@@ -20,27 +20,36 @@ function resolveCallInitializer(init: Expression): ValueRef | null {
   return null;
 }
 
+const MAX_RESOLVE_DEPTH = 8;
+
 /**
  * Resolve a ts-morph Expression node to a structured ValueRef.
  * Uses only expr.getSymbol()?.getDeclarations()[0] for symbol lookup —
  * never findReferencesAsNodes() which is project-wide and quadratic.
+ *
+ * Follows intermediate variable assignments (const data = result.body)
+ * so that property chains through temporaries resolve to their origin.
+ * Depth-bounded to prevent infinite recursion on cyclic references.
  */
-export function resolveSubject(expr: Expression): ValueRef {
+export function resolveSubject(expr: Expression, depth = 0): ValueRef {
+  if (depth >= MAX_RESOLVE_DEPTH) {
+    return { type: "unresolved", sourceText: expr.getText() };
+  }
   const sourceText = expr.getText();
 
   // Strip parentheses — recurse into inner expression
   if (Node.isParenthesizedExpression(expr)) {
-    return resolveSubject(expr.getExpression());
+    return resolveSubject(expr.getExpression(), depth + 1);
   }
 
   // Strip await — recurse into inner expression
   if (Node.isAwaitExpression(expr)) {
-    return resolveSubject(expr.getExpression());
+    return resolveSubject(expr.getExpression(), depth + 1);
   }
 
   // Strip as-expression (type cast) — recurse into inner expression
   if (Node.isAsExpression(expr)) {
-    return resolveSubject(expr.getExpression());
+    return resolveSubject(expr.getExpression(), depth + 1);
   }
 
   // Literal: null keyword
@@ -72,7 +81,7 @@ export function resolveSubject(expr: Expression): ValueRef {
   if (Node.isPropertyAccessExpression(expr)) {
     return {
       type: "derived",
-      from: resolveSubject(expr.getExpression()),
+      from: resolveSubject(expr.getExpression(), depth + 1),
       derivation: { type: "propertyAccess", property: expr.getName() },
     };
   }
@@ -81,7 +90,7 @@ export function resolveSubject(expr: Expression): ValueRef {
   if (Node.isElementAccessExpression(expr)) {
     return {
       type: "derived",
-      from: resolveSubject(expr.getExpression()),
+      from: resolveSubject(expr.getExpression(), depth + 1),
       derivation: {
         type: "indexAccess",
         index: expr.getArgumentExpression()?.getText() ?? "?",
@@ -131,6 +140,17 @@ export function resolveSubject(expr: Expression): ValueRef {
                 derivation: { type: "destructured", field: bindingName },
               };
             }
+            // Follow through non-call initializers for binding elements too
+            if (Node.isExpression(init)) {
+              const resolved = resolveSubject(init, depth + 1);
+              if (resolved.type !== "unresolved") {
+                return {
+                  type: "derived",
+                  from: resolved,
+                  derivation: { type: "destructured", field: bindingName },
+                };
+              }
+            }
           }
         }
       }
@@ -147,6 +167,17 @@ export function resolveSubject(expr: Expression): ValueRef {
       const dep = resolveCallInitializer(init);
       if (dep !== null) {
         return dep;
+      }
+
+      // Follow through intermediate assignments:
+      //   const data = result.body  → resolveSubject(result.body)
+      //   const x = y               → resolveSubject(y)
+      //   const d = await promise    → resolveSubject(promise)
+      if (Node.isExpression(init)) {
+        const resolved = resolveSubject(init, depth + 1);
+        if (resolved.type !== "unresolved") {
+          return resolved;
+        }
       }
 
       return { type: "unresolved", sourceText };

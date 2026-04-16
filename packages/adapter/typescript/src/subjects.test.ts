@@ -332,3 +332,69 @@ describe("resolveSubject — dependency then property access", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Intermediate variable resolution (Level 4)
+// ---------------------------------------------------------------------------
+
+describe("resolveSubject — intermediate variable assignments", () => {
+  it("const data = result.body; data.name → derived chain through intermediate", () => {
+    const cond = getFirstIfCondition(sourceFile, "intermediatePropertyAccess");
+    const result = resolveSubject(cond);
+    // data.name → data = result.body → result = await db.findUser(id)
+    // so: derived(derived(dependency(db.findUser), body), name)
+    expect(result).toEqual({
+      type: "derived",
+      from: {
+        type: "derived",
+        from: {
+          type: "dependency",
+          name: "db.findUser",
+          accessChain: [],
+        },
+        derivation: { type: "propertyAccess", property: "body" },
+      },
+      derivation: { type: "propertyAccess", property: "name" },
+    });
+  });
+
+  it("const alias = user; alias.deletedAt → follows identifier assignment", () => {
+    const cond = getFirstIfCondition(sourceFile, "intermediateIdentifier");
+    const result = resolveSubject(cond);
+    // alias.deletedAt → alias = user → user = await db.findUser(id)
+    // so: derived(dependency(db.findUser), deletedAt)
+    expect(result).toEqual({
+      type: "derived",
+      from: {
+        type: "dependency",
+        name: "db.findUser",
+        accessChain: [],
+      },
+      derivation: { type: "propertyAccess", property: "deletedAt" },
+    });
+  });
+
+  it("three-level chain: result → body → user → user.name", () => {
+    const cond = getFirstIfCondition(sourceFile, "chainedIntermediates");
+    const result = resolveSubject(cond);
+    // user.name → user = body.user → body = result.body → result = await db.findUser("1")
+    // so: derived(derived(derived(dependency(db.findUser), body), user), name)
+    expect(result).toEqual({
+      type: "derived",
+      from: {
+        type: "derived",
+        from: {
+          type: "derived",
+          from: {
+            type: "dependency",
+            name: "db.findUser",
+            accessChain: [],
+          },
+          derivation: { type: "propertyAccess", property: "body" },
+        },
+        derivation: { type: "propertyAccess", property: "user" },
+      },
+      derivation: { type: "propertyAccess", property: "name" },
+    });
+  });
+});
