@@ -2,79 +2,128 @@
 
 Given behavioral summaries for two sides of a boundary — a provider (the handler producing a response) and a consumer (the call site reading it) — is their behavior compatible?
 
-This document specifies the *pairwise* check: one provider summary, one consumer summary, a list of findings. It describes the algorithm `suss check` uses, the kinds of mismatches it surfaces, and how the IR supports cross-boundary reasoning. For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
+This document is the canonical reference for how suss behavioral analysis works: the conceptual model, the analysis levels, what the checker does today, and where it's heading. For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
 
-> **Status:** consumer-side discovery has landed. Both sides of a boundary can now be extracted from real code: providers via handler registration (ts-rest, Express, React Router) and consumers via client call sites (ts-rest `initClient`, `fetch`). `suss check` compares provider and consumer summaries for status-code coverage, dead branches, and contract consistency (including body shapes against declared contracts). See [§ Current limitations](#current-limitations) for what the checker does *not* yet do. Broader analysis layers (cross-service graphs, historical tracking, continuous checking) are deliberately **out of scope** for this repository; see [§ Beyond pairwise](#beyond-pairwise).
+## The three contracts
 
-## What the check answers
+Every API boundary has three behavioral contracts, whether anyone writes them down or not.
 
-Given two summaries that share a boundary, the checker answers three questions:
+### 1. The declared contract (authored, optional)
 
-1. **Does the consumer handle every case the provider can produce?** (*provider coverage*)
-2. **Does the provider actually produce every case the consumer expects?** (*consumer satisfaction*)
-3. **If a declared contract exists, does each side agree with it?** (*contract consistency*)
+ts-rest `responses`, OpenAPI schema, GraphQL SDL. Says what statuses and shapes are *supposed* to exist. This is what most tools check against. It's authored by a human, so it can be wrong, incomplete, or out of date — but when it exists, it's the shared source of truth between provider and consumer teams.
 
-Each failed question becomes a **finding** — a structured record naming the mismatched transitions, source locations on both sides, and a human-readable description.
+### 2. The provider's inferred contract (extracted from implementation)
 
-## The three checks
+The actual set of transitions — under condition A the provider produces output X, under condition B it produces output Y. This is richer than the declared contract because it captures:
 
-### 1. Provider coverage
+- **Sub-cases within a status code.** A declared contract says "200 returns User." The inferred contract says "200 returns `{ ...user }` when `!user.deletedAt`, and 200 returns `{ ...user, status: "deleted" }` when `user.deletedAt`." Two behavioral cases that the declared contract collapses into one.
+- **Body shape variation per condition.** Each transition has its own `Output.body` shape. Different conditions produce different shapes, even for the same status code.
+- **Gaps.** The declared contract says 500 is possible; the implementation never produces it. Or the implementation returns 418, which the contract doesn't declare.
 
-For every transition the provider produces, the consumer must handle it.
+### 3. The consumer's inferred contract (extracted from call-site code)
 
-```
-for each providerTransition in provider.transitions:
-  if no consumerTransition matches providerTransition:
-    emit finding { kind: "unhandledProviderCase", providerTransition, ... }
-```
+What the consumer actually *depends on*: which status codes it branches on, which body fields it reads, what conditions it tests on the response. This contract is **never explicitly defined** — not in OpenAPI, not in types, not in Pact tests (unless someone thinks to write the specific example). It's the invisible contract that causes production incidents when violated.
 
-"Matches" is not output-equality — it's *the consumer reads this response and does something with it*. In practice, matching a provider's `response { status: 404 }` means finding a consumer transition whose conditions include something like "status equals 404" applied to this call site's result.
+suss infers it from the consumer's source code:
+- Status branching: `if (result.status === 404)` → consumer expects status 404 as a case
+- Field access: `result.body.name`, `result.body.email` → consumer depends on these fields existing
+- Response conditions: `if (result.body.status === "deleted")` → consumer distinguishes a sub-case by testing a response field
 
-**Example finding.** Provider returns `200` with `body: { ...user, status: "deleted" }` when `user.deletedAt` is truthy. Consumer only handles the shape `{ id, email, ... }` — never tests `body.status`. Uncovered case: the soft-delete response flows through as if the user were active.
+## The comparison matrix
 
-### 2. Consumer satisfaction
+The checker's job is to compare these three contracts pairwise. Each comparison catches a different class of failure.
 
-For every case the consumer handles, the provider must be able to produce it. Branches the consumer reserves for responses that never arrive are dead code — or, worse, stale assumptions about what the provider used to do.
+| Comparison | What it catches | Implemented |
+|---|---|---|
+| Provider inferred vs declared | Handler never produces declared status. Handler produces undeclared status. Body shape doesn't match schema. | Yes (`checkContractConsistency`) |
+| Provider inferred vs consumer inferred (status) | Provider returns 404, consumer doesn't handle it. Consumer handles 410, provider never produces it. | Yes (`checkProviderCoverage`, `checkConsumerSatisfaction`) |
+| Provider inferred vs consumer inferred (sub-cases) | Provider has two 200s (active vs deleted user), consumer has one 200 branch. | Yes (`checkProviderCoverage` sub-case analysis) |
+| Provider inferred vs consumer inferred (body fields) | Consumer reads `body.email` but provider's 200 response doesn't include it. | Yes (`checkBodyCompatibility`) |
+| Consumer inferred vs declared | Consumer reads `body.role` but the declared 200 schema doesn't include `role`. Consumer depends on an undeclared implementation detail. | Not yet |
+| Provider output ↔ consumer conditions (semantic bridging) | Provider's `user.deletedAt` transition produces body with `status: "deleted"`. Consumer tests `body.status === "deleted"`. These are the same behavioral case expressed in different domains. | Not yet — north star |
 
-```
-for each consumerTransition in consumer.transitions:
-  if consumerTransition reads a provider response that no provider transition produces:
-    emit finding { kind: "deadConsumerBranch", consumerTransition, ... }
-```
+## Analysis levels
 
-**Example finding.** Consumer has a branch that fires on `status === 410`. Provider's summary contains no `410` response. Either the provider used to return 410 and the consumer hasn't been updated, or the consumer was written speculatively.
+The checks compose in layers, each building on the previous.
 
-### 3. Contract consistency
+### Level 0: Status-code coverage (done)
 
-If a declared contract exists at the boundary (ts-rest `responses`, an OpenAPI spec, a GraphQL schema), each side is checked independently:
+Set comparison on status codes. Does the consumer handle every status the provider produces? Does the provider produce every status the consumer expects?
 
-- **Provider vs contract** — does the provider produce every response the contract declares? Does it produce any response the contract doesn't declare? These are the same gap categories that `@suss/extractor`'s `detectGaps` already emits; the checker reformats each entry in `provider.gaps` into a `providerContractViolation` finding (severity `error`). The gap data stays on the summary so other consumers still see it. When the contract declares a body shape for a status code, each matching provider transition's body is compared to the declared shape via `bodyShapesMatch` — incompatible shapes raise `providerContractViolation` (severity `error`); indeterminate comparisons (record spreads, unresolved refs) surface as `lowConfidence` (severity `info`) instead of false positives.
-- **Consumer vs contract** — does the consumer handle every declared response? Branches for undeclared responses are a contract violation in the consumer (severity `error`); unhandled declared responses are uncovered risk (severity `warning`). A consumer default branch implicitly covers declared 2xx statuses, mirroring the provider-coverage rule.
+This catches the most common integration failures: a new error status that no consumer handles, or a consumer branch for a status the provider stopped returning.
 
-Contract consistency can catch mismatches that `1`/`2` miss. If both provider and consumer have drifted away from the contract in the same direction, they'll agree with each other but disagree with the declared truth.
+### Level 1: Sub-case detection (done)
 
-## How summaries support comparison
+When a provider has multiple transitions for the same status code (e.g., two 200s gated by different conditions), check whether the consumer distinguishes between them. If the consumer has a single 200 branch with no sub-case conditions, emit a warning per conditional provider transition.
 
-The checker does the same work at a boundary that a human would — but it can only do so because the IR was designed to make comparison tractable.
+This catches the class of failure where "200 means success" is too coarse — the provider returns 200 in semantically different situations that the consumer collapses.
 
-**Transitions are atomic.** Each transition is `(conditions → output, effects)` with a stable `id`. Matching provider outputs to consumer expectations happens at the transition level, not by diffing free-form code.
+### Level 2: Field-presence comparison (done)
 
-**Predicates are structural, not textual.** A predicate is `{ subject, test }`, not a source string. The provider's `user.deletedAt` (a `truthinessCheck` on a `derived` subject whose origin is `db.findById`) and the consumer's `user.status === "deleted"` (a `comparison` on the same shape) can be compared as structured objects. Two predicates on different sides of a boundary that test the same thing should be recognizable as such.
+For each consumer transition with `expectedInput`, compare the set of fields the consumer reads against the provider's body shape for the matching status code. A missing field is a definite mismatch.
 
-**Subjects have identity.** `ValueRef` records where a value came from (parameter, dependency call, derived property access) as a traversable DAG. A response body field on the provider side and the same field read on the consumer side share a subject path — the checker walks both to decide whether they refer to the same value.
+Consumer field tracking works by tracing property accesses on the response variable within each branch (e.g., `result.body.name`, `result.body.email`). These are collected into a `TypeShape` on `Transition.expectedInput` during extraction, flowing through `RawBranch` → `assembleSummary` → `Transition`.
 
-**Opaque predicates are honest.** When decomposition failed on either side, the checker can't assert compatibility. It emits a `lowConfidence` finding rather than a false negative. Matching against opaque predicates is treated as *unknown*, not *compatible*.
+### Level 3: Consumer vs declared contract (not yet)
 
-**Gaps carry forward.** `BehavioralSummary.gaps` (populated by `detectGaps`) is already structured — gaps detected during extraction flow through the checker unchanged, with the boundary adding the context that makes them actionable.
+Compare the consumer's `expectedInput` against the *declared* contract's body schema, not just the provider's actual output. If the consumer reads `body.role` but the declared 200 schema only has `{ id, name, email }`, the consumer depends on an undeclared field — an implementation detail that the provider can remove without violating its contract.
+
+This is the "contract leakage" check: the consumer assumes more than the contract guarantees.
+
+### Level 4: Subject resolution improvement (not yet)
+
+The current `resolveSubject` in the TypeScript adapter handles identifiers whose declaration initializer is a call expression (`const user = await db.findById(id)`) but falls through to `unresolved` when the initializer is a property access (`const data = result.body`) or another identifier (`const x = y`).
+
+This means consumer conditions that go through intermediate variables — `const data = result.body; if (data.status === "deleted")` — lose their chain back to the response. Fixing this is a targeted change: when a variable's initializer is a property access or identifier, recurse into it.
+
+This level unlocks Level 5.
+
+### Level 5: Semantic condition bridging (north star)
+
+The core insight: provider conditions and consumer conditions are about the *same semantic concept* but expressed in different domains. The provider's condition `user.deletedAt` (a database field) and the consumer's condition `result.body.status === "deleted"` (a response field) are correlated — the provider *puts* the data there, the consumer *reads* it.
+
+The bridge between them is the **provider's output shape per transition**:
+
+1. Provider transition: when `user.deletedAt` is truthy, produce body `{ ...user, status: "deleted" }`
+2. The body shape for that transition includes `status` with value `"deleted"` (a literal)
+3. Consumer condition: `result.body.status === "deleted"` — a comparison predicate testing a derived subject (response → body → status) against literal `"deleted"`
+
+The checker can ask: **does the provider transition's output body contain a field whose value matches the consumer transition's comparison predicate?**
+
+If the provider's body has `{ status: { type: "literal", value: "deleted" } }` and the consumer tests `body.status === "deleted"`, that's a semantic match — the consumer is distinguishing *this specific provider sub-case*. If the consumer doesn't test for it, it's collapsing sub-cases. If the consumer tests for a value the provider never produces (e.g., `body.status === "suspended"` but no provider transition puts `"suspended"` in `status`), that's a dead branch.
+
+This is the level at which suss catches the motivating example end-to-end:
+
+> A user endpoint starts returning `200` with `status: "deleted"` for soft-deleted accounts. Three services downstream break because they assumed `200` meant "the user exists and is usable."
+
+At Level 5, suss reports: "Provider transition `getUser:response:200:a1b2c3d` produces body with `status: "deleted"` when `user.deletedAt` is truthy. Consumer `loadUser` handles status 200 but does not test `body.status` — this sub-case flows through without distinction."
+
+### Level 6: Local function inlining (independent)
+
+When a provider condition is a call to a local helper — `if (!isActive(user))` where `isActive` is `(u) => !u.deletedAt && !u.suspendedAt` — the current extractor records the condition as an opaque `call` predicate. Inlining the helper body would produce two structured truthiness-check predicates instead.
+
+Boundary: **can we statically resolve the function body to a single expression with no side effects?** If yes, inline. If no, stay opaque. This improves confidence scores and makes Levels 1-5 more effective, but is independent of them.
+
+## How the IR supports comparison
+
+**Transitions are atomic.** Each transition is `(conditions → output, effects)` with a stable `id`. Matching happens at the transition level.
+
+**Predicates are structural, not textual.** A predicate is `{ subject, test }`, not a source string. Structured predicates can be compared across boundaries where the same concept appears in different forms.
+
+**Subjects have identity.** `ValueRef` records where a value came from (parameter, dependency call, derived property access) as a traversable DAG. On the provider side, `user.deletedAt` resolves to `derived(dependency("db.findById"), propertyAccess("deletedAt"))`. On the consumer side, `result.body.status` resolves to `derived(derived(dependency("client.getUser"), propertyAccess("body")), propertyAccess("status"))`. Semantic bridging (Level 5) works by matching the provider's *output body field paths* against the consumer's *subject derivation chains*.
+
+**`expectedInput` captures what the consumer reads.** Each client transition has an optional `expectedInput: TypeShape` representing the response body fields the consumer accesses within that branch. This is inferred from property access chains on the response variable — no annotation needed.
+
+**Opaque predicates are honest.** When decomposition fails, the checker emits `lowConfidence` rather than a false negative.
+
+**Gaps carry forward.** Provider gaps (declared-but-not-produced, produced-but-not-declared) flow through the checker as `providerContractViolation` findings.
 
 ## Output: findings
-
-A finding is the checker's unit of output, analogous to a compiler diagnostic. The planned shape:
 
 ```typescript
 interface Finding {
   kind:
-    | "unhandledProviderCase"      // provider coverage
+    | "unhandledProviderCase"      // provider coverage, sub-case, or body mismatch
     | "deadConsumerBranch"         // consumer satisfaction
     | "providerContractViolation"  // contract consistency, provider side
     | "consumerContractViolation"  // contract consistency, consumer side
@@ -87,21 +136,7 @@ interface Finding {
 }
 ```
 
-Findings are JSON-serializable and render to human-readable text via `suss inspect`-style formatting. The CLI exits non-zero when any `error`-severity findings exist, so the check composes into CI as a standard check step.
-
-## Current limitations
-
-The checker's three checks currently operate at the **status-code level only**. The IR was designed for deeper comparison (structured predicates, subject trees, body shapes), and the matching infrastructure exists (`subjectsMatch`, `predicatesMatch`, `bodyShapesMatch`), but the checks don't yet use it for cross-boundary analysis. Specifically:
-
-1. **No cross-boundary body comparison.** The checker compares provider body shapes against *declared contracts* (via `bodyShapesMatch`), but does not compare provider body shapes against *consumer expectations*. Consumer summaries don't yet capture which fields the consumer reads from the response body — only that it branches on the status code.
-
-2. **No predicate-level transition matching.** When a provider has two `200` transitions gated by different conditions (e.g., `user.deletedAt` vs default), the checker treats them as one "provider produces 200" signal. It cannot distinguish whether the consumer handles both sub-cases. The `predicatesMatch` / `subjectsMatch` functions are tested but not wired into the coverage checks.
-
-3. **No automatic boundary pairing.** `checkPair` takes one provider and one consumer. There's no mechanism to discover which pairs to check from a directory of summaries. Path template normalization (`:id` vs `{id}`) is needed for automatic matching.
-
-4. **`CodeUnitKind = "consumer"` is overloaded.** The IR defines `"consumer"` for message consumers (Kafka, SQS), but Phase 6 reuses it for API client call sites. These have different behavioral models.
-
-These gaps are tracked in Phase 7 of [`status.md`](status.md).
+Findings are JSON-serializable. The CLI exits non-zero when any `error`-severity finding exists.
 
 ## Scope
 
@@ -109,8 +144,7 @@ These gaps are tracked in Phase 7 of [`status.md`](status.md).
 
 - The `suss check <provider.json> <consumer.json>` command — pairwise, local, stateless.
 - Deterministic findings output (JSON or human-readable).
-- Subject/predicate/transition matching as described above.
-- Integration of `detectGaps`-style contract checks into the pairwise finding stream.
+- All six analysis levels described above (Levels 0-2 are done; 3-6 are in progress).
 - Library API so other tools can call the checker programmatically.
 
 ### Beyond pairwise

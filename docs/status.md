@@ -121,14 +121,14 @@ Progress tracker. Updated as phases land.
 |---------|-------|-------|
 | `@suss/behavioral-ir` | 8 | diff utility, type narrowing, Finding shape |
 | `@suss/extractor` | 52 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, transition ID stability, edge cases |
-| `@suss/adapter-typescript` | 296 | conditions, predicates, subjects, terminals, discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction, consumer binding extraction, integration |
+| `@suss/adapter-typescript` | 303 | conditions, predicates, subjects, terminals, discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction, consumer binding extraction, field-access tracking, integration |
 | `@suss/framework-ts-rest` | 10 | pack shape (handler + consumer discovery) + integration |
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
 | `@suss/runtime-web` | 4 | pack shape + integration (fetch discovery, binding extraction, transitions) |
-| `@suss/checker` | 92 | subject/predicate matchers, body-shape matcher, response-match helpers, provider coverage, consumer satisfaction, contract consistency (status + body), `checkPair` integration |
+| `@suss/checker` | 103 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), response-match helpers, provider coverage (incl. sub-case analysis), consumer satisfaction, contract consistency (status + body), `checkPair` integration |
 | `@suss/cli` | 25 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check`, consumer extraction, end-to-end extract+check |
-| **Total** | **501** | |
+| **Total** | **519** | |
 
 Runs via `turbo test`.
 
