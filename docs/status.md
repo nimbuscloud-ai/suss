@@ -95,16 +95,18 @@ Progress tracker. Updated as phases land.
 
 ## Phase 7 — Deepen cross-boundary analysis
 
-*The checker currently matches on status codes only. This phase closes the gap between the IR's expressive power and the checker's actual analysis depth, so cross-boundary findings catch field-level and predicate-level mismatches — not just "consumer handles 404."*
+*Closes the gap between the IR's expressive power and the checker's actual analysis depth, so cross-boundary findings catch field-level, predicate-level, and semantic mismatches.*
 
 | Task | Status | Notes |
 |------|--------|-------|
-| 7.1 Resolve `consumer` kind overload | ⬜ | `CodeUnitKind = "consumer"` is used for both message consumers (Kafka/SQS) and API client call sites. Add `"client"` kind or a discriminating field. |
-| 7.2 Consumer body-field extraction | ⬜ | After the consumer branches on status, trace which properties it reads from the response body. Produce a `TypeShape` per status branch representing what the consumer actually expects. |
-| 7.3 Cross-boundary body comparison | ⬜ | New check: compare provider's produced body shape against consumer's expected body shape per status code. `bodyShapesMatch` already exists — wire it into a fourth check alongside coverage/satisfaction/contract-consistency. |
-| 7.4 Predicate-level transition matching | ⬜ | Use `predicatesMatch` / `subjectsMatch` in the actual coverage checks. When the provider has two `200` transitions with different conditions, the checker should match each against consumer branches — not just confirm "consumer handles 200." |
+| 7.1 Resolve `consumer` kind overload | ✅ | `CodeUnitKind` gains `"client"` for API call sites, distinct from `"consumer"` (message queues). |
+| 7.2 Consumer body-field extraction | ✅ | `collectClientFieldAccesses` traces property accesses on the response variable per branch. Populates `RawBranch.expectedInput` → `Transition.expectedInput`. |
+| 7.3 Cross-boundary body comparison | ✅ | `checkBodyCompatibility` compares provider body shapes against consumer `expectedInput` using field-presence semantics (`providerCoversConsumerFields`). |
+| 7.4 Predicate-level transition matching | ✅ | Sub-case analysis in `checkProviderCoverage`: when provider has N > 1 transitions for the same status, warns if consumer doesn't distinguish them. Uses `predicatesMatch` for structured predicate comparison. |
 | 7.5 Automatic boundary pairing | ⬜ | Given a directory of summaries, match providers to consumers by `(method, normalizedPath)`. Path template normalization (`:id` vs `{id}`). Enables `suss check --dir summaries/`. |
 | 7.6 Error-to-response bridging | ⬜ | When a provider throws and the framework converts it to an HTTP response, the checker should recognize this as a produced status code. Requires framework-pack-level throw→status mapping. |
+| 7.7 Subject resolution through intermediates | ✅ | `resolveSubject` follows non-call initializers (`const data = result.body` → recurse). Depth-bounded at 8 hops. |
+| 7.8 Semantic condition bridging | ✅ | `checkSemanticBridging`: when provider transitions produce distinguishing literal body fields (e.g., `status: "deleted"` vs `status: "active"`), checks whether consumer predicates test for them. Known limitations (5 aspiration tests): literal-only discrimination, equality-only matching, hardcoded "body" accessor, ref shapes opaque, `as const` dependency. See [`cross-boundary-checking.md`](cross-boundary-checking.md) §Level 5. |
 
 ## Phase 8+ — Deferred
 
@@ -121,14 +123,14 @@ Progress tracker. Updated as phases land.
 |---------|-------|-------|
 | `@suss/behavioral-ir` | 8 | diff utility, type narrowing, Finding shape |
 | `@suss/extractor` | 52 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, transition ID stability, edge cases |
-| `@suss/adapter-typescript` | 303 | conditions, predicates, subjects, terminals, discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction, consumer binding extraction, field-access tracking, integration |
+| `@suss/adapter-typescript` | 306 | conditions, predicates, subjects (incl. intermediate variable resolution), terminals, discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction, consumer binding extraction, field-access tracking, integration |
 | `@suss/framework-ts-rest` | 10 | pack shape (handler + consumer discovery) + integration |
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
 | `@suss/runtime-web` | 4 | pack shape + integration (fetch discovery, binding extraction, transitions) |
-| `@suss/checker` | 103 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), response-match helpers, provider coverage (incl. sub-case analysis), consumer satisfaction, contract consistency (status + body), `checkPair` integration |
-| `@suss/cli` | 25 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check`, consumer extraction, end-to-end extract+check |
-| **Total** | **519** | |
+| `@suss/checker` | 115 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (incl. 6 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis), consumer satisfaction, contract consistency (status + body), `checkPair` integration |
+| `@suss/cli` | 26 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check`, consumer extraction, end-to-end extract+check, semantic-bridging e2e |
+| **Total** | **535** | |
 
 Runs via `turbo test`.
 

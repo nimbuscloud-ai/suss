@@ -98,6 +98,18 @@ This is the level at which suss catches the motivating example end-to-end:
 
 At Level 5, suss reports: "Provider transition `getUser:response:200:a1b2c3d` produces body with `status: "deleted"` when `user.deletedAt` is truthy. Consumer `loadUser` handles status 200 but does not test `body.status` — this sub-case flows through without distinction."
 
+Level 5 is implemented (`checkSemanticBridging`) with the following known limitations, each documented as an aspiration test in `semantic-bridging.aspirations.test.ts`:
+
+1. **Literal-only discrimination.** Only `TypeShape.literal` values trigger bridging. When the provider distinguishes sub-cases by field presence (body has `deletedAt` vs doesn't) or by non-literal type differences, the check doesn't fire. Field-presence discrimination needs a separate structural-diff mode comparing key sets of sibling transition body shapes.
+
+2. **Equality-only consumer matching.** The checker extracts consumer field tests from `comparison` predicates with `op: "eq"`. Negated comparisons (`!== "active"` as a proxy for `"deleted"`), truthiness checks (`if (data.deletedAt)`), range comparisons, and method-call predicates (`includes`, `startsWith`) are invisible. Truthiness checks are the most tractable next step — extend consumer field test extraction to recognize `truthinessCheck` predicates on body fields.
+
+3. **Hardcoded `"body"` property accessor.** The checker looks for `"body"` in the consumer's property chain to compute the body-relative path. This works for ts-rest (`result.body.status`) but fails for fetch (where the consumer calls `result.json()` and accesses the returned object directly). Framework-aware body accessor configuration is needed.
+
+4. **Provider body shapes must be structurally visible.** When the response body is constructed by a helper function (`buildResponse(user, "deleted")`), the shape extractor resolves it as a `ref` (opaque type name) rather than a record with literal fields. Improving this requires either local function inlining (Level 6) or ref resolution against structural type definitions.
+
+5. **`as const` dependency for narrow literals.** Without `as const`, TypeScript's type checker widens string literals to `string`. The extractor's syntactic pass should preserve the literal from the AST node, but the type-checker fallback pass may override it. Investigation needed.
+
 ### Level 6: Local function inlining (independent)
 
 When a provider condition is a call to a local helper — `if (!isActive(user))` where `isActive` is `(u) => !u.deletedAt && !u.suspendedAt` — the current extractor records the condition as an opaque `call` predicate. Inlining the helper body would produce two structured truthiness-check predicates instead.
