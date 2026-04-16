@@ -100,9 +100,9 @@ At Level 5, suss reports: "Provider transition `getUser:response:200:a1b2c3d` pr
 
 Level 5 is implemented (`checkSemanticBridging`) with the following known limitations, each documented as an aspiration test in `semantic-bridging.aspirations.test.ts`:
 
-1. **Literal-only discrimination.** Only `TypeShape.literal` values trigger bridging. When the provider distinguishes sub-cases by field presence (body has `deletedAt` vs doesn't) or by non-literal type differences, the check doesn't fire. Field-presence discrimination needs a separate structural-diff mode comparing key sets of sibling transition body shapes.
+1. ~~**Literal-only discrimination.**~~ **RESOLVED.** Field-presence discrimination now detects when sibling transitions have structurally different bodies (e.g., one has `deletedAt`, the other doesn't) even without literal value differences. A consumer truthiness check on the distinguishing field suppresses the finding. Literal discrimination takes priority when both are available.
 
-2. **Negated comparisons.** `!== "active"` as a proxy for `"deleted"` is not recognized. The checker matches exact `(path, value)` equality and truthiness checks, but not negated comparisons or closed-union reasoning.
+2. ~~**Negated comparisons.**~~ **RESOLVED.** `!== "active"` is now recognized as covering any sub-case whose value isn't `"active"` (e.g., `"deleted"`). Both `comparison(neq)` and `negation(comparison(eq))` are handled, with double-negation cancellation.
 
 3. ~~**Hardcoded `"body"` property accessor.**~~ **RESOLVED.** The checker now recognizes `res.json()` as a body accessor: properties accessed on a `.json()` call result are treated as body-relative paths. Other body accessor patterns (custom deserializers, `.text()` + `JSON.parse`) would need to be added.
 
