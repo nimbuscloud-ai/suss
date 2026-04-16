@@ -197,9 +197,9 @@ describe("extract — ts-rest", () => {
     expect(getUser.metadata?.declaredContract).toMatchObject({
       framework: "core",
       responses: expect.arrayContaining([
-        { statusCode: 200 },
-        { statusCode: 404 },
-        { statusCode: 500 },
+        expect.objectContaining({ statusCode: 200 }),
+        expect.objectContaining({ statusCode: 404 }),
+        expect.objectContaining({ statusCode: 500 }),
       ]),
     });
 

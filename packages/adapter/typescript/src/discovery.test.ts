@@ -503,8 +503,8 @@ describe("namedExport — React Router style (loader, action, default)", () => {
     expect(units).toHaveLength(2);
     const names = units.map((u) => u.name).sort();
     expect(names).toEqual(["action", "loader"]);
-    expect(units.find((u) => u.name === "loader")!.kind).toBe("loader");
-    expect(units.find((u) => u.name === "action")!.kind).toBe("action");
+    expect(units.find((u) => u.name === "loader")?.kind).toBe("loader");
+    expect(units.find((u) => u.name === "action")?.kind).toBe("action");
   });
 
   it("discovers default export component", () => {

@@ -143,13 +143,13 @@ describe("ts-rest style — returnShape", () => {
         b.terminal.statusCode.value === 404,
     );
     expect(b404).toBeDefined();
-    expect(b404!.conditions).toHaveLength(1);
-    expect(b404!.conditions[0].polarity).toBe("positive");
-    expect(b404!.conditions[0].source).toBe("explicit");
-    expect(b404!.isDefault).toBe(false);
+    expect(b404?.conditions).toHaveLength(1);
+    expect(b404?.conditions[0].polarity).toBe("positive");
+    expect(b404?.conditions[0].source).toBe("explicit");
+    expect(b404?.isDefault).toBe(false);
     // structured should be a negation/truthinessCheck, not null
-    expect(b404!.conditions[0].structured).not.toBeNull();
-    expect(b404!.conditions[0].structured!.type).toBe("truthinessCheck");
+    expect(b404?.conditions[0].structured).not.toBeNull();
+    expect(b404?.conditions[0].structured?.type).toBe("truthinessCheck");
 
     // Second branch: 200 — has early return condition (negative polarity)
     const b200 = branches.find(
@@ -158,11 +158,11 @@ describe("ts-rest style — returnShape", () => {
         b.terminal.statusCode.value === 200,
     );
     expect(b200).toBeDefined();
-    expect(b200!.conditions).toHaveLength(1);
-    expect(b200!.conditions[0].polarity).toBe("negative");
-    expect(b200!.conditions[0].source).toBe("earlyReturn");
+    expect(b200?.conditions).toHaveLength(1);
+    expect(b200?.conditions[0].polarity).toBe("negative");
+    expect(b200?.conditions[0].source).toBe("earlyReturn");
     // isDefault: true because all conditions are earlyReturn
-    expect(b200!.isDefault).toBe(true);
+    expect(b200?.isDefault).toBe(true);
   });
 
   it("fills in structured predicates for comparisons", () => {
@@ -186,7 +186,7 @@ describe("ts-rest style — returnShape", () => {
     const ifBranch = branches[0];
     expect(ifBranch.conditions).toHaveLength(1);
     expect(ifBranch.conditions[0].structured).not.toBeNull();
-    expect(ifBranch.conditions[0].structured!.type).toBe("comparison");
+    expect(ifBranch.conditions[0].structured?.type).toBe("comparison");
   });
 
   it("handles arrow expression body (concise return)", () => {
@@ -267,16 +267,16 @@ describe("Express style — parameterMethodCall", () => {
         b.terminal.statusCode.value === 400,
     );
     expect(b400).toBeDefined();
-    expect(b400!.conditions).toHaveLength(1);
-    expect(b400!.conditions[0].structured).not.toBeNull();
-    expect(b400!.isDefault).toBe(false);
+    expect(b400?.conditions).toHaveLength(1);
+    expect(b400?.conditions[0].structured).not.toBeNull();
+    expect(b400?.isDefault).toBe(false);
 
     // json() branch: has early return condition
     const bJson = branches.find((b) => b.terminal.statusCode === null);
     expect(bJson).toBeDefined();
-    expect(bJson!.conditions).toHaveLength(1);
-    expect(bJson!.conditions[0].source).toBe("earlyReturn");
-    expect(bJson!.isDefault).toBe(true);
+    expect(bJson?.conditions).toHaveLength(1);
+    expect(bJson?.conditions[0].source).toBe("earlyReturn");
+    expect(bJson?.isDefault).toBe(true);
   });
 
   it("handles multiple sequential if-guards", () => {
@@ -306,14 +306,14 @@ describe("Express style — parameterMethodCall", () => {
         b.terminal.statusCode.value === 200,
     );
     expect(b200).toBeDefined();
-    expect(b200!.conditions).toHaveLength(2);
-    expect(b200!.conditions.every((c) => c.polarity === "negative")).toBe(true);
+    expect(b200?.conditions).toHaveLength(2);
+    expect(b200?.conditions.every((c) => c.polarity === "negative")).toBe(true);
     expect(
-      b200!.conditions.every(
+      b200?.conditions.every(
         (c) => c.source === "earlyReturn" || c.source === "earlyThrow",
       ),
     ).toBe(true);
-    expect(b200!.isDefault).toBe(true);
+    expect(b200?.isDefault).toBe(true);
   });
 });
 
@@ -342,20 +342,20 @@ describe("React Router style — returnShape + throwExpression", () => {
 
     const throwBranch = branches.find((b) => b.terminal.kind === "throw");
     expect(throwBranch).toBeDefined();
-    expect(throwBranch!.terminal.statusCode).toEqual({
+    expect(throwBranch?.terminal.statusCode).toEqual({
       type: "literal",
       value: 404,
     });
-    expect(throwBranch!.conditions).toHaveLength(1);
-    expect(throwBranch!.conditions[0].polarity).toBe("positive");
+    expect(throwBranch?.conditions).toHaveLength(1);
+    expect(throwBranch?.conditions[0].polarity).toBe("positive");
 
     const returnBranch = branches.find((b) => b.terminal.kind === "return");
     expect(returnBranch).toBeDefined();
     // Early throw condition
-    expect(returnBranch!.conditions).toHaveLength(1);
-    expect(returnBranch!.conditions[0].source).toBe("earlyThrow");
-    expect(returnBranch!.conditions[0].polarity).toBe("negative");
-    expect(returnBranch!.isDefault).toBe(true);
+    expect(returnBranch?.conditions).toHaveLength(1);
+    expect(returnBranch?.conditions[0].source).toBe("earlyThrow");
+    expect(returnBranch?.conditions[0].polarity).toBe("negative");
+    expect(returnBranch?.isDefault).toBe(true);
   });
 });
 
@@ -389,10 +389,10 @@ describe("try/catch", () => {
         b.terminal.statusCode.value === 500,
     );
     expect(catchBranch).toBeDefined();
-    expect(catchBranch!.conditions).toHaveLength(1);
-    expect(catchBranch!.conditions[0].source).toBe("catchBlock");
-    expect(catchBranch!.conditions[0].structured).toBeNull();
-    expect(catchBranch!.isDefault).toBe(false);
+    expect(catchBranch?.conditions).toHaveLength(1);
+    expect(catchBranch?.conditions[0].source).toBe("catchBlock");
+    expect(catchBranch?.conditions[0].structured).toBeNull();
+    expect(catchBranch?.isDefault).toBe(false);
   });
 });
 
@@ -425,7 +425,7 @@ describe("if / else-if chain", () => {
     expect(branches[0].conditions).toHaveLength(1);
     expect(branches[0].conditions[0].polarity).toBe("positive");
     expect(branches[0].conditions[0].structured).not.toBeNull();
-    expect(branches[0].conditions[0].structured!.type).toBe("comparison");
+    expect(branches[0].conditions[0].structured?.type).toBe("comparison");
 
     // Second branch: negative outer + positive inner
     expect(branches[1].conditions).toHaveLength(2);
@@ -470,8 +470,8 @@ describe("switch/case", () => {
         b.conditions.length > 0 && b.conditions[0].sourceText.includes('"a"'),
     );
     expect(caseA).toBeDefined();
-    expect(caseA!.conditions[0].structured).toBeNull();
-    expect(caseA!.conditions[0].source).toBe("explicit");
+    expect(caseA?.conditions[0].structured).toBeNull();
+    expect(caseA?.conditions[0].source).toBe("explicit");
 
     // The fallthrough branch (400) has no conditions
     const b400 = branches.find(
@@ -480,7 +480,7 @@ describe("switch/case", () => {
         b.terminal.statusCode.value === 400,
     );
     expect(b400).toBeDefined();
-    expect(b400!.isDefault).toBe(true);
+    expect(b400?.isDefault).toBe(true);
   });
 });
 
@@ -551,9 +551,9 @@ describe("nested conditions", () => {
     const secretBranch = branches.find((b) => b.conditions.length === 2);
     expect(secretBranch).toBeDefined();
     // Outermost first
-    expect(secretBranch!.conditions[0].sourceText).toBe("params.authenticated");
-    expect(secretBranch!.conditions[1].sourceText).toBe("params.admin");
-    expect(secretBranch!.isDefault).toBe(false);
+    expect(secretBranch?.conditions[0].sourceText).toBe("params.authenticated");
+    expect(secretBranch?.conditions[1].sourceText).toBe("params.admin");
+    expect(secretBranch?.isDefault).toBe(false);
   });
 });
 
@@ -591,13 +591,13 @@ describe("mixed early returns + ancestor conditions", () => {
     );
     expect(adminBranch).toBeDefined();
     // Early return comes first
-    expect(adminBranch!.conditions[0].source).toBe("earlyReturn");
-    expect(adminBranch!.conditions[0].polarity).toBe("negative");
+    expect(adminBranch?.conditions[0].source).toBe("earlyReturn");
+    expect(adminBranch?.conditions[0].polarity).toBe("negative");
     // Ancestor condition comes second
-    expect(adminBranch!.conditions[1].source).toBe("explicit");
-    expect(adminBranch!.conditions[1].polarity).toBe("positive");
+    expect(adminBranch?.conditions[1].source).toBe("explicit");
+    expect(adminBranch?.conditions[1].polarity).toBe("positive");
     // Has an explicit condition, so NOT default
-    expect(adminBranch!.isDefault).toBe(false);
+    expect(adminBranch?.isDefault).toBe(false);
 
     // Final branch: two early returns, no explicit → isDefault
     const fallthrough = branches.find(
@@ -608,7 +608,7 @@ describe("mixed early returns + ancestor conditions", () => {
         ),
     );
     expect(fallthrough).toBeDefined();
-    expect(fallthrough!.isDefault).toBe(true);
+    expect(fallthrough?.isDefault).toBe(true);
   });
 });
 
@@ -637,10 +637,10 @@ describe("compound predicates through assembly", () => {
     const okBranch = branches[0];
     expect(okBranch.conditions).toHaveLength(1);
     expect(okBranch.conditions[0].structured).not.toBeNull();
-    expect(okBranch.conditions[0].structured!.type).toBe("compound");
-    if (okBranch.conditions[0].structured!.type === "compound") {
-      expect(okBranch.conditions[0].structured!.op).toBe("and");
-      expect(okBranch.conditions[0].structured!.operands).toHaveLength(2);
+    expect(okBranch.conditions[0].structured?.type).toBe("compound");
+    if (okBranch.conditions[0].structured?.type === "compound") {
+      expect(okBranch.conditions[0].structured?.op).toBe("and");
+      expect(okBranch.conditions[0].structured?.operands).toHaveLength(2);
     }
   });
 
@@ -661,9 +661,9 @@ describe("compound predicates through assembly", () => {
     const branches = extractRawBranches(fn, tsRestTerminals);
     const goneBranch = branches[0];
     expect(goneBranch.conditions[0].structured).not.toBeNull();
-    expect(goneBranch.conditions[0].structured!.type).toBe("compound");
-    if (goneBranch.conditions[0].structured!.type === "compound") {
-      expect(goneBranch.conditions[0].structured!.op).toBe("or");
+    expect(goneBranch.conditions[0].structured?.type).toBe("compound");
+    if (goneBranch.conditions[0].structured?.type === "compound") {
+      expect(goneBranch.conditions[0].structured?.op).toBe("or");
     }
   });
 });
@@ -691,7 +691,7 @@ describe("null check predicates through assembly", () => {
     const branches = extractRawBranches(fn, tsRestTerminals);
     const notFoundBranch = branches[0];
     expect(notFoundBranch.conditions[0].structured).not.toBeNull();
-    expect(notFoundBranch.conditions[0].structured!.type).toBe("nullCheck");
+    expect(notFoundBranch.conditions[0].structured?.type).toBe("nullCheck");
   });
 
   it("if (x !== undefined) produces a nullCheck with negated: true", () => {
@@ -712,9 +712,9 @@ describe("null check predicates through assembly", () => {
     const branches = extractRawBranches(fn, tsRestTerminals);
     const cachedBranch = branches[0];
     expect(cachedBranch.conditions[0].structured).not.toBeNull();
-    expect(cachedBranch.conditions[0].structured!.type).toBe("nullCheck");
-    if (cachedBranch.conditions[0].structured!.type === "nullCheck") {
-      expect(cachedBranch.conditions[0].structured!.negated).toBe(true);
+    expect(cachedBranch.conditions[0].structured?.type).toBe("nullCheck");
+    if (cachedBranch.conditions[0].structured?.type === "nullCheck") {
+      expect(cachedBranch.conditions[0].structured?.negated).toBe(true);
     }
   });
 });
@@ -742,9 +742,9 @@ describe("call predicates through assembly", () => {
     const branches = extractRawBranches(fn, tsRestTerminals);
     const adminBranch = branches[0];
     expect(adminBranch.conditions[0].structured).not.toBeNull();
-    expect(adminBranch.conditions[0].structured!.type).toBe("call");
-    if (adminBranch.conditions[0].structured!.type === "call") {
-      expect(adminBranch.conditions[0].structured!.callee).toBe("isAdmin");
+    expect(adminBranch.conditions[0].structured?.type).toBe("call");
+    if (adminBranch.conditions[0].structured?.type === "call") {
+      expect(adminBranch.conditions[0].structured?.callee).toBe("isAdmin");
     }
   });
 });
@@ -783,13 +783,13 @@ describe("try/catch + nested conditions", () => {
         b.terminal.statusCode.value === 404,
     );
     expect(b404).toBeDefined();
-    expect(b404!.conditions).toHaveLength(2);
+    expect(b404?.conditions).toHaveLength(2);
     // catchBlock first (outermost), then explicit if condition
-    expect(b404!.conditions[0].source).toBe("catchBlock");
-    expect(b404!.conditions[1].source).toBe("explicit");
-    expect(b404!.conditions[1].structured).not.toBeNull();
-    expect(b404!.conditions[1].structured!.type).toBe("comparison");
-    expect(b404!.isDefault).toBe(false);
+    expect(b404?.conditions[0].source).toBe("catchBlock");
+    expect(b404?.conditions[1].source).toBe("explicit");
+    expect(b404?.conditions[1].structured).not.toBeNull();
+    expect(b404?.conditions[1].structured?.type).toBe("comparison");
+    expect(b404?.isDefault).toBe(false);
 
     // 500 branch: catch + early return from inner if
     const b500 = branches.find(
@@ -799,11 +799,11 @@ describe("try/catch + nested conditions", () => {
     );
     expect(b500).toBeDefined();
     // catch condition only — the inner if's guard is an early return within catch
-    const catchConditions = b500!.conditions.filter(
+    const catchConditions = b500?.conditions.filter(
       (c) => c.source === "catchBlock",
     );
     expect(catchConditions).toHaveLength(1);
-    expect(b500!.isDefault).toBe(false);
+    expect(b500?.isDefault).toBe(false);
   });
 });
 
@@ -841,10 +841,10 @@ describe("mixed early throw + early return", () => {
         b.terminal.statusCode.value === 200,
     );
     expect(b200).toBeDefined();
-    expect(b200!.conditions).toHaveLength(2);
-    expect(b200!.conditions[0].source).toBe("earlyThrow");
-    expect(b200!.conditions[1].source).toBe("earlyReturn");
-    expect(b200!.isDefault).toBe(true);
+    expect(b200?.conditions).toHaveLength(2);
+    expect(b200?.conditions[0].source).toBe("earlyThrow");
+    expect(b200?.conditions[1].source).toBe("earlyReturn");
+    expect(b200?.isDefault).toBe(true);
   });
 });
 
@@ -904,15 +904,16 @@ describe("realistic multi-layer handler", () => {
         b.terminal.statusCode.value === 404,
     );
     expect(b404).toBeDefined();
-    const b404EarlyReturns = b404!.conditions.filter(
+    if (b404 === undefined) {
+      throw new Error("expected b404 branch");
+    }
+    const b404EarlyReturns = b404.conditions.filter(
       (c) => c.source === "earlyReturn" || c.source === "earlyThrow",
     );
-    const b404Explicit = b404!.conditions.filter(
-      (c) => c.source === "explicit",
-    );
+    const b404Explicit = b404.conditions.filter((c) => c.source === "explicit");
     expect(b404EarlyReturns.length).toBeGreaterThanOrEqual(2);
     expect(b404Explicit.length).toBeGreaterThanOrEqual(1);
-    expect(b404!.isDefault).toBe(false);
+    expect(b404?.isDefault).toBe(false);
 
     // 200: has early returns from all guards + early return from inner ifs
     const b200 = branches.find(
@@ -922,7 +923,7 @@ describe("realistic multi-layer handler", () => {
     );
     expect(b200).toBeDefined();
     // Should have early returns from the outer guards, plus inner guards (!repo, repo.archived)
-    expect(b200!.conditions.length).toBeGreaterThanOrEqual(2);
+    expect(b200?.conditions.length).toBeGreaterThanOrEqual(2);
 
     // 500 (catch): has catch condition
     const b500 = branches.find(
@@ -931,7 +932,7 @@ describe("realistic multi-layer handler", () => {
         b.terminal.statusCode.value === 500,
     );
     expect(b500).toBeDefined();
-    expect(b500!.conditions.some((c) => c.source === "catchBlock")).toBe(true);
+    expect(b500?.conditions.some((c) => c.source === "catchBlock")).toBe(true);
 
     // All structured predicates should be non-null where there's an expression
     for (const branch of branches) {
@@ -977,7 +978,7 @@ describe("realistic Express handler", () => {
 
     // 400 branch: explicit condition
     expect(branches[0].conditions[0].source).toBe("explicit");
-    expect(branches[0].conditions[0].structured!.type).toBe("truthinessCheck");
+    expect(branches[0].conditions[0].structured?.type).toBe("truthinessCheck");
 
     // 404 branch: early return + explicit null check
     const b404 = branches.find(
@@ -986,9 +987,9 @@ describe("realistic Express handler", () => {
         b.terminal.statusCode.value === 404,
     );
     expect(b404).toBeDefined();
-    expect(b404!.conditions.some((c) => c.source === "earlyReturn")).toBe(true);
+    expect(b404?.conditions.some((c) => c.source === "earlyReturn")).toBe(true);
     expect(
-      b404!.conditions.some((c) => c.structured?.type === "nullCheck"),
+      b404?.conditions.some((c) => c.structured?.type === "nullCheck"),
     ).toBe(true);
 
     // fullAccess:true branch: early returns + compound condition (active && verified)
@@ -997,7 +998,7 @@ describe("realistic Express handler", () => {
     );
     expect(fullAccessBranch).toBeDefined();
     // Has early returns for the two guards plus the explicit compound condition
-    expect(fullAccessBranch!.conditions.length).toBeGreaterThanOrEqual(3);
+    expect(fullAccessBranch?.conditions.length).toBeGreaterThanOrEqual(3);
   });
 });
 
@@ -1044,14 +1045,17 @@ describe("edge cases", () => {
     const branches = extractRawBranches(fn, tsRestTerminals);
     const deepBranch = branches.find((b) => b.conditions.length === 4);
     expect(deepBranch).toBeDefined();
-    expect(deepBranch!.conditions[0].sourceText).toBe("params.a");
-    expect(deepBranch!.conditions[1].sourceText).toBe("params.b");
-    expect(deepBranch!.conditions[2].sourceText).toBe("params.c");
-    expect(deepBranch!.conditions[3].sourceText).toBe("params.d");
+    expect(deepBranch?.conditions[0].sourceText).toBe("params.a");
+    expect(deepBranch?.conditions[1].sourceText).toBe("params.b");
+    expect(deepBranch?.conditions[2].sourceText).toBe("params.c");
+    expect(deepBranch?.conditions[3].sourceText).toBe("params.d");
+    if (deepBranch === undefined) {
+      throw new Error("expected deepBranch");
+    }
     // All should have structured truthinessCheck predicates
-    for (const cond of deepBranch!.conditions) {
+    for (const cond of deepBranch.conditions) {
       expect(cond.structured).not.toBeNull();
-      expect(cond.structured!.type).toBe("truthinessCheck");
+      expect(cond.structured?.type).toBe("truthinessCheck");
     }
   });
 });
