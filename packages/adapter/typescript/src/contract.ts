@@ -284,7 +284,7 @@ function extractEndpointContract(
 }
 
 // ---------------------------------------------------------------------------
-// Main exported function
+// Main exported function — provider side
 // ---------------------------------------------------------------------------
 
 /**
@@ -320,6 +320,92 @@ export function readContract(
     }
 
     if (prop.getName() !== routerInfo.handlerName) {
+      continue;
+    }
+
+    const endpointInit = prop.getInitializer();
+    if (endpointInit === undefined) {
+      continue;
+    }
+
+    return extractEndpointContract(
+      endpointInit,
+      pattern,
+      pattern.discovery.importModule.split("/").pop() ?? "unknown",
+    );
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Consumer-side contract resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the contract for a consumer call site.
+ *
+ * Given `client.getUser(...)`, traces back to the `initClient(contract, ...)`
+ * call to find the contract, then extracts the endpoint definition for the
+ * matched method name (e.g. "getUser").
+ */
+export function readContractForClientCall(
+  callExpression: Node,
+  methodName: string,
+  pattern: ContractPattern,
+): ContractReadResult | null {
+  // Walk from client.getUser() → client → find the variable declaration
+  const callee = Node.isCallExpression(callExpression)
+    ? callExpression.getExpression()
+    : null;
+  if (callee === null || !Node.isPropertyAccessExpression(callee)) {
+    return null;
+  }
+
+  const clientIdentifier = callee.getExpression();
+  if (!Node.isIdentifier(clientIdentifier)) {
+    return null;
+  }
+
+  const symbol = clientIdentifier.getSymbol();
+  if (symbol === undefined) {
+    return null;
+  }
+
+  const decls = symbol.getDeclarations();
+  if (decls.length === 0) {
+    return null;
+  }
+
+  const decl = decls[0];
+  if (!Node.isVariableDeclaration(decl)) {
+    return null;
+  }
+
+  // The variable init should be initClient(contract, ...) or similar
+  const init = decl.getInitializer();
+  if (init === undefined || !Node.isCallExpression(init)) {
+    return null;
+  }
+
+  const args = init.getArguments();
+  if (args.length === 0) {
+    return null;
+  }
+
+  // First arg is the contract reference
+  const contractObj = resolveContractObject(args[0]);
+  if (contractObj === null || !Node.isObjectLiteralExpression(contractObj)) {
+    return null;
+  }
+
+  // Find the endpoint for the method name
+  for (const prop of contractObj.getProperties()) {
+    if (!Node.isPropertyAssignment(prop)) {
+      continue;
+    }
+
+    if (prop.getName() !== methodName) {
       continue;
     }
 

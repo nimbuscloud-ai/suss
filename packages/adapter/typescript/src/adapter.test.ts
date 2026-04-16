@@ -1027,3 +1027,213 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(summaries).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Consumer discovery + extraction
+// ---------------------------------------------------------------------------
+
+describe("consumer extraction", () => {
+  const fetchPack: FrameworkPack = {
+    name: "fetch",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "consumer",
+        match: {
+          type: "clientCall",
+          importModule: "global",
+          importName: "fetch",
+        },
+        bindingExtraction: {
+          method: {
+            type: "fromArgumentProperty",
+            position: 1,
+            property: "method",
+            default: "GET",
+          },
+          path: { type: "fromArgumentLiteral", position: 0 },
+        },
+      },
+    ],
+    terminals: [
+      {
+        kind: "return",
+        match: { type: "returnStatement" },
+        extraction: {},
+      },
+      {
+        kind: "throw",
+        match: { type: "throwExpression" },
+        extraction: {},
+      },
+    ],
+    inputMapping: {
+      type: "positionalParams",
+      params: [],
+    },
+  };
+
+  it("extracts a consumer summary from a function with fetch()", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser(id: string) {
+        const res = await fetch("/users/" + id);
+        if (!res.ok) {
+          throw new Error("failed");
+        }
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].kind).toBe("consumer");
+    expect(summaries[0].identity.name).toBe("loadUser");
+  });
+
+  it("extracts boundary binding from literal URL argument", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getHealth() {
+        const res = await fetch("/health");
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.boundaryBinding).toEqual({
+      protocol: "http",
+      method: "GET",
+      path: "/health",
+      framework: "fetch",
+    });
+  });
+
+  it("extracts method from options argument", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function createUser(data: any) {
+        const res = await fetch("/users", { method: "POST", body: JSON.stringify(data) });
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.boundaryBinding?.method).toBe("POST");
+    expect(summaries[0].identity.boundaryBinding?.path).toBe("/users");
+  });
+
+  it("defaults method to GET when no options argument", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getUser() {
+        const res = await fetch("/users/1");
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.boundaryBinding?.method).toBe("GET");
+  });
+
+  it("omits path when URL is non-literal", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getUser(id: string) {
+        const url = "/users/" + id;
+        const res = await fetch(url);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.boundaryBinding?.path).toBeUndefined();
+  });
+
+  it("produces status-code conditions the checker can read", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser(id: string) {
+        const result = await fetch("/users/" + id);
+        if (result.status === 404) {
+          return null;
+        }
+        if (result.status === 200) {
+          return result.json();
+        }
+        throw new Error("unexpected status");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    const s = summaries[0];
+    expect(s.transitions.length).toBeGreaterThanOrEqual(2);
+
+    // Verify the checker can read the consumer's expected statuses.
+    // collectStatusLiterals walks conditions for comparison(subject, eq, literal)
+    // where subject ends in .status/.statusCode.
+    const statusesPerTransition = s.transitions.map((t) => {
+      const statuses: number[] = [];
+      for (const c of t.conditions) {
+        const json = JSON.stringify(c);
+        const match = json.match(/"value":(\d{3})/);
+        if (match !== null && json.includes("status")) {
+          statuses.push(Number(match[1]));
+        }
+      }
+      return statuses;
+    });
+
+    const allStatuses = statusesPerTransition.flat();
+    expect(allStatuses).toContain(404);
+    expect(allStatuses).toContain(200);
+  });
+});

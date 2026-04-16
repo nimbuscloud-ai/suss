@@ -566,6 +566,261 @@ describe("namedExport — React Router style (loader, action, default)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// clientCall — global (fetch)
+// ---------------------------------------------------------------------------
+
+function makeFetchPattern(): DiscoveryPattern {
+  return {
+    kind: "consumer",
+    match: {
+      type: "clientCall",
+      importModule: "global",
+      importName: "fetch",
+    },
+  };
+}
+
+function makeClientCallPattern(): DiscoveryPattern {
+  return {
+    kind: "consumer",
+    match: {
+      type: "clientCall",
+      importModule: "./api-client",
+      importName: "initClient",
+    },
+  };
+}
+
+describe("clientCall — global fetch", () => {
+  it("discovers function containing a bare fetch() call", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      export async function loadUser(id: string) {
+        const res = await fetch("/users/" + id);
+        if (res.ok) {
+          return res.json();
+        }
+        throw new Error("failed");
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, [makeFetchPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("loadUser");
+    expect(units[0].kind).toBe("consumer");
+    expect(units[0].callSite).toBeDefined();
+    expect(units[0].callSite?.methodName).toBeNull();
+  });
+
+  it("discovers arrow function containing fetch()", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      export const getUsers = async () => {
+        const res = await fetch("/users");
+        return res.json();
+      };
+    `,
+    );
+
+    const units = discoverUnits(file, [makeFetchPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("getUsers");
+  });
+
+  it("does not discover fetch at top level (no enclosing function)", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      const res = await fetch("/health");
+    `,
+    );
+
+    const units = discoverUnits(file, [makeFetchPattern()]);
+    expect(units).toHaveLength(0);
+  });
+
+  it("ignores non-fetch global calls", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      export async function doStuff() {
+        const res = await setTimeout(() => {}, 100);
+        return res;
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, [makeFetchPattern()]);
+    expect(units).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// clientCall — imported client (ts-rest style)
+// ---------------------------------------------------------------------------
+
+describe("clientCall — imported client", () => {
+  it("discovers function containing client.method() call", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      import { initClient } from "./api-client";
+      const client = initClient(contract);
+
+      export async function loadUser(id: string) {
+        const result = await client.getUser({ params: { id } });
+        if (result.status === 404) {
+          return null;
+        }
+        return result.body;
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, [makeClientCallPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("loadUser");
+    expect(units[0].kind).toBe("consumer");
+    expect(units[0].callSite?.methodName).toBe("getUser");
+  });
+
+  it("discovers multiple consumer functions for different client methods", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      import { initClient } from "./api-client";
+      const client = initClient(contract);
+
+      export async function loadUser(id: string) {
+        return client.getUser({ params: { id } });
+      }
+
+      export async function createUser(data: any) {
+        return client.createUser({ body: data });
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, [makeClientCallPattern()]);
+    expect(units).toHaveLength(2);
+    const names = units.map((u) => u.name).sort();
+    expect(names).toEqual(["createUser", "loadUser"]);
+  });
+
+  it("does not discover calls on non-matching variables", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      import { initClient } from "./api-client";
+      const client = initClient(contract);
+      const other = someOtherThing();
+
+      export async function doStuff() {
+        return other.getUser({ params: { id: "1" } });
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, [makeClientCallPattern()]);
+    expect(units).toHaveLength(0);
+  });
+
+  it("respects methodFilter when set", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      import { initClient } from "./api-client";
+      const client = initClient(contract);
+
+      export async function loadUser() {
+        return client.getUser({ params: { id: "1" } });
+      }
+
+      export async function createUser() {
+        return client.createUser({ body: {} });
+      }
+    `,
+    );
+
+    const pattern: DiscoveryPattern = {
+      kind: "consumer",
+      match: {
+        type: "clientCall",
+        importModule: "./api-client",
+        importName: "initClient",
+        methodFilter: ["getUser"],
+      },
+    };
+
+    const units = discoverUnits(file, [pattern]);
+    expect(units).toHaveLength(1);
+    expect(units[0].callSite?.methodName).toBe("getUser");
+  });
+
+  it("handles aliased import", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      import { initClient as createApi } from "./api-client";
+      const api = createApi(contract);
+
+      export async function loadUser() {
+        return api.getUser({ params: { id: "1" } });
+      }
+    `,
+    );
+
+    // The pattern matches importName = the original name, but we resolve through aliases
+    const pattern: DiscoveryPattern = {
+      kind: "consumer",
+      match: {
+        type: "clientCall",
+        importModule: "./api-client",
+        importName: "initClient",
+      },
+    };
+
+    const units = discoverUnits(file, [pattern]);
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("loadUser");
+  });
+
+  it("deduplicates when two calls in the same function match", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      import { initClient } from "./api-client";
+      const client = initClient(contract);
+
+      export async function loadAll() {
+        const user = await client.getUser({ params: { id: "1" } });
+        const posts = await client.getPosts({ params: { userId: "1" } });
+        return { user, posts };
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, [makeClientCallPattern()]);
+    // Two calls in the same function — should deduplicate to one unit
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("loadAll");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // multiple patterns combined
 // ---------------------------------------------------------------------------
 

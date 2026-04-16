@@ -6,7 +6,7 @@ export {
 } from "./adapter.js";
 export { extractRawBranches } from "./assembly.js";
 export { collectAncestorBranches, collectEarlyReturns } from "./conditions.js";
-export { readContract } from "./contract.js";
+export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery.js";
 export { parseConditionExpression } from "./predicates.js";
 export { resolveSubject } from "./subjects.js";
@@ -17,5 +17,5 @@ export type {
   TypeScriptAdapterConfig,
 } from "./adapter.js";
 export type { ContractReadResult } from "./contract.js";
-export type { DiscoveredUnit } from "./discovery.js";
+export type { ClientCallSite, DiscoveredUnit } from "./discovery.js";
 export type { FoundTerminal } from "./terminals.js";

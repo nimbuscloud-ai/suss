@@ -479,6 +479,32 @@ function tryMatchParameterMethodCall(
   return { node, terminal };
 }
 
+function tryMatchReturnStatement(
+  node: Node,
+  pattern: TerminalPattern,
+): FoundTerminal | null {
+  if (!Node.isReturnStatement(node)) {
+    return null;
+  }
+
+  const terminal: RawTerminal = {
+    kind: pattern.kind,
+    statusCode: null,
+    body: null,
+    exceptionType: null,
+    message: null,
+    component: null,
+    delegateTarget: null,
+    emitEvent: null,
+    location: {
+      start: node.getStartLineNumber(),
+      end: node.getEndLineNumber(),
+    },
+  };
+
+  return { node, terminal };
+}
+
 function tryMatchThrowExpression(
   node: Node,
   pattern: TerminalPattern,
@@ -629,6 +655,8 @@ export function findTerminals(
 
       if (pattern.match.type === "returnShape") {
         found = tryMatchReturnShape(node, pattern, pattern.match);
+      } else if (pattern.match.type === "returnStatement") {
+        found = tryMatchReturnStatement(node, pattern);
       } else if (pattern.match.type === "parameterMethodCall") {
         found = tryMatchParameterMethodCall(node, func, pattern, pattern.match);
       } else if (pattern.match.type === "throwExpression") {
