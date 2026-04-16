@@ -87,6 +87,14 @@ export interface RawBranch {
   effects: RawEffect[];
   location: { start: number; end: number };
   isDefault: boolean;
+  /**
+   * Shape of upstream data the code unit reads within this branch.
+   * Populated by the adapter for client/consumer code units: after
+   * branching on a response status, the consumer accesses fields on
+   * the response body — those accesses are collected into a TypeShape.
+   * The extractor copies this through to Transition.expectedInput.
+   */
+  expectedInput?: TypeShape | null;
 }
 
 export interface RawDependencyCall {
@@ -214,7 +222,7 @@ export function assembleSummary(
         : pred;
     });
 
-    return {
+    const transition: Transition = {
       id: makeTransitionId(raw.identity.name, branch),
       conditions,
       output: terminalToOutput(branch.terminal),
@@ -222,6 +230,10 @@ export function assembleSummary(
       location: branch.location,
       isDefault: branch.isDefault,
     };
+    if (branch.expectedInput != null) {
+      transition.expectedInput = branch.expectedInput;
+    }
+    return transition;
   });
 
   const gaps = detectGaps(raw, transitions, options);

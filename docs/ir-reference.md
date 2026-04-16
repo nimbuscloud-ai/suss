@@ -376,14 +376,25 @@ interface RawCodeStructure {
   dependencyCalls: RawDependencyCall[];
   declaredContract: RawDeclaredContract | null;
 }
+
+interface RawBranch {
+  conditions: RawCondition[];
+  terminal: RawTerminal;
+  effects: RawEffect[];
+  location: { start: number; end: number };
+  isDefault: boolean;
+  expectedInput?: TypeShape | null;
+}
 ```
 
 Every field is plain JSON — no AST nodes, no compiler types. An adapter's job is to read source code and produce this shape; the extractor's job is to turn this shape into a `BehavioralSummary`.
 
+**`RawBranch.expectedInput`** is populated by the adapter for client code units. After branching on a response status code, the consumer accesses fields on the response body — the adapter traces those accesses and builds a `TypeShape`. The extractor copies `expectedInput` through to `Transition.expectedInput` during assembly. This ensures the pipeline contract is preserved: everything the summary needs comes through `RawCodeStructure`, no post-assembly patching.
+
 This split exists for three reasons:
 
 1. **The extractor can be tested without a compiler.** Hand-written `RawCodeStructure` values drive the whole test suite in milliseconds.
-2. **Logic lives in one place.** Opaque wrapping, gap detection, confidence assessment, and the final `BehavioralSummary` shape are all decided in the extractor. Adapters don't re-implement them.
-3. **Adding a language is adding an adapter.** A Python adapter produces the same `RawCodeStructure`; the extractor doesn't know or care which compiler filled it in.
+2. **Logic lives in one place.** Opaque wrapping, gap detection, confidence assessment, `expectedInput` pass-through, and the final `BehavioralSummary` shape are all decided in the extractor. Adapters don't re-implement them.
+3. **Adding a language is adding an adapter.** A Python adapter produces the same `RawCodeStructure`; the extractor doesn't know or care which compiler filled it in. Client field tracking works automatically for any adapter that populates `RawBranch.expectedInput`.
 
 See `docs/extraction-algorithm.md` for how the TypeScript adapter produces `RawCodeStructure` from source files.
