@@ -7,7 +7,7 @@ export function webFetchRuntime(): FrameworkPack {
 
     discovery: [
       {
-        kind: "consumer",
+        kind: "client",
         match: {
           type: "clientCall",
           importModule: "global",

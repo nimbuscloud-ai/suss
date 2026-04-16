@@ -1038,7 +1038,7 @@ describe("consumer extraction", () => {
     languages: ["typescript"],
     discovery: [
       {
-        kind: "consumer",
+        kind: "client",
         match: {
           type: "clientCall",
           importModule: "global",
@@ -1094,7 +1094,7 @@ describe("consumer extraction", () => {
     });
     const summaries = adapter.extractAll();
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].kind).toBe("consumer");
+    expect(summaries[0].kind).toBe("client");
     expect(summaries[0].identity.name).toBe("loadUser");
   });
 

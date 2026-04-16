@@ -145,7 +145,7 @@ export function consumer(
   transitions: Transition[],
 ): BehavioralSummary {
   return {
-    kind: "consumer",
+    kind: "client",
     location: {
       file: `src/ui/${name}.ts`,
       range: { start: 1, end: 30 },

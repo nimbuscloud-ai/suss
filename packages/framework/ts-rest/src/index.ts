@@ -22,7 +22,7 @@ export function tsRestFramework(): FrameworkPack {
         },
       },
       {
-        kind: "consumer",
+        kind: "client",
         match: {
           type: "clientCall",
           importModule: "@ts-rest/core",

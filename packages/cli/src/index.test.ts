@@ -663,7 +663,7 @@ describe("consumer extraction — fetch", () => {
       });
 
       expect(summaries).toHaveLength(1);
-      expect(summaries[0].kind).toBe("consumer");
+      expect(summaries[0].kind).toBe("client");
       expect(summaries[0].identity.name).toBe("getHealth");
       expect(summaries[0].identity.boundaryBinding?.path).toBe("/health");
       expect(summaries[0].identity.boundaryBinding?.method).toBe("GET");

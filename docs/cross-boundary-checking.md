@@ -4,7 +4,7 @@ Given behavioral summaries for two sides of a boundary — a provider (the handl
 
 This document specifies the *pairwise* check: one provider summary, one consumer summary, a list of findings. It describes the algorithm `suss check` uses, the kinds of mismatches it surfaces, and how the IR supports cross-boundary reasoning. For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
 
-> **Status:** consumer-side discovery has landed. Both sides of a boundary can now be extracted from real code: providers via handler registration (ts-rest, Express, React Router) and consumers via client call sites (ts-rest `initClient`, `fetch`). `suss check` compares provider and consumer summaries for status-code coverage, dead branches, and contract consistency (including body shapes). Pairwise body comparison across provider/consumer summaries is still TODO. See [`status.md`](status.md). Broader analysis layers (cross-service graphs, historical tracking, continuous checking) are deliberately **out of scope** for this repository; see [§ Beyond pairwise](#beyond-pairwise).
+> **Status:** consumer-side discovery has landed. Both sides of a boundary can now be extracted from real code: providers via handler registration (ts-rest, Express, React Router) and consumers via client call sites (ts-rest `initClient`, `fetch`). `suss check` compares provider and consumer summaries for status-code coverage, dead branches, and contract consistency (including body shapes against declared contracts). See [§ Current limitations](#current-limitations) for what the checker does *not* yet do. Broader analysis layers (cross-service graphs, historical tracking, continuous checking) are deliberately **out of scope** for this repository; see [§ Beyond pairwise](#beyond-pairwise).
 
 ## What the check answers
 
@@ -88,6 +88,20 @@ interface Finding {
 ```
 
 Findings are JSON-serializable and render to human-readable text via `suss inspect`-style formatting. The CLI exits non-zero when any `error`-severity findings exist, so the check composes into CI as a standard check step.
+
+## Current limitations
+
+The checker's three checks currently operate at the **status-code level only**. The IR was designed for deeper comparison (structured predicates, subject trees, body shapes), and the matching infrastructure exists (`subjectsMatch`, `predicatesMatch`, `bodyShapesMatch`), but the checks don't yet use it for cross-boundary analysis. Specifically:
+
+1. **No cross-boundary body comparison.** The checker compares provider body shapes against *declared contracts* (via `bodyShapesMatch`), but does not compare provider body shapes against *consumer expectations*. Consumer summaries don't yet capture which fields the consumer reads from the response body — only that it branches on the status code.
+
+2. **No predicate-level transition matching.** When a provider has two `200` transitions gated by different conditions (e.g., `user.deletedAt` vs default), the checker treats them as one "provider produces 200" signal. It cannot distinguish whether the consumer handles both sub-cases. The `predicatesMatch` / `subjectsMatch` functions are tested but not wired into the coverage checks.
+
+3. **No automatic boundary pairing.** `checkPair` takes one provider and one consumer. There's no mechanism to discover which pairs to check from a directory of summaries. Path template normalization (`:id` vs `{id}`) is needed for automatic matching.
+
+4. **`CodeUnitKind = "consumer"` is overloaded.** The IR defines `"consumer"` for message consumers (Kafka, SQS), but Phase 6 reuses it for API client call sites. These have different behavioral models.
+
+These gaps are tracked in Phase 7 of [`status.md`](status.md).
 
 ## Scope
 

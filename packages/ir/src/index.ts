@@ -9,6 +9,7 @@ export type CodeUnitKind =
   | "middleware"
   | "resolver"
   | "consumer"
+  | "client"
   | "worker";
 
 export interface SourceLocation {
@@ -187,6 +188,15 @@ export interface Transition {
   location: { start: number; end: number };
   isDefault: boolean;
   confidence?: ConfidenceInfo;
+  /**
+   * The shape of upstream data this transition reads within its branch.
+   * Populated for client/consumer transitions: after branching on a
+   * response status code, the consumer accesses fields on the response
+   * body — those accesses are collected into a TypeShape representing
+   * what the consumer expects to receive. The checker compares this
+   * against the provider's produced body shape for the same status.
+   */
+  expectedInput?: TypeShape;
 }
 
 export interface Gap {

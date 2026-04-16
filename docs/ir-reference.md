@@ -33,10 +33,13 @@ type CodeUnitKind =
   | "middleware" // Express middleware
   | "resolver"   // GraphQL resolver
   | "consumer"   // Message consumer (Kafka, SQS)
+  | "client"     // API client call site (fetch, ts-rest initClient)
   | "worker";    // Background worker, scheduled task
 ```
 
-The kind determines the behavioral model — specifically, how inputs arrive and what counts as output. Handlers take a request and produce a response. Components take props and state and produce a UI tree. Consumers take a message and produce effects.
+The kind determines the behavioral model — specifically, how inputs arrive and what counts as output. Handlers take a request and produce a response. Components take props and state and produce a UI tree. Consumers take a message and produce effects. Clients call an upstream API and branch on the response.
+
+**`consumer` vs `client`.** Both sit on the receiving side of a boundary, but the behavioral model differs. A `consumer` receives a message and produces effects (mutation, emission, delegation). A `client` makes a request, branches on the response status, and reads fields from the response body — the interesting behavior is *what does the client expect the response to look like*, which feeds into cross-boundary body-shape comparison. The distinction matters because the checker applies different rules: client transitions carry `expectedInput` (the body shape the client reads), while consumer transitions carry effects.
 
 **Why it's a closed union.** Open strings would lose type safety. Framework packs can't invent new kinds; if a new framework needs a new kind, it needs an IR update first. This is deliberate — each kind carries assumptions about how the rest of the extraction works, and those assumptions need to be explicit.
 
@@ -87,6 +90,7 @@ interface Transition {
   location: { start: number; end: number };
   isDefault: boolean;
   confidence?: ConfidenceInfo;
+  expectedInput?: TypeShape;
 }
 ```
 
@@ -97,6 +101,24 @@ A transition says: "when all of these conditions hold, this output is produced a
 **`isDefault`** marks the fall-through transition — the case with no explicit conditions, or only early-return guards. It's the "everything else" case. Most handlers have exactly one default transition; some have none (all paths are explicitly gated) and some have multiple (each returning early from different guards).
 
 **`id` is content-addressable**, not an index. It's generated as `${functionName}:${terminalKind}:${statusKey}:${hash7}`, where `hash7` is the first 7 hex chars of a SHA-1 over the ordered condition chain's canonical source text. This makes `diffSummaries` robust under branch reordering (identities survive) while semantic edits — changing a status code, a condition, or a terminal kind — mint a new ID as expected. Condition order is part of identity because short-circuit semantics make `a && b` and `b && a` observably different. Source-location offsets are deliberately excluded: whitespace shouldn't re-mint IDs.
+
+**`expectedInput`** is populated for `client` transitions. After branching on a response status code, the client function reads fields from the response body — `result.body.name`, `data.users[0].id`, etc. These accesses are collected into a `TypeShape` representing what the client actually expects the upstream response to contain for this status code. The checker compares this against the provider's produced body shape:
+
+```json
+{
+  "conditions": [{ "type": "comparison", "left": <result.status>, "op": "eq", "right": { "type": "literal", "value": 200 } }],
+  "output": { "type": "return", "value": { "type": "record", "properties": { "name": { "type": "text" } } } },
+  "expectedInput": {
+    "type": "record",
+    "properties": {
+      "name": { "type": "text" },
+      "email": { "type": "text" }
+    }
+  }
+}
+```
+
+Here the client reads `body.name` and `body.email` — if the provider's `200` transition returns a body without `email`, the checker flags a mismatch. `expectedInput` is absent on provider transitions and on client transitions where field tracking couldn't resolve the accesses.
 
 ## `Predicate` — conditions that gate transitions
 
