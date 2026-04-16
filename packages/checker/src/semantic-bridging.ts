@@ -104,6 +104,78 @@ function findDistinguishingLiterals(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Field-presence discrimination
+// ---------------------------------------------------------------------------
+
+interface DistinguishingField {
+  /** Property path from the body root, e.g. ["deletedAt"] */
+  path: string[];
+  /** Whether this transition HAS the field (vs sibling which doesn't) */
+  present: boolean;
+}
+
+/**
+ * Find fields whose presence differs between this transition and its siblings.
+ * A field is "distinguishing by presence" if this transition has it but at
+ * least one sibling doesn't (or vice versa).
+ *
+ * Only reports fields present in THIS transition but missing from a sibling
+ * (we can't warn about something that isn't there).
+ */
+function findDistinguishingFields(
+  transition: Transition,
+  siblings: Transition[],
+): DistinguishingField[] {
+  if (
+    transition.output.type !== "response" ||
+    transition.output.body === null ||
+    transition.output.body.type !== "record"
+  ) {
+    return [];
+  }
+
+  const myFields = collectFieldPaths(transition.output.body);
+  const results: DistinguishingField[] = [];
+
+  for (const fieldPath of myFields) {
+    for (const sibling of siblings) {
+      if (sibling.id === transition.id) {
+        continue;
+      }
+      if (sibling.output.type !== "response" || sibling.output.body === null) {
+        results.push({ path: fieldPath, present: true });
+        break;
+      }
+      const siblingValue = getValueAtPath(sibling.output.body, fieldPath);
+      if (siblingValue === undefined) {
+        results.push({ path: fieldPath, present: true });
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Collect all field paths in a record shape (non-recursive into nested records
+ * for now — top-level field presence is the most common discriminator).
+ */
+function collectFieldPaths(
+  shape: TypeShape,
+  prefix: string[] = [],
+): string[][] {
+  if (shape.type !== "record") {
+    return [];
+  }
+  const paths: string[][] = [];
+  for (const key of Object.keys(shape.properties)) {
+    paths.push([...prefix, key]);
+  }
+  return paths;
+}
+
 function getValueAtPath(
   shape: TypeShape,
   path: string[],
@@ -342,49 +414,72 @@ export function checkSemanticBridging(
       continue; // Status not handled — already caught by provider coverage
     }
 
-    // For each provider transition, find distinguishing literal body fields
+    // For each provider transition, check two kinds of discriminators:
+    // 1. Distinguishing literals (field values that differ between siblings)
+    // 2. Distinguishing fields (fields present in one sibling but not another)
     for (const pt of providerTransitions) {
+      // --- Literal discrimination ---
       const distinguishing = findDistinguishingLiterals(
         pt,
         providerTransitions,
       );
-      if (distinguishing.length === 0) {
-        continue;
+
+      if (distinguishing.length > 0) {
+        // Check if any consumer field test matches ANY distinguishing literal
+        const anyLiteralMatched = distinguishing.some((lit) =>
+          consumerFieldTests.some((test) => {
+            if (!pathsEqual(test.bodyPath, lit.path)) {
+              return false;
+            }
+            if (test.type === "equality") {
+              return test.value === lit.value;
+            }
+            if (test.type === "negatedEquality") {
+              return test.value !== lit.value;
+            }
+            // Truthiness or field-presence: same path is enough
+            return true;
+          }),
+        );
+
+        if (!anyLiteralMatched) {
+          const lit = distinguishing[0];
+          findings.push({
+            kind: "unhandledProviderCase",
+            boundary,
+            provider: makeSide(provider, pt.id),
+            consumer: makeSide(consumer),
+            description: `Provider transition ${pt.id} for status ${status} produces body with ${formatPath(lit.path)} = ${JSON.stringify(lit.value)}, but no consumer branch tests for this value`,
+            severity: "warning",
+          });
+        }
+        continue; // Literal discrimination takes priority
       }
 
-      // Check if any consumer field test matches ANY distinguishing literal.
-      // If the consumer tests for at least one distinguishing field (by
-      // equality or truthiness), they're aware of this sub-case — even if
-      // they don't check every distinguishing field.
-      const anyMatched = distinguishing.some((lit) =>
-        consumerFieldTests.some((test) => {
-          if (!pathsEqual(test.bodyPath, lit.path)) {
-            return false;
-          }
-          if (test.type === "equality") {
-            return test.value === lit.value;
-          }
-          if (test.type === "negatedEquality") {
-            // Consumer tests !== X: covers any literal that isn't X.
-            // e.g., !== "active" covers "deleted", "suspended", etc.
-            return test.value !== lit.value;
-          }
-          // Truthiness check on the same path: the consumer IS distinguishing
-          // based on this field, regardless of the specific literal value
-          return true;
-        }),
-      );
+      // --- Field-presence discrimination ---
+      // Only fires when there are no distinguishing literals (otherwise
+      // the literal check above is more specific).
+      const presenceFields = findDistinguishingFields(pt, providerTransitions);
 
-      if (!anyMatched) {
-        const lit = distinguishing[0];
-        findings.push({
-          kind: "unhandledProviderCase",
-          boundary,
-          provider: makeSide(provider, pt.id),
-          consumer: makeSide(consumer),
-          description: `Provider transition ${pt.id} for status ${status} produces body with ${formatPath(lit.path)} = ${JSON.stringify(lit.value)}, but no consumer branch tests for this value`,
-          severity: "warning",
-        });
+      if (presenceFields.length > 0) {
+        // Check if the consumer tests any of the presence-distinguishing fields
+        const anyPresenceMatched = presenceFields.some((field) =>
+          consumerFieldTests.some((test) =>
+            pathsEqual(test.bodyPath, field.path),
+          ),
+        );
+
+        if (!anyPresenceMatched) {
+          const field = presenceFields[0];
+          findings.push({
+            kind: "unhandledProviderCase",
+            boundary,
+            provider: makeSide(provider, pt.id),
+            consumer: makeSide(consumer),
+            description: `Provider transition ${pt.id} for status ${status} has body field ${formatPath(field.path)} that other transitions lack, but no consumer branch tests for this field`,
+            severity: "warning",
+          });
+        }
       }
     }
   }

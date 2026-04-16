@@ -147,20 +147,12 @@ describe("RESOLVED: negated comparisons", () => {
 // Aspiration 3: Field presence as discriminator
 // ---------------------------------------------------------------------------
 
-describe("aspiration: field presence discrimination", () => {
-  it("does NOT detect discrimination by field existence (deletedAt present vs absent)", () => {
-    // Provider: one transition includes deletedAt, the other doesn't.
-    // This is a structural discriminator — the consumer should check
-    // whether deletedAt exists.
-    //
-    // IDEAL: The checker should recognize that the two body shapes
-    // differ structurally (one has deletedAt, the other doesn't) and
-    // warn if the consumer doesn't test for it.
-    //
-    // CURRENT: No literal fields differ → no semantic bridging finding.
-    // (Field presence difference IS caught by checkBodyCompatibility
-    // if the consumer reads deletedAt, but not as a "distinguishing
-    // behavioral signal" warning.)
+describe("RESOLVED: field presence discrimination", () => {
+  it("detects discrimination by field existence (deletedAt present vs absent)", () => {
+    // RESOLVED: The checker now detects structural differences between
+    // sibling transition bodies. When a field exists in one transition
+    // but not another, it's a presence discriminator. If no consumer
+    // test covers that field, a finding is emitted.
     const p = provider("getUser", [
       transition("t-200-deleted", {
         output: response(
@@ -180,12 +172,15 @@ describe("aspiration: field presence discrimination", () => {
       }),
     ]);
 
-    // CURRENT: no semantic bridging finding (no literals)
-    expect(checkSemanticBridging(p, c)).toEqual([]);
-
-    // IDEAL: should warn that the provider has structurally different
-    // body shapes for status 200 (one has deletedAt, the other doesn't)
-    // and the consumer doesn't distinguish them.
+    const findings = checkSemanticBridging(p, c);
+    // t-200-deleted has deletedAt that t-200-active lacks
+    expect(findings.length).toBeGreaterThanOrEqual(1);
+    expect(
+      findings.some((f) => f.provider.transitionId === "t-200-deleted"),
+    ).toBe(true);
+    expect(findings.some((f) => f.description.includes("deletedAt"))).toBe(
+      true,
+    );
   });
 });
 

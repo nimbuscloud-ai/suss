@@ -163,13 +163,13 @@ describe("checkSemanticBridging", () => {
     expect(checkSemanticBridging(p, c)).toEqual([]);
   });
 
-  it("emits no finding when provider body has no literals (all dynamic)", () => {
+  it("emits no finding when provider bodies are structurally identical (all dynamic)", () => {
     const p = provider("getUser", [
       transition("t-200-a", {
         output: response(200, record({ name: text, email: text })),
       }),
       transition("t-200-b", {
-        output: response(200, record({ name: text })),
+        output: response(200, record({ name: text, email: text })),
         isDefault: true,
       }),
     ]);
@@ -180,8 +180,7 @@ describe("checkSemanticBridging", () => {
       }),
     ]);
 
-    // No literal fields to distinguish — no semantic bridging findings
-    // (field presence difference is caught by checkBodyCompatibility)
+    // Same fields, same types, no literals — nothing to distinguish
     expect(checkSemanticBridging(p, c)).toEqual([]);
   });
 
@@ -475,5 +474,121 @@ describe("checkSemanticBridging", () => {
     expect(
       findings.some((f) => f.provider.transitionId === "t-200-deleted"),
     ).toBe(false);
+  });
+
+  it("detects field-presence discrimination when bodies differ structurally", () => {
+    // Provider: one transition has deletedAt, the other doesn't.
+    // No literals differ — the structural difference is the discriminator.
+    const p = provider("getUser", [
+      transition("t-200-deleted", {
+        output: response(
+          200,
+          record({ id: text, name: text, deletedAt: text }),
+        ),
+      }),
+      transition("t-200-active", {
+        output: response(200, record({ id: text, name: text })),
+        isDefault: true,
+      }),
+    ]);
+    const c = consumer("UserPage", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    const findings = checkSemanticBridging(p, c);
+    expect(findings.length).toBeGreaterThanOrEqual(1);
+    expect(findings.some((f) => f.description.includes("deletedAt"))).toBe(
+      true,
+    );
+  });
+
+  it("suppresses field-presence finding when consumer uses truthiness check on the field", () => {
+    const p = provider("getUser", [
+      transition("t-200-deleted", {
+        output: response(
+          200,
+          record({ id: text, name: text, deletedAt: text }),
+        ),
+      }),
+      transition("t-200-active", {
+        output: response(200, record({ id: text, name: text })),
+        isDefault: true,
+      }),
+    ]);
+
+    const truthinessCheck: Predicate = {
+      type: "truthinessCheck",
+      subject: {
+        type: "derived",
+        from: {
+          type: "derived",
+          from: {
+            type: "dependency",
+            name: "client.getUser",
+            accessChain: [],
+          },
+          derivation: { type: "propertyAccess", property: "body" },
+        },
+        derivation: { type: "propertyAccess", property: "deletedAt" },
+      },
+      negated: false,
+    };
+
+    const c = consumer("UserPage", [
+      transition("ct-200-deleted", {
+        conditions: [statusEq(200), truthinessCheck],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-200-default", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+
+    const findings = checkSemanticBridging(p, c);
+    // Truthiness check on deletedAt covers the field-presence discriminator
+    expect(
+      findings.some((f) => f.provider.transitionId === "t-200-deleted"),
+    ).toBe(false);
+  });
+
+  it("skips field-presence check when literal discrimination is available", () => {
+    // Provider has both literal and field-presence differences.
+    // Literal discrimination takes priority — more specific signal.
+    const p = provider("getUser", [
+      transition("t-200-deleted", {
+        output: response(
+          200,
+          record({
+            id: text,
+            status: literal("deleted"),
+            deletedAt: text,
+          }),
+        ),
+      }),
+      transition("t-200-active", {
+        output: response(200, record({ id: text, status: literal("active") })),
+        isDefault: true,
+      }),
+    ]);
+    const c = consumer("UserPage", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    const findings = checkSemanticBridging(p, c);
+    // Finding mentions literal "deleted", not field presence "deletedAt"
+    const finding = findings.find(
+      (f) => f.provider.transitionId === "t-200-deleted",
+    );
+    expect(finding).toBeDefined();
+    expect(finding?.description).toContain("deleted");
+    expect(finding?.description).not.toContain("other transitions lack");
   });
 });
