@@ -93,13 +93,27 @@ Progress tracker. Updated as phases land.
 - **Recursive dependency extraction** → local function calls within the consumer are `invocation` effects, not recursively extracted into their own summaries.
 - **axios, tRPC, GraphQL clients** → additive; the mechanism is proven, more packs are data.
 
-## Phase 7+ — Deferred
+## Phase 7 — Deepen cross-boundary analysis
+
+*The checker currently matches on status codes only. This phase closes the gap between the IR's expressive power and the checker's actual analysis depth, so cross-boundary findings catch field-level and predicate-level mismatches — not just "consumer handles 404."*
+
+| Task | Status | Notes |
+|------|--------|-------|
+| 7.1 Resolve `consumer` kind overload | ⬜ | `CodeUnitKind = "consumer"` is used for both message consumers (Kafka/SQS) and API client call sites. Add `"client"` kind or a discriminating field. |
+| 7.2 Consumer body-field extraction | ⬜ | After the consumer branches on status, trace which properties it reads from the response body. Produce a `TypeShape` per status branch representing what the consumer actually expects. |
+| 7.3 Cross-boundary body comparison | ⬜ | New check: compare provider's produced body shape against consumer's expected body shape per status code. `bodyShapesMatch` already exists — wire it into a fourth check alongside coverage/satisfaction/contract-consistency. |
+| 7.4 Predicate-level transition matching | ⬜ | Use `predicatesMatch` / `subjectsMatch` in the actual coverage checks. When the provider has two `200` transitions with different conditions, the checker should match each against consumer branches — not just confirm "consumer handles 200." |
+| 7.5 Automatic boundary pairing | ⬜ | Given a directory of summaries, match providers to consumers by `(method, normalizedPath)`. Path template normalization (`:id` vs `{id}`). Enables `suss check --dir summaries/`. |
+| 7.6 Error-to-response bridging | ⬜ | When a provider throws and the framework converts it to an HTTP response, the checker should recognize this as a produced status code. Requires framework-pack-level throw→status mapping. |
+
+## Phase 8+ — Deferred
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Python adapter | ⏸ | Same `RawCodeStructure` interface, Pyright or ast-grep. |
+| Python adapter | ⏸ | Same `RawCodeStructure` interface, Pyright or ast-grep. Multiplier on analysis depth — more valuable after Phase 7. |
 | React component support | ⏸ | `Input` types beyond `parameter` (hookReturn, contextValue) need `RawCodeStructure` surface. JSX-as-terminal pattern design. |
-| GitHub Action / CI integration | ⏸ | PR-scoped extraction wrapper. |
+| GitHub Action / CI integration | ⏸ | PR-scoped extraction wrapper. Depends on automatic boundary pairing (7.5). |
+| Additional client packs | ⏸ | axios, tRPC, GraphQL — additive once the consumer extraction mechanism is proven. |
 
 ## Test coverage
 

@@ -571,7 +571,7 @@ describe("namedExport — React Router style (loader, action, default)", () => {
 
 function makeFetchPattern(): DiscoveryPattern {
   return {
-    kind: "consumer",
+    kind: "client",
     match: {
       type: "clientCall",
       importModule: "global",
@@ -582,7 +582,7 @@ function makeFetchPattern(): DiscoveryPattern {
 
 function makeClientCallPattern(): DiscoveryPattern {
   return {
-    kind: "consumer",
+    kind: "client",
     match: {
       type: "clientCall",
       importModule: "./api-client",
@@ -610,7 +610,7 @@ describe("clientCall — global fetch", () => {
     const units = discoverUnits(file, [makeFetchPattern()]);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("loadUser");
-    expect(units[0].kind).toBe("consumer");
+    expect(units[0].kind).toBe("client");
     expect(units[0].callSite).toBeDefined();
     expect(units[0].callSite?.methodName).toBeNull();
   });
@@ -688,7 +688,7 @@ describe("clientCall — imported client", () => {
     const units = discoverUnits(file, [makeClientCallPattern()]);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("loadUser");
-    expect(units[0].kind).toBe("consumer");
+    expect(units[0].kind).toBe("client");
     expect(units[0].callSite?.methodName).toBe("getUser");
   });
 
@@ -754,7 +754,7 @@ describe("clientCall — imported client", () => {
     );
 
     const pattern: DiscoveryPattern = {
-      kind: "consumer",
+      kind: "client",
       match: {
         type: "clientCall",
         importModule: "./api-client",
@@ -784,7 +784,7 @@ describe("clientCall — imported client", () => {
 
     // The pattern matches importName = the original name, but we resolve through aliases
     const pattern: DiscoveryPattern = {
-      kind: "consumer",
+      kind: "client",
       match: {
         type: "clientCall",
         importModule: "./api-client",

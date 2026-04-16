@@ -46,7 +46,7 @@ describe("tsRestFramework — pack shape", () => {
     expect(pack.name).toBe("ts-rest");
     expect(pack.discovery).toHaveLength(2);
     expect(pack.discovery[0].kind).toBe("handler");
-    expect(pack.discovery[1].kind).toBe("consumer");
+    expect(pack.discovery[1].kind).toBe("client");
     expect(pack.terminals).toHaveLength(1);
     expect(pack.terminals[0].kind).toBe("response");
     expect(pack.contractReading).toBeDefined();

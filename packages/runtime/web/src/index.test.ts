@@ -10,7 +10,7 @@ describe("webFetchRuntime — pack shape", () => {
     const pack = webFetchRuntime();
     expect(pack.name).toBe("fetch");
     expect(pack.discovery).toHaveLength(1);
-    expect(pack.discovery[0].kind).toBe("consumer");
+    expect(pack.discovery[0].kind).toBe("client");
     expect(pack.discovery[0].match.type).toBe("clientCall");
     expect(pack.terminals).toHaveLength(2);
     expect(pack.inputMapping.type).toBe("positionalParams");
@@ -39,7 +39,7 @@ describe("webFetchRuntime — integration", () => {
     });
     const summaries = adapter.extractAll();
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].kind).toBe("consumer");
+    expect(summaries[0].kind).toBe("client");
     expect(summaries[0].identity.name).toBe("getUser");
     expect(summaries[0].identity.boundaryBinding).toEqual({
       protocol: "http",
