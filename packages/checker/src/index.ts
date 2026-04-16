@@ -1,4 +1,5 @@
 import { checkBodyCompatibility } from "./body-compatibility.js";
+import { checkConsumerContract } from "./consumer-contract.js";
 import { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 import { checkContractConsistency } from "./contract-consistency.js";
 import { pairSummaries } from "./pairing.js";
@@ -9,6 +10,7 @@ import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
 export { checkBodyCompatibility } from "./body-compatibility.js";
 export { bodyShapesMatch } from "./body-match.js";
+export { checkConsumerContract } from "./consumer-contract.js";
 export { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 export { checkContractConsistency } from "./contract-consistency.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
@@ -30,6 +32,7 @@ export function checkPair(
     ...checkProviderCoverage(provider, consumer),
     ...checkConsumerSatisfaction(provider, consumer),
     ...checkContractConsistency(provider, consumer),
+    ...checkConsumerContract(provider, consumer),
     ...checkBodyCompatibility(provider, consumer),
     ...checkSemanticBridging(provider, consumer),
   ];
