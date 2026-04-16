@@ -688,4 +688,81 @@ describe("extractShape", () => {
       });
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Literal narrowness preservation (aspiration verification)
+  // -------------------------------------------------------------------------
+
+  describe("literal narrowness without as const", () => {
+    it("preserves string literal in direct object literal (no as const needed)", () => {
+      // The syntactic pass reads the AST node, not the type.
+      // { status: "deleted" } → literal("deleted"), not text.
+      expect(extractShape(parseExpression('({ status: "deleted" })'))).toEqual({
+        type: "record",
+        properties: {
+          status: { type: "literal", value: "deleted" },
+        },
+      });
+    });
+
+    it("preserves literal through variable binding to object literal", () => {
+      // const result = { status: "deleted" }; → resolves through variable
+      const expr = parseExpressionWithPrelude(
+        'const result = { status: "deleted" };',
+        "result",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "record",
+        properties: {
+          status: { type: "literal", value: "deleted" },
+        },
+      });
+    });
+
+    it("preserves literal through single-return local function", () => {
+      // function build() { return { status: "deleted" }; }
+      // extractShape(build()) → literal preserved via resolveCall
+      const expr = parseExpressionWithPrelude(
+        'function buildDeleted() { return { status: "deleted" }; }',
+        "buildDeleted()",
+      );
+      expect(extractShape(expr)).toEqual({
+        type: "record",
+        properties: {
+          status: { type: "literal", value: "deleted" },
+        },
+      });
+    });
+
+    it("expands named interface to record (not ref)", () => {
+      // interface User { id: string; name: string }
+      // declare const user: User → record, not ref
+      const expr = parseExpressionWithPrelude(
+        "interface User { id: string; name: string; }\ndeclare const user: User;",
+        "user",
+      );
+      const shape = extractShape(expr);
+      expect(shape?.type).toBe("record");
+      if (shape?.type === "record") {
+        expect(shape.properties.id).toEqual({ type: "text" });
+        expect(shape.properties.name).toEqual({ type: "text" });
+      }
+    });
+
+    it("loses literal narrowness through typed variable binding", () => {
+      // When a variable has an explicit type annotation that widens the literal,
+      // the AST resolver still walks to the initializer and preserves the literal.
+      const expr = parseExpressionWithPrelude(
+        'const result: { status: string } = { status: "deleted" };',
+        "result",
+      );
+      // The initializer IS the object literal, so syntactic pass catches it
+      expect(extractShape(expr)).toEqual({
+        type: "record",
+        properties: {
+          status: { type: "literal", value: "deleted" },
+        },
+      });
+    });
+  });
 });

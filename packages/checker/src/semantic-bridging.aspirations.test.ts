@@ -67,18 +67,21 @@ function bodyFieldNeq(
 // ---------------------------------------------------------------------------
 // Aspiration 1: Type-widened literals (no `as const`)
 // ---------------------------------------------------------------------------
+// RECLASSIFIED: The extractor's syntactic pass DOES preserve literals
+// without `as const` for direct object literals, variable bindings, and
+// single-return local functions. Verified by tests in shapes.test.ts.
+//
+// The remaining gap is bodies constructed through multi-return functions,
+// method calls, or cross-module functions — these fall through to the
+// type-checker fallback which sees `string` instead of `"deleted"`.
+// This is the same underlying issue as aspiration 4 (Level 6 territory).
 
-describe("aspiration: type-widened literals", () => {
-  it("does NOT detect discrimination when provider body field is widened to text", () => {
-    // Provider returns { status: "deleted" } and { status: "active" },
-    // but the shapes show `text` instead of `literal` because the source
-    // didn't use `as const` and the type checker widened the values.
-    //
-    // IDEAL: The extractor's syntactic pass should preserve the literal
-    // even without `as const` (it reads the AST node, not the type).
-    // The checker should then detect the discrimination.
-    //
-    // CURRENT: When shapes are `text`, no literals to compare → no finding.
+describe("aspiration: type-widened literals (via multi-return function)", () => {
+  it("cannot discriminate when shapes are widened to text (Level 6 gap)", () => {
+    // This scenario only occurs when the body goes through a code path
+    // the AST resolver can't inline (multi-return function, method call,
+    // cross-module function). For direct object literals, the syntactic
+    // pass preserves the literal without `as const`.
     const p = provider("getUser", [
       transition("t-200-deleted", {
         output: response(200, record({ status: text, id: text })),
@@ -95,12 +98,9 @@ describe("aspiration: type-widened literals", () => {
       }),
     ]);
 
-    // CURRENT: no findings (both bodies look identical)
+    // Bodies are structurally identical (same fields, same types) →
+    // no literal or field-presence discrimination possible.
     expect(checkSemanticBridging(p, c)).toEqual([]);
-
-    // IDEAL: should detect that these are distinct behavioral cases
-    // even though the type-level shapes are the same, because the
-    // provider conditions differ.
   });
 });
 
@@ -188,16 +188,25 @@ describe("RESOLVED: field presence discrimination", () => {
 // Aspiration 4: Response body behind function calls
 // ---------------------------------------------------------------------------
 
-describe("aspiration: body constructed by helper function", () => {
-  it("does NOT detect discrimination when body is built by a function call", () => {
-    // Provider: body is { type: "ref", name: "User" } because the
-    // shape extractor couldn't resolve through the function call.
-    //
-    // IDEAL: For local helpers, the extractor would inline the function
-    // body and extract the literal shape. For external functions, the
-    // type checker's return type would be used.
-    //
-    // CURRENT: ref shapes are opaque → no literals → no finding.
+// ---------------------------------------------------------------------------
+// Aspiration 4: Response body behind function calls
+// ---------------------------------------------------------------------------
+// RECLASSIFIED: The extractor DOES expand named interfaces into records
+// (User → { id: text, name: text }). And single-return local functions
+// ARE inlined by resolveCall, preserving literal narrowness.
+//
+// Ref shapes only appear when:
+//   - The function has multiple return statements
+//   - The callee is a method (obj.buildUser()) not a bare function
+//   - The function is cross-module with no visible body
+//
+// These are all Level 6 (local function inlining) territory.
+
+describe("aspiration: body constructed by multi-return or method helper", () => {
+  it("cannot discriminate ref shapes (requires Level 6 inlining)", () => {
+    // This only happens when the AST resolver can't inline the function.
+    // Single-return local functions DO preserve literal narrowness.
+    // Named interfaces expand to records, not refs.
     const p = provider("getUser", [
       transition("t-200-deleted", {
         output: response(200, ref("DeletedUser")),
@@ -214,12 +223,8 @@ describe("aspiration: body constructed by helper function", () => {
       }),
     ]);
 
-    // CURRENT: no finding (ref shapes are opaque)
+    // Ref shapes are opaque — no structural information to discriminate
     expect(checkSemanticBridging(p, c)).toEqual([]);
-
-    // IDEAL: if DeletedUser and ActiveUser have different literal
-    // fields, should detect the discrimination. This requires
-    // resolving ref shapes to their structural definitions.
   });
 });
 
