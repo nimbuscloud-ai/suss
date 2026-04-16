@@ -12,11 +12,13 @@ Command-line interface for suss. Wraps the extraction pipeline and checker into 
 suss extract -p tsconfig.json -f ts-rest [-f express] [-o summaries.json]
 suss inspect summaries.json
 suss check provider.json consumer.json [--json] [-o findings.json]
+suss check --dir summaries/ [--json] [-o findings.json]
 ```
 
 - **`extract`** discovers code units, runs the extraction pipeline, and outputs `BehavioralSummary[]` as JSON.
 - **`inspect`** renders summaries as human-readable text.
-- **`check`** runs the pairwise cross-boundary checker and outputs `Finding[]`. Exits non-zero when any finding has `error` severity.
+- **`check`** (pairwise) runs the cross-boundary checker on explicit provider/consumer files.
+- **`check --dir`** reads all JSON files from a directory, automatically pairs providers with consumers by `(method, normalizedPath)`, and checks each pair. Reports unmatched summaries.
 
 ### Built-in framework resolution
 

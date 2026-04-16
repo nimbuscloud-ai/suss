@@ -1,6 +1,7 @@
 import { checkBodyCompatibility } from "./body-compatibility.js";
 import { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 import { checkContractConsistency } from "./contract-consistency.js";
+import { pairSummaries } from "./pairing.js";
 import { checkProviderCoverage } from "./provider-coverage.js";
 import { checkSemanticBridging } from "./semantic-bridging.js";
 
@@ -11,6 +12,13 @@ export { bodyShapesMatch } from "./body-match.js";
 export { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 export { checkContractConsistency } from "./contract-consistency.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
+export {
+  boundaryKey,
+  normalizePath,
+  type PairingResult,
+  pairSummaries,
+  type SummaryPair,
+} from "./pairing.js";
 export { checkProviderCoverage } from "./provider-coverage.js";
 export { checkSemanticBridging } from "./semantic-bridging.js";
 
@@ -25,4 +33,56 @@ export function checkPair(
     ...checkBodyCompatibility(provider, consumer),
     ...checkSemanticBridging(provider, consumer),
   ];
+}
+
+export interface CheckAllResult {
+  findings: Finding[];
+  pairs: Array<{ key: string; provider: string; consumer: string }>;
+  unmatched: {
+    providers: Array<{ name: string; key: string | null }>;
+    consumers: Array<{ name: string; key: string | null }>;
+    noBinding: string[];
+  };
+}
+
+/**
+ * Given a flat list of summaries, automatically pair providers with consumers
+ * by `(method, normalizedPath)` and run `checkPair` on each matched pair.
+ */
+export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
+  const { pairs, unmatched } = pairSummaries(summaries);
+
+  const findings: Finding[] = [];
+  const pairInfo: CheckAllResult["pairs"] = [];
+
+  for (const { provider, consumer, key } of pairs) {
+    findings.push(...checkPair(provider, consumer));
+    pairInfo.push({
+      key,
+      provider: provider.identity.name,
+      consumer: consumer.identity.name,
+    });
+  }
+
+  return {
+    findings,
+    pairs: pairInfo,
+    unmatched: {
+      providers: unmatched.providers.map((s) => ({
+        name: s.identity.name,
+        key:
+          s.identity.boundaryBinding !== null
+            ? `${(s.identity.boundaryBinding.method ?? "ANY").toUpperCase()} ${s.identity.boundaryBinding.path ?? "?"}`
+            : null,
+      })),
+      consumers: unmatched.consumers.map((s) => ({
+        name: s.identity.name,
+        key:
+          s.identity.boundaryBinding !== null
+            ? `${(s.identity.boundaryBinding.method ?? "ANY").toUpperCase()} ${s.identity.boundaryBinding.path ?? "?"}`
+            : null,
+      })),
+      noBinding: unmatched.noBinding.map((s) => s.identity.name),
+    },
+  };
 }

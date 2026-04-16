@@ -1,13 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { checkPair } from "@suss/checker";
+import { checkAll, checkPair } from "@suss/checker";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type { CheckAllResult } from "@suss/checker";
 
 export interface CheckOptions {
   providerFile: string;
   consumerFile: string;
+  json?: boolean;
+  output?: string;
+}
+
+export interface CheckDirOptions {
+  dir: string;
   json?: boolean;
   output?: string;
 }
@@ -28,6 +35,50 @@ export function check(options: CheckOptions): CheckResult {
     }
   }
 
+  return emitFindings(findings, options);
+}
+
+export function checkDir(
+  options: CheckDirOptions,
+): CheckResult & { result: CheckAllResult } {
+  const resolved = path.resolve(options.dir);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    throw new Error(`Directory not found: ${resolved}`);
+  }
+
+  const files = fs.readdirSync(resolved).filter((f) => f.endsWith(".json"));
+  if (files.length === 0) {
+    throw new Error(`No JSON files found in ${resolved}`);
+  }
+
+  const allSummaries: BehavioralSummary[] = [];
+  for (const file of files) {
+    allSummaries.push(...readSummaries(path.join(resolved, file)));
+  }
+
+  const result = checkAll(allSummaries);
+
+  const rendered = options.json
+    ? `${JSON.stringify({ findings: result.findings, pairs: result.pairs, unmatched: result.unmatched }, null, 2)}\n`
+    : renderDirHuman(result);
+
+  if (options.output !== undefined) {
+    fs.writeFileSync(options.output, rendered);
+  } else {
+    process.stdout.write(rendered);
+  }
+
+  return {
+    findings: result.findings,
+    hasErrors: result.findings.some((f) => f.severity === "error"),
+    result,
+  };
+}
+
+function emitFindings(
+  findings: Finding[],
+  options: { json?: boolean; output?: string },
+): CheckResult {
   const rendered = options.json
     ? `${JSON.stringify(findings, null, 2)}\n`
     : renderHuman(findings);
@@ -100,4 +151,46 @@ function formatRoute(boundary: Finding["boundary"]): string {
     return ` ${method} ${p}`.trimEnd();
   }
   return "";
+}
+
+function renderDirHuman(result: CheckAllResult): string {
+  const lines: string[] = [];
+
+  // Pairing summary
+  lines.push(
+    `Paired ${result.pairs.length} provider-consumer combination${result.pairs.length === 1 ? "" : "s"}:`,
+  );
+  for (const pair of result.pairs) {
+    lines.push(`  ${pair.key}: ${pair.provider} <-> ${pair.consumer}`);
+  }
+
+  const { providers, consumers, noBinding } = result.unmatched;
+  if (providers.length > 0 || consumers.length > 0 || noBinding.length > 0) {
+    lines.push("");
+    lines.push("Unmatched:");
+    for (const p of providers) {
+      lines.push(
+        `  provider ${p.name} (${p.key ?? "no path"}) — no matching consumer`,
+      );
+    }
+    for (const c of consumers) {
+      lines.push(
+        `  consumer ${c.name} (${c.key ?? "no path"}) — no matching provider`,
+      );
+    }
+    for (const name of noBinding) {
+      lines.push(`  ${name} — no boundary binding`);
+    }
+  }
+
+  lines.push("");
+
+  // Findings
+  if (result.findings.length === 0) {
+    lines.push("No findings.");
+  } else {
+    lines.push(renderHuman(result.findings).trimEnd());
+  }
+
+  return `${lines.join("\n")}\n`;
 }
