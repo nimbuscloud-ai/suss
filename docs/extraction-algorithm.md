@@ -403,7 +403,32 @@ extractRawBranches(func, framework):
     })
 ```
 
-The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which handles the opaque-wrapping, gap detection, and confidence scoring. That logic is already implemented and tested — this document covers only the adapter side.
+The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which handles the opaque-wrapping, gap detection, confidence scoring, and `expectedInput` pass-through. That logic is already implemented and tested — this document covers only the adapter side.
+
+### Step 5b — Client field tracking
+
+For client code units (discovered via `clientCall`), the adapter runs an additional step after branch extraction: trace which properties the consumer reads from the response variable within each branch.
+
+```
+collectClientFieldAccesses(callExpr, func, branchLocations):
+    responseVar = findResponseVariable(callExpr)
+    // e.g. "const res = await fetch(...)" → responseVar = "res"
+
+    for each branch:
+        subtree = findBranchSubtree(func, branch.location)
+        accesses = collectPropertyAccesses(subtree, responseVar)
+        // e.g. res.body.name → ["body", "name"]
+        //      res.body.email → ["body", "email"]
+
+        // Filter out status/ok/headers — we only want body-related accesses
+        bodyAccesses = accesses.filter(not status/ok/headers)
+
+        branch.expectedInput = buildShapeFromPaths(bodyAccesses)
+        // → { type: "record", properties: { body: { type: "record",
+        //     properties: { name: { type: "unknown" }, email: { type: "unknown" } } } } }
+```
+
+`expectedInput` flows through `RawBranch` → `assembleSummary` → `Transition.expectedInput`, where the checker's `checkBodyCompatibility` compares it against the provider's output body shape. Leaf types are `unknown` because we only track *which* fields are accessed, not what types the consumer expects — field presence is the comparison, not type compatibility.
 
 ## Testing strategy
 

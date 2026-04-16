@@ -156,6 +156,19 @@ Find functions with specific decorators. Used by FastAPI (`@app.get`), NestJS (`
 ```
 Find code units by file path + expected export names. Used by Next.js App Router (`app/**/route.ts` with `GET`/`POST` exports), SvelteKit (`+page.server.ts` with `load`/`actions`).
 
+#### `clientCall`
+```typescript
+{
+  type: "clientCall";
+  importModule: string;  // or "global" for built-ins like fetch
+  importName: string;    // e.g. "initClient", "fetch"
+  methodFilter?: string[];
+}
+```
+Find client call sites — the consumer side of a boundary. The adapter finds imports of `importName` from `importModule`, resolves variables initialized from that import, and walks their method calls. For globals like `fetch`, all bare calls to `importName` match. If `methodFilter` is set, only calls to those methods are discovered. The enclosing function becomes the code unit (kind `"client"`).
+
+Used by ts-rest (`initClient` from `@ts-rest/core`) and `@suss/runtime-web` (`fetch` as global).
+
 ### `BindingExtraction`
 
 How to derive the HTTP method and path from a discovered code unit:
@@ -177,6 +190,9 @@ How to derive the HTTP method and path from a discovered code unit:
 - **`fromRegistration`** — extract from the registration call. `position: "methodName"` means the method *is* the HTTP method (`app.get` → `"GET"`). `position: 0` means it's the first argument.
 - **`fromExportName`** — the export name *is* the HTTP method. Next.js App Router convention.
 - **`fromContract`** — both method and path live in a separate contract definition.
+- **`fromClientMethod`** — the method or path is derived from the client call site's method name via the contract. Used by ts-rest client discovery: `client.getUser(...)` resolves `getUser` back through the contract to find `method: "GET"`, `path: "/users/:id"`.
+- **`fromArgumentLiteral`** — the path is a string literal at a given argument position. Used by `@suss/runtime-web`: `fetch("/users")` extracts `"/users"` from argument 0.
+- **`fromArgumentProperty`** — the method is a property on an options argument. Used by `@suss/runtime-web`: `fetch(url, { method: "POST" })` extracts `"POST"` from argument 1, property `method`. Supports a `default` value (e.g., `"GET"` when no options are passed).
 - **`fromFilename`** — file-based routing (React Router, Next.js, SvelteKit). The adapter derives the path from the file path.
 - **`literal`** — hard-code the value. React Router loaders are always `GET`.
 
@@ -209,6 +225,12 @@ Match `throw` statements. If `constructorPattern` is set, the thrown expression 
 { type: "functionCall"; functionName: string }
 ```
 Match calls to a named function (not a method on an object). Used by React Router (`json(data)`, `data(value)`, `redirect(url)`). Only matches bare `Identifier` callees — `res.json(...)` won't match a `functionName: "json"` pattern because the callee is a property access, not an identifier.
+
+#### `returnStatement`
+```typescript
+{ type: "returnStatement" }
+```
+Match any `ReturnStatement`, regardless of what's being returned. Used by client code units where the consumer function returns arbitrary values (not structured `{ status, body }` objects). The return value is captured as `Output.return`. Every client pack uses this as its primary terminal.
 
 ### `TerminalExtraction`
 
