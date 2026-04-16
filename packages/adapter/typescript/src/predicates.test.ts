@@ -722,4 +722,103 @@ describe("parseConditionExpression — call inlining", () => {
       args: [{ type: "input", inputRef: "user", path: [] }],
     });
   });
+
+  it("inlines both sides of a compound: isDeleted(user) && isVerified(user)", () => {
+    const cond = getFirstIfCondition(
+      sourceFile,
+      "checkInlineCompoundBothSides",
+    );
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "compound",
+      op: "and",
+      operands: [
+        {
+          type: "truthinessCheck",
+          subject: {
+            type: "derived",
+            from: { type: "input", inputRef: "user", path: [] },
+            derivation: { type: "propertyAccess", property: "deletedAt" },
+          },
+          negated: false,
+        },
+        {
+          type: "truthinessCheck",
+          subject: {
+            type: "derived",
+            from: { type: "input", inputRef: "user", path: [] },
+            derivation: { type: "propertyAccess", property: "emailVerified" },
+          },
+          negated: false,
+        },
+      ],
+    });
+  });
+
+  it("recursively inlines nested calls: isUsable calls isDeleted and isVerified", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkNestedInline");
+    const result = parseConditionExpression(cond);
+    // isUsable = (u) => !isDeleted(u) && isVerified(u)
+    // isDeleted = (u) => u.deletedAt
+    // isVerified = (u) => u.emailVerified
+    // → compound(and, [truthiness(!user.deletedAt), truthiness(user.emailVerified)])
+    expect(result).toEqual({
+      type: "compound",
+      op: "and",
+      operands: [
+        {
+          type: "truthinessCheck",
+          subject: {
+            type: "derived",
+            from: { type: "input", inputRef: "user", path: [] },
+            derivation: { type: "propertyAccess", property: "deletedAt" },
+          },
+          negated: true,
+        },
+        {
+          type: "truthinessCheck",
+          subject: {
+            type: "derived",
+            from: { type: "input", inputRef: "user", path: [] },
+            derivation: { type: "propertyAccess", property: "emailVerified" },
+          },
+          negated: false,
+        },
+      ],
+    });
+  });
+
+  it("deeply inlines: canAccess calls hasRole, multi-arg substitution at each level", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkDeepInline");
+    const result = parseConditionExpression(cond);
+    // canAccess = (u, resourceOwnerId) => hasRole(u, "admin") || u.id === resourceOwnerId
+    // hasRole = (u, role) => u.role === role
+    // → compound(or, [comparison(user.role, eq, "admin"), comparison(user.id, eq, ownerId)])
+    expect(result).toEqual({
+      type: "compound",
+      op: "or",
+      operands: [
+        {
+          type: "comparison",
+          left: {
+            type: "derived",
+            from: { type: "input", inputRef: "user", path: [] },
+            derivation: { type: "propertyAccess", property: "role" },
+          },
+          op: "eq",
+          right: { type: "literal", value: "admin" },
+        },
+        {
+          type: "comparison",
+          left: {
+            type: "derived",
+            from: { type: "input", inputRef: "user", path: [] },
+            derivation: { type: "propertyAccess", property: "id" },
+          },
+          op: "eq",
+          right: { type: "input", inputRef: "ownerId", path: [] },
+        },
+      ],
+    });
+  });
 });
