@@ -1,0 +1,267 @@
+import { Node, Project } from "ts-morph";
+import { describe, expect, it } from "vitest";
+
+import { createTypeScriptAdapter } from "./adapter.js";
+import { findResponseVariable } from "./field-accesses.js";
+
+import type { FrameworkPack } from "@suss/extractor";
+
+// ---------------------------------------------------------------------------
+// Helper: create a project and get the first call expression
+// ---------------------------------------------------------------------------
+
+function createProject() {
+  return new Project({ useInMemoryFileSystem: true });
+}
+
+function getFirstCallExpression(project: Project, fileName: string) {
+  const file = project.getSourceFileOrThrow(fileName);
+  let result: Node | undefined;
+  file.forEachDescendant((node) => {
+    if (Node.isCallExpression(node) && result === undefined) {
+      const text = node.getExpression().getText();
+      if (text === "fetch" || text.includes(".getUser")) {
+        result = node;
+      }
+    }
+  });
+  if (result === undefined || !Node.isCallExpression(result)) {
+    throw new Error("No matching call expression found");
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// findResponseVariable
+// ---------------------------------------------------------------------------
+
+describe("findResponseVariable", () => {
+  it("finds variable from const res = await fetch(...)", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "test.ts",
+      `
+      async function f() {
+        const res = await fetch("/api");
+        return res.json();
+      }
+    `,
+    );
+    const call = getFirstCallExpression(project, "test.ts");
+    expect(findResponseVariable(call)).toBe("res");
+  });
+
+  it("finds variable from const result = await client.getUser(...)", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "test.ts",
+      `
+      async function f() {
+        const result = await (null as any).getUser({});
+        return result.body;
+      }
+    `,
+    );
+    const call = getFirstCallExpression(project, "test.ts");
+    expect(findResponseVariable(call)).toBe("result");
+  });
+
+  it("returns null for unassigned calls", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "test.ts",
+      `
+      async function f() {
+        await fetch("/api");
+      }
+    `,
+    );
+    const call = getFirstCallExpression(project, "test.ts");
+    expect(findResponseVariable(call)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration: expectedInput on consumer transitions
+// ---------------------------------------------------------------------------
+
+const fetchPack: FrameworkPack = {
+  name: "fetch",
+  languages: ["typescript"],
+  discovery: [
+    {
+      kind: "client",
+      match: {
+        type: "clientCall",
+        importModule: "global",
+        importName: "fetch",
+      },
+      bindingExtraction: {
+        method: {
+          type: "fromArgumentProperty",
+          position: 1,
+          property: "method",
+          default: "GET",
+        },
+        path: { type: "fromArgumentLiteral", position: 0 },
+      },
+    },
+  ],
+  terminals: [
+    { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+  ],
+  inputMapping: { type: "positionalParams", params: [] },
+};
+
+describe("expectedInput on client transitions", () => {
+  it("populates expectedInput with body fields read after status check", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser(id: string) {
+        const res = await fetch("/users/" + id);
+        if (res.status === 200) {
+          const data = res.body;
+          return { name: data.name, email: data.email };
+        }
+        throw new Error("failed");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    // Find the transition in the status === 200 branch
+    const transitions = summaries[0].transitions;
+    const bodyTransition = transitions.find(
+      (t) =>
+        t.expectedInput !== undefined &&
+        t.expectedInput !== null &&
+        t.expectedInput.type === "record",
+    );
+
+    // Should have captured body.name and body.email accesses
+    expect(bodyTransition).toBeDefined();
+    const input1 = bodyTransition?.expectedInput;
+    expect(input1?.type).toBe("record");
+    if (input1?.type === "record") {
+      expect(input1.properties).toHaveProperty("body");
+    }
+  });
+
+  it("sets expectedInput to null when no response fields are accessed", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function ping() {
+        const res = await fetch("/health");
+        if (res.status !== 200) {
+          throw new Error("unhealthy");
+        }
+        return true;
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    // No body field accesses — all transitions should have no expectedInput
+    for (const t of summaries[0].transitions) {
+      expect(t.expectedInput).toBeUndefined();
+    }
+  });
+
+  it("captures nested property accesses like result.body.user.name", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser() {
+        const res = await fetch("/api/user");
+        if (res.status === 200) {
+          return res.body.user.name;
+        }
+        throw new Error("fail");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    const withInput = summaries[0].transitions.find(
+      (t) => t.expectedInput !== undefined,
+    );
+    expect(withInput).toBeDefined();
+    // Should have body.user.name
+    const input = withInput?.expectedInput;
+    expect(input?.type).toBe("record");
+    if (input?.type === "record") {
+      expect(input.properties).toHaveProperty("body");
+      const body = input.properties.body;
+      expect(body.type).toBe("record");
+      if (body.type === "record") {
+        expect(body.properties).toHaveProperty("user");
+        const user = body.properties.user;
+        expect(user.type).toBe("record");
+        if (user.type === "record") {
+          expect(user.properties).toHaveProperty("name");
+        }
+      }
+    }
+  });
+
+  it("filters out status/ok/headers accesses", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function check() {
+        const res = await fetch("/check");
+        if (res.ok && res.status === 200) {
+          console.log(res.headers);
+          return res.body.data;
+        }
+        throw new Error("fail");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    const withInput = summaries[0].transitions.find(
+      (t) => t.expectedInput !== undefined,
+    );
+    expect(withInput).toBeDefined();
+    const input = withInput?.expectedInput;
+    expect(input).toBeDefined();
+    // Should only have body.data, not status/ok/headers
+    expect(input?.type).toBe("record");
+    if (input?.type === "record") {
+      expect(input.properties).toHaveProperty("body");
+      expect(input.properties).not.toHaveProperty("status");
+      expect(input.properties).not.toHaveProperty("ok");
+      expect(input.properties).not.toHaveProperty("headers");
+    }
+  });
+});
