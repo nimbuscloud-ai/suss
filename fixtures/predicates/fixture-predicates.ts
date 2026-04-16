@@ -251,3 +251,26 @@ export function checkNoInlineMultiReturn(user: any) {
   if (complexCheck(user)) return 1;
   return 0;
 }
+
+// Compound with both sides inlineable
+const isVerified = (u: any) => u.emailVerified;
+export function checkInlineCompoundBothSides(user: any) {
+  if (isDeleted(user) && isVerified(user)) return 1;
+  return 0;
+}
+
+// Nested inlining: outer calls inner
+const isUsable = (u: any) => !isDeleted(u) && isVerified(u);
+export function checkNestedInline(user: any) {
+  if (isUsable(user)) return 1;
+  return 0;
+}
+
+// Real-world: authorization guard with nested helpers
+const hasRole = (u: any, role: string) => u.role === role;
+const canAccess = (u: any, resourceOwnerId: string) =>
+  hasRole(u, "admin") || u.id === resourceOwnerId;
+export function checkDeepInline(user: any, ownerId: string) {
+  if (canAccess(user, ownerId)) return 1;
+  return 0;
+}
