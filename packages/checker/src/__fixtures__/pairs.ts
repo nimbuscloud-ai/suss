@@ -4,6 +4,7 @@ import type {
   Output,
   Predicate,
   Transition,
+  TypeShape,
   ValueRef,
 } from "@suss/behavioral-ir";
 
@@ -28,11 +29,14 @@ export function statusEq(status: number): Predicate {
   };
 }
 
-export function response(status: number): Output {
+export function response(
+  status: number,
+  body: TypeShape | null = null,
+): Output {
   return {
     type: "response",
     statusCode: { type: "literal", value: status },
-    body: null,
+    body,
     headers: {},
   };
 }
@@ -104,6 +108,24 @@ export function withContract(
       declaredContract: {
         framework: "ts-rest",
         responses: declaredStatuses.map((statusCode) => ({ statusCode })),
+      },
+    },
+  };
+}
+
+export function withContractBodies(
+  summary: BehavioralSummary,
+  responses: Array<{ statusCode: number; body: TypeShape | null }>,
+  gaps: Gap[] = [],
+): BehavioralSummary {
+  return {
+    ...summary,
+    gaps,
+    metadata: {
+      ...(summary.metadata ?? {}),
+      declaredContract: {
+        framework: "ts-rest",
+        responses,
       },
     },
   };
