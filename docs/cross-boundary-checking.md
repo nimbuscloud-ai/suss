@@ -40,7 +40,7 @@ The checker's job is to compare these three contracts pairwise. Each comparison 
 | Provider inferred vs consumer inferred (sub-cases) | Provider has two 200s (active vs deleted user), consumer has one 200 branch. | Yes (`checkProviderCoverage` sub-case analysis) |
 | Provider inferred vs consumer inferred (body fields) | Consumer reads `body.email` but provider's 200 response doesn't include it. | Yes (`checkBodyCompatibility`) |
 | Consumer inferred vs declared | Consumer reads `body.role` but the declared 200 schema doesn't include `role`. Consumer depends on an undeclared implementation detail. | Not yet |
-| Provider output ↔ consumer conditions (semantic bridging) | Provider's `user.deletedAt` transition produces body with `status: "deleted"`. Consumer tests `body.status === "deleted"`. These are the same behavioral case expressed in different domains. | Not yet — north star |
+| Provider output ↔ consumer conditions (semantic bridging) | Provider's `user.deletedAt` transition produces body with `status: "deleted"`. Consumer tests `body.status === "deleted"`. These are the same behavioral case expressed in different domains. | Yes (`checkSemanticBridging`) |
 
 ## Analysis levels
 
@@ -70,13 +70,9 @@ Compare the consumer's `expectedInput` against the *declared* contract's body sc
 
 This is the "contract leakage" check: the consumer assumes more than the contract guarantees.
 
-### Level 4: Subject resolution improvement (not yet)
+### Level 4: Subject resolution through intermediates (done)
 
-The current `resolveSubject` in the TypeScript adapter handles identifiers whose declaration initializer is a call expression (`const user = await db.findById(id)`) but falls through to `unresolved` when the initializer is a property access (`const data = result.body`) or another identifier (`const x = y`).
-
-This means consumer conditions that go through intermediate variables — `const data = result.body; if (data.status === "deleted")` — lose their chain back to the response. Fixing this is a targeted change: when a variable's initializer is a property access or identifier, recurse into it.
-
-This level unlocks Level 5.
+`resolveSubject` follows non-call initializers (`const data = result.body` → recurse on the property access, `const alias = user` → recurse on the identifier). Depth-bounded at 8 hops. This means consumer conditions that go through intermediate variables maintain their chain back to the response variable.
 
 ### Level 5: Semantic condition bridging (north star)
 
