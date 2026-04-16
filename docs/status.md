@@ -128,9 +128,9 @@ Progress tracker. Updated as phases land.
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
 | `@suss/runtime-web` | 4 | pack shape + integration (fetch discovery, binding extraction, transitions) |
-| `@suss/checker` | 146 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (literal + field-presence discrimination, truthiness, negated comparisons, `.json()` accessor, 2 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis, throw-as-response), consumer satisfaction, contract consistency (status + body), path normalization, boundary pairing, `checkPair` integration |
+| `@suss/checker` | 154 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (literal + field-presence discrimination, truthiness, negated comparisons, `.json()` accessor, 2 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis, throw-as-response), consumer satisfaction, contract consistency (status + body), consumer contract leakage (Level 3), path normalization, boundary pairing, `checkPair` integration |
 | `@suss/cli` | 34 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check`, `suss check --dir`, consumer extraction, end-to-end extract+check, semantic-bridging e2e |
-| **Total** | **582** | |
+| **Total** | **590** | |
 
 Runs via `turbo test`.
 

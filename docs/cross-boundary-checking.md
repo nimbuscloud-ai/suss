@@ -39,7 +39,7 @@ The checker's job is to compare these three contracts pairwise. Each comparison 
 | Provider inferred vs consumer inferred (status) | Provider returns 404, consumer doesn't handle it. Consumer handles 410, provider never produces it. | Yes (`checkProviderCoverage`, `checkConsumerSatisfaction`) |
 | Provider inferred vs consumer inferred (sub-cases) | Provider has two 200s (active vs deleted user), consumer has one 200 branch. | Yes (`checkProviderCoverage` sub-case analysis) |
 | Provider inferred vs consumer inferred (body fields) | Consumer reads `body.email` but provider's 200 response doesn't include it. | Yes (`checkBodyCompatibility`) |
-| Consumer inferred vs declared | Consumer reads `body.role` but the declared 200 schema doesn't include `role`. Consumer depends on an undeclared implementation detail. | Not yet |
+| Consumer inferred vs declared | Consumer reads `body.role` but the declared 200 schema doesn't include `role`. Consumer depends on an undeclared implementation detail. | Yes (`checkConsumerContract`) |
 | Provider output ↔ consumer conditions (semantic bridging) | Provider's `user.deletedAt` transition produces body with `status: "deleted"`. Consumer tests `body.status === "deleted"`. These are the same behavioral case expressed in different domains. | Yes (`checkSemanticBridging`) |
 
 ## Analysis levels
@@ -64,11 +64,11 @@ For each consumer transition with `expectedInput`, compare the set of fields the
 
 Consumer field tracking works by tracing property accesses on the response variable within each branch (e.g., `result.body.name`, `result.body.email`). These are collected into a `TypeShape` on `Transition.expectedInput` during extraction, flowing through `RawBranch` → `assembleSummary` → `Transition`.
 
-### Level 3: Consumer vs declared contract (not yet)
+### Level 3: Consumer vs declared contract (done)
 
 Compare the consumer's `expectedInput` against the *declared* contract's body schema, not just the provider's actual output. If the consumer reads `body.role` but the declared 200 schema only has `{ id, name, email }`, the consumer depends on an undeclared field — an implementation detail that the provider can remove without violating its contract.
 
-This is the "contract leakage" check: the consumer assumes more than the contract guarantees.
+This is the "contract leakage" check: the consumer assumes more than the contract guarantees. Emits `consumerContractViolation` with `warning` severity — it's not a current bug, but a fragility.
 
 ### Level 4: Subject resolution through intermediates (done)
 
