@@ -41,6 +41,8 @@ These summaries are the input to downstream tools: contract checkers, documentat
 | [`@suss/framework-ts-rest`](packages/framework/ts-rest) | Framework pack for ts-rest. | ![](.github/badges/coverage-ts-rest.svg) |
 | [`@suss/framework-react-router`](packages/framework/react-router) | Framework pack for React Router loaders/actions/components. | ![](.github/badges/coverage-react-router.svg) |
 | [`@suss/framework-express`](packages/framework/express) | Framework pack for Express handlers. | ![](.github/badges/coverage-express.svg) |
+| [`@suss/runtime-web`](packages/runtime/web) | Runtime pack for `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
+| [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker. | ![](.github/badges/coverage-checker.svg) |
 | [`@suss/cli`](packages/cli) | CLI wrapper. | ![](.github/badges/coverage-cli.svg) |
 
 ## Docs
@@ -51,11 +53,12 @@ These summaries are the input to downstream tools: contract checkers, documentat
 - [`docs/ir-reference.md`](docs/ir-reference.md) — type-by-type walkthrough of `@suss/behavioral-ir`
 - [`docs/framework-packs.md`](docs/framework-packs.md) — how to write or modify a framework pack, pattern reference, worked Fastify example
 - [`docs/style.md`](docs/style.md) — code conventions (Biome, TypeScript, tests, monorepo)
+- [`docs/cross-boundary-checking.md`](docs/cross-boundary-checking.md) — the pairwise checker: provider coverage, consumer satisfaction, contract consistency
 - [`docs/status.md`](docs/status.md) — phase-by-phase progress tracker, test counts, decisions log
 
 ## Status
 
-Phases 1–4 complete. Core extraction pipeline is functional end-to-end: IR, extractor, TypeScript adapter, three framework packs (ts-rest, React Router, Express), CLI, and fixture sets. 288 tests. See [`docs/status.md`](docs/status.md) for details.
+Phases 1–6 complete. Full extraction pipeline with cross-boundary checking: IR, extractor, TypeScript adapter, three framework packs (ts-rest, React Router, Express), `fetch` runtime pack, pairwise checker, CLI, consumer-side discovery, and fixture sets. 501 tests. See [`docs/status.md`](docs/status.md) for details.
 
 ## License
 

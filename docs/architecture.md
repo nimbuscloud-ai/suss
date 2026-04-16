@@ -183,11 +183,12 @@ tsRestFramework(): FrameworkPack {
     │
     ├─ @suss/extractor          assembly engine + FrameworkPack interface. No AST access.
     │     │
-    │     ├─ @suss/adapter-typescript     ts-morph-based extraction
+    │     ├─ @suss/adapter-typescript     ts-morph-based extraction (provider + consumer)
     │     │
-    │     ├─ @suss/framework-ts-rest      declarative patterns
+    │     ├─ @suss/framework-ts-rest      declarative patterns (handler + client discovery)
     │     ├─ @suss/framework-react-router
-    │     └─ @suss/framework-express
+    │     ├─ @suss/framework-express
+    │     └─ @suss/runtime-web            fetch call-site discovery
     │
     └─ @suss/checker            pairwise cross-boundary checker. IR-only consumer.
           │
@@ -199,7 +200,7 @@ Dependency rules (enforced by the layout):
 - `@suss/behavioral-ir` — zero dependencies. This is what downstream consumers install.
 - `@suss/extractor` — depends only on the IR. Defines `RawCodeStructure` and `FrameworkPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript` — depends on IR, extractor, ts-morph. This is the heavyweight package.
-- `@suss/framework-*` packs — depend only on `@suss/extractor` (for the `FrameworkPack` type). They're data, not logic.
+- `@suss/framework-*` and `@suss/runtime-*` packs — depend only on `@suss/extractor` (for the `FrameworkPack` type). They're data, not logic. Runtime packs (e.g., `@suss/runtime-web` for `fetch`) use the same `FrameworkPack` interface but target built-in APIs rather than third-party frameworks.
 - `@suss/checker` — depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or framework packs — operates on the serialized IR.
 - `@suss/cli` — depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs.
 
@@ -248,6 +249,6 @@ Static analysis of real codebases is always imperfect. suss handles this explici
 ## What's deliberately not here
 
 - **A full control flow graph.** suss identifies terminals and their gating conditions. It doesn't build a CFG or do data flow analysis. This is a cost/value tradeoff — a CFG would capture more but costs orders of magnitude more in complexity.
-- **A cross-boundary checker.** Comparing provider/consumer summaries is downstream work. suss produces the inputs; a separate tool will consume them.
+- **Cross-service aggregation.** `@suss/checker` compares two summaries at a time (one provider, one consumer). Aggregating across an organization, tracking boundaries over commits, or alerting on regressions are separate concerns that consume pairwise findings as input. See [`cross-boundary-checking.md`](cross-boundary-checking.md).
 - **Runtime tracing.** Everything is static. No instrumentation, no production data.
 - **Semantic understanding of dependency calls.** When the extractor sees `await db.findById(id)`, it knows the subject is `"the result of db.findById"`. It doesn't know what Prisma's `findById` actually does. That's fine — cross-boundary comparison only needs subjects to be *stable*, not *semantically understood*.
