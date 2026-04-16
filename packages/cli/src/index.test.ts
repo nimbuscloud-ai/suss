@@ -724,3 +724,83 @@ describe("end-to-end: extract provider + consumer, then check", () => {
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// End-to-end: semantic bridging (the motivating example)
+// ---------------------------------------------------------------------------
+
+describe("end-to-end: semantic bridging — soft-delete motivating example", () => {
+  it(
+    "detects that consumer ignores provider's distinguishing body.status literal",
+    { timeout: 90_000 },
+    async () => {
+      // Extract provider from semantic-bridging fixture
+      const providerTsconfig = createTempTsConfig(
+        path.join(FIXTURES_ROOT, "semantic-bridging"),
+      );
+      const providerTmpDir = path.dirname(providerTsconfig);
+      const providerOutPath = path.join(providerTmpDir, "provider.json");
+      await extract({
+        tsconfig: providerTsconfig,
+        frameworks: ["ts-rest"],
+        files: [
+          path.join(FIXTURES_ROOT, "semantic-bridging", "handler.ts"),
+          path.join(FIXTURES_ROOT, "semantic-bridging", "contract.ts"),
+        ],
+        output: providerOutPath,
+      });
+
+      // Extract consumer from semantic-bridging fixture
+      const consumerTsconfig = createTempTsConfig(
+        path.join(FIXTURES_ROOT, "semantic-bridging"),
+      );
+      const consumerTmpDir = path.dirname(consumerTsconfig);
+      const consumerOutPath = path.join(consumerTmpDir, "consumer.json");
+      await extract({
+        tsconfig: consumerTsconfig,
+        frameworks: ["ts-rest"],
+        files: [
+          path.join(FIXTURES_ROOT, "semantic-bridging", "consumer.ts"),
+          path.join(FIXTURES_ROOT, "semantic-bridging", "contract.ts"),
+        ],
+        output: consumerOutPath,
+      });
+
+      // Verify provider has multiple 200 transitions
+      const providerSummaries: BehavioralSummary[] = JSON.parse(
+        fs.readFileSync(providerOutPath, "utf8"),
+      );
+      const getUser = providerSummaries.find(
+        (s) => s.identity.name === "getUser",
+      );
+      expect(getUser).toBeDefined();
+      const provider200s = getUser?.transitions.filter(
+        (t) =>
+          t.output.type === "response" &&
+          t.output.statusCode?.type === "literal" &&
+          t.output.statusCode.value === 200,
+      );
+      expect(provider200s?.length).toBeGreaterThanOrEqual(2);
+
+      // Check provider against consumer
+      const { check } = await import("./check.js");
+      const result = check({
+        providerFile: providerOutPath,
+        consumerFile: consumerOutPath,
+      });
+
+      // Should have a finding about the distinguishing "deleted" literal
+      // that the consumer ignores
+      const semanticFindings = result.findings.filter(
+        (f: { description: string }) =>
+          f.description.includes("deleted") ||
+          f.description.includes("distinct cases") ||
+          f.description.includes("status"),
+      );
+      expect(semanticFindings.length).toBeGreaterThan(0);
+
+      fs.rmSync(providerTmpDir, { recursive: true });
+      fs.rmSync(consumerTmpDir, { recursive: true });
+    },
+  );
+});
