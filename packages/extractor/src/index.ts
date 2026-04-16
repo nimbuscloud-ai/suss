@@ -378,11 +378,30 @@ const terminalConverters: Record<
     const body: TypeShape | null = bodyToShape(t.body);
     return { type: "response", statusCode, body, headers: {} };
   },
-  throw: (t) => ({
-    type: "throw",
-    exceptionType: t.exceptionType,
-    message: t.message,
-  }),
+  throw: (t) => {
+    // When the framework pack extracts a status code from the thrown value
+    // (e.g., Express error middleware converting `throw new HttpError(404)`
+    // to a 404 response), the throw is behaviorally a response — the client
+    // sees an HTTP status code, not an exception. Convert to a response
+    // output so the checker counts it as a produced status.
+    if (t.statusCode) {
+      const statusCode: ValueRef =
+        t.statusCode.type === "literal"
+          ? { type: "literal", value: t.statusCode.value }
+          : { type: "unresolved", sourceText: t.statusCode.sourceText };
+      return {
+        type: "response",
+        statusCode,
+        body: bodyToShape(t.body),
+        headers: {},
+      };
+    }
+    return {
+      type: "throw",
+      exceptionType: t.exceptionType,
+      message: t.message,
+    };
+  },
   render: (t) => ({
     type: "render",
     component: t.component ?? "unknown",

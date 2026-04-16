@@ -592,6 +592,55 @@ describe("terminalToOutput", () => {
     });
   });
 
+  it("converts throw-with-status to a response output", () => {
+    // When a framework pack extracts a status code from a thrown value,
+    // the throw is behaviorally a response (the client sees HTTP status).
+    const out = terminalToOutput(
+      makeTerminal({
+        kind: "throw",
+        exceptionType: "HttpError",
+        message: "Not found",
+        statusCode: { type: "literal", value: 404 },
+      }),
+    );
+    expect(out).toEqual({
+      type: "response",
+      statusCode: { type: "literal", value: 404 },
+      body: null,
+      headers: {},
+    });
+  });
+
+  it("converts throw-with-dynamic-status to response with unresolved statusCode", () => {
+    const out = terminalToOutput(
+      makeTerminal({
+        kind: "throw",
+        statusCode: { type: "dynamic", sourceText: "errorCode" },
+      }),
+    );
+    expect(out).toEqual({
+      type: "response",
+      statusCode: { type: "unresolved", sourceText: "errorCode" },
+      body: null,
+      headers: {},
+    });
+  });
+
+  it("keeps throw-without-status as a throw output", () => {
+    const out = terminalToOutput(
+      makeTerminal({
+        kind: "throw",
+        exceptionType: "Error",
+        message: "oops",
+      }),
+    );
+    expect(out).toEqual({
+      type: "throw",
+      exceptionType: "Error",
+      message: "oops",
+    });
+  });
+
   it("converts a render terminal, preserving component name", () => {
     const out = terminalToOutput(
       makeTerminal({ kind: "render", component: "UserCard" }),
