@@ -241,26 +241,16 @@ describe("aspiration: body constructed by helper function", () => {
 // Aspiration 5: Consumer accessing through .json() (fetch pattern)
 // ---------------------------------------------------------------------------
 
-describe("aspiration: fetch .json() response pattern", () => {
-  it("does NOT bridge through json() intermediate (no 'body' in property chain)", () => {
-    // In fetch patterns, the consumer does:
-    //   const res = await fetch(url);
-    //   const data = await res.json();
-    //   if (data.status === "deleted") { ... }
+describe("RESOLVED: fetch .json() response pattern", () => {
+  it("bridges through json() intermediate — recognizes .json() as body accessor", () => {
+    // RESOLVED: The checker now recognizes that dependencies whose name
+    // ends with ".json" (e.g., res.json()) are body accessors. Properties
+    // accessed on the return value are treated as body-relative paths.
     //
-    // The consumer predicate's subject chain goes through `data` (assigned
-    // from res.json()) not through `.body`. The checker looks for "body"
-    // in the chain to compute the body-relative path.
-    //
-    // IDEAL: The checker should recognize that `res.json()` is the response
-    // body accessor for fetch, and `data.status` is equivalent to
-    // `response.body.status` for body-relative path matching.
-    //
-    // CURRENT: No "body" in the chain → tryExtractFieldTest returns null
-    // → no consumer field test → finding emitted even though consumer
-    // actually handles the case.
+    // Remaining limitation: only ".json()" is recognized. Other body
+    // accessor patterns (custom deserializers, .text() + JSON.parse, etc.)
+    // would need to be added to isBodyAccessorCall.
 
-    // Simulate: consumer predicate with chain ["status"] (no "body" prefix)
     const dataStatusRef: ValueRef = {
       type: "derived",
       from: { type: "dependency", name: "res.json", accessChain: [] },
@@ -270,7 +260,7 @@ describe("aspiration: fetch .json() response pattern", () => {
       type: "comparison",
       op: "eq",
       left: dataStatusRef,
-      right: { type: "literal", value: "deleted" },
+      right: { type: "literal", value: "down" },
     };
 
     const p = provider("getHealth", [
@@ -296,12 +286,11 @@ describe("aspiration: fetch .json() response pattern", () => {
 
     const findings = checkSemanticBridging(p, c);
 
-    // CURRENT: emits finding because consumer's chain doesn't go through "body"
-    // so tryExtractFieldTest doesn't extract a ConsumerFieldTest
-    expect(findings.length).toBeGreaterThanOrEqual(1);
-
-    // IDEAL: no finding — the consumer IS testing the right field,
-    // just through a different accessor pattern than .body
+    // Consumer tests status === "down" through .json() accessor — finding
+    // suppressed for t-200-down
+    expect(findings.some((f) => f.provider.transitionId === "t-200-down")).toBe(
+      false,
+    );
   });
 });
 
@@ -309,24 +298,28 @@ describe("aspiration: fetch .json() response pattern", () => {
 // Aspiration 6: Truthiness check as discriminator
 // ---------------------------------------------------------------------------
 
-describe("aspiration: truthiness check on body field", () => {
-  it("does NOT bridge when consumer uses truthiness check instead of equality", () => {
-    // Consumer does: if (result.body.deletedAt) { handle deleted }
-    // This is a truthiness check, not an equality comparison.
+describe("RESOLVED: truthiness check on body field", () => {
+  it("bridges when consumer uses truthiness check on a distinguishing field", () => {
+    // RESOLVED: Truthiness checks on body fields are now extracted as
+    // ConsumerFieldTest entries. A truthiness check on a path matches
+    // any distinguishing literal at that path, since the consumer IS
+    // making a distinction on that field.
     //
-    // IDEAL: Recognize that a truthiness check on a body field that
-    // exists in one provider transition but not another is a valid
-    // sub-case distinction.
-    //
-    // CURRENT: Only equality comparisons with literal values are
-    // extracted as consumer field tests.
+    // Remaining limitation: the complementary sub-case (t-200-active)
+    // still emits a finding because no consumer test explicitly covers
+    // status = "active". The default branch implicitly handles it, but
+    // the checker doesn't reason about default-as-complement yet.
     const truthinessCheck: Predicate = {
       type: "truthinessCheck",
       subject: {
         type: "derived",
         from: {
           type: "derived",
-          from: { type: "dependency", name: "client.getUser", accessChain: [] },
+          from: {
+            type: "dependency",
+            name: "client.getUser",
+            accessChain: [],
+          },
           derivation: { type: "propertyAccess", property: "body" },
         },
         derivation: { type: "propertyAccess", property: "deletedAt" },
@@ -364,12 +357,14 @@ describe("aspiration: truthiness check on body field", () => {
 
     const findings = checkSemanticBridging(p, c);
 
-    // CURRENT: emits finding for "deleted" because consumer's
-    // truthiness check isn't recognized as matching a literal
-    expect(findings.some((f) => f.description.includes("deleted"))).toBe(true);
+    // Truthiness check on deletedAt covers the deleted sub-case
+    expect(
+      findings.some((f) => f.provider.transitionId === "t-200-deleted"),
+    ).toBe(false);
 
-    // IDEAL: no finding — the consumer IS distinguishing the deleted
-    // case via truthiness check on deletedAt, even though it doesn't
-    // test the exact literal value.
+    // Active sub-case still emits a finding (complement reasoning not yet implemented)
+    expect(
+      findings.some((f) => f.provider.transitionId === "t-200-active"),
+    ).toBe(true);
   });
 });

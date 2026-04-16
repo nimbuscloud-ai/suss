@@ -102,13 +102,15 @@ Level 5 is implemented (`checkSemanticBridging`) with the following known limita
 
 1. **Literal-only discrimination.** Only `TypeShape.literal` values trigger bridging. When the provider distinguishes sub-cases by field presence (body has `deletedAt` vs doesn't) or by non-literal type differences, the check doesn't fire. Field-presence discrimination needs a separate structural-diff mode comparing key sets of sibling transition body shapes.
 
-2. **Equality-only consumer matching.** The checker extracts consumer field tests from `comparison` predicates with `op: "eq"`. Negated comparisons (`!== "active"` as a proxy for `"deleted"`), truthiness checks (`if (data.deletedAt)`), range comparisons, and method-call predicates (`includes`, `startsWith`) are invisible. Truthiness checks are the most tractable next step — extend consumer field test extraction to recognize `truthinessCheck` predicates on body fields.
+2. **Negated comparisons.** `!== "active"` as a proxy for `"deleted"` is not recognized. The checker matches exact `(path, value)` equality and truthiness checks, but not negated comparisons or closed-union reasoning.
 
-3. **Hardcoded `"body"` property accessor.** The checker looks for `"body"` in the consumer's property chain to compute the body-relative path. This works for ts-rest (`result.body.status`) but fails for fetch (where the consumer calls `result.json()` and accesses the returned object directly). Framework-aware body accessor configuration is needed.
+3. ~~**Hardcoded `"body"` property accessor.**~~ **RESOLVED.** The checker now recognizes `res.json()` as a body accessor: properties accessed on a `.json()` call result are treated as body-relative paths. Other body accessor patterns (custom deserializers, `.text()` + `JSON.parse`) would need to be added.
 
 4. **Provider body shapes must be structurally visible.** When the response body is constructed by a helper function (`buildResponse(user, "deleted")`), the shape extractor resolves it as a `ref` (opaque type name) rather than a record with literal fields. Improving this requires either local function inlining (Level 6) or ref resolution against structural type definitions.
 
 5. **`as const` dependency for narrow literals.** Without `as const`, TypeScript's type checker widens string literals to `string`. The extractor's syntactic pass should preserve the literal from the AST node, but the type-checker fallback pass may override it. Investigation needed.
+
+6. ~~**Truthiness checks invisible.**~~ **RESOLVED.** `truthinessCheck` predicates on body fields are now extracted as consumer field tests. A truthiness check on a path matches any distinguishing literal at that path — the consumer IS making a distinction on that field. Remaining gap: complement reasoning (the negated/default case isn't automatically inferred as covering the opposite sub-case).
 
 ### Level 6: Local function inlining (independent)
 

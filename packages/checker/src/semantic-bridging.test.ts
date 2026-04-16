@@ -9,7 +9,7 @@ import {
 } from "./__fixtures__/pairs.js";
 import { checkSemanticBridging } from "./semantic-bridging.js";
 
-import type { Predicate, TypeShape } from "@suss/behavioral-ir";
+import type { Predicate, TypeShape, ValueRef } from "@suss/behavioral-ir";
 
 // Helpers
 const record = (props: Record<string, TypeShape>): TypeShape => ({
@@ -242,5 +242,152 @@ describe("checkSemanticBridging", () => {
       (f) => f.provider.transitionId === "t-200-special",
     );
     expect(forSpecial).toHaveLength(1);
+  });
+
+  it("suppresses finding when consumer uses truthiness check on a distinguishing field", () => {
+    // Provider: two 200s distinguished by deletedAt literal
+    const p = provider("getUser", [
+      transition("t-200-deleted", {
+        output: response(
+          200,
+          record({
+            id: text,
+            deletedAt: literal("2024-01-01"),
+            status: literal("deleted"),
+          }),
+        ),
+      }),
+      transition("t-200-active", {
+        output: response(200, record({ id: text, status: literal("active") })),
+        isDefault: true,
+      }),
+    ]);
+
+    // Consumer: truthiness check on body.deletedAt
+    const truthinessCheck: Predicate = {
+      type: "truthinessCheck",
+      subject: {
+        type: "derived",
+        from: {
+          type: "derived",
+          from: {
+            type: "dependency",
+            name: "client.getUser",
+            accessChain: [],
+          },
+          derivation: { type: "propertyAccess", property: "body" },
+        },
+        derivation: { type: "propertyAccess", property: "deletedAt" },
+      },
+      negated: false,
+    };
+    const c = consumer("UserPage", [
+      transition("ct-200-deleted", {
+        conditions: [statusEq(200), truthinessCheck],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-200-default", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+
+    const findings = checkSemanticBridging(p, c);
+    // Truthiness check on deletedAt covers the t-200-deleted sub-case
+    expect(
+      findings.some((f) => f.provider.transitionId === "t-200-deleted"),
+    ).toBe(false);
+  });
+
+  it("recognizes fetch .json() body accessor for field tests", () => {
+    // Provider: two 200s with distinguishing status literal
+    const p = provider("getHealth", [
+      transition("t-200-down", {
+        output: response(200, record({ status: literal("down") })),
+      }),
+      transition("t-200-up", {
+        output: response(200, record({ status: literal("up") })),
+        isDefault: true,
+      }),
+    ]);
+
+    // Consumer: tests data.status === "down" where data = res.json()
+    const dataStatusRef: ValueRef = {
+      type: "derived",
+      from: { type: "dependency", name: "res.json", accessChain: [] },
+      derivation: { type: "propertyAccess", property: "status" },
+    };
+    const c = consumer("HealthCheck", [
+      transition("ct-200-down", {
+        conditions: [
+          statusEq(200),
+          {
+            type: "comparison",
+            op: "eq",
+            left: dataStatusRef,
+            right: { type: "literal", value: "down" },
+          },
+        ],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-200-up", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+
+    const findings = checkSemanticBridging(p, c);
+    // Consumer tests for "down" through .json() accessor — no finding for t-200-down
+    expect(findings.some((f) => f.provider.transitionId === "t-200-down")).toBe(
+      false,
+    );
+  });
+
+  it("emits no finding when consumer matches any distinguishing literal (not all)", () => {
+    // Provider transition has both type and tier as distinguishing literals
+    // Consumer only tests for type — that's sufficient awareness
+    const p = provider("getUser", [
+      transition("t-200-special", {
+        output: response(
+          200,
+          record({
+            type: literal("special"),
+            tier: literal("premium"),
+            name: text,
+          }),
+        ),
+      }),
+      transition("t-200-normal", {
+        output: response(
+          200,
+          record({
+            type: literal("normal"),
+            tier: literal("free"),
+            name: text,
+          }),
+        ),
+        isDefault: true,
+      }),
+    ]);
+
+    const c = consumer("Client", [
+      transition("ct-200-special", {
+        conditions: [statusEq(200), bodyFieldEq("type", "special")],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-200-default", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+
+    const findings = checkSemanticBridging(p, c);
+    // Consumer tests type but not tier — still covers the sub-case
+    expect(
+      findings.some((f) => f.provider.transitionId === "t-200-special"),
+    ).toBe(false);
   });
 });
