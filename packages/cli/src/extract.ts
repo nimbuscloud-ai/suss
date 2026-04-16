@@ -19,6 +19,7 @@ const BUILTIN_FRAMEWORKS: Record<
   "ts-rest": () => import("@suss/framework-ts-rest"),
   "react-router": () => import("@suss/framework-react-router"),
   express: () => import("@suss/framework-express"),
+  fetch: () => import("@suss/runtime-web"),
 };
 
 async function resolveFramework(name: string): Promise<FrameworkPack> {
