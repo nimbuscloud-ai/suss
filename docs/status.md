@@ -104,7 +104,7 @@ Progress tracker. Updated as phases land.
 | 7.3 Cross-boundary body comparison | ✅ | `checkBodyCompatibility` compares provider body shapes against consumer `expectedInput` using field-presence semantics (`providerCoversConsumerFields`). |
 | 7.4 Predicate-level transition matching | ✅ | Sub-case analysis in `checkProviderCoverage`: when provider has N > 1 transitions for the same status, warns if consumer doesn't distinguish them. Uses `predicatesMatch` for structured predicate comparison. |
 | 7.5 Automatic boundary pairing | ✅ | `normalizePath` (`:id` ↔ `{id}`), `pairSummaries`, `checkAll`. CLI: `suss check --dir summaries/`. Human-readable pairing report + `--json` structured output. |
-| 7.6 Error-to-response bridging | ⬜ | When a provider throws and the framework converts it to an HTTP response, the checker should recognize this as a produced status code. Requires framework-pack-level throw→status mapping. |
+| 7.6 Error-to-response bridging | ✅ | Throw terminals with framework-extracted status codes are converted to response outputs at the extractor level. Behavioral contract (consumer sees HTTP status, not exception) takes priority over mechanism (code threw). Unhandled throws without status codes remain as throw outputs. |
 | 7.7 Subject resolution through intermediates | ✅ | `resolveSubject` follows non-call initializers (`const data = result.body` → recurse). Depth-bounded at 8 hops. |
 | 7.8 Semantic condition bridging | ✅ | `checkSemanticBridging`: literal discrimination, field-presence discrimination, truthiness checks, negated comparisons (`!== X`), fetch `.json()` body accessor, "any match suppresses" semantics. All 6 original aspirations resolved or reclassified — remaining gaps are Level 6 (local function inlining). See [`cross-boundary-checking.md`](cross-boundary-checking.md) §Level 5. |
 
@@ -122,15 +122,15 @@ Progress tracker. Updated as phases land.
 | Package | Tests | Notes |
 |---------|-------|-------|
 | `@suss/behavioral-ir` | 8 | diff utility, type narrowing, Finding shape |
-| `@suss/extractor` | 52 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, transition ID stability, edge cases |
+| `@suss/extractor` | 55 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, throw-to-response bridging, transition ID stability, edge cases |
 | `@suss/adapter-typescript` | 311 | conditions, predicates, subjects (incl. intermediate variable resolution), terminals, discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction (incl. literal narrowness verification), consumer binding extraction, field-access tracking, integration |
 | `@suss/framework-ts-rest` | 10 | pack shape (handler + consumer discovery) + integration |
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
 | `@suss/runtime-web` | 4 | pack shape + integration (fetch discovery, binding extraction, transitions) |
-| `@suss/checker` | 145 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (literal + field-presence discrimination, truthiness, negated comparisons, `.json()` accessor, 2 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis), consumer satisfaction, contract consistency (status + body), path normalization, boundary pairing, `checkPair` integration |
+| `@suss/checker` | 146 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (literal + field-presence discrimination, truthiness, negated comparisons, `.json()` accessor, 2 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis, throw-as-response), consumer satisfaction, contract consistency (status + body), path normalization, boundary pairing, `checkPair` integration |
 | `@suss/cli` | 34 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check`, `suss check --dir`, consumer extraction, end-to-end extract+check, semantic-bridging e2e |
-| **Total** | **578** | |
+| **Total** | **582** | |
 
 Runs via `turbo test`.
 
