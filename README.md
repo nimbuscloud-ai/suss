@@ -58,7 +58,7 @@ These summaries are the input to downstream tools: contract checkers, documentat
 
 ## Status
 
-Phases 1–6 complete, Phase 7 in progress. Full extraction pipeline with cross-boundary checking: IR, extractor, TypeScript adapter, three framework packs (ts-rest, React Router, Express), `fetch` runtime pack, pairwise checker with automatic boundary pairing, CLI, consumer-side discovery, and fixture sets. 565 tests. See [`docs/status.md`](docs/status.md) for details.
+Phases 1–6 complete, Phase 7 in progress. Full extraction pipeline with cross-boundary checking: IR, extractor, TypeScript adapter, three framework packs (ts-rest, React Router, Express), `fetch` runtime pack, pairwise checker with automatic boundary pairing, CLI, consumer-side discovery, and fixture sets. 568 tests. See [`docs/status.md`](docs/status.md) for details.
 
 ## License
 

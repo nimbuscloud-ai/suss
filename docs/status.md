@@ -106,7 +106,7 @@ Progress tracker. Updated as phases land.
 | 7.5 Automatic boundary pairing | ✅ | `normalizePath` (`:id` ↔ `{id}`), `pairSummaries`, `checkAll`. CLI: `suss check --dir summaries/`. Human-readable pairing report + `--json` structured output. |
 | 7.6 Error-to-response bridging | ⬜ | When a provider throws and the framework converts it to an HTTP response, the checker should recognize this as a produced status code. Requires framework-pack-level throw→status mapping. |
 | 7.7 Subject resolution through intermediates | ✅ | `resolveSubject` follows non-call initializers (`const data = result.body` → recurse). Depth-bounded at 8 hops. |
-| 7.8 Semantic condition bridging | ✅ | `checkSemanticBridging`: when provider transitions produce distinguishing literal body fields (e.g., `status: "deleted"` vs `status: "active"`), checks whether consumer predicates test for them. Known limitations (5 aspiration tests): literal-only discrimination, equality-only matching, hardcoded "body" accessor, ref shapes opaque, `as const` dependency. See [`cross-boundary-checking.md`](cross-boundary-checking.md) §Level 5. |
+| 7.8 Semantic condition bridging | ✅ | `checkSemanticBridging`: when provider transitions produce distinguishing literal body fields (e.g., `status: "deleted"` vs `status: "active"`), checks whether consumer predicates test for them. Truthiness checks recognized as body field discriminators. Fetch `.json()` recognized as body accessor. "Any match suppresses" semantics — testing one distinguishing field is sufficient. Remaining aspirations (4): literal-only discrimination, negated comparisons, ref shapes opaque, `as const` dependency. See [`cross-boundary-checking.md`](cross-boundary-checking.md) §Level 5. |
 
 ## Phase 8+ — Deferred
 
@@ -128,9 +128,9 @@ Progress tracker. Updated as phases land.
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
 | `@suss/runtime-web` | 4 | pack shape + integration (fetch discovery, binding extraction, transitions) |
-| `@suss/checker` | 137 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (incl. 6 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis), consumer satisfaction, contract consistency (status + body), path normalization, boundary pairing, `checkPair` integration |
+| `@suss/checker` | 140 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (incl. truthiness checks, `.json()` accessor, 4 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis), consumer satisfaction, contract consistency (status + body), path normalization, boundary pairing, `checkPair` integration |
 | `@suss/cli` | 34 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check`, `suss check --dir`, consumer extraction, end-to-end extract+check, semantic-bridging e2e |
-| **Total** | **565** | |
+| **Total** | **568** | |
 
 Runs via `turbo test`.
 

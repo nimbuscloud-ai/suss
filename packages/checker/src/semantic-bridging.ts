@@ -126,14 +126,23 @@ function getValueAtPath(
 // Extract body-field comparisons from consumer predicates
 // ---------------------------------------------------------------------------
 
-interface ConsumerFieldTest {
-  /** Property path from the response body, e.g. ["status"] */
-  bodyPath: string[];
-  /** The literal value being compared */
-  value: string | number | boolean;
-  /** The transition this test appears in */
-  transitionId: string;
-}
+type ConsumerFieldTest =
+  | {
+      type: "equality";
+      /** Property path from the response body, e.g. ["status"] */
+      bodyPath: string[];
+      /** The literal value being compared */
+      value: string | number | boolean;
+      /** The transition this test appears in */
+      transitionId: string;
+    }
+  | {
+      type: "truthiness";
+      /** Property path from the response body, e.g. ["deletedAt"] */
+      bodyPath: string[];
+      /** The transition this test appears in */
+      transitionId: string;
+    };
 
 /**
  * Extract comparison predicates that test response body fields from
@@ -172,6 +181,13 @@ function collectFieldTestsFromPredicate(
     }
     return;
   }
+  if (pred.type === "truthinessCheck") {
+    const bodyPath = tryExtractBodyPath(pred.subject);
+    if (bodyPath !== null) {
+      out.push({ type: "truthiness", bodyPath, transitionId });
+    }
+    return;
+  }
   if (pred.type === "compound") {
     for (const op of pred.operands) {
       collectFieldTestsFromPredicate(op, transitionId, out);
@@ -186,36 +202,69 @@ function collectFieldTestsFromPredicate(
 function tryExtractFieldTest(
   ref: ValueRef,
   lit: ValueRef,
-): { bodyPath: string[]; value: string | number | boolean } | null {
+): ConsumerFieldTest | null {
   if (lit.type !== "literal" || lit.value === null) {
     return null;
   }
 
-  // Extract the property chain from the ValueRef
-  const chain = extractPropertyChain(ref);
-  if (chain === null) {
+  const bodyPath = tryExtractBodyPath(ref);
+  if (bodyPath === null) {
     return null;
   }
 
-  // Look for "body" in the chain — everything after it is the body-relative path
-  const bodyIndex = chain.indexOf("body");
-  if (bodyIndex >= 0 && bodyIndex < chain.length - 1) {
-    return {
-      bodyPath: chain.slice(bodyIndex + 1),
-      value: lit.value,
-    };
+  return { type: "equality", bodyPath, value: lit.value, transitionId: "" };
+}
+
+/**
+ * Extract the body-relative property path from a ValueRef.
+ *
+ * Two patterns are recognized:
+ * 1. Explicit `.body` accessor: `result.body.status` → `["status"]`
+ * 2. Body-returning call: `data.status` where data = `res.json()` → `["status"]`
+ *    (the `.json()` call returns the body directly, so properties on its result
+ *    are body fields)
+ */
+function tryExtractBodyPath(ref: ValueRef): string[] | null {
+  const result = extractPropertyChainWithRoot(ref);
+  if (result === null) {
+    return null;
   }
 
-  // No explicit "body" segment — could be direct response field access
-  // (e.g., result.status is handled by status checks, not here)
+  const { chain, root } = result;
+
+  // Pattern 1: explicit "body" in the chain
+  const bodyIndex = chain.indexOf("body");
+  if (bodyIndex >= 0 && bodyIndex < chain.length - 1) {
+    return chain.slice(bodyIndex + 1);
+  }
+
+  // Pattern 2: root is a call that returns the body directly (e.g. res.json())
+  if (
+    root.type === "dependency" &&
+    isBodyAccessorCall(root.name) &&
+    chain.length > 0
+  ) {
+    return chain;
+  }
+
   return null;
 }
 
 /**
- * Walk a ValueRef's derivation chain and extract the property names.
- * Returns null if the chain contains non-propertyAccess derivations.
+ * Check if a dependency name represents a call whose return value IS
+ * the response body (e.g., `res.json()` in fetch).
  */
-function extractPropertyChain(ref: ValueRef): string[] | null {
+function isBodyAccessorCall(name: string): boolean {
+  return name.endsWith(".json");
+}
+
+/**
+ * Walk a ValueRef's derivation chain and extract the property names,
+ * along with the root ValueRef where the chain terminates.
+ */
+function extractPropertyChainWithRoot(
+  ref: ValueRef,
+): { chain: string[]; root: ValueRef } | null {
   const chain: string[] = [];
   let current: ValueRef = ref;
 
@@ -225,11 +274,11 @@ function extractPropertyChain(ref: ValueRef): string[] | null {
       current = current.from;
     } else {
       // Non-property derivation (destructured, indexAccess, etc.) — bail
-      return chain.length > 0 ? chain : null;
+      return chain.length > 0 ? { chain, root: current } : null;
     }
   }
 
-  return chain.length > 0 ? chain : null;
+  return chain.length > 0 ? { chain, root: current } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,27 +335,34 @@ export function checkSemanticBridging(
         continue;
       }
 
-      // Check if any consumer field test matches a distinguishing literal
-      for (const lit of distinguishing) {
-        const consumerMatches = consumerFieldTests.filter(
-          (test) =>
-            pathsEqual(test.bodyPath, lit.path) && test.value === lit.value,
-        );
+      // Check if any consumer field test matches ANY distinguishing literal.
+      // If the consumer tests for at least one distinguishing field (by
+      // equality or truthiness), they're aware of this sub-case — even if
+      // they don't check every distinguishing field.
+      const anyMatched = distinguishing.some((lit) =>
+        consumerFieldTests.some((test) => {
+          if (!pathsEqual(test.bodyPath, lit.path)) {
+            return false;
+          }
+          if (test.type === "equality") {
+            return test.value === lit.value;
+          }
+          // Truthiness check on the same path: the consumer IS distinguishing
+          // based on this field, regardless of the specific literal value
+          return true;
+        }),
+      );
 
-        if (consumerMatches.length === 0) {
-          // No consumer tests for this distinguishing field value
-          findings.push({
-            kind: "unhandledProviderCase",
-            boundary,
-            provider: makeSide(provider, pt.id),
-            consumer: makeSide(consumer),
-            description: `Provider transition ${pt.id} for status ${status} produces body with ${formatPath(lit.path)} = ${JSON.stringify(lit.value)}, but no consumer branch tests for this value`,
-            severity: "warning",
-          });
-          // Only emit one finding per provider transition (the first
-          // unmatched distinguishing literal is enough signal)
-          break;
-        }
+      if (!anyMatched) {
+        const lit = distinguishing[0];
+        findings.push({
+          kind: "unhandledProviderCase",
+          boundary,
+          provider: makeSide(provider, pt.id),
+          consumer: makeSide(consumer),
+          description: `Provider transition ${pt.id} for status ${status} produces body with ${formatPath(lit.path)} = ${JSON.stringify(lit.value)}, but no consumer branch tests for this value`,
+          severity: "warning",
+        });
       }
     }
   }
