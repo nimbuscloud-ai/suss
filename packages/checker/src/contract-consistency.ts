@@ -1,13 +1,19 @@
+import { bodyShapesMatch } from "./body-match.js";
 import {
   consumerExpectedStatuses,
+  extractResponseStatus,
   makeBoundary,
   makeSide,
 } from "./response-match.js";
 
-import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Finding,
+  TypeShape,
+} from "@suss/behavioral-ir";
 
 interface DeclaredContract {
-  responses: Array<{ statusCode: number }>;
+  responses: Array<{ statusCode: number; body: TypeShape | null }>;
 }
 
 export function checkContractConsistency(
@@ -77,6 +83,48 @@ export function checkContractConsistency(
     });
   }
 
+  for (const declared of contract.responses) {
+    if (declared.body === null) {
+      continue;
+    }
+    for (const pt of provider.transitions) {
+      if (pt.output.type !== "response") {
+        continue;
+      }
+      const status = extractResponseStatus(pt);
+      if (status !== declared.statusCode) {
+        continue;
+      }
+      const actualBody = pt.output.body;
+      if (actualBody === null) {
+        continue;
+      }
+      const result = bodyShapesMatch(actualBody, declared.body);
+      if (result === "match") {
+        continue;
+      }
+      if (result === "nomatch") {
+        findings.push({
+          kind: "providerContractViolation",
+          boundary,
+          provider: makeSide(provider, pt.id),
+          consumer: makeSide(consumer),
+          description: `Handler transition ${pt.id} returns a body shape incompatible with the declared schema for status ${declared.statusCode}`,
+          severity: "error",
+        });
+        continue;
+      }
+      findings.push({
+        kind: "lowConfidence",
+        boundary,
+        provider: makeSide(provider, pt.id),
+        consumer: makeSide(consumer),
+        description: `Handler transition ${pt.id} body shape cannot be compared to the declared schema for status ${declared.statusCode}`,
+        severity: "info",
+      });
+    }
+  }
+
   return findings;
 }
 
@@ -91,14 +139,20 @@ function readDeclaredContract(
   if (!Array.isArray(responses)) {
     return null;
   }
-  const validated: Array<{ statusCode: number }> = [];
+  const validated: Array<{ statusCode: number; body: TypeShape | null }> = [];
   for (const r of responses) {
     if (
       r &&
       typeof r === "object" &&
       typeof (r as { statusCode?: unknown }).statusCode === "number"
     ) {
-      validated.push({ statusCode: (r as { statusCode: number }).statusCode });
+      const bodyRaw = (r as { body?: unknown }).body;
+      const body =
+        bodyRaw && typeof bodyRaw === "object" ? (bodyRaw as TypeShape) : null;
+      validated.push({
+        statusCode: (r as { statusCode: number }).statusCode,
+        body,
+      });
     }
   }
   return { responses: validated };

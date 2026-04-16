@@ -8,8 +8,11 @@ import {
   transition,
   unhandledCaseGap,
   withContract,
+  withContractBodies,
 } from "./__fixtures__/pairs.js";
 import { checkContractConsistency } from "./contract-consistency.js";
+
+import type { TypeShape } from "@suss/behavioral-ir";
 
 describe("checkContractConsistency", () => {
   it("returns no findings when provider has no declared contract", () => {
@@ -83,7 +86,7 @@ describe("checkContractConsistency", () => {
         f.kind === "consumerContractViolation" && f.description.includes("418"),
     );
     expect(undeclared).toBeDefined();
-    expect(undeclared!.severity).toBe("error");
+    expect(undeclared?.severity).toBe("error");
   });
 
   it("flags consumer as violating when it fails to handle a declared non-success status", () => {
@@ -132,6 +135,129 @@ describe("checkContractConsistency", () => {
       }),
     ]);
     expect(checkContractConsistency(p, c)).toEqual([]);
+  });
+
+  it("emits providerContractViolation when actual body is missing a declared field", () => {
+    const declaredBody: TypeShape = {
+      type: "record",
+      properties: {
+        id: { type: "text" },
+        name: { type: "text" },
+      },
+    };
+    const actualBody: TypeShape = {
+      type: "record",
+      properties: { id: { type: "text" } },
+    };
+    const p = withContractBodies(
+      provider("getUser", [
+        transition("t-200", {
+          output: response(200, actualBody),
+          isDefault: true,
+        }),
+      ]),
+      [{ statusCode: 200, body: declaredBody }],
+    );
+    const c = consumer("UserPage", [
+      transition("ct", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    const findings = checkContractConsistency(p, c);
+    const bodyViolations = findings.filter(
+      (f) =>
+        f.kind === "providerContractViolation" &&
+        f.description.includes("body"),
+    );
+    expect(bodyViolations).toHaveLength(1);
+    expect(bodyViolations[0].severity).toBe("error");
+    expect(bodyViolations[0].provider.transitionId).toBe("t-200");
+  });
+
+  it("produces no body findings when actual record conforms to declared schema", () => {
+    const schema: TypeShape = {
+      type: "record",
+      properties: { id: { type: "text" } },
+    };
+    const actual: TypeShape = {
+      type: "record",
+      properties: { id: { type: "literal", value: "abc" } },
+    };
+    const p = withContractBodies(
+      provider("getUser", [
+        transition("t-200", { output: response(200, actual), isDefault: true }),
+      ]),
+      [{ statusCode: 200, body: schema }],
+    );
+    const c = consumer("UserPage", [
+      transition("ct", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(
+      checkContractConsistency(p, c).filter((f) =>
+        f.description.includes("body"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("emits lowConfidence when actual body has spreads that obscure the shape", () => {
+    const declared: TypeShape = {
+      type: "record",
+      properties: {
+        id: { type: "text" },
+        admin: { type: "boolean" },
+      },
+    };
+    const actual: TypeShape = {
+      type: "record",
+      properties: { admin: { type: "literal", value: true } },
+      spreads: [{ sourceText: "user" }],
+    };
+    const p = withContractBodies(
+      provider("getUser", [
+        transition("t-200", { output: response(200, actual), isDefault: true }),
+      ]),
+      [{ statusCode: 200, body: declared }],
+    );
+    const c = consumer("UserPage", [
+      transition("ct", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    const findings = checkContractConsistency(p, c);
+    const low = findings.filter(
+      (f) => f.kind === "lowConfidence" && f.description.includes("body"),
+    );
+    expect(low).toHaveLength(1);
+    expect(low[0].severity).toBe("info");
+  });
+
+  it("skips body matching when actual transition carries no body shape", () => {
+    const declared: TypeShape = {
+      type: "record",
+      properties: { id: { type: "text" } },
+    };
+    const p = withContractBodies(
+      provider("getUser", [
+        transition("t-200", { output: response(200, null), isDefault: true }),
+      ]),
+      [{ statusCode: 200, body: declared }],
+    );
+    const c = consumer("UserPage", [
+      transition("ct", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(
+      checkContractConsistency(p, c).filter((f) =>
+        f.description.includes("body"),
+      ),
+    ).toEqual([]);
   });
 
   it("ignores malformed declaredContract metadata", () => {
