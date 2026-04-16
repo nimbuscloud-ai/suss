@@ -4,7 +4,9 @@ TypeScript language adapter for suss — extracts behavioral structure from Type
 
 ## What this package is
 
-`@suss/adapter-typescript` is the Phase 2 language adapter. Its job is to walk TypeScript ASTs via ts-morph, identify code units (handlers, loaders, actions, etc.), and emit `RawCodeStructure` objects that the extractor can assemble into `BehavioralSummary` IR. It bridges the gap between raw TypeScript source and the framework-agnostic extraction pipeline.
+`@suss/adapter-typescript` is the TypeScript language adapter. It walks ASTs via ts-morph, identifies code units (handlers, loaders, actions, client call sites), and emits `RawCodeStructure` objects that the extractor assembles into `BehavioralSummary` IR.
+
+Supports both provider-side extraction (handler registration, terminal discovery, contract reading, body-shape extraction) and client-side extraction (call-site discovery, enclosing-function lifting, response field tracking via `expectedInput`).
 
 ## Where it sits in suss
 
@@ -12,9 +14,7 @@ Imports `@suss/behavioral-ir` for type references and `@suss/extractor` for the 
 
 ## Status
 
-Phase 2 in progress — the public API may still change. See [`docs/status.md`](../../docs/status.md).
-
-See `docs/extraction-algorithm.md` for the design; public API will be documented once Phase 2 lands.
+Phases 2 and 6 complete. Public API: `createTypeScriptAdapter` returns an adapter with `extractFromFiles` and `extractAll` methods. See [`docs/status.md`](../../../docs/status.md) and [`docs/extraction-algorithm.md`](../../../docs/extraction-algorithm.md).
 
 ## Coverage
 

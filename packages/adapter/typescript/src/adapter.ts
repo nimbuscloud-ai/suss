@@ -166,6 +166,22 @@ export function extractCodeStructure(
   const branches = extractRawBranches(func, pack.terminals);
   const depCalls = extractDependencyCalls(func);
 
+  // For client units, populate expectedInput on each branch
+  if (unit.callSite !== undefined) {
+    const branchLocations = branches.map((b) => b.location);
+    const fieldAccesses = collectClientFieldAccesses(
+      unit.callSite.callExpression,
+      func,
+      branchLocations,
+    );
+    for (let i = 0; i < branches.length; i++) {
+      const access = fieldAccesses[i];
+      if (access?.expectedInput != null) {
+        branches[i] = { ...branches[i], expectedInput: access.expectedInput };
+      }
+    }
+  }
+
   return {
     identity: {
       name,
@@ -348,28 +364,7 @@ function extractFromSourceFile(
         };
       }
 
-      const summary = assembleSummary(raw, options);
-
-      // For client units, populate expectedInput on each transition
-      if (unit.callSite !== undefined) {
-        const branchLocations = summary.transitions.map((t) => t.location);
-        const fieldAccesses = collectClientFieldAccesses(
-          unit.callSite.callExpression,
-          unit.func,
-          branchLocations,
-        );
-        for (let i = 0; i < summary.transitions.length; i++) {
-          const access = fieldAccesses[i];
-          if (access?.expectedInput !== null) {
-            summary.transitions[i] = {
-              ...summary.transitions[i],
-              expectedInput: access.expectedInput,
-            };
-          }
-        }
-      }
-
-      summaries.push(summary);
+      summaries.push(assembleSummary(raw, options));
     }
   }
 

@@ -222,20 +222,32 @@ The adapter produces `RawCodeStructure` (plain data). The extractor consumes it 
 Three reasons:
 
 1. **Testability.** `assembleSummary(raw)` is a pure function that can be tested with hand-crafted input. No fixtures, no compiler, no files. The extractor test suite runs in <50ms.
-2. **Logic centralization.** Gap detection, confidence assessment, predicate normalization, and opaque-wrapping all live in one place. Language adapters don't re-implement them.
+2. **Logic centralization.** Gap detection, confidence assessment, predicate normalization, opaque-wrapping, and `expectedInput` pass-through all live in one place. Language adapters don't re-implement them.
 3. **Contributor isolation.** A framework pack author never touches adapter code. An adapter bug doesn't affect the extractor. The extractor doesn't care what language the raw structure came from.
+
+The pipeline contract is strict: the adapter fills in `RawCodeStructure` (including `RawBranch.expectedInput` for client call sites), the extractor produces `BehavioralSummary` from it. No post-assembly patching — everything the summary needs must come through `RawCodeStructure`.
 
 ## Framework packs are data, not code
 
 A framework pack is a `FrameworkPack` object describing patterns:
 
-- **Discovery patterns** — how to find code units (`namedExport` for React Router loaders, `registrationCall` for ts-rest handlers, `decorator` for FastAPI, `fileConvention` for Next.js)
-- **Terminal patterns** — what counts as output (`returnShape` for `{ status, body }`, `parameterMethodCall` for `res.json()`, `throwExpression` for `throw httpErrorJson(...)`)
-- **Binding extraction** — how to derive the HTTP method and path (from a registration call argument, from the filename, from a contract, or as a literal)
+- **Discovery patterns** — how to find code units (`namedExport` for React Router loaders, `registrationCall` for ts-rest handlers, `clientCall` for ts-rest `initClient` / `fetch`, `decorator` for FastAPI, `fileConvention` for Next.js)
+- **Terminal patterns** — what counts as output (`returnShape` for `{ status, body }`, `parameterMethodCall` for `res.json()`, `throwExpression` for `throw httpErrorJson(...)`, `returnStatement` for any return in client functions)
+- **Binding extraction** — how to derive the HTTP method and path (from a registration call argument, from the filename, from a contract, from a client method name, or as a literal)
 - **Contract reading** — if the framework has declared contracts, how to find and read them
 - **Input mapping** — how inputs reach the handler (`singleObjectParam`, `positionalParams`, `destructuredObject`) with role annotations
 
 The adapter interprets these patterns against a language's AST. This means adding a new framework with a similar pattern to an existing one (e.g., Fastify after Express) is mostly copy-edit work.
+
+### Known tension: provider-shaped interface carries client patterns
+
+The `FrameworkPack` interface was designed around provider-side extraction. Client/consumer discovery was added via `clientCall` match and `returnStatement` terminal, which works correctly but creates structural noise:
+
+- `inputMapping` is meaningless for clients (they don't receive framework-structured inputs). Client packs set it to `positionalParams: []`.
+- `terminals` for clients is boilerplate — every client pack repeats `returnStatement` + `throwExpression` identically.
+- `contractReading` is provider-only but lives at the top level.
+
+This isn't worth refactoring while there are only two client packs (ts-rest, fetch). If a third client pack lands and the boilerplate becomes a pattern, the right move is to split `FrameworkPack` into `provider` / `client` sub-shapes with sensible defaults for client terminals.
 
 ## Degradation strategy
 
@@ -252,3 +264,10 @@ Static analysis of real codebases is always imperfect. suss handles this explici
 - **Cross-service aggregation.** `@suss/checker` compares two summaries at a time (one provider, one consumer). Aggregating across an organization, tracking boundaries over commits, or alerting on regressions are separate concerns that consume pairwise findings as input. See [`cross-boundary-checking.md`](cross-boundary-checking.md).
 - **Runtime tracing.** Everything is static. No instrumentation, no production data.
 - **Semantic understanding of dependency calls.** When the extractor sees `await db.findById(id)`, it knows the subject is `"the result of db.findById"`. It doesn't know what Prisma's `findById` actually does. That's fine — cross-boundary comparison only needs subjects to be *stable*, not *semantically understood*.
+- **A shared adapter abstraction layer.** The TypeScript adapter contains ~2000 lines of analysis logic (condition parsing, subject resolution, shape extraction, field tracking). A Python adapter would need analogous logic using a different AST library. Some patterns are conceptually language-agnostic ("find all property accesses on a variable within a subtree"), but extracting a shared `@suss/adapter-core` is premature with one adapter. When the second adapter starts, the right move is to extract shared patterns as they emerge from the second implementation, not design them upfront.
+
+## Strategic direction
+
+The checker currently matches transitions by **status code**. The IR was designed for deeper comparison (structured predicates, subject trees, body shapes), and the infrastructure exists (`subjectsMatch`, `predicatesMatch`, `bodyShapesMatch`, `providerCoversConsumerFields`). The near-term priority is wiring that infrastructure into the actual checks — predicate-level transition matching, automatic boundary pairing — so the checker catches the field-level and condition-level mismatches that no existing tool (Pact, OpenAPI diff, type systems) can detect statically.
+
+Language breadth (Python adapter, React components) is valuable but is a *multiplier* on analysis depth. Deeper analysis first, then more languages to multiply the value across polyglot codebases.
