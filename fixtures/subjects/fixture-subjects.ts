@@ -113,3 +113,28 @@ export function dependencyThenProperty(id: string) {
   if (user.name) return user.name;
   return null;
 }
+
+// Intermediate variable from property access: const data = result.body; data.name
+export async function intermediatePropertyAccess(id: string) {
+  const result = await db.findUser(id);
+  const data = result.body;
+  if (data.name) return data.name;
+  return null;
+}
+
+// Intermediate variable from identifier: const x = user; x.name
+export async function intermediateIdentifier(id: string) {
+  const user = await db.findUser(id);
+  const alias = user;
+  if (alias.deletedAt) return null;
+  return alias;
+}
+
+// Chained intermediates: const result = await fetch(); const body = result.body; body.user.name
+export async function chainedIntermediates() {
+  const result = await db.findUser("1");
+  const body = result.body;
+  const user = body.user;
+  if (user.name) return user.name;
+  return null;
+}
