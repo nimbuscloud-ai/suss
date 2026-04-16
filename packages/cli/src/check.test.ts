@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { check } from "./check.js";
+import { check, checkDir } from "./check.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -320,5 +320,276 @@ describe("check CLI command", () => {
         consumerFile: consumerPath,
       }),
     ).toThrow("Expected a JSON array");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkDir — automatic boundary pairing
+// ---------------------------------------------------------------------------
+
+function providerWithRoute(
+  name: string,
+  method: string,
+  routePath: string,
+  transitions: BehavioralSummary["transitions"],
+): BehavioralSummary {
+  return {
+    kind: "handler",
+    location: {
+      file: `src/handlers/${name}.ts`,
+      range: { start: 1, end: 50 },
+      exportName: name,
+    },
+    identity: {
+      name,
+      exportPath: [name],
+      boundaryBinding: {
+        protocol: "http",
+        framework: "ts-rest",
+        method,
+        path: routePath,
+      },
+    },
+    inputs: [],
+    transitions,
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+function consumerWithRoute(
+  name: string,
+  method: string,
+  routePath: string,
+  transitions: BehavioralSummary["transitions"],
+): BehavioralSummary {
+  return {
+    kind: "client",
+    location: {
+      file: `src/ui/${name}.ts`,
+      range: { start: 1, end: 30 },
+      exportName: name,
+    },
+    identity: {
+      name,
+      exportPath: [name],
+      boundaryBinding: {
+        protocol: "http",
+        framework: "fetch",
+        method,
+        path: routePath,
+      },
+    },
+    inputs: [],
+    transitions,
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+describe("checkDir", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-checkdir-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function captureStdout(fn: () => void): string {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      fn();
+    } finally {
+      process.stdout.write = orig;
+    }
+    return chunks.join("");
+  }
+
+  it("pairs provider and consumer from separate files by method+path", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+          transition("t-404", { statusCode: 404 }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "consumer.json"),
+      JSON.stringify([
+        consumerWithRoute("UserPage", "GET", "/users/:id", [
+          transition("ct-404", { conditionStatus: 404 }),
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+
+    const output = captureStdout(() => {
+      const result = checkDir({ dir: tmpDir });
+      expect(result.findings).toEqual([]);
+      expect(result.hasErrors).toBe(false);
+      expect(result.result.pairs).toHaveLength(1);
+      expect(result.result.pairs[0].key).toBe("GET /users/{id}");
+    });
+    expect(output).toContain("Paired 1 provider-consumer combination");
+    expect(output).toContain("No findings");
+  });
+
+  it("pairs across param syntax styles (:id vs {id})", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "consumer.json"),
+      JSON.stringify([
+        consumerWithRoute("UserPage", "GET", "/users/{id}", [
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+
+    captureStdout(() => {
+      const result = checkDir({ dir: tmpDir });
+      expect(result.result.pairs).toHaveLength(1);
+    });
+  });
+
+  it("reports unmatched providers and consumers", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "summaries.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+        consumerWithRoute("OrgPage", "GET", "/orgs/:id", [
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+
+    const output = captureStdout(() => {
+      const result = checkDir({ dir: tmpDir });
+      expect(result.result.pairs).toHaveLength(0);
+      expect(result.result.unmatched.providers).toHaveLength(1);
+      expect(result.result.unmatched.consumers).toHaveLength(1);
+    });
+    expect(output).toContain("Unmatched");
+    expect(output).toContain("getUser");
+    expect(output).toContain("OrgPage");
+  });
+
+  it("detects findings across automatically paired summaries", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+          transition("t-404", { statusCode: 404 }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "consumer.json"),
+      JSON.stringify([
+        consumerWithRoute("UserPage", "GET", "/users/:id", [
+          // Consumer doesn't handle 404
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+
+    captureStdout(() => {
+      const result = checkDir({ dir: tmpDir });
+      expect(result.findings.length).toBeGreaterThanOrEqual(1);
+      expect(
+        result.findings.some((f) => f.kind === "unhandledProviderCase"),
+      ).toBe(true);
+    });
+  });
+
+  it("--json emits structured output with pairs and unmatched", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+        consumerWithRoute("UserPage", "GET", "/users/:id", [
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+
+    const output = captureStdout(() => {
+      checkDir({ dir: tmpDir, json: true });
+    });
+    const parsed = JSON.parse(output) as {
+      findings: unknown[];
+      pairs: Array<{ key: string }>;
+      unmatched: {
+        providers: unknown[];
+        consumers: unknown[];
+        noBinding: unknown[];
+      };
+    };
+    expect(parsed.pairs).toHaveLength(1);
+    expect(parsed.pairs[0].key).toBe("GET /users/{id}");
+    expect(parsed.findings).toEqual([]);
+  });
+
+  it("handles multiple endpoints across multiple files", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "handlers.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+        providerWithRoute("listUsers", "GET", "/users", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "clients.json"),
+      JSON.stringify([
+        consumerWithRoute("UserPage", "GET", "/users/:id", [
+          transition("ct-default", { isDefault: true }),
+        ]),
+        consumerWithRoute("UserList", "GET", "/users", [
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+
+    captureStdout(() => {
+      const result = checkDir({ dir: tmpDir });
+      expect(result.result.pairs).toHaveLength(2);
+    });
+  });
+
+  it("throws when directory does not exist", () => {
+    expect(() => checkDir({ dir: path.join(tmpDir, "nonexistent") })).toThrow(
+      "Directory not found",
+    );
+  });
+
+  it("throws when directory has no JSON files", () => {
+    const emptyDir = path.join(tmpDir, "empty");
+    fs.mkdirSync(emptyDir);
+    expect(() => checkDir({ dir: emptyDir })).toThrow("No JSON files");
   });
 });
