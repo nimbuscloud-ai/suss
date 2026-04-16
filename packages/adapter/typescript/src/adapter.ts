@@ -6,6 +6,8 @@ import { Node, Project, type SourceFile } from "ts-morph";
 
 import {
   assembleSummary,
+  type BindingExtraction,
+  type DiscoveryPattern,
   type ExtractorOptions,
   type FrameworkPack,
   type InputMappingPattern,
@@ -15,7 +17,7 @@ import {
 } from "@suss/extractor";
 
 import { extractRawBranches } from "./assembly.js";
-import { readContract } from "./contract.js";
+import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
 
 import type { BehavioralSummary, CodeUnitKind } from "@suss/behavioral-ir";
@@ -184,6 +186,122 @@ export function extractCodeStructure(
 }
 
 // ---------------------------------------------------------------------------
+// Consumer binding extraction
+// ---------------------------------------------------------------------------
+
+function extractConsumerBinding(
+  unit: DiscoveredUnit,
+  pattern: DiscoveryPattern,
+  pack: FrameworkPack,
+): {
+  protocol: string;
+  method?: string;
+  path?: string;
+  framework: string;
+} | null {
+  const callSite = unit.callSite;
+  if (callSite === undefined) {
+    return null;
+  }
+
+  const binding = pattern.bindingExtraction;
+  if (binding === undefined) {
+    return null;
+  }
+
+  let method: string | undefined;
+  let path: string | undefined;
+
+  method = extractBindingMethod(binding, callSite, pack);
+  path = extractBindingPath(binding, callSite, pack);
+
+  const result: {
+    protocol: string;
+    method?: string;
+    path?: string;
+    framework: string;
+  } = { protocol: "http", framework: pack.name };
+  if (method !== undefined) {
+    result.method = method;
+  }
+  if (path !== undefined) {
+    result.path = path;
+  }
+  return result;
+}
+
+function extractBindingMethod(
+  binding: BindingExtraction,
+  callSite: NonNullable<DiscoveredUnit["callSite"]>,
+  pack: FrameworkPack,
+): string | undefined {
+  const m = binding.method;
+  if (m.type === "fromClientMethod") {
+    return resolveContractField(callSite, pack, "method");
+  }
+  if (m.type === "fromArgumentProperty") {
+    const args = callSite.callExpression.getArguments();
+    const arg = args[m.position];
+    if (arg !== undefined && Node.isObjectLiteralExpression(arg)) {
+      const prop = arg.getProperty(m.property);
+      if (prop !== undefined && Node.isPropertyAssignment(prop)) {
+        const init = prop.getInitializer();
+        if (init !== undefined && Node.isStringLiteral(init)) {
+          return init.getLiteralValue();
+        }
+      }
+    }
+    return m.default;
+  }
+  if (m.type === "literal") {
+    return m.value;
+  }
+  return undefined;
+}
+
+function extractBindingPath(
+  binding: BindingExtraction,
+  callSite: NonNullable<DiscoveredUnit["callSite"]>,
+  pack: FrameworkPack,
+): string | undefined {
+  const p = binding.path;
+  if (p.type === "fromClientMethod") {
+    return resolveContractField(callSite, pack, "path");
+  }
+  if (p.type === "fromArgumentLiteral") {
+    const args = callSite.callExpression.getArguments();
+    const arg = args[p.position];
+    if (arg !== undefined && Node.isStringLiteral(arg)) {
+      return arg.getLiteralValue();
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+function resolveContractField(
+  callSite: NonNullable<DiscoveredUnit["callSite"]>,
+  pack: FrameworkPack,
+  field: "method" | "path",
+): string | undefined {
+  if (pack.contractReading === undefined || callSite.methodName === null) {
+    return undefined;
+  }
+  const result = readContractForClientCall(
+    callSite.callExpression,
+    callSite.methodName,
+    pack.contractReading,
+  );
+  if (result === null) {
+    return undefined;
+  }
+  if (field === "method") {
+    return result.boundaryBinding?.method;
+  }
+  return result.boundaryBinding?.path;
+}
+
+// ---------------------------------------------------------------------------
 // Per-file extraction
 // ---------------------------------------------------------------------------
 
@@ -201,8 +319,17 @@ function extractFromSourceFile(
     for (const unit of units) {
       const raw = extractCodeStructure(unit, pack, filePath);
 
-      // Attempt contract reading
-      if (pack.contractReading !== undefined) {
+      // Find the discovery pattern that matched this unit
+      const matchedPattern = pack.discovery.find((d) => d.kind === unit.kind);
+
+      if (unit.callSite !== undefined && matchedPattern !== undefined) {
+        // Consumer: extract binding from call site
+        const binding = extractConsumerBinding(unit, matchedPattern, pack);
+        if (binding !== null) {
+          raw.boundaryBinding = binding;
+        }
+      } else if (pack.contractReading !== undefined) {
+        // Provider: attempt contract reading
         const contract = readContract(unit, pack.contractReading);
         if (contract !== null) {
           raw.declaredContract = contract.declaredContract;

@@ -2,6 +2,7 @@
 
 import {
   type ArrowFunction,
+  type CallExpression,
   type FunctionDeclaration,
   type FunctionExpression,
   type MethodDeclaration,
@@ -16,10 +17,17 @@ import type { FunctionRoot } from "./conditions.js";
 // Public output type
 // ---------------------------------------------------------------------------
 
+export interface ClientCallSite {
+  callExpression: CallExpression;
+  /** Method name on the client object (e.g. "getUser"), null for bare calls like fetch() */
+  methodName: string | null;
+}
+
 export interface DiscoveredUnit {
   func: FunctionRoot;
   kind: string;
   name: string;
+  callSite?: ClientCallSite;
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +325,161 @@ function discoverRegistrationCalls(
 }
 
 // ---------------------------------------------------------------------------
+// clientCall discovery
+// ---------------------------------------------------------------------------
+
+function findEnclosingFunction(node: Node): FunctionRoot | null {
+  let current = node.getParent();
+  while (current !== undefined) {
+    if (
+      Node.isFunctionDeclaration(current) ||
+      Node.isFunctionExpression(current) ||
+      Node.isArrowFunction(current) ||
+      Node.isMethodDeclaration(current)
+    ) {
+      return current as FunctionRoot;
+    }
+    current = current.getParent();
+  }
+  return null;
+}
+
+function discoverClientCalls(
+  sourceFile: SourceFile,
+  match: Extract<DiscoveryPattern["match"], { type: "clientCall" }>,
+  kind: string,
+): DiscoveredUnit[] {
+  const results: DiscoveredUnit[] = [];
+  const isGlobal = match.importModule === "global";
+
+  // Step 1: Resolve the local name of the imported identifier.
+  // For globals (fetch, etc.), match directly on the importName.
+  let importedLocalName: string | null = isGlobal ? match.importName : null;
+
+  if (!isGlobal) {
+    for (const importDecl of sourceFile.getImportDeclarations()) {
+      if (importDecl.getModuleSpecifierValue() !== match.importModule) {
+        continue;
+      }
+      for (const namedImport of importDecl.getNamedImports()) {
+        if (
+          namedImport.getName() === match.importName ||
+          namedImport.getAliasNode()?.getText() === match.importName
+        ) {
+          importedLocalName =
+            namedImport.getAliasNode()?.getText() ?? namedImport.getName();
+          break;
+        }
+      }
+      if (importedLocalName !== null) {
+        break;
+      }
+      const defaultImport = importDecl.getDefaultImport();
+      if (
+        defaultImport !== undefined &&
+        defaultImport.getText() === match.importName
+      ) {
+        importedLocalName = defaultImport.getText();
+        break;
+      }
+    }
+  }
+
+  if (importedLocalName === null) {
+    return results;
+  }
+
+  // Step 2: For non-global imports, find variables holding the result of calling
+  // the imported function (e.g. `const client = initClient(contract, ...)`)
+  const clientVarNames = new Set<string>();
+  if (!isGlobal) {
+    for (const varDecl of sourceFile.getVariableDeclarations()) {
+      const init = varDecl.getInitializer();
+      if (init === undefined) {
+        continue;
+      }
+      let calleeText: string | null = null;
+      if (Node.isCallExpression(init)) {
+        calleeText = init.getExpression().getText();
+      }
+      if (calleeText === importedLocalName) {
+        clientVarNames.add(varDecl.getName());
+      }
+    }
+  }
+
+  // Step 3: Walk all call expressions looking for matching client calls
+  const methodFilter =
+    match.methodFilter !== undefined ? new Set(match.methodFilter) : null;
+
+  sourceFile.forEachDescendant((node) => {
+    if (!Node.isCallExpression(node)) {
+      return;
+    }
+
+    const callee = node.getExpression();
+    let methodName: string | null = null;
+    let matched = false;
+
+    if (isGlobal && Node.isIdentifier(callee)) {
+      // Bare call: fetch(...)
+      if (callee.getText() === importedLocalName) {
+        matched = true;
+      }
+    } else if (Node.isPropertyAccessExpression(callee)) {
+      // Method call: client.getUser(...)
+      const subject = callee.getExpression();
+      if (Node.isIdentifier(subject) && clientVarNames.has(subject.getText())) {
+        methodName = callee.getName();
+        if (methodFilter === null || methodFilter.has(methodName)) {
+          matched = true;
+        }
+      }
+    }
+
+    if (!matched) {
+      return;
+    }
+
+    // Step 4: Walk up to the enclosing function
+    const enclosingFunc = findEnclosingFunction(node);
+    if (enclosingFunc === null) {
+      return;
+    }
+
+    // Derive the unit name: prefer the enclosing function's name, fall back to method name
+    let unitName: string;
+    if (Node.isFunctionDeclaration(enclosingFunc)) {
+      unitName = enclosingFunc.getName() ?? methodName ?? "anonymous";
+    } else if (Node.isMethodDeclaration(enclosingFunc)) {
+      unitName = enclosingFunc.getName();
+    } else {
+      // Arrow or function expression — check if assigned to a variable
+      const parent = enclosingFunc.getParent();
+      if (parent !== undefined && Node.isVariableDeclaration(parent)) {
+        unitName = parent.getName();
+      } else if (parent !== undefined && Node.isPropertyAssignment(parent)) {
+        unitName = parent.getName();
+      } else {
+        unitName = methodName ?? "anonymous";
+      }
+    }
+
+    results.push({
+      func: enclosingFunc,
+      kind,
+      name: unitName,
+      callSite: {
+        callExpression: node,
+        methodName,
+      },
+    });
+  });
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Main exported function
 // ---------------------------------------------------------------------------
 
@@ -341,6 +504,8 @@ export function discoverUnits(
         pattern.match,
         pattern.kind,
       );
+    } else if (pattern.match.type === "clientCall") {
+      found = discoverClientCalls(sourceFile, pattern.match, pattern.kind);
     } else if (pattern.match.type === "decorator") {
       // stub
       found = [];
