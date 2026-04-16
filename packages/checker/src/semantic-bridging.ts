@@ -137,6 +137,15 @@ type ConsumerFieldTest =
       transitionId: string;
     }
   | {
+      type: "negatedEquality";
+      /** Property path from the response body */
+      bodyPath: string[];
+      /** The literal value being excluded (consumer tests !== this value) */
+      value: string | number | boolean;
+      /** The transition this test appears in */
+      transitionId: string;
+    }
+  | {
       type: "truthiness";
       /** Property path from the response body, e.g. ["deletedAt"] */
       bodyPath: string[];
@@ -170,14 +179,22 @@ function collectFieldTestsFromPredicate(
   pred: Predicate,
   transitionId: string,
   out: ConsumerFieldTest[],
+  negated = false,
 ): void {
-  if (pred.type === "comparison" && pred.op === "eq") {
+  if (pred.type === "comparison" && (pred.op === "eq" || pred.op === "neq")) {
     // Try both orientations: left=ref right=literal, or vice versa
-    const test =
-      tryExtractFieldTest(pred.left, pred.right) ??
-      tryExtractFieldTest(pred.right, pred.left);
-    if (test !== null) {
-      out.push({ ...test, transitionId });
+    const extracted =
+      tryExtractFieldTestBody(pred.left, pred.right) ??
+      tryExtractFieldTestBody(pred.right, pred.left);
+    if (extracted !== null) {
+      // neq XOR negation context → negated equality
+      const isNegated = (pred.op === "neq") !== negated;
+      out.push({
+        type: isNegated ? "negatedEquality" : "equality",
+        bodyPath: extracted.bodyPath,
+        value: extracted.value,
+        transitionId,
+      });
     }
     return;
   }
@@ -190,19 +207,19 @@ function collectFieldTestsFromPredicate(
   }
   if (pred.type === "compound") {
     for (const op of pred.operands) {
-      collectFieldTestsFromPredicate(op, transitionId, out);
+      collectFieldTestsFromPredicate(op, transitionId, out, negated);
     }
     return;
   }
   if (pred.type === "negation") {
-    collectFieldTestsFromPredicate(pred.operand, transitionId, out);
+    collectFieldTestsFromPredicate(pred.operand, transitionId, out, !negated);
   }
 }
 
-function tryExtractFieldTest(
+function tryExtractFieldTestBody(
   ref: ValueRef,
   lit: ValueRef,
-): ConsumerFieldTest | null {
+): { bodyPath: string[]; value: string | number | boolean } | null {
   if (lit.type !== "literal" || lit.value === null) {
     return null;
   }
@@ -212,7 +229,7 @@ function tryExtractFieldTest(
     return null;
   }
 
-  return { type: "equality", bodyPath, value: lit.value, transitionId: "" };
+  return { bodyPath, value: lit.value };
 }
 
 /**
@@ -346,6 +363,11 @@ export function checkSemanticBridging(
           }
           if (test.type === "equality") {
             return test.value === lit.value;
+          }
+          if (test.type === "negatedEquality") {
+            // Consumer tests !== X: covers any literal that isn't X.
+            // e.g., !== "active" covers "deleted", "suspended", etc.
+            return test.value !== lit.value;
           }
           // Truthiness check on the same path: the consumer IS distinguishing
           // based on this field, regardless of the specific literal value
