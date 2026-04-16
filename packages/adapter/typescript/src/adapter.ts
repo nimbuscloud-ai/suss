@@ -19,6 +19,7 @@ import {
 import { extractRawBranches } from "./assembly.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
+import { collectClientFieldAccesses } from "./field-accesses.js";
 
 import type { BehavioralSummary, CodeUnitKind } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";
@@ -347,7 +348,28 @@ function extractFromSourceFile(
         };
       }
 
-      summaries.push(assembleSummary(raw, options));
+      const summary = assembleSummary(raw, options);
+
+      // For client units, populate expectedInput on each transition
+      if (unit.callSite !== undefined) {
+        const branchLocations = summary.transitions.map((t) => t.location);
+        const fieldAccesses = collectClientFieldAccesses(
+          unit.callSite.callExpression,
+          unit.func,
+          branchLocations,
+        );
+        for (let i = 0; i < summary.transitions.length; i++) {
+          const access = fieldAccesses[i];
+          if (access?.expectedInput !== null) {
+            summary.transitions[i] = {
+              ...summary.transitions[i],
+              expectedInput: access.expectedInput,
+            };
+          }
+        }
+      }
+
+      summaries.push(summary);
     }
   }
 

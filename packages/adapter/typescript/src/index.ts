@@ -8,6 +8,7 @@ export { extractRawBranches } from "./assembly.js";
 export { collectAncestorBranches, collectEarlyReturns } from "./conditions.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery.js";
+export { collectClientFieldAccesses } from "./field-accesses.js";
 export { parseConditionExpression } from "./predicates.js";
 export { resolveSubject } from "./subjects.js";
 export { findTerminals } from "./terminals.js";
