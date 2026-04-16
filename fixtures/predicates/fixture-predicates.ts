@@ -207,3 +207,47 @@ export function checkTypeofReversed(x: any) {
   if ("string" === typeof x) return 1;
   return 0;
 }
+
+// ---------------------------------------------------------------------------
+// Call inlining — local functions with single-expression bodies
+// ---------------------------------------------------------------------------
+
+// Arrow function with expression body
+const isDeleted = (u: any) => u.deletedAt;
+export function checkInlineArrow(user: any) {
+  if (isDeleted(user)) return 1;
+  return 0;
+}
+
+// Arrow function with negation
+const isNotActive = (u: any) => !u.active;
+export function checkInlineNegation(user: any) {
+  if (isNotActive(user)) return 1;
+  return 0;
+}
+
+// Arrow function with compound expression
+const isAdminAndActive = (u: any) => u.role === "admin" && u.active;
+export function checkInlineCompound(user: any) {
+  if (isAdminAndActive(user)) return 1;
+  return 0;
+}
+
+// Function declaration with single return
+function hasPermission(u: any, perm: string) {
+  return u.role === perm;
+}
+export function checkInlineDeclaration(user: any) {
+  if (hasPermission(user, "admin")) return 1;
+  return 0;
+}
+
+// Multi-return function — should NOT inline (stays opaque)
+function complexCheck(u: any) {
+  if (u.deletedAt) return false;
+  return u.active;
+}
+export function checkNoInlineMultiReturn(user: any) {
+  if (complexCheck(user)) return 1;
+  return 0;
+}

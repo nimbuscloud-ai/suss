@@ -2,9 +2,12 @@
 
 import { type Expression, Node, SyntaxKind } from "ts-morph";
 
+import { resolveCallableBody } from "./ast-resolve.js";
 import { resolveSubject } from "./subjects.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
+
+const MAX_INLINE_DEPTH = 4;
 
 // Operators that check for null/undefined equality
 const NULL_CHECK_OPS = new Set(["===", "!==", "==", "!="]);
@@ -54,11 +57,19 @@ function wrapOpaque(
  * Parse a ts-morph Expression into a structured Predicate.
  * Returns null when the expression can't be decomposed cleanly.
  * The caller wraps null into { type: "opaque", sourceText, reason: "complexExpression" }.
+ *
+ * Call expressions are resolved recursively: if the callee is a local
+ * function with a single-expression body, the body is parsed as a
+ * predicate and parameter references are substituted with the call-site
+ * arguments. This reduces opaqueness for patterns like `if (isActive(user))`.
  */
-export function parseConditionExpression(expr: Expression): Predicate | null {
+export function parseConditionExpression(
+  expr: Expression,
+  depth = 0,
+): Predicate | null {
   // ParenthesizedExpression: strip parentheses and recurse
   if (Node.isParenthesizedExpression(expr)) {
-    return parseConditionExpression(expr.getExpression());
+    return parseConditionExpression(expr.getExpression(), depth);
   }
 
   // PrefixUnaryExpression: handles `!x` and `!!x`
@@ -67,7 +78,7 @@ export function parseConditionExpression(expr: Expression): Predicate | null {
       return null;
     }
     const operand = expr.getOperand();
-    const inner = parseConditionExpression(operand);
+    const inner = parseConditionExpression(operand, depth);
 
     if (inner === null) {
       return {
@@ -103,8 +114,8 @@ export function parseConditionExpression(expr: Expression): Predicate | null {
 
     // Logical AND
     if (opToken.getKind() === SyntaxKind.AmpersandAmpersandToken) {
-      const leftPred = parseConditionExpression(left);
-      const rightPred = parseConditionExpression(right);
+      const leftPred = parseConditionExpression(left, depth);
+      const rightPred = parseConditionExpression(right, depth);
       return {
         type: "compound",
         op: "and",
@@ -117,8 +128,8 @@ export function parseConditionExpression(expr: Expression): Predicate | null {
 
     // Logical OR
     if (opToken.getKind() === SyntaxKind.BarBarToken) {
-      const leftPred = parseConditionExpression(left);
-      const rightPred = parseConditionExpression(right);
+      const leftPred = parseConditionExpression(left, depth);
+      const rightPred = parseConditionExpression(right, depth);
       return {
         type: "compound",
         op: "or",
@@ -180,8 +191,14 @@ export function parseConditionExpression(expr: Expression): Predicate | null {
     return null;
   }
 
-  // CallExpression: isActive(user)
+  // CallExpression: isActive(user) — try to inline, fall back to opaque
   if (Node.isCallExpression(expr)) {
+    if (depth < MAX_INLINE_DEPTH) {
+      const inlined = tryInlineCallPredicate(expr, depth);
+      if (inlined !== null) {
+        return inlined;
+      }
+    }
     const args: ValueRef[] = expr
       .getArguments()
       .map((arg) => resolveSubject(arg as Expression));
@@ -225,4 +242,138 @@ export function parseConditionExpression(expr: Expression): Predicate | null {
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Call predicate inlining
+// ---------------------------------------------------------------------------
+
+/**
+ * Try to inline a call expression used as a condition.
+ * If the callee is a local function with a single-expression body,
+ * parse the body as a predicate and substitute parameter references
+ * with the call-site argument values.
+ *
+ * Example: `isActive(user)` where `isActive = (u) => !u.deletedAt`
+ * → `truthinessCheck(derived(resolveSubject(user), propertyAccess("deletedAt")), negated: true)`
+ */
+function tryInlineCallPredicate(
+  call: import("ts-morph").CallExpression,
+  depth: number,
+): Predicate | null {
+  const callee = call.getExpression();
+  const resolved = resolveCallableBody(callee);
+  if (resolved === null) {
+    return null;
+  }
+
+  const { bodyExpr, paramNames } = resolved;
+  if (!Node.isExpression(bodyExpr)) {
+    return null;
+  }
+
+  // Parse the body expression as a predicate (in the callee's scope)
+  const bodyPred = parseConditionExpression(bodyExpr as Expression, depth + 1);
+  if (bodyPred === null) {
+    return null;
+  }
+
+  // Build substitution map: param name → argument ValueRef
+  const callArgs = call.getArguments();
+  const subs = new Map<string, ValueRef>();
+  for (let i = 0; i < paramNames.length && i < callArgs.length; i++) {
+    subs.set(paramNames[i], resolveSubject(callArgs[i] as Expression));
+  }
+
+  if (subs.size === 0) {
+    return bodyPred; // No params to substitute
+  }
+
+  return substitutePredicate(bodyPred, subs);
+}
+
+// ---------------------------------------------------------------------------
+// Parameter substitution
+// ---------------------------------------------------------------------------
+
+function substitutePredicate(
+  pred: Predicate,
+  subs: Map<string, ValueRef>,
+): Predicate {
+  switch (pred.type) {
+    case "truthinessCheck":
+      return {
+        ...pred,
+        subject: substituteValueRef(pred.subject, subs),
+      };
+    case "nullCheck":
+      return {
+        ...pred,
+        subject: substituteValueRef(pred.subject, subs),
+      };
+    case "comparison":
+      return {
+        ...pred,
+        left: substituteValueRef(pred.left, subs),
+        right: substituteValueRef(pred.right, subs),
+      };
+    case "typeCheck":
+      return {
+        ...pred,
+        subject: substituteValueRef(pred.subject, subs),
+      };
+    case "propertyExists":
+      return {
+        ...pred,
+        subject: substituteValueRef(pred.subject, subs),
+      };
+    case "negation":
+      return {
+        ...pred,
+        operand: substitutePredicate(pred.operand, subs),
+      };
+    case "compound":
+      return {
+        ...pred,
+        operands: pred.operands.map((op) => substitutePredicate(op, subs)),
+      };
+    case "call":
+      return {
+        ...pred,
+        args: pred.args.map((arg) => substituteValueRef(arg, subs)),
+      };
+    case "opaque":
+      return pred; // Can't substitute into opaque source text
+  }
+}
+
+function substituteValueRef(
+  ref: ValueRef,
+  subs: Map<string, ValueRef>,
+): ValueRef {
+  switch (ref.type) {
+    case "input": {
+      const sub = subs.get(ref.inputRef);
+      if (sub === undefined) {
+        return ref;
+      }
+      // If the input has a path, chain property accesses onto the substituted value
+      let result = sub;
+      for (const segment of ref.path) {
+        result = {
+          type: "derived",
+          from: result,
+          derivation: { type: "propertyAccess", property: segment },
+        };
+      }
+      return result;
+    }
+    case "derived":
+      return {
+        ...ref,
+        from: substituteValueRef(ref.from, subs),
+      };
+    default:
+      return ref;
+  }
 }

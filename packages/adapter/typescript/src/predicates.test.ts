@@ -623,3 +623,103 @@ describe("parseConditionExpression — unknown nodes return null", () => {
     expect(result).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Call inlining — resolving through local function bodies
+// ---------------------------------------------------------------------------
+
+describe("parseConditionExpression — call inlining", () => {
+  it("inlines arrow function with expression body: isDeleted(user) → truthinessCheck(user.deletedAt)", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkInlineArrow");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "truthinessCheck",
+      subject: {
+        type: "derived",
+        from: { type: "input", inputRef: "user", path: [] },
+        derivation: { type: "propertyAccess", property: "deletedAt" },
+      },
+      negated: false,
+    });
+  });
+
+  it("inlines negation: isNotActive(user) → truthinessCheck(user.active, negated: true)", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkInlineNegation");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "truthinessCheck",
+      subject: {
+        type: "derived",
+        from: { type: "input", inputRef: "user", path: [] },
+        derivation: { type: "propertyAccess", property: "active" },
+      },
+      negated: true,
+    });
+  });
+
+  it("inlines compound: isAdminAndActive(user) → compound(and, [comparison, truthiness])", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkInlineCompound");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "compound",
+      op: "and",
+      operands: [
+        {
+          type: "comparison",
+          left: {
+            type: "derived",
+            from: { type: "input", inputRef: "user", path: [] },
+            derivation: { type: "propertyAccess", property: "role" },
+          },
+          op: "eq",
+          right: { type: "literal", value: "admin" },
+        },
+        {
+          type: "truthinessCheck",
+          subject: {
+            type: "derived",
+            from: { type: "input", inputRef: "user", path: [] },
+            derivation: { type: "propertyAccess", property: "active" },
+          },
+          negated: false,
+        },
+      ],
+    });
+  });
+
+  it("inlines function declaration with multi-arg substitution: hasPermission(user, 'admin')", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkInlineDeclaration");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "comparison",
+      left: {
+        type: "derived",
+        from: { type: "input", inputRef: "user", path: [] },
+        derivation: { type: "propertyAccess", property: "role" },
+      },
+      op: "eq",
+      right: { type: "literal", value: "admin" },
+    });
+  });
+
+  it("does NOT inline multi-return functions (stays opaque call)", () => {
+    const cond = getFirstIfCondition(sourceFile, "checkNoInlineMultiReturn");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "call",
+      callee: "complexCheck",
+      args: [{ type: "input", inputRef: "user", path: [] }],
+    });
+  });
+
+  it("does NOT inline declared-only functions (stays opaque call)", () => {
+    // isActive is `declare function` — no body to inline
+    const cond = getFirstIfCondition(sourceFile, "checkCallExpr");
+    const result = parseConditionExpression(cond);
+    expect(result).toEqual({
+      type: "call",
+      callee: "isActive",
+      args: [{ type: "input", inputRef: "user", path: [] }],
+    });
+  });
+});

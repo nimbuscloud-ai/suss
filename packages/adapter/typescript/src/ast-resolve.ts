@@ -374,6 +374,64 @@ function unwrapInitializer(node: Node): Node {
   return current;
 }
 
+/**
+ * Resolve a callable expression (identifier or property access) to its
+ * single-expression body and parameter names. Returns null when the
+ * callee can't be resolved to a simple function.
+ *
+ * Used by both shape extraction (resolveCall) and predicate inlining.
+ */
+export function resolveCallableBody(
+  callee: Node,
+): { bodyExpr: Node; paramNames: string[] } | null {
+  if (!Node.isIdentifier(callee)) {
+    return null;
+  }
+  const defs = safeGetDefinitions(callee);
+  for (const def of defs) {
+    const body = functionBodyOf(def);
+    if (!body) {
+      continue;
+    }
+    const bodyExpr = singleReturnExpression(body);
+    if (!bodyExpr) {
+      continue;
+    }
+    const paramNames = extractParamNames(def);
+    return { bodyExpr, paramNames };
+  }
+  return null;
+}
+
+function extractParamNames(decl: Node): string[] {
+  const getParams = (
+    fn:
+      | import("ts-morph").FunctionDeclaration
+      | import("ts-morph").ArrowFunction
+      | import("ts-morph").FunctionExpression
+      | import("ts-morph").MethodDeclaration,
+  ) => fn.getParameters().map((p) => p.getName());
+
+  if (
+    Node.isFunctionDeclaration(decl) ||
+    Node.isFunctionExpression(decl) ||
+    Node.isArrowFunction(decl) ||
+    Node.isMethodDeclaration(decl)
+  ) {
+    return getParams(decl);
+  }
+  if (Node.isVariableDeclaration(decl)) {
+    const init = decl.getInitializer();
+    if (
+      init &&
+      (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
+    ) {
+      return getParams(init);
+    }
+  }
+  return [];
+}
+
 function safeGetDefinitions(id: Node): Node[] {
   if (!Node.isIdentifier(id)) {
     return [];
