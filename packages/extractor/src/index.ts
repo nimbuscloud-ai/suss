@@ -101,8 +101,13 @@ export interface RawDeclaredContract {
   framework: string;
   responses: Array<{
     statusCode: number;
-    schemaName?: string;
-    shape?: unknown;
+    /**
+     * Structured body schema the contract declares for this status code.
+     * Populated when the adapter can statically resolve the response schema
+     * (e.g. `c.type<T>()`'s type argument). Null when the contract exists
+     * but no body was declared or the schema form isn't yet supported.
+     */
+    body?: TypeShape | null;
   }>;
   params?: Record<string, { type: string; required: boolean }>;
 }
