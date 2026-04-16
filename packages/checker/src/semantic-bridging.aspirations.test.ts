@@ -1,13 +1,13 @@
 // semantic-bridging.aspirations.test.ts
 //
-// Tests that document the current limitations of semantic condition bridging.
-// Each test describes:
-//   - What the code pattern is
-//   - What the IDEAL behavior would be (commented)
-//   - What the CURRENT behavior is (asserted)
+// Tests documenting the boundaries of semantic condition bridging.
+// Originally 6 aspirations; 4 resolved (moved to main test file with
+// updated assertions), 2 reclassified (common cases already handled;
+// remaining gap is Level 6 local function inlining).
 //
-// As capabilities improve, these tests should be updated: change the assertion
-// to match the ideal behavior and move the test to the main test file.
+// The two remaining tests exercise scenarios where the extractor can't
+// preserve literal narrowness through multi-return functions or
+// cross-module calls — both require Level 6 to improve.
 
 import { describe, expect, it } from "vitest";
 
