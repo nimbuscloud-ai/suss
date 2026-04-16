@@ -5,6 +5,9 @@
 
 import { Node } from "ts-morph";
 
+import { shapeFromNodeType } from "./type-shapes.js";
+
+import type { TypeShape } from "@suss/behavioral-ir";
 import type { ContractPattern, RawDeclaredContract } from "@suss/extractor";
 import type { DiscoveredUnit } from "./discovery.js";
 
@@ -25,6 +28,27 @@ export interface ContractReadResult {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Extract a `TypeShape` from a response-schema expression like
+ * `c.type<{ id: string }>()`. Pulls the first type argument of the call and
+ * runs it through the shared shape extractor. Returns null for unsupported
+ * forms (zod schemas, raw references, missing type arguments) — the contract
+ * entry still records the status code, just without a body shape.
+ */
+function extractDeclaredBody(node: Node | undefined): TypeShape | null {
+  if (node === undefined) {
+    return null;
+  }
+  if (!Node.isCallExpression(node)) {
+    return null;
+  }
+  const typeArgs = node.getTypeArguments();
+  if (typeArgs.length === 0) {
+    return null;
+  }
+  return shapeFromNodeType(typeArgs[0]);
+}
 
 /**
  * Walk up from the handler function node to find the enclosing .router() call.
@@ -230,7 +254,8 @@ function extractEndpointContract(
             continue;
           }
 
-          responses.push({ statusCode });
+          const body = extractDeclaredBody(respProp.getInitializer());
+          responses.push(body !== null ? { statusCode, body } : { statusCode });
         }
       }
     }

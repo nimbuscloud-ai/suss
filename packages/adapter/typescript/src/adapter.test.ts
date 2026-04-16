@@ -440,11 +440,11 @@ describe("readContract", () => {
     const result = readContract(units[0], tsRestPack.contractReading!);
 
     expect(result).not.toBeNull();
-    expect(result!.declaredContract.responses).toEqual([
+    expect(result?.declaredContract.responses).toEqual([
       { statusCode: 200 },
       { statusCode: 404 },
     ]);
-    expect(result!.boundaryBinding).toEqual({
+    expect(result?.boundaryBinding).toEqual({
       protocol: "http",
       method: "GET",
       path: "/users/:id",
@@ -534,8 +534,86 @@ describe("readContract", () => {
     const result = readContract(units[0], tsRestPack.contractReading!);
 
     expect(result).not.toBeNull();
-    expect(result!.declaredContract.responses).toHaveLength(2);
-    expect(result!.boundaryBinding!.method).toBe("GET");
+    expect(result?.declaredContract.responses).toHaveLength(2);
+    expect(result?.boundaryBinding?.method).toBe("GET");
+  });
+
+  it("extracts body TypeShape from c.type<T>() declarations", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: {
+            200: c.type<{ id: string; name: string }>(),
+            404: c.type<{ error: string }>(),
+          },
+        },
+      });
+
+      const s = initServer();
+      export const router = s.router(contract, {
+        getUser: async () => ({ status: 200, body: { id: "x", name: "y" } }),
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const result = readContract(units[0], tsRestPack.contractReading!);
+
+    expect(result).not.toBeNull();
+    if (result === null) {
+      throw new Error("expected contract result");
+    }
+    const [ok, notFound] = result.declaredContract.responses;
+    expect(ok).toEqual({
+      statusCode: 200,
+      body: {
+        type: "record",
+        properties: { id: { type: "text" }, name: { type: "text" } },
+      },
+    });
+    expect(notFound).toEqual({
+      statusCode: 404,
+      body: {
+        type: "record",
+        properties: { error: { type: "text" } },
+      },
+    });
+  });
+
+  it("omits body when response schema is not a c.type<T>() call", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: {
+            200: null as any,
+          },
+        },
+      });
+
+      const s = initServer();
+      export const router = s.router(contract, {
+        getUser: async () => ({ status: 200, body: {} }),
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+    const result = readContract(units[0], tsRestPack.contractReading!);
+
+    expect(result).not.toBeNull();
+    expect(result?.declaredContract.responses).toEqual([{ statusCode: 200 }]);
   });
 
   it("returns null boundaryBinding when contract has no method or path", () => {
@@ -563,7 +641,7 @@ describe("readContract", () => {
     const result = readContract(units[0], tsRestPack.contractReading!);
 
     expect(result).not.toBeNull();
-    expect(result!.boundaryBinding).toBeNull();
+    expect(result?.boundaryBinding).toBeNull();
   });
 });
 
@@ -606,17 +684,17 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
-    expect(getUser!.kind).toBe("handler");
+    expect(getUser?.kind).toBe("handler");
 
     // getUser has 4 transitions:
     //   1. !params.id → 404
     //   2. !user → 404
     //   3. user.deletedAt → 404
     //   4. default → 200
-    expect(getUser!.transitions).toHaveLength(4);
+    expect(getUser?.transitions).toHaveLength(4);
 
     // Check status codes
-    const statusCodes = getUser!.transitions.map((t) => {
+    const statusCodes = getUser?.transitions.map((t) => {
       if (
         t.output.type === "response" &&
         t.output.statusCode?.type === "literal"
@@ -628,12 +706,12 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(statusCodes).toEqual([404, 404, 404, 200]);
 
     // Last transition should be default
-    expect(getUser!.transitions[3].isDefault).toBe(true);
+    expect(getUser?.transitions[3].isDefault).toBe(true);
 
     // First three should not be default
-    expect(getUser!.transitions[0].isDefault).toBe(false);
-    expect(getUser!.transitions[1].isDefault).toBe(false);
-    expect(getUser!.transitions[2].isDefault).toBe(false);
+    expect(getUser?.transitions[0].isDefault).toBe(false);
+    expect(getUser?.transitions[1].isDefault).toBe(false);
+    expect(getUser?.transitions[2].isDefault).toBe(false);
   });
 
   it("getUser handler has correct inputs", () => {
@@ -649,13 +727,13 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(getUser).toBeDefined();
 
     // params should be extracted with role "pathParams"
-    const paramsInput = getUser!.inputs.find(
+    const paramsInput = getUser?.inputs.find(
       (i) => i.type === "parameter" && i.name === "params",
     );
     expect(paramsInput).toBeDefined();
-    expect(paramsInput!.type).toBe("parameter");
-    if (paramsInput!.type === "parameter") {
-      expect(paramsInput!.role).toBe("pathParams");
+    expect(paramsInput?.type).toBe("parameter");
+    if (paramsInput?.type === "parameter") {
+      expect(paramsInput?.role).toBe("pathParams");
     }
   });
 
@@ -672,10 +750,10 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(getUser).toBeDefined();
 
     // The contract declares 500 but the handler never produces it
-    const gap500 = getUser!.gaps.find((g) => g.description.includes("500"));
+    const gap500 = getUser?.gaps.find((g) => g.description.includes("500"));
     expect(gap500).toBeDefined();
-    expect(gap500!.type).toBe("unhandledCase");
-    expect(gap500!.description).toContain("never produced");
+    expect(gap500?.type).toBe("unhandledCase");
+    expect(gap500?.description).toContain("never produced");
   });
 
   it("getUser handler has dependency call for db.findById", () => {
@@ -691,8 +769,8 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(getUser).toBeDefined();
 
     // The metadata should include the declaredContract
-    expect(getUser!.metadata).toBeDefined();
-    expect(getUser!.metadata!.declaredContract).toBeDefined();
+    expect(getUser?.metadata).toBeDefined();
+    expect(getUser?.metadata?.declaredContract).toBeDefined();
   });
 
   it("getUser handler has high confidence when all conditions are structured", () => {
@@ -706,7 +784,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
-    expect(getUser!.confidence.level).toBe("high");
+    expect(getUser?.confidence.level).toBe("high");
   });
 
   it("createUser handler has correct transitions", () => {
@@ -720,14 +798,14 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     const createUser = summaries.find((s) => s.identity.name === "createUser");
 
     expect(createUser).toBeDefined();
-    expect(createUser!.kind).toBe("handler");
+    expect(createUser?.kind).toBe("handler");
 
     // createUser has 2 transitions:
     //   1. !body.name || !body.email → 400
     //   2. default → 201
-    expect(createUser!.transitions).toHaveLength(2);
+    expect(createUser?.transitions).toHaveLength(2);
 
-    const statusCodes = createUser!.transitions.map((t) => {
+    const statusCodes = createUser?.transitions.map((t) => {
       if (
         t.output.type === "response" &&
         t.output.statusCode?.type === "literal"
@@ -750,9 +828,9 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
-    expect(getUser!.identity.boundaryBinding).toBeDefined();
-    expect(getUser!.identity.boundaryBinding!.method).toBe("GET");
-    expect(getUser!.identity.boundaryBinding!.path).toBe("/users/:id");
+    expect(getUser?.identity.boundaryBinding).toBeDefined();
+    expect(getUser?.identity.boundaryBinding?.method).toBe("GET");
+    expect(getUser?.identity.boundaryBinding?.path).toBe("/users/:id");
   });
 
   it("extractAll skips declaration files", () => {
@@ -787,8 +865,11 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
 
+    if (getUser === undefined) {
+      throw new Error("expected getUser summary");
+    }
     // None of the conditions should be opaque
-    for (const t of getUser!.transitions) {
+    for (const t of getUser.transitions) {
       for (const c of t.conditions) {
         expect(c.type).not.toBe("opaque");
       }
@@ -797,7 +878,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     // Transition 0: the guard `if (!params.id)` — terminal is in the
     // then-branch (positive polarity). parseConditionExpression folds
     // the `!` into truthinessCheck.negated, so no wrapping negation node.
-    const t0 = getUser!.transitions[0];
+    const t0 = getUser.transitions[0];
     expect(t0.conditions).toHaveLength(1);
     expect(t0.conditions[0].type).toBe("truthinessCheck");
     if (t0.conditions[0].type === "truthinessCheck") {
@@ -809,7 +890,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     // Transition 1: `if (!user)` with prior early return for `!params.id`.
     // The early return condition has polarity "negative" so assembleSummary
     // wraps it in a negation node.
-    const t1 = getUser!.transitions[1];
+    const t1 = getUser?.transitions[1];
     expect(t1.conditions.length).toBeGreaterThanOrEqual(2);
     // First condition: negation of the early return guard (!params.id)
     expect(t1.conditions[0].type).toBe("negation");
@@ -823,7 +904,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     }
 
     // Transition 2: `if (user.deletedAt)` with two prior early return guards.
-    const t2 = getUser!.transitions[2];
+    const t2 = getUser?.transitions[2];
     expect(t2.conditions.length).toBeGreaterThanOrEqual(3);
     // Last condition: truthinessCheck on user.deletedAt (positive polarity)
     const t2Last = t2.conditions[t2.conditions.length - 1];
@@ -850,12 +931,15 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     const summaries = adapter.extractAll();
     const createUser = summaries.find((s) => s.identity.name === "createUser");
     expect(createUser).toBeDefined();
+    if (createUser === undefined) {
+      throw new Error("expected createUser summary");
+    }
 
     // The first transition has a guard: !body.name || !body.email
     // This is an early return, so its polarity is "negative".
     // The condition expression itself is `!body.name || !body.email`.
     // The negation of that compound expression is the actual predicate.
-    const t0 = createUser!.transitions[0];
+    const t0 = createUser.transitions[0];
     expect(t0.conditions.length).toBeGreaterThan(0);
   });
 
@@ -898,7 +982,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
       g.description.includes("400"),
     );
     expect(reverseGap).toBeDefined();
-    expect(reverseGap!.description).toContain("not declared");
+    expect(reverseGap?.description).toContain("not declared");
   });
 
   it("gapHandling: silent suppresses all gaps", () => {
@@ -913,7 +997,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
-    expect(getUser!.gaps).toEqual([]);
+    expect(getUser?.gaps).toEqual([]);
   });
 
   it("file with no matching handlers produces empty result", () => {
