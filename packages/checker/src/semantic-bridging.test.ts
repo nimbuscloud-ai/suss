@@ -22,7 +22,7 @@ const literal = (v: string | number | boolean): TypeShape => ({
 });
 const text: TypeShape = { type: "text" };
 
-// A consumer predicate that tests result.body.status === "deleted"
+// A consumer predicate that tests result.body.field === value
 function bodyFieldEq(
   field: string,
   value: string | number | boolean,
@@ -40,6 +40,17 @@ function bodyFieldEq(
       derivation: { type: "propertyAccess", property: field },
     },
     right: { type: "literal", value },
+  };
+}
+
+// A consumer predicate that tests result.body.field !== value
+function bodyFieldNeq(
+  field: string,
+  value: string | number | boolean,
+): Predicate {
+  return {
+    type: "negation",
+    operand: bodyFieldEq(field, value),
   };
 }
 
@@ -388,6 +399,81 @@ describe("checkSemanticBridging", () => {
     // Consumer tests type but not tier — still covers the sub-case
     expect(
       findings.some((f) => f.provider.transitionId === "t-200-special"),
+    ).toBe(false);
+  });
+
+  it("suppresses finding when consumer uses negated comparison (!== covers the other value)", () => {
+    const p = provider("getUser", [
+      transition("t-200-deleted", {
+        output: response(200, record({ status: literal("deleted"), id: text })),
+      }),
+      transition("t-200-active", {
+        output: response(200, record({ status: literal("active"), id: text })),
+        isDefault: true,
+      }),
+    ]);
+
+    // Consumer: !== "active" handles deleted, === "active" handles active
+    const c = consumer("UserPage", [
+      transition("ct-200-not-active", {
+        conditions: [statusEq(200), bodyFieldNeq("status", "active")],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-200-active", {
+        conditions: [statusEq(200), bodyFieldEq("status", "active")],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    const findings = checkSemanticBridging(p, c);
+    expect(findings).toEqual([]);
+  });
+
+  it("handles comparison(neq) directly (not just negation wrapping eq)", () => {
+    const p = provider("getUser", [
+      transition("t-200-deleted", {
+        output: response(200, record({ status: literal("deleted"), id: text })),
+      }),
+      transition("t-200-active", {
+        output: response(200, record({ status: literal("active"), id: text })),
+        isDefault: true,
+      }),
+    ]);
+
+    // Direct neq comparison (body.status !== "active")
+    const neqPredicate: Predicate = {
+      type: "comparison",
+      op: "neq",
+      left: {
+        type: "derived",
+        from: {
+          type: "derived",
+          from: {
+            type: "dependency",
+            name: "client.getUser",
+            accessChain: [],
+          },
+          derivation: { type: "propertyAccess", property: "body" },
+        },
+        derivation: { type: "propertyAccess", property: "status" },
+      },
+      right: { type: "literal", value: "active" },
+    };
+
+    const c = consumer("UserPage", [
+      transition("ct-200-not-active", {
+        conditions: [statusEq(200), neqPredicate],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-200-active", {
+        conditions: [statusEq(200), bodyFieldEq("status", "active")],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    const findings = checkSemanticBridging(p, c);
+    expect(
+      findings.some((f) => f.provider.transitionId === "t-200-deleted"),
     ).toBe(false);
   });
 });

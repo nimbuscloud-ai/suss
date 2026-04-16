@@ -108,17 +108,14 @@ describe("aspiration: type-widened literals", () => {
 // Aspiration 2: Negated comparisons as proxy
 // ---------------------------------------------------------------------------
 
-describe("aspiration: negated comparisons", () => {
-  it("does NOT recognize !== 'active' as covering the 'deleted' case", () => {
-    // Provider has two 200 sub-cases: status = "deleted" vs "active".
-    // Consumer tests `body.status !== "active"` to handle the deleted case.
+describe("RESOLVED: negated comparisons", () => {
+  it("recognizes !== 'active' as covering the 'deleted' case", () => {
+    // RESOLVED: The checker now extracts negated equality tests
+    // (comparison(neq) and negation(comparison(eq))). A negated test
+    // !== X covers any distinguishing literal that isn't X.
     //
-    // IDEAL: The checker should recognize that `!== "active"` in a
-    // two-variant universe covers the "deleted" case.
-    //
-    // CURRENT: The checker only matches exact (path, value) pairs.
-    // `!== "active"` is a negated comparison, not an equality match
-    // against "deleted", so it doesn't suppress the finding.
+    // !== "active" at path ["status"] matches any literal at ["status"]
+    // whose value is not "active" — including "deleted".
     const p = provider("getUser", [
       transition("t-200-deleted", {
         output: response(200, record({ status: literal("deleted"), id: text })),
@@ -141,14 +138,8 @@ describe("aspiration: negated comparisons", () => {
 
     const findings = checkSemanticBridging(p, c);
 
-    // CURRENT: emits a finding for "deleted" because the consumer
-    // tests for !== "active", not === "deleted"
-    expect(findings.length).toBeGreaterThanOrEqual(1);
-    expect(findings.some((f) => f.description.includes("deleted"))).toBe(true);
-
-    // IDEAL: no finding — the consumer's !== "active" covers the
-    // "deleted" case when the provider's status is a closed union
-    // of "active" | "deleted".
+    // !== "active" covers "deleted", and === "active" covers "active"
+    expect(findings).toEqual([]);
   });
 });
 
