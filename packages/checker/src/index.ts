@@ -4,6 +4,7 @@ import { checkProviderCoverage } from "./provider-coverage.js";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
+export { bodyShapesMatch } from "./body-match.js";
 export { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 export { checkContractConsistency } from "./contract-consistency.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
