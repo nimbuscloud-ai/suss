@@ -640,3 +640,87 @@ describe("inspect", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Consumer extraction — fetch
+// ---------------------------------------------------------------------------
+
+describe("consumer extraction — fetch", () => {
+  it(
+    "discovers consumer functions from fetch fixture",
+    { timeout: 90_000 },
+    async () => {
+      const tsconfigPath = createTempTsConfig(
+        path.join(FIXTURES_ROOT, "fetch"),
+      );
+      const tmpDir = path.dirname(tsconfigPath);
+      const outPath = path.join(tmpDir, "summaries.json");
+
+      const summaries = await extract({
+        tsconfig: tsconfigPath,
+        frameworks: ["fetch"],
+        output: outPath,
+      });
+
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0].kind).toBe("consumer");
+      expect(summaries[0].identity.name).toBe("getHealth");
+      expect(summaries[0].identity.boundaryBinding?.path).toBe("/health");
+      expect(summaries[0].identity.boundaryBinding?.method).toBe("GET");
+      expect(summaries[0].transitions.length).toBeGreaterThanOrEqual(2);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end: extract + check with ts-rest provider and consumer
+// ---------------------------------------------------------------------------
+
+describe("end-to-end: extract provider + consumer, then check", () => {
+  it(
+    "produces findings when consumer misses a status the provider can produce",
+    { timeout: 90_000 },
+    async () => {
+      // Extract provider from ts-rest fixture
+      const providerTsconfig = createTempTsConfig(
+        path.join(FIXTURES_ROOT, "ts-rest"),
+      );
+      const providerTmpDir = path.dirname(providerTsconfig);
+      const providerOutPath = path.join(providerTmpDir, "provider.json");
+      await extract({
+        tsconfig: providerTsconfig,
+        frameworks: ["ts-rest"],
+        output: providerOutPath,
+      });
+
+      // Extract consumer from fetch fixture (simulated consumer)
+      const consumerTsconfig = createTempTsConfig(
+        path.join(FIXTURES_ROOT, "fetch"),
+      );
+      const consumerTmpDir = path.dirname(consumerTsconfig);
+      const consumerOutPath = path.join(consumerTmpDir, "consumer.json");
+      await extract({
+        tsconfig: consumerTsconfig,
+        frameworks: ["fetch"],
+        output: consumerOutPath,
+      });
+
+      // Check provider against consumer
+      const { check } = await import("./check.js");
+      const result = check({
+        providerFile: providerOutPath,
+        consumerFile: consumerOutPath,
+      });
+
+      // The provider (ts-rest) produces multiple statuses (200, 404, 400, 201);
+      // the consumer (fetch/getHealth) only handles 200 and 503.
+      // Provider coverage should flag unhandled provider cases.
+      expect(result.findings.length).toBeGreaterThan(0);
+
+      fs.rmSync(providerTmpDir, { recursive: true });
+      fs.rmSync(consumerTmpDir, { recursive: true });
+    },
+  );
+});
