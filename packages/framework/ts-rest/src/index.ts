@@ -21,6 +21,18 @@ export function tsRestFramework(): FrameworkPack {
           path: { type: "fromContract" },
         },
       },
+      {
+        kind: "consumer",
+        match: {
+          type: "clientCall",
+          importModule: "@ts-rest/core",
+          importName: "initClient",
+        },
+        bindingExtraction: {
+          method: { type: "fromClientMethod" },
+          path: { type: "fromClientMethod" },
+        },
+      },
     ],
 
     terminals: [
