@@ -27,18 +27,37 @@ export type DiscoveryMatch =
       type: "fileConvention";
       filePattern: string; // glob
       exportNames: string[];
+    }
+  | {
+      type: "clientCall";
+      /** Module the client is imported from, or "global" for built-ins like fetch */
+      importModule: string;
+      /** Named export or identifier — e.g. "initClient", "fetch" */
+      importName: string;
+      /** If set, only match calls to these methods on the client (e.g. ["getUser"]).
+       *  Unset means any method call (or bare call for globals). */
+      methodFilter?: string[];
     };
 
 export type BindingExtraction = {
   method:
     | { type: "fromRegistration"; position: "methodName" | number }
-    | { type: "fromExportName" } // Next.js: the export name IS the method
-    | { type: "fromContract" } // ts-rest: method comes from the contract definition
+    | { type: "fromExportName" }
+    | { type: "fromContract" }
+    | { type: "fromClientMethod" }
+    | {
+        type: "fromArgumentProperty";
+        position: number;
+        property: string;
+        default?: string;
+      }
     | { type: "literal"; value: string };
   path:
     | { type: "fromRegistration"; position: number }
-    | { type: "fromFilename" } // file-based routing
-    | { type: "fromContract" }; // ts-rest: path comes from the contract definition
+    | { type: "fromFilename" }
+    | { type: "fromContract" }
+    | { type: "fromClientMethod" }
+    | { type: "fromArgumentLiteral"; position: number };
 };
 
 export interface DiscoveryPattern {
@@ -56,6 +75,9 @@ export type TerminalMatch =
   | {
       type: "returnShape";
       requiredProperties?: string[]; // e.g. ["status", "body"] for ts-rest
+    }
+  | {
+      type: "returnStatement";
     }
   | {
       type: "parameterMethodCall";
