@@ -104,6 +104,42 @@ describe("checkProviderCoverage", () => {
     expect(findings[0].severity).toBe("info");
   });
 
+  it("counts throw-converted-to-response as a produced status code", () => {
+    // When the extractor converts a throw-with-status to a response output
+    // (e.g., `throw new HttpError(404)` → response 404), the checker
+    // treats it like any other response.
+    const p = provider("getUser", [
+      transition("t-404", {
+        conditions: [
+          {
+            type: "truthinessCheck",
+            subject: {
+              type: "dependency",
+              name: "db.findById",
+              accessChain: [],
+            },
+            negated: true,
+          },
+        ],
+        // Extractor already converted throw-with-status to response
+        output: response(404),
+      }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const c = consumer("UserPage", [
+      transition("ct-404", {
+        conditions: [statusEq(404)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+
+    expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
   it("uses the provider's boundary binding on findings", () => {
     const p = provider(
       "getUser",
