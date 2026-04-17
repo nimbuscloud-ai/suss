@@ -5,6 +5,7 @@
     "module": "node16",
     "target": "ES2022",
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "declaration": true,
     "declarationMap": true,

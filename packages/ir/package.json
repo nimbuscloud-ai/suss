@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "ajv": "^8.18.0",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
