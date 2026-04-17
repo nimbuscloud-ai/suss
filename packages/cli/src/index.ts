@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 
 import { check, checkDir } from "./check.js";
 import { extract } from "./extract.js";
-import { inspect } from "./inspect.js";
+import { inspect, inspectDiff } from "./inspect.js";
 
 import type { CheckResult } from "./check.js";
 
@@ -12,6 +12,7 @@ const USAGE = `
 Usage:
   suss extract -p <tsconfig> -f <framework> [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss inspect <summaries.json>
+  suss inspect --diff <before.json> <after.json>
   suss check <provider.json> <consumer.json> [--json] [-o <output>]
   suss check --dir <directory> [--json] [-o <output>]
 
@@ -103,14 +104,24 @@ async function main() {
       ...(gaps !== undefined ? { gaps } : {}),
     });
   } else if (command === "inspect") {
-    const file = args[1];
-    if (file === undefined) {
-      console.error("Error: inspect requires a summaries JSON file path");
-      console.error(USAGE);
-      process.exit(1);
+    if (args[1] === "--diff") {
+      const before = args[2];
+      const after = args[3];
+      if (before === undefined || after === undefined) {
+        console.error("Error: --diff requires two summary file paths");
+        console.error(USAGE);
+        process.exit(1);
+      }
+      inspectDiff({ before, after });
+    } else {
+      const file = args[1];
+      if (file === undefined) {
+        console.error("Error: inspect requires a summaries JSON file path");
+        console.error(USAGE);
+        process.exit(1);
+      }
+      inspect({ file });
     }
-
-    inspect({ file });
   } else if (command === "check") {
     const { values, positionals } = parseArgs({
       args: args.slice(1),
@@ -164,8 +175,8 @@ main().catch((err: Error) => {
 
 export { check, checkDir } from "./check.js";
 export { extract } from "./extract.js";
-export { inspect } from "./inspect.js";
+export { inspect, inspectDiff } from "./inspect.js";
 
 export type { CheckDirOptions, CheckOptions, CheckResult } from "./check.js";
 export type { ExtractOptions } from "./extract.js";
-export type { InspectOptions } from "./inspect.js";
+export type { DiffOptions, InspectOptions } from "./inspect.js";
