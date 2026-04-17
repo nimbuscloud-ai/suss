@@ -4,7 +4,7 @@ Framework pack for [ts-rest](https://ts-rest.com/). Declarative patterns describ
 
 ## What this package is
 
-`@suss/framework-ts-rest` returns a `FrameworkPack` object — data, not code. The language adapter interprets these patterns against the AST. This pack describes:
+`@suss/framework-ts-rest` returns a `PatternPack` object — data, not code. The language adapter interprets these patterns against the AST. This pack describes:
 
 - **Provider discovery** via `initServer().router(contract, handlers)` registration calls
 - **Client discovery** via `initClient(contract)` call sites
@@ -14,7 +14,7 @@ Framework pack for [ts-rest](https://ts-rest.com/). Declarative patterns describ
 
 ## Where it sits in suss
 
-Depends only on `@suss/extractor` (for the `FrameworkPack` type). Contains no analysis logic — the adapter does all the work.
+Depends only on `@suss/extractor` (for the `PatternPack` type). Contains no analysis logic — the adapter does all the work.
 
 ## Coverage
 

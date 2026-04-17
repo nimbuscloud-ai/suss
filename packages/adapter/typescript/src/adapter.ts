@@ -9,11 +9,13 @@ import {
   type BindingExtraction,
   type DiscoveryPattern,
   type ExtractorOptions,
-  type FrameworkPack,
   type InputMappingPattern,
+  type PatternPack,
+  type RawBranch,
   type RawCodeStructure,
   type RawDependencyCall,
   type RawParameter,
+  type ResponsePropertyMapping,
 } from "@suss/extractor";
 
 import { extractRawBranches } from "./assembly.js";
@@ -21,7 +23,12 @@ import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
 import { collectClientFieldAccesses } from "./field-accesses.js";
 
-import type { BehavioralSummary, CodeUnitKind } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  CodeUnitKind,
+  Predicate,
+  ValueRef,
+} from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";
 
 // ---------------------------------------------------------------------------
@@ -153,26 +160,159 @@ function extractDependencyCalls(func: FunctionRoot): RawDependencyCall[] {
 }
 
 // ---------------------------------------------------------------------------
+// Response property resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve response properties (e.g. `.ok`) in branch conditions using
+ * the pack's declared response semantics. Produces more specific predicates
+ * so the checker doesn't need framework-specific knowledge.
+ *
+ * For statusRange semantics (like fetch `.ok`), a truthinessCheck on the
+ * property is replaced with a compound comparison on the status code.
+ */
+function resolveResponseProperties(
+  branches: RawBranch[],
+  calleeText: string,
+  semantics: ResponsePropertyMapping[],
+): RawBranch[] {
+  return branches.map((branch) => ({
+    ...branch,
+    conditions: branch.conditions.map((cond) => ({
+      ...cond,
+      structured: cond.structured
+        ? resolveResponsePredicate(cond.structured, calleeText, semantics)
+        : null,
+    })),
+  }));
+}
+
+function resolveResponsePredicate(
+  pred: Predicate,
+  calleeText: string,
+  semantics: ResponsePropertyMapping[],
+): Predicate {
+  if (pred.type === "truthinessCheck") {
+    const resolved = tryResolveStatusRange(pred.subject, calleeText, semantics);
+    if (resolved !== null) {
+      return pred.negated ? { type: "negation", operand: resolved } : resolved;
+    }
+  }
+
+  if (pred.type === "compound") {
+    return {
+      ...pred,
+      operands: pred.operands.map((op) =>
+        resolveResponsePredicate(op, calleeText, semantics),
+      ),
+    };
+  }
+
+  if (pred.type === "negation") {
+    return {
+      ...pred,
+      operand: resolveResponsePredicate(pred.operand, calleeText, semantics),
+    };
+  }
+
+  return pred;
+}
+
+/**
+ * If `ref` is a property access on the response dependency and that property
+ * has `statusRange` semantics, produce a compound comparison predicate.
+ *
+ * Example: `.ok` on a fetch response → `status >= 200 && status <= 299`
+ */
+function tryResolveStatusRange(
+  ref: ValueRef,
+  calleeText: string,
+  semantics: ResponsePropertyMapping[],
+): Predicate | null {
+  if (ref.type !== "derived" || ref.derivation.type !== "propertyAccess") {
+    return null;
+  }
+
+  const baseRef = ref.from;
+  if (
+    baseRef.type !== "dependency" ||
+    baseRef.name !== calleeText ||
+    baseRef.accessChain.length !== 0
+  ) {
+    return null;
+  }
+
+  const propName = ref.derivation.property;
+  const mapping = semantics.find(
+    (s) =>
+      s.name === propName &&
+      s.access === "property" &&
+      s.semantics.type === "statusRange",
+  );
+  if (mapping === undefined || mapping.semantics.type !== "statusRange") {
+    return null;
+  }
+
+  const statusRef: ValueRef = {
+    type: "derived",
+    from: baseRef,
+    derivation: { type: "propertyAccess", property: "status" },
+  };
+
+  return {
+    type: "compound",
+    op: "and",
+    operands: [
+      {
+        type: "comparison",
+        left: statusRef,
+        op: "gte",
+        right: { type: "literal", value: mapping.semantics.min },
+      },
+      {
+        type: "comparison",
+        left: statusRef,
+        op: "lte",
+        right: { type: "literal", value: mapping.semantics.max },
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Code structure extraction (per unit)
 // ---------------------------------------------------------------------------
 
 export function extractCodeStructure(
   unit: DiscoveredUnit,
-  pack: FrameworkPack,
+  pack: PatternPack,
   filePath: string,
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   const params = extractParameters(func, pack.inputMapping);
-  const branches = extractRawBranches(func, pack.terminals);
+  let branches = extractRawBranches(func, pack.terminals);
   const depCalls = extractDependencyCalls(func);
 
-  // For client units, populate expectedInput on each branch
+  // For client units: resolve response properties and populate expectedInput
   if (unit.callSite !== undefined) {
+    const calleeText = unit.callSite.callExpression.getExpression().getText();
+
+    // Resolve response property semantics (e.g. .ok → status range)
+    if (pack.responseSemantics !== undefined) {
+      branches = resolveResponseProperties(
+        branches,
+        calleeText,
+        pack.responseSemantics,
+      );
+    }
+
+    // Populate expectedInput (body field accesses) on each branch
     const branchLocations = branches.map((b) => b.location);
     const fieldAccesses = collectClientFieldAccesses(
       unit.callSite.callExpression,
       func,
       branchLocations,
+      pack.responseSemantics,
     );
     for (let i = 0; i < branches.length; i++) {
       const access = fieldAccesses[i];
@@ -209,7 +349,7 @@ export function extractCodeStructure(
 function extractConsumerBinding(
   unit: DiscoveredUnit,
   pattern: DiscoveryPattern,
-  pack: FrameworkPack,
+  pack: PatternPack,
 ): {
   protocol: string;
   method?: string;
@@ -250,7 +390,7 @@ function extractConsumerBinding(
 function extractBindingMethod(
   binding: BindingExtraction,
   callSite: NonNullable<DiscoveredUnit["callSite"]>,
-  pack: FrameworkPack,
+  pack: PatternPack,
 ): string | undefined {
   const m = binding.method;
   if (m.type === "fromClientMethod") {
@@ -279,7 +419,7 @@ function extractBindingMethod(
 function extractBindingPath(
   binding: BindingExtraction,
   callSite: NonNullable<DiscoveredUnit["callSite"]>,
-  pack: FrameworkPack,
+  pack: PatternPack,
 ): string | undefined {
   const p = binding.path;
   if (p.type === "fromClientMethod") {
@@ -298,7 +438,7 @@ function extractBindingPath(
 
 function resolveContractField(
   callSite: NonNullable<DiscoveredUnit["callSite"]>,
-  pack: FrameworkPack,
+  pack: PatternPack,
   field: "method" | "path",
 ): string | undefined {
   if (pack.contractReading === undefined || callSite.methodName === null) {
@@ -324,7 +464,7 @@ function resolveContractField(
 
 function extractFromSourceFile(
   sourceFile: SourceFile,
-  frameworks: FrameworkPack[],
+  frameworks: PatternPack[],
   options?: ExtractorOptions,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
@@ -378,7 +518,7 @@ function extractFromSourceFile(
 export interface TypeScriptAdapterConfig {
   tsConfigFilePath?: string;
   project?: Project;
-  frameworks: FrameworkPack[];
+  frameworks: PatternPack[];
   extractorOptions?: ExtractorOptions;
 }
 

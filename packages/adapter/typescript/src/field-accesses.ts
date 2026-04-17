@@ -7,6 +7,7 @@
 import { type CallExpression, type IfStatement, Node } from "ts-morph";
 
 import type { TypeShape } from "@suss/behavioral-ir";
+import type { ResponsePropertyMapping } from "@suss/extractor";
 
 // ---------------------------------------------------------------------------
 // Find the response variable from the API call site
@@ -231,11 +232,14 @@ export interface BranchFieldAccesses {
  * @param callExpr The API call expression (fetch(), client.getUser())
  * @param func The enclosing function
  * @param branchLocations Terminal locations from the extracted branches
+ * @param responseSemantics Optional response property mappings from the pack —
+ *   used to filter non-body properties instead of a hardcoded list
  */
 export function collectClientFieldAccesses(
   callExpr: CallExpression,
   func: Node,
   branchLocations: Array<{ start: number; end: number }>,
+  responseSemantics?: ResponsePropertyMapping[],
 ): BranchFieldAccesses[] {
   const responseVar = findResponseVariable(callExpr);
   if (responseVar === null) {
@@ -245,25 +249,36 @@ export function collectClientFieldAccesses(
     }));
   }
 
+  // Build the set of non-body property names from pack semantics.
+  // Any property with statusCode, statusRange, or headers semantics
+  // is filtered out; body-typed and unknown properties pass through.
+  const nonBodyProps = buildNonBodyPropertySet(responseSemantics);
+
   return branchLocations.map((loc) => {
     const subtree = findBranchSubtree(func, loc.start, loc.end);
     const accesses = collectPropertyAccesses(subtree, responseVar);
 
-    // Filter to body-related accesses: we care about what the consumer
-    // reads from the response body, not status/headers/ok.
-    // For fetch: res.json() result is typically assigned to another var,
-    // so we also look for accesses on the response directly.
-    // For ts-rest: result.body.* is the pattern.
     const bodyAccesses = accesses.filter(
-      (a) =>
-        a.chain.length > 0 &&
-        a.chain[0] !== "status" &&
-        a.chain[0] !== "statusCode" &&
-        a.chain[0] !== "ok" &&
-        a.chain[0] !== "headers",
+      (a) => a.chain.length > 0 && !nonBodyProps.has(a.chain[0]),
     );
 
     const expectedInput = buildShapeFromPaths(bodyAccesses);
     return { terminalLocation: loc, expectedInput };
   });
+}
+
+function buildNonBodyPropertySet(
+  semantics?: ResponsePropertyMapping[],
+): Set<string> {
+  if (semantics === undefined) {
+    // Fallback: hardcoded list for packs without response semantics
+    return new Set(["status", "statusCode", "ok", "headers"]);
+  }
+  const nonBody = new Set<string>();
+  for (const mapping of semantics) {
+    if (mapping.semantics.type !== "body") {
+      nonBody.add(mapping.name);
+    }
+  }
+  return nonBody;
 }

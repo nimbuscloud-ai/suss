@@ -4,7 +4,7 @@ Framework pack for [Express](https://expressjs.com/) handlers. Declarative patte
 
 ## What this package is
 
-`@suss/framework-express` returns a `FrameworkPack` object describing:
+`@suss/framework-express` returns a `PatternPack` object describing:
 
 - **Discovery** via `express.Router().get/post/put/delete/patch()` registration calls
 - **Terminals**: `res.status(N).json(body)`, `res.json(body)`, `res.sendStatus(N)`, `res.redirect()`, and `throw`
@@ -12,7 +12,7 @@ Framework pack for [Express](https://expressjs.com/) handlers. Declarative patte
 
 ## Where it sits in suss
 
-Depends only on `@suss/extractor` (for the `FrameworkPack` type). Contains no analysis logic.
+Depends only on `@suss/extractor` (for the `PatternPack` type). Contains no analysis logic.
 
 ## Coverage
 

@@ -1,6 +1,6 @@
 # Framework Packs
 
-A framework pack teaches suss how to find and interpret code written for a specific framework — ts-rest, React Router, Express, FastAPI, etc. Packs are **declarative data**: a `FrameworkPack` object describing patterns. The language adapter interprets the patterns against the AST.
+A framework pack teaches suss how to find and interpret code written for a specific framework — ts-rest, React Router, Express, FastAPI, etc. Packs are **declarative data**: a `PatternPack` object describing patterns. The language adapter interprets the patterns against the AST.
 
 This document is for people writing or modifying framework packs. If you're using an existing pack, see `docs/architecture.md`.
 
@@ -13,10 +13,10 @@ A pack answers four questions about a framework:
 3. **Inputs**: How are inputs delivered to the handler?
 4. **Contracts**: *(optional)* If the framework has declared contracts, how do I read them?
 
-The `FrameworkPack` shape:
+The `PatternPack` shape:
 
 ```typescript
-interface FrameworkPack {
+interface PatternPack {
   name: string;
   languages: string[];
   discovery: DiscoveryPattern[];
@@ -298,7 +298,7 @@ packages/framework/<name>/
   package.json         @suss/framework-<name>, deps: @suss/extractor workspace:*
   tsconfig.json        extends ../../../tsconfig.base.json
   src/
-    index.ts           exports a function returning FrameworkPack
+    index.ts           exports a function returning PatternPack
     index.test.ts
   tsup.config.ts
   vitest.config.ts
@@ -320,9 +320,9 @@ If an existing pattern variant doesn't fit, talk to the maintainers before addin
 ### Step 3 — Write the pack as a function
 
 ```typescript
-import type { FrameworkPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
-export function myFramework(): FrameworkPack {
+export function myFramework(): PatternPack {
   return {
     name: "my-framework",
     languages: ["typescript"],
@@ -341,7 +341,7 @@ Export both a named function and a default for dynamic imports from the CLI.
 
 A pack test has two layers:
 
-1. **Pack shape** — structural correctness of the returned `FrameworkPack`. Check `pack.discovery[i].kind`, `pack.terminals[i].match.type`, `inputMapping.knownProperties`.
+1. **Pack shape** — structural correctness of the returned `PatternPack`. Check `pack.discovery[i].kind`, `pack.terminals[i].match.type`, `inputMapping.knownProperties`.
 2. **Integration** — build an in-memory ts-morph project over `fixtures/<framework>/*.ts`, run `createTypeScriptAdapter({ project, frameworks: [yourPack()] }).extractAll()`, and assert on the resulting `BehavioralSummary[]`: transition counts, status codes, isDefault flags, input roles, gaps (if the pack has `contractReading`). Share the summaries via `beforeAll` so ts-morph setup runs once per file — raise the hook timeout to 30s under turbo concurrency.
 
 See `packages/framework/ts-rest/src/index.test.ts` for a pack with contract reading and `packages/framework/express/src/index.test.ts` for a pack without.

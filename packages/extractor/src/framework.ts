@@ -1,6 +1,6 @@
-// @suss/extractor — FrameworkPack interface
+// @suss/extractor — PatternPack interface
 //
-// Framework packs are declarative data that tell the language adapter WHAT to look for.
+// Pattern packs are declarative data that tell the language adapter WHAT to look for.
 // The adapter knows HOW to look for it in the language's AST.
 
 // =============================================================================
@@ -156,14 +156,44 @@ export type InputMappingPattern =
     };
 
 // =============================================================================
-// FrameworkPack
+// Response property semantics
 // =============================================================================
 
-export interface FrameworkPack {
+/**
+ * What a property on the API response object semantically represents.
+ * Declared in the pack so the adapter can resolve derived properties
+ * (e.g. `.ok` → status range 200–299) at extraction time.
+ */
+export type ResponsePropertyMeaning =
+  | { type: "statusCode" }
+  | { type: "statusRange"; min: number; max: number }
+  | { type: "body" }
+  | { type: "headers" };
+
+export interface ResponsePropertyMapping {
+  /** Property or method name on the response (e.g. "ok", "status", "json") */
+  name: string;
+  /** How this member is accessed: property read or method call */
+  access: "property" | "method";
+  /** What the value semantically represents */
+  semantics: ResponsePropertyMeaning;
+}
+
+// =============================================================================
+// PatternPack
+// =============================================================================
+
+export interface PatternPack {
   name: string;
   languages: string[];
   discovery: DiscoveryPattern[];
   terminals: TerminalPattern[];
   contractReading?: ContractPattern;
   inputMapping: InputMappingPattern;
+  /**
+   * Semantics of properties on the API response object (consumer side).
+   * Tells the adapter how to resolve derived properties like `.ok` or
+   * `.json()` to structured IR constructs instead of leaving them opaque.
+   */
+  responseSemantics?: ResponsePropertyMapping[];
 }

@@ -4,7 +4,7 @@ Framework pack for [React Router](https://reactrouter.com/) loaders and actions.
 
 ## What this package is
 
-`@suss/framework-react-router` returns a `FrameworkPack` object describing:
+`@suss/framework-react-router` returns a `PatternPack` object describing:
 
 - **Discovery** via named exports (`loader`, `action`)
 - **Terminals**: `json()`, `data()`, `redirect()` function calls and `throw` with `httpErrorJson`
@@ -12,7 +12,7 @@ Framework pack for [React Router](https://reactrouter.com/) loaders and actions.
 
 ## Where it sits in suss
 
-Depends only on `@suss/extractor` (for the `FrameworkPack` type). Contains no analysis logic.
+Depends only on `@suss/extractor` (for the `PatternPack` type). Contains no analysis logic.
 
 ## Coverage
 

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createTypeScriptAdapter } from "./adapter.js";
 import { findResponseVariable } from "./field-accesses.js";
 
-import type { FrameworkPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
 // ---------------------------------------------------------------------------
 // Helper: create a project and get the first call expression
@@ -85,7 +85,7 @@ describe("findResponseVariable", () => {
 // Integration: expectedInput on consumer transitions
 // ---------------------------------------------------------------------------
 
-const fetchPack: FrameworkPack = {
+const fetchPack: PatternPack = {
   name: "fetch",
   languages: ["typescript"],
   discovery: [

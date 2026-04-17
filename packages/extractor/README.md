@@ -4,7 +4,7 @@ Assembly engine that turns raw language-adapter output into a `BehavioralSummary
 
 ## What this package is
 
-`@suss/extractor` is the core assembly layer of the suss pipeline. Language adapters (such as `@suss/adapter-typescript`) parse source code and produce a `RawCodeStructure` — a normalized, adapter-specific intermediate form. The extractor's `assembleSummary` function converts that structure into the final `BehavioralSummary` IR, handling condition polarity, terminal mapping, gap detection, confidence assessment, and `expectedInput` pass-through for client field tracking. It also exports the `RawCodeStructure` type, the `FrameworkPack` interface, and all related raw types so adapters can share a common contract.
+`@suss/extractor` is the core assembly layer of the suss pipeline. Language adapters (such as `@suss/adapter-typescript`) parse source code and produce a `RawCodeStructure` — a normalized, adapter-specific intermediate form. The extractor's `assembleSummary` function converts that structure into the final `BehavioralSummary` IR, handling condition polarity, terminal mapping, gap detection, confidence assessment, and `expectedInput` pass-through for client field tracking. It also exports the `RawCodeStructure` type, the `PatternPack` interface, and all related raw types so adapters can share a common contract.
 
 ## Where it sits in suss
 

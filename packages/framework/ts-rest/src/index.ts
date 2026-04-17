@@ -1,8 +1,8 @@
-// @suss/framework-ts-rest — FrameworkPack for ts-rest
+// @suss/framework-ts-rest — PatternPack for ts-rest
 
-import type { FrameworkPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
-export function tsRestFramework(): FrameworkPack {
+export function tsRestFramework(): PatternPack {
   return {
     name: "ts-rest",
     languages: ["typescript"],
@@ -69,6 +69,12 @@ export function tsRestFramework(): FrameworkPack {
         headers: "headers",
       },
     },
+
+    responseSemantics: [
+      { name: "status", access: "property", semantics: { type: "statusCode" } },
+      { name: "body", access: "property", semantics: { type: "body" } },
+      { name: "headers", access: "property", semantics: { type: "headers" } },
+    ],
   };
 }
 
