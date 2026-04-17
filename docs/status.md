@@ -111,29 +111,64 @@ Progress tracker. Updated as phases land.
 | 7.10 Opaqueness reductions: instanceof, in, Array.includes | ✅ | `instanceof` → `typeCheck`, `in` → `propertyExists`, `[lit].includes(x)` → compound OR. Default status codes for Express/React Router implicit-200 terminals via `defaultStatusCode` in `TerminalExtraction`. |
 | 7.11 Behavioral summary format spec | ✅ | JSON Schema v0 (`packages/ir/schema/behavioral-summary.schema.json`), format spec (`docs/behavioral-summary-format.md`), publishing convention (`suss.summaries` in package.json), portable relative paths, schema validation tests. Inspect rewrite: output-first behavioral descriptions with body shapes and contract display. |
 
-## Phase 8+ — Deferred
+## Phase 8 — Real-world readiness
+
+*Production-grade coverage of the dominant ecosystem patterns: a second server framework, a second HTTP client with all the shapes real codebases use, declared-contract stubs for cross-team and cross-org checking, governance scaffolding, and a runnable example.*
+
+| Task | Status | Notes |
+|------|--------|-------|
+| 8.1 `@suss/framework-fastify` | ✅ | Full pack, 8 tests. `Fastify()` and named-import `fastify()` discovery, `reply.code/status(N).send(body)` chains, implicit-200 `reply.send(body)`, `reply.redirect(...)` with 1-arg/2-arg disambiguation, throw matcher, positional `(request, reply)` inputs. |
+| 8.2 `@suss/runtime-axios` | ✅ | Per-verb discovery via `methodFilter` + literal-method bindings, `factoryMethods: ["create"]` so `const api = axios.create(...); api.get(...)` is matched, AxiosResponse semantics (`.data` body, `.status` statusCode). 7 tests. |
+| 8.3 Adapter `clientCall` enhancements | ✅ | Direct method calls on the imported binding (`axios.get(...)`) and not just on call-result variables; each `DiscoveredUnit` carries the source pattern so kind-sharing patterns (per-verb axios) pick the right binding. |
+| 8.4 Template-literal path extraction | ✅ | `fromArgumentLiteral` matches `NoSubstitutionTemplateLiteral` and `TemplateExpression`; substitutions become OpenAPI-style `{name}` placeholders that pair with `:id`-style provider paths via the existing path normaliser. |
+| 8.5 Destructured response support | ✅ | `findResponseAccessor` returns identifier OR destructured shape (mapping local → underlying property); `collectPropertyAccesses` resolves bare destructured uses to property chains. Status check via destructured `status` is recognised in the checker (`refLooksLikeStatus`). |
+| 8.6 Pack-aware body unwrap | ✅ | Adapter records pack body-typed accessor names on each client summary's `metadata.bodyAccessors`; checker reads it and tries each accessor when unwrapping `expectedInput`. Falls back to `["body"]` for legacy summaries. Fixes false-positive body-shape findings for axios consumers. |
+| 8.7 Optional-field tracking | ✅ | OpenAPI `required` set is preserved; non-required properties become `union<T, undefined>`. Body-compatibility unwraps optional unions before recursing AND emits info-level `consumerContractViolation` findings for consumer reads of optional fields via `findOptionalAccesses`. |
+| 8.8 Wrapper expansion | ✅ | Path-passthrough wrappers (`getJson(path)` forwarding to `axios.get(path)`) get per-caller summaries via post-pass: ts-morph references → caller's literal/template-literal arg → synthetic `DiscoveredUnit` → full `extractCodeStructure` pipeline. Caller-side branch tracking and `expectedInput` work; multi-hop and method-as-parameter wrappers deferred. |
+| 8.9 `@suss/stub-openapi` | ✅ | OpenAPI 3.x → `BehavioralSummary[]` with `$ref` cycle protection, `oneOf`/`anyOf`/`allOf`, `nullable`, `enum`, `additionalProperties` → `dictionary`, file/JSON/YAML loading. 31 tests. |
+| 8.10 `@suss/stub-cloudformation` | ✅ | CFN/SAM templates: inline OpenAPI bodies (REST/HTTP API + SAM `Body`/`DefinitionBody`), CFN-native `AWS::ApiGateway::Method` walks (resolves path via `ResourceId` chain through `AWS::ApiGateway::Resource`), `AWS::ApiGatewayV2::Route` parsing, CloudFormation YAML intrinsic shorthand (`!Ref`, `!GetAtt`, pass-through for `!Sub`/`!Join`/etc.). 22 tests. |
+| 8.11 `suss stub` CLI command | ✅ | `suss stub --from <openapi\|cloudformation> <spec>` with uniform loader registry. Plumbs into `suss check --dir` so stub providers and extracted consumers pair seamlessly. |
+| 8.12 Inspect refactor | ✅ | All five `switch (x.type)` dispatches in `inspect.ts` converted to typed `DispatchTable<T, R>` maps; `formatBodyShape` now renders all `TypeShape` variants (the prior switch silently dropped primitives like `text`, `integer`, leading to `{ [key]:  }` for dictionary values). |
+| 8.13 OSS governance | ✅ | `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `.github/ISSUE_TEMPLATE/` (bug + feature + config), `.github/PULL_REQUEST_TEMPLATE.md`, npm publish metadata across all packages. |
+| 8.14 Runnable end-to-end example | ✅ | `examples/petstore-axios-openapi/` — axios consumer + Petstore OpenAPI + Makefile that runs extract → stub → check. Doubles as a regression test for the full pipeline. |
+
+### Deferred within Phase 8
+
+- **`axios.create()` instances with `axios({ url, method })` bare-call form and `axios.request(config)`** — only per-verb method calls are matched.
+- **Aliased default imports** (`import myAxios from "axios"`) — pack matches the conventional `import axios from "axios"` only.
+- **Multi-hop wrapper expansion** (helper-of-helper) — single hop only.
+- **Method-as-parameter wrappers** (`fetch(method, path)`) — only path-passthrough is recognised.
+- **`BodyS3Location`** in CloudFormation — out-of-line OpenAPI bodies aren't fetched.
+- **Raw CDK source** — consume `cdk synth` output instead.
+
+## Phase 9+ — Deferred
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Python adapter | ⏸ | Same `RawCodeStructure` interface, Pyright or ast-grep. Multiplier on analysis depth — more valuable after Phase 7. |
+| Python adapter | ⏸ | Same `RawCodeStructure` interface, Pyright or ast-grep. |
 | React component support | ⏸ | `Input` types beyond `parameter` (hookReturn, contextValue) need `RawCodeStructure` surface. JSX-as-terminal pattern design. |
-| GitHub Action / CI integration | ⏸ | PR-scoped extraction wrapper. Depends on automatic boundary pairing (7.5). |
-| Additional client packs | ⏸ | axios, tRPC, GraphQL — additive once the consumer extraction mechanism is proven. |
+| GitHub Action / CI integration | ⏸ | PR-scoped extraction wrapper. |
+| GraphQL / gRPC stubs | ⏸ | Different protocol shape than HTTP req/resp; the IR's `boundaryBinding` doesn't currently model RPC method + service or query/mutation operation. |
+| OpenAPI 3.1 nullability + `discriminator` polymorphism | ⏸ | Today only OpenAPI 3.0's `nullable: true` is recognised; `type: ["string", "null"]` in 3.1 isn't yet. |
 
 ## Test coverage
 
 | Package | Tests | Notes |
 |---------|-------|-------|
-| `@suss/behavioral-ir` | 12 | diff utility, type narrowing, Finding shape, JSON Schema validation (v0 schema against all predicate/output/shape types) |
+| `@suss/behavioral-ir` | 12 | diff utility, type narrowing, Finding shape, JSON Schema validation |
 | `@suss/extractor` | 55 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, throw-to-response bridging, transition ID stability, edge cases |
-| `@suss/adapter-typescript` | 331 | conditions, predicates (incl. recursive call inlining, instanceof, in operator, Array.includes expansion), subjects (incl. intermediate variable resolution), terminals (incl. defaultStatusCode fallback), discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction (incl. literal narrowness verification), consumer binding extraction, field-access tracking, response property resolution (.ok → status range), integration |
+| `@suss/adapter-typescript` | 345 | conditions, predicates (incl. instanceof, in operator, Array.includes expansion), subjects (incl. intermediate variable resolution), terminals (incl. defaultStatusCode fallback), discovery (clientCall + factoryMethods + direct method-on-import), contract reading, shape extraction, consumer binding (incl. template literals), field-access tracking (incl. destructured response), response property resolution, wrapper expansion, integration |
 | `@suss/framework-ts-rest` | 10 | pack shape (handler + consumer discovery) + integration |
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, default status codes, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms, default status codes) |
+| `@suss/framework-fastify` | 8 | pack shape + integration (Fastify + named-import discovery, reply.code/status chains, redirect, throw, defaults) |
 | `@suss/runtime-web` | 4 | pack shape + integration (fetch discovery, binding extraction, transitions) |
-| `@suss/checker` | 154 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (literal + field-presence discrimination, truthiness, negated comparisons, `.json()` accessor, 2 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis, throw-as-response), consumer satisfaction, contract consistency (status + body), consumer contract leakage (Level 3), path normalization, boundary pairing, `checkPair` integration |
-| `@suss/cli` | 34 | deep-equal summary shape per framework, `-o` round-trip, inspect (behavioral descriptions), `suss check`, `suss check --dir`, consumer extraction, end-to-end extract+check, semantic-bridging e2e |
-| **Total** | **614** | |
+| `@suss/runtime-axios` | 7 | pack shape + integration (per-verb discovery, axios.create instances, response semantics) |
+| `@suss/checker` | 158 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence + optional fields), semantic bridging, response-match helpers (incl. destructured + nested derived statuses), provider coverage, consumer satisfaction, contract consistency, consumer contract leakage, path normalization, boundary pairing, `checkPair` integration |
+| `@suss/stub-openapi` | 31 | basic mapping, `$ref` cycles, schema features (oneOf/anyOf/allOf/nullable/enum/additionalProperties), required→optional encoding, file loading |
+| `@suss/stub-cloudformation` | 22 | inline OpenAPI bodies (REST/HTTP API/SAM), CFN-native AWS::ApiGateway::Method walks (with ParentId chain resolution + Fn::GetAtt + bare strings), AWS::ApiGatewayV2::Route, YAML intrinsic shorthand |
+| `@suss/cli` | 49 | deep-equal summary shape per framework, `-o` round-trip, inspect (behavioral descriptions, snapshot pinning), `suss check`, `suss check --dir`, `suss stub`, consumer extraction, end-to-end extract+check, semantic-bridging e2e |
+| **Total** | **715** | |
 
 Runs via `turbo test`.
 
@@ -155,3 +190,6 @@ Runs via `turbo test`.
 14. **`FrameworkPack` → `PatternPack` (done).** The interface describes discovery patterns, terminal extraction, and binding extraction. It applies equally to frameworks (Express, ts-rest) and runtime APIs (fetch). `@suss/runtime-web` uses the same interface. Renamed alongside response property semantics (7.9).
 15. **Response property semantics belong in the pack, not the checker (done).** Properties like `.ok` (fetch) and `.body` (ts-rest) have framework/runtime-specific relationships to the HTTP status code and response body. The pack declares these semantics via `ResponsePropertyMapping[]` so the adapter resolves derived properties (`.ok` → `status >= 200 && status <= 299`) at extraction time. The checker never needs to know about framework-specific response shapes.
 16. **Throw-with-status converts to response at extraction time.** When a framework pack extracts a status code from a thrown value, the extractor produces a `response` output, not a `throw` output. The behavioral contract (what the consumer sees) takes priority over the mechanism (how the code achieves it). This keeps transition IDs stable across throw↔direct-response refactors.
+17. **Stubs are first-class.** Summary generators that don't extract from source (`@suss/stub-openapi`, `@suss/stub-cloudformation`) emit the same `BehavioralSummary[]` shape as the extractor and carry `confidence.source: "stub"`. The cross-boundary checker pairs stub providers with extracted consumers without any source-aware logic — pairing is by `(method, normalisedPath)` regardless of where each side came from. This is what lets a TypeScript axios consumer be checked against a Stripe / GitHub / internal-team API whose handlers we can't extract from source.
+18. **Pack-aware checker via summary metadata.** The body-compatibility checker can't be hardcoded to fetch's `.body` accessor — axios uses `.data`, ts-rest uses `.body`, custom packs vary. Adapter writes `metadata.bodyAccessors` on each client summary from the pack's response semantics; checker reads it. Same pattern will scale to other pack-specific knowledge (status accessor names if we ever need pack-specific overrides, request body accessors, etc.).
+19. **Wrapper expansion is a post-pass over the discovered summaries.** Path-passthrough wrappers (`getJson(path)` forwarding to `axios.get(path)`) are recognised after the per-file discovery completes. ts-morph references find callers across the project; each caller gets a synthetic `DiscoveredUnit` fed back through `extractCodeStructure` with a synthetic pack. This reuses every existing analysis (terminal extraction, branch tracking, expectedInput) instead of growing a parallel synthesis path.
