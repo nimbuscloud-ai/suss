@@ -1,5 +1,7 @@
+import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, it } from "vitest";
 
+import schema from "../schema/behavioral-summary.schema.json";
 import {
   type BehavioralSummary,
   diffSummaries,
@@ -186,5 +188,185 @@ describe("diffSummaries", () => {
     expect(finding.kind).toBe("unhandledProviderCase");
     expect(finding.consumer.transitionId).toBeUndefined();
     expect(finding.provider.transitionId).toBe("t-200");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JSON Schema validation
+// ---------------------------------------------------------------------------
+
+describe("behavioral-summary.schema.json", () => {
+  const ajv = new Ajv2020({ strict: false });
+  const validate = ajv.compile(schema);
+
+  it("validates a minimal summary array", () => {
+    const summaries: BehavioralSummary[] = [
+      makeSummary([
+        makeTransition("t1", {
+          type: "response",
+          statusCode: { type: "literal", value: 200 },
+          body: null,
+          headers: {},
+        }),
+      ]),
+    ];
+    const valid = validate(summaries);
+    if (!valid) {
+      console.error(validate.errors);
+    }
+    expect(valid).toBe(true);
+  });
+
+  it("validates a summary with all predicate types", () => {
+    const t: Transition = {
+      id: "complex",
+      conditions: [
+        {
+          type: "nullCheck",
+          subject: { type: "input", inputRef: "user", path: [] },
+          negated: false,
+        },
+        {
+          type: "truthinessCheck",
+          subject: {
+            type: "derived",
+            from: { type: "dependency", name: "db.find", accessChain: [] },
+            derivation: { type: "propertyAccess", property: "deletedAt" },
+          },
+          negated: true,
+        },
+        {
+          type: "comparison",
+          left: { type: "input", inputRef: "status", path: [] },
+          op: "eq",
+          right: { type: "literal", value: 200 },
+        },
+        {
+          type: "typeCheck",
+          subject: { type: "unresolved", sourceText: "err" },
+          expectedType: "HttpError",
+        },
+        {
+          type: "propertyExists",
+          subject: { type: "input", inputRef: "body", path: [] },
+          property: "email",
+          negated: false,
+        },
+        {
+          type: "compound",
+          op: "or",
+          operands: [
+            {
+              type: "comparison",
+              left: { type: "input", inputRef: "x", path: [] },
+              op: "eq",
+              right: { type: "literal", value: 1 },
+            },
+            {
+              type: "comparison",
+              left: { type: "input", inputRef: "x", path: [] },
+              op: "eq",
+              right: { type: "literal", value: 2 },
+            },
+          ],
+        },
+        {
+          type: "negation",
+          operand: {
+            type: "call",
+            callee: "isValid",
+            args: [{ type: "input", inputRef: "data", path: [] }],
+          },
+        },
+        {
+          type: "opaque",
+          sourceText: "complexExpr()",
+          reason: "complexExpression",
+        },
+      ],
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 404 },
+        body: {
+          type: "record",
+          properties: {
+            error: { type: "literal", value: "not found" },
+            code: { type: "integer" },
+          },
+        },
+        headers: {},
+      },
+      effects: [
+        { type: "mutation", target: "users", operation: "delete" },
+        { type: "invocation", callee: "logger.warn", args: [], async: false },
+      ],
+      location: { start: 10, end: 30 },
+      isDefault: false,
+    };
+
+    const summaries: BehavioralSummary[] = [makeSummary([t])];
+    const valid = validate(summaries);
+    if (!valid) {
+      console.error(JSON.stringify(validate.errors, null, 2));
+    }
+    expect(valid).toBe(true);
+  });
+
+  it("validates a summary with metadata and expectedInput", () => {
+    const t: Transition = {
+      id: "client-branch",
+      conditions: [],
+      output: { type: "return", value: null },
+      effects: [],
+      location: { start: 1, end: 5 },
+      isDefault: true,
+      expectedInput: {
+        type: "record",
+        properties: { name: { type: "unknown" } },
+      },
+    };
+
+    const summaries: BehavioralSummary[] = [
+      {
+        kind: "client",
+        location: {
+          file: "consumer.ts",
+          range: { start: 1, end: 10 },
+          exportName: "loadUser",
+        },
+        identity: {
+          name: "loadUser",
+          exportPath: ["loadUser"],
+          boundaryBinding: {
+            protocol: "http",
+            method: "GET",
+            path: "/users/:id",
+            framework: "fetch",
+          },
+        },
+        inputs: [],
+        transitions: [t],
+        gaps: [],
+        confidence: { source: "inferred_static", level: "high" },
+        metadata: {
+          declaredContract: {
+            framework: "ts-rest",
+            responses: [{ statusCode: 200 }, { statusCode: 404 }],
+          },
+        },
+      },
+    ];
+
+    const valid = validate(summaries);
+    if (!valid) {
+      console.error(JSON.stringify(validate.errors, null, 2));
+    }
+    expect(valid).toBe(true);
+  });
+
+  it("rejects invalid data", () => {
+    expect(validate([{ kind: "invalid" }])).toBe(false);
+    expect(validate("not an array")).toBe(false);
+    expect(validate([{ kind: "handler" }])).toBe(false);
   });
 });
