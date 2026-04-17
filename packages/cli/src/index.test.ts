@@ -626,7 +626,9 @@ describe("inspect", () => {
       }
 
       const output = chunks.join("");
-      expect(output).toContain("getUser");
+      expect(output).toContain("GET /users/:id");
+      expect(output).toContain("-> 200");
+      expect(output).toContain("Contract:");
       expect(output).toContain("summaries inspected");
 
       // Clean up
