@@ -23,6 +23,7 @@
     "packages/framework/express",
     "packages/framework/fastify",
     "packages/runtime/web",
+    "packages/runtime/axios",
     "packages/checker",
     "packages/cli"
   ],

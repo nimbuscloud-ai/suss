@@ -21,6 +21,7 @@ const BUILTIN_FRAMEWORKS: Record<
   express: () => import("@suss/framework-express"),
   fastify: () => import("@suss/framework-fastify"),
   fetch: () => import("@suss/runtime-web"),
+  axios: () => import("@suss/runtime-axios"),
 };
 
 async function resolveFramework(name: string): Promise<PatternPack> {
