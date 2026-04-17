@@ -79,6 +79,23 @@ describe("findResponseVariable", () => {
     const call = getFirstCallExpression(project, "test.ts");
     expect(findResponseVariable(call)).toBeNull();
   });
+
+  it("returns null for destructured assignments via the simple-identifier API", () => {
+    // findResponseVariable is the legacy shape; richer destructuring info is
+    // available via findResponseAccessor. Pin the legacy contract here.
+    const project = createProject();
+    project.createSourceFile(
+      "test.ts",
+      `
+      async function f() {
+        const { data } = await fetch("/api");
+        return data;
+      }
+    `,
+    );
+    const call = getFirstCallExpression(project, "test.ts");
+    expect(findResponseVariable(call)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -225,6 +242,106 @@ describe("expectedInput on client transitions", () => {
           expect(user.properties).toHaveProperty("name");
         }
       }
+    }
+  });
+
+  it("tracks fields read via destructured response (axios-style)", () => {
+    // Real axios usage: `const { data, status } = await axios.get(...)`.
+    // Status checks become accesses to `status` (resolved to the underlying
+    // property), and field reads on `data` become `data.x` chains.
+    const axiosLikePack: PatternPack = {
+      ...fetchPack,
+      name: "axios-like",
+      responseSemantics: [
+        { name: "data", access: "property", semantics: { type: "body" } },
+        {
+          name: "status",
+          access: "property",
+          semantics: { type: "statusCode" },
+        },
+      ],
+    };
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser(id: string) {
+        const { data, status } = await fetch("/users/" + id);
+        if (status === 404) {
+          return null;
+        }
+        return { name: data.name, email: data.email };
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    const withBodyFields = summaries[0].transitions.find(
+      (t) =>
+        t.expectedInput?.type === "record" &&
+        t.expectedInput.properties.data !== undefined,
+    );
+    expect(withBodyFields).toBeDefined();
+    const input = withBodyFields?.expectedInput;
+    if (input?.type === "record" && input.properties.data?.type === "record") {
+      expect(input.properties.data.properties).toHaveProperty("name");
+      expect(input.properties.data.properties).toHaveProperty("email");
+    } else {
+      throw new Error("expected nested data record with name + email");
+    }
+    // Status accesses should be filtered as non-body
+    if (input?.type === "record") {
+      expect(input.properties).not.toHaveProperty("status");
+    }
+  });
+
+  it("respects renamed destructured bindings (`{ status: code }`)", () => {
+    const axiosLikePack: PatternPack = {
+      ...fetchPack,
+      name: "axios-like",
+      responseSemantics: [
+        { name: "data", access: "property", semantics: { type: "body" } },
+        {
+          name: "status",
+          access: "property",
+          semantics: { type: "statusCode" },
+        },
+      ],
+    };
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser() {
+        const { data: payload, status: code } = await fetch("/u");
+        if (code === 404) return null;
+        return payload.id;
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = adapter.extractAll();
+    const withInput = summaries[0].transitions.find(
+      (t) => t.expectedInput?.type === "record",
+    );
+    expect(withInput).toBeDefined();
+    const input = withInput?.expectedInput;
+    if (input?.type === "record" && input.properties.data?.type === "record") {
+      // Local binding was `payload` but it's recorded against the underlying
+      // `data` property — that's what the provider declares.
+      expect(input.properties.data.properties).toHaveProperty("id");
+    } else {
+      throw new Error("expected data record with id");
     }
   });
 
