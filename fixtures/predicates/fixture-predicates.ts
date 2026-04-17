@@ -274,3 +274,49 @@ export function checkDeepInline(user: any, ownerId: string) {
   if (canAccess(user, ownerId)) return 1;
   return 0;
 }
+
+// instanceof check
+export function checkInstanceof(error: any) {
+  if (error instanceof TypeError) return 1;
+  return 0;
+}
+
+// in operator
+export function checkInOperator(body: any) {
+  if ("email" in body) return 1;
+  return 0;
+}
+
+// Array.includes with literals
+export function checkArrayIncludes(status: number) {
+  if ([200, 201, 204].includes(status)) return 1;
+  return 0;
+}
+
+// Array.includes with single element
+export function checkArrayIncludesSingle(code: string) {
+  if (["admin"].includes(code)) return 1;
+  return 0;
+}
+
+// Negated instanceof
+export function checkNegatedInstanceof(error: any) {
+  if (!(error instanceof HttpError)) return 1;
+  return 0;
+}
+
+// Negated in operator
+export function checkNegatedIn(body: any) {
+  if (!("email" in body)) return 1;
+  return 0;
+}
+
+// Negated Array.includes
+export function checkNegatedIncludes(status: number) {
+  if (![200, 201].includes(status)) return 1;
+  return 0;
+}
+
+declare class HttpError extends Error {
+  status: number;
+}
