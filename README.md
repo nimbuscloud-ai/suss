@@ -57,6 +57,7 @@ suss check --dir summaries/           # auto-pairs by method + path
 | [`@suss/runtime-web`](packages/runtime/web) | Runtime pack for `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
 | [`@suss/runtime-axios`](packages/runtime/axios) | Runtime pack for axios call sites. | ![](.github/badges/coverage-axios.svg) |
 | [`@suss/stub-openapi`](packages/stub/openapi) | Stub generator: OpenAPI 3.x → behavioral summaries. | ![](.github/badges/coverage-stub-openapi.svg) |
+| [`@suss/stub-cloudformation`](packages/stub/cloudformation) | Stub generator: AWS CloudFormation / SAM templates → behavioral summaries (via the embedded OpenAPI body). | ![](.github/badges/coverage-stub-cloudformation.svg) |
 | [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker. | ![](.github/badges/coverage-checker.svg) |
 | [`@suss/cli`](packages/cli) | CLI wrapper. | ![](.github/badges/coverage-cli.svg) |
 

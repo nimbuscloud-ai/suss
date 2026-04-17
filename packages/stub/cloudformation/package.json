@@ -1,39 +1,37 @@
 {
-  "name": "@suss/cli",
+  "name": "@suss/stub-cloudformation",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Command-line interface for suss — extract, inspect, diff, and check TypeScript behavioral summaries.",
+  "description": "Generate suss behavioral summaries from AWS CloudFormation / SAM templates with embedded API Gateway OpenAPI definitions.",
   "keywords": [
     "suss",
-    "cli",
     "behavioral-summary",
-    "static-analysis",
-    "contract-testing",
-    "typescript"
+    "stub",
+    "aws",
+    "cloudformation",
+    "sam",
+    "api-gateway",
+    "openapi"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/cli#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/stub/cloudformation#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/cli"
+    "directory": "packages/stub/cloudformation"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
   },
-  "engines": {
-    "node": ">=18"
-  },
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "suss": "./dist/index.js"
-  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
       "types": "./dist/index.d.ts"
     }
   },
@@ -51,17 +49,8 @@
   },
   "dependencies": {
     "@suss/behavioral-ir": "*",
-    "@suss/checker": "*",
-    "@suss/extractor": "*",
-    "@suss/adapter-typescript": "*",
-    "@suss/framework-ts-rest": "*",
-    "@suss/framework-react-router": "*",
-    "@suss/framework-express": "*",
-    "@suss/framework-fastify": "*",
-    "@suss/runtime-web": "*",
-    "@suss/runtime-axios": "*",
     "@suss/stub-openapi": "*",
-    "@suss/stub-cloudformation": "*"
+    "yaml": "^2.4.0"
   },
   "devDependencies": {
     "tsup": "*",

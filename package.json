@@ -25,6 +25,7 @@
     "packages/runtime/web",
     "packages/runtime/axios",
     "packages/stub/openapi",
+    "packages/stub/cloudformation",
     "packages/checker",
     "packages/cli"
   ],
