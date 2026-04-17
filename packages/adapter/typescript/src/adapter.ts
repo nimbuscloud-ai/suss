@@ -441,12 +441,43 @@ function extractBindingPath(
   if (p.type === "fromArgumentLiteral") {
     const args = callSite.callExpression.getArguments();
     const arg = args[p.position];
-    if (arg !== undefined && Node.isStringLiteral(arg)) {
+    if (arg === undefined) {
+      return undefined;
+    }
+    if (Node.isStringLiteral(arg)) {
       return arg.getLiteralValue();
+    }
+    if (Node.isNoSubstitutionTemplateLiteral(arg)) {
+      return arg.getLiteralValue();
+    }
+    if (Node.isTemplateExpression(arg)) {
+      // `/pet/${id}/comments/${commentId}` →
+      // `/pet/{id}/comments/{commentId}`. Each substitution becomes an
+      // OpenAPI-style placeholder; the checker's path normalizer treats
+      // `{id}` and `:id` as equivalent so this pairs with both Express
+      // and ts-rest-style provider paths too.
+      let path = arg.getHead().getLiteralText();
+      for (const span of arg.getTemplateSpans()) {
+        path += `{${placeholderName(span.getExpression())}}`;
+        path += span.getLiteral().getLiteralText();
+      }
+      return path;
     }
     return undefined;
   }
   return undefined;
+}
+
+function placeholderName(expr: Node): string {
+  if (Node.isIdentifier(expr)) {
+    return expr.getText();
+  }
+  if (Node.isPropertyAccessExpression(expr)) {
+    // Use the trailing segment (`req.params.id` → `id`) — keeps the path
+    // readable and matches what API authors typically name the segment.
+    return expr.getName();
+  }
+  return "param";
 }
 
 function resolveContractField(

@@ -1124,6 +1124,110 @@ describe("consumer extraction", () => {
     });
   });
 
+  it("extracts a template-literal path with substitutions as OpenAPI placeholders", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getPet(petId: string) {
+        const res = await fetch(\`/pet/\${petId}\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.boundaryBinding?.path).toBe("/pet/{petId}");
+  });
+
+  it("extracts a template literal with no substitutions as the literal text", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function ping() {
+        const res = await fetch(\`/health\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries[0].identity.boundaryBinding?.path).toBe("/health");
+  });
+
+  it("extracts a template-literal path with multiple substitutions", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getComment(petId: string, commentId: string) {
+        const res = await fetch(\`/pet/\${petId}/comments/\${commentId}\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries[0].identity.boundaryBinding?.path).toBe(
+      "/pet/{petId}/comments/{commentId}",
+    );
+  });
+
+  it("uses the trailing property name when the substitution is a property access", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      interface Req { params: { id: string } }
+      export async function handler(req: Req) {
+        const res = await fetch(\`/users/\${req.params.id}\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries[0].identity.boundaryBinding?.path).toBe("/users/{id}");
+  });
+
+  it("falls back to {param} when the substitution is not a simple identifier", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function search() {
+        const res = await fetch(\`/search/\${"x".toUpperCase()}\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries[0].identity.boundaryBinding?.path).toBe("/search/{param}");
+  });
+
   it("extracts method from options argument", () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
