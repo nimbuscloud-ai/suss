@@ -1,0 +1,87 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`inspect --diff output snapshots > shows added transition 1`] = `
+"handler:GET /users/:id
+  express handler
+  1 change
+    + 403 { error }  when  db.findById().restricted
+
+"
+`;
+
+exports[`inspect --diff output snapshots > shows changed transition 1`] = `
+"handler:GET /users/:id
+  express handler
+  1 change
+    ~ 200 { id, name, email }  (default)
+      -> 200 { id, name, email, avatar }  (default)
+
+"
+`;
+
+exports[`inspect --diff output snapshots > shows new and removed summaries 1`] = `
+"+ client:GET /users/:id
+  new client with 2 transitions
+
+- handler:GET /users/:id
+  removed handler (had 3 transitions)
+
+"
+`;
+
+exports[`inspect --diff output snapshots > shows no changes for identical files 1`] = `
+"No behavioral changes.
+"
+`;
+
+exports[`inspect --diff output snapshots > shows removed transition 1`] = `
+"handler:GET /users/:id
+  express handler
+  1 change
+    - 200 { id, name, email }  (default)
+
+"
+`;
+
+exports[`inspect output snapshots > renders a client summary 1`] = `
+"GET /users/:id
+  fetch client | src/pages/user.ts:5
+
+    -> throw Error  when  !fetch().ok
+    -> return  (default)
+
+1 summaries inspected.
+"
+`;
+
+exports[`inspect output snapshots > renders a handler with contract and body shapes 1`] = `
+"GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> 400 { error }  when  !req.params.id
+    -> 404 { error }  when  db.findById() == null
+    -> 200 { id, name, email }  (default)
+
+1 summaries inspected.
+"
+`;
+
+exports[`inspect output snapshots > renders multiple summaries 1`] = `
+"GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> 400 { error }  when  !req.params.id
+    -> 404 { error }  when  db.findById() == null
+    -> 200 { id, name, email }  (default)
+
+GET /users/:id
+  fetch client | src/pages/user.ts:5
+
+    -> throw Error  when  !fetch().ok
+    -> return  (default)
+
+2 summaries inspected.
+"
+`;
