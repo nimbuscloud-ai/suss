@@ -39,6 +39,8 @@ suss check --dir summaries/           # auto-pairs by method + path
 
 **Publish behavioral contracts.** Summaries are portable — paths are relative, the format is [versioned and documented](docs/behavioral-summary-format.md). Library authors can publish summaries alongside their packages so consumers get cross-boundary checking without the source code.
 
+**Check against contracts you don't own.** `suss stub --from openapi` turns an OpenAPI 3.x specification into the same `BehavioralSummary[]` shape, so you can check your TS consumer against a third-party API (Stripe, an AWS service, an internal team's gateway) whose handlers you can't extract from source.
+
 **Build downstream tools.** The summary format is a foundation: documentation generators, AI context providers, test case enumerators, impact analyzers, architectural dashboards. Install `@suss/behavioral-ir` (zero dependencies) to consume the format. See the [format spec](docs/behavioral-summary-format.md) for the JSON Schema and consumption guide.
 
 ## Packages
@@ -54,6 +56,7 @@ suss check --dir summaries/           # auto-pairs by method + path
 | [`@suss/framework-fastify`](packages/framework/fastify) | Pattern pack for Fastify handlers. | ![](.github/badges/coverage-fastify.svg) |
 | [`@suss/runtime-web`](packages/runtime/web) | Runtime pack for `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
 | [`@suss/runtime-axios`](packages/runtime/axios) | Runtime pack for axios call sites. | ![](.github/badges/coverage-axios.svg) |
+| [`@suss/stub-openapi`](packages/stub/openapi) | Stub generator: OpenAPI 3.x → behavioral summaries. | ![](.github/badges/coverage-stub-openapi.svg) |
 | [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker. | ![](.github/badges/coverage-checker.svg) |
 | [`@suss/cli`](packages/cli) | CLI wrapper. | ![](.github/badges/coverage-cli.svg) |
 

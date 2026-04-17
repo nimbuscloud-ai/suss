@@ -5,8 +5,10 @@ import { parseArgs } from "node:util";
 import { check, checkDir } from "./check.js";
 import { extract } from "./extract.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
+import { stub } from "./stub.js";
 
 import type { CheckResult } from "./check.js";
+import type { StubSource } from "./stub.js";
 
 const USAGE = `
 Usage:
@@ -16,15 +18,17 @@ Usage:
   suss inspect --diff <before.json> <after.json>
   suss check <provider.json> <consumer.json> [--json] [-o <output>]
   suss check --dir <directory> [--json] [-o <output>]
+  suss stub --from <source> <spec> [-o <output.json>]
 
 Commands:
   extract   Extract behavioral summaries from TypeScript source files
   inspect   Display human-readable output from a summaries JSON file
   check     Compare summary files and report cross-boundary findings
+  stub      Generate behavioral summaries from a declared contract
 
 Options (extract):
   -p, --project    Path to tsconfig.json (required)
-  -f, --framework  Framework name: ts-rest, react-router, express (repeatable)
+  -f, --framework  Framework name: ts-rest, react-router, express, fastify, fetch, axios (repeatable)
   -o, --output     Write JSON to file instead of stdout
   --files          Specific source files to extract from
   --gaps           Gap handling: strict (default), permissive, silent
@@ -34,6 +38,10 @@ Options (check):
   --json           Emit findings as JSON (default: human-readable)
   -o, --output     Write findings to file instead of stdout
   --fail-on        Exit non-zero threshold: error (default), warning, info, none
+
+Options (stub):
+  --from           Stub source kind: openapi (the only one today)
+  -o, --output     Write JSON to file instead of stdout
 
 Exit codes:
   check exits non-zero when any error-severity findings are present.
@@ -192,6 +200,40 @@ async function main() {
     if (result.hasErrors) {
       process.exit(1);
     }
+  } else if (command === "stub") {
+    const { values, positionals } = parseArgs({
+      args: args.slice(1),
+      options: {
+        from: { type: "string" },
+        output: { type: "string", short: "o" },
+      },
+      allowPositionals: true,
+    });
+
+    const from = values.from as StubSource | undefined;
+    if (from === undefined) {
+      console.error("Error: --from is required for stub");
+      console.error(USAGE);
+      process.exit(1);
+    }
+    if (from !== "openapi") {
+      console.error(
+        `Error: unknown --from value "${from}". Supported: openapi`,
+      );
+      process.exit(1);
+    }
+
+    if (positionals.length === 0) {
+      console.error("Error: stub requires a spec file path");
+      console.error(USAGE);
+      process.exit(1);
+    }
+
+    await stub({
+      from,
+      spec: positionals[0],
+      ...(values.output !== undefined ? { output: values.output } : {}),
+    });
   } else {
     console.error(`Unknown command: ${command}`);
     console.error(USAGE);
@@ -207,6 +249,7 @@ main().catch((err: Error) => {
 export { check, checkDir } from "./check.js";
 export { extract } from "./extract.js";
 export { inspect, inspectDiff, inspectDir } from "./inspect.js";
+export { stub } from "./stub.js";
 
 export type {
   CheckDirOptions,
@@ -216,3 +259,4 @@ export type {
 } from "./check.js";
 export type { ExtractOptions } from "./extract.js";
 export type { DiffOptions, DirOptions, InspectOptions } from "./inspect.js";
+export type { StubOptions, StubSource } from "./stub.js";
