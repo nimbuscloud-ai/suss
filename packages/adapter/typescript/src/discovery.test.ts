@@ -797,6 +797,85 @@ describe("clientCall — imported client", () => {
     expect(units[0].name).toBe("loadUser");
   });
 
+  it("matches method calls directly on the imported binding (axios style)", () => {
+    // axios pattern: `import axios from "axios"; axios.get(...)` — the import
+    // itself is the client object, no construction call.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      import axios from "axios";
+
+      export async function loadUser(id: string) {
+        return axios.get("/users/" + id);
+      }
+    `,
+    );
+
+    const pattern: DiscoveryPattern = {
+      kind: "client",
+      match: {
+        type: "clientCall",
+        importModule: "axios",
+        importName: "axios",
+        methodFilter: ["get"],
+      },
+    };
+
+    const units = discoverUnits(file, [pattern]);
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("loadUser");
+    expect(units[0].callSite?.methodName).toBe("get");
+  });
+
+  it("attaches the source pattern to each discovered unit", () => {
+    // Required so adapter.extractFromSourceFile picks the right
+    // bindingExtraction when several discovery patterns share the same kind
+    // (e.g. axios's per-verb patterns).
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      import axios from "axios";
+
+      export async function getUser() {
+        return axios.get("/u");
+      }
+
+      export async function createUser() {
+        return axios.post("/u", {});
+      }
+    `,
+    );
+
+    const getPattern: DiscoveryPattern = {
+      kind: "client",
+      match: {
+        type: "clientCall",
+        importModule: "axios",
+        importName: "axios",
+        methodFilter: ["get"],
+      },
+    };
+    const postPattern: DiscoveryPattern = {
+      kind: "client",
+      match: {
+        type: "clientCall",
+        importModule: "axios",
+        importName: "axios",
+        methodFilter: ["post"],
+      },
+    };
+
+    const units = discoverUnits(file, [getPattern, postPattern]);
+    expect(units).toHaveLength(2);
+
+    const get = units.find((u) => u.name === "getUser");
+    const post = units.find((u) => u.name === "createUser");
+    expect(get?.pattern).toBe(getPattern);
+    expect(post?.pattern).toBe(postPattern);
+  });
+
   it("deduplicates when two calls in the same function match", () => {
     const project = createProject();
     const file = project.createSourceFile(
