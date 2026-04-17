@@ -3,7 +3,25 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "description": "Cross-boundary compatibility checker for suss behavioral summaries — pairs providers with consumers and reports findings.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "contract-testing",
+    "static-analysis",
+    "typescript"
+  ],
   "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/checker#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/checker"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,6 +32,11 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run --coverage",
