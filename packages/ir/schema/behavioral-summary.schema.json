@@ -1,12 +1,12 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://suss.dev/schema/behavioral-summary/v0",
   "title": "Behavioral Summary",
   "description": "A structured, language-agnostic description of a code unit's behavior: under what conditions it produces what outputs. Output of `suss extract`.",
   "type": "array",
-  "items": { "$ref": "#/$defs/BehavioralSummary" },
+  "items": { "$ref": "#/definitions/BehavioralSummary" },
 
-  "$defs": {
+  "definitions": {
     "BehavioralSummary": {
       "type": "object",
       "description": "Complete behavioral description of a single code unit (handler, client, loader, etc.).",
@@ -21,24 +21,24 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "$ref": "#/$defs/CodeUnitKind" },
-        "location": { "$ref": "#/$defs/SourceLocation" },
-        "identity": { "$ref": "#/$defs/CodeUnitIdentity" },
+        "kind": { "$ref": "#/definitions/CodeUnitKind" },
+        "location": { "$ref": "#/definitions/SourceLocation" },
+        "identity": { "$ref": "#/definitions/CodeUnitIdentity" },
         "inputs": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Input" }
+          "items": { "$ref": "#/definitions/Input" }
         },
         "transitions": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Transition" },
+          "items": { "$ref": "#/definitions/Transition" },
           "description": "Every observable execution path through the code unit."
         },
         "gaps": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Gap" },
+          "items": { "$ref": "#/definitions/Gap" },
           "description": "Cases the code unit doesn't handle — declared-but-not-produced, fall-through, etc."
         },
-        "confidence": { "$ref": "#/$defs/ConfidenceInfo" },
+        "confidence": { "$ref": "#/definitions/ConfidenceInfo" },
         "metadata": {
           "type": "object",
           "description": "Framework-specific data (declared contracts, annotations). Ignored by tools that don't need it."
@@ -134,7 +134,10 @@
           ]
         },
         "boundaryBinding": {
-          "oneOf": [{ "$ref": "#/$defs/BoundaryBinding" }, { "type": "null" }]
+          "oneOf": [
+            { "$ref": "#/definitions/BoundaryBinding" },
+            { "type": "null" }
+          ]
         }
       }
     },
@@ -228,8 +231,8 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "derived" },
-            "from": { "$ref": "#/$defs/ValueRef" },
-            "derivation": { "$ref": "#/$defs/Derivation" }
+            "from": { "$ref": "#/definitions/ValueRef" },
+            "derivation": { "$ref": "#/definitions/Derivation" }
           }
         },
         {
@@ -281,7 +284,7 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "nullCheck" },
-            "subject": { "$ref": "#/$defs/ValueRef" },
+            "subject": { "$ref": "#/definitions/ValueRef" },
             "negated": { "type": "boolean" }
           }
         },
@@ -291,7 +294,7 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "truthinessCheck" },
-            "subject": { "$ref": "#/$defs/ValueRef" },
+            "subject": { "$ref": "#/definitions/ValueRef" },
             "negated": { "type": "boolean" }
           }
         },
@@ -301,12 +304,12 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "comparison" },
-            "left": { "$ref": "#/$defs/ValueRef" },
+            "left": { "$ref": "#/definitions/ValueRef" },
             "op": {
               "type": "string",
               "enum": ["eq", "neq", "gt", "gte", "lt", "lte"]
             },
-            "right": { "$ref": "#/$defs/ValueRef" }
+            "right": { "$ref": "#/definitions/ValueRef" }
           }
         },
         {
@@ -315,7 +318,7 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "typeCheck" },
-            "subject": { "$ref": "#/$defs/ValueRef" },
+            "subject": { "$ref": "#/definitions/ValueRef" },
             "expectedType": { "type": "string" }
           }
         },
@@ -325,7 +328,7 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "propertyExists" },
-            "subject": { "$ref": "#/$defs/ValueRef" },
+            "subject": { "$ref": "#/definitions/ValueRef" },
             "property": { "type": "string" },
             "negated": { "type": "boolean" }
           }
@@ -339,7 +342,7 @@
             "op": { "type": "string", "enum": ["and", "or"] },
             "operands": {
               "type": "array",
-              "items": { "$ref": "#/$defs/Predicate" }
+              "items": { "$ref": "#/definitions/Predicate" }
             }
           }
         },
@@ -349,7 +352,7 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "negation" },
-            "operand": { "$ref": "#/$defs/Predicate" }
+            "operand": { "$ref": "#/definitions/Predicate" }
           }
         },
         {
@@ -359,7 +362,10 @@
           "properties": {
             "type": { "const": "call" },
             "callee": { "type": "string" },
-            "args": { "type": "array", "items": { "$ref": "#/$defs/ValueRef" } }
+            "args": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/ValueRef" }
+            }
           }
         },
         {
@@ -397,7 +403,7 @@
             "type": { "const": "record" },
             "properties": {
               "type": "object",
-              "additionalProperties": { "$ref": "#/$defs/TypeShape" },
+              "additionalProperties": { "$ref": "#/definitions/TypeShape" },
               "description": "Known fields and their shapes."
             },
             "spreads": {
@@ -418,7 +424,7 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "dictionary" },
-            "values": { "$ref": "#/$defs/TypeShape" }
+            "values": { "$ref": "#/definitions/TypeShape" }
           }
         },
         {
@@ -427,7 +433,7 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "array" },
-            "items": { "$ref": "#/$defs/TypeShape" }
+            "items": { "$ref": "#/definitions/TypeShape" }
           }
         },
         {
@@ -493,7 +499,7 @@
             "type": { "const": "union" },
             "variants": {
               "type": "array",
-              "items": { "$ref": "#/$defs/TypeShape" }
+              "items": { "$ref": "#/definitions/TypeShape" }
             }
           }
         },
@@ -528,14 +534,20 @@
           "properties": {
             "type": { "const": "response" },
             "statusCode": {
-              "oneOf": [{ "$ref": "#/$defs/ValueRef" }, { "type": "null" }]
+              "oneOf": [
+                { "$ref": "#/definitions/ValueRef" },
+                { "type": "null" }
+              ]
             },
             "body": {
-              "oneOf": [{ "$ref": "#/$defs/TypeShape" }, { "type": "null" }]
+              "oneOf": [
+                { "$ref": "#/definitions/TypeShape" },
+                { "type": "null" }
+              ]
             },
             "headers": {
               "type": "object",
-              "additionalProperties": { "$ref": "#/$defs/ValueRef" }
+              "additionalProperties": { "$ref": "#/definitions/ValueRef" }
             }
           }
         },
@@ -566,7 +578,10 @@
           "properties": {
             "type": { "const": "return" },
             "value": {
-              "oneOf": [{ "$ref": "#/$defs/TypeShape" }, { "type": "null" }]
+              "oneOf": [
+                { "$ref": "#/definitions/TypeShape" },
+                { "type": "null" }
+              ]
             }
           }
         },
@@ -586,7 +601,7 @@
           "properties": {
             "type": { "const": "emit" },
             "event": { "type": "string" },
-            "payload": { "$ref": "#/$defs/TypeShape" }
+            "payload": { "$ref": "#/definitions/TypeShape" }
           }
         },
         {
@@ -666,7 +681,10 @@
               "description": "Semantic role: \"request\", \"response\", \"pathParams\", \"requestBody\", etc."
             },
             "shape": {
-              "oneOf": [{ "$ref": "#/$defs/TypeShape" }, { "type": "null" }]
+              "oneOf": [
+                { "$ref": "#/definitions/TypeShape" },
+                { "type": "null" }
+              ]
             }
           }
         },
@@ -679,7 +697,10 @@
             "name": { "type": "string" },
             "mechanism": { "type": "string" },
             "shape": {
-              "oneOf": [{ "$ref": "#/$defs/TypeShape" }, { "type": "null" }]
+              "oneOf": [
+                { "$ref": "#/definitions/TypeShape" },
+                { "type": "null" }
+              ]
             }
           }
         },
@@ -737,13 +758,13 @@
         },
         "conditions": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Predicate" },
+          "items": { "$ref": "#/definitions/Predicate" },
           "description": "Guard conditions — all must hold for this transition to fire."
         },
-        "output": { "$ref": "#/$defs/Output" },
+        "output": { "$ref": "#/definitions/Output" },
         "effects": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Effect" }
+          "items": { "$ref": "#/definitions/Effect" }
         },
         "location": {
           "type": "object",
@@ -758,9 +779,9 @@
           "type": "boolean",
           "description": "True if this transition fires when no other conditions match."
         },
-        "confidence": { "$ref": "#/$defs/ConfidenceInfo" },
+        "confidence": { "$ref": "#/definitions/ConfidenceInfo" },
         "expectedInput": {
-          "$ref": "#/$defs/TypeShape",
+          "$ref": "#/definitions/TypeShape",
           "description": "For client code units: the fields the consumer reads from the response body in this branch."
         }
       }
@@ -774,7 +795,7 @@
         "type": { "const": "unhandledCase" },
         "conditions": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Predicate" }
+          "items": { "$ref": "#/definitions/Predicate" }
         },
         "consequence": {
           "type": "string",

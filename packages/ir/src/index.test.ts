@@ -1,4 +1,9 @@
-import Ajv2020 from "ajv/dist/2020";
+import _Ajv from "ajv";
+
+// ajv's types don't expose a proper constructor under node16 moduleResolution.
+// The runtime export is a constructor function, so cast it.
+const Ajv = _Ajv as unknown as typeof _Ajv.default;
+
 import { describe, expect, it } from "vitest";
 
 import schema from "../schema/behavioral-summary.schema.json";
@@ -196,7 +201,7 @@ describe("diffSummaries", () => {
 // ---------------------------------------------------------------------------
 
 describe("behavioral-summary.schema.json", () => {
-  const ajv = new Ajv2020({ strict: false });
+  const ajv = new Ajv({ strict: false });
   const validate = ajv.compile(schema);
 
   it("validates a minimal summary array", () => {

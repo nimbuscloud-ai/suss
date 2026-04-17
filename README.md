@@ -69,7 +69,7 @@ suss check --dir summaries/           # auto-pairs by method + path
 
 ## Status
 
-Phases 1-7 complete. 603 tests. See [`docs/status.md`](docs/status.md) for details.
+Phases 1-7 complete. 614 tests. See [`docs/status.md`](docs/status.md) for details.
 
 ## License
 

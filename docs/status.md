@@ -108,6 +108,8 @@ Progress tracker. Updated as phases land.
 | 7.7 Subject resolution through intermediates | ✅ | `resolveSubject` follows non-call initializers (`const data = result.body` → recurse). Depth-bounded at 8 hops. |
 | 7.8 Semantic condition bridging | ✅ | `checkSemanticBridging`: literal discrimination, field-presence discrimination, truthiness checks, negated comparisons (`!== X`), fetch `.json()` body accessor, "any match suppresses" semantics. All 6 original aspirations resolved or reclassified — remaining gaps are Level 6 (local function inlining). See [`cross-boundary-checking.md`](cross-boundary-checking.md) §Level 5. |
 | 7.9 `PatternPack` rename + response property semantics | ✅ | `FrameworkPack` → `PatternPack` across all packages. `ResponsePropertyMapping` declares response property semantics (statusCode, statusRange, body, headers). Adapter resolves `.ok` → `status >= 200 && status <= 299` at extraction time. Pack-driven field filtering in `collectClientFieldAccesses` replaces hardcoded property lists. |
+| 7.10 Opaqueness reductions: instanceof, in, Array.includes | ✅ | `instanceof` → `typeCheck`, `in` → `propertyExists`, `[lit].includes(x)` → compound OR. Default status codes for Express/React Router implicit-200 terminals via `defaultStatusCode` in `TerminalExtraction`. |
+| 7.11 Behavioral summary format spec | ✅ | JSON Schema v0 (`packages/ir/schema/behavioral-summary.schema.json`), format spec (`docs/behavioral-summary-format.md`), publishing convention (`suss.summaries` in package.json), portable relative paths, schema validation tests. Inspect rewrite: output-first behavioral descriptions with body shapes and contract display. |
 
 ## Phase 8+ — Deferred
 
@@ -122,16 +124,16 @@ Progress tracker. Updated as phases land.
 
 | Package | Tests | Notes |
 |---------|-------|-------|
-| `@suss/behavioral-ir` | 8 | diff utility, type narrowing, Finding shape |
+| `@suss/behavioral-ir` | 12 | diff utility, type narrowing, Finding shape, JSON Schema validation (v0 schema against all predicate/output/shape types) |
 | `@suss/extractor` | 55 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, throw-to-response bridging, transition ID stability, edge cases |
-| `@suss/adapter-typescript` | 324 | conditions, predicates (incl. recursive call inlining), subjects (incl. intermediate variable resolution), terminals, discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction (incl. literal narrowness verification), consumer binding extraction, field-access tracking, response property resolution (.ok → status range), integration |
+| `@suss/adapter-typescript` | 331 | conditions, predicates (incl. recursive call inlining, instanceof, in operator, Array.includes expansion), subjects (incl. intermediate variable resolution), terminals (incl. defaultStatusCode fallback), discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction (incl. literal narrowness verification), consumer binding extraction, field-access tracking, response property resolution (.ok → status range), integration |
 | `@suss/framework-ts-rest` | 10 | pack shape (handler + consumer discovery) + integration |
-| `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
-| `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
+| `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, default status codes, singleObjectParam inputs) |
+| `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms, default status codes) |
 | `@suss/runtime-web` | 4 | pack shape + integration (fetch discovery, binding extraction, transitions) |
 | `@suss/checker` | 154 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (literal + field-presence discrimination, truthiness, negated comparisons, `.json()` accessor, 2 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis, throw-as-response), consumer satisfaction, contract consistency (status + body), consumer contract leakage (Level 3), path normalization, boundary pairing, `checkPair` integration |
-| `@suss/cli` | 34 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check`, `suss check --dir`, consumer extraction, end-to-end extract+check, semantic-bridging e2e |
-| **Total** | **603** | |
+| `@suss/cli` | 34 | deep-equal summary shape per framework, `-o` round-trip, inspect (behavioral descriptions), `suss check`, `suss check --dir`, consumer extraction, end-to-end extract+check, semantic-bridging e2e |
+| **Total** | **614** | |
 
 Runs via `turbo test`.
 
