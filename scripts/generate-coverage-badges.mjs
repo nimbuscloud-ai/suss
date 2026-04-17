@@ -24,6 +24,7 @@ const packageDirs = [
   ["packages/framework/express", "express"],
   ["packages/framework/fastify", "fastify"],
   ["packages/runtime/web", "web"],
+  ["packages/runtime/axios", "axios"],
   ["packages/checker", "checker"],
   ["packages/cli", "cli"],
 ];
