@@ -34,6 +34,7 @@ const minimalSpec: OpenApiSpec = {
               "application/json": {
                 schema: {
                   type: "object",
+                  required: ["id", "name"],
                   properties: {
                     id: { type: "string" },
                     name: { type: "string" },
@@ -48,6 +49,7 @@ const minimalSpec: OpenApiSpec = {
               "application/json": {
                 schema: {
                   type: "object",
+                  required: ["error"],
                   properties: { error: { type: "string" } },
                 },
               },
@@ -82,6 +84,7 @@ const refSpec: OpenApiSpec = {
     schemas: {
       User: {
         type: "object",
+        required: ["id", "name", "friend"],
         properties: {
           id: { type: "string" },
           name: { type: "string" },
@@ -641,10 +644,12 @@ describe("openApiToSummaries — schema feature coverage", () => {
                       allOf: [
                         {
                           type: "object",
+                          required: ["id"],
                           properties: { id: { type: "string" } },
                         },
                         {
                           type: "object",
+                          required: ["name"],
                           properties: { name: { type: "string" } },
                         },
                       ],
@@ -702,6 +707,54 @@ describe("openApiToSummaries — schema feature coverage", () => {
     expect(t.output.body).toEqual({
       type: "union",
       variants: [{ type: "text" }, { type: "integer" }],
+    });
+  });
+
+  it("wraps non-required properties in `union<T, undefined>`", () => {
+    const spec: OpenApiSpec = {
+      openapi: "3.0.3",
+      paths: {
+        "/x": {
+          get: {
+            operationId: "x",
+            responses: {
+              "200": {
+                description: "ok",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      // `required` mentions only `id`; `name` is optional
+                      required: ["id"],
+                      properties: {
+                        id: { type: "string" },
+                        name: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const summaries = openApiToSummaries(spec);
+    const t = summaries[0].transitions[0];
+    if (t.output.type !== "response") {
+      throw new Error("expected response output");
+    }
+    expect(t.output.body).toEqual({
+      type: "record",
+      properties: {
+        // Required — kept as-is
+        id: { type: "text" },
+        // Optional — wrapped with undefined
+        name: {
+          type: "union",
+          variants: [{ type: "text" }, { type: "undefined" }],
+        },
+      },
     });
   });
 

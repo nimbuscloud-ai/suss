@@ -54,6 +54,14 @@ export function providerCoversConsumerFields(
     return "unknown";
   }
 
+  // Optional provider field (`union<T, undefined>`) — the field exists at the
+  // type level, so unwrap and continue the field-presence comparison against
+  // the non-undefined variant. The fact that it's optional is surfaced as a
+  // separate info-level finding via findOptionalAccesses, not as a mismatch.
+  if (isOptionalShape(provider)) {
+    return providerCoversConsumerFields(unwrapOptional(provider), consumer);
+  }
+
   // Both records: check that every consumer key exists in provider
   if (consumer.type === "record" && provider.type === "record") {
     let result: MatchResult = "match";
@@ -99,6 +107,59 @@ function combineResults(a: MatchResult, b: MatchResult): MatchResult {
     return "unknown";
   }
   return "match";
+}
+
+/**
+ * Walk the consumer field tree against the provider's shape and return the
+ * dot-paths where the consumer reads a field the provider declares as
+ * optional (modeled as `union<T, undefined>`).
+ *
+ * The check still passes for these (the field exists), but consumers should
+ * know they're depending on a value the provider may legally omit.
+ */
+export function findOptionalAccesses(
+  provider: TypeShape,
+  consumer: TypeShape,
+  prefix: string[] = [],
+): string[][] {
+  if (consumer.type !== "record" || provider.type !== "record") {
+    return [];
+  }
+  const out: string[][] = [];
+  for (const key of Object.keys(consumer.properties)) {
+    const providerProp = provider.properties[key];
+    if (providerProp === undefined) {
+      continue;
+    }
+    if (isOptionalShape(providerProp)) {
+      out.push([...prefix, key]);
+    }
+    const inner = unwrapOptional(providerProp);
+    out.push(
+      ...findOptionalAccesses(inner, consumer.properties[key], [
+        ...prefix,
+        key,
+      ]),
+    );
+  }
+  return out;
+}
+
+function isOptionalShape(shape: TypeShape): boolean {
+  return (
+    shape.type === "union" && shape.variants.some((v) => v.type === "undefined")
+  );
+}
+
+function unwrapOptional(shape: TypeShape): TypeShape {
+  if (!isOptionalShape(shape) || shape.type !== "union") {
+    return shape;
+  }
+  const nonUndef = shape.variants.filter((v) => v.type !== "undefined");
+  if (nonUndef.length === 1) {
+    return nonUndef[0];
+  }
+  return { type: "union", variants: nonUndef };
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +225,20 @@ export function checkBodyCompatibility(
             severity: "info",
           });
         }
+
+        for (const path of findOptionalAccesses(
+          providerBody,
+          consumerBodyShape,
+        )) {
+          findings.push({
+            kind: "consumerContractViolation",
+            boundary,
+            provider: makeSide(provider, pt.id),
+            consumer: makeSide(consumer, ct.id),
+            description: `Consumer reads "${path.join(".")}" on status ${status}, but the provider declares it optional`,
+            severity: "info",
+          });
+        }
       }
     }
 
@@ -197,6 +272,20 @@ export function checkBodyCompatibility(
             consumer: makeSide(consumer, ct.id),
             description: `Provider body shape for status ${providerStatus} is missing fields that consumer reads in default branch`,
             severity: "error",
+          });
+        }
+
+        for (const path of findOptionalAccesses(
+          pt.output.body,
+          consumerBodyShape,
+        )) {
+          findings.push({
+            kind: "consumerContractViolation",
+            boundary,
+            provider: makeSide(provider, pt.id),
+            consumer: makeSide(consumer, ct.id),
+            description: `Consumer reads "${path.join(".")}" on default branch (status ${providerStatus}), but the provider declares it optional`,
+            severity: "info",
           });
         }
       }
