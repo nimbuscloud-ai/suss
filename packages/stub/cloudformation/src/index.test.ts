@@ -164,6 +164,222 @@ describe("cloudFormationToSummaries — resource shapes", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// CFN-native walks: AWS::ApiGateway::Method (REST)
+// ---------------------------------------------------------------------------
+
+describe("cloudFormationToSummaries — AWS::ApiGateway::Method", () => {
+  it("resolves a method's path by walking ParentId chain through Resource entries", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::ApiGateway::RestApi",
+          Properties: { Name: "petstore" },
+        },
+        PetsResource: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: { PathPart: "pets", ParentId: { Ref: "Api" } },
+        },
+        PetIdResource: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: {
+            PathPart: "{petId}",
+            ParentId: { Ref: "PetsResource" },
+          },
+        },
+        GetPetMethod: {
+          Type: "AWS::ApiGateway::Method",
+          Properties: {
+            HttpMethod: "GET",
+            ResourceId: { Ref: "PetIdResource" },
+            MethodResponses: [{ StatusCode: 200 }, { StatusCode: 404 }],
+          },
+        },
+      },
+    });
+    expect(summaries).toHaveLength(1);
+    const s = summaries[0];
+    expect(s.kind).toBe("handler");
+    expect(s.identity.boundaryBinding).toEqual({
+      protocol: "http",
+      method: "GET",
+      path: "/pets/{petId}",
+      framework: "apigateway",
+    });
+    const codes = s.transitions
+      .map((t) =>
+        t.output.type === "response" && t.output.statusCode?.type === "literal"
+          ? t.output.statusCode.value
+          : null,
+      )
+      .sort();
+    expect(codes).toEqual([200, 404]);
+  });
+
+  it("falls back to a single default transition when MethodResponses is absent", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        PingResource: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: { PathPart: "ping" },
+        },
+        PingMethod: {
+          Type: "AWS::ApiGateway::Method",
+          Properties: {
+            HttpMethod: "GET",
+            ResourceId: { Ref: "PingResource" },
+          },
+        },
+      },
+    });
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].transitions).toHaveLength(1);
+    expect(summaries[0].transitions[0].isDefault).toBe(true);
+  });
+
+  it("accepts string status codes ('200') alongside numeric ones", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        R: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: { PathPart: "x" },
+        },
+        M: {
+          Type: "AWS::ApiGateway::Method",
+          Properties: {
+            HttpMethod: "POST",
+            ResourceId: { Ref: "R" },
+            MethodResponses: [{ StatusCode: "201" }, { StatusCode: 422 }],
+          },
+        },
+      },
+    });
+    const codes = summaries[0].transitions
+      .map((t) =>
+        t.output.type === "response" && t.output.statusCode?.type === "literal"
+          ? t.output.statusCode.value
+          : null,
+      )
+      .sort();
+    expect(codes).toEqual([201, 422]);
+  });
+
+  it("skips methods with HttpMethod=ANY (would explode into 7 verbs)", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        R: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: { PathPart: "x" },
+        },
+        M: {
+          Type: "AWS::ApiGateway::Method",
+          Properties: { HttpMethod: "ANY", ResourceId: { Ref: "R" } },
+        },
+      },
+    });
+    expect(summaries).toEqual([]);
+  });
+
+  it("falls back to '/' when ResourceId can't be resolved", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        M: {
+          Type: "AWS::ApiGateway::Method",
+          Properties: { HttpMethod: "GET" },
+        },
+      },
+    });
+    expect(summaries[0].identity.boundaryBinding?.path).toBe("/");
+  });
+
+  it("recognises Fn::GetAtt references in ResourceId", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::ApiGateway::RestApi",
+          Properties: { Name: "x" },
+        },
+        Root: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: {
+            PathPart: "x",
+            ParentId: { "Fn::GetAtt": ["Api", "RootResourceId"] },
+          },
+        },
+        M: {
+          Type: "AWS::ApiGateway::Method",
+          Properties: {
+            HttpMethod: "GET",
+            ResourceId: { "Fn::GetAtt": ["Root", "Id"] },
+          },
+        },
+      },
+    });
+    expect(summaries[0].identity.boundaryBinding?.path).toBe("/x");
+  });
+
+  it("accepts a bare-string ResourceId (parsers that drop the !Ref tag)", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        R: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: { PathPart: "y" },
+        },
+        M: {
+          Type: "AWS::ApiGateway::Method",
+          Properties: { HttpMethod: "GET", ResourceId: "R" },
+        },
+      },
+    });
+    expect(summaries[0].identity.boundaryBinding?.path).toBe("/y");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CFN-native walks: AWS::ApiGatewayV2::Route (HTTP API)
+// ---------------------------------------------------------------------------
+
+describe("cloudFormationToSummaries — AWS::ApiGatewayV2::Route", () => {
+  it("parses RouteKey 'METHOD path' into a boundary binding", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        GetPetRoute: {
+          Type: "AWS::ApiGatewayV2::Route",
+          Properties: { RouteKey: "GET /pets/{petId}" },
+        },
+      },
+    });
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.boundaryBinding).toEqual({
+      protocol: "http",
+      method: "GET",
+      path: "/pets/{petId}",
+      framework: "apigateway",
+    });
+    expect(summaries[0].transitions[0].isDefault).toBe(true);
+  });
+
+  it("skips $default routes and malformed RouteKeys", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        Default: {
+          Type: "AWS::ApiGatewayV2::Route",
+          Properties: { RouteKey: "$default" },
+        },
+        Empty: {
+          Type: "AWS::ApiGatewayV2::Route",
+          Properties: { RouteKey: "" },
+        },
+        NoSpace: {
+          Type: "AWS::ApiGatewayV2::Route",
+          Properties: { RouteKey: "GETBADKEY" },
+        },
+      },
+    });
+    expect(summaries).toEqual([]);
+  });
+});
+
 describe("cloudFormationFileToSummaries — file loading", () => {
   it("loads a JSON template from disk", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-cfn-"));
@@ -212,6 +428,40 @@ describe("cloudFormationFileToSummaries — file loading", () => {
       const summaries = cloudFormationFileToSummaries(file);
       expect(summaries).toHaveLength(1);
       expect(summaries[0].identity.boundaryBinding?.path).toBe("/ping");
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
+    }
+  });
+
+  it("understands CloudFormation YAML intrinsic shorthand (!Ref / !GetAtt / !Sub)", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-cfn-"));
+    const file = path.join(tmp, "template.yaml");
+    fs.writeFileSync(
+      file,
+      `Resources:
+  Api:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "petstore"
+  PetsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      PathPart: pets
+      ParentId: !GetAtt Api.RootResourceId
+  GetPets:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      ResourceId: !Ref PetsResource
+      MethodResponses:
+        - StatusCode: 200
+`,
+    );
+    try {
+      const summaries = cloudFormationFileToSummaries(file);
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0].identity.boundaryBinding?.path).toBe("/pets");
+      expect(summaries[0].identity.boundaryBinding?.method).toBe("GET");
     } finally {
       fs.rmSync(tmp, { recursive: true });
     }
