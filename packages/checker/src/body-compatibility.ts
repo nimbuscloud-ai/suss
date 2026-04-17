@@ -135,7 +135,7 @@ export function checkBodyCompatibility(
           continue;
         }
 
-        const consumerBodyShape = unwrapBodyField(expectedInput);
+        const consumerBodyShape = unwrapBodyField(expectedInput, consumer);
         if (consumerBodyShape === null) {
           continue;
         }
@@ -181,7 +181,7 @@ export function checkBodyCompatibility(
         if (pt.output.type !== "response" || pt.output.body === null) {
           continue;
         }
-        const consumerBodyShape = unwrapBodyField(expectedInput);
+        const consumerBodyShape = unwrapBodyField(expectedInput, consumer);
         if (consumerBodyShape === null) {
           continue;
         }
@@ -206,9 +206,28 @@ export function checkBodyCompatibility(
   return findings;
 }
 
-function unwrapBodyField(shape: TypeShape): TypeShape | null {
-  if (shape.type === "record" && shape.properties.body !== undefined) {
-    return shape.properties.body;
+function unwrapBodyField(
+  shape: TypeShape,
+  consumer: BehavioralSummary,
+): TypeShape | null {
+  if (shape.type !== "record") {
+    return shape;
+  }
+  for (const accessor of bodyAccessorsFor(consumer)) {
+    const wrapped = shape.properties[accessor];
+    if (wrapped !== undefined) {
+      return wrapped;
+    }
   }
   return shape;
+}
+
+function bodyAccessorsFor(consumer: BehavioralSummary): string[] {
+  const fromMetadata = consumer.metadata?.bodyAccessors;
+  if (Array.isArray(fromMetadata) && fromMetadata.length > 0) {
+    return fromMetadata.filter((v): v is string => typeof v === "string");
+  }
+  // Fallback for summaries produced before bodyAccessors metadata existed
+  // (or written by hand) — assume the historical fetch wrapper.
+  return ["body"];
 }
