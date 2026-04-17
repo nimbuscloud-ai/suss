@@ -97,11 +97,30 @@ function objectToShape(schema: OpenApiSchema, ctx: SchemaContext): TypeShape {
     return { type: "dictionary", values: schemaToShape(valueSchema, ctx) };
   }
 
+  // OpenAPI's `required` lists the property names that MUST be present.
+  // Anything not in the list is optional — encode that as a union with
+  // `undefined` so downstream consumers (and the cross-boundary checker)
+  // can distinguish guaranteed vs absent-able fields.
+  const required = new Set(schema.required ?? []);
   const properties: Record<string, TypeShape> = {};
   for (const [name, propSchema] of Object.entries(schema.properties ?? {})) {
-    properties[name] = schemaToShape(propSchema, ctx);
+    const shape = schemaToShape(propSchema, ctx);
+    properties[name] = required.has(name) ? shape : makeOptional(shape);
   }
   return { type: "record", properties };
+}
+
+function makeOptional(shape: TypeShape): TypeShape {
+  if (shape.type === "union") {
+    if (shape.variants.some((v) => v.type === "undefined")) {
+      return shape;
+    }
+    return {
+      type: "union",
+      variants: [...shape.variants, { type: "undefined" }],
+    };
+  }
+  return { type: "union", variants: [shape, { type: "undefined" }] };
 }
 
 function mergeAllOf(parts: OpenApiSchema[], ctx: SchemaContext): TypeShape {

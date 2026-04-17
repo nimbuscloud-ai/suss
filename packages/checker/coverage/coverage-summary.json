@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 679,
-      "covered": 588,
+      "total": 705,
+      "covered": 612,
       "skipped": 0,
-      "pct": 86.59
+      "pct": 86.8
     },
     "statements": {
-      "total": 687,
-      "covered": 594,
+      "total": 714,
+      "covered": 619,
       "skipped": 0,
-      "pct": 86.46
+      "pct": 86.69
     },
     "functions": {
-      "total": 92,
-      "covered": 82,
+      "total": 97,
+      "covered": 87,
       "skipped": 0,
-      "pct": 89.13
+      "pct": 89.69
     },
     "branches": {
-      "total": 588,
-      "covered": 479,
+      "total": 607,
+      "covered": 498,
       "skipped": 0,
-      "pct": 81.46
+      "pct": 82.04
     },
     "branchesTrue": {
       "total": 0,
@@ -33,28 +33,28 @@
   },
   "src/body-compatibility.ts": {
     "lines": {
-      "total": 76,
-      "covered": 53,
+      "total": 102,
+      "covered": 76,
       "skipped": 0,
-      "pct": 69.73
+      "pct": 74.5
     },
     "functions": {
-      "total": 7,
-      "covered": 6,
+      "total": 12,
+      "covered": 11,
       "skipped": 0,
-      "pct": 85.71
+      "pct": 91.66
     },
     "statements": {
-      "total": 77,
-      "covered": 53,
+      "total": 104,
+      "covered": 77,
       "skipped": 0,
-      "pct": 68.83
+      "pct": 74.03
     },
     "branches": {
-      "total": 69,
-      "covered": 42,
+      "total": 88,
+      "covered": 60,
       "skipped": 0,
-      "pct": 60.86
+      "pct": 68.18
     }
   },
   "src/body-match.ts": {
@@ -268,9 +268,9 @@
   "src/response-match.ts": {
     "lines": {
       "total": 46,
-      "covered": 43,
+      "covered": 44,
       "skipped": 0,
-      "pct": 93.47
+      "pct": 95.65
     },
     "functions": {
       "total": 9,
@@ -280,15 +280,15 @@
     },
     "statements": {
       "total": 46,
-      "covered": 43,
+      "covered": 44,
       "skipped": 0,
-      "pct": 93.47
+      "pct": 95.65
     },
     "branches": {
       "total": 42,
-      "covered": 38,
+      "covered": 39,
       "skipped": 0,
-      "pct": 90.47
+      "pct": 92.85
     }
   },
   "src/semantic-bridging.ts": {

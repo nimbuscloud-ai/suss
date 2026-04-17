@@ -127,6 +127,41 @@ describe("consumerExpectedStatuses", () => {
     expect(consumerExpectedStatuses(txn([pred]))).toEqual([418]);
   });
 
+  it("finds status literals on destructured derivations (`const { status }`)", () => {
+    const pred: Predicate = {
+      type: "comparison",
+      left: {
+        type: "derived",
+        from: { type: "dependency", name: "axios.get", accessChain: [] },
+        derivation: { type: "destructured", field: "status" },
+      },
+      op: "eq",
+      right: { type: "literal", value: 404 },
+    };
+    expect(consumerExpectedStatuses(txn([pred]))).toEqual([404]);
+  });
+
+  it("finds status literals on err.response.status (try/catch shape)", () => {
+    // axios throws on 4xx/5xx and stores the response on err.response.
+    // The status check survives the nested derived ref because
+    // refLooksLikeStatus inspects only the outermost derivation.
+    const pred: Predicate = {
+      type: "comparison",
+      left: {
+        type: "derived",
+        from: {
+          type: "derived",
+          from: { type: "unresolved", sourceText: "err" },
+          derivation: { type: "propertyAccess", property: "response" },
+        },
+        derivation: { type: "propertyAccess", property: "status" },
+      },
+      op: "eq",
+      right: { type: "literal", value: 404 },
+    };
+    expect(consumerExpectedStatuses(txn([pred]))).toEqual([404]);
+  });
+
   it("walks into compound and negation predicates", () => {
     const pred: Predicate = {
       type: "compound",
