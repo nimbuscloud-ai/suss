@@ -33,6 +33,7 @@ Options (check):
   --dir            Directory of summary JSON files (auto-pairs by method+path)
   --json           Emit findings as JSON (default: human-readable)
   -o, --output     Write findings to file instead of stdout
+  --fail-on        Exit non-zero threshold: error (default), warning, info, none
 
 Exit codes:
   check exits non-zero when any error-severity findings are present.
@@ -138,18 +139,40 @@ async function main() {
         json: { type: "boolean" },
         output: { type: "string", short: "o" },
         dir: { type: "string" },
+        "fail-on": { type: "string" },
       },
       allowPositionals: true,
     });
 
+    const failOn = values["fail-on"] as
+      | "error"
+      | "warning"
+      | "info"
+      | "none"
+      | undefined;
+    if (
+      failOn !== undefined &&
+      failOn !== "error" &&
+      failOn !== "warning" &&
+      failOn !== "info" &&
+      failOn !== "none"
+    ) {
+      console.error(
+        `Error: --fail-on must be "error", "warning", "info", or "none"`,
+      );
+      process.exit(1);
+    }
+
+    const shared = {
+      ...(values.json === true ? { json: true } : {}),
+      ...(values.output !== undefined ? { output: values.output } : {}),
+      ...(failOn !== undefined ? { failOn } : {}),
+    };
+
     let result: CheckResult;
 
     if (values.dir !== undefined) {
-      result = checkDir({
-        dir: values.dir,
-        ...(values.json === true ? { json: true } : {}),
-        ...(values.output !== undefined ? { output: values.output } : {}),
-      });
+      result = checkDir({ dir: values.dir, ...shared });
     } else {
       if (positionals.length < 2) {
         console.error(
@@ -162,8 +185,7 @@ async function main() {
       result = check({
         providerFile: positionals[0],
         consumerFile: positionals[1],
-        ...(values.json === true ? { json: true } : {}),
-        ...(values.output !== undefined ? { output: values.output } : {}),
+        ...shared,
       });
     }
 
@@ -186,6 +208,11 @@ export { check, checkDir } from "./check.js";
 export { extract } from "./extract.js";
 export { inspect, inspectDiff, inspectDir } from "./inspect.js";
 
-export type { CheckDirOptions, CheckOptions, CheckResult } from "./check.js";
+export type {
+  CheckDirOptions,
+  CheckOptions,
+  CheckResult,
+  FailOn,
+} from "./check.js";
 export type { ExtractOptions } from "./extract.js";
 export type { DiffOptions, DirOptions, InspectOptions } from "./inspect.js";
