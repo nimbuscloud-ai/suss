@@ -598,6 +598,7 @@ interface WrapperInfo {
 function expandWrapperCallers(
   summaries: BehavioralSummary[],
   project: Project,
+  options?: ExtractorOptions,
 ): BehavioralSummary[] {
   const wrappers: WrapperInfo[] = [];
 
@@ -630,7 +631,7 @@ function expandWrapperCallers(
 
   const derived: BehavioralSummary[] = [];
   for (const wrapper of wrappers) {
-    derived.push(...synthesizeCallerSummaries(wrapper, project));
+    derived.push(...synthesizeCallerSummaries(wrapper, project, options));
   }
   return [...summaries, ...derived];
 }
@@ -692,6 +693,7 @@ function locateFunction(
 function synthesizeCallerSummaries(
   wrapper: WrapperInfo,
   project: Project,
+  options?: ExtractorOptions,
 ): BehavioralSummary[] {
   // Find the wrapper's identifier so we can ask ts-morph for references.
   const nameNode = wrapperNameNode(wrapper.func);
@@ -733,7 +735,7 @@ function synthesizeCallerSummaries(
     }
     seen.add(dedupKey);
 
-    out.push(buildCallerSummary(wrapper, callerFunc, callExpr, path));
+    out.push(buildCallerSummary(wrapper, callerFunc, callExpr, path, options));
   }
 
   return out;
@@ -828,60 +830,72 @@ function buildCallerSummary(
   callerFunc: FunctionRoot,
   callExpr: CallExpression,
   path: string,
+  options?: ExtractorOptions,
 ): BehavioralSummary {
   const sf = callerFunc.getSourceFile();
-  // Locate file relative to the wrapper's recorded file: callers might live
-  // in different source files. We keep the absolute path here and let the
-  // CLI's relativizer normalize it later, the same way primary extraction
-  // does.
   const file = sf.getFilePath();
   const wrapperBinding = wrapper.summary.identity.boundaryBinding;
 
-  return {
-    kind: "client",
-    location: {
-      file,
-      range: {
-        start: callerFunc.getStartLineNumber(),
-        end: callerFunc.getEndLineNumber(),
-      },
-      exportName: callerName(callerFunc),
-    },
-    identity: {
-      name: callerName(callerFunc),
-      exportPath: [callerName(callerFunc)],
-      boundaryBinding: {
-        protocol: wrapperBinding?.protocol ?? "http",
-        framework: wrapperBinding?.framework ?? "unknown",
-        ...(wrapperBinding?.method !== undefined
-          ? { method: wrapperBinding.method }
-          : {}),
-        path,
-      },
-    },
-    inputs: [],
-    transitions: [
-      {
-        id: `${callerName(callerFunc)}:return:via:${callExpr.getStart()}`,
-        conditions: [],
-        output: { type: "return", value: null },
-        effects: [],
-        location: {
-          start: callerFunc.getStartLineNumber(),
-          end: callerFunc.getEndLineNumber(),
-        },
-        isDefault: true,
-      },
+  // Run the caller through the same extraction pipeline used for direct
+  // clientCall consumers. The wrapper call site stands in for the API call
+  // — branch tracking, terminal extraction, and field-access tracking on
+  // the wrapper return value all flow through the existing code paths.
+  //
+  // The synthetic pack carries no responseSemantics: the wrapper has
+  // already unwrapped the response, so caller-side accesses on the
+  // wrapper return value are already body-relative — there's no `data`
+  // or `body` key to filter.
+  const syntheticPack: PatternPack = {
+    name: wrapperBinding?.framework ?? "unknown",
+    languages: ["typescript"],
+    discovery: [],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
     ],
-    gaps: [],
-    confidence: { source: "inferred_static", level: "low" },
-    metadata: {
-      derivedFromWrapper: {
-        file: wrapper.summary.location.file,
-        name: wrapper.summary.identity.name,
-      },
+    inputMapping: { type: "positionalParams", params: [] },
+    // Empty (not absent): tells field-access tracking that there's no
+    // response wrapper to filter on — every property is a body field.
+    // Without this the hardcoded fallback would drop `status` / `headers`
+    // accesses that are perfectly legitimate on an unwrapped body.
+    responseSemantics: [],
+  };
+
+  const unit: DiscoveredUnit = {
+    func: callerFunc,
+    kind: "client",
+    name: callerName(callerFunc),
+    callSite: {
+      callExpression: callExpr,
+      methodName: wrapper.summary.identity.name,
     },
   };
+
+  const raw = extractCodeStructure(unit, syntheticPack, file);
+  raw.boundaryBinding = {
+    protocol: wrapperBinding?.protocol ?? "http",
+    framework: wrapperBinding?.framework ?? "unknown",
+    ...(wrapperBinding?.method !== undefined
+      ? { method: wrapperBinding.method }
+      : {}),
+    path,
+  };
+
+  const summary = assembleSummary(raw, options);
+  // Stitch wrapper-origin metadata so consumers can trace synthesised
+  // summaries back to the wrapper they came from. assembleSummary may
+  // already have set metadata for declaredContract or bodyAccessors —
+  // merge rather than overwrite.
+  summary.metadata = {
+    ...(summary.metadata ?? {}),
+    derivedFromWrapper: {
+      file: wrapper.summary.location.file,
+      name: wrapper.summary.identity.name,
+    },
+  };
+  // Wrapper-derived summaries are inferred indirectly; weight accordingly.
+  summary.confidence = { source: "inferred_static", level: "low" };
+  return summary;
 }
 
 // ---------------------------------------------------------------------------
@@ -951,7 +965,7 @@ export function createTypeScriptAdapter(
         );
       }
 
-      return expandWrapperCallers(summaries, project);
+      return expandWrapperCallers(summaries, project, config.extractorOptions);
     },
   };
 }

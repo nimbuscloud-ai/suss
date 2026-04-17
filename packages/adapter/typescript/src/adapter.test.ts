@@ -1744,4 +1744,55 @@ describe("wrapper expansion", () => {
     );
     expect(synthesised).toHaveLength(0);
   });
+
+  it("populates expectedInput when the caller reads fields off the wrapper return", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function describePet(petId: number) {
+        const pet = await getJson<{ id: number; status: string }>(\`/pet/\${petId}\`);
+        return \`\${pet.id}:\${pet.status}\`;
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = adapter.extractAll();
+
+    const caller = summaries.find((s) => s.identity.name === "describePet");
+    expect(caller).toBeDefined();
+    // The wrapper has already unwrapped the response — the caller's reads
+    // on the wrapper return value should appear directly as body fields,
+    // including `status` (which would have been filtered as a non-body
+    // property by the hardcoded fallback before responseSemantics: [] was
+    // set on the synthetic pack).
+    const withInput = caller!.transitions.find(
+      (t) => t.expectedInput?.type === "record",
+    );
+    expect(withInput).toBeDefined();
+    if (withInput?.expectedInput?.type === "record") {
+      expect(withInput.expectedInput.properties).toHaveProperty("id");
+      expect(withInput.expectedInput.properties).toHaveProperty("status");
+    } else {
+      throw new Error("expected record expectedInput on wrapper-call branch");
+    }
+  });
 });
