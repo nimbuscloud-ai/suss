@@ -59,7 +59,8 @@
     "@suss/framework-express": "*",
     "@suss/framework-fastify": "*",
     "@suss/runtime-web": "*",
-    "@suss/runtime-axios": "*"
+    "@suss/runtime-axios": "*",
+    "@suss/stub-openapi": "*"
   },
   "devDependencies": {
     "tsup": "*",

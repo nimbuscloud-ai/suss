@@ -26,6 +26,9 @@ suss check provider.json consumer.json [--json] [-o findings.json]
 
 # Directory check: auto-pair providers with consumers by (method, path)
 suss check --dir summaries/ [--json] [-o findings.json] [--fail-on warning]
+
+# Generate summaries from a declared contract (no source extraction)
+suss stub --from openapi spec.yaml [-o provider.json]
 ```
 
 ### Options
@@ -42,6 +45,11 @@ suss check --dir summaries/ [--json] [-o findings.json] [--fail-on warning]
 - `--json` — emit findings as JSON
 - `-o, --output` — write findings to file instead of stdout
 - `--fail-on` — exit-code threshold: `error` (default), `warning`, `info`, or `none`
+
+**`stub`**
+- `--from` — stub source kind (today: `openapi`)
+- `-o, --output` — write JSON to file instead of stdout
+- Positional argument: path to the spec file
 
 ### Built-in framework resolution
 
