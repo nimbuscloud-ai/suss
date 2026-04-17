@@ -71,19 +71,27 @@ function asStatusLiteral(a: ValueRef, b: ValueRef): number | null {
 }
 
 function refLooksLikeStatus(v: ValueRef): boolean {
-  if (v.type === "derived" && v.derivation.type === "propertyAccess") {
-    const prop = v.derivation.property;
-    return prop === "status" || prop === "statusCode";
+  if (v.type === "derived") {
+    // Destructured: `const { status } = await call()`; later `status === 404`
+    // is parsed as a derived value with a destructured derivation.
+    if (v.derivation.type === "destructured") {
+      return isStatusName(v.derivation.field);
+    }
+    if (v.derivation.type === "propertyAccess") {
+      return isStatusName(v.derivation.property);
+    }
   }
   if (v.type === "input") {
-    const last = v.path[v.path.length - 1];
-    return last === "status" || last === "statusCode";
+    return isStatusName(v.path[v.path.length - 1]);
   }
   if (v.type === "dependency") {
-    const last = v.accessChain[v.accessChain.length - 1];
-    return last === "status" || last === "statusCode";
+    return isStatusName(v.accessChain[v.accessChain.length - 1]);
   }
   return false;
+}
+
+function isStatusName(name: string | undefined): boolean {
+  return name === "status" || name === "statusCode";
 }
 
 export function makeSide(
