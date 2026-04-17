@@ -12,7 +12,7 @@ Imports `@suss/behavioral-ir` for the IR types it produces. Consumed by `@suss/a
 
 ## Status
 
-Phase 1 complete and stable. `assembleSummary`, `detectGaps`, and `assessConfidence` are the settled public API. See [`docs/status.md`](../../docs/status.md).
+Stable. `assembleSummary`, `detectGaps`, and `assessConfidence` are the public API. The `RawCodeStructure` and `PatternPack` interfaces are the contract that language adapters and framework packs implement against.
 
 ## Minimal usage
 

@@ -14,7 +14,7 @@ Zero dependencies — `@suss/behavioral-ir` is the foundation everyone else impo
 
 ## Status
 
-Phase 1 complete and stable. Types and `diffSummaries` are considered the settled public API for this phase. See [`docs/status.md`](../../docs/status.md).
+Stable. The IR types and `diffSummaries` are the public API. The format is also published as a [JSON Schema](schema/behavioral-summary.schema.json) and a [spec document](../../docs/behavioral-summary-format.md) so consumers in any language can validate and interpret summaries without taking a runtime dependency on this package.
 
 ## Minimal usage
 

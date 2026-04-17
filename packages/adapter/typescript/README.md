@@ -14,7 +14,7 @@ Imports `@suss/behavioral-ir` for type references and `@suss/extractor` for the 
 
 ## Status
 
-Phases 2 and 6 complete. Public API: `createTypeScriptAdapter` returns an adapter with `extractFromFiles` and `extractAll` methods. See [`docs/status.md`](../../../docs/status.md) and [`docs/extraction-algorithm.md`](../../../docs/extraction-algorithm.md).
+Stable. Public API: `createTypeScriptAdapter` returns an adapter with `extractFromFiles` and `extractAll` methods. Provider-side extraction (handlers, terminals, contracts, body shapes) and client-side extraction (call sites, response field tracking) are both supported. See [`docs/extraction-algorithm.md`](../../../docs/extraction-algorithm.md) for the algorithm and [`docs/status.md`](../../../docs/status.md) for the capability matrix.
 
 ## Coverage
 

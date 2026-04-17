@@ -69,7 +69,7 @@ suss check --dir summaries/           # auto-pairs by method + path
 
 ## Status
 
-Phases 1-7 complete. 614 tests. See [`docs/status.md`](docs/status.md) for details.
+Stable surface: the [behavioral summary format](docs/behavioral-summary-format.md), the IR types in `@suss/behavioral-ir`, the extraction pipeline, and the cross-boundary checker. Pattern packs ship today for **ts-rest**, **React Router**, **Express**, and **fetch**. See [`docs/status.md`](docs/status.md) for the full capability matrix.
 
 ## License
 
