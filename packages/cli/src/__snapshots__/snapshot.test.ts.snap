@@ -104,3 +104,99 @@ GET /users/:id
 2 summaries inspected.
 "
 `;
+
+exports[`inspect variant rendering > renders every Output variant 1`] = `
+"GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> throw ValidationError
+
+GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> render <ErrorPage />
+
+GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> return string
+
+GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> delegate -> next
+
+GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> emit "user.created"
+
+GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> void
+
+6 summaries inspected.
+"
+`;
+
+exports[`inspect variant rendering > renders every Predicate variant 1`] = `
+"GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> 200  when  1 !== 2 && req.query.id && db.findById() == null && typeof err === "Error" && !obj.has("id") && isValid(x) && a || b && !(1 > 0) && weirdSync()
+
+1 summaries inspected.
+"
+`;
+
+exports[`inspect variant rendering > renders every ValueRef and Derivation variant 1`] = `
+"GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> 200  when  db().result === 1 && arr.[0] === "x" && fetch().await.json().kind === "ok" && state.loaded === MAGIC
+
+1 summaries inspected.
+"
+`;
+
+exports[`inspect variant rendering > renders every primitive TypeShape variant in body shapes 1`] = `
+"GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> 200 { text, int, num, bool, n }
+
+1 summaries inspected.
+"
+`;
+
+exports[`inspect variant rendering > renders union, array, dictionary, ref, literal, undefined, unknown TypeShapes 1`] = `
+"GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> 200 { tags, byKey, shape, literal, ... }
+
+1 summaries inspected.
+"
+`;
+
+exports[`inspect variant rendering > simplifies double negations and !truthinessCheck via the negation handler 1`] = `
+"GET /users/:id
+  express handler | src/handlers/users.ts:10
+  Contract: 200, 400, 404, 500
+
+    -> 200  when  x && !y && z != null
+
+1 summaries inspected.
+"
+`;
