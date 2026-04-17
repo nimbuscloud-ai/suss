@@ -140,6 +140,20 @@ interface ExtractionContext {
 // ---------------------------------------------------------------------------
 
 function extractStatusCode(ctx: ExtractionContext): RawTerminal["statusCode"] {
+  const result = extractStatusCodeFromRule(ctx);
+  if (result !== null) {
+    return result;
+  }
+  // Fall back to pack-declared default (e.g. Express res.json() → 200)
+  if (ctx.extraction.defaultStatusCode !== undefined) {
+    return { type: "literal", value: ctx.extraction.defaultStatusCode };
+  }
+  return null;
+}
+
+function extractStatusCodeFromRule(
+  ctx: ExtractionContext,
+): RawTerminal["statusCode"] {
   const sc = ctx.extraction.statusCode;
   if (sc === undefined) {
     return null;

@@ -96,16 +96,16 @@ describe("expressFramework — integration", () => {
     // Branch order:
     //   1. !id                       → res.status(400).json(...)   → 400
     //   2. !user                     → res.status(404).json(...)   → 404
-    //   3. user.role === "admin"     → res.json(...)               → null (implicit 200)
-    //   4. default                   → res.json(user)              → null (implicit 200)
+    //   3. user.role === "admin"     → res.json(...)               → 200 (default)
+    //   4. default                   → res.json(user)              → 200 (default)
     const statusCodes = main!.transitions.map((t) =>
       t.output.type === "response" ? t.output.statusCode : "not-response",
     );
     expect(statusCodes).toEqual([
       { type: "literal", value: 400 },
       { type: "literal", value: 404 },
-      null,
-      null,
+      { type: "literal", value: 200 },
+      { type: "literal", value: 200 },
     ]);
 
     // Only the last transition is implicit default.
@@ -122,18 +122,21 @@ describe("expressFramework — integration", () => {
     }
   });
 
-  it("redirect(url) → 1-arg form has no extractable status code", () => {
-    // Exactly one redirect handler has a null statusCode (the 1-arg form).
+  it("redirect(url) → 1-arg form falls back to default 302", () => {
+    // The 1-arg redirect can't extract status from args (minArgs: 2 guard),
+    // so it falls back to the pack's defaultStatusCode: 302.
     const singleTxn = summaries.filter((s) => s.transitions.length === 1);
     expect(singleTxn).toHaveLength(2);
 
     const oneArg = singleTxn.find((s) => {
       const out = s.transitions[0].output;
-      return out.type === "response" && out.statusCode === null;
+      return (
+        out.type === "response" &&
+        out.statusCode?.type === "literal" &&
+        out.statusCode.value === 302
+      );
     });
     expect(oneArg).toBeDefined();
-    // minArgs: 2 on the redirect terminal's status extraction ensures the
-    // URL string does NOT leak in as a status code for the 1-arg form.
   });
 
   it("redirect(N, url) → 2-arg form extracts the status code from arg 0", () => {

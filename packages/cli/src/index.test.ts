@@ -356,7 +356,7 @@ describe("extract — express", () => {
       },
       {
         type: "response",
-        statusCode: null,
+        statusCode: { type: "literal", value: 200 },
         body: {
           type: "record",
           properties: {
@@ -370,7 +370,7 @@ describe("extract — express", () => {
       },
       {
         type: "response",
-        statusCode: null,
+        statusCode: { type: "literal", value: 200 },
         body: {
           type: "record",
           properties: {
@@ -391,11 +391,11 @@ describe("extract — express", () => {
 
     // Transition IDs are stable prefixes + short content hashes.
     for (const t of main.transitions) {
-      expect(t.id).toMatch(/^get:response:(400|404|none):[0-9a-f]{7}$/);
+      expect(t.id).toMatch(/^get:response:(400|404|200|none):[0-9a-f]{7}$/);
     }
   });
 
-  it("redirect handlers: 1-arg form → null status, 2-arg form → 301", () => {
+  it("redirect handlers: 1-arg form → default 302, 2-arg form → 301", () => {
     const singleTxn = summaries.filter((s) => s.transitions.length === 1);
     expect(singleTxn).toHaveLength(2);
 
@@ -404,7 +404,7 @@ describe("extract — express", () => {
         ? s.transitions[0].output.statusCode
         : "not-response",
     );
-    expect(codes).toContainEqual(null);
+    expect(codes).toContainEqual({ type: "literal", value: 302 });
     expect(codes).toContainEqual({ type: "literal", value: 301 });
   });
 });
@@ -437,7 +437,7 @@ describe("extract — react-router", () => {
     }
   });
 
-  it("loader has full expected shape — three response transitions, all null status", () => {
+  it("loader has full expected shape — three response transitions with default status codes", () => {
     const loader = summaries.find((s) => s.kind === "loader");
     if (loader === undefined) {
       expect.unreachable("loader not found");
@@ -454,17 +454,12 @@ describe("extract — react-router", () => {
       },
     ]);
 
-    // Three response transitions. json() extracts body only (not status),
-    // and redirect() reads status from arg 1 — none are provided here, so
-    // every statusCode is null. The redirect in the middle has no body
-    // extraction, so only the two json() calls produce structured bodies.
-    // `{ user }` uses shorthand — `user` has a declared type, so the shorthand
-    // resolves through the type checker to a full nested record.
+    // Three response transitions. json() defaults to 200, redirect() to 302.
     expect(loader.transitions).toHaveLength(3);
     expect(loader.transitions.map((t) => t.output)).toEqual([
       {
         type: "response",
-        statusCode: null,
+        statusCode: { type: "literal", value: 200 },
         body: {
           type: "record",
           properties: {
@@ -473,10 +468,15 @@ describe("extract — react-router", () => {
         },
         headers: {},
       },
-      { type: "response", statusCode: null, body: null, headers: {} },
       {
         type: "response",
-        statusCode: null,
+        statusCode: { type: "literal", value: 302 },
+        body: null,
+        headers: {},
+      },
+      {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
         body: {
           type: "record",
           properties: {
@@ -528,7 +528,7 @@ describe("extract — react-router", () => {
     expect(action.transitions.map((t) => t.output)).toEqual([
       {
         type: "response",
-        statusCode: null,
+        statusCode: { type: "literal", value: 200 },
         body: {
           type: "record",
           properties: {
@@ -537,8 +537,13 @@ describe("extract — react-router", () => {
         },
         headers: {},
       },
-      // Final redirect has no body extraction — body is null.
-      { type: "response", statusCode: null, body: null, headers: {} },
+      // Final redirect defaults to 302 — body is null.
+      {
+        type: "response",
+        statusCode: { type: "literal", value: 302 },
+        body: null,
+        headers: {},
+      },
     ]);
     expect(action.transitions.map((t) => t.isDefault)).toEqual([false, true]);
   });

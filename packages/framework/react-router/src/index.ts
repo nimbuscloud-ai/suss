@@ -37,6 +37,7 @@ export function reactRouterFramework(): PatternPack {
         match: { type: "functionCall", functionName: "json" },
         extraction: {
           body: { from: "argument", position: 0 },
+          defaultStatusCode: 200,
         },
       },
       {
@@ -45,6 +46,7 @@ export function reactRouterFramework(): PatternPack {
         match: { type: "functionCall", functionName: "data" },
         extraction: {
           body: { from: "argument", position: 0 },
+          defaultStatusCode: 200,
         },
       },
       {
@@ -53,6 +55,7 @@ export function reactRouterFramework(): PatternPack {
         match: { type: "functionCall", functionName: "redirect" },
         extraction: {
           statusCode: { from: "argument", position: 1 },
+          defaultStatusCode: 302,
         },
       },
       {
