@@ -24,6 +24,7 @@
     "packages/framework/fastify",
     "packages/runtime/web",
     "packages/runtime/axios",
+    "packages/stub/openapi",
     "packages/checker",
     "packages/cli"
   ],
