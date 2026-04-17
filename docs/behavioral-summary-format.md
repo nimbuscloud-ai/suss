@@ -170,6 +170,51 @@ The behavioral summary is a foundation, not an endpoint. Some things it enables:
 - **Impact analysis** — when a handler's summary changes, trace which consumers are affected via boundary bindings
 - **Architectural visibility** — aggregate summaries across a codebase to map which services talk to which endpoints and how
 
+## Publishing summaries
+
+Summaries are portable — `suss extract` produces relative file paths, and the format contains no machine-specific data. This means a library author can publish pre-built summaries alongside their package, and consumers get cross-boundary checking without the library's source code.
+
+### Convention
+
+Add a `suss` field to your `package.json` pointing to the summary file:
+
+```json
+{
+  "name": "my-api",
+  "suss": {
+    "summaries": "./suss-summaries.json"
+  }
+}
+```
+
+Then extract and include the file in your published package:
+
+```sh
+suss extract -p tsconfig.json -f express -o suss-summaries.json
+```
+
+Consumers can check against published summaries directly:
+
+```sh
+suss check node_modules/my-api/suss-summaries.json my-consumer-summaries.json
+```
+
+### Community-maintained summaries
+
+For libraries that don't publish their own summaries, a community repository can maintain them — similar to DefinitelyTyped for type definitions. The same `BehavioralSummary[]` format applies; the summaries just come from a different source.
+
+### Stub summaries
+
+When source code isn't available, summaries can be written by hand or generated from documentation. Set `confidence.source` to `"stub"` and `confidence.level` to `"low"` to signal that the summary wasn't extracted from code:
+
+```json
+{
+  "confidence": { "source": "stub", "level": "low" }
+}
+```
+
+Tools can use this to adjust how much they trust the summary.
+
 ## Schema
 
 The JSON Schema is at [`packages/ir/schema/behavioral-summary.schema.json`](../packages/ir/schema/behavioral-summary.schema.json). It validates the output of `suss extract`.
