@@ -29,6 +29,7 @@ suss check --dir summaries/ [--json] [-o findings.json] [--fail-on warning]
 
 # Generate summaries from a declared contract (no source extraction)
 suss stub --from openapi spec.yaml [-o provider.json]
+suss stub --from cloudformation template.yaml [-o provider.json]
 ```
 
 ### Options
@@ -47,7 +48,7 @@ suss stub --from openapi spec.yaml [-o provider.json]
 - `--fail-on` — exit-code threshold: `error` (default), `warning`, `info`, or `none`
 
 **`stub`**
-- `--from` — stub source kind (today: `openapi`)
+- `--from` — stub source kind: `openapi` or `cloudformation`
 - `-o, --output` — write JSON to file instead of stdout
 - Positional argument: path to the spec file
 

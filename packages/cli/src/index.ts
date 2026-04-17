@@ -40,7 +40,7 @@ Options (check):
   --fail-on        Exit non-zero threshold: error (default), warning, info, none
 
 Options (stub):
-  --from           Stub source kind: openapi (the only one today)
+  --from           Stub source kind: openapi, cloudformation
   -o, --output     Write JSON to file instead of stdout
 
 Exit codes:
@@ -216,9 +216,9 @@ async function main() {
       console.error(USAGE);
       process.exit(1);
     }
-    if (from !== "openapi") {
+    if (from !== "openapi" && from !== "cloudformation") {
       console.error(
-        `Error: unknown --from value "${from}". Supported: openapi`,
+        `Error: unknown --from value "${from}". Supported: openapi, cloudformation`,
       );
       process.exit(1);
     }

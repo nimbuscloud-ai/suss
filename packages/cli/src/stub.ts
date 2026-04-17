@@ -1,16 +1,16 @@
 // stub.ts — `suss stub` command implementation
 //
 // Generates BehavioralSummary[] from a declared contract source rather than
-// from TypeScript code. Today only OpenAPI specs are supported; the --from
-// flag picks the source kind so future stub sources (CDK synth, GraphQL SDL,
-// gRPC proto) plug in the same way.
+// from TypeScript code. Each --from value maps to a tiny loader that knows
+// how to turn a file path into summaries; future stub kinds (GraphQL SDL,
+// gRPC proto, etc.) plug in the same way.
 
 import fs from "node:fs";
 import path from "node:path";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
-export type StubSource = "openapi";
+export type StubSource = "openapi" | "cloudformation";
 
 export interface StubOptions {
   from: StubSource;
@@ -18,13 +18,17 @@ export interface StubOptions {
   output?: string;
 }
 
-const STUB_LOADERS: Record<
-  StubSource,
-  () => Promise<{
-    openApiFileToSummaries: (file: string) => BehavioralSummary[];
-  }>
-> = {
-  openapi: () => import("@suss/stub-openapi"),
+type StubLoader = (specPath: string) => Promise<BehavioralSummary[]>;
+
+const STUB_LOADERS: Record<StubSource, StubLoader> = {
+  openapi: async (specPath) => {
+    const mod = await import("@suss/stub-openapi");
+    return mod.openApiFileToSummaries(specPath);
+  },
+  cloudformation: async (specPath) => {
+    const mod = await import("@suss/stub-cloudformation");
+    return mod.cloudFormationFileToSummaries(specPath);
+  },
 };
 
 export async function stub(options: StubOptions): Promise<BehavioralSummary[]> {
@@ -35,8 +39,7 @@ export async function stub(options: StubOptions): Promise<BehavioralSummary[]> {
     );
   }
 
-  const mod = await loader();
-  const summaries = mod.openApiFileToSummaries(options.spec);
+  const summaries = await loader(options.spec);
 
   const json = JSON.stringify(summaries, null, 2);
 
