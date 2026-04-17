@@ -357,16 +357,16 @@ A framework pack author doesn't need to understand:
 
 That's the whole point of the declarative design. If writing a new pack requires touching any file outside `packages/framework/<name>/`, the pattern system has a gap that needs to be filled properly — don't work around it in the pack.
 
-## A worked example: adding Fastify support
+## A worked example: the Fastify pack
 
-Fastify handlers look like this:
+The shipped Fastify pack lives in [`packages/framework/fastify/`](../packages/framework/fastify/) — read it alongside this section. Fastify handlers look like:
 
 ```typescript
 import Fastify from "fastify";
 
-const fastify = Fastify();
+const app = Fastify();
 
-fastify.get("/users/:id", async (request, reply) => {
+app.get("/users/:id", async (request, reply) => {
   const user = await db.findById(request.params.id);
   if (!user) {
     return reply.code(404).send({ error: "not found" });
@@ -377,7 +377,7 @@ fastify.get("/users/:id", async (request, reply) => {
 
 Walking through the four questions:
 
-**Discovery.** Handlers are registered via `fastify.get("/path", handler)` (and `.post`, `.put`, etc.). This is a `registrationCall` pattern:
+**Discovery.** Handlers are registered via `app.<verb>("/path", handler)` where `app` is the result of calling the imported `Fastify` (or named-import `fastify`). This is a `registrationCall` pattern. The pack ships two discovery entries — one for the default-import shape (`importName: "Fastify"`) and one for the named-import shape (`importName: "fastify"`) — because `defaultImport.getText() === match.importName` matches against the local binding name.
 
 ```typescript
 discovery: [
@@ -386,58 +386,50 @@ discovery: [
     match: {
       type: "registrationCall",
       importModule: "fastify",
-      importName: "default",
-      registrationChain: [".get", ".post", ".put", ".delete", ".patch"],
+      importName: "Fastify",
+      registrationChain: [".get", ".post", ".put", ".delete", ".patch", ".head", ".options"],
     },
     bindingExtraction: {
       method: { type: "fromRegistration", position: "methodName" },
       path: { type: "fromRegistration", position: 0 },
     },
   },
+  // ...same shape with importName: "fastify" for the named-import form
 ],
 ```
 
-**Terminals.** Responses are produced via `reply.code(N).send(body)` or `reply.send(body)`, or by returning a value directly (Fastify serializes it). Three terminal patterns:
+**Terminals.** Responses are produced via `reply.code(N).send(body)`, `reply.status(N).send(body)`, or implicit-200 `reply.send(body)`. Plus `reply.redirect(...)` and `throw`. Each becomes a `parameterMethodCall` matcher on parameter position 1 (`reply`):
 
 ```typescript
 terminals: [
-  // reply.code(N).send(body)
   {
     kind: "response",
-    match: {
-      type: "parameterMethodCall",
-      parameterPosition: 1,
-      methodChain: ["code", "send"],
-    },
+    match: { type: "parameterMethodCall", parameterPosition: 1, methodChain: ["code", "send"] },
     extraction: {
       statusCode: { from: "argument", position: 0 },
       body: { from: "argument", position: 0 },
     },
   },
-  // reply.send(body) — implicit 200
   {
     kind: "response",
-    match: {
-      type: "parameterMethodCall",
-      parameterPosition: 1,
-      methodChain: ["send"],
-    },
+    match: { type: "parameterMethodCall", parameterPosition: 1, methodChain: ["send"] },
     extraction: {
       body: { from: "argument", position: 0 },
+      defaultStatusCode: 200, // implicit 200 for bare reply.send()
     },
   },
-  // return value — implicit 200
+  // ...status-aliased and redirect variants
   {
-    kind: "response",
-    match: { type: "returnShape" },
-    extraction: {
-      body: { from: "property", name: "" }, // whole return value
-    },
+    kind: "throw",
+    match: { type: "throwExpression" },
+    extraction: {},
   },
 ],
 ```
 
-**Inputs.** Fastify uses `(request, reply) => ...` — positional:
+The `defaultStatusCode: 200` field is important: without it the implicit-200 chain (`reply.send(body)`) would emit a transition with `statusCode: null`, and inspect would render `???`. The pack declares the framework-level default and the adapter applies it when extraction can't pull a numeric value from the call.
+
+**Inputs.** Fastify's handler signature is `(request, reply) => ...` — positional:
 
 ```typescript
 inputMapping: {
@@ -449,6 +441,8 @@ inputMapping: {
 },
 ```
 
-**Contracts.** Fastify has JSON Schema-based validation schemas attached to route options, but they're not pre-declared elsewhere — the schema lives inline with the handler. For v0, skip contract reading and rely on inferred transitions alone.
+**Contracts.** Fastify supports JSON Schema validation attached to route options inline with the handler. v0 doesn't declare a `contractReading` and relies on inferred transitions alone.
 
-That's the whole Fastify pack: ~60 lines. Plus a test file asserting the structure is well-formed, and a fixture in Phase 4 with a minimal Fastify handler + expected output.
+**Limitations the pack documents.** Fastify also lets handlers serialise a returned value as the response body (`return user`). The current `TerminalExtraction` has no shape for "the whole returned expression as the body" — it can only read named properties of an object literal. So the Fastify pack doesn't match `return value` shapes today; users wanting full coverage write `return reply.send(value)` instead.
+
+The whole pack is ~120 lines of declarative data plus an integration test against an in-memory ts-morph project.
