@@ -593,3 +593,76 @@ describe("checkDir", () => {
     expect(() => checkDir({ dir: emptyDir })).toThrow("No JSON files");
   });
 });
+
+// ---------------------------------------------------------------------------
+// --fail-on
+// ---------------------------------------------------------------------------
+
+describe("--fail-on threshold", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-failon-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  function writeJson(name: string, data: unknown) {
+    fs.writeFileSync(path.join(tmpDir, name), JSON.stringify(data));
+  }
+
+  it("failOn: none — never triggers hasErrors even with error findings", () => {
+    const p = provider("test", [
+      transition("p1", { statusCode: 200 }),
+      transition("p2", { statusCode: 500 }),
+    ]);
+    const c = consumer("test", [
+      transition("c1", { conditionStatus: 200, isDefault: true }),
+    ]);
+
+    writeJson("p.json", [p]);
+    writeJson("c.json", [c]);
+
+    const result = check({
+      providerFile: path.join(tmpDir, "p.json"),
+      consumerFile: path.join(tmpDir, "c.json"),
+      failOn: "none",
+    });
+    expect(result.hasErrors).toBe(false);
+    expect(result.findings.length).toBeGreaterThan(0);
+  });
+
+  it("failOn: warning — triggers on warning-severity findings", () => {
+    const p = provider("test", [
+      transition("p1", { statusCode: 200 }),
+      transition("p2", { statusCode: 200 }),
+    ]);
+    const c = consumer("test", [
+      transition("c1", { conditionStatus: 200, isDefault: true }),
+    ]);
+
+    writeJson("p.json", [p]);
+    writeJson("c.json", [c]);
+
+    const resultWarning = check({
+      providerFile: path.join(tmpDir, "p.json"),
+      consumerFile: path.join(tmpDir, "c.json"),
+      failOn: "warning",
+    });
+
+    const resultError = check({
+      providerFile: path.join(tmpDir, "p.json"),
+      consumerFile: path.join(tmpDir, "c.json"),
+      failOn: "error",
+    });
+
+    // Same findings, different threshold
+    expect(resultWarning.findings).toEqual(resultError.findings);
+    // warning threshold catches more
+    if (resultWarning.findings.some((f) => f.severity === "warning")) {
+      expect(resultWarning.hasErrors).toBe(true);
+      expect(resultError.hasErrors).toBe(false);
+    }
+  });
+});

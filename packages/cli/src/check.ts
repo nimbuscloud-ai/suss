@@ -6,17 +6,21 @@ import { checkAll, checkPair } from "@suss/checker";
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 import type { CheckAllResult } from "@suss/checker";
 
+export type FailOn = "error" | "warning" | "info" | "none";
+
 export interface CheckOptions {
   providerFile: string;
   consumerFile: string;
   json?: boolean;
   output?: string;
+  failOn?: FailOn;
 }
 
 export interface CheckDirOptions {
   dir: string;
   json?: boolean;
   output?: string;
+  failOn?: FailOn;
 }
 
 export interface CheckResult {
@@ -70,14 +74,14 @@ export function checkDir(
 
   return {
     findings: result.findings,
-    hasErrors: result.findings.some((f) => f.severity === "error"),
+    hasErrors: meetsThreshold(result.findings, options.failOn ?? "error"),
     result,
   };
 }
 
 function emitFindings(
   findings: Finding[],
-  options: { json?: boolean; output?: string },
+  options: { json?: boolean; output?: string; failOn?: FailOn },
 ): CheckResult {
   const rendered = options.json
     ? `${JSON.stringify(findings, null, 2)}\n`
@@ -91,8 +95,22 @@ function emitFindings(
 
   return {
     findings,
-    hasErrors: findings.some((f) => f.severity === "error"),
+    hasErrors: meetsThreshold(findings, options.failOn ?? "error"),
   };
+}
+
+const SEVERITY_ORDER: Record<string, number> = {
+  error: 0,
+  warning: 1,
+  info: 2,
+};
+
+function meetsThreshold(findings: Finding[], failOn: FailOn): boolean {
+  if (failOn === "none") {
+    return false;
+  }
+  const threshold = SEVERITY_ORDER[failOn];
+  return findings.some((f) => SEVERITY_ORDER[f.severity] <= threshold);
 }
 
 function readSummaries(file: string): BehavioralSummary[] {
