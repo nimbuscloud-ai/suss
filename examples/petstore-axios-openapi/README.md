@@ -27,7 +27,7 @@ make inspect-provider
 
 ## What you should see
 
-The `check` step produces 7 findings: 5 errors and 2 info. Below is what each one means and which line of the consumer caused it.
+The `check` step produces 11 findings: 7 errors and 4 info. Below is what each one means and which line of the consumer caused it.
 
 ### Errors — provider produces a status the consumer doesn't handle
 
@@ -39,6 +39,7 @@ These are real bugs in the consumer. Petstore declares 200, 400, and 404 for `GE
 | `safeGetPet` (line 33)  | `GET /pet/{petId}`        | 400 | catches 404 only via `err.response?.status` |
 | `describePet` (line 55) | `GET /pet/{petId}`        | 400 + 404 | no status handling at all — assumes 200 |
 | `listPets` (line 48)    | `GET /pet/findByStatus`   | 400 | wrapper-callsite (via `getJson`) — no status handling |
+| `describePetViaWrapper` (line 65) | `GET /pet/{petId}` | 400 + 404 | wrapper-callsite — no status handling |
 
 Note that `listPets` doesn't directly call axios — it calls `getJson()` from `api-client.ts`, which forwards `path` to `axios.get`. `suss` walks references to wrapper functions and synthesises a per-caller summary so the call site is still pairable.
 
@@ -48,8 +49,12 @@ Petstore's `Pet` schema lists only `name` and `photoUrls` as required. `id` and 
 
 | Consumer | Field | Notes |
 |----------|-------|-------|
-| `describePet` | `id`     | Read as `data.id` after `axios.get` |
-| `describePet` | `status` | Read as `data.status` after `axios.get` |
+| `describePet`           | `id`     | Read as `data.id` after `axios.get` |
+| `describePet`           | `status` | Read as `data.status` after `axios.get` |
+| `describePetViaWrapper` | `id`     | Read as `pet.id` on the wrapper return value |
+| `describePetViaWrapper` | `status` | Read as `pet.status` on the wrapper return value |
+
+The two `describePetViaWrapper` findings exercise the wrapper-expansion pipeline end-to-end: `getJson` already unwrapped the response inside `api-client.ts`, so accesses on its return value are direct body fields and the same optional-field rule fires.
 
 The check is severity `info` — it doesn't fail CI by default, but tells you where the consumer is implicitly depending on something the provider doesn't guarantee.
 

@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1879,
-      "covered": 1563,
+      "total": 1886,
+      "covered": 1571,
       "skipped": 0,
-      "pct": 83.18
+      "pct": 83.29
     },
     "statements": {
-      "total": 1894,
-      "covered": 1576,
+      "total": 1901,
+      "covered": 1585,
       "skipped": 0,
-      "pct": 83.21
+      "pct": 83.37
     },
     "functions": {
       "total": 154,
-      "covered": 143,
+      "covered": 144,
       "skipped": 0,
-      "pct": 92.85
+      "pct": 93.5
     },
     "branches": {
-      "total": 1513,
-      "covered": 1118,
+      "total": 1517,
+      "covered": 1123,
       "skipped": 0,
-      "pct": 73.89
+      "pct": 74.02
     },
     "branchesTrue": {
       "total": 0,
@@ -33,10 +33,10 @@
   },
   "src/adapter.ts": {
     "lines": {
-      "total": 300,
-      "covered": 245,
+      "total": 307,
+      "covered": 252,
       "skipped": 0,
-      "pct": 81.66
+      "pct": 82.08
     },
     "functions": {
       "total": 35,
@@ -45,16 +45,16 @@
       "pct": 91.42
     },
     "statements": {
-      "total": 304,
-      "covered": 248,
+      "total": 311,
+      "covered": 255,
       "skipped": 0,
-      "pct": 81.57
+      "pct": 81.99
     },
     "branches": {
-      "total": 244,
-      "covered": 168,
+      "total": 248,
+      "covered": 171,
       "skipped": 0,
-      "pct": 68.85
+      "pct": 68.95
     }
   },
   "src/assembly.ts": {
@@ -190,27 +190,27 @@
   "src/field-accesses.ts": {
     "lines": {
       "total": 145,
-      "covered": 134,
+      "covered": 135,
       "skipped": 0,
-      "pct": 92.41
+      "pct": 93.1
     },
     "functions": {
       "total": 17,
-      "covered": 16,
+      "covered": 17,
       "skipped": 0,
-      "pct": 94.11
+      "pct": 100
     },
     "statements": {
       "total": 147,
-      "covered": 135,
+      "covered": 137,
       "skipped": 0,
-      "pct": 91.83
+      "pct": 93.19
     },
     "branches": {
       "total": 87,
-      "covered": 72,
+      "covered": 74,
       "skipped": 0,
-      "pct": 82.75
+      "pct": 85.05
     }
   },
   "src/index.ts": {

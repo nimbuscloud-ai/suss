@@ -49,6 +49,17 @@ export async function listPets(): Promise<Pet[]> {
   return getJson<Pet[]>("/pet/findByStatus");
 }
 
+// Body field reads through the wrapper. The wrapper has already unwrapped
+// the response via destructuring, so `pet.id` / `pet.name` / `pet.status`
+// are direct body accesses — the synthesised summary's expectedInput
+// captures them and the body-compatibility check surfaces optional-field
+// findings for `id` and `status` (only `name` and `photoUrls` are required
+// on Petstore's Pet schema).
+export async function describePetViaWrapper(petId: number): Promise<string> {
+  const pet = await getJson<Pet>(`/pet/${petId}`);
+  return `${pet.id}: ${pet.name} (${pet.status})`;
+}
+
 // Reads body fields after destructuring. `name` is required in Petstore's
 // Pet schema; `id` and `status` are optional — suss should emit info-level
 // "consumer reads optional field" findings for those two.
