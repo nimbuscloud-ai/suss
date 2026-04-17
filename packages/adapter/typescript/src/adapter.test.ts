@@ -1419,10 +1419,8 @@ describe("response property semantics", () => {
   });
 
   it("does not resolve when pack has no responseSemantics", () => {
-    const packWithoutSemantics: PatternPack = {
-      ...fetchPackWithSemantics,
-      responseSemantics: undefined,
-    };
+    const { responseSemantics: _, ...packWithoutSemantics } =
+      fetchPackWithSemantics;
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
