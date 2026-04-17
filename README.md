@@ -51,6 +51,7 @@ suss check --dir summaries/           # auto-pairs by method + path
 | [`@suss/framework-ts-rest`](packages/framework/ts-rest) | Pattern pack for ts-rest. | ![](.github/badges/coverage-ts-rest.svg) |
 | [`@suss/framework-react-router`](packages/framework/react-router) | Pattern pack for React Router loaders/actions/components. | ![](.github/badges/coverage-react-router.svg) |
 | [`@suss/framework-express`](packages/framework/express) | Pattern pack for Express handlers. | ![](.github/badges/coverage-express.svg) |
+| [`@suss/framework-fastify`](packages/framework/fastify) | Pattern pack for Fastify handlers. | ![](.github/badges/coverage-fastify.svg) |
 | [`@suss/runtime-web`](packages/runtime/web) | Runtime pack for `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
 | [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker. | ![](.github/badges/coverage-checker.svg) |
 | [`@suss/cli`](packages/cli) | CLI wrapper. | ![](.github/badges/coverage-cli.svg) |
@@ -69,7 +70,7 @@ suss check --dir summaries/           # auto-pairs by method + path
 
 ## Status
 
-Stable surface: the [behavioral summary format](docs/behavioral-summary-format.md), the IR types in `@suss/behavioral-ir`, the extraction pipeline, and the cross-boundary checker. Pattern packs ship today for **ts-rest**, **React Router**, **Express**, and **fetch**. See [`docs/status.md`](docs/status.md) for the full capability matrix.
+Stable surface: the [behavioral summary format](docs/behavioral-summary-format.md), the IR types in `@suss/behavioral-ir`, the extraction pipeline, and the cross-boundary checker. Pattern packs ship today for **ts-rest**, **React Router**, **Express**, **Fastify**, and **fetch**. See [`docs/status.md`](docs/status.md) for the full capability matrix.
 
 ## License
 

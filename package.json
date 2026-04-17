@@ -21,6 +21,7 @@
     "packages/framework/ts-rest",
     "packages/framework/react-router",
     "packages/framework/express",
+    "packages/framework/fastify",
     "packages/runtime/web",
     "packages/checker",
     "packages/cli"

@@ -1,0 +1,170 @@
+import path from "node:path";
+
+import { Project } from "ts-morph";
+import { beforeAll, describe, expect, it } from "vitest";
+
+import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+
+import { fastifyFramework } from "./index.js";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+// ---------------------------------------------------------------------------
+// Fixture project — adds fixtures/fastify/*.ts to an in-memory ts-morph project
+// ---------------------------------------------------------------------------
+
+const fixturesDir = path.resolve(__dirname, "../../../../fixtures/fastify");
+
+function runAdapter(): BehavioralSummary[] {
+  const project = new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: {
+      strict: true,
+      target: 99, // ESNext
+      module: 99, // ESNext
+      moduleResolution: 100, // Bundler
+      skipLibCheck: true,
+    },
+  });
+  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
+
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: [fastifyFramework()],
+  });
+
+  return adapter.extractAll();
+}
+
+// ---------------------------------------------------------------------------
+// Structural sanity checks
+// ---------------------------------------------------------------------------
+
+describe("fastifyFramework — pack shape", () => {
+  it("exposes the expected discovery, terminals, and inputMapping keys", () => {
+    const pack = fastifyFramework();
+    expect(pack.name).toBe("fastify");
+    expect(pack.languages).toEqual(["typescript", "javascript"]);
+    // Two discovery patterns — default-import and named-import variants
+    expect(pack.discovery).toHaveLength(2);
+    expect(pack.contractReading).toBeUndefined();
+    expect(pack.inputMapping.type).toBe("positionalParams");
+  });
+
+  it("registers all standard HTTP method verbs", () => {
+    const pack = fastifyFramework();
+    for (const discovery of pack.discovery) {
+      expect(discovery.match.type).toBe("registrationCall");
+      if (discovery.match.type !== "registrationCall") {
+        continue;
+      }
+      expect(discovery.match.registrationChain).toEqual([
+        ".get",
+        ".post",
+        ".put",
+        ".delete",
+        ".patch",
+        ".head",
+        ".options",
+      ]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration — run the adapter against the fastify fixture
+// ---------------------------------------------------------------------------
+
+describe("fastifyFramework — integration", () => {
+  let summaries: BehavioralSummary[];
+  beforeAll(() => {
+    summaries = runAdapter();
+  }, 90_000);
+
+  it("discovers every app.<method> handler in the fixture", () => {
+    expect(summaries).toHaveLength(3);
+    for (const s of summaries) {
+      expect(s.kind).toBe("handler");
+      expect(s.identity.name).toBe("get");
+      expect(s.identity.boundaryBinding).toEqual({
+        protocol: "http",
+        framework: "fastify",
+      });
+    }
+  });
+
+  it("maps positional params (request, reply) to framework roles", () => {
+    const main = summaries.find((s) => s.transitions.length === 4);
+    expect(main).toBeDefined();
+    const roles = main!.inputs
+      .filter((i) => i.type === "parameter")
+      .map((i) => (i.type === "parameter" ? i.role : null));
+    expect(roles).toEqual(["request", "reply"]);
+  });
+
+  it("assembles the /users/:id guard chain into four response transitions", () => {
+    const main = summaries.find((s) => s.transitions.length === 4);
+    expect(main).toBeDefined();
+
+    // Branch order:
+    //   1. !id                       → reply.code(400).send(...)   → 400
+    //   2. !user                     → reply.code(404).send(...)   → 404
+    //   3. user.role === "admin"     → reply.send(...)             → 200 (default)
+    //   4. default                   → reply.send(user)            → 200 (default)
+    const statusCodes = main!.transitions.map((t) =>
+      t.output.type === "response" ? t.output.statusCode : "not-response",
+    );
+    expect(statusCodes).toEqual([
+      { type: "literal", value: 400 },
+      { type: "literal", value: 404 },
+      { type: "literal", value: 200 },
+      { type: "literal", value: 200 },
+    ]);
+
+    expect(main!.transitions.map((t) => t.isDefault)).toEqual([
+      false,
+      false,
+      false,
+      true,
+    ]);
+
+    for (const t of main!.transitions) {
+      expect(t.output.type).toBe("response");
+    }
+  });
+
+  it("redirect(url) → 1-arg form falls back to default 302", () => {
+    const singleTxn = summaries.filter((s) => s.transitions.length === 1);
+    expect(singleTxn).toHaveLength(2);
+
+    const oneArg = singleTxn.find((s) => {
+      const out = s.transitions[0].output;
+      return (
+        out.type === "response" &&
+        out.statusCode?.type === "literal" &&
+        out.statusCode.value === 302
+      );
+    });
+    expect(oneArg).toBeDefined();
+  });
+
+  it("redirect(N, url) → 2-arg form extracts the status code from arg 0", () => {
+    const twoArg = summaries
+      .filter((s) => s.transitions.length === 1)
+      .find((s) => {
+        const out = s.transitions[0].output;
+        return (
+          out.type === "response" &&
+          out.statusCode?.type === "literal" &&
+          out.statusCode.value === 301
+        );
+      });
+    expect(twoArg).toBeDefined();
+  });
+
+  it("has no gaps when there is no contract", () => {
+    for (const s of summaries) {
+      expect(s.gaps).toEqual([]);
+    }
+  });
+});
