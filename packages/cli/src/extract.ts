@@ -87,6 +87,13 @@ export async function extract(
       ? adapter.extractFromFiles(options.files.map((f) => path.resolve(f)))
       : adapter.extractAll();
 
+  // Make file paths relative to the project root so summaries are portable.
+  // Absolute paths leak filesystem structure and break on other machines.
+  const projectRoot = path.dirname(tsconfigPath);
+  for (const summary of summaries) {
+    summary.location.file = path.relative(projectRoot, summary.location.file);
+  }
+
   // Output
   const json = JSON.stringify(summaries, null, 2);
 
