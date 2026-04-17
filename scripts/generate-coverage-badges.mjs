@@ -25,6 +25,7 @@ const packageDirs = [
   ["packages/framework/fastify", "fastify"],
   ["packages/runtime/web", "web"],
   ["packages/runtime/axios", "axios"],
+  ["packages/stub/openapi", "stub-openapi"],
   ["packages/checker", "checker"],
   ["packages/cli", "cli"],
 ];
