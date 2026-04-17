@@ -43,6 +43,25 @@ exports[`inspect --diff output snapshots > shows removed transition 1`] = `
 "
 `;
 
+exports[`inspect --dir output snapshots > shows paired boundaries with transition counts 1`] = `
+"1 paired boundary:
+
+  GET /users/{id}
+    provider: getUser (express, 3 transitions)
+    client:   loadUser (fetch, 2 transitions)
+
+2 summaries from 2 files.
+"
+`;
+
+exports[`inspect --dir output snapshots > shows unmatched summaries 1`] = `
+"1 unmatched:
+  getUser (GET /users/:id) — no matching client
+
+1 summaries from 1 files.
+"
+`;
+
 exports[`inspect output snapshots > renders a client summary 1`] = `
 "GET /users/:id
   fetch client | src/pages/user.ts:5

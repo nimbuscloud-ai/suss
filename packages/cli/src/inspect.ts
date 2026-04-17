@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { diffSummaries } from "@suss/behavioral-ir";
+import { pairSummaries } from "@suss/checker";
 
 import type {
   BehavioralSummary,
@@ -276,6 +277,10 @@ export interface InspectOptions {
   file: string;
 }
 
+export interface DirOptions {
+  dir: string;
+}
+
 export interface DiffOptions {
   before: string;
   after: string;
@@ -438,4 +443,119 @@ export function inspectDiff(options: DiffOptions): void {
   if (!hasChanges) {
     process.stdout.write("No behavioral changes.\n");
   }
+}
+
+// ---------------------------------------------------------------------------
+// Dir command — boundary pair overview
+// ---------------------------------------------------------------------------
+
+function readSummariesFromDir(dir: string): BehavioralSummary[] {
+  const resolved = path.resolve(dir);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    throw new Error(`Directory not found: ${resolved}`);
+  }
+
+  const files = fs.readdirSync(resolved).filter((f) => f.endsWith(".json"));
+  if (files.length === 0) {
+    throw new Error(`No JSON files found in ${resolved}`);
+  }
+
+  const all: BehavioralSummary[] = [];
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(resolved, file), "utf-8");
+    const parsed = JSON.parse(content) as unknown;
+    if (Array.isArray(parsed)) {
+      all.push(...(parsed as BehavioralSummary[]));
+    }
+  }
+  return all;
+}
+
+export function inspectDir(options: DirOptions): void {
+  const summaries = readSummariesFromDir(options.dir);
+  const result = pairSummaries(summaries);
+
+  // Paired boundaries
+  // Group pairs by key and show provider/consumer transition counts
+  const pairsByKey = new Map<
+    string,
+    { providers: BehavioralSummary[]; consumers: BehavioralSummary[] }
+  >();
+  for (const pair of result.pairs) {
+    let group = pairsByKey.get(pair.key);
+    if (group === undefined) {
+      group = { providers: [], consumers: [] };
+      pairsByKey.set(pair.key, group);
+    }
+    if (!group.providers.includes(pair.provider)) {
+      group.providers.push(pair.provider);
+    }
+    if (!group.consumers.includes(pair.consumer)) {
+      group.consumers.push(pair.consumer);
+    }
+  }
+
+  if (pairsByKey.size > 0) {
+    process.stdout.write(
+      `${pairsByKey.size} paired boundar${pairsByKey.size === 1 ? "y" : "ies"}:\n\n`,
+    );
+
+    for (const [key, group] of pairsByKey) {
+      process.stdout.write(`  ${key}\n`);
+      for (const p of group.providers) {
+        const binding = p.identity.boundaryBinding;
+        const fw = binding?.framework ?? "?";
+        process.stdout.write(
+          `    provider: ${p.identity.name} (${fw}, ${p.transitions.length} transitions)\n`,
+        );
+      }
+      for (const c of group.consumers) {
+        const binding = c.identity.boundaryBinding;
+        const fw = binding?.framework ?? "?";
+        process.stdout.write(
+          `    client:   ${c.identity.name} (${fw}, ${c.transitions.length} transitions)\n`,
+        );
+      }
+    }
+  }
+
+  // Unmatched
+  const { providers, consumers, noBinding } = result.unmatched;
+  const unmatchedCount = providers.length + consumers.length + noBinding.length;
+
+  if (unmatchedCount > 0) {
+    if (pairsByKey.size > 0) {
+      process.stdout.write("\n");
+    }
+    process.stdout.write(`${unmatchedCount} unmatched:\n`);
+    for (const p of providers) {
+      const key =
+        p.identity.boundaryBinding?.method && p.identity.boundaryBinding.path
+          ? `${p.identity.boundaryBinding.method} ${p.identity.boundaryBinding.path}`
+          : "no path";
+      process.stdout.write(
+        `  ${p.identity.name} (${key}) — no matching client\n`,
+      );
+    }
+    for (const c of consumers) {
+      const key =
+        c.identity.boundaryBinding?.method && c.identity.boundaryBinding.path
+          ? `${c.identity.boundaryBinding.method} ${c.identity.boundaryBinding.path}`
+          : "no path";
+      process.stdout.write(
+        `  ${c.identity.name} (${key}) — no matching provider\n`,
+      );
+    }
+    for (const s of noBinding) {
+      process.stdout.write(`  ${s.identity.name} — no boundary binding\n`);
+    }
+  }
+
+  if (pairsByKey.size === 0 && unmatchedCount === 0) {
+    process.stdout.write("No summaries found.\n");
+  }
+
+  process.stdout.write(
+    `\n${summaries.length} summaries from ${fs.readdirSync(path.resolve(options.dir)).filter((f) => f.endsWith(".json")).length} files.\n`,
+  );
 }

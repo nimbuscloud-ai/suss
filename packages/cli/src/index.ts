@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 
 import { check, checkDir } from "./check.js";
 import { extract } from "./extract.js";
-import { inspect, inspectDiff } from "./inspect.js";
+import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 
 import type { CheckResult } from "./check.js";
 
@@ -12,6 +12,7 @@ const USAGE = `
 Usage:
   suss extract -p <tsconfig> -f <framework> [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss inspect <summaries.json>
+  suss inspect --dir <directory>
   suss inspect --diff <before.json> <after.json>
   suss check <provider.json> <consumer.json> [--json] [-o <output>]
   suss check --dir <directory> [--json] [-o <output>]
@@ -113,6 +114,14 @@ async function main() {
         process.exit(1);
       }
       inspectDiff({ before, after });
+    } else if (args[1] === "--dir") {
+      const dir = args[2];
+      if (dir === undefined) {
+        console.error("Error: --dir requires a directory path");
+        console.error(USAGE);
+        process.exit(1);
+      }
+      inspectDir({ dir });
     } else {
       const file = args[1];
       if (file === undefined) {
@@ -175,8 +184,8 @@ main().catch((err: Error) => {
 
 export { check, checkDir } from "./check.js";
 export { extract } from "./extract.js";
-export { inspect, inspectDiff } from "./inspect.js";
+export { inspect, inspectDiff, inspectDir } from "./inspect.js";
 
 export type { CheckDirOptions, CheckOptions, CheckResult } from "./check.js";
 export type { ExtractOptions } from "./extract.js";
-export type { DiffOptions, InspectOptions } from "./inspect.js";
+export type { DiffOptions, DirOptions, InspectOptions } from "./inspect.js";

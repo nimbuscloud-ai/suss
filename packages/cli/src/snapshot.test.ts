@@ -9,7 +9,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { inspect, inspectDiff } from "./inspect.js";
+import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 
@@ -357,6 +357,39 @@ describe("inspect --diff output snapshots", () => {
     const output = captureStdout(() => inspectDiff({ before: f1, after: f2 }));
     fs.rmSync(path.dirname(f1), { recursive: true });
     fs.rmSync(path.dirname(f2), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dir snapshots
+// ---------------------------------------------------------------------------
+
+function writeTempDir(files: Record<string, BehavioralSummary[]>): string {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-dir-"));
+  for (const [name, data] of Object.entries(files)) {
+    fs.writeFileSync(path.join(tmpDir, name), JSON.stringify(data, null, 2));
+  }
+  return tmpDir;
+}
+
+describe("inspect --dir output snapshots", () => {
+  it("shows paired boundaries with transition counts", () => {
+    const dir = writeTempDir({
+      "providers.json": [handlerSummary],
+      "consumers.json": [clientSummary],
+    });
+    const output = captureStdout(() => inspectDir({ dir }));
+    fs.rmSync(dir, { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
+  it("shows unmatched summaries", () => {
+    const dir = writeTempDir({
+      "providers.json": [handlerSummary],
+    });
+    const output = captureStdout(() => inspectDir({ dir }));
+    fs.rmSync(dir, { recursive: true });
     expect(output).toMatchSnapshot();
   });
 });
