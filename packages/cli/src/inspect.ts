@@ -24,35 +24,44 @@ import type {
 // Body shape rendering
 // ---------------------------------------------------------------------------
 
+type ShapeFormatter<K extends TypeShape["type"]> = (
+  shape: Extract<TypeShape, { type: K }>,
+) => string;
+
+const SHAPE_FORMATTERS: { [K in TypeShape["type"]]: ShapeFormatter<K> } = {
+  record: (s) => {
+    const keys = Object.keys(s.properties);
+    if (keys.length === 0) {
+      return "{}";
+    }
+    if (keys.length <= 5) {
+      return `{ ${keys.join(", ")} }`;
+    }
+    return `{ ${keys.slice(0, 4).join(", ")}, ... }`;
+  },
+  literal: (s) => JSON.stringify(s.value),
+  ref: (s) => s.name,
+  array: (s) => `[${formatBodyShape(s.items)}]`,
+  dictionary: (s) => `{ [key]: ${formatBodyShape(s.values)} }`,
+  union: (s) => s.variants.map(formatBodyShape).join(" | "),
+  text: () => "string",
+  integer: () => "int",
+  number: () => "number",
+  boolean: () => "bool",
+  null: () => "null",
+  undefined: () => "undefined",
+  unknown: () => "any",
+};
+
 /** Compact representation of a body shape: `{ id, name, email }` */
 function formatBodyShape(shape: TypeShape | null | undefined): string {
   if (shape == null) {
     return "";
   }
-  switch (shape.type) {
-    case "record": {
-      const keys = Object.keys(shape.properties);
-      if (keys.length === 0) {
-        return "{}";
-      }
-      if (keys.length <= 5) {
-        return `{ ${keys.join(", ")} }`;
-      }
-      return `{ ${keys.slice(0, 4).join(", ")}, ... }`;
-    }
-    case "literal":
-      return JSON.stringify(shape.value);
-    case "ref":
-      return shape.name;
-    case "array":
-      return `[${formatBodyShape(shape.items)}]`;
-    case "dictionary":
-      return `{ [key]: ${formatBodyShape(shape.values)} }`;
-    case "union":
-      return shape.variants.map(formatBodyShape).join(" | ");
-    default:
-      return "";
-  }
+  // The map is keyed on TypeShape["type"] so adding a new variant is a type
+  // error at definition time, not a silent default at runtime.
+  const formatter = SHAPE_FORMATTERS[shape.type] as (s: TypeShape) => string;
+  return formatter(shape);
 }
 
 // ---------------------------------------------------------------------------
