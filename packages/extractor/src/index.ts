@@ -141,6 +141,14 @@ export interface RawCodeStructure {
   branches: RawBranch[];
   dependencyCalls: RawDependencyCall[];
   declaredContract: RawDeclaredContract | null;
+  /**
+   * Names of pack-declared response properties whose semantics is `body`.
+   * For client units this records the accessor a consumer uses to reach the
+   * body (e.g. ["data"] for axios, ["body","json","text"] for fetch). Carried
+   * through to `summary.metadata.bodyAccessors` so the cross-boundary checker
+   * can unwrap consumer expectedInput correctly without knowing each pack.
+   */
+  bodyAccessors?: string[];
 }
 
 // =============================================================================
@@ -258,8 +266,18 @@ export function assembleSummary(
     transitions,
     gaps,
     confidence,
-    ...(raw.declaredContract
-      ? { metadata: { declaredContract: raw.declaredContract } }
+    ...(raw.declaredContract !== null ||
+    (raw.bodyAccessors !== undefined && raw.bodyAccessors.length > 0)
+      ? {
+          metadata: {
+            ...(raw.declaredContract !== null
+              ? { declaredContract: raw.declaredContract }
+              : {}),
+            ...(raw.bodyAccessors !== undefined && raw.bodyAccessors.length > 0
+              ? { bodyAccessors: raw.bodyAccessors }
+              : {}),
+          },
+        }
       : {}),
   };
 }

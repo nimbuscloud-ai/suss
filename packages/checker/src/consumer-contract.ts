@@ -53,7 +53,7 @@ export function checkConsumerContract(
       continue;
     }
 
-    const consumerBodyShape = unwrapBodyField(expectedInput);
+    const consumerBodyShape = unwrapBodyField(expectedInput, consumer);
     if (consumerBodyShape === null || consumerBodyShape.type !== "record") {
       continue;
     }
@@ -132,9 +132,26 @@ function readDeclaredContract(
   return { responses: validated };
 }
 
-function unwrapBodyField(shape: TypeShape): TypeShape | null {
-  if (shape.type === "record" && shape.properties.body !== undefined) {
-    return shape.properties.body;
+function unwrapBodyField(
+  shape: TypeShape,
+  consumer: BehavioralSummary,
+): TypeShape | null {
+  if (shape.type !== "record") {
+    return shape;
+  }
+  for (const accessor of bodyAccessorsFor(consumer)) {
+    const wrapped = shape.properties[accessor];
+    if (wrapped !== undefined) {
+      return wrapped;
+    }
   }
   return shape;
+}
+
+function bodyAccessorsFor(consumer: BehavioralSummary): string[] {
+  const fromMetadata = consumer.metadata?.bodyAccessors;
+  if (Array.isArray(fromMetadata) && fromMetadata.length > 0) {
+    return fromMetadata.filter((v): v is string => typeof v === "string");
+  }
+  return ["body"];
 }

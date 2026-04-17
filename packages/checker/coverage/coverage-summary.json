@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 662,
-      "covered": 576,
+      "total": 678,
+      "covered": 588,
       "skipped": 0,
-      "pct": 87
+      "pct": 86.72
     },
     "statements": {
-      "total": 668,
-      "covered": 582,
+      "total": 686,
+      "covered": 594,
       "skipped": 0,
-      "pct": 87.12
+      "pct": 86.58
     },
     "functions": {
-      "total": 87,
-      "covered": 79,
+      "total": 91,
+      "covered": 81,
       "skipped": 0,
-      "pct": 90.8
+      "pct": 89.01
     },
     "branches": {
-      "total": 582,
-      "covered": 480,
+      "total": 590,
+      "covered": 482,
       "skipped": 0,
-      "pct": 82.47
+      "pct": 81.69
     },
     "branchesTrue": {
       "total": 0,
@@ -33,28 +33,28 @@
   },
   "src/body-compatibility.ts": {
     "lines": {
-      "total": 68,
-      "covered": 47,
+      "total": 76,
+      "covered": 53,
       "skipped": 0,
-      "pct": 69.11
+      "pct": 69.73
     },
     "functions": {
-      "total": 5,
-      "covered": 5,
+      "total": 7,
+      "covered": 6,
       "skipped": 0,
-      "pct": 100
+      "pct": 85.71
     },
     "statements": {
-      "total": 68,
-      "covered": 47,
+      "total": 77,
+      "covered": 53,
       "skipped": 0,
-      "pct": 69.11
+      "pct": 68.83
     },
     "branches": {
-      "total": 65,
-      "covered": 41,
+      "total": 69,
+      "covered": 42,
       "skipped": 0,
-      "pct": 63.07
+      "pct": 60.86
     }
   },
   "src/body-match.ts": {
@@ -85,28 +85,28 @@
   },
   "src/consumer-contract.ts": {
     "lines": {
-      "total": 47,
-      "covered": 43,
+      "total": 55,
+      "covered": 49,
       "skipped": 0,
-      "pct": 91.48
+      "pct": 89.09
     },
     "functions": {
-      "total": 4,
-      "covered": 4,
+      "total": 6,
+      "covered": 5,
       "skipped": 0,
-      "pct": 100
+      "pct": 83.33
     },
     "statements": {
-      "total": 47,
-      "covered": 43,
+      "total": 56,
+      "covered": 49,
       "skipped": 0,
-      "pct": 91.48
+      "pct": 87.5
     },
     "branches": {
-      "total": 45,
-      "covered": 39,
+      "total": 49,
+      "covered": 40,
       "skipped": 0,
-      "pct": 86.66
+      "pct": 81.63
     }
   },
   "src/consumer-satisfaction.ts": {

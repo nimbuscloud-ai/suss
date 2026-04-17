@@ -322,6 +322,16 @@ export function extractCodeStructure(
     }
   }
 
+  // For client units, surface the pack's body-typed response property names
+  // so cross-boundary checking can unwrap expectedInput against the right
+  // wrapper key (e.g. axios uses .data, fetch uses .body / .json()).
+  const bodyAccessors =
+    unit.callSite !== undefined && pack.responseSemantics !== undefined
+      ? pack.responseSemantics
+          .filter((m) => m.semantics.type === "body")
+          .map((m) => m.name)
+      : undefined;
+
   return {
     identity: {
       name,
@@ -339,6 +349,9 @@ export function extractCodeStructure(
     branches,
     dependencyCalls: depCalls,
     declaredContract: null,
+    ...(bodyAccessors !== undefined && bodyAccessors.length > 0
+      ? { bodyAccessors }
+      : {}),
   };
 }
 
