@@ -11,6 +11,7 @@ import { pairSummaries } from "@suss/checker";
 
 import type {
   BehavioralSummary,
+  Derivation,
   Gap,
   Output,
   Predicate,
@@ -21,14 +22,34 @@ import type {
 } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
+// Variant dispatch helper
+// ---------------------------------------------------------------------------
+//
+// Each renderer below is a Record<Variant["type"], handler> rather than a
+// switch statement so that adding a new variant to the IR becomes a type
+// error here at definition time, not a silent default-case fallback at
+// runtime. dispatchByType is the one place we cast back to the union type
+// — the caller only sees a typed result.
+
+type DispatchTable<T extends { type: string }, R> = {
+  [K in T["type"]]: (variant: Extract<T, { type: K }>) => R;
+};
+
+function dispatchByType<T extends { type: string }, R>(
+  table: DispatchTable<T, R>,
+  value: T,
+): R {
+  // The double cast is the deliberate seam between the well-typed table
+  // (per-variant narrowing) and the runtime lookup (one cast, one place).
+  const handler = (table as unknown as Record<string, (v: T) => R>)[value.type];
+  return handler(value);
+}
+
+// ---------------------------------------------------------------------------
 // Body shape rendering
 // ---------------------------------------------------------------------------
 
-type ShapeFormatter<K extends TypeShape["type"]> = (
-  shape: Extract<TypeShape, { type: K }>,
-) => string;
-
-const SHAPE_FORMATTERS: { [K in TypeShape["type"]]: ShapeFormatter<K> } = {
+const SHAPE_FORMATTERS: DispatchTable<TypeShape, string> = {
   record: (s) => {
     const keys = Object.keys(s.properties);
     if (keys.length === 0) {
@@ -58,49 +79,45 @@ function formatBodyShape(shape: TypeShape | null | undefined): string {
   if (shape == null) {
     return "";
   }
-  // The map is keyed on TypeShape["type"] so adding a new variant is a type
-  // error at definition time, not a silent default at runtime.
-  const formatter = SHAPE_FORMATTERS[shape.type] as (s: TypeShape) => string;
-  return formatter(shape);
+  return dispatchByType(SHAPE_FORMATTERS, shape);
 }
 
 // ---------------------------------------------------------------------------
 // Condition rendering (human-readable)
 // ---------------------------------------------------------------------------
 
+const CONDITION_FORMATTERS: DispatchTable<Predicate, string> = {
+  comparison: (p) =>
+    `${formatRef(p.left)} ${formatOp(p.op)} ${formatRef(p.right)}`,
+  truthinessCheck: (p) =>
+    p.negated ? `!${formatRef(p.subject)}` : formatRef(p.subject),
+  nullCheck: (p) => `${formatRef(p.subject)} ${p.negated ? "!=" : "=="} null`,
+  typeCheck: (p) => `typeof ${formatRef(p.subject)} === "${p.expectedType}"`,
+  negation: (p) => {
+    // Simplify double negation: !(!(x)) → x, !(!x) → x
+    if (p.operand.type === "negation") {
+      return formatCondition(p.operand.operand);
+    }
+    if (p.operand.type === "truthinessCheck") {
+      return formatCondition({ ...p.operand, negated: !p.operand.negated });
+    }
+    if (p.operand.type === "nullCheck") {
+      return formatCondition({ ...p.operand, negated: !p.operand.negated });
+    }
+    return `!(${formatCondition(p.operand)})`;
+  },
+  compound: (p) =>
+    p.operands
+      .map((o) => formatCondition(o))
+      .join(p.op === "and" ? " && " : " || "),
+  call: (p) => `${p.callee}(${p.args.map(formatRef).join(", ")})`,
+  propertyExists: (p) =>
+    `${p.negated ? "!" : ""}${formatRef(p.subject)}.has("${p.property}")`,
+  opaque: (p) => p.sourceText,
+};
+
 function formatCondition(p: Predicate): string {
-  switch (p.type) {
-    case "comparison":
-      return `${formatRef(p.left)} ${formatOp(p.op)} ${formatRef(p.right)}`;
-    case "truthinessCheck":
-      return p.negated ? `!${formatRef(p.subject)}` : formatRef(p.subject);
-    case "nullCheck":
-      return `${formatRef(p.subject)} ${p.negated ? "!=" : "=="} null`;
-    case "typeCheck":
-      return `typeof ${formatRef(p.subject)} === "${p.expectedType}"`;
-    case "negation":
-      // Simplify double negation: !(!(x)) → x, !(!x) → x
-      if (p.operand.type === "negation") {
-        return formatCondition(p.operand.operand);
-      }
-      if (p.operand.type === "truthinessCheck") {
-        return formatCondition({ ...p.operand, negated: !p.operand.negated });
-      }
-      if (p.operand.type === "nullCheck") {
-        return formatCondition({ ...p.operand, negated: !p.operand.negated });
-      }
-      return `!(${formatCondition(p.operand)})`;
-    case "compound":
-      return p.operands
-        .map((o) => formatCondition(o))
-        .join(p.op === "and" ? " && " : " || ");
-    case "call":
-      return `${p.callee}(${p.args.map(formatRef).join(", ")})`;
-    case "propertyExists":
-      return `${p.negated ? "!" : ""}${formatRef(p.subject)}.has("${p.property}")`;
-    case "opaque":
-      return p.sourceText;
-  }
+  return dispatchByType(CONDITION_FORMATTERS, p);
 }
 
 function formatOp(op: string): string {
@@ -115,71 +132,58 @@ function formatOp(op: string): string {
   return ops[op] ?? op;
 }
 
+const REF_FORMATTERS: DispatchTable<ValueRef, string> = {
+  literal: (v) => JSON.stringify(v.value),
+  input: (v) =>
+    v.path.length > 0 ? `${v.inputRef}.${v.path.join(".")}` : v.inputRef,
+  dependency: (v) =>
+    v.accessChain.length > 0
+      ? `${v.name}().${v.accessChain.join(".")}`
+      : `${v.name}()`,
+  derived: (v) => `${formatRef(v.from)}.${formatDerivation(v.derivation)}`,
+  state: (v) => `state.${v.name}`,
+  unresolved: (v) => v.sourceText,
+};
+
 function formatRef(v: ValueRef): string {
-  switch (v.type) {
-    case "literal":
-      return JSON.stringify(v.value);
-    case "input":
-      return v.path.length > 0
-        ? `${v.inputRef}.${v.path.join(".")}`
-        : v.inputRef;
-    case "dependency":
-      return v.accessChain.length > 0
-        ? `${v.name}().${v.accessChain.join(".")}`
-        : `${v.name}()`;
-    case "derived":
-      return `${formatRef(v.from)}.${formatDerivation(v.derivation)}`;
-    case "state":
-      return `state.${v.name}`;
-    case "unresolved":
-      return v.sourceText;
-  }
+  return dispatchByType(REF_FORMATTERS, v);
 }
 
-function formatDerivation(d: { type: string; [key: string]: unknown }): string {
-  switch (d.type) {
-    case "propertyAccess":
-      return d.property as string;
-    case "indexAccess":
-      return `[${d.index}]`;
-    case "destructured":
-      return d.field as string;
-    case "methodCall":
-      return `${d.method}()`;
-    case "awaited":
-      return "await";
-    default:
-      return "?";
-  }
+const DERIVATION_FORMATTERS: DispatchTable<Derivation, string> = {
+  propertyAccess: (d) => d.property,
+  indexAccess: (d) => `[${d.index}]`,
+  destructured: (d) => d.field,
+  methodCall: (d) => `${d.method}()`,
+  awaited: () => "await",
+};
+
+function formatDerivation(d: Derivation): string {
+  return dispatchByType(DERIVATION_FORMATTERS, d);
 }
 
 // ---------------------------------------------------------------------------
 // Transition rendering — output-first
 // ---------------------------------------------------------------------------
 
+const OUTPUT_FORMATTERS: DispatchTable<Output, string> = {
+  response: (o) => {
+    const status = o.statusCode !== null ? formatRef(o.statusCode) : "???";
+    const body = formatBodyShape(o.body);
+    return body ? `${status} ${body}` : `${status}`;
+  },
+  throw: (o) => `throw ${o.exceptionType ?? "Error"}`,
+  render: (o) => `render <${o.component} />`,
+  return: (o) => {
+    const body = formatBodyShape(o.value);
+    return body ? `return ${body}` : "return";
+  },
+  delegate: (o) => `delegate -> ${o.to}`,
+  emit: (o) => `emit "${o.event}"`,
+  void: () => "void",
+};
+
 function formatOutput(output: Output): string {
-  switch (output.type) {
-    case "response": {
-      const status =
-        output.statusCode !== null ? formatRef(output.statusCode) : "???";
-      const body = formatBodyShape(output.body);
-      return body ? `${status} ${body}` : `${status}`;
-    }
-    case "throw":
-      return `throw ${output.exceptionType ?? "Error"}`;
-    case "render":
-      return `render <${output.component} />`;
-    case "return": {
-      const body = formatBodyShape(output.value);
-      return body ? `return ${body}` : "return";
-    }
-    case "delegate":
-      return `delegate -> ${output.to}`;
-    case "emit":
-      return `emit "${output.event}"`;
-    case "void":
-      return "void";
-  }
+  return dispatchByType(OUTPUT_FORMATTERS, output);
 }
 
 function formatTransition(
