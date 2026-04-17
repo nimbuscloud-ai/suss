@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/nimbuscloud-ai/suss/discussions
+    about: For open-ended questions, design discussions, or "is this a bug?"
