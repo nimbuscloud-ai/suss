@@ -22,6 +22,7 @@ const packageDirs = [
   ["packages/framework/ts-rest", "ts-rest"],
   ["packages/framework/react-router", "react-router"],
   ["packages/framework/express", "express"],
+  ["packages/framework/fastify", "fastify"],
   ["packages/runtime/web", "web"],
   ["packages/checker", "checker"],
   ["packages/cli", "cli"],

@@ -45,7 +45,7 @@ suss check --dir summaries/ [--json] [-o findings.json] [--fail-on warning]
 
 ### Built-in framework resolution
 
-Pass `-f <name>` to select a pattern pack. Built-in names: `ts-rest`, `react-router`, `express`, `fetch`. Custom packs are resolved via `@suss/framework-<name>` dynamic import.
+Pass `-f <name>` to select a pattern pack. Built-in names: `ts-rest`, `react-router`, `express`, `fastify`, `fetch`. Custom packs are resolved via `@suss/framework-<name>` dynamic import.
 
 ### Exit codes
 
