@@ -28,6 +28,8 @@ export interface DiscoveredUnit {
   kind: string;
   name: string;
   callSite?: ClientCallSite;
+  /** The discovery pattern that produced this unit. Set by discoverUnits. */
+  pattern?: DiscoveryPattern;
 }
 
 // ---------------------------------------------------------------------------
@@ -427,9 +429,18 @@ function discoverClientCalls(
         matched = true;
       }
     } else if (Node.isPropertyAccessExpression(callee)) {
-      // Method call: client.getUser(...)
+      // Method call. Two shapes:
+      //   1. client.getUser(...)        — `client` is a variable holding the
+      //                                    result of calling the import (e.g.
+      //                                    `const client = initClient(...)`).
+      //   2. axios.get("/users")        — the import itself is the client and
+      //                                    methods are called on it directly.
       const subject = callee.getExpression();
-      if (Node.isIdentifier(subject) && clientVarNames.has(subject.getText())) {
+      if (
+        Node.isIdentifier(subject) &&
+        (clientVarNames.has(subject.getText()) ||
+          subject.getText() === importedLocalName)
+      ) {
         methodName = callee.getName();
         if (methodFilter === null || methodFilter.has(methodName)) {
           matched = true;
@@ -514,6 +525,9 @@ export function discoverUnits(
       found = [];
     }
 
+    for (const unit of found) {
+      unit.pattern = pattern;
+    }
     allResults.push(...found);
   }
 

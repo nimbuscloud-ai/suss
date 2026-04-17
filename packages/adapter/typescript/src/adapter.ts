@@ -476,8 +476,11 @@ function extractFromSourceFile(
     for (const unit of units) {
       const raw = extractCodeStructure(unit, pack, filePath);
 
-      // Find the discovery pattern that matched this unit
-      const matchedPattern = pack.discovery.find((d) => d.kind === unit.kind);
+      // The discovery pattern that produced this unit is attached by
+      // discoverUnits — fall back to the first kind-match if missing so older
+      // call paths keep working.
+      const matchedPattern =
+        unit.pattern ?? pack.discovery.find((d) => d.kind === unit.kind);
 
       if (unit.callSite !== undefined && matchedPattern !== undefined) {
         // Consumer: extract binding from call site
