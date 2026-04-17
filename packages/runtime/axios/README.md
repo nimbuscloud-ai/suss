@@ -15,7 +15,6 @@ This is a "runtime pack" — axios is a third-party HTTP client used at consumer
 
 ### Limitations (v0)
 
-- **Instance form not supported.** `const api = axios.create({ baseURL }); api.get(...)` is not yet discovered. Direct calls on the imported binding (`axios.get(...)`) are.
 - **Bare-call form not supported.** `axios({ url, method })` and `axios.request(config)` aren't matched — only the per-verb method calls are.
 - **Aliased default imports** (`import myAxios from "axios"`) are not recognized — the pack matches the conventional `import axios from "axios"`.
 

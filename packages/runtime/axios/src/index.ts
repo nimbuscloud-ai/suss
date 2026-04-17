@@ -16,13 +16,18 @@ function discoveryForVerb(
   verb: (typeof HTTP_METHODS)[number],
 ): DiscoveryPattern {
   return {
-    // import axios from "axios"; axios.<verb>("/path", ...)
+    // Matches both shapes:
+    //   axios.<verb>("/path", ...)
+    //   const api = axios.create({ ... }); api.<verb>("/path", ...)
+    // The factoryMethods entry tells the adapter that variables initialized
+    // from `axios.create(...)` are also clients.
     kind: "client",
     match: {
       type: "clientCall",
       importModule: "axios",
       importName: "axios",
       methodFilter: [verb],
+      factoryMethods: ["create"],
     },
     bindingExtraction: {
       method: { type: "literal", value: verb.toUpperCase() },

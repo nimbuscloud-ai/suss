@@ -120,10 +120,10 @@ describe("axiosRuntime — integration", () => {
     expect(summaries[0].transitions.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("does not match calls on instances created via axios.create()", () => {
-    // v0 limitation: `const api = axios.create(); api.get(...)` is not
-    // currently discovered. This test pins the limitation so we'll notice
-    // when we lift it.
+  it("matches calls on instances created via axios.create()", () => {
+    // The dominant production pattern: per-service axios instances created
+    // with a baseURL. The pack declares factoryMethods: ["create"] so the
+    // adapter treats `api` as a client subject.
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -143,8 +143,44 @@ describe("axiosRuntime — integration", () => {
       frameworks: [axiosRuntime()],
     });
     const summaries = adapter.extractAll();
-    // The api.get(...) call site is not discovered; only direct axios.<verb>
-    // calls are matched by v0.
-    expect(summaries).toHaveLength(0);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.name).toBe("getUser");
+    expect(summaries[0].identity.boundaryBinding).toEqual({
+      protocol: "http",
+      method: "GET",
+      path: "/users/1",
+      framework: "axios",
+    });
+  });
+
+  it("matches multiple verbs called on the same axios.create() instance", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import axios from "axios";
+
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getUser() {
+        return api.get("/users/1");
+      }
+
+      export async function deleteUser() {
+        await api.delete("/users/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosRuntime()],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(2);
+    const get = summaries.find((s) => s.identity.name === "getUser");
+    expect(get?.identity.boundaryBinding?.method).toBe("GET");
+    const del = summaries.find((s) => s.identity.name === "deleteUser");
+    expect(del?.identity.boundaryBinding?.method).toBe("DELETE");
   });
 });
