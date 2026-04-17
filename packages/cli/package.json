@@ -3,7 +3,26 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "description": "Command-line interface for suss — extract, inspect, diff, and check TypeScript behavioral summaries.",
+  "keywords": [
+    "suss",
+    "cli",
+    "behavioral-summary",
+    "static-analysis",
+    "contract-testing",
+    "typescript"
+  ],
   "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
   "engines": {
     "node": ">=18"
   },
@@ -18,6 +37,11 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run --coverage",

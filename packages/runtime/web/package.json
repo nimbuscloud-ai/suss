@@ -3,7 +3,26 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "description": "Runtime pack for extracting suss client behavioral summaries from web fetch() call sites.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "runtime-pack",
+    "fetch",
+    "web-api",
+    "static-analysis"
+  ],
   "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/runtime/web#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/runtime/web"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,6 +33,11 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run --coverage",

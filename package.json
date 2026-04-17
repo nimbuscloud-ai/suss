@@ -3,8 +3,17 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "description": "Static behavioral analysis for TypeScript — extract, compare, and publish summaries of what your code does.",
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
   "workspaces": [
     "packages/ir",
     "packages/extractor",
