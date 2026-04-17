@@ -1556,6 +1556,126 @@ describe("response property semantics", () => {
 });
 
 // ---------------------------------------------------------------------------
+// readContractForClientCall — consumer-side contract resolution
+// ---------------------------------------------------------------------------
+
+describe("client-side contract resolution via fromClientMethod", () => {
+  // Pack mirrors the ts-rest client side: clientCall discovery against
+  // initClient + bindingExtraction.fromClientMethod that walks back through
+  // the contract for method/path. Uses contractReading shape from the
+  // ts-rest pack so readContractForClientCall finds the contract object.
+  const tsRestClientPack: PatternPack = {
+    name: "ts-rest",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "@ts-rest/core",
+          importName: "initClient",
+        },
+        bindingExtraction: {
+          method: { type: "fromClientMethod" },
+          path: { type: "fromClientMethod" },
+        },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ],
+    contractReading: {
+      discovery: {
+        importModule: "@ts-rest/core",
+        importName: "initContract",
+        registrationChain: [".router"],
+      },
+      responseExtraction: { property: "responses" },
+      paramsExtraction: { property: "pathParams" },
+    },
+    inputMapping: { type: "positionalParams", params: [] },
+  };
+
+  it("resolves method+path on a client.method() call by walking back to the contract", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { initClient, initContract } from "@ts-rest/core";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: { 200: null as any, 404: null as any },
+        },
+      });
+
+      const client = initClient(contract, { baseUrl: "" });
+
+      export async function loadUser(id: string) {
+        return client.getUser({ params: { id } });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestClientPack],
+    });
+    const summaries = adapter.extractAll();
+    const consumer = summaries.find((s) => s.identity.name === "loadUser");
+    expect(consumer).toBeDefined();
+    expect(consumer?.kind).toBe("client");
+    expect(consumer?.identity.boundaryBinding).toEqual({
+      protocol: "http",
+      method: "GET",
+      path: "/users/:id",
+      framework: "ts-rest",
+    });
+  });
+
+  it("returns no binding when the called method isn't in the contract", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { initClient, initContract } from "@ts-rest/core";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: { 200: null as any },
+        },
+      });
+
+      const client = initClient(contract, { baseUrl: "" });
+
+      export async function ping() {
+        return client.healthCheck();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestClientPack],
+    });
+    const summaries = adapter.extractAll();
+    const consumer = summaries.find((s) => s.identity.name === "ping");
+    // Discovery still finds the function; the binding falls back to just
+    // protocol+framework because fromClientMethod can't resolve.
+    expect(consumer?.identity.boundaryBinding).toEqual({
+      protocol: "http",
+      framework: "ts-rest",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Wrapper expansion (cross-function path resolution)
 // ---------------------------------------------------------------------------
 
@@ -1743,6 +1863,81 @@ describe("wrapper expansion", () => {
           ?.derivedFromWrapper !== undefined,
     );
     expect(synthesised).toHaveLength(0);
+  });
+
+  it("resolves caller args even when the wrapper is a sibling export", () => {
+    // Sibling export pattern: the wrapper is the directly-exported function,
+    // not bound to a variable. Exercises wrapperNameNode's
+    // FunctionDeclaration branch.
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function getCount() {
+        return getJson<number>("/count");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = adapter.extractAll();
+    const caller = summaries.find((s) => s.identity.name === "getCount");
+    expect(caller?.identity.boundaryBinding?.path).toBe("/count");
+  });
+
+  it("respects export-keyword boundary on enclosing function lookup", () => {
+    // The caller is a non-exported function — verify wrapper expansion
+    // still tracks the call via ts-morph references.
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function fetchAndProcess() {
+        const internal = await getJson<unknown>("/internal");
+        return internal;
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = adapter.extractAll();
+    expect(
+      summaries.find((s) => s.identity.name === "fetchAndProcess"),
+    ).toBeDefined();
   });
 
   it("populates expectedInput when the caller reads fields off the wrapper return", () => {

@@ -2,27 +2,27 @@
   "total": {
     "lines": {
       "total": 1886,
-      "covered": 1571,
+      "covered": 1604,
       "skipped": 0,
-      "pct": 83.29
+      "pct": 85.04
     },
     "statements": {
       "total": 1901,
-      "covered": 1585,
+      "covered": 1618,
       "skipped": 0,
-      "pct": 83.37
+      "pct": 85.11
     },
     "functions": {
       "total": 154,
-      "covered": 144,
+      "covered": 146,
       "skipped": 0,
-      "pct": 93.5
+      "pct": 94.8
     },
     "branches": {
       "total": 1517,
-      "covered": 1123,
+      "covered": 1153,
       "skipped": 0,
-      "pct": 74.02
+      "pct": 76
     },
     "branchesTrue": {
       "total": 0,
@@ -34,27 +34,27 @@
   "src/adapter.ts": {
     "lines": {
       "total": 307,
-      "covered": 252,
+      "covered": 261,
       "skipped": 0,
-      "pct": 82.08
+      "pct": 85.01
     },
     "functions": {
       "total": 35,
-      "covered": 32,
+      "covered": 33,
       "skipped": 0,
-      "pct": 91.42
+      "pct": 94.28
     },
     "statements": {
       "total": 311,
-      "covered": 255,
+      "covered": 264,
       "skipped": 0,
-      "pct": 81.99
+      "pct": 84.88
     },
     "branches": {
       "total": 248,
-      "covered": 171,
+      "covered": 181,
       "skipped": 0,
-      "pct": 68.95
+      "pct": 72.98
     }
   },
   "src/assembly.ts": {
@@ -138,27 +138,27 @@
   "src/contract.ts": {
     "lines": {
       "total": 143,
-      "covered": 84,
+      "covered": 108,
       "skipped": 0,
-      "pct": 58.74
+      "pct": 75.52
     },
     "functions": {
       "total": 7,
-      "covered": 6,
+      "covered": 7,
       "skipped": 0,
-      "pct": 85.71
+      "pct": 100
     },
     "statements": {
       "total": 143,
-      "covered": 84,
+      "covered": 108,
       "skipped": 0,
-      "pct": 58.74
+      "pct": 75.52
     },
     "branches": {
       "total": 136,
-      "covered": 71,
+      "covered": 91,
       "skipped": 0,
-      "pct": 52.2
+      "pct": 66.91
     }
   },
   "src/discovery.ts": {
