@@ -37,6 +37,15 @@ export type DiscoveryMatch =
       /** If set, only match calls to these methods on the client (e.g. ["getUser"]).
        *  Unset means any method call (or bare call for globals). */
       methodFilter?: string[];
+      /**
+       * Method names on the import that produce a client-equivalent instance,
+       * so variables initialized from those calls also act as discovery
+       * subjects. axios uses `axios.create({...})` to build a baseURL-bound
+       * instance; declaring `factoryMethods: ["create"]` lets the adapter
+       * treat `api.get(...)` (where `api = axios.create(...)`) the same as
+       * `axios.get(...)`.
+       */
+      factoryMethods?: string[];
     };
 
 export type BindingExtraction = {

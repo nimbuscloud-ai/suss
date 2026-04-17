@@ -391,20 +391,26 @@ function discoverClientCalls(
     return results;
   }
 
-  // Step 2: For non-global imports, find variables holding the result of calling
-  // the imported function (e.g. `const client = initClient(contract, ...)`)
+  // Step 2: For non-global imports, find variables holding the result of
+  // calling the imported function (`const client = initClient(...)`) OR
+  // calling one of its declared factory methods (`const api = axios.create(...)`).
   const clientVarNames = new Set<string>();
+  const factoryCallTexts =
+    match.factoryMethods !== undefined
+      ? new Set(match.factoryMethods.map((m) => `${importedLocalName}.${m}`))
+      : null;
+
   if (!isGlobal) {
     for (const varDecl of sourceFile.getVariableDeclarations()) {
       const init = varDecl.getInitializer();
-      if (init === undefined) {
+      if (init === undefined || !Node.isCallExpression(init)) {
         continue;
       }
-      let calleeText: string | null = null;
-      if (Node.isCallExpression(init)) {
-        calleeText = init.getExpression().getText();
-      }
-      if (calleeText === importedLocalName) {
+      const calleeText = init.getExpression().getText();
+      if (
+        calleeText === importedLocalName ||
+        factoryCallTexts?.has(calleeText)
+      ) {
         clientVarNames.add(varDecl.getName());
       }
     }
