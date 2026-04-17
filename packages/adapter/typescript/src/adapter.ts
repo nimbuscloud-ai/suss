@@ -2,7 +2,13 @@
 //
 // Wires together: discovery → extractCodeStructure → readContract → assembleSummary
 
-import { Node, Project, type SourceFile } from "ts-morph";
+import {
+  type CallExpression,
+  type Identifier,
+  Node,
+  Project,
+  type SourceFile,
+} from "ts-morph";
 
 import {
   assembleSummary,
@@ -559,6 +565,326 @@ function extractFromSourceFile(
 }
 
 // ---------------------------------------------------------------------------
+// Wrapper expansion (cross-function path resolution)
+// ---------------------------------------------------------------------------
+//
+// A "wrapper" is a thin client function whose path argument is forwarded
+// from one of its own parameters: e.g.
+//
+//   export async function getJson<T>(path: string): Promise<T> {
+//     const { data } = await api.get(path);
+//     return data;
+//   }
+//
+// Discovery sees getJson as a client unit because it contains an axios call,
+// but bindingExtraction can't pin a path — `path` is a parameter, not a
+// literal. Pure-source consumers that call `getJson("/pet/1")` are then
+// invisible to the checker because no summary exists for them.
+//
+// expandWrapperCallers does a post-pass: for each wrapper-shaped client
+// summary it finds the containing function, asks ts-morph for callers
+// across the project, and synthesises a thin client summary per caller
+// where the path comes from the caller's literal argument. The synthesised
+// summary participates in pairing and unhandled-status checks; it does NOT
+// carry through caller-local conditional branches or expectedInput field
+// tracking — those are out of scope for v0 cross-function analysis.
+
+interface WrapperInfo {
+  summary: BehavioralSummary;
+  func: FunctionRoot;
+  pathParamPosition: number;
+}
+
+function expandWrapperCallers(
+  summaries: BehavioralSummary[],
+  project: Project,
+): BehavioralSummary[] {
+  const wrappers: WrapperInfo[] = [];
+
+  for (const s of summaries) {
+    if (s.kind !== "client") {
+      continue;
+    }
+    const binding = s.identity.boundaryBinding;
+    if (
+      binding === null ||
+      binding.method === undefined ||
+      binding.path !== undefined
+    ) {
+      continue;
+    }
+    const located = findWrapperPathParam(s, project);
+    if (located === null) {
+      continue;
+    }
+    wrappers.push({
+      summary: s,
+      func: located.func,
+      pathParamPosition: located.pathParamPosition,
+    });
+  }
+
+  if (wrappers.length === 0) {
+    return summaries;
+  }
+
+  const derived: BehavioralSummary[] = [];
+  for (const wrapper of wrappers) {
+    derived.push(...synthesizeCallerSummaries(wrapper, project));
+  }
+  return [...summaries, ...derived];
+}
+
+function findWrapperPathParam(
+  summary: BehavioralSummary,
+  project: Project,
+): { func: FunctionRoot; pathParamPosition: number } | null {
+  // Find the function in the project. summary.location.file is project-
+  // relative for portability; ts-morph stores absolute paths so we have to
+  // match by suffix.
+  const func = locateFunction(summary, project);
+  if (func === null) {
+    return null;
+  }
+  // Look at the function's parameters; the one whose name appears as a
+  // call argument inside the function (in any descendant CallExpression
+  // arg-0 position) is our best guess at the path parameter. We use the
+  // first parameter as the heuristic for v0 — fits axios and ts-rest
+  // wrapper conventions where the path is parameter zero.
+  const params = func.getParameters();
+  if (params.length === 0) {
+    return null;
+  }
+  return { func, pathParamPosition: 0 };
+}
+
+function locateFunction(
+  summary: BehavioralSummary,
+  project: Project,
+): FunctionRoot | null {
+  for (const sf of project.getSourceFiles()) {
+    if (!sf.getFilePath().endsWith(summary.location.file)) {
+      continue;
+    }
+    const candidates: FunctionRoot[] = [];
+    sf.forEachDescendant((node) => {
+      if (
+        Node.isFunctionDeclaration(node) ||
+        Node.isFunctionExpression(node) ||
+        Node.isArrowFunction(node) ||
+        Node.isMethodDeclaration(node)
+      ) {
+        if (
+          node.getStartLineNumber() === summary.location.range.start &&
+          node.getEndLineNumber() === summary.location.range.end
+        ) {
+          candidates.push(node as FunctionRoot);
+        }
+      }
+    });
+    if (candidates.length > 0) {
+      return candidates[0];
+    }
+  }
+  return null;
+}
+
+function synthesizeCallerSummaries(
+  wrapper: WrapperInfo,
+  project: Project,
+): BehavioralSummary[] {
+  // Find the wrapper's identifier so we can ask ts-morph for references.
+  const nameNode = wrapperNameNode(wrapper.func);
+  if (nameNode === null) {
+    return [];
+  }
+
+  const refs = nameNode.findReferencesAsNodes();
+  const seen = new Set<string>();
+  const out: BehavioralSummary[] = [];
+
+  for (const ref of refs) {
+    if (ref === nameNode) {
+      continue;
+    }
+    const callExpr = enclosingCall(ref);
+    if (callExpr === null) {
+      continue;
+    }
+
+    const args = callExpr.getArguments();
+    const pathArg = args[wrapper.pathParamPosition];
+    if (pathArg === undefined) {
+      continue;
+    }
+    const path = literalOrTemplate(pathArg);
+    if (path === undefined) {
+      continue;
+    }
+
+    const callerFunc = enclosingFunction(callExpr);
+    if (callerFunc === null) {
+      continue;
+    }
+
+    const dedupKey = `${callerFunc.getStart()}:${callExpr.getStart()}`;
+    if (seen.has(dedupKey)) {
+      continue;
+    }
+    seen.add(dedupKey);
+
+    out.push(buildCallerSummary(wrapper, callerFunc, callExpr, path));
+  }
+
+  return out;
+}
+
+function wrapperNameNode(func: FunctionRoot): Identifier | null {
+  if (Node.isFunctionDeclaration(func) || Node.isMethodDeclaration(func)) {
+    const name = func.getNameNode();
+    if (name !== undefined && Node.isIdentifier(name)) {
+      return name;
+    }
+  }
+  // Arrow / function expressions: the identifier we want is the variable
+  // they're bound to (`export const getJson = ...`).
+  const parent = func.getParent();
+  if (parent !== undefined && Node.isVariableDeclaration(parent)) {
+    const nameNode = parent.getNameNode();
+    if (Node.isIdentifier(nameNode)) {
+      return nameNode;
+    }
+  }
+  return null;
+}
+
+function enclosingCall(node: Node): CallExpression | null {
+  // Skip past intervening identifier/property-access wrapping to reach the
+  // call expression where this reference is the callee.
+  let current: Node | undefined = node.getParent();
+  while (current !== undefined) {
+    if (Node.isCallExpression(current)) {
+      return current;
+    }
+    if (Node.isPropertyAccessExpression(current)) {
+      current = current.getParent();
+      continue;
+    }
+    return null;
+  }
+  return null;
+}
+
+function enclosingFunction(node: Node): FunctionRoot | null {
+  let current: Node | undefined = node.getParent();
+  while (current !== undefined) {
+    if (
+      Node.isFunctionDeclaration(current) ||
+      Node.isFunctionExpression(current) ||
+      Node.isArrowFunction(current) ||
+      Node.isMethodDeclaration(current)
+    ) {
+      return current as FunctionRoot;
+    }
+    current = current.getParent();
+  }
+  return null;
+}
+
+function literalOrTemplate(arg: Node): string | undefined {
+  if (Node.isStringLiteral(arg)) {
+    return arg.getLiteralValue();
+  }
+  if (Node.isNoSubstitutionTemplateLiteral(arg)) {
+    return arg.getLiteralValue();
+  }
+  if (Node.isTemplateExpression(arg)) {
+    let path = arg.getHead().getLiteralText();
+    for (const span of arg.getTemplateSpans()) {
+      path += `{${placeholderName(span.getExpression())}}`;
+      path += span.getLiteral().getLiteralText();
+    }
+    return path;
+  }
+  return undefined;
+}
+
+function callerName(func: FunctionRoot): string {
+  if (Node.isFunctionDeclaration(func) || Node.isMethodDeclaration(func)) {
+    return func.getName() ?? "anonymous";
+  }
+  const parent = func.getParent();
+  if (parent !== undefined && Node.isVariableDeclaration(parent)) {
+    const nameNode = parent.getNameNode();
+    if (Node.isIdentifier(nameNode)) {
+      return nameNode.getText();
+    }
+  }
+  return "anonymous";
+}
+
+function buildCallerSummary(
+  wrapper: WrapperInfo,
+  callerFunc: FunctionRoot,
+  callExpr: CallExpression,
+  path: string,
+): BehavioralSummary {
+  const sf = callerFunc.getSourceFile();
+  // Locate file relative to the wrapper's recorded file: callers might live
+  // in different source files. We keep the absolute path here and let the
+  // CLI's relativizer normalize it later, the same way primary extraction
+  // does.
+  const file = sf.getFilePath();
+  const wrapperBinding = wrapper.summary.identity.boundaryBinding;
+
+  return {
+    kind: "client",
+    location: {
+      file,
+      range: {
+        start: callerFunc.getStartLineNumber(),
+        end: callerFunc.getEndLineNumber(),
+      },
+      exportName: callerName(callerFunc),
+    },
+    identity: {
+      name: callerName(callerFunc),
+      exportPath: [callerName(callerFunc)],
+      boundaryBinding: {
+        protocol: wrapperBinding?.protocol ?? "http",
+        framework: wrapperBinding?.framework ?? "unknown",
+        ...(wrapperBinding?.method !== undefined
+          ? { method: wrapperBinding.method }
+          : {}),
+        path,
+      },
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: `${callerName(callerFunc)}:return:via:${callExpr.getStart()}`,
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [],
+        location: {
+          start: callerFunc.getStartLineNumber(),
+          end: callerFunc.getEndLineNumber(),
+        },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "low" },
+    metadata: {
+      derivedFromWrapper: {
+        file: wrapper.summary.location.file,
+        name: wrapper.summary.identity.name,
+      },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public adapter API
 // ---------------------------------------------------------------------------
 
@@ -625,7 +951,7 @@ export function createTypeScriptAdapter(
         );
       }
 
-      return summaries;
+      return expandWrapperCallers(summaries, project);
     },
   };
 }

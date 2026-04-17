@@ -1554,3 +1554,194 @@ describe("response property semantics", () => {
     expect(hasTruthiness).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Wrapper expansion (cross-function path resolution)
+// ---------------------------------------------------------------------------
+
+describe("wrapper expansion", () => {
+  // Pack mirrors the axios runtime pack — direct method-on-import discovery
+  // with literal-method bindings. We use it on an in-memory project so the
+  // tests don't require the real axios npm dep.
+  const axiosLikePack: PatternPack = {
+    name: "axios",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "axios",
+          importName: "axios",
+          methodFilter: ["get"],
+          factoryMethods: ["create"],
+        },
+        bindingExtraction: {
+          method: { type: "literal", value: "GET" },
+          path: { type: "fromArgumentLiteral", position: 0 },
+        },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+    responseSemantics: [
+      { name: "data", access: "property", semantics: { type: "body" } },
+      { name: "status", access: "property", semantics: { type: "statusCode" } },
+    ],
+  };
+
+  function makeProject(): Project {
+    return new Project({
+      useInMemoryFileSystem: true,
+      compilerOptions: {
+        strict: true,
+        target: 99,
+        module: 99,
+        moduleResolution: 100,
+        skipLibCheck: true,
+      },
+    });
+  }
+
+  it("synthesises a caller summary for a single-hop path-passthrough wrapper", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function getPet(id: number) {
+        return getJson<unknown>(\`/pet/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = adapter.extractAll();
+
+    // The wrapper itself is one summary (no path), the caller is the second
+    // (synthesised with the literal/template-literal path from the call site).
+    const wrapper = summaries.find((s) => s.identity.name === "getJson");
+    expect(wrapper).toBeDefined();
+    expect(wrapper?.identity.boundaryBinding?.path).toBeUndefined();
+
+    const caller = summaries.find((s) => s.identity.name === "getPet");
+    expect(caller).toBeDefined();
+    expect(caller?.kind).toBe("client");
+    expect(caller?.identity.boundaryBinding).toEqual({
+      protocol: "http",
+      framework: "axios",
+      method: "GET",
+      path: "/pet/{id}",
+    });
+    expect(caller?.confidence.level).toBe("low");
+    expect(
+      (caller?.metadata as { derivedFromWrapper?: { name: string } })
+        ?.derivedFromWrapper?.name,
+    ).toBe("getJson");
+  });
+
+  it("emits a synthetic summary for every distinct caller", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function getPet(id: number) {
+        return getJson<unknown>(\`/pet/\${id}\`);
+      }
+
+      export async function listPets() {
+        return getJson<unknown>("/pet/findByStatus");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = adapter.extractAll();
+
+    const callerPaths = summaries
+      .filter(
+        (s) =>
+          (s.metadata as { derivedFromWrapper?: unknown } | undefined)
+            ?.derivedFromWrapper !== undefined,
+      )
+      .map((s) => s.identity.boundaryBinding?.path)
+      .sort();
+    expect(callerPaths).toEqual(["/pet/findByStatus", "/pet/{id}"]);
+  });
+
+  it("does not synthesise a caller summary when the call site has no literal path", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function getMystery(p: string) {
+        // Path is also a parameter in the caller — nothing literal to extract.
+        return getJson<unknown>(p);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = adapter.extractAll();
+
+    const synthesised = summaries.filter(
+      (s) =>
+        (s.metadata as { derivedFromWrapper?: unknown } | undefined)
+          ?.derivedFromWrapper !== undefined,
+    );
+    expect(synthesised).toHaveLength(0);
+  });
+});
