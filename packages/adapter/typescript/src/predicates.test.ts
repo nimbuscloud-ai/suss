@@ -609,7 +609,7 @@ describe("parseConditionExpression — unknown nodes return null", () => {
     expect(result).toBeNull();
   });
 
-  it("unsupported binary operator (instanceof) → null", () => {
+  it("instanceof now produces typeCheck (no longer opaque)", () => {
     const project = new Project({ useInMemoryFileSystem: false });
     const tmpFile = project.createSourceFile(
       "__tmp_instanceof.ts",
@@ -620,7 +620,10 @@ describe("parseConditionExpression — unknown nodes return null", () => {
       .getDescendantsOfKind(SyntaxKind.IfStatement)[0]
       .getExpression();
     const result = parseConditionExpression(cond);
-    expect(result).toBeNull();
+    expect(result).toMatchObject({
+      type: "typeCheck",
+      expectedType: "Error",
+    });
   });
 });
 
@@ -819,6 +822,115 @@ describe("parseConditionExpression — call inlining", () => {
           right: { type: "input", inputRef: "ownerId", path: [] },
         },
       ],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// instanceof, in, Array.includes()
+// ---------------------------------------------------------------------------
+
+describe("instanceof", () => {
+  it("produces a typeCheck predicate", () => {
+    const expr = getFirstIfCondition(sourceFile, "checkInstanceof");
+    const result = parseConditionExpression(expr);
+    expect(result).toMatchObject({
+      type: "typeCheck",
+      expectedType: "TypeError",
+    });
+  });
+
+  it("handles negated instanceof", () => {
+    const expr = getFirstIfCondition(sourceFile, "checkNegatedInstanceof");
+    const result = parseConditionExpression(expr);
+    expect(result).toMatchObject({
+      type: "negation",
+      operand: {
+        type: "typeCheck",
+        expectedType: "HttpError",
+      },
+    });
+  });
+});
+
+describe("in operator", () => {
+  it("produces a propertyExists predicate", () => {
+    const expr = getFirstIfCondition(sourceFile, "checkInOperator");
+    const result = parseConditionExpression(expr);
+    expect(result).toMatchObject({
+      type: "propertyExists",
+      property: "email",
+      negated: false,
+    });
+  });
+
+  it("handles negated in operator", () => {
+    const expr = getFirstIfCondition(sourceFile, "checkNegatedIn");
+    const result = parseConditionExpression(expr);
+    // !("email" in body) → negation(propertyExists) or propertyExists(negated: true)
+    expect(result).toBeDefined();
+    // The ! wraps the parenthesized expression, so it goes through the negation handler
+    if (result?.type === "negation") {
+      expect(result.operand).toMatchObject({
+        type: "propertyExists",
+        property: "email",
+      });
+    } else {
+      expect(result).toMatchObject({
+        type: "propertyExists",
+        property: "email",
+        negated: true,
+      });
+    }
+  });
+});
+
+describe("Array.includes() expansion", () => {
+  it("expands to compound OR of comparisons", () => {
+    const expr = getFirstIfCondition(sourceFile, "checkArrayIncludes");
+    const result = parseConditionExpression(expr);
+    expect(result).toMatchObject({
+      type: "compound",
+      op: "or",
+      operands: [
+        {
+          type: "comparison",
+          op: "eq",
+          right: { type: "literal", value: 200 },
+        },
+        {
+          type: "comparison",
+          op: "eq",
+          right: { type: "literal", value: 201 },
+        },
+        {
+          type: "comparison",
+          op: "eq",
+          right: { type: "literal", value: 204 },
+        },
+      ],
+    });
+  });
+
+  it("single-element array becomes a simple comparison", () => {
+    const expr = getFirstIfCondition(sourceFile, "checkArrayIncludesSingle");
+    const result = parseConditionExpression(expr);
+    expect(result).toMatchObject({
+      type: "comparison",
+      op: "eq",
+      right: { type: "literal", value: "admin" },
+    });
+  });
+
+  it("handles negated Array.includes()", () => {
+    const expr = getFirstIfCondition(sourceFile, "checkNegatedIncludes");
+    const result = parseConditionExpression(expr);
+    expect(result).toMatchObject({
+      type: "negation",
+      operand: {
+        type: "compound",
+        op: "or",
+      },
     });
   });
 });

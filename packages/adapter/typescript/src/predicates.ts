@@ -140,6 +140,25 @@ export function parseConditionExpression(
       };
     }
 
+    // instanceof: error instanceof HttpError → typeCheck
+    if (opToken.getKind() === SyntaxKind.InstanceOfKeyword) {
+      const subject = resolveSubject(left);
+      return { type: "typeCheck", subject, expectedType: right.getText() };
+    }
+
+    // in: "email" in body → propertyExists
+    if (opToken.getKind() === SyntaxKind.InKeyword) {
+      if (Node.isStringLiteral(left)) {
+        const subject = resolveSubject(right);
+        return {
+          type: "propertyExists",
+          subject,
+          property: left.getLiteralValue(),
+          negated: false,
+        };
+      }
+    }
+
     // Comparison / null-check operators
     const op = toComparisonOp(opText);
     if (op !== null) {
@@ -193,6 +212,12 @@ export function parseConditionExpression(
 
   // CallExpression: isActive(user) — try to inline, fall back to opaque
   if (Node.isCallExpression(expr)) {
+    // Array.includes() expansion: [200, 201].includes(x) → x === 200 || x === 201
+    const includesResult = tryExpandArrayIncludes(expr);
+    if (includesResult !== null) {
+      return includesResult;
+    }
+
     if (depth < MAX_INLINE_DEPTH) {
       const inlined = tryInlineCallPredicate(expr, depth);
       if (inlined !== null) {
@@ -242,6 +267,76 @@ export function parseConditionExpression(
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Array.includes() expansion
+// ---------------------------------------------------------------------------
+
+/**
+ * Expand `[lit1, lit2, ...].includes(x)` into a compound OR of equalities.
+ * Only works when the receiver is an array literal with all-literal elements.
+ *
+ * Example: `[200, 201, 204].includes(status)` →
+ *   `status === 200 || status === 201 || status === 204`
+ */
+function tryExpandArrayIncludes(
+  call: import("ts-morph").CallExpression,
+): Predicate | null {
+  const callee = call.getExpression();
+  if (!Node.isPropertyAccessExpression(callee)) {
+    return null;
+  }
+  if (callee.getName() !== "includes") {
+    return null;
+  }
+
+  const receiver = callee.getExpression();
+  if (!Node.isArrayLiteralExpression(receiver)) {
+    return null;
+  }
+
+  const callArgs = call.getArguments();
+  if (callArgs.length !== 1) {
+    return null;
+  }
+
+  const elements = receiver.getElements();
+  if (elements.length === 0) {
+    return null;
+  }
+
+  // All elements must be literals
+  const literalValues: ValueRef[] = [];
+  for (const el of elements) {
+    const ref = resolveSubject(el as Expression);
+    if (ref.type !== "literal") {
+      return null;
+    }
+    literalValues.push(ref);
+  }
+
+  const subject = resolveSubject(callArgs[0] as Expression);
+
+  if (literalValues.length === 1) {
+    return {
+      type: "comparison",
+      left: subject,
+      op: "eq",
+      right: literalValues[0],
+    };
+  }
+
+  return {
+    type: "compound",
+    op: "or",
+    operands: literalValues.map((lit) => ({
+      type: "comparison" as const,
+      left: subject,
+      op: "eq" as const,
+      right: lit,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
