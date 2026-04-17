@@ -393,3 +393,319 @@ describe("inspect --dir output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Variant coverage — exercises individual TypeShape / Predicate / ValueRef /
+// Output / Derivation cases through the inspect renderer so the typed
+// dispatch maps don't silently drop coverage when new variants land.
+// ---------------------------------------------------------------------------
+
+function makeHandlerWith(
+  overrides: Partial<Transition> & { conditions?: Transition["conditions"] },
+): BehavioralSummary {
+  return {
+    ...handlerSummary,
+    transitions: [
+      {
+        id: "h:variant:t",
+        conditions: [],
+        output: { type: "void" },
+        effects: [],
+        location: { start: 12, end: 14 },
+        isDefault: false,
+        ...overrides,
+      },
+    ],
+  };
+}
+
+describe("inspect variant rendering", () => {
+  it("renders every primitive TypeShape variant in body shapes", () => {
+    const summary = makeHandlerWith({
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: {
+          type: "record",
+          properties: {
+            text: { type: "text" },
+            int: { type: "integer" },
+            num: { type: "number" },
+            bool: { type: "boolean" },
+            n: { type: "null" },
+          },
+        },
+        headers: {},
+      },
+    });
+    const filePath = writeTempJson([summary]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
+  it("renders union, array, dictionary, ref, literal, undefined, unknown TypeShapes", () => {
+    const summary = makeHandlerWith({
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: {
+          type: "record",
+          properties: {
+            tags: { type: "array", items: { type: "text" } },
+            byKey: { type: "dictionary", values: { type: "integer" } },
+            shape: { type: "ref", name: "Pet" },
+            literal: { type: "literal", value: "ok" },
+            optional: {
+              type: "union",
+              variants: [{ type: "text" }, { type: "undefined" }],
+            },
+            anything: { type: "unknown" },
+          },
+        },
+        headers: {},
+      },
+    });
+    const filePath = writeTempJson([summary]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
+  it("renders every Predicate variant", () => {
+    const summary = makeHandlerWith({
+      conditions: [
+        // comparison
+        {
+          type: "comparison",
+          left: { type: "literal", value: 1 },
+          op: "neq",
+          right: { type: "literal", value: 2 },
+        },
+        // truthinessCheck (positive + negated)
+        {
+          type: "truthinessCheck",
+          subject: { type: "input", inputRef: "req", path: ["query", "id"] },
+          negated: false,
+        },
+        // nullCheck
+        {
+          type: "nullCheck",
+          subject: { type: "dependency", name: "db.findById", accessChain: [] },
+          negated: false,
+        },
+        // typeCheck
+        {
+          type: "typeCheck",
+          subject: { type: "input", inputRef: "err", path: [] },
+          expectedType: "Error",
+        },
+        // propertyExists
+        {
+          type: "propertyExists",
+          subject: { type: "input", inputRef: "obj", path: [] },
+          property: "id",
+          negated: true,
+        },
+        // call
+        {
+          type: "call",
+          callee: "isValid",
+          args: [{ type: "input", inputRef: "x", path: [] }],
+        },
+        // compound
+        {
+          type: "compound",
+          op: "or",
+          operands: [
+            {
+              type: "truthinessCheck",
+              subject: { type: "input", inputRef: "a", path: [] },
+              negated: false,
+            },
+            {
+              type: "truthinessCheck",
+              subject: { type: "input", inputRef: "b", path: [] },
+              negated: false,
+            },
+          ],
+        },
+        // negation wrapping a generic predicate (not the simplifiable cases)
+        {
+          type: "negation",
+          operand: {
+            type: "comparison",
+            left: { type: "literal", value: 1 },
+            op: "gt",
+            right: { type: "literal", value: 0 },
+          },
+        },
+        // opaque
+        {
+          type: "opaque",
+          sourceText: "weirdSync()",
+          reason: "unsupportedSyntax",
+        },
+      ],
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: null,
+        headers: {},
+      },
+    });
+    const filePath = writeTempJson([summary]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
+  it("renders every ValueRef and Derivation variant", () => {
+    const summary = makeHandlerWith({
+      conditions: [
+        // derived → propertyAccess
+        {
+          type: "comparison",
+          left: {
+            type: "derived",
+            from: { type: "dependency", name: "db", accessChain: [] },
+            derivation: { type: "propertyAccess", property: "result" },
+          },
+          op: "eq",
+          right: { type: "literal", value: 1 },
+        },
+        // derived → indexAccess
+        {
+          type: "comparison",
+          left: {
+            type: "derived",
+            from: { type: "input", inputRef: "arr", path: [] },
+            derivation: { type: "indexAccess", index: 0 },
+          },
+          op: "eq",
+          right: { type: "literal", value: "x" },
+        },
+        // derived → destructured + methodCall + awaited (chained)
+        {
+          type: "comparison",
+          left: {
+            type: "derived",
+            from: {
+              type: "derived",
+              from: {
+                type: "derived",
+                from: { type: "dependency", name: "fetch", accessChain: [] },
+                derivation: { type: "awaited" },
+              },
+              derivation: { type: "methodCall", method: "json", args: [] },
+            },
+            derivation: { type: "destructured", field: "kind" },
+          },
+          op: "eq",
+          right: { type: "literal", value: "ok" },
+        },
+        // state ref + unresolved ref
+        {
+          type: "comparison",
+          left: { type: "state", name: "loaded" },
+          op: "eq",
+          right: { type: "unresolved", sourceText: "MAGIC" },
+        },
+      ],
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: null,
+        headers: {},
+      },
+    });
+    const filePath = writeTempJson([summary]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
+  it("renders every Output variant", () => {
+    const summaries: BehavioralSummary[] = [
+      // throw
+      makeHandlerWith({
+        output: {
+          type: "throw",
+          exceptionType: "ValidationError",
+          message: null,
+        },
+      }),
+      // render
+      makeHandlerWith({
+        output: { type: "render", component: "ErrorPage" },
+      }),
+      // return
+      makeHandlerWith({
+        output: { type: "return", value: { type: "text" } },
+      }),
+      // delegate
+      makeHandlerWith({
+        output: { type: "delegate", to: "next" },
+      }),
+      // emit
+      makeHandlerWith({
+        output: { type: "emit", event: "user.created" },
+      }),
+      // void
+      makeHandlerWith({
+        output: { type: "void" },
+      }),
+    ];
+    const filePath = writeTempJson(summaries);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
+  it("simplifies double negations and !truthinessCheck via the negation handler", () => {
+    const summary = makeHandlerWith({
+      conditions: [
+        // !!x → x
+        {
+          type: "negation",
+          operand: {
+            type: "negation",
+            operand: {
+              type: "truthinessCheck",
+              subject: { type: "input", inputRef: "x", path: [] },
+              negated: false,
+            },
+          },
+        },
+        // !truthinessCheck flips negated
+        {
+          type: "negation",
+          operand: {
+            type: "truthinessCheck",
+            subject: { type: "input", inputRef: "y", path: [] },
+            negated: false,
+          },
+        },
+        // !nullCheck flips negated
+        {
+          type: "negation",
+          operand: {
+            type: "nullCheck",
+            subject: { type: "input", inputRef: "z", path: [] },
+            negated: false,
+          },
+        },
+      ],
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: null,
+        headers: {},
+      },
+    });
+    const filePath = writeTempJson([summary]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+});

@@ -7,14 +7,16 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary"],
       include: ["src/**/*.ts"],
-      exclude: ["**/*.test.ts", "**/dist/**", "**/*.config.ts"],
+      // bin.ts is the side-effect entry point that wires runCli to
+      // process.exit — exercised in production but not in vitest because
+      // importing it would terminate the test process. The dispatch logic
+      // is fully covered via runCli in run.ts.
+      exclude: ["**/*.test.ts", "**/dist/**", "**/*.config.ts", "src/bin.ts"],
       thresholds: {
-        // All at 0: cli is Phase 4 scaffolding (src/index.ts is `export {}`).
-        // Restore thresholds when real implementation lands.
-        lines: 0,
-        functions: 0,
-        branches: 0,
-        statements: 0,
+        lines: 80,
+        functions: 80,
+        branches: 75,
+        statements: 80,
       },
     },
   },
