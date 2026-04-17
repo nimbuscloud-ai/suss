@@ -1,8 +1,8 @@
-// @suss/framework-express — FrameworkPack for Express
+// @suss/framework-express — PatternPack for Express
 
-import type { FrameworkPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
-export function expressFramework(): FrameworkPack {
+export function expressFramework(): PatternPack {
   return {
     name: "express",
     languages: ["typescript", "javascript"],

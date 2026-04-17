@@ -1,8 +1,8 @@
-// @suss/framework-react-router — FrameworkPack for React Router
+// @suss/framework-react-router — PatternPack for React Router
 
-import type { FrameworkPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
-export function reactRouterFramework(): FrameworkPack {
+export function reactRouterFramework(): PatternPack {
   return {
     name: "react-router",
     languages: ["typescript", "javascript"],

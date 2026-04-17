@@ -11,3 +11,13 @@ export async function getHealth() {
   }
   throw new Error(`health check failed: ${res.status}`);
 }
+
+// Uses .ok — tests response property semantics resolution
+export async function getUser(id: string) {
+  const res = await fetch(`/users/${id}`);
+  if (!res.ok) {
+    throw new Error("user fetch failed");
+  }
+  const data = await res.json();
+  return data;
+}

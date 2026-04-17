@@ -76,7 +76,7 @@ It borrows from **formal verification** (preconditions, postconditions) but is d
 2. **Graceful degradation.** Real code is messy. When the extractor can't decompose a condition, it falls back to opaque — preserving the source text and reducing confidence, never failing or lying.
 3. **Language-agnostic output.** The output shape is the same whether extracted from TypeScript, Python, or anything else. Downstream tools don't care about the source language.
 4. **Boundaries are first-class.** The whole point is cross-boundary checking. Every summary either is bound to a boundary or knows it's not.
-5. **Declarative over imperative.** Framework support is data, not code. Adding Fastify should be ~100 lines of `FrameworkPack` configuration, not a new module.
+5. **Declarative over imperative.** Framework support is data, not code. Adding Fastify should be ~100 lines of `PatternPack` configuration, not a new module.
 6. **Layered coupling.** The IR has zero dependencies. The extractor depends only on the IR. The adapter depends on the extractor and the compiler API. Each layer can be replaced without touching the others.
 
 ## What suss is not

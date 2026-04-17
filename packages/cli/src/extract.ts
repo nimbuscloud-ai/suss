@@ -6,7 +6,7 @@ import path from "node:path";
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { FrameworkPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
 // ---------------------------------------------------------------------------
 // Framework pack resolution
@@ -14,7 +14,7 @@ import type { FrameworkPack } from "@suss/extractor";
 
 const BUILTIN_FRAMEWORKS: Record<
   string,
-  () => Promise<{ default: () => FrameworkPack }>
+  () => Promise<{ default: () => PatternPack }>
 > = {
   "ts-rest": () => import("@suss/framework-ts-rest"),
   "react-router": () => import("@suss/framework-react-router"),
@@ -22,7 +22,7 @@ const BUILTIN_FRAMEWORKS: Record<
   fetch: () => import("@suss/runtime-web"),
 };
 
-async function resolveFramework(name: string): Promise<FrameworkPack> {
+async function resolveFramework(name: string): Promise<PatternPack> {
   const builtin = BUILTIN_FRAMEWORKS[name];
   if (builtin !== undefined) {
     const mod = await builtin();
@@ -32,7 +32,7 @@ async function resolveFramework(name: string): Promise<FrameworkPack> {
   // Try dynamic import for custom framework packs
   try {
     const mod = (await import(`@suss/framework-${name}`)) as {
-      default: () => FrameworkPack;
+      default: () => PatternPack;
     };
     return mod.default();
   } catch {

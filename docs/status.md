@@ -18,7 +18,7 @@ Progress tracker. Updated as phases land.
 | 1.1 Monorepo scaffold | ✅ | turbo + npm workspaces + tsup + vitest. 7 packages. |
 | 1.2 `@suss/behavioral-ir` types and utilities | ✅ | Full IR + `diffSummaries`. 7 tests. |
 | 1.3 `@suss/extractor` assembly engine | ✅ | `assembleSummary`, `detectGaps` (both directions), `assessConfidence`. Map-based converters. 9 tests. |
-| 1.4 `FrameworkPack` interface | ✅ | Lives in `@suss/extractor/framework`. |
+| 1.4 `PatternPack` interface | ✅ | Lives in `@suss/extractor/framework`. |
 
 ## Phase 2 — TypeScript Adapter
 
@@ -77,7 +77,7 @@ Progress tracker. Updated as phases land.
 
 | Task | Status | Notes |
 |------|--------|-------|
-| 6.1 `clientCall` discovery match + consumer binding extractors | ✅ | New `DiscoveryMatch` variant `clientCall` in `FrameworkPack` interface. `BindingExtraction` gains `fromClientMethod`, `fromArgumentLiteral`, `fromArgumentProperty`. |
+| 6.1 `clientCall` discovery match + consumer binding extractors | ✅ | New `DiscoveryMatch` variant `clientCall` in `PatternPack` interface. `BindingExtraction` gains `fromClientMethod`, `fromArgumentLiteral`, `fromArgumentProperty`. |
 | 6.2 `discoverByClientCall` in the TS adapter | ✅ | Finds matching call sites, walks to enclosing function, returns `DiscoveredUnit` with `callSite` metadata. Consumer binding extraction reads method/path from call args or contract. |
 | 6.3 `returnStatement` terminal match | ✅ | New `TerminalMatch` variant for any return statement (not just object-literal returns). Required because consumer functions return arbitrary values, not `{ status, body }` objects. |
 | 6.4 `readContractForClientCall` | ✅ | Traces from `client.getUser()` → `const client = initClient(contract)` → contract object → endpoint definition for the called method. Reuses existing `resolveContractObject` + `extractEndpointContract`. |
@@ -107,6 +107,7 @@ Progress tracker. Updated as phases land.
 | 7.6 Error-to-response bridging | ✅ | Throw terminals with framework-extracted status codes are converted to response outputs at the extractor level. Behavioral contract (consumer sees HTTP status, not exception) takes priority over mechanism (code threw). Unhandled throws without status codes remain as throw outputs. |
 | 7.7 Subject resolution through intermediates | ✅ | `resolveSubject` follows non-call initializers (`const data = result.body` → recurse). Depth-bounded at 8 hops. |
 | 7.8 Semantic condition bridging | ✅ | `checkSemanticBridging`: literal discrimination, field-presence discrimination, truthiness checks, negated comparisons (`!== X`), fetch `.json()` body accessor, "any match suppresses" semantics. All 6 original aspirations resolved or reclassified — remaining gaps are Level 6 (local function inlining). See [`cross-boundary-checking.md`](cross-boundary-checking.md) §Level 5. |
+| 7.9 `PatternPack` rename + response property semantics | ✅ | `FrameworkPack` → `PatternPack` across all packages. `ResponsePropertyMapping` declares response property semantics (statusCode, statusRange, body, headers). Adapter resolves `.ok` → `status >= 200 && status <= 299` at extraction time. Pack-driven field filtering in `collectClientFieldAccesses` replaces hardcoded property lists. |
 
 ## Phase 8+ — Deferred
 
@@ -123,14 +124,14 @@ Progress tracker. Updated as phases land.
 |---------|-------|-------|
 | `@suss/behavioral-ir` | 8 | diff utility, type narrowing, Finding shape |
 | `@suss/extractor` | 55 | assembly, gaps (both directions), confidence, opaque wrapping, ValueRef statusCode, throw-to-response bridging, transition ID stability, edge cases |
-| `@suss/adapter-typescript` | 320 | conditions, predicates (incl. recursive call inlining), subjects (incl. intermediate variable resolution), terminals, discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction (incl. literal narrowness verification), consumer binding extraction, field-access tracking, integration |
+| `@suss/adapter-typescript` | 324 | conditions, predicates (incl. recursive call inlining), subjects (incl. intermediate variable resolution), terminals, discovery (incl. clientCall), contract reading (incl. body schema, consumer contract resolution), shape extraction (incl. literal narrowness verification), consumer binding extraction, field-access tracking, response property resolution (.ok → status range), integration |
 | `@suss/framework-ts-rest` | 10 | pack shape (handler + consumer discovery) + integration |
 | `@suss/framework-react-router` | 7 | pack shape + integration (loader/action transitions, singleObjectParam inputs) |
 | `@suss/framework-express` | 7 | pack shape + integration (guard chains, positional inputs, redirect forms) |
 | `@suss/runtime-web` | 4 | pack shape + integration (fetch discovery, binding extraction, transitions) |
 | `@suss/checker` | 154 | subject/predicate matchers, body-shape matcher, body-compatibility (field presence), semantic bridging (literal + field-presence discrimination, truthiness, negated comparisons, `.json()` accessor, 2 aspiration tests), response-match helpers, provider coverage (incl. sub-case analysis, throw-as-response), consumer satisfaction, contract consistency (status + body), consumer contract leakage (Level 3), path normalization, boundary pairing, `checkPair` integration |
 | `@suss/cli` | 34 | deep-equal summary shape per framework, `-o` round-trip, inspect, `suss check`, `suss check --dir`, consumer extraction, end-to-end extract+check, semantic-bridging e2e |
-| **Total** | **599** | |
+| **Total** | **603** | |
 
 Runs via `turbo test`.
 
@@ -149,6 +150,6 @@ Runs via `turbo test`.
 11. **`"client"` vs `"consumer"` in `CodeUnitKind`.** `"consumer"` is for message consumers (Kafka, SQS). `"client"` is for API call sites (fetch, ts-rest `initClient`). Different behavioral models: clients branch on response status and read body fields; consumers receive messages and produce effects.
 12. **Depth before breadth.** Cross-boundary analysis depth (field-level body comparison, predicate-level transition matching, automatic boundary pairing) takes priority over language breadth (Python adapter, React components). Breadth multiplies depth; adding depth later is a rewrite, adding breadth later is additive.
 13. **Reduce opaqueness recursively.** When the extractor encounters something it can't decompose (call expression, unresolved reference), it should try to resolve through it — inline the function body, follow the variable chain, look up the type. Same recursive strategy at every level. Opaque predicates are the honest fallback, not the first resort.
-14. **`FrameworkPack` → `PatternPack` (rename planned).** The interface describes discovery patterns, terminal extraction, and binding extraction. It applies equally to frameworks (Express, ts-rest) and runtime APIs (fetch). `@suss/runtime-web` uses the same interface. Rename to `PatternPack` when adding response property semantics — the two changes touch the same interface.
-15. **Response property semantics belong in the pack, not the checker.** Properties like `.ok` (fetch) and `.body` (ts-rest) have framework/runtime-specific relationships to the HTTP status code and response body. The pack should declare these semantics so the extractor can resolve derived properties (`.ok` → status range 200-299) at extraction time. The checker should never need to know about framework-specific response shapes.
+14. **`FrameworkPack` → `PatternPack` (done).** The interface describes discovery patterns, terminal extraction, and binding extraction. It applies equally to frameworks (Express, ts-rest) and runtime APIs (fetch). `@suss/runtime-web` uses the same interface. Renamed alongside response property semantics (7.9).
+15. **Response property semantics belong in the pack, not the checker (done).** Properties like `.ok` (fetch) and `.body` (ts-rest) have framework/runtime-specific relationships to the HTTP status code and response body. The pack declares these semantics via `ResponsePropertyMapping[]` so the adapter resolves derived properties (`.ok` → `status >= 200 && status <= 299`) at extraction time. The checker never needs to know about framework-specific response shapes.
 16. **Throw-with-status converts to response at extraction time.** When a framework pack extracts a status code from a thrown value, the extractor produces a `response` output, not a `throw` output. The behavioral contract (what the consumer sees) takes priority over the mechanism (how the code achieves it). This keeps transition IDs stable across throw↔direct-response refactors.

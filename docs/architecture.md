@@ -161,7 +161,7 @@ The extractor reads both the declaration and the implementation, and the checker
 **Framework pack**: declarative patterns describing how to find code units, what terminals look like, and how inputs are delivered for a specific framework. They are data, not code — the adapter interprets them.
 
 ```typescript
-tsRestFramework(): FrameworkPack {
+tsRestFramework(): PatternPack {
   return {
     name: "ts-rest",
     languages: ["typescript"],
@@ -181,7 +181,7 @@ tsRestFramework(): FrameworkPack {
 ```
 @suss/behavioral-ir          zero deps, types only. Install this to consume summaries.
     │
-    ├─ @suss/extractor          assembly engine + FrameworkPack interface. No AST access.
+    ├─ @suss/extractor          assembly engine + PatternPack interface. No AST access.
     │     │
     │     ├─ @suss/adapter-typescript     ts-morph-based extraction (provider + consumer)
     │     │
@@ -198,9 +198,9 @@ tsRestFramework(): FrameworkPack {
 Dependency rules (enforced by the layout):
 
 - `@suss/behavioral-ir` — zero dependencies. This is what downstream consumers install.
-- `@suss/extractor` — depends only on the IR. Defines `RawCodeStructure` and `FrameworkPack`. Never imports ts-morph or any compiler API.
+- `@suss/extractor` — depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript` — depends on IR, extractor, ts-morph. This is the heavyweight package.
-- `@suss/framework-*` and `@suss/runtime-*` packs — depend only on `@suss/extractor` (for the `FrameworkPack` type). They're data, not logic. Runtime packs (e.g., `@suss/runtime-web` for `fetch`) use the same `FrameworkPack` interface but target built-in APIs rather than third-party frameworks.
+- `@suss/framework-*` and `@suss/runtime-*` packs — depend only on `@suss/extractor` (for the `PatternPack` type). They're data, not logic. Runtime packs (e.g., `@suss/runtime-web` for `fetch`) use the same `PatternPack` interface but target built-in APIs rather than third-party frameworks.
 - `@suss/checker` — depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or framework packs — operates on the serialized IR.
 - `@suss/cli` — depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs.
 
@@ -229,7 +229,7 @@ The pipeline contract is strict: the adapter fills in `RawCodeStructure` (includ
 
 ## Framework packs are data, not code
 
-A framework pack is a `FrameworkPack` object describing patterns:
+A framework pack is a `PatternPack` object describing patterns:
 
 - **Discovery patterns** — how to find code units (`namedExport` for React Router loaders, `registrationCall` for ts-rest handlers, `clientCall` for ts-rest `initClient` / `fetch`, `decorator` for FastAPI, `fileConvention` for Next.js)
 - **Terminal patterns** — what counts as output (`returnShape` for `{ status, body }`, `parameterMethodCall` for `res.json()`, `throwExpression` for `throw httpErrorJson(...)`, `returnStatement` for any return in client functions)
@@ -241,13 +241,13 @@ The adapter interprets these patterns against a language's AST. This means addin
 
 ### Known tension: provider-shaped interface carries client patterns
 
-The `FrameworkPack` interface was designed around provider-side extraction. Client/consumer discovery was added via `clientCall` match and `returnStatement` terminal, which works correctly but creates structural noise:
+The `PatternPack` interface was designed around provider-side extraction. Client/consumer discovery was added via `clientCall` match and `returnStatement` terminal, which works correctly but creates structural noise:
 
 - `inputMapping` is meaningless for clients (they don't receive framework-structured inputs). Client packs set it to `positionalParams: []`.
 - `terminals` for clients is boilerplate — every client pack repeats `returnStatement` + `throwExpression` identically.
 - `contractReading` is provider-only but lives at the top level.
 
-This isn't worth refactoring while there are only two client packs (ts-rest, fetch). If a third client pack lands and the boilerplate becomes a pattern, the right move is to split `FrameworkPack` into `provider` / `client` sub-shapes with sensible defaults for client terminals.
+This isn't worth refactoring while there are only two client packs (ts-rest, fetch). If a third client pack lands and the boilerplate becomes a pattern, the right move is to split `PatternPack` into `provider` / `client` sub-shapes with sensible defaults for client terminals.
 
 ## Degradation strategy
 

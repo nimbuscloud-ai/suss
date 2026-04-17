@@ -662,12 +662,22 @@ describe("consumer extraction — fetch", () => {
         output: outPath,
       });
 
-      expect(summaries).toHaveLength(1);
-      expect(summaries[0].kind).toBe("client");
-      expect(summaries[0].identity.name).toBe("getHealth");
-      expect(summaries[0].identity.boundaryBinding?.path).toBe("/health");
-      expect(summaries[0].identity.boundaryBinding?.method).toBe("GET");
-      expect(summaries[0].transitions.length).toBeGreaterThanOrEqual(2);
+      expect(summaries).toHaveLength(2);
+
+      const health = summaries.find((s) => s.identity.name === "getHealth");
+      expect(health).toBeDefined();
+      if (health) {
+        expect(health.kind).toBe("client");
+        expect(health.identity.boundaryBinding?.path).toBe("/health");
+        expect(health.identity.boundaryBinding?.method).toBe("GET");
+        expect(health.transitions.length).toBeGreaterThanOrEqual(2);
+      }
+
+      const user = summaries.find((s) => s.identity.name === "getUser");
+      expect(user).toBeDefined();
+      if (user) {
+        expect(user.kind).toBe("client");
+      }
 
       fs.rmSync(tmpDir, { recursive: true });
     },

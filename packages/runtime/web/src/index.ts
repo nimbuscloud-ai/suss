@@ -1,6 +1,6 @@
-import type { FrameworkPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
-export function webFetchRuntime(): FrameworkPack {
+export function webFetchRuntime(): PatternPack {
   return {
     name: "fetch",
     languages: ["typescript"],
@@ -42,6 +42,19 @@ export function webFetchRuntime(): FrameworkPack {
       type: "positionalParams",
       params: [],
     },
+
+    responseSemantics: [
+      {
+        name: "ok",
+        access: "property",
+        semantics: { type: "statusRange", min: 200, max: 299 },
+      },
+      { name: "status", access: "property", semantics: { type: "statusCode" } },
+      { name: "json", access: "method", semantics: { type: "body" } },
+      { name: "text", access: "method", semantics: { type: "body" } },
+      { name: "body", access: "property", semantics: { type: "body" } },
+      { name: "headers", access: "property", semantics: { type: "headers" } },
+    ],
   };
 }
 

@@ -9,13 +9,13 @@ import { createTypeScriptAdapter, extractCodeStructure } from "./adapter.js";
 import { readContract } from "./contract.js";
 import { discoverUnits } from "./discovery.js";
 
-import type { FrameworkPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
 // ---------------------------------------------------------------------------
 // ts-rest framework pack (same as @suss/framework-ts-rest)
 // ---------------------------------------------------------------------------
 
-const tsRestPack: FrameworkPack = {
+const tsRestPack: PatternPack = {
   name: "ts-rest",
   languages: ["typescript"],
   discovery: [
@@ -184,7 +184,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("extracts positional parameters (Express style)", () => {
-    const expressPack: FrameworkPack = {
+    const expressPack: PatternPack = {
       ...tsRestPack,
       name: "express",
       inputMapping: {
@@ -1033,7 +1033,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 // ---------------------------------------------------------------------------
 
 describe("consumer extraction", () => {
-  const fetchPack: FrameworkPack = {
+  const fetchPack: PatternPack = {
     name: "fetch",
     languages: ["typescript"],
     discovery: [
@@ -1235,5 +1235,220 @@ describe("consumer extraction", () => {
     const allStatuses = statusesPerTransition.flat();
     expect(allStatuses).toContain(404);
     expect(allStatuses).toContain(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Response property semantics resolution
+// ---------------------------------------------------------------------------
+
+describe("response property semantics", () => {
+  const fetchPackWithSemantics: PatternPack = {
+    name: "fetch",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "global",
+          importName: "fetch",
+        },
+        bindingExtraction: {
+          method: {
+            type: "fromArgumentProperty",
+            position: 1,
+            property: "method",
+            default: "GET",
+          },
+          path: { type: "fromArgumentLiteral", position: 0 },
+        },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+    responseSemantics: [
+      {
+        name: "ok",
+        access: "property",
+        semantics: { type: "statusRange", min: 200, max: 299 },
+      },
+      {
+        name: "status",
+        access: "property",
+        semantics: { type: "statusCode" },
+      },
+      {
+        name: "json",
+        access: "method",
+        semantics: { type: "body" },
+      },
+      {
+        name: "headers",
+        access: "property",
+        semantics: { type: "headers" },
+      },
+    ],
+  };
+
+  it("resolves response.ok to a status range comparison", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser() {
+        const res = await fetch("/users/1");
+        if (res.ok) {
+          return res.json();
+        }
+        throw new Error("request failed");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPackWithSemantics],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    const s = summaries[0];
+    // The ok-guarded branch should have a compound(and) comparison
+    // instead of a truthinessCheck on .ok
+    // At least one transition should have a compound(and) status range
+    const compounds = s.transitions
+      .flatMap((t) => t.conditions)
+      .filter((c) => c.type === "compound" && c.op === "and");
+    expect(compounds).toHaveLength(1);
+
+    const compound = compounds[0];
+    // Verify the compound has gte(200) and lte(299)
+    if (compound.type === "compound") {
+      expect(compound.operands).toHaveLength(2);
+      const [gte, lte] = compound.operands;
+      expect(gte).toMatchObject({
+        type: "comparison",
+        op: "gte",
+        right: { type: "literal", value: 200 },
+      });
+      expect(lte).toMatchObject({
+        type: "comparison",
+        op: "lte",
+        right: { type: "literal", value: 299 },
+      });
+    }
+  });
+
+  it("resolves negated !response.ok to negation(status range)", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser() {
+        const res = await fetch("/users/1");
+        if (!res.ok) {
+          throw new Error("request failed");
+        }
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPackWithSemantics],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    const s = summaries[0];
+    // The !ok guard branch should have a negation wrapping the range
+    const negations = s.transitions
+      .flatMap((t) => t.conditions)
+      .filter((c) => c.type === "negation");
+    expect(negations.length).toBeGreaterThanOrEqual(1);
+
+    const negation = negations.find(
+      (c) => c.type === "negation" && c.operand.type === "compound",
+    );
+    expect(negation).toBeDefined();
+    if (negation?.type === "negation" && negation.operand.type === "compound") {
+      expect(negation.operand.op).toBe("and");
+      expect(negation.operand.operands).toHaveLength(2);
+    }
+  });
+
+  it("leaves status comparisons unchanged", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser() {
+        const res = await fetch("/users/1");
+        if (res.status === 404) {
+          return null;
+        }
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPackWithSemantics],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    const s = summaries[0];
+    // The status === 404 condition should remain as a comparison
+    const statusBranch = s.transitions.find((t) =>
+      t.conditions.some(
+        (c) =>
+          c.type === "comparison" &&
+          c.op === "eq" &&
+          c.right.type === "literal" &&
+          c.right.value === 404,
+      ),
+    );
+    expect(statusBranch).toBeDefined();
+  });
+
+  it("does not resolve when pack has no responseSemantics", () => {
+    const packWithoutSemantics: PatternPack = {
+      ...fetchPackWithSemantics,
+      responseSemantics: undefined,
+    };
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser() {
+        const res = await fetch("/users/1");
+        if (res.ok) {
+          return res.json();
+        }
+        throw new Error("failed");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [packWithoutSemantics],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    // Without semantics, .ok stays as a truthinessCheck
+    const s = summaries[0];
+    const hasTruthiness = s.transitions.some((t) =>
+      t.conditions.some((c) => c.type === "truthinessCheck"),
+    );
+    expect(hasTruthiness).toBe(true);
   });
 });
