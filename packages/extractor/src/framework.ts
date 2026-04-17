@@ -101,6 +101,8 @@ export interface TerminalExtraction {
   body?:
     | { from: "property"; name: string } // { body: data } → name: "body"
     | { from: "argument"; position: number; minArgs?: number }; // res.json(data) → position: 0
+  /** Fallback status code when none is extracted. e.g. Express res.json() defaults to 200. */
+  defaultStatusCode?: number;
 }
 
 export interface TerminalPattern {

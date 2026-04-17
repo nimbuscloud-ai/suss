@@ -64,6 +64,7 @@ export function expressFramework(): PatternPack {
         },
         extraction: {
           body: { from: "argument", position: 0 },
+          defaultStatusCode: 200,
         },
       },
       {
@@ -80,7 +81,7 @@ export function expressFramework(): PatternPack {
         },
       },
       {
-        // res.send(body)
+        // res.send(body) — implicit 200
         kind: "response",
         match: {
           type: "parameterMethodCall",
@@ -89,6 +90,7 @@ export function expressFramework(): PatternPack {
         },
         extraction: {
           body: { from: "argument", position: 0 },
+          defaultStatusCode: 200,
         },
       },
       {
@@ -115,6 +117,7 @@ export function expressFramework(): PatternPack {
         },
         extraction: {
           statusCode: { from: "argument", position: 0, minArgs: 2 },
+          defaultStatusCode: 302,
         },
       },
       {

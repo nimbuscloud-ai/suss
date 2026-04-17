@@ -86,20 +86,19 @@ describe("reactRouterFramework — integration", () => {
     const loader = summaries.find((s) => s.kind === "loader");
     expect(loader).toBeDefined();
 
-    // Three detected terminals (throw new Response is not currently
-    // matched — the pack's throw matcher targets `httpErrorJson`).
-    //   1. json({ error: "not found" }, { status: 404 })  → response, null status
-    //   2. redirect("/users")                             → response, null status
-    //   3. json({ user })                                 → default response
-    // json() today extracts body only (no init-arg status), so all three
-    // carry null statusCode — this test pins that behavior.
+    // Three detected terminals:
+    //   1. json({ error: "not found" }, { status: 404 })  → response, 200 default
+    //   2. redirect("/users")                             → response, 302 default
+    //   3. json({ user })                                 → default response, 200
+    // json()/data() default to 200, redirect() defaults to 302 via
+    // the pack's defaultStatusCode extraction.
     expect(loader!.transitions).toHaveLength(3);
-    for (const t of loader!.transitions) {
-      expect(t.output.type).toBe("response");
-      if (t.output.type === "response") {
-        expect(t.output.statusCode).toBeNull();
-      }
-    }
+    const statuses = loader!.transitions.map((t) =>
+      t.output.type === "response" && t.output.statusCode?.type === "literal"
+        ? t.output.statusCode.value
+        : null,
+    );
+    expect(statuses).toEqual([200, 302, 200]);
     expect(loader!.transitions.map((t) => t.isDefault)).toEqual([
       false,
       false,
