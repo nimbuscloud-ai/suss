@@ -188,6 +188,16 @@ function renderHuman(
     lines.push(`[${f.severity.toUpperCase()}] ${f.kind}`);
     lines.push(`  ${f.description}`);
     lines.push(`  provider: ${formatSide(f.provider, confidence)}`);
+    // When the finding was collapsed across multiple provider sources,
+    // list the others below the primary so reviewers can see who
+    // agreed. Skipped in the common single-source case to keep output
+    // uncluttered.
+    if (f.sources !== undefined && f.sources.length > 1) {
+      const others = f.sources.filter((s) => s !== f.provider.summary);
+      for (const other of others) {
+        lines.push(`    also from: ${other}`);
+      }
+    }
     lines.push(`  consumer: ${formatSide(f.consumer, confidence)}`);
     lines.push(
       `  boundary: ${f.boundary.framework} (${f.boundary.protocol})${formatRoute(f.boundary)}`,

@@ -435,6 +435,15 @@ export const FindingSchema = z.object({
   consumer: FindingSideSchema,
   description: z.string(),
   severity: FindingSeveritySchema,
+  /**
+   * Present only when two or more identical findings (same kind,
+   * boundary, description, consumer) from different providers were
+   * collapsed by the checker's dedup pass. Each entry is a
+   * `${file}::${name}` identifier matching FindingSide.summary.
+   * Single-source findings leave this unset. The `provider` field
+   * above still points at one representative contributor.
+   */
+  sources: z.array(z.string()).optional(),
 });
 
 // ---------------------------------------------------------------------------

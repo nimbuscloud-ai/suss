@@ -2,6 +2,7 @@ import { checkBodyCompatibility } from "./body-compatibility.js";
 import { checkConsumerContract } from "./consumer-contract.js";
 import { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 import { checkContractConsistency } from "./contract-consistency.js";
+import { dedupeFindings } from "./dedupe.js";
 import { pairSummaries } from "./pairing.js";
 import { checkProviderCoverage } from "./provider-coverage.js";
 import { checkSemanticBridging } from "./semantic-bridging.js";
@@ -13,6 +14,7 @@ export { bodyShapesMatch } from "./body-match.js";
 export { checkConsumerContract } from "./consumer-contract.js";
 export { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 export { checkContractConsistency } from "./contract-consistency.js";
+export { dedupeFindings } from "./dedupe.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
 export {
   boundaryKey,
@@ -51,6 +53,13 @@ export interface CheckAllResult {
 /**
  * Given a flat list of summaries, automatically pair providers with consumers
  * by `(method, normalizedPath)` and run `checkPair` on each matched pair.
+ *
+ * Identical findings from overlapping providers (e.g. an OpenAPI stub and
+ * a CloudFormation stub describing the same REST endpoint, both producing
+ * the same "consumer doesn't handle 400" finding) are collapsed into one
+ * representative carrying `sources` that lists every contributor. This
+ * noise reduction is *only* at the N×M pair level — `checkPair` on a
+ * single pair is unchanged.
  */
 export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const { pairs, unmatched } = pairSummaries(summaries);
@@ -68,7 +77,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   }
 
   return {
-    findings,
+    findings: dedupeFindings(findings),
     pairs: pairInfo,
     unmatched: {
       providers: unmatched.providers.map((s) => ({
