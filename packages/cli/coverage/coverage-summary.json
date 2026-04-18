@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 488,
-      "covered": 449,
+      "total": 534,
+      "covered": 492,
       "skipped": 0,
-      "pct": 92
+      "pct": 92.13
     },
     "statements": {
-      "total": 495,
-      "covered": 455,
+      "total": 540,
+      "covered": 497,
       "skipped": 0,
-      "pct": 91.91
+      "pct": 92.03
     },
     "functions": {
-      "total": 98,
-      "covered": 83,
+      "total": 105,
+      "covered": 89,
       "skipped": 0,
-      "pct": 84.69
+      "pct": 84.76
     },
     "branches": {
-      "total": 307,
-      "covered": 234,
+      "total": 342,
+      "covered": 265,
       "skipped": 0,
-      "pct": 76.22
+      "pct": 77.48
     },
     "branchesTrue": {
       "total": 0,
@@ -33,28 +33,28 @@
   },
   "src/check.ts": {
     "lines": {
-      "total": 98,
-      "covered": 92,
+      "total": 114,
+      "covered": 108,
       "skipped": 0,
-      "pct": 93.87
+      "pct": 94.73
     },
     "functions": {
-      "total": 15,
-      "covered": 14,
+      "total": 17,
+      "covered": 16,
       "skipped": 0,
-      "pct": 93.33
+      "pct": 94.11
     },
     "statements": {
-      "total": 101,
-      "covered": 94,
+      "total": 116,
+      "covered": 109,
       "skipped": 0,
-      "pct": 93.06
+      "pct": 93.96
     },
     "branches": {
-      "total": 61,
-      "covered": 52,
+      "total": 76,
+      "covered": 67,
       "skipped": 0,
-      "pct": 85.24
+      "pct": 88.15
     }
   },
   "src/extract.ts": {
@@ -185,6 +185,32 @@
       "covered": 4,
       "skipped": 0,
       "pct": 100
+    }
+  },
+  "src/suppressions-loader.ts": {
+    "lines": {
+      "total": 30,
+      "covered": 27,
+      "skipped": 0,
+      "pct": 90
+    },
+    "functions": {
+      "total": 5,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 80
+    },
+    "statements": {
+      "total": 30,
+      "covered": 27,
+      "skipped": 0,
+      "pct": 90
+    },
+    "branches": {
+      "total": 20,
+      "covered": 16,
+      "skipped": 0,
+      "pct": 80
     }
   }
 }
