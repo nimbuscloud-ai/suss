@@ -4,7 +4,7 @@ Version: **v0** (draft)
 
 A behavioral summary is a structured, language-agnostic description of a code unit's behavior. It answers: *under what conditions does this function produce what outputs?*
 
-This document describes the JSON format. The authoritative schema is [`behavioral-summary.schema.json`](../packages/ir/schema/behavioral-summary.schema.json).
+This document describes the JSON format. The authoritative source of truth is the zod schema in [`packages/ir/src/schemas.ts`](../packages/ir/src/schemas.ts); the [`behavioral-summary.schema.json`](../packages/ir/schema/behavioral-summary.schema.json) JSON Schema is generated from it at build time and committed for non-TypeScript consumers (Python, Go, etc.) that want to validate without running JS.
 
 ## File format
 
@@ -130,23 +130,33 @@ When a contract declares a status code that no transition produces, the gap tell
 
 ## Metadata
 
-The `metadata` field carries framework-specific data that doesn't fit the universal shape. Currently used for declared contracts:
+The `metadata` field carries framework-specific data that doesn't fit the universal shape. Keys are **namespaced by boundary semantics** so additional semantics (GraphQL, Lambda-invoke, queue messages) can use their own sibling namespaces without clashing with HTTP-scoped keys. HTTP-scoped entries live under `metadata.http.*`:
 
 ```json
 {
   "metadata": {
-    "declaredContract": {
-      "framework": "ts-rest",
-      "responses": [
-        { "statusCode": 200, "body": { "type": "record", "properties": { ... } } },
-        { "statusCode": 404 }
-      ]
+    "http": {
+      "declaredContract": {
+        "framework": "ts-rest",
+        "responses": [
+          { "statusCode": 200, "body": { "type": "record", "properties": { ... } } },
+          { "statusCode": 404 }
+        ]
+      },
+      "bodyAccessors": ["data"],
+      "statusAccessors": ["status"]
     }
   }
 }
 ```
 
-Tools that don't need contract data can ignore metadata entirely.
+- `http.declaredContract` — pack-declared response schema (status codes + body shapes). Populated by contract-reading frameworks like ts-rest.
+- `http.bodyAccessors` — names of response properties the consumer uses to read the body (`.data` for axios, `.body`/`.json()` for fetch). Lets the cross-boundary checker unwrap `expectedInput` correctly.
+- `http.statusAccessors` — names of response properties the consumer uses to read the status code. Lets the checker recognise pack-specific names beyond the historical `["status", "statusCode"]`.
+
+Semantics-neutral keys (valid for every boundary kind) stay at the top level — e.g. `metadata.derivedFromWrapper` on wrapper-expansion-produced summaries.
+
+Tools that don't need metadata can ignore it entirely. See [`boundary-semantics.md`](boundary-semantics.md) for the layered model this namespacing anticipates.
 
 ## Consuming summaries
 
@@ -155,7 +165,7 @@ Summaries are designed for machine consumption. Common operations:
 - **Enumerate transitions** — iterate `transitions[]` to see every execution path
 - **Check coverage** — compare provider transition statuses against consumer condition literals
 - **Inspect body shapes** — read `output.body` to see what fields are returned
-- **Pair boundaries** — group summaries by `identity.boundaryBinding.(method, path)` to find provider/consumer pairs
+- **Pair boundaries** — for HTTP boundaries, group summaries by `identity.boundaryBinding.(method, path)` to find provider/consumer pairs. The pairing key is semantics-specific; future non-REST semantics will pair by their own identity (GraphQL operation name, Kafka topic, Lambda function name, etc.). See [`boundary-semantics.md`](boundary-semantics.md).
 - **Detect drift** — compare summaries from two points in time using transition IDs
 
 The format is stable enough to build on. Pin your tools to `v0` and check the schema version before parsing.
@@ -217,4 +227,7 @@ Tools can use this to adjust how much they trust the summary.
 
 ## Schema
 
-The JSON Schema is at [`packages/ir/schema/behavioral-summary.schema.json`](../packages/ir/schema/behavioral-summary.schema.json). It validates the output of `suss extract`.
+Two consumption paths:
+
+- **TypeScript / JavaScript:** install `@suss/behavioral-ir` (one peer dep on `zod`) and use `parseSummaries(json)` for validate-and-narrow, or `safeParseSummaries(json)` to handle errors without throwing. Types (`BehavioralSummary`, `Transition`, `Predicate`, …) are derived from the same schemas via `z.infer`.
+- **Other languages:** validate against [`packages/ir/schema/behavioral-summary.schema.json`](../packages/ir/schema/behavioral-summary.schema.json). It is generated from the zod schema at build time (`npm run build` in `packages/ir/`), so it is always in sync with the runtime parsers and never hand-edited.

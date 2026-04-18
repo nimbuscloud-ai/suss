@@ -4,6 +4,8 @@ A framework pack teaches suss how to find and interpret code written for a speci
 
 This document is for people writing or modifying framework packs. If you're using an existing pack, see `docs/architecture.md`.
 
+**Scope today: HTTP.** Every shipping pack describes an HTTP boundary (REST semantics). The pack shape reflects that — `statusCode`, `body`, and response-property mappings are HTTP-biased. When a non-HTTP boundary semantics lands (GraphQL, Lambda-invoke, queue messages, React render), the pack interface grows per-semantics extensions rather than stretching the HTTP vocabulary. See [`boundary-semantics.md`](boundary-semantics.md) for the layered transport / semantics / recognition model this is heading toward.
+
 ## What a pack describes
 
 A pack answers four questions about a framework:

@@ -21,6 +21,8 @@ This is what extraction produces and what downstream tools consume. It's a flat,
 
 **Why `metadata` is an unstructured bag.** Framework-specific information that doesn't fit the universal shape goes here — declared contracts, source file paths relative to the project, framework-specific annotations. Downstream tools can look at it if they care; if they don't, they can ignore it. The core shape stays clean.
 
+**Keys are namespaced by boundary semantics.** HTTP-scoped entries live under `metadata.http.{declaredContract, bodyAccessors, statusAccessors}`. Future semantics (GraphQL, Lambda-invoke, queue messages) would own sibling namespaces (`metadata.graphql.*`, `metadata.lambda.*`). Semantics-neutral keys (e.g. `metadata.derivedFromWrapper` recording wrapper-expansion provenance) stay at the top level. See [`boundary-semantics.md`](boundary-semantics.md).
+
 ## `CodeUnitKind`
 
 ```typescript
@@ -69,15 +71,17 @@ Location is file + line range. Identity is symbolic: *what* is this code unit, r
 
 ```typescript
 interface BoundaryBinding {
-  protocol: string;            // "http", "grpc", "graphql", "event", "invoke"
+  protocol: string;            // "http" today; will split when we add a second protocol
   method?: string;             // "GET", "POST", etc. for HTTP
   path?: string;               // "/users/:id" for HTTP
-  framework: string;           // "ts-rest", "express", "react-router"
+  framework: string;           // "ts-rest", "express", "react-router", "fetch", "axios"
   declaredResponses?: number[];
 }
 ```
 
 Where a code unit connects to the outside world. A REST endpoint is the same boundary whether it's served at `/api/v1/users` or `/api/v2/members` — the *identity* of the boundary is separate from the address. For v0, we use the address as the identity; adding stable boundary IDs is a future concern.
+
+**This shape is HTTP-biased today.** `protocol` is doing the work of both *transport* (wire protocol) and *semantics* (what the participants think they're doing); `framework` is doing the work of recognition (the specific library). `method` / `path` are REST-specific and would be empty for any non-REST boundary even if it's HTTP-transported. When a second boundary semantics lands (GraphQL is the planned forcing function), these fields split into `transport` + `semantics` (a discriminated union) + `recognition`. See [`boundary-semantics.md`](boundary-semantics.md) for the target shape. Until then, the checker, the pairing logic, and the pack interfaces all assume REST semantics.
 
 ## `Transition` — the atomic unit of behavior
 
