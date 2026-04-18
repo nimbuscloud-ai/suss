@@ -4,9 +4,11 @@
 //
 // Also normalizes coverage-summary.json: relativizes paths and pretty-prints.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { normalizeSummaryFile } from "./normalize-coverage-summary.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -67,33 +69,12 @@ function makeSvg(label, value, color) {
 </svg>`;
 }
 
-// Normalize and format all existing coverage-summary.json files.
-// vitest emits minified JSON with absolute file paths as keys. We:
-//   1. Replace absolute path keys with paths relative to the package root
-//      so the committed file is machine-independent.
-//   2. Run biome format --write so PR diffs show field-level changes.
+// Normalize and pretty-print any coverage-summary.json files the test
+// run produced (vitest emits minified JSON with absolute paths, which
+// we can't commit — see scripts/normalize-coverage-summary.mjs).
 for (const [pkgPath] of packageDirs) {
   const summaryPath = resolve(root, pkgPath, "coverage/coverage-summary.json");
-  if (!existsSync(summaryPath)) {
-    continue;
-  }
-  const pkgAbsPath = resolve(root, pkgPath);
-  const raw = readFileSync(summaryPath, "utf8");
-  const data = JSON.parse(raw);
-  const normalized = {};
-  for (const [key, value] of Object.entries(data)) {
-    // Replace absolute paths with relative-to-package-root paths.
-    // "total" and any other non-path keys are kept as-is.
-    const rel = key.startsWith(pkgAbsPath)
-      ? key.slice(pkgAbsPath.length + 1) // strip leading slash
-      : key;
-    normalized[rel] = value;
-  }
-  writeFileSync(
-    summaryPath,
-    `${JSON.stringify(normalized, null, 2)}\n`,
-    "utf8",
-  );
+  normalizeSummaryFile(summaryPath);
 }
 
 const results = [];
