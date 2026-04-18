@@ -10,6 +10,8 @@ import {
 } from "./__fixtures__/pairs.js";
 import { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 
+import type { Predicate } from "@suss/behavioral-ir";
+
 describe("checkConsumerSatisfaction", () => {
   it("reports no findings when every consumer-expected status is produced", () => {
     const p = provider("getUser", [
@@ -94,17 +96,16 @@ describe("checkConsumerSatisfaction", () => {
     // the HTTP status as `.responseStatus` rather than `.status`. Without
     // metadata, the checker would not see the comparison as a status
     // predicate and would think every consumer expectation went unmatched.
-    const responseStatusEq = (status: number) =>
-      ({
-        type: "comparison",
-        op: "eq",
-        left: {
-          type: "derived",
-          from: { type: "dependency", name: "client.get", accessChain: [] },
-          derivation: { type: "propertyAccess", property: "responseStatus" },
-        },
-        right: { type: "literal", value: status },
-      }) as const;
+    const responseStatusEq = (status: number): Predicate => ({
+      type: "comparison",
+      op: "eq",
+      left: {
+        type: "derived",
+        from: { type: "dependency", name: "client.get", accessChain: [] },
+        derivation: { type: "propertyAccess", property: "responseStatus" },
+      },
+      right: { type: "literal", value: status },
+    });
 
     const p = provider("getUser", [
       transition("t-200", { output: response(200), isDefault: true }),
