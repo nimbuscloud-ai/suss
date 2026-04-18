@@ -266,7 +266,7 @@ describe("checkContractConsistency", () => {
     ]);
     const withBadContract: typeof base = {
       ...base,
-      metadata: { declaredContract: "not-an-object" },
+      metadata: { http: { declaredContract: "not-an-object" } },
     };
     const c = consumer("UserPage", [
       transition("ct", {

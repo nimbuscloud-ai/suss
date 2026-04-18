@@ -263,4 +263,28 @@ describe("pairSummaries", () => {
     const result = pairSummaries([p, c]);
     expect(result.pairs).toHaveLength(1);
   });
+
+  it("classifies non-handler provider kinds (worker, component, hook) as providers", () => {
+    const workerProvider: BehavioralSummary = {
+      ...providerWithPath("processOrder", "POST", "/orders"),
+      kind: "worker",
+    };
+    const c = consumerWithPath("OrdersClient", "POST", "/orders");
+
+    const result = pairSummaries([workerProvider, c]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0].provider.kind).toBe("worker");
+    expect(result.unmatched.noBinding).toHaveLength(0);
+  });
+
+  it("places summaries with an unrecognized kind into noBinding", () => {
+    const malformed = {
+      ...providerWithPath("mystery", "GET", "/x"),
+      kind: "made-up" as BehavioralSummary["kind"],
+    };
+
+    const result = pairSummaries([malformed]);
+    expect(result.unmatched.noBinding).toHaveLength(1);
+    expect(result.pairs).toHaveLength(0);
+  });
 });

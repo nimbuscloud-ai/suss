@@ -8,6 +8,11 @@
 
 import { providerCoversConsumerFields } from "./body-compatibility.js";
 import {
+  bodyAccessorsFor,
+  readDeclaredContract,
+  statusAccessorsFor,
+} from "./declared-contract.js";
+import {
   consumerExpectedStatuses,
   makeBoundary,
   makeSide,
@@ -18,10 +23,6 @@ import type {
   Finding,
   TypeShape,
 } from "@suss/behavioral-ir";
-
-interface DeclaredContract {
-  responses: Array<{ statusCode: number; body: TypeShape | null }>;
-}
 
 export function checkConsumerContract(
   provider: BehavioralSummary,
@@ -47,6 +48,8 @@ export function checkConsumerContract(
     return []; // No declared body schemas to compare against
   }
 
+  const statusAccessors = statusAccessorsFor(consumer);
+
   for (const ct of consumer.transitions) {
     const expectedInput = ct.expectedInput;
     if (expectedInput === undefined || expectedInput === null) {
@@ -58,7 +61,7 @@ export function checkConsumerContract(
       continue;
     }
 
-    const statuses = consumerExpectedStatuses(ct);
+    const statuses = consumerExpectedStatuses(ct, statusAccessors);
     const statusesToCheck =
       statuses.length > 0
         ? statuses
@@ -102,36 +105,6 @@ export function checkConsumerContract(
   return findings;
 }
 
-function readDeclaredContract(
-  summary: BehavioralSummary,
-): DeclaredContract | null {
-  const raw = summary.metadata?.declaredContract;
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-  const responses = (raw as { responses?: unknown }).responses;
-  if (!Array.isArray(responses)) {
-    return null;
-  }
-  const validated: Array<{ statusCode: number; body: TypeShape | null }> = [];
-  for (const r of responses) {
-    if (
-      r &&
-      typeof r === "object" &&
-      typeof (r as { statusCode?: unknown }).statusCode === "number"
-    ) {
-      const bodyRaw = (r as { body?: unknown }).body;
-      const body =
-        bodyRaw && typeof bodyRaw === "object" ? (bodyRaw as TypeShape) : null;
-      validated.push({
-        statusCode: (r as { statusCode: number }).statusCode,
-        body,
-      });
-    }
-  }
-  return { responses: validated };
-}
-
 function unwrapBodyField(
   shape: TypeShape,
   consumer: BehavioralSummary,
@@ -146,12 +119,4 @@ function unwrapBodyField(
     }
   }
   return shape;
-}
-
-function bodyAccessorsFor(consumer: BehavioralSummary): string[] {
-  const fromMetadata = consumer.metadata?.bodyAccessors;
-  if (Array.isArray(fromMetadata) && fromMetadata.length > 0) {
-    return fromMetadata.filter((v): v is string => typeof v === "string");
-  }
-  return ["body"];
 }
