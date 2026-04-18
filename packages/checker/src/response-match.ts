@@ -26,17 +26,33 @@ export function hasOpaqueStatus(t: Transition): boolean {
   return sc != null && sc.type !== "literal";
 }
 
-export function consumerExpectedStatuses(t: Transition): number[] {
+/**
+ * Status property names recognised by `consumerExpectedStatuses` and
+ * related helpers. Built once per check via `statusAccessorsFor(summary)`
+ * (see declared-contract.ts) so the names track the consumer's pack —
+ * `["status"]` for fetch/axios today, but extensible without code changes
+ * if a pack declares custom names.
+ */
+export type StatusAccessors = ReadonlySet<string>;
+
+export function consumerExpectedStatuses(
+  t: Transition,
+  accessors: StatusAccessors,
+): number[] {
   const statuses: number[] = [];
   for (const pred of t.conditions) {
-    collectStatusLiterals(pred, statuses);
+    collectStatusLiterals(pred, accessors, statuses);
   }
   return statuses;
 }
 
-function collectStatusLiterals(pred: Predicate, out: number[]): void {
+function collectStatusLiterals(
+  pred: Predicate,
+  accessors: StatusAccessors,
+  out: number[],
+): void {
   if (pred.type === "comparison" && pred.op === "eq") {
-    const literal = asStatusLiteral(pred.left, pred.right);
+    const literal = asStatusLiteral(pred.left, pred.right, accessors);
     if (literal != null) {
       out.push(literal);
     }
@@ -44,16 +60,20 @@ function collectStatusLiterals(pred: Predicate, out: number[]): void {
   }
   if (pred.type === "compound") {
     for (const op of pred.operands) {
-      collectStatusLiterals(op, out);
+      collectStatusLiterals(op, accessors, out);
     }
     return;
   }
   if (pred.type === "negation") {
-    collectStatusLiterals(pred.operand, out);
+    collectStatusLiterals(pred.operand, accessors, out);
   }
 }
 
-function asStatusLiteral(a: ValueRef, b: ValueRef): number | null {
+function asStatusLiteral(
+  a: ValueRef,
+  b: ValueRef,
+  accessors: StatusAccessors,
+): number | null {
   const pairs: Array<[ValueRef, ValueRef]> = [
     [a, b],
     [b, a],
@@ -62,7 +82,7 @@ function asStatusLiteral(a: ValueRef, b: ValueRef): number | null {
     if (
       maybeLit.type === "literal" &&
       typeof maybeLit.value === "number" &&
-      refLooksLikeStatus(maybeRef)
+      refLooksLikeStatus(maybeRef, accessors)
     ) {
       return maybeLit.value;
     }
@@ -70,28 +90,37 @@ function asStatusLiteral(a: ValueRef, b: ValueRef): number | null {
   return null;
 }
 
-function refLooksLikeStatus(v: ValueRef): boolean {
+/**
+ * Whether `v` is a `ValueRef` that names a status property — i.e. its
+ * outermost accessor is one of the configured names.
+ *
+ * Exported because provider-coverage filters out status-eq predicates
+ * when computing sub-case discriminators; sharing this with the rest of
+ * the response-match plumbing keeps the recognition rules in one place.
+ */
+export function refLooksLikeStatus(
+  v: ValueRef,
+  accessors: StatusAccessors,
+): boolean {
   if (v.type === "derived") {
     // Destructured: `const { status } = await call()`; later `status === 404`
     // is parsed as a derived value with a destructured derivation.
     if (v.derivation.type === "destructured") {
-      return isStatusName(v.derivation.field);
+      return accessors.has(v.derivation.field);
     }
     if (v.derivation.type === "propertyAccess") {
-      return isStatusName(v.derivation.property);
+      return accessors.has(v.derivation.property);
     }
   }
   if (v.type === "input") {
-    return isStatusName(v.path[v.path.length - 1]);
+    const last = v.path[v.path.length - 1];
+    return last !== undefined && accessors.has(last);
   }
   if (v.type === "dependency") {
-    return isStatusName(v.accessChain[v.accessChain.length - 1]);
+    const last = v.accessChain[v.accessChain.length - 1];
+    return last !== undefined && accessors.has(last);
   }
   return false;
-}
-
-function isStatusName(name: string | undefined): boolean {
-  return name === "status" || name === "statusCode";
 }
 
 export function makeSide(

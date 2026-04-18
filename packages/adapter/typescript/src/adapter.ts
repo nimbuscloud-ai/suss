@@ -328,13 +328,20 @@ export function extractCodeStructure(
     }
   }
 
-  // For client units, surface the pack's body-typed response property names
-  // so cross-boundary checking can unwrap expectedInput against the right
-  // wrapper key (e.g. axios uses .data, fetch uses .body / .json()).
+  // For client units, surface the pack's body-typed and statusCode-typed
+  // response property names so cross-boundary checking can recognise the
+  // pack-specific accessors (e.g. axios uses .data for body and .status for
+  // status; fetch uses .body / .json() and .status).
   const bodyAccessors =
     unit.callSite !== undefined && pack.responseSemantics !== undefined
       ? pack.responseSemantics
           .filter((m) => m.semantics.type === "body")
+          .map((m) => m.name)
+      : undefined;
+  const statusAccessors =
+    unit.callSite !== undefined && pack.responseSemantics !== undefined
+      ? pack.responseSemantics
+          .filter((m) => m.semantics.type === "statusCode")
           .map((m) => m.name)
       : undefined;
 
@@ -357,6 +364,9 @@ export function extractCodeStructure(
     declaredContract: null,
     ...(bodyAccessors !== undefined && bodyAccessors.length > 0
       ? { bodyAccessors }
+      : {}),
+    ...(statusAccessors !== undefined && statusAccessors.length > 0
+      ? { statusAccessors }
       : {}),
   };
 }

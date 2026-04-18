@@ -145,10 +145,21 @@ export interface RawCodeStructure {
    * Names of pack-declared response properties whose semantics is `body`.
    * For client units this records the accessor a consumer uses to reach the
    * body (e.g. ["data"] for axios, ["body","json","text"] for fetch). Carried
-   * through to `summary.metadata.bodyAccessors` so the cross-boundary checker
-   * can unwrap consumer expectedInput correctly without knowing each pack.
+   * through to `summary.metadata.http.bodyAccessors` so the cross-boundary
+   * checker can unwrap consumer expectedInput correctly without knowing each
+   * pack. Flat here because this is the adapter→extractor plumbing contract;
+   * nesting under `http` happens when the summary is assembled.
    */
   bodyAccessors?: string[];
+  /**
+   * Names of pack-declared response properties whose semantics is
+   * `statusCode`. Same shape as `bodyAccessors` but for the status side —
+   * lets the checker recognise pack-specific names (e.g. fetch's `status`,
+   * axios's `status`, hypothetical `responseStatus`) when matching consumer
+   * branch conditions to provider transitions. Carried through to
+   * `summary.metadata.http.statusAccessors`.
+   */
+  statusAccessors?: string[];
 }
 
 // =============================================================================
@@ -266,20 +277,33 @@ export function assembleSummary(
     transitions,
     gaps,
     confidence,
-    ...(raw.declaredContract !== null ||
-    (raw.bodyAccessors !== undefined && raw.bodyAccessors.length > 0)
-      ? {
-          metadata: {
-            ...(raw.declaredContract !== null
-              ? { declaredContract: raw.declaredContract }
-              : {}),
-            ...(raw.bodyAccessors !== undefined && raw.bodyAccessors.length > 0
-              ? { bodyAccessors: raw.bodyAccessors }
-              : {}),
-          },
-        }
+    ...(buildHttpMetadata(raw) !== null
+      ? { metadata: { http: buildHttpMetadata(raw) } }
       : {}),
   };
+}
+
+/**
+ * HTTP-scoped summary metadata, nested under `metadata.http` so the key
+ * space is explicitly scoped to HTTP boundaries. A future GraphQL /
+ * Lambda-invoke / queue pack would use its own sibling namespace (e.g.
+ * `metadata.graphql.*`, `metadata.lambda.*`) without collision. See
+ * `docs/boundary-semantics.md` for the broader model.
+ */
+function buildHttpMetadata(
+  raw: RawCodeStructure,
+): Record<string, unknown> | null {
+  const http: Record<string, unknown> = {};
+  if (raw.declaredContract !== null) {
+    http.declaredContract = raw.declaredContract;
+  }
+  if (raw.bodyAccessors !== undefined && raw.bodyAccessors.length > 0) {
+    http.bodyAccessors = raw.bodyAccessors;
+  }
+  if (raw.statusAccessors !== undefined && raw.statusAccessors.length > 0) {
+    http.statusAccessors = raw.statusAccessors;
+  }
+  return Object.keys(http).length > 0 ? http : null;
 }
 
 // =============================================================================

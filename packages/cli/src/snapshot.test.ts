@@ -157,14 +157,16 @@ const handlerSummary: BehavioralSummary = {
   gaps: [],
   confidence: { source: "inferred_static", level: "high" },
   metadata: {
-    declaredContract: {
-      framework: "express",
-      responses: [
-        { statusCode: 200 },
-        { statusCode: 400 },
-        { statusCode: 404 },
-        { statusCode: 500 },
-      ],
+    http: {
+      declaredContract: {
+        framework: "express",
+        responses: [
+          { statusCode: 200 },
+          { statusCode: 400 },
+          { statusCode: 404 },
+          { statusCode: 500 },
+        ],
+      },
     },
   },
 };

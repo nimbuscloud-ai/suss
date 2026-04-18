@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { diffSummaries } from "@suss/behavioral-ir";
+import { diffSummaries, safeParseSummaries } from "@suss/behavioral-ir";
 import { pairSummaries } from "@suss/checker";
 
 import type {
@@ -251,7 +251,8 @@ function renderSummary(summary: BehavioralSummary): string {
   lines.push(`  ${meta.join(" | ")}`);
 
   // Contract line
-  const contract = summary.metadata?.declaredContract as
+  const http = summary.metadata?.http as Record<string, unknown> | undefined;
+  const contract = http?.declaredContract as
     | { responses: Array<{ statusCode: number }> }
     | undefined;
   let declaredStatuses: Set<number> | null = null;
@@ -307,11 +308,7 @@ export function inspect(options: InspectOptions): void {
   }
 
   const content = fs.readFileSync(filePath, "utf-8");
-  const summaries = JSON.parse(content) as BehavioralSummary[];
-
-  if (!Array.isArray(summaries)) {
-    throw new Error("Expected a JSON array of BehavioralSummary objects");
-  }
+  const summaries = parseSummaryFile(filePath, content);
 
   for (let i = 0; i < summaries.length; i++) {
     if (i > 0) {
@@ -394,12 +391,14 @@ export function inspectDiff(options: DiffOptions): void {
     throw new Error(`File not found: ${afterPath}`);
   }
 
-  const beforeSummaries = JSON.parse(
+  const beforeSummaries = parseSummaryFile(
+    beforePath,
     fs.readFileSync(beforePath, "utf-8"),
-  ) as BehavioralSummary[];
-  const afterSummaries = JSON.parse(
+  );
+  const afterSummaries = parseSummaryFile(
+    afterPath,
     fs.readFileSync(afterPath, "utf-8"),
-  ) as BehavioralSummary[];
+  );
 
   // Index by key
   const beforeByKey = new Map<string, BehavioralSummary>();
@@ -475,13 +474,27 @@ function readSummariesFromDir(dir: string): BehavioralSummary[] {
 
   const all: BehavioralSummary[] = [];
   for (const file of files) {
-    const content = fs.readFileSync(path.join(resolved, file), "utf-8");
-    const parsed = JSON.parse(content) as unknown;
-    if (Array.isArray(parsed)) {
-      all.push(...(parsed as BehavioralSummary[]));
-    }
+    const filePath = path.join(resolved, file);
+    const content = fs.readFileSync(filePath, "utf-8");
+    all.push(...parseSummaryFile(filePath, content));
   }
   return all;
+}
+
+function parseSummaryFile(
+  filePath: string,
+  content: string,
+): BehavioralSummary[] {
+  const json = JSON.parse(content) as unknown;
+  const result = safeParseSummaries(json);
+  if (!result.success) {
+    const issues = result.error.issues
+      .slice(0, 10)
+      .map((i) => `  - ${i.path.join(".") || "<root>"}: ${i.message}`)
+      .join("\n");
+    throw new Error(`Invalid summary file ${filePath}:\n${issues}`);
+  }
+  return result.data;
 }
 
 export function inspectDir(options: DirOptions): void {

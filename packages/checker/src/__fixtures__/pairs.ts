@@ -100,14 +100,21 @@ export function withContract(
   declaredStatuses: number[],
   gaps: Gap[] = [],
 ): BehavioralSummary {
+  const existingHttp =
+    summary.metadata?.http && typeof summary.metadata.http === "object"
+      ? (summary.metadata.http as Record<string, unknown>)
+      : {};
   return {
     ...summary,
     gaps,
     metadata: {
       ...(summary.metadata ?? {}),
-      declaredContract: {
-        framework: "ts-rest",
-        responses: declaredStatuses.map((statusCode) => ({ statusCode })),
+      http: {
+        ...existingHttp,
+        declaredContract: {
+          framework: "ts-rest",
+          responses: declaredStatuses.map((statusCode) => ({ statusCode })),
+        },
       },
     },
   };
@@ -118,14 +125,21 @@ export function withContractBodies(
   responses: Array<{ statusCode: number; body: TypeShape | null }>,
   gaps: Gap[] = [],
 ): BehavioralSummary {
+  const existingHttp =
+    summary.metadata?.http && typeof summary.metadata.http === "object"
+      ? (summary.metadata.http as Record<string, unknown>)
+      : {};
   return {
     ...summary,
     gaps,
     metadata: {
       ...(summary.metadata ?? {}),
-      declaredContract: {
-        framework: "ts-rest",
-        responses,
+      http: {
+        ...existingHttp,
+        declaredContract: {
+          framework: "ts-rest",
+          responses,
+        },
       },
     },
   };
@@ -143,6 +157,7 @@ export function unhandledCaseGap(description: string): Gap {
 export function consumer(
   name: string,
   transitions: Transition[],
+  metadata?: BehavioralSummary["metadata"],
 ): BehavioralSummary {
   return {
     kind: "client",
@@ -160,5 +175,6 @@ export function consumer(
     transitions,
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
+    ...(metadata !== undefined ? { metadata } : {}),
   };
 }

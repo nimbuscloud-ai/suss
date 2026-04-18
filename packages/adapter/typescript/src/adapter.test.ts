@@ -768,9 +768,10 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 
     expect(getUser).toBeDefined();
 
-    // The metadata should include the declaredContract
+    // The metadata should include the declaredContract under the HTTP namespace
     expect(getUser?.metadata).toBeDefined();
-    expect(getUser?.metadata?.declaredContract).toBeDefined();
+    const http = getUser?.metadata?.http as Record<string, unknown> | undefined;
+    expect(http?.declaredContract).toBeDefined();
   });
 
   it("getUser handler has high confidence when all conditions are structured", () => {

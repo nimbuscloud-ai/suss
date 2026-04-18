@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { safeParseSummaries } from "@suss/behavioral-ir";
 import { checkAll, checkPair } from "@suss/checker";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
@@ -119,12 +120,22 @@ function readSummaries(file: string): BehavioralSummary[] {
     throw new Error(`File not found: ${resolved}`);
   }
   const parsed = JSON.parse(fs.readFileSync(resolved, "utf-8")) as unknown;
-  if (!Array.isArray(parsed)) {
+  const result = safeParseSummaries(parsed);
+  if (!result.success) {
     throw new Error(
-      `Expected a JSON array of BehavioralSummary objects in ${resolved}`,
+      `Invalid summary file ${resolved}:\n${formatParseIssues(result.error.issues)}`,
     );
   }
-  return parsed as BehavioralSummary[];
+  return result.data;
+}
+
+function formatParseIssues(
+  issues: Array<{ path: PropertyKey[]; message: string }>,
+): string {
+  return issues
+    .slice(0, 10)
+    .map((i) => `  - ${i.path.join(".") || "<root>"}: ${i.message}`)
+    .join("\n");
 }
 
 function renderHuman(findings: Finding[]): string {
