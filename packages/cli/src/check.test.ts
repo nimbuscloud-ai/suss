@@ -337,6 +337,64 @@ describe("check CLI command", () => {
       }),
     ).toThrow(/Invalid summary file/);
   });
+
+  it("human output annotates sub-`high` confidence alongside the finding", () => {
+    // Confidence is informational only — the checker's severity logic
+    // doesn't look at it. The renderer surfaces it so reviewers can weigh
+    // findings themselves.
+    const prov = provider("getUser", [
+      transition("t-200", { statusCode: 200, isDefault: true }),
+    ]);
+    prov.confidence = { source: "inferred_static", level: "medium" };
+    const cons = consumer("UserPage", [
+      transition("ct-410", { conditionStatus: 410 }),
+      transition("ct-default", { isDefault: true }),
+    ]);
+
+    fs.writeFileSync(providerPath, JSON.stringify([prov]));
+    fs.writeFileSync(consumerPath, JSON.stringify([cons]));
+
+    const output = captureStdout(() => {
+      check({ providerFile: providerPath, consumerFile: consumerPath });
+    });
+
+    // Provider is medium → annotation expected on the provider line.
+    // Consumer is high (default) → no annotation.
+    const providerLine = output
+      .split("\n")
+      .find((line) => line.includes("provider:"));
+    const consumerLine = output
+      .split("\n")
+      .find((line) => line.includes("consumer:"));
+
+    expect(providerLine).toMatch(/\(confidence: medium\)/);
+    expect(consumerLine).not.toMatch(/confidence:/);
+  });
+
+  it("human output does not annotate when both sides are high confidence", () => {
+    // Sanity check: high confidence is the default, no noise in output.
+    fs.writeFileSync(
+      providerPath,
+      JSON.stringify([
+        provider("getUser", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      consumerPath,
+      JSON.stringify([
+        consumer("UserPage", [
+          transition("ct-410", { conditionStatus: 410 }),
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+    const output = captureStdout(() => {
+      check({ providerFile: providerPath, consumerFile: consumerPath });
+    });
+    expect(output).not.toMatch(/confidence:/);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -4,8 +4,33 @@ import path from "node:path";
 import { safeParseSummaries } from "@suss/behavioral-ir";
 import { checkAll, checkPair } from "@suss/checker";
 
-import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  ConfidenceInfo,
+  Finding,
+} from "@suss/behavioral-ir";
 import type { CheckAllResult } from "@suss/checker";
+
+/**
+ * Look up the summary-level confidence for a `Finding` side. The
+ * checker stamps `side.summary` as `${file}::${name}`, which matches
+ * the key we build here. Informational only — the checker does not
+ * use confidence to decide anything; the human-output renderer
+ * surfaces it so reviewers can weigh findings themselves.
+ */
+type ConfidenceLookup = Map<string, ConfidenceInfo>;
+
+function buildConfidenceLookup(
+  ...groups: BehavioralSummary[][]
+): ConfidenceLookup {
+  const map: ConfidenceLookup = new Map();
+  for (const group of groups) {
+    for (const s of group) {
+      map.set(`${s.location.file}::${s.identity.name}`, s.confidence);
+    }
+  }
+  return map;
+}
 
 export type FailOn = "error" | "warning" | "info" | "none";
 
@@ -40,7 +65,11 @@ export function check(options: CheckOptions): CheckResult {
     }
   }
 
-  return emitFindings(findings, options);
+  const confidence = buildConfidenceLookup(
+    providerSummaries,
+    consumerSummaries,
+  );
+  return emitFindings(findings, confidence, options);
 }
 
 export function checkDir(
@@ -62,10 +91,11 @@ export function checkDir(
   }
 
   const result = checkAll(allSummaries);
+  const confidence = buildConfidenceLookup(allSummaries);
 
   const rendered = options.json
     ? `${JSON.stringify({ findings: result.findings, pairs: result.pairs, unmatched: result.unmatched }, null, 2)}\n`
-    : renderDirHuman(result);
+    : renderDirHuman(result, confidence);
 
   if (options.output !== undefined) {
     fs.writeFileSync(options.output, rendered);
@@ -82,11 +112,12 @@ export function checkDir(
 
 function emitFindings(
   findings: Finding[],
+  confidence: ConfidenceLookup,
   options: { json?: boolean; output?: string; failOn?: FailOn },
 ): CheckResult {
   const rendered = options.json
     ? `${JSON.stringify(findings, null, 2)}\n`
-    : renderHuman(findings);
+    : renderHuman(findings, confidence);
 
   if (options.output !== undefined) {
     fs.writeFileSync(options.output, rendered);
@@ -138,7 +169,10 @@ function formatParseIssues(
     .join("\n");
 }
 
-function renderHuman(findings: Finding[]): string {
+function renderHuman(
+  findings: Finding[],
+  confidence: ConfidenceLookup,
+): string {
   if (findings.length === 0) {
     return "No findings.\n";
   }
@@ -153,8 +187,8 @@ function renderHuman(findings: Finding[]): string {
     lines.push(`${"─".repeat(60)}`);
     lines.push(`[${f.severity.toUpperCase()}] ${f.kind}`);
     lines.push(`  ${f.description}`);
-    lines.push(`  provider: ${formatSide(f.provider)}`);
-    lines.push(`  consumer: ${formatSide(f.consumer)}`);
+    lines.push(`  provider: ${formatSide(f.provider, confidence)}`);
+    lines.push(`  consumer: ${formatSide(f.consumer, confidence)}`);
     lines.push(
       `  boundary: ${f.boundary.framework} (${f.boundary.protocol})${formatRoute(f.boundary)}`,
     );
@@ -167,10 +201,21 @@ function renderHuman(findings: Finding[]): string {
   return `${lines.join("\n")}\n`;
 }
 
-function formatSide(side: Finding["provider"]): string {
+function formatSide(
+  side: Finding["provider"],
+  confidence: ConfidenceLookup,
+): string {
   const loc = `${side.location.file}:${side.location.range.start}`;
   const txn = side.transitionId ? ` @ ${side.transitionId}` : "";
-  return `${side.summary}${txn} (${loc})`;
+  const info = confidence.get(side.summary);
+  // Only annotate when the level is below `high` — reviewers don't need
+  // to know the analysis was confident; they need to know when it
+  // wasn't. Informational only; checker severity is unchanged.
+  const conf =
+    info !== undefined && info.level !== "high"
+      ? ` (confidence: ${info.level})`
+      : "";
+  return `${side.summary}${txn} (${loc})${conf}`;
 }
 
 function formatRoute(boundary: Finding["boundary"]): string {
@@ -182,7 +227,10 @@ function formatRoute(boundary: Finding["boundary"]): string {
   return "";
 }
 
-function renderDirHuman(result: CheckAllResult): string {
+function renderDirHuman(
+  result: CheckAllResult,
+  confidence: ConfidenceLookup,
+): string {
   const lines: string[] = [];
 
   // Pairing summary
@@ -218,7 +266,7 @@ function renderDirHuman(result: CheckAllResult): string {
   if (result.findings.length === 0) {
     lines.push("No findings.");
   } else {
-    lines.push(renderHuman(result.findings).trimEnd());
+    lines.push(renderHuman(result.findings, confidence).trimEnd());
   }
 
   return `${lines.join("\n")}\n`;
