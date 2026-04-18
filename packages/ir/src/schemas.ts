@@ -46,6 +46,14 @@ export const FindingKindSchema = z.enum([
   "providerContractViolation",
   "consumerContractViolation",
   "lowConfidence",
+  /**
+   * Two or more providers at the same boundary declare contracts that
+   * disagree — e.g. OpenAPI spec says statuses {200, 400, 404} but the
+   * CFN template's MethodResponses says {200, 400, 404, 500}. Emitted
+   * by checkContractAgreement; attribution lists every contributing
+   * source in `Finding.sources`.
+   */
+  "contractDisagreement",
 ]);
 
 export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);
