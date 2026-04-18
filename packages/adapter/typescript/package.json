@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "TypeScript adapter for suss — walks source files with ts-morph and emits raw extractions for the suss pipeline.",
+  "description": "TypeScript adapter for suss \u2014 walks source files with ts-morph and emits raw extractions for the suss pipeline.",
   "keywords": [
     "suss",
     "behavioral-summary",
@@ -28,9 +28,9 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs"
     }
   },
   "files": [
