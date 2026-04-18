@@ -1,54 +1,30 @@
 // @suss/framework-fastify — PatternPack for Fastify
 
-import type { PatternPack } from "@suss/extractor";
+import { httpRouteDiscovery } from "@suss/extractor";
 
-const HTTP_METHODS = [
-  ".get",
-  ".post",
-  ".put",
-  ".delete",
-  ".patch",
-  ".head",
-  ".options",
-];
+import type { PatternPack } from "@suss/extractor";
 
 export function fastifyFramework(): PatternPack {
   return {
     name: "fastify",
     languages: ["typescript", "javascript"],
 
-    discovery: [
-      {
-        // import Fastify from "fastify"; const app = Fastify();
-        // app.get("/path", handler)
-        kind: "handler",
-        match: {
-          type: "registrationCall",
-          importModule: "fastify",
-          importName: "Fastify",
-          registrationChain: HTTP_METHODS,
-        },
-        bindingExtraction: {
-          method: { type: "fromRegistration", position: "methodName" },
-          path: { type: "fromRegistration", position: 0 },
-        },
-      },
-      {
-        // import { fastify } from "fastify"; const app = fastify();
-        // app.get("/path", handler)
-        kind: "handler",
-        match: {
-          type: "registrationCall",
-          importModule: "fastify",
-          importName: "fastify",
-          registrationChain: HTTP_METHODS,
-        },
-        bindingExtraction: {
-          method: { type: "fromRegistration", position: "methodName" },
-          path: { type: "fromRegistration", position: 0 },
-        },
-      },
-    ],
+    // Fastify exposes the routable via either default `Fastify` or
+    // named `fastify()`. Both drive handler registration the same way.
+    // Unlike Express, Fastify's router supports `.head` and `.options`.
+    discovery: httpRouteDiscovery({
+      importModule: "fastify",
+      importNames: ["Fastify", "fastify"],
+      methods: [
+        ".get",
+        ".post",
+        ".put",
+        ".delete",
+        ".patch",
+        ".head",
+        ".options",
+      ],
+    }),
 
     terminals: [
       {

@@ -1,5 +1,7 @@
 // @suss/framework-express — PatternPack for Express
 
+import { httpRouteDiscovery } from "@suss/extractor";
+
 import type { PatternPack } from "@suss/extractor";
 
 export function expressFramework(): PatternPack {
@@ -7,38 +9,14 @@ export function expressFramework(): PatternPack {
     name: "express",
     languages: ["typescript", "javascript"],
 
-    discovery: [
-      {
-        // import { Router } from "express"; const router = Router();
-        // router.get("/path", handler)
-        kind: "handler",
-        match: {
-          type: "registrationCall",
-          importModule: "express",
-          importName: "Router",
-          registrationChain: [".get", ".post", ".put", ".delete", ".patch"],
-        },
-        bindingExtraction: {
-          method: { type: "fromRegistration", position: "methodName" },
-          path: { type: "fromRegistration", position: 0 },
-        },
-      },
-      {
-        // import express from "express"; const app = express();
-        // app.get("/path", handler)
-        kind: "handler",
-        match: {
-          type: "registrationCall",
-          importModule: "express",
-          importName: "express",
-          registrationChain: [".get", ".post", ".put", ".delete", ".patch"],
-        },
-        bindingExtraction: {
-          method: { type: "fromRegistration", position: "methodName" },
-          path: { type: "fromRegistration", position: 0 },
-        },
-      },
-    ],
+    // Express exposes the routable via either `Router()` (named) or
+    // `express()` (default). Both drive handler registration the same
+    // way; `httpRouteDiscovery` emits one DiscoveryPattern per name.
+    discovery: httpRouteDiscovery({
+      importModule: "express",
+      importNames: ["Router", "express"],
+      methods: [".get", ".post", ".put", ".delete", ".patch"],
+    }),
 
     terminals: [
       {
