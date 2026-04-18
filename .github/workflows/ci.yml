@@ -32,6 +32,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Turbo persists task outputs under .turbo/. Caching it between
+      # runs lets `turbo build / test / lint / typecheck` hit "FULL TURBO"
+      # for packages whose hashed inputs didn't change. Key includes the
+      # commit SHA so each run writes its own cache entry; restore-keys
+      # walk back to the nearest previous turbo cache. Invalidated
+      # automatically when package-lock.json changes (dependency churn
+      # affects task hashes).
+      - name: Cache turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            turbo-${{ runner.os }}-
+
       - name: Lint
         run: npm run lint
 
