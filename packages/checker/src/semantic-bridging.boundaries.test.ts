@@ -1,13 +1,9 @@
-// semantic-bridging.aspirations.test.ts
+// semantic-bridging.boundaries.test.ts
 //
-// Tests documenting the boundaries of semantic condition bridging.
-// Originally 6 aspirations; 4 resolved (moved to main test file with
-// updated assertions), 2 reclassified (common cases already handled;
-// remaining gap is Level 6 local function inlining).
-//
-// The two remaining tests exercise scenarios where the extractor can't
-// preserve literal narrowness through multi-return functions or
-// cross-module calls — both require Level 6 to improve.
+// Documents the known boundaries of semantic condition bridging — both
+// scenarios the checker now handles (kept as regression tests) and the
+// two scenarios it deliberately doesn't, which require Level 6 (local
+// function inlining) in the extractor before they can be addressed.
 
 import { describe, expect, it } from "vitest";
 

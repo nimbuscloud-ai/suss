@@ -1,20 +1,16 @@
 import { bodyShapesMatch } from "./body-match.js";
 import {
+  readDeclaredContract,
+  statusAccessorsFor,
+} from "./declared-contract.js";
+import {
   consumerExpectedStatuses,
   extractResponseStatus,
   makeBoundary,
   makeSide,
 } from "./response-match.js";
 
-import type {
-  BehavioralSummary,
-  Finding,
-  TypeShape,
-} from "@suss/behavioral-ir";
-
-interface DeclaredContract {
-  responses: Array<{ statusCode: number; body: TypeShape | null }>;
-}
+import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
 export function checkContractConsistency(
   provider: BehavioralSummary,
@@ -40,6 +36,7 @@ export function checkContractConsistency(
   }
 
   const declaredStatuses = new Set(contract.responses.map((r) => r.statusCode));
+  const statusAccessors = statusAccessorsFor(consumer);
 
   const consumerExplicit = new Set<number>();
   let consumerHasDefault = false;
@@ -47,7 +44,7 @@ export function checkContractConsistency(
     if (ct.isDefault) {
       consumerHasDefault = true;
     }
-    for (const s of consumerExpectedStatuses(ct)) {
+    for (const s of consumerExpectedStatuses(ct, statusAccessors)) {
       consumerExplicit.add(s);
     }
   }
@@ -126,36 +123,6 @@ export function checkContractConsistency(
   }
 
   return findings;
-}
-
-function readDeclaredContract(
-  summary: BehavioralSummary,
-): DeclaredContract | null {
-  const raw = summary.metadata?.declaredContract;
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-  const responses = (raw as { responses?: unknown }).responses;
-  if (!Array.isArray(responses)) {
-    return null;
-  }
-  const validated: Array<{ statusCode: number; body: TypeShape | null }> = [];
-  for (const r of responses) {
-    if (
-      r &&
-      typeof r === "object" &&
-      typeof (r as { statusCode?: unknown }).statusCode === "number"
-    ) {
-      const bodyRaw = (r as { body?: unknown }).body;
-      const body =
-        bodyRaw && typeof bodyRaw === "object" ? (bodyRaw as TypeShape) : null;
-      validated.push({
-        statusCode: (r as { statusCode: number }).statusCode,
-        body,
-      });
-    }
-  }
-  return { responses: validated };
 }
 
 function isSuccessStatus(status: number): boolean {

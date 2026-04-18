@@ -1,3 +1,5 @@
+import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
+
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
@@ -48,20 +50,6 @@ export function boundaryKey(binding: BoundaryBinding): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Provider / client classification
-// ---------------------------------------------------------------------------
-
-const PROVIDER_KINDS = new Set([
-  "handler",
-  "loader",
-  "action",
-  "middleware",
-  "resolver",
-]);
-
-const CLIENT_KINDS = new Set(["client", "consumer"]);
-
-// ---------------------------------------------------------------------------
 // Pairing
 // ---------------------------------------------------------------------------
 
@@ -107,23 +95,21 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       continue;
     }
 
-    if (PROVIDER_KINDS.has(summary.kind)) {
-      const list = providersByKey.get(key);
-      if (list !== undefined) {
-        list.push(summary);
-      } else {
-        providersByKey.set(key, [summary]);
-      }
-    } else if (CLIENT_KINDS.has(summary.kind)) {
-      const list = consumersByKey.get(key);
-      if (list !== undefined) {
-        list.push(summary);
-      } else {
-        consumersByKey.set(key, [summary]);
-      }
-    } else {
-      // Unknown kind — treat as no binding
+    // Guard against summaries deserialized from disk with an unknown kind
+    // string — the type system can't see those. Goes away once IR exposes
+    // a real parser (see #79); until then, an unknown kind means we can't
+    // place it on either side of a pairing.
+    const role = BOUNDARY_ROLE[summary.kind];
+    if (role === undefined) {
       noBinding.push(summary);
+      continue;
+    }
+    const bucket = role === "provider" ? providersByKey : consumersByKey;
+    const list = bucket.get(key);
+    if (list !== undefined) {
+      list.push(summary);
+    } else {
+      bucket.set(key, [summary]);
     }
   }
 

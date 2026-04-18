@@ -5,6 +5,7 @@
 // by status code and compare the provider's output body against the
 // consumer's expected shape.
 
+import { bodyAccessorsFor, statusAccessorsFor } from "./declared-contract.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
@@ -172,6 +173,7 @@ export function checkBodyCompatibility(
 ): Finding[] {
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
+  const statusAccessors = statusAccessorsFor(consumer);
 
   for (const ct of consumer.transitions) {
     const expectedInput = ct.expectedInput;
@@ -179,7 +181,7 @@ export function checkBodyCompatibility(
       continue;
     }
 
-    const consumerStatuses = consumerExpectedStatuses(ct);
+    const consumerStatuses = consumerExpectedStatuses(ct, statusAccessors);
 
     for (const status of consumerStatuses) {
       const matchingProviderTransitions = provider.transitions.filter((pt) => {
@@ -309,14 +311,4 @@ function unwrapBodyField(
     }
   }
   return shape;
-}
-
-function bodyAccessorsFor(consumer: BehavioralSummary): string[] {
-  const fromMetadata = consumer.metadata?.bodyAccessors;
-  if (Array.isArray(fromMetadata) && fromMetadata.length > 0) {
-    return fromMetadata.filter((v): v is string => typeof v === "string");
-  }
-  // Fallback for summaries produced before bodyAccessors metadata existed
-  // (or written by hand) — assume the historical fetch wrapper.
-  return ["body"];
 }
