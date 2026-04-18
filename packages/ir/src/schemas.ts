@@ -428,6 +428,28 @@ export const FindingSideSchema = z.object({
   location: SourceLocationSchema,
 });
 
+export const FindingSuppressionSchema = z.object({
+  /** Human-written explanation from the .sussignore rule. Required. */
+  reason: z.string(),
+  /**
+   * What happened to this finding:
+   *   - "mark": still shown and returned; excluded from exit-code
+   *     threshold calculations. Default.
+   *   - "downgrade": severity dropped one level (error -> warning ->
+   *     info); still counted toward exit code at the downgraded level.
+   *   - "hide": filtered from output and exit code entirely. The
+   *     `suppressed` annotation survives only for downstream JSON
+   *     consumers that want to see what was silenced.
+   */
+  effect: z.enum(["mark", "downgrade", "hide"]),
+  /**
+   * Original severity before downgrade, preserved so downstream tools
+   * can distinguish "this was always info" from "this was downgraded
+   * from error to info." Present only when effect is "downgrade".
+   */
+  originalSeverity: FindingSeveritySchema.optional(),
+});
+
 export const FindingSchema = z.object({
   kind: FindingKindSchema,
   boundary: BoundaryBindingSchema,
@@ -444,6 +466,12 @@ export const FindingSchema = z.object({
    * above still points at one representative contributor.
    */
   sources: z.array(z.string()).optional(),
+  /**
+   * Present only when a .sussignore rule matched this finding. The
+   * `effect` tells downstream tools how the finding was handled;
+   * `reason` is the rule's human-written justification.
+   */
+  suppressed: FindingSuppressionSchema.optional(),
 });
 
 // ---------------------------------------------------------------------------

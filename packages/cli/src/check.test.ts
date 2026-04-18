@@ -395,6 +395,212 @@ describe("check CLI command", () => {
     });
     expect(output).not.toMatch(/confidence:/);
   });
+
+  // ---------------------------------------------------------------------
+  // .sussignore — suppression
+  // ---------------------------------------------------------------------
+
+  function writeDeadBranchScenario() {
+    fs.writeFileSync(
+      providerPath,
+      JSON.stringify([
+        provider("getUser", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      consumerPath,
+      JSON.stringify([
+        consumer("UserPage", [
+          transition("ct-410", { conditionStatus: 410 }),
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+  }
+
+  it("marks a suppressed finding and excludes it from the failure threshold", () => {
+    writeDeadBranchScenario();
+    fs.writeFileSync(
+      path.join(tmpDir, ".sussignore.yml"),
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: deadConsumerBranch",
+        "    boundary: GET /getUser",
+        "    reason: consumer retries 410 via middleware",
+      ].join("\n"),
+    );
+
+    const output = captureStdout(() => {
+      const result = check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+        sussignore: path.join(tmpDir, ".sussignore.yml"),
+        failOn: "warning",
+      });
+      expect(result.findings).toHaveLength(1);
+      expect(result.findings[0].suppressed).toEqual({
+        reason: "consumer retries 410 via middleware",
+        effect: "mark",
+      });
+      // Marked findings are excluded from --fail-on warning
+      expect(result.hasErrors).toBe(false);
+    });
+    expect(output).toMatch(/suppressed \(mark\): consumer retries 410/);
+    expect(output).toMatch(/WARNING, suppressed/);
+  });
+
+  it("hides a suppressed finding with effect=hide from the output entirely", () => {
+    writeDeadBranchScenario();
+    fs.writeFileSync(
+      path.join(tmpDir, ".sussignore.yml"),
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: deadConsumerBranch",
+        "    boundary: GET /getUser",
+        "    effect: hide",
+        "    reason: legacy quirk",
+      ].join("\n"),
+    );
+
+    const output = captureStdout(() => {
+      const result = check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+        sussignore: path.join(tmpDir, ".sussignore.yml"),
+      });
+      expect(result.findings).toEqual([]);
+    });
+    expect(output).toMatch(/No findings/);
+  });
+
+  it("downgrades severity when effect=downgrade and retains threshold participation", () => {
+    writeDeadBranchScenario();
+    fs.writeFileSync(
+      path.join(tmpDir, ".sussignore.yml"),
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: deadConsumerBranch",
+        "    boundary: GET /getUser",
+        "    effect: downgrade",
+        "    reason: not blocking, still watch",
+      ].join("\n"),
+    );
+
+    const output = captureStdout(() => {
+      const result = check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+        sussignore: path.join(tmpDir, ".sussignore.yml"),
+        failOn: "info",
+      });
+      expect(result.findings).toHaveLength(1);
+      expect(result.findings[0].severity).toBe("info");
+      expect(result.findings[0].suppressed?.originalSeverity).toBe("warning");
+      // downgrade DOES count at its post-downgrade severity;
+      // fail-on=info catches it
+      expect(result.hasErrors).toBe(true);
+    });
+    expect(output).toMatch(/downgraded from WARNING/);
+  });
+
+  it("auto-discovers .sussignore.yml next to the cwd when no --sussignore override", () => {
+    writeDeadBranchScenario();
+    fs.writeFileSync(
+      path.join(tmpDir, ".sussignore.yml"),
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: deadConsumerBranch",
+        "    boundary: GET /getUser",
+        "    effect: hide",
+        "    reason: auto-discovery works",
+      ].join("\n"),
+    );
+
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      const result = captureStdout(() => {
+        const r = check({
+          providerFile: providerPath,
+          consumerFile: consumerPath,
+        });
+        expect(r.findings).toEqual([]);
+        return r;
+      });
+      expect(result).toMatch(/No findings/);
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  it("--no-suppressions skips the .sussignore even if one exists", () => {
+    writeDeadBranchScenario();
+    fs.writeFileSync(
+      path.join(tmpDir, ".sussignore.yml"),
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: deadConsumerBranch",
+        "    boundary: GET /getUser",
+        "    effect: hide",
+        "    reason: would hide if applied",
+      ].join("\n"),
+    );
+
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      captureStdout(() => {
+        const r = check({
+          providerFile: providerPath,
+          consumerFile: consumerPath,
+          noSuppressions: true,
+        });
+        expect(r.findings).toHaveLength(1);
+        expect(r.findings[0].suppressed).toBeUndefined();
+      });
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  it("throws when .sussignore has rules with invalid shape", () => {
+    writeDeadBranchScenario();
+    fs.writeFileSync(
+      path.join(tmpDir, ".sussignore.yml"),
+      [
+        "version: 1",
+        "rules:",
+        // narrow-scope rule with only kind → invalid
+        "  - kind: deadConsumerBranch",
+        "    reason: too broad",
+      ].join("\n"),
+    );
+    expect(() =>
+      check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+        sussignore: path.join(tmpDir, ".sussignore.yml"),
+      }),
+    ).toThrow(/narrow-scope/);
+  });
+
+  it("throws when --sussignore points at a missing file", () => {
+    writeDeadBranchScenario();
+    expect(() =>
+      check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+        sussignore: path.join(tmpDir, "does-not-exist.yml"),
+      }),
+    ).toThrow(/Suppressions file not found/);
+  });
 });
 
 // ---------------------------------------------------------------------------

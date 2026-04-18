@@ -25,6 +25,15 @@ export {
 } from "./pairing.js";
 export { checkProviderCoverage } from "./provider-coverage.js";
 export { checkSemanticBridging } from "./semantic-bridging.js";
+export {
+  applySuppressions,
+  countsForThreshold,
+  type SuppressionFile,
+  SuppressionFileSchema,
+  type SuppressionRule,
+  SuppressionRuleSchema,
+  validateRule,
+} from "./suppressions.js";
 
 export function checkPair(
   provider: BehavioralSummary,

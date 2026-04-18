@@ -148,7 +148,9 @@ interface Finding {
 }
 ```
 
-Findings are JSON-serializable. The CLI exits non-zero when any `error`-severity finding exists.
+Findings are JSON-serializable. The CLI exits non-zero when any `error`-severity finding exists (tunable via `--fail-on`).
+
+**Accepted findings.** When a finding is true but intentionally tolerated (e.g. "this consumer genuinely doesn't need to handle 500"), a `.sussignore.yml` file at the project root can `mark`, `downgrade`, or `hide` it. `mark` keeps the finding visible but excludes it from exit-code; `downgrade` drops severity one level; `hide` removes it entirely. See [`suppressions.md`](suppressions.md) for the full format. The `Finding.suppressed` field on output carries the rule's reason and effect so downstream tools can distinguish accepted-and-known from silently-ignored.
 
 **Confidence is informational, not prescriptive.** Each summary carries `ConfidenceInfo` (high / medium / low, plus source) reflecting how well the extractor decomposed the source — how many opaque predicates it fell back to, whether wrapper-expansion inferred the summary indirectly, etc. The checker does **not** downgrade severities based on it; the `lowConfidence` finding kind is the per-finding mechanism for "I couldn't decide." Summary-level confidence is a different axis (analysis quality on one side) and conflating it with finding certainty would hide both. The human `suss check` output appends `(confidence: medium|low)` after a provider or consumer side whose confidence is below `high`, so reviewers can weigh findings themselves; downstream tools (dashboards, docs generators) can read `summary.confidence` from the JSON output and apply their own policy if they want one.
 

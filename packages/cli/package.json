@@ -49,6 +49,9 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
   "dependencies": {
     "@suss/behavioral-ir": "*",
     "@suss/checker": "*",
@@ -62,11 +65,13 @@
     "@suss/runtime-axios": "*",
     "@suss/stub-aws-apigateway": "*",
     "@suss/stub-openapi": "*",
-    "@suss/stub-cloudformation": "*"
+    "@suss/stub-cloudformation": "*",
+    "yaml": "^2.4.0"
   },
   "devDependencies": {
     "tsup": "*",
     "typescript": "*",
-    "vitest": "*"
+    "vitest": "*",
+    "zod": "^4.0.0"
   }
 }
