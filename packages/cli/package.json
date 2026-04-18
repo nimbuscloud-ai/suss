@@ -60,6 +60,7 @@
     "@suss/framework-fastify": "*",
     "@suss/runtime-web": "*",
     "@suss/runtime-axios": "*",
+    "@suss/stub-aws-apigateway": "*",
     "@suss/stub-openapi": "*",
     "@suss/stub-cloudformation": "*"
   },
