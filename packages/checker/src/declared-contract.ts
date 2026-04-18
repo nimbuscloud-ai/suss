@@ -10,8 +10,29 @@
 
 import type { BehavioralSummary, TypeShape } from "@suss/behavioral-ir";
 
+export type ContractProvenance = "derived" | "independent";
+
 export interface DeclaredContract {
   responses: Array<{ statusCode: number; body: TypeShape | null }>;
+  /**
+   * "derived": the contract is extracted from the same source that
+   *   drives this summary's `transitions[]` (e.g. an OpenAPI stub's
+   *   contract and its transitions both come from the same operation's
+   *   `responses` block). Self-comparison via checkContractConsistency
+   *   would be tautological and is skipped.
+   *
+   * "independent": the contract is a separate statement from the
+   *   transitions (ts-rest router declaration vs handler code, CFN
+   *   MethodResponses vs integration-derived transitions, etc.).
+   *   Contract-consistency comparison is meaningful.
+   *
+   * Defaults to "independent" when a pack doesn't explicitly say —
+   * we'd rather investigate a spurious finding than silently drop a
+   * real one.
+   */
+  provenance: ContractProvenance;
+  /** Framework tag recorded by the producing pack (passed through). */
+  framework?: string;
 }
 
 function httpMetadata(
@@ -50,7 +71,18 @@ export function readDeclaredContract(
       });
     }
   }
-  return { responses: validated };
+  const provRaw = (raw as { provenance?: unknown }).provenance;
+  const provenance: ContractProvenance =
+    provRaw === "derived" ? "derived" : "independent";
+  const framework =
+    typeof (raw as { framework?: unknown }).framework === "string"
+      ? (raw as { framework: string }).framework
+      : undefined;
+  return {
+    responses: validated,
+    provenance,
+    ...(framework !== undefined ? { framework } : {}),
+  };
 }
 
 export function bodyAccessorsFor(consumer: BehavioralSummary): string[] {

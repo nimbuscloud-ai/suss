@@ -138,6 +138,21 @@ function buildEndpointSummary(
     metadata: {
       apiId: api.id,
       integrationType: endpoint.integration.type,
+      http: {
+        // The integration's declared status codes (from MethodResponses
+        // in the CFN template) are the declared contract here. Platform-
+        // injected transitions (authorizer 401/403, throttle 429, etc.)
+        // come from SEPARATE config fields and so are independent from
+        // this contract — contract-consistency comparison is meaningful
+        // and will surface template-internal inconsistencies.
+        declaredContract: {
+          framework: FRAMEWORK,
+          provenance: "independent",
+          responses: endpoint.integration.statusCodes.map((statusCode) => ({
+            statusCode,
+          })),
+        },
+      },
     },
   };
 }

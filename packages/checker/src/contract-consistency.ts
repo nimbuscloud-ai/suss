@@ -23,16 +23,26 @@ export function checkContractConsistency(
 
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
+  // When the contract is "derived" from the same source as the
+  // transitions (e.g. an OpenAPI stub's contract extracted from the
+  // same operation that produced its transitions), self-comparison is
+  // tautological — any mismatch would indicate a bug in the producing
+  // pack itself, not a contract violation. Skip the provider-vs-its-own-
+  // contract checks; consumer-vs-contract checks still run because the
+  // consumer is always an independent observation.
+  const skipSelfComparison = contract.provenance === "derived";
 
-  for (const gap of provider.gaps) {
-    findings.push({
-      kind: "providerContractViolation",
-      boundary,
-      provider: makeSide(provider),
-      consumer: makeSide(consumer),
-      description: gap.description,
-      severity: "error",
-    });
+  if (!skipSelfComparison) {
+    for (const gap of provider.gaps) {
+      findings.push({
+        kind: "providerContractViolation",
+        boundary,
+        provider: makeSide(provider),
+        consumer: makeSide(consumer),
+        description: gap.description,
+        severity: "error",
+      });
+    }
   }
 
   const declaredStatuses = new Set(contract.responses.map((r) => r.statusCode));
@@ -78,6 +88,10 @@ export function checkContractConsistency(
       description: `Consumer handles status ${expected} but contract does not declare it`,
       severity: "error",
     });
+  }
+
+  if (skipSelfComparison) {
+    return findings;
   }
 
   for (const declared of contract.responses) {

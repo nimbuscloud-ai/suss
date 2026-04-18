@@ -280,7 +280,15 @@ function extractEndpointContract(
         }
       : null;
 
-  return { declaredContract: { framework, responses }, boundaryBinding };
+  // Contract-reading packs (ts-rest, ts-rest clients) read a contract
+  // that is authored *separately* from the handler implementation the
+  // same summary's transitions come from. That makes them "independent"
+  // observations — comparing transitions against this contract is
+  // meaningful (the implementation can drift from the declaration).
+  return {
+    declaredContract: { framework, responses, provenance: "independent" },
+    boundaryBinding,
+  };
 }
 
 // ---------------------------------------------------------------------------

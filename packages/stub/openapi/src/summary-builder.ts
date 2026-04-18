@@ -101,8 +101,46 @@ function buildSummary(
         summary: op.summary ?? null,
         tags: op.tags ?? [],
       },
+      http: {
+        // Declared contract from the same operation that drove
+        // `transitions[]` above. Provenance is "derived" —
+        // self-consistency is tautological by construction, so the
+        // cross-boundary checker's per-summary contract check skips
+        // these. Other sources describing the same boundary (a CFN
+        // stub, a handler implementation) can still be compared
+        // against this contract via checkContractAgreement.
+        declaredContract: buildDeclaredContract(op, ctx),
+      },
     },
   };
+}
+
+function buildDeclaredContract(
+  op: OpenApiOperation,
+  ctx: ReturnType<typeof newContext>,
+): {
+  framework: string;
+  provenance: "derived";
+  responses: Array<{ statusCode: number; body: TypeShape | null }>;
+} {
+  const responses: Array<{ statusCode: number; body: TypeShape | null }> = [];
+  for (const [code, response] of Object.entries(op.responses ?? {})) {
+    if (response === undefined || code === "default") {
+      continue;
+    }
+    if (!/^\d{3}$/.test(code)) {
+      // Range codes (1XX-5XX) can't be represented as a single
+      // statusCode in the declared-contract shape — skip. The
+      // transition carries the range via metadata.http.statusRange
+      // and downstream checks can still reason about it there.
+      continue;
+    }
+    responses.push({
+      statusCode: Number.parseInt(code, 10),
+      body: bodyShape(response, ctx),
+    });
+  }
+  return { framework: "openapi", provenance: "derived", responses };
 }
 
 function mergeParameters(

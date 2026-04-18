@@ -122,6 +122,28 @@ export interface RawDeclaredContract {
     body?: TypeShape | null;
   }>;
   params?: Record<string, { type: string; required: boolean }>;
+  /**
+   * Relationship between this declared contract and the `transitions[]`
+   * on the same summary:
+   *
+   *   - "derived": both are extracted from the same source data, so
+   *     comparing them against each other is tautological. Example: an
+   *     OpenAPI stub's contract and its transitions both come from the
+   *     operation's `responses` block. The cross-boundary checker
+   *     skips per-summary contract-consistency for these.
+   *
+   *   - "independent": the contract is a separate statement from the
+   *     transitions. Example: a ts-rest handler whose router declares
+   *     `responses` and whose implementation is a separate function;
+   *     a CFN stub whose `MethodResponses` and integration config are
+   *     independent template fields. Contract-consistency comparison
+   *     is meaningful.
+   *
+   * Defaults to "independent" when a pack doesn't say — safer to
+   * surface a spurious-but-investigable finding than to silently drop
+   * a real one.
+   */
+  provenance?: "derived" | "independent";
 }
 
 export interface RawCodeStructure {

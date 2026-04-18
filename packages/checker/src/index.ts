@@ -1,6 +1,7 @@
 import { checkBodyCompatibility } from "./body-compatibility.js";
 import { checkConsumerContract } from "./consumer-contract.js";
 import { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
+import { checkContractAgreement } from "./contract-agreement.js";
 import { checkContractConsistency } from "./contract-consistency.js";
 import { dedupeFindings } from "./dedupe.js";
 import { pairSummaries } from "./pairing.js";
@@ -13,6 +14,7 @@ export { checkBodyCompatibility } from "./body-compatibility.js";
 export { bodyShapesMatch } from "./body-match.js";
 export { checkConsumerContract } from "./consumer-contract.js";
 export { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
+export { checkContractAgreement } from "./contract-agreement.js";
 export { checkContractConsistency } from "./contract-consistency.js";
 export { dedupeFindings } from "./dedupe.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
@@ -84,6 +86,13 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
       consumer: consumer.identity.name,
     });
   }
+
+  // Layer 2: cross-source contract agreement. Runs independently of
+  // pairing — it compares each boundary's declared contracts against
+  // each other without caring about consumers. Findings emitted here
+  // represent disagreement BETWEEN sources, not inconsistency within
+  // a single source (which is Layer 1's job).
+  findings.push(...checkContractAgreement(summaries));
 
   return {
     findings: dedupeFindings(findings),

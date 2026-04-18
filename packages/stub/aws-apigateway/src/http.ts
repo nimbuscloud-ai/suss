@@ -155,6 +155,15 @@ function buildRouteSummary(
       apiId: api.id,
       apiVersion: "v2",
       integrationType: route.integration.type,
+      http: {
+        declaredContract: {
+          framework: FRAMEWORK,
+          provenance: "independent",
+          responses: route.integration.statusCodes.map((statusCode) => ({
+            statusCode,
+          })),
+        },
+      },
     },
   };
 }
