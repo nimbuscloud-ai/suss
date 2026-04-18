@@ -1,256 +1,136 @@
-// @suss/behavioral-ir — core types and utilities
+// @suss/behavioral-ir — core types, schemas, and utilities for the
+// behavioral summary format.
+//
+// Schemas in `./schemas` are the single source of truth. Types here are
+// derived via `z.infer` so there is nothing to keep in sync by hand.
+// Schemas themselves are not part of the public API — consumers get the
+// types plus `parseSummary`/`parseSummaries` for runtime validation.
+// Anyone needing zod-level composition can import the schema module
+// directly via the package's internal path; that surface is not stable.
 
-export type CodeUnitKind =
-  | "handler"
-  | "loader"
-  | "action"
-  | "component"
-  | "hook"
-  | "middleware"
-  | "resolver"
-  | "consumer"
-  | "client"
-  | "worker";
+import {
+  BehavioralSummaryArraySchema,
+  BehavioralSummarySchema,
+  type BoundaryBindingSchema,
+  type CodeUnitIdentitySchema,
+  type CodeUnitKindSchema,
+  type ComparisonOpSchema,
+  type ConfidenceInfoSchema,
+  type DerivationSchema,
+  type EffectSchema,
+  type FindingKindSchema,
+  type FindingSchema,
+  type FindingSeveritySchema,
+  type FindingSideSchema,
+  type GapSchema,
+  type InputSchema,
+  type LiteralSchema,
+  type OpaqueReasonSchema,
+  type OutputSchema,
+  type PredicateSchema,
+  type SourceLocationSchema,
+  type SummaryDiffSchema,
+  type TransitionSchema,
+  type TypeShapeSchema,
+  type ValueRefSchema,
+} from "./schemas.js";
 
-export interface SourceLocation {
-  file: string;
-  range: { start: number; end: number };
-  exportName: string | null;
-}
+import type { z } from "zod";
 
-export interface BoundaryBinding {
-  protocol: string;
-  method?: string;
-  path?: string;
-  framework: string;
-  declaredResponses?: number[];
-}
+// ---------------------------------------------------------------------------
+// Derived types (single source of truth: schemas.ts)
+// ---------------------------------------------------------------------------
 
-export interface CodeUnitIdentity {
-  name: string;
-  exportPath: string[] | null;
-  boundaryBinding: BoundaryBinding | null;
-}
+export type CodeUnitKind = z.infer<typeof CodeUnitKindSchema>;
+export type ComparisonOp = z.infer<typeof ComparisonOpSchema>;
+export type OpaqueReason = z.infer<typeof OpaqueReasonSchema>;
+export type FindingKind = z.infer<typeof FindingKindSchema>;
+export type FindingSeverity = z.infer<typeof FindingSeveritySchema>;
 
-export type ComparisonOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
-export type OpaqueReason =
-  | "complexExpression"
-  | "externalFunction"
-  | "dynamicValue"
-  | "unsupportedSyntax";
+export type SourceLocation = z.infer<typeof SourceLocationSchema>;
+export type BoundaryBinding = z.infer<typeof BoundaryBindingSchema>;
+export type CodeUnitIdentity = z.infer<typeof CodeUnitIdentitySchema>;
+export type ConfidenceInfo = z.infer<typeof ConfidenceInfoSchema>;
 
-export type Derivation =
-  | { type: "propertyAccess"; property: string }
-  | { type: "methodCall"; method: string; args: string[] }
-  | { type: "destructured"; field: string }
-  | { type: "awaited" }
-  | { type: "indexAccess"; index: string | number };
+export type Literal = z.infer<typeof LiteralSchema>;
+export type Derivation = z.infer<typeof DerivationSchema>;
+export type ValueRef = z.infer<typeof ValueRefSchema>;
+export type Predicate = z.infer<typeof PredicateSchema>;
+export type TypeShape = z.infer<typeof TypeShapeSchema>;
 
-export type Input =
-  | {
-      type: "parameter";
-      name: string;
-      position: number;
-      role: string;
-      shape: TypeShape | null;
-    }
-  | {
-      type: "injection";
-      name: string;
-      mechanism: string;
-      shape: TypeShape | null;
-    }
-  | { type: "hookReturn"; hook: string; destructuredFields: string[] }
-  | { type: "contextValue"; context: string; accessedFields: string[] }
-  | { type: "closure"; name: string };
+export type Input = z.infer<typeof InputSchema>;
+export type Output = z.infer<typeof OutputSchema>;
+export type Effect = z.infer<typeof EffectSchema>;
 
-export type Literal = {
-  type: "literal";
-  value: string | number | boolean | null;
+export type Transition = z.infer<typeof TransitionSchema>;
+export type Gap = z.infer<typeof GapSchema>;
+export type BehavioralSummary = z.infer<typeof BehavioralSummarySchema>;
+export type SummaryDiff = z.infer<typeof SummaryDiffSchema>;
+
+export type FindingSide = z.infer<typeof FindingSideSchema>;
+export type Finding = z.infer<typeof FindingSchema>;
+
+// ---------------------------------------------------------------------------
+// Boundary role (provider vs consumer)
+// ---------------------------------------------------------------------------
+
+/**
+ * The role a code unit plays at a boundary. Pairing logic looks this up
+ * via `BOUNDARY_ROLE` so adding a new kind requires only a single edit
+ * (and the lookup becomes a type error if a variant is missed).
+ */
+export type BoundaryRole = "provider" | "consumer";
+
+export const BOUNDARY_ROLE: Record<CodeUnitKind, BoundaryRole> = {
+  handler: "provider",
+  loader: "provider",
+  action: "provider",
+  middleware: "provider",
+  resolver: "provider",
+  worker: "provider",
+  component: "provider",
+  hook: "provider",
+  client: "consumer",
+  consumer: "consumer",
 };
 
-export type ValueRef =
-  | { type: "input"; inputRef: string; path: string[] }
-  | { type: "dependency"; name: string; accessChain: string[] }
-  | { type: "derived"; from: ValueRef; derivation: Derivation }
-  | Literal
-  | { type: "state"; name: string }
-  | { type: "unresolved"; sourceText: string };
+// ---------------------------------------------------------------------------
+// Parsing entry points
+// ---------------------------------------------------------------------------
 
-export type Predicate =
-  | { type: "nullCheck"; subject: ValueRef; negated: boolean }
-  | { type: "truthinessCheck"; subject: ValueRef; negated: boolean }
-  | { type: "comparison"; left: ValueRef; op: ComparisonOp; right: ValueRef }
-  | { type: "typeCheck"; subject: ValueRef; expectedType: string }
-  | {
-      type: "propertyExists";
-      subject: ValueRef;
-      property: string;
-      negated: boolean;
-    }
-  | { type: "compound"; op: "and" | "or"; operands: Predicate[] }
-  | { type: "negation"; operand: Predicate }
-  | { type: "call"; callee: string; args: ValueRef[] }
-  | { type: "opaque"; sourceText: string; reason: OpaqueReason };
-
-export type TypeShape =
-  | {
-      type: "record";
-      properties: Record<string, TypeShape>;
-      /**
-       * Source-text of spread/rest expressions that merge additional fields
-       * into this record at runtime (e.g. `{ ...user, admin: true }`). Fields
-       * in `properties` are known statically; anything else may be contributed
-       * by a spread and is not enumerable here. Absent when the record has no
-       * spreads.
-       */
-      spreads?: Array<{ sourceText: string }>;
-    }
-  | {
-      /**
-       * Index-signature / dictionary type: `{ [key: string]: T }` or
-       * `Record<string, T>`. Distinct from `record`: the key set is open and
-       * not statically known. Consumers reasoning about specific fields
-       * should expect any access to succeed at the value type.
-       */
-      type: "dictionary";
-      values: TypeShape;
-    }
-  | { type: "array"; items: TypeShape }
-  | {
-      /**
-       * A literal value preserved with its exact narrow type. Emitted for
-       * syntactic literals (`"success"`, `42`, `true`) and literal types
-       * surfaced by the type checker.
-       *
-       * **Wire-format caveat (see "Serialization semantics" in the IR
-       * reference).** `value` uses the ergonomic JS representation:
-       * strings and booleans roundtrip exactly, but JS `number` is IEEE
-       * 754 double. Integers beyond `Number.MAX_SAFE_INTEGER` (2^53 - 1),
-       * high-precision decimals, and alternate notations (hex, scientific,
-       * numeric separators) would lose information through `number`
-       * coercion. For numeric literals, `raw` MUST be populated with the
-       * exact source text so consumers that care about precision or
-       * over-the-wire fidelity never have to guess.
-       *
-       * Consumers wanting a widened primitive can map `literal` →
-       * `text`/`integer`/`number`/`boolean` by inspecting `value`.
-       */
-      type: "literal";
-      value: string | number | boolean;
-      /**
-       * Source text of a numeric literal, carrying exact representation.
-       * Present iff `value` is a number. Absent for string/boolean
-       * literals because those roundtrip losslessly through JSON / JS
-       * strings.
-       */
-      raw?: string;
-    }
-  | { type: "text" }
-  | { type: "integer" }
-  | { type: "number" }
-  | { type: "boolean" }
-  | { type: "null" }
-  | { type: "undefined" }
-  | { type: "union"; variants: TypeShape[] }
-  | { type: "ref"; name: string }
-  | { type: "unknown" };
-
-export type Output =
-  | {
-      type: "response";
-      statusCode: ValueRef | null;
-      body: TypeShape | null;
-      headers: Record<string, ValueRef>;
-    }
-  | { type: "throw"; exceptionType: string | null; message: string | null }
-  | { type: "render"; component: string; props?: Record<string, unknown> }
-  | { type: "return"; value: TypeShape | null }
-  | { type: "delegate"; to: string }
-  | { type: "emit"; event: string; payload?: TypeShape }
-  | { type: "void" };
-
-export type Effect =
-  | {
-      type: "mutation";
-      target: string;
-      operation: "create" | "update" | "delete";
-    }
-  | { type: "invocation"; callee: string; args: unknown[]; async: boolean }
-  | { type: "emission"; event: string; payload?: unknown }
-  | { type: "stateChange"; variable: string; newValue?: unknown };
-
-export interface Transition {
-  id: string;
-  conditions: Predicate[];
-  output: Output;
-  effects: Effect[];
-  location: { start: number; end: number };
-  isDefault: boolean;
-  confidence?: ConfidenceInfo;
-  /**
-   * The shape of upstream data this transition reads within its branch.
-   * Populated for client/consumer transitions: after branching on a
-   * response status code, the consumer accesses fields on the response
-   * body — those accesses are collected into a TypeShape representing
-   * what the consumer expects to receive. The checker compares this
-   * against the provider's produced body shape for the same status.
-   */
-  expectedInput?: TypeShape;
+/**
+ * Validate and return a single summary, throwing on failure. Use this at
+ * boundaries where invalid data should halt processing (CLI loading from
+ * disk).
+ */
+export function parseSummary(input: unknown): BehavioralSummary {
+  return BehavioralSummarySchema.parse(input);
 }
 
-export interface Gap {
-  type: "unhandledCase";
-  conditions: Predicate[];
-  consequence: "frameworkDefault" | "implicitThrow" | "fallthrough" | "unknown";
-  description: string;
+export function safeParseSummary(
+  input: unknown,
+): z.ZodSafeParseResult<BehavioralSummary> {
+  return BehavioralSummarySchema.safeParse(input);
 }
 
-export interface ConfidenceInfo {
-  source: "inferred_static" | "inferred_ai" | "declared" | "stub";
-  level: "high" | "medium" | "low";
+/**
+ * Validate and return an array of summaries. Throws if the input is not
+ * an array, or any element fails validation. Use `safeParseSummaries`
+ * for non-throwing behavior.
+ */
+export function parseSummaries(input: unknown): BehavioralSummary[] {
+  return BehavioralSummaryArraySchema.parse(input);
 }
 
-export interface BehavioralSummary {
-  kind: CodeUnitKind;
-  location: SourceLocation;
-  identity: CodeUnitIdentity;
-  inputs: Input[];
-  transitions: Transition[];
-  gaps: Gap[];
-  confidence: ConfidenceInfo;
-  metadata?: Record<string, unknown>;
+export function safeParseSummaries(
+  input: unknown,
+): z.ZodSafeParseResult<BehavioralSummary[]> {
+  return BehavioralSummaryArraySchema.safeParse(input);
 }
 
-export interface SummaryDiff {
-  addedTransitions: Transition[];
-  removedTransitions: Transition[];
-  changedTransitions: Array<{ before: Transition; after: Transition }>;
-}
-
-export type FindingKind =
-  | "unhandledProviderCase"
-  | "deadConsumerBranch"
-  | "providerContractViolation"
-  | "consumerContractViolation"
-  | "lowConfidence";
-
-export type FindingSeverity = "error" | "warning" | "info";
-
-export interface FindingSide {
-  summary: string;
-  transitionId?: string;
-  location: SourceLocation;
-}
-
-export interface Finding {
-  kind: FindingKind;
-  boundary: BoundaryBinding;
-  provider: FindingSide;
-  consumer: FindingSide;
-  description: string;
-  severity: FindingSeverity;
-}
+// ---------------------------------------------------------------------------
+// Diff
+// ---------------------------------------------------------------------------
 
 export function diffSummaries(
   before: BehavioralSummary,

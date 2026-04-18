@@ -30,6 +30,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",
       "types": "./dist/index.d.ts"
+    },
+    "./schemas": {
+      "import": "./dist/schemas.js",
+      "require": "./dist/schemas.cjs",
+      "types": "./dist/schemas.d.ts"
     }
   },
   "files": [
@@ -39,16 +44,20 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/generate-schema.mjs && npx biome format --write schema/behavioral-summary.schema.json",
+    "schema:generate": "node scripts/generate-schema.mjs && npx biome format --write schema/behavioral-summary.schema.json",
     "test": "vitest run --coverage",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
   "devDependencies": {
-    "ajv": "^8.18.0",
     "tsup": "*",
     "typescript": "*",
-    "vitest": "*"
+    "vitest": "*",
+    "zod": "^4.3.6"
   }
 }

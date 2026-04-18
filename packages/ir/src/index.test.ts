@@ -1,18 +1,17 @@
-import _Ajv from "ajv";
-
-// ajv's types don't expose a proper constructor under node16 moduleResolution.
-// The runtime export is a constructor function, so cast it.
-const Ajv = _Ajv as unknown as typeof _Ajv.default;
-
 import { describe, expect, it } from "vitest";
 
-import schema from "../schema/behavioral-summary.schema.json";
 import {
   type BehavioralSummary,
+  BOUNDARY_ROLE,
+  type CodeUnitKind,
   diffSummaries,
   type Finding,
   type Output,
   type Predicate,
+  parseSummaries,
+  parseSummary,
+  safeParseSummaries,
+  safeParseSummary,
   type Transition,
 } from "./index.js";
 
@@ -197,13 +196,10 @@ describe("diffSummaries", () => {
 });
 
 // ---------------------------------------------------------------------------
-// JSON Schema validation
+// Schema validation (zod-based)
 // ---------------------------------------------------------------------------
 
-describe("behavioral-summary.schema.json", () => {
-  const ajv = new Ajv({ strict: false });
-  const validate = ajv.compile(schema);
-
+describe("BehavioralSummaryArraySchema", () => {
   it("validates a minimal summary array", () => {
     const summaries: BehavioralSummary[] = [
       makeSummary([
@@ -215,11 +211,11 @@ describe("behavioral-summary.schema.json", () => {
         }),
       ]),
     ];
-    const valid = validate(summaries);
-    if (!valid) {
-      console.error(validate.errors);
+    const result = safeParseSummaries(summaries);
+    if (!result.success) {
+      console.error(JSON.stringify(result.error.issues, null, 2));
     }
-    expect(valid).toBe(true);
+    expect(result.success).toBe(true);
   });
 
   it("validates a summary with all predicate types", () => {
@@ -310,11 +306,11 @@ describe("behavioral-summary.schema.json", () => {
     };
 
     const summaries: BehavioralSummary[] = [makeSummary([t])];
-    const valid = validate(summaries);
-    if (!valid) {
-      console.error(JSON.stringify(validate.errors, null, 2));
+    const result = safeParseSummaries(summaries);
+    if (!result.success) {
+      console.error(JSON.stringify(result.error.issues, null, 2));
     }
-    expect(valid).toBe(true);
+    expect(result.success).toBe(true);
   });
 
   it("validates a summary with metadata and expectedInput", () => {
@@ -354,24 +350,115 @@ describe("behavioral-summary.schema.json", () => {
         gaps: [],
         confidence: { source: "inferred_static", level: "high" },
         metadata: {
-          declaredContract: {
-            framework: "ts-rest",
-            responses: [{ statusCode: 200 }, { statusCode: 404 }],
+          http: {
+            declaredContract: {
+              framework: "ts-rest",
+              responses: [{ statusCode: 200 }, { statusCode: 404 }],
+            },
           },
         },
       },
     ];
 
-    const valid = validate(summaries);
-    if (!valid) {
-      console.error(JSON.stringify(validate.errors, null, 2));
+    const result = safeParseSummaries(summaries);
+    if (!result.success) {
+      console.error(JSON.stringify(result.error.issues, null, 2));
     }
-    expect(valid).toBe(true);
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a transition with per-transition metadata", () => {
+    const t: Transition = {
+      id: "platform-401",
+      conditions: [
+        {
+          type: "opaque",
+          sourceText: "platform:apiGateway:authorization.denied",
+          reason: "externalFunction",
+        },
+      ],
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 401 },
+        body: null,
+        headers: {},
+      },
+      effects: [],
+      location: { start: 0, end: 0 },
+      isDefault: false,
+      confidence: { source: "stub", level: "high" },
+      metadata: {
+        source: "aws::apigateway::method.authorization",
+        configRef: "template.yaml#/Resources/Auth",
+        causes: ["iam-authorizer", "api-key"],
+      },
+    };
+
+    const summaries: BehavioralSummary[] = [makeSummary([t])];
+    const result = safeParseSummaries(summaries);
+    if (!result.success) {
+      console.error(JSON.stringify(result.error.issues, null, 2));
+    }
+    expect(result.success).toBe(true);
   });
 
   it("rejects invalid data", () => {
-    expect(validate([{ kind: "invalid" }])).toBe(false);
-    expect(validate("not an array")).toBe(false);
-    expect(validate([{ kind: "handler" }])).toBe(false);
+    expect(safeParseSummaries([{ kind: "invalid" }]).success).toBe(false);
+    expect(safeParseSummaries("not an array").success).toBe(false);
+    expect(safeParseSummaries([{ kind: "handler" }]).success).toBe(false);
+  });
+
+  it("parseSummary throws on invalid; safeParseSummary surfaces issues", () => {
+    expect(() => parseSummary({ kind: "bogus" })).toThrow();
+    const result = safeParseSummary({ kind: "bogus" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("parseSummaries returns the typed array on success", () => {
+    const minimal = makeSummary([
+      makeTransition("t1", {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: null,
+        headers: {},
+      }),
+    ]);
+    const parsed = parseSummaries([minimal]);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].kind).toBe("handler");
+  });
+});
+
+describe("BOUNDARY_ROLE", () => {
+  it("classifies every CodeUnitKind", () => {
+    const allKinds: CodeUnitKind[] = [
+      "handler",
+      "loader",
+      "action",
+      "component",
+      "hook",
+      "middleware",
+      "resolver",
+      "consumer",
+      "client",
+      "worker",
+    ];
+    for (const kind of allKinds) {
+      expect(BOUNDARY_ROLE[kind]).toMatch(/^(provider|consumer)$/);
+    }
+  });
+
+  it("classifies non-HTTP provider kinds (worker, component, hook) as providers", () => {
+    expect(BOUNDARY_ROLE.worker).toBe("provider");
+    expect(BOUNDARY_ROLE.component).toBe("provider");
+    expect(BOUNDARY_ROLE.hook).toBe("provider");
+  });
+
+  it("classifies client and consumer as consumers", () => {
+    expect(BOUNDARY_ROLE.client).toBe("consumer");
+    expect(BOUNDARY_ROLE.consumer).toBe("consumer");
   });
 });
