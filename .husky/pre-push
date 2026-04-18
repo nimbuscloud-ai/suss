@@ -4,5 +4,6 @@ npm run typecheck
 # Run full test suite with coverage
 # Bump heap for ts-morph-heavy adapter + CLI tests running in parallel
 NODE_OPTIONS="--max-old-space-size=8192" npm test
-# Normalize and format coverage-summary.json files (path relativization + biome format)
-npm run badges
+# Coverage summaries and badges are refreshed by CI and auto-committed
+# back to the branch (main or same-repo PR) with [skip ci]. No local
+# regen needed before push.
