@@ -210,6 +210,8 @@ const effective = applySuppressions(findings, mySuppressions);
 - [`docs/cross-boundary-checking.md`](docs/cross-boundary-checking.md) — the pairwise checker: provider coverage, consumer satisfaction, contract consistency
 - [`docs/suppressions.md`](docs/suppressions.md) — `.sussignore` file format and effects (`mark` / `downgrade` / `hide`) for accepted findings
 - [`docs/stubs.md`](docs/stubs.md) — boundary contracts authored from non-source-code inputs (specs, manifests, vendor docs); reader/semantics layering; conventions for platform-injected transitions
+- [`docs/contracts.md`](docs/contracts.md) — the five contract shapes (schema, examples, tests, snapshots, design), their epistemic characters (specification / observation / derivation), and how new domains get added
+- [`docs/roadmap-react.md`](docs/roadmap-react.md) — design-only: React as the first non-HTTP boundary, phased plan (inferred → Storybook → Figma → cross-shape checking), what the rollout commits us to
 - [`docs/boundary-semantics.md`](docs/boundary-semantics.md) — design-only: the layered transport / semantics / recognition model, the `BoundarySemantics` refactor deferred until a second concrete protocol lands, and why GraphQL is the forcing function
 - [`docs/status.md`](docs/status.md) — phase-by-phase progress tracker, test counts, decisions log
 - [`docs/style.md`](docs/style.md) — code conventions (Biome, TypeScript, tests, monorepo)

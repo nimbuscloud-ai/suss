@@ -7,6 +7,8 @@ A stub is a behavioral contract authored at the boundary, not extracted from imp
 > - [`architecture.md`](architecture.md) — how packages fit together
 > - [`behavioral-summary-format.md`](behavioral-summary-format.md) — the IR / wire format
 > - [`ir-reference.md`](ir-reference.md) — type-by-type walkthrough
+> - [`contracts.md`](contracts.md) — the five shapes of declared contracts suss absorbs (schema, examples, tests, snapshots, design); every shipping stub today reads the **schema** shape
+> - [`roadmap-react.md`](roadmap-react.md) — the first domain where multiple contract shapes for one boundary are actively planned
 
 ## What a stub is, and isn't
 
