@@ -91,6 +91,47 @@ function extractParameters(
         });
       }
     }
+  } else if (inputMapping.type === "componentProps") {
+    const param = params[inputMapping.paramPosition];
+    if (param !== undefined) {
+      const nameNode = param.getNameNode();
+      if (Node.isObjectBindingPattern(nameNode)) {
+        // Destructured props: emit one Input per bound name. The role
+        // is the prop name itself — the pack doesn't know the name
+        // space in advance, so the role is just "whatever the
+        // component author called this prop." `typeText` comes from
+        // the type of the element's binding identifier, which the
+        // type checker resolves via indexing into the parameter's
+        // type annotation (whether declared inline or via a named
+        // interface).
+        for (const element of nameNode.getElements()) {
+          const name = element.getName();
+          // BindingElement.getType() resolves via the type checker
+          // against the parameter's declared type — e.g. for
+          // `({ label }: { label: string })`, that's `string`. Works
+          // whether the annotation is inline or via a named interface.
+          // Type.getText() returns the printed form; empty-string
+          // returns (for unresolvable types) collapse to null.
+          const typeText = element.getType().getText();
+          result.push({
+            name,
+            position: inputMapping.paramPosition,
+            role: name,
+            typeText: typeText.length > 0 ? typeText : null,
+          });
+        }
+      } else {
+        // Non-destructured props (`function X(props) {...}`): one
+        // Input for the whole object, role defaults to "props".
+        const type = param.getType();
+        result.push({
+          name: param.getName(),
+          position: inputMapping.paramPosition,
+          role: inputMapping.wholeParamRole ?? "props",
+          typeText: type.getText() || null,
+        });
+      }
+    }
   }
 
   return result;
