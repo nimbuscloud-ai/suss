@@ -11,6 +11,7 @@ import type {
   Input,
   Output,
   Predicate,
+  RenderNode,
   Transition,
   TypeShape,
   ValueRef,
@@ -68,6 +69,13 @@ export interface RawTerminal {
   message: string | null;
   /** For render terminals: the component being rendered */
   component: string | null;
+  /**
+   * For render terminals (JSX / component-tree output): the nested
+   * render tree if the pack's extractor can produce one. Flows
+   * through to `Output.render.root`. Absent when the extractor sees
+   * only the root element name or opted out of tree extraction.
+   */
+  renderTree: RenderNode | null;
   /** For delegate terminals: where control is passed */
   delegateTarget: string | null;
   /** For emit terminals: the event/channel name */
@@ -473,6 +481,7 @@ const terminalConverters: Record<
   render: (t) => ({
     type: "render",
     component: t.component ?? "unknown",
+    ...(t.renderTree !== null ? { root: t.renderTree } : {}),
   }),
   delegate: (t) => ({
     type: "delegate",

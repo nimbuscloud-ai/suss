@@ -177,4 +177,98 @@ describe("reactFramework — integration", () => {
       expect(out.component).toBe("button");
     }
   });
+
+  // -------------------------------------------------------------------
+  // Phase 1.6: nested render tree (Output.render.root)
+  // -------------------------------------------------------------------
+
+  it("UserCard's render branch carries a tree with the dynamic child as an expression node", () => {
+    const userCard = summaries.find((s) => s.identity.name === "UserCard");
+    expect(userCard).toBeDefined();
+    const renderTxn = userCard!.transitions[1];
+    expect(renderTxn.output.type).toBe("render");
+    if (renderTxn.output.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = renderTxn.output.root;
+    expect(root).toBeDefined();
+    expect(root?.type).toBe("element");
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    expect(root.tag).toBe("div");
+    // `<div>{user.name}</div>` — one dynamic expression child carrying
+    // the original source text.
+    expect(root.children).toHaveLength(1);
+    expect(root.children[0]).toEqual({
+      type: "expression",
+      sourceText: "user.name",
+    });
+  });
+
+  it("Nav's fragment root contains two anchor elements with trimmed text children", () => {
+    const nav = summaries.find((s) => s.identity.name === "Nav");
+    const out = nav!.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    expect(root.tag).toBe("Fragment");
+    // Two child elements; whitespace-only text between them is stripped.
+    const aTags = root.children.filter(
+      (c) => c.type === "element" && c.tag === "a",
+    );
+    expect(aTags).toHaveLength(2);
+    const first = aTags[0];
+    if (first.type !== "element") {
+      throw new Error("expected element");
+    }
+    expect(first.children).toEqual([{ type: "text", value: "Home" }]);
+  });
+
+  it("Counter's render tree mixes elements, text, and dynamic expressions", () => {
+    const counter = summaries.find((s) => s.identity.name === "Counter");
+    const out = counter!.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    expect(root.tag).toBe("div");
+    // <div> children: <span>{label}</span>, <button>...</button>
+    const elementChildren = root.children.filter((c) => c.type === "element");
+    expect(elementChildren).toHaveLength(2);
+    const span = elementChildren[0];
+    if (span.type !== "element") {
+      throw new Error("expected element");
+    }
+    expect(span.tag).toBe("span");
+    expect(span.children).toEqual([
+      { type: "expression", sourceText: "label" },
+    ]);
+  });
+
+  it("Greeting's single-element render tree has text and expression children", () => {
+    const greeting = summaries.find((s) => s.identity.name === "Greeting");
+    const out = greeting!.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    expect(root.tag).toBe("div");
+    // Order preserved: "Hello," text, then {props.name} expression.
+    expect(root.children[0]).toEqual({ type: "text", value: "Hello," });
+    expect(root.children[1]).toEqual({
+      type: "expression",
+      sourceText: "props.name",
+    });
+  });
 });
