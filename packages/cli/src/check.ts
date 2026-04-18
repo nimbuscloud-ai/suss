@@ -2,14 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { safeParseSummaries } from "@suss/behavioral-ir";
-import { checkAll, checkPair } from "@suss/checker";
+import {
+  applySuppressions,
+  checkAll,
+  checkPair,
+  countsForThreshold,
+} from "@suss/checker";
+
+import { loadSuppressionsOrEmpty } from "./suppressions-loader.js";
 
 import type {
   BehavioralSummary,
   ConfidenceInfo,
   Finding,
 } from "@suss/behavioral-ir";
-import type { CheckAllResult } from "@suss/checker";
+import type { CheckAllResult, SuppressionRule } from "@suss/checker";
 
 /**
  * Look up the summary-level confidence for a `Finding` side. The
@@ -40,6 +47,10 @@ export interface CheckOptions {
   json?: boolean;
   output?: string;
   failOn?: FailOn;
+  /** Override path to a .sussignore file. */
+  sussignore?: string;
+  /** Skip loading any .sussignore, even if one would be auto-discovered. */
+  noSuppressions?: boolean;
 }
 
 export interface CheckDirOptions {
@@ -47,6 +58,8 @@ export interface CheckDirOptions {
   json?: boolean;
   output?: string;
   failOn?: FailOn;
+  sussignore?: string;
+  noSuppressions?: boolean;
 }
 
 export interface CheckResult {
@@ -58,18 +71,34 @@ export function check(options: CheckOptions): CheckResult {
   const providerSummaries = readSummaries(options.providerFile);
   const consumerSummaries = readSummaries(options.consumerFile);
 
-  const findings: Finding[] = [];
+  const rawFindings: Finding[] = [];
   for (const provider of providerSummaries) {
     for (const consumer of consumerSummaries) {
-      findings.push(...checkPair(provider, consumer));
+      rawFindings.push(...checkPair(provider, consumer));
     }
   }
+
+  const suppressions = loadSuppressionsForOptions(options, process.cwd());
+  const findings = applySuppressions(rawFindings, suppressions);
 
   const confidence = buildConfidenceLookup(
     providerSummaries,
     consumerSummaries,
   );
   return emitFindings(findings, confidence, options);
+}
+
+function loadSuppressionsForOptions(
+  options: { sussignore?: string; noSuppressions?: boolean },
+  searchDir: string,
+): SuppressionRule[] {
+  if (options.noSuppressions === true) {
+    return [];
+  }
+  return loadSuppressionsOrEmpty({
+    overridePath: options.sussignore,
+    searchDir,
+  });
 }
 
 export function checkDir(
@@ -90,7 +119,12 @@ export function checkDir(
     allSummaries.push(...readSummaries(path.join(resolved, file)));
   }
 
-  const result = checkAll(allSummaries);
+  const rawResult = checkAll(allSummaries);
+  const suppressions = loadSuppressionsForOptions(options, resolved);
+  const result: CheckAllResult = {
+    ...rawResult,
+    findings: applySuppressions(rawResult.findings, suppressions),
+  };
   const confidence = buildConfidenceLookup(allSummaries);
 
   const rendered = options.json
@@ -142,7 +176,12 @@ function meetsThreshold(findings: Finding[], failOn: FailOn): boolean {
     return false;
   }
   const threshold = SEVERITY_ORDER[failOn];
-  return findings.some((f) => SEVERITY_ORDER[f.severity] <= threshold);
+  // Suppressed findings are excluded from threshold calculation unless
+  // their effect was "downgrade" (in which case they count at the
+  // downgraded severity). See @suss/checker/countsForThreshold.
+  return findings.some(
+    (f) => countsForThreshold(f) && SEVERITY_ORDER[f.severity] <= threshold,
+  );
 }
 
 function readSummaries(file: string): BehavioralSummary[] {
@@ -185,8 +224,14 @@ function renderHuman(
 
   for (const f of findings) {
     lines.push(`${"─".repeat(60)}`);
-    lines.push(`[${f.severity.toUpperCase()}] ${f.kind}`);
+    const sevLabel = formatSeverityHeader(f);
+    lines.push(`[${sevLabel}] ${f.kind}`);
     lines.push(`  ${f.description}`);
+    if (f.suppressed !== undefined) {
+      lines.push(
+        `  suppressed (${f.suppressed.effect}): ${f.suppressed.reason}`,
+      );
+    }
     lines.push(`  provider: ${formatSide(f.provider, confidence)}`);
     // When the finding was collapsed across multiple provider sources,
     // list the others below the primary so reviewers can see who
@@ -209,6 +254,20 @@ function renderHuman(
   );
 
   return `${lines.join("\n")}\n`;
+}
+
+function formatSeverityHeader(f: Finding): string {
+  if (
+    f.suppressed !== undefined &&
+    f.suppressed.effect === "downgrade" &&
+    f.suppressed.originalSeverity !== undefined
+  ) {
+    return `${f.severity.toUpperCase()}, downgraded from ${f.suppressed.originalSeverity.toUpperCase()}`;
+  }
+  if (f.suppressed !== undefined && f.suppressed.effect !== "downgrade") {
+    return `${f.severity.toUpperCase()}, suppressed`;
+  }
+  return f.severity.toUpperCase();
 }
 
 function formatSide(

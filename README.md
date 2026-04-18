@@ -62,6 +62,119 @@ suss check --dir summaries/           # auto-pairs by method + path
 
 **Build downstream tools.** The summary format is a foundation: documentation generators, AI context providers, test case enumerators, impact analyzers, architectural dashboards. Install `@suss/behavioral-ir` (one peer dep on `zod`) to consume the format with runtime validation. Non-TS consumers can validate against the published [JSON Schema](packages/ir/schema/behavioral-summary.schema.json) generated from the same source. See the [format spec](docs/behavioral-summary-format.md) for the consumption guide.
 
+## Usage
+
+### Install
+
+suss ships as `@suss/cli` plus opt-in pattern packs for your framework and runtime. Install the CLI globally or per-project:
+
+```bash
+npm install --save-dev @suss/cli @suss/framework-ts-rest @suss/runtime-axios
+```
+
+Pick the packs that match your code. The full set is in the [Packages](#packages) table.
+
+### Extract summaries from source
+
+```bash
+# Provider side: extract handlers using the ts-rest pack
+suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
+
+# Consumer side: extract axios call sites
+suss extract -p apps/web/tsconfig.json -f axios -o summaries/consumer.json
+```
+
+`-f` may be repeated: `-f ts-rest -f axios` runs both packs in one pass. Output is a JSON array of `BehavioralSummary` objects.
+
+### Pair a provider against a consumer
+
+```bash
+suss check summaries/provider.json summaries/consumer.json
+```
+
+Emits findings (unhandled statuses, dead consumer branches, body-field mismatches, contract violations). Exit code is non-zero when any `error`-severity finding exists; tune with `--fail-on error|warning|info|none`.
+
+Whole-directory mode pairs every summary against every other by `(method, path)`:
+
+```bash
+suss check --dir summaries/
+suss check --dir summaries/ --fail-on warning --json > findings.json
+```
+
+### Inspect a summary file
+
+```bash
+# Human-readable view of every transition
+suss inspect summaries/provider.json
+
+# Compare two points in time
+suss inspect --diff before.json after.json
+
+# Boundary-pair overview for a directory
+suss inspect --dir summaries/
+```
+
+### Generate stubs from specs / manifests
+
+`suss stub` turns a non-source-code contract into the same summary format:
+
+```bash
+# OpenAPI 3.x (3.0 and 3.1 supported)
+suss stub --from openapi -i openapi.yaml -o summaries/stripe-provider.json
+
+# AWS CloudFormation / SAM templates (handles inline OpenAPI bodies, native
+# REST/HTTP API resources, and SAM Events blocks)
+suss stub --from cloudformation -i template.yaml -o summaries/api-provider.json
+```
+
+Stubbed summaries carry `confidence.source: "stub"` and pair with extracted consumers exactly like real provider summaries.
+
+### Suppress accepted findings
+
+Create `.sussignore.yml` at the project root (or wherever you run `suss check` from):
+
+```yaml
+version: 1
+rules:
+  - kind: deadConsumerBranch
+    boundary: "GET /pet/{petId}"
+    consumer:
+      transitionId: ct-500
+    reason: Upstream returns 500 only in force-majeure handled by retry middleware.
+    effect: mark  # mark | downgrade | hide — default "mark"
+```
+
+`mark` keeps the finding visible but excludes it from exit-code; `downgrade` drops severity a level; `hide` removes it entirely. `reason` is required. See [`docs/suppressions.md`](docs/suppressions.md) for the full format.
+
+Override or skip lookup via `--sussignore <path>` / `--no-suppressions`.
+
+### Use in CI
+
+```yaml
+# .github/workflows/contracts.yml
+- name: Extract
+  run: npx suss extract -p tsconfig.json -f ts-rest -f axios -o summaries.json
+- name: Stub third-party APIs
+  run: npx suss stub --from openapi -i vendor/stripe.yaml -o stripe.json
+- name: Check
+  run: npx suss check --dir . --fail-on warning
+```
+
+The CLI exits non-zero when findings cross the `--fail-on` threshold, so standard CI gating works without extra plumbing. `--json` output is stable for downstream tools (dashboards, PR comment bots, metric collectors).
+
+### Programmatic API
+
+For custom pipelines (mono-repo orchestrators, IDE integrations, AI context providers), `@suss/checker` and `@suss/behavioral-ir` are directly importable:
+
+```typescript
+import { parseSummaries } from "@suss/behavioral-ir";
+import { checkAll, applySuppressions } from "@suss/checker";
+
+const summaries = parseSummaries(JSON.parse(readFileSync("summaries.json", "utf8")));
+const { findings } = checkAll(summaries);
+const effective = applySuppressions(findings, mySuppressions);
+```
+
 ## Packages
 
 | Package | Description | Coverage |
@@ -95,6 +208,7 @@ suss check --dir summaries/           # auto-pairs by method + path
 - [`docs/ir-reference.md`](docs/ir-reference.md) — type-by-type walkthrough of `@suss/behavioral-ir`
 - [`docs/framework-packs.md`](docs/framework-packs.md) — how to write or modify a pattern pack, pattern reference, worked Fastify example
 - [`docs/cross-boundary-checking.md`](docs/cross-boundary-checking.md) — the pairwise checker: provider coverage, consumer satisfaction, contract consistency
+- [`docs/suppressions.md`](docs/suppressions.md) — `.sussignore` file format and effects (`mark` / `downgrade` / `hide`) for accepted findings
 - [`docs/stubs.md`](docs/stubs.md) — boundary contracts authored from non-source-code inputs (specs, manifests, vendor docs); reader/semantics layering; conventions for platform-injected transitions
 - [`docs/boundary-semantics.md`](docs/boundary-semantics.md) — design-only: the layered transport / semantics / recognition model, the `BoundarySemantics` refactor deferred until a second concrete protocol lands, and why GraphQL is the forcing function
 - [`docs/status.md`](docs/status.md) — phase-by-phase progress tracker, test counts, decisions log

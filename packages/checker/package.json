@@ -44,12 +44,16 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
   "dependencies": {
     "@suss/behavioral-ir": "*"
   },
   "devDependencies": {
     "tsup": "*",
     "typescript": "*",
-    "vitest": "*"
+    "vitest": "*",
+    "zod": "^4.0.0"
   }
 }
