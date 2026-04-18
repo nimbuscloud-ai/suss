@@ -100,6 +100,15 @@ export type TerminalMatch =
   | {
       type: "functionCall";
       functionName: string; // e.g. "json", "redirect" — matches calls to a named function
+    }
+  | {
+      /**
+       * Return statement whose value is a JSX element or fragment. The
+       * root element/component name is recorded in RawTerminal.component.
+       * Used by React (and any other JSX-based framework pack) to
+       * classify component outputs as `render` terminals.
+       */
+      type: "jsxReturn";
     };
 
 export interface TerminalExtraction {

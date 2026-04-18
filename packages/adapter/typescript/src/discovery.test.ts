@@ -507,7 +507,7 @@ describe("namedExport — React Router style (loader, action, default)", () => {
     expect(units.find((u) => u.name === "action")?.kind).toBe("action");
   });
 
-  it("discovers default export component", () => {
+  it("discovers default export component using the function's own name", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
@@ -515,6 +515,24 @@ describe("namedExport — React Router style (loader, action, default)", () => {
       export default function UserPage() {
         return null;
       }
+    `,
+    );
+
+    const units = discoverUnits(file, makeReactRouterPatterns());
+    expect(units).toHaveLength(1);
+    // Component identity is the function name when one exists — the
+    // React pack relies on this to distinguish default-exported
+    // components across files.
+    expect(units[0].name).toBe("UserPage");
+    expect(units[0].kind).toBe("component");
+  });
+
+  it("falls back to 'default' for anonymous default exports", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "anon.ts",
+      `
+      export default () => null;
     `,
     );
 

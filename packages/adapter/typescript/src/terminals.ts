@@ -519,6 +519,80 @@ function tryMatchReturnStatement(
   return { node, terminal };
 }
 
+/**
+ * Match a return statement whose expression is a JSX element, JSX
+ * fragment, or JSX self-closing element. Used by React (and any JSX
+ * framework) to classify component outputs as `render` terminals,
+ * recording the root element/component name in `component`.
+ *
+ * Scope for Phase 1.1 (the initial React extractor): capture the root
+ * element name only. Nested tree structure, prop bindings, and event
+ * handler wiring are deferred — see `docs/roadmap-react.md`.
+ */
+function tryMatchJsxReturn(
+  node: Node,
+  pattern: TerminalPattern,
+): FoundTerminal | null {
+  if (!Node.isReturnStatement(node)) {
+    return null;
+  }
+  const expr = node.getExpression();
+  if (expr === undefined) {
+    return null;
+  }
+  const component = jsxRootName(expr);
+  if (component === null) {
+    return null;
+  }
+
+  const terminal: RawTerminal = {
+    kind: pattern.kind,
+    statusCode: null,
+    body: null,
+    exceptionType: null,
+    message: null,
+    component,
+    delegateTarget: null,
+    emitEvent: null,
+    location: {
+      start: node.getStartLineNumber(),
+      end: node.getEndLineNumber(),
+    },
+  };
+
+  return { node, terminal };
+}
+
+/**
+ * If `expr` is a JSX element or fragment, return a short identifying
+ * name for its root. For `<div>…</div>` that's `"div"`; for
+ * `<UserCard />` that's `"UserCard"`; for `<>…</>` that's
+ * `"Fragment"`. Returns null if the expression isn't JSX — callers use
+ * that to reject the match.
+ *
+ * We deliberately don't resolve variables or expressions here: a
+ * component that does `const el = <div/>; return el;` would currently
+ * fall through. That's a known extractor limitation shared with the
+ * other opaque-predicate fallbacks and is tracked as part of the
+ * reduce-opaqueness-recursively direction.
+ */
+function jsxRootName(expr: Node): string | null {
+  if (Node.isJsxElement(expr)) {
+    return expr.getOpeningElement().getTagNameNode().getText();
+  }
+  if (Node.isJsxSelfClosingElement(expr)) {
+    return expr.getTagNameNode().getText();
+  }
+  if (Node.isJsxFragment(expr)) {
+    return "Fragment";
+  }
+  // Parenthesized JSX: `return (<div/>)` — unwrap one level.
+  if (Node.isParenthesizedExpression(expr)) {
+    return jsxRootName(expr.getExpression());
+  }
+  return null;
+}
+
 function tryMatchThrowExpression(
   node: Node,
   pattern: TerminalPattern,
@@ -671,6 +745,8 @@ export function findTerminals(
         found = tryMatchReturnShape(node, pattern, pattern.match);
       } else if (pattern.match.type === "returnStatement") {
         found = tryMatchReturnStatement(node, pattern);
+      } else if (pattern.match.type === "jsxReturn") {
+        found = tryMatchJsxReturn(node, pattern);
       } else if (pattern.match.type === "parameterMethodCall") {
         found = tryMatchParameterMethodCall(node, func, pattern, pattern.match);
       } else if (pattern.match.type === "throwExpression") {

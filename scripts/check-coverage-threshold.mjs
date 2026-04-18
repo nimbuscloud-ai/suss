@@ -22,6 +22,7 @@ const packageDirs = [
   "packages/adapter/typescript",
   "packages/framework/ts-rest",
   "packages/framework/react-router",
+  "packages/framework/react",
   "packages/framework/express",
   "packages/framework/fastify",
   "packages/runtime/web",

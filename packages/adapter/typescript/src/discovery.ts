@@ -50,6 +50,38 @@ function toFunctionRoot(node: Node): FunctionRoot | null {
   return null;
 }
 
+/**
+ * Name a code unit discovered via `export default`. Prefers the
+ * function's own identifier (`export default function UserCard() {}`
+ * → `"UserCard"`) so component / handler identity survives. Falls
+ * back to `"default"` for genuinely anonymous defaults
+ * (`export default () => ...` or `export default function() {}`).
+ */
+function resolveDefaultExportName(decl: Node, fn: FunctionRoot): string {
+  // FunctionDeclaration and named FunctionExpression both expose
+  // getName(); ArrowFunction does not. Prefer the explicit name when
+  // present.
+  if (Node.isFunctionDeclaration(fn) || Node.isFunctionExpression(fn)) {
+    const n = fn.getName?.();
+    if (typeof n === "string" && n.length > 0) {
+      return n;
+    }
+  }
+
+  // `export default UserCard` — the declaration seen by the default-
+  // export symbol resolver is the VariableDeclaration or the
+  // referenced function. If we landed on a named VariableDeclaration,
+  // use that name.
+  if (Node.isVariableDeclaration(decl)) {
+    const name = decl.getName();
+    if (name.length > 0) {
+      return name;
+    }
+  }
+
+  return "default";
+}
+
 // ---------------------------------------------------------------------------
 // namedExport discovery
 // ---------------------------------------------------------------------------
@@ -107,7 +139,15 @@ function discoverNamedExports(
     }
   }
 
-  // 3. export default function() {} — name "default"
+  // 3. export default function UserCard() {} — name "UserCard"
+  //    export default function() {}          — name "default"
+  //    export default UserCard               — name from the referenced binding
+  //    export default () => ...              — name "default"
+  //
+  // Prefer the function's own name when it has one. For components
+  // especially, the function name is the component identity; losing
+  // it to "default" would collapse every file's default export into
+  // the same name across the workspace.
   if (names.has("default")) {
     const defaultExport = sourceFile.getDefaultExportSymbol();
     if (defaultExport !== undefined) {
@@ -115,7 +155,8 @@ function discoverNamedExports(
       for (const decl of decls) {
         const fn = toFunctionRoot(decl);
         if (fn !== null) {
-          results.push({ func: fn, kind, name: "default" });
+          const resolvedName = resolveDefaultExportName(decl, fn);
+          results.push({ func: fn, kind, name: resolvedName });
         }
       }
     }
