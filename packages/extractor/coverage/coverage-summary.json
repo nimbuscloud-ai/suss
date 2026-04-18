@@ -1,3 +1,60 @@
-{"total": {"lines":{"total":85,"covered":80,"skipped":0,"pct":94.11},"statements":{"total":85,"covered":80,"skipped":0,"pct":94.11},"functions":{"total":25,"covered":25,"skipped":0,"pct":100},"branches":{"total":71,"covered":63,"skipped":0,"pct":88.73},"branchesTrue":{"total":0,"covered":0,"skipped":0,"pct":"Unknown"}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/extractor/src/index.ts": {"lines":{"total":85,"covered":80,"skipped":0,"pct":94.11},"functions":{"total":25,"covered":25,"skipped":0,"pct":100},"statements":{"total":85,"covered":80,"skipped":0,"pct":94.11},"branches":{"total":71,"covered":63,"skipped":0,"pct":88.73}}
+{
+  "total": {
+    "lines": {
+      "total": 85,
+      "covered": 80,
+      "skipped": 0,
+      "pct": 94.11
+    },
+    "statements": {
+      "total": 85,
+      "covered": 80,
+      "skipped": 0,
+      "pct": 94.11
+    },
+    "functions": {
+      "total": 25,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 71,
+      "covered": 63,
+      "skipped": 0,
+      "pct": 88.73
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": "Unknown"
+    }
+  },
+  "src/index.ts": {
+    "lines": {
+      "total": 85,
+      "covered": 80,
+      "skipped": 0,
+      "pct": 94.11
+    },
+    "functions": {
+      "total": 25,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 85,
+      "covered": 80,
+      "skipped": 0,
+      "pct": 94.11
+    },
+    "branches": {
+      "total": 71,
+      "covered": 63,
+      "skipped": 0,
+      "pct": 88.73
+    }
+  }
 }
