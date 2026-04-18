@@ -58,6 +58,9 @@
   "lint-staged": {
     "*": [
       "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
+    ],
+    "**/coverage/coverage-summary.json": [
+      "node scripts/normalize-coverage-summary.mjs"
     ]
   }
 }
