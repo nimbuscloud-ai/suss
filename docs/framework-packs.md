@@ -339,6 +339,20 @@ export default myFramework;
 
 Export both a named function and a default for dynamic imports from the CLI.
 
+**Shared discovery shape for HTTP servers.** Most Node HTTP frameworks register handlers the same way (`app.get(path, handler)` / `router.post(...)`) with variation only in the library name, the method list, and whether the library exports a default or named factory. `@suss/extractor` exposes `httpRouteDiscovery` so packs don't have to hand-write the repeated `registrationCall` + `bindingExtraction` shape per import name:
+
+```typescript
+import { httpRouteDiscovery } from "@suss/extractor";
+
+discovery: httpRouteDiscovery({
+  importModule: "express",
+  importNames: ["Router", "express"],
+  methods: [".get", ".post", ".put", ".delete", ".patch"],
+}),
+```
+
+This emits one `DiscoveryPattern` per name with binding extraction (`method` from the registration method, `path` from argument 0) wired up. The Express and Fastify packs use this; anything with a different registration shape (`@ts-rest/express`'s `initServer().router()`, decorators, file-convention) should declare `discovery` entries directly.
+
 ### Step 4 — Write the tests
 
 A pack test has two layers:
