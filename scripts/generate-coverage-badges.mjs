@@ -26,6 +26,7 @@ const packageDirs = [
   ["packages/runtime/web", "web"],
   ["packages/runtime/axios", "axios"],
   ["packages/stub/openapi", "stub-openapi"],
+  ["packages/stub/aws-apigateway", "stub-aws-apigateway"],
   ["packages/stub/cloudformation", "stub-cloudformation"],
   ["packages/checker", "checker"],
   ["packages/cli", "cli"],
