@@ -173,6 +173,25 @@ export type InputMappingPattern =
       type: "destructuredObject";
       /** Property name → role, e.g. { params: "pathParams", body: "requestBody" } */
       knownProperties: Record<string, string>;
+    }
+  | {
+      /**
+       * Component props, React / Vue / Svelte-style: one parameter that
+       * the caller destructures at will, with prop names only visible at
+       * the call site. When the parameter is destructured, each bound
+       * name becomes its own Input with role equal to the name. When
+       * it's not destructured (e.g. `function X(props) {...}`), one
+       * Input is emitted with `wholeParamRole` (default `"props"`).
+       *
+       * Differs from `destructuredObject` in that prop names are not
+       * declared by the pack up-front — they are whatever the component
+       * author wrote. Differs from `singleObjectParam` in that the
+       * destructuring pattern is honored when present.
+       */
+      type: "componentProps";
+      paramPosition: number;
+      /** Role for the single Input when the param is not destructured. Defaults to "props". */
+      wholeParamRole?: string;
     };
 
 // =============================================================================

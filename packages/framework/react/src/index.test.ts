@@ -62,12 +62,12 @@ describe("reactFramework — pack shape", () => {
     expect(jsxTerminal?.match).toEqual({ type: "jsxReturn" });
   });
 
-  it("declares a positional 'props' input at position 0", () => {
+  it("declares componentProps input mapping at position 0", () => {
     const pack = reactFramework();
-    if (pack.inputMapping.type !== "positionalParams") {
-      throw new Error("expected positionalParams");
+    if (pack.inputMapping.type !== "componentProps") {
+      throw new Error("expected componentProps");
     }
-    expect(pack.inputMapping.params).toEqual([{ position: 0, role: "props" }]);
+    expect(pack.inputMapping.paramPosition).toBe(0);
   });
 });
 
@@ -83,10 +83,58 @@ describe("reactFramework — integration", () => {
 
   it("discovers every default-exported component", () => {
     const names = summaries.map((s) => s.identity.name).sort();
-    expect(names).toEqual(["Button", "Nav", "UserCard"]);
+    expect(names).toEqual(["Button", "Counter", "Greeting", "Nav", "UserCard"]);
     for (const s of summaries) {
       expect(s.kind).toBe("component");
     }
+  });
+
+  it("Counter emits one Input per destructured prop (role = prop name, type resolved)", () => {
+    const counter = summaries.find((s) => s.identity.name === "Counter");
+    expect(counter).toBeDefined();
+    const inputs = counter!.inputs;
+    const byName = new Map(
+      inputs.map((i) => {
+        if (i.type !== "parameter") {
+          throw new Error("expected parameter input");
+        }
+        return [i.name, i] as const;
+      }),
+    );
+    expect([...byName.keys()].sort()).toEqual(["initial", "label", "onChange"]);
+    expect(byName.get("label")?.role).toBe("label");
+    expect(byName.get("initial")?.role).toBe("initial");
+    expect(byName.get("onChange")?.role).toBe("onChange");
+
+    // Types come back as named-ref TypeShapes whose `.name` is the
+    // TypeScript-printed type. Exact formatting varies slightly across
+    // ts-morph versions, so assert on key substrings rather than
+    // exact-string match.
+    const labelShape = byName.get("label")?.shape;
+    expect(labelShape?.type).toBe("ref");
+    if (labelShape?.type === "ref") {
+      expect(labelShape.name).toContain("string");
+    }
+    const initialShape = byName.get("initial")?.shape;
+    if (initialShape?.type === "ref") {
+      expect(initialShape.name).toContain("number");
+    }
+    const onChangeShape = byName.get("onChange")?.shape;
+    if (onChangeShape?.type === "ref") {
+      expect(onChangeShape.name).toContain("=>"); // arrow-function type
+    }
+  });
+
+  it("Greeting emits a single whole-object Input (non-destructured)", () => {
+    const greeting = summaries.find((s) => s.identity.name === "Greeting");
+    expect(greeting).toBeDefined();
+    const inputs = greeting!.inputs;
+    expect(inputs).toHaveLength(1);
+    if (inputs[0].type !== "parameter") {
+      throw new Error("expected parameter input");
+    }
+    expect(inputs[0].name).toBe("props");
+    expect(inputs[0].role).toBe("props");
   });
 
   it("UserCard has two transitions: early-return-null and render div", () => {

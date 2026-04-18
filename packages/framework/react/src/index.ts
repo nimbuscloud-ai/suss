@@ -61,11 +61,12 @@ export function reactFramework(): PatternPack {
 
     inputMapping: {
       // The first positional parameter is conventionally the props
-      // object. Phase 1.1 doesn't extract prop names yet — this
-      // declaration is minimal so the adapter has a handle to hang
-      // input tracking off when later phases need it.
-      type: "positionalParams",
-      params: [{ position: 0, role: "props" }],
+      // object. When it's destructured (`function X({user, onDelete}: Props)`)
+      // each name becomes its own Input with role = the prop name;
+      // when not (`function X(props)`), one whole-object Input gets
+      // role "props". See `componentProps` in @suss/extractor.
+      type: "componentProps",
+      paramPosition: 0,
     },
   };
 }
