@@ -3,21 +3,26 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
     },
     "test": {
       "dependsOn": ["build"],
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
     },
     "lint": {
-      "outputs": []
+      "outputs": [],
+      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
     },
     "lint:fix": {
-      "outputs": []
+      "outputs": [],
+      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "outputs": []
+      "outputs": [],
+      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
     }
   }
 }
