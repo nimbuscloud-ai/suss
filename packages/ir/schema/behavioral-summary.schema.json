@@ -1,382 +1,960 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://suss.dev/schema/behavioral-summary/v0",
-  "title": "Behavioral Summary",
-  "description": "A structured, language-agnostic description of a code unit's behavior: under what conditions it produces what outputs. Output of `suss extract`.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://suss.dev/schemas/behavioral-summary.schema.json",
+  "title": "BehavioralSummaryArray",
+  "description": "Array of behavioral summaries — see https://github.com/nimbuscloud-ai/suss/blob/main/docs/behavioral-summary-format.md",
   "type": "array",
-  "items": { "$ref": "#/definitions/BehavioralSummary" },
-
-  "definitions": {
-    "BehavioralSummary": {
-      "type": "object",
-      "description": "Complete behavioral description of a single code unit (handler, client, loader, etc.).",
-      "required": [
-        "kind",
-        "location",
-        "identity",
-        "inputs",
-        "transitions",
-        "gaps",
-        "confidence"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "kind": { "$ref": "#/definitions/CodeUnitKind" },
-        "location": { "$ref": "#/definitions/SourceLocation" },
-        "identity": { "$ref": "#/definitions/CodeUnitIdentity" },
-        "inputs": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/Input" }
-        },
-        "transitions": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/Transition" },
-          "description": "Every observable execution path through the code unit."
-        },
-        "gaps": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/Gap" },
-          "description": "Cases the code unit doesn't handle — declared-but-not-produced, fall-through, etc."
-        },
-        "confidence": { "$ref": "#/definitions/ConfidenceInfo" },
-        "metadata": {
-          "type": "object",
-          "description": "Framework-specific data (declared contracts, annotations). Ignored by tools that don't need it."
-        }
-      }
-    },
-
-    "CodeUnitKind": {
-      "type": "string",
-      "enum": [
-        "handler",
-        "loader",
-        "action",
-        "component",
-        "hook",
-        "middleware",
-        "resolver",
-        "consumer",
-        "client",
-        "worker"
-      ],
-      "description": "What kind of code unit this is. Determines the behavioral model — how inputs arrive and what counts as output."
-    },
-
-    "SourceLocation": {
-      "type": "object",
-      "required": ["file", "range", "exportName"],
-      "additionalProperties": false,
-      "properties": {
-        "file": {
-          "type": "string",
-          "description": "File path (relative or absolute, depending on extraction context)."
-        },
-        "range": {
-          "type": "object",
-          "required": ["start", "end"],
-          "additionalProperties": false,
-          "properties": {
-            "start": {
-              "type": "integer",
-              "description": "Start line number (1-based)."
+  "items": {
+    "type": "object",
+    "properties": {
+      "kind": {
+        "type": "string",
+        "enum": [
+          "handler",
+          "loader",
+          "action",
+          "component",
+          "hook",
+          "middleware",
+          "resolver",
+          "consumer",
+          "client",
+          "worker"
+        ]
+      },
+      "location": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "range": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "number"
+              },
+              "end": {
+                "type": "number"
+              }
             },
-            "end": {
-              "type": "integer",
-              "description": "End line number (1-based)."
+            "required": ["start", "end"],
+            "additionalProperties": false
+          },
+          "exportName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["file", "range", "exportName"],
+        "additionalProperties": false
+      },
+      "identity": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "exportPath": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "boundaryBinding": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "protocol": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "framework": {
+                    "type": "string"
+                  },
+                  "declaredResponses": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "required": ["protocol", "framework"],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["name", "exportPath", "boundaryBinding"],
+        "additionalProperties": false
+      },
+      "inputs": {
+        "type": "array",
+        "items": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "parameter"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "position": {
+                  "type": "number"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "shape": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["type", "name", "position", "role", "shape"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "injection"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "mechanism": {
+                  "type": "string"
+                },
+                "shape": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["type", "name", "mechanism", "shape"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "hookReturn"
+                },
+                "hook": {
+                  "type": "string"
+                },
+                "destructuredFields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["type", "hook", "destructuredFields"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "contextValue"
+                },
+                "context": {
+                  "type": "string"
+                },
+                "accessedFields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["type", "context", "accessedFields"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "closure"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "name"],
+              "additionalProperties": false
             }
-          }
-        },
-        "exportName": { "type": ["string", "null"] }
-      }
-    },
-
-    "BoundaryBinding": {
-      "type": "object",
-      "required": ["protocol", "framework"],
-      "additionalProperties": false,
-      "description": "How this code unit binds to an API boundary (HTTP endpoint, message queue, etc.).",
-      "properties": {
-        "protocol": {
-          "type": "string",
-          "description": "e.g. \"http\", \"grpc\", \"websocket\"."
-        },
-        "method": {
-          "type": "string",
-          "description": "HTTP method (GET, POST, etc.)."
-        },
-        "path": {
-          "type": "string",
-          "description": "URL path pattern, e.g. \"/users/:id\"."
-        },
-        "framework": {
-          "type": "string",
-          "description": "Framework or runtime that provides the binding."
-        },
-        "declaredResponses": {
-          "type": "array",
-          "items": { "type": "integer" },
-          "description": "Status codes declared in the contract."
-        }
-      }
-    },
-
-    "CodeUnitIdentity": {
-      "type": "object",
-      "required": ["name", "exportPath", "boundaryBinding"],
-      "additionalProperties": false,
-      "properties": {
-        "name": { "type": "string" },
-        "exportPath": {
-          "oneOf": [
-            { "type": "array", "items": { "type": "string" } },
-            { "type": "null" }
-          ]
-        },
-        "boundaryBinding": {
-          "oneOf": [
-            { "$ref": "#/definitions/BoundaryBinding" },
-            { "type": "null" }
           ]
         }
-      }
-    },
-
-    "Derivation": {
-      "oneOf": [
-        {
+      },
+      "transitions": {
+        "type": "array",
+        "items": {
           "type": "object",
-          "required": ["type", "property"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "propertyAccess" },
-            "property": { "type": "string" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "method", "args"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "methodCall" },
-            "method": { "type": "string" },
-            "args": { "type": "array", "items": { "type": "string" } }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "field"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "destructured" },
-            "field": { "type": "string" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "awaited" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "index"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "indexAccess" },
-            "index": { "oneOf": [{ "type": "string" }, { "type": "number" }] }
-          }
-        }
-      ]
-    },
-
-    "ValueRef": {
-      "description": "A reference to a value in the program. The building block of conditions and outputs.",
-      "oneOf": [
-        {
-          "type": "object",
-          "required": ["type", "inputRef", "path"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "input" },
-            "inputRef": {
-              "type": "string",
-              "description": "Parameter or input name."
+            "id": {
+              "type": "string"
             },
-            "path": {
+            "conditions": {
               "type": "array",
-              "items": { "type": "string" },
-              "description": "Property path from the input root."
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "name", "accessChain"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "dependency" },
-            "name": {
-              "type": "string",
-              "description": "Callee expression text."
+              "items": {
+                "$ref": "#/$defs/__schema1"
+              }
             },
-            "accessChain": { "type": "array", "items": { "type": "string" } }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "from", "derivation"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "derived" },
-            "from": { "$ref": "#/definitions/ValueRef" },
-            "derivation": { "$ref": "#/definitions/Derivation" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "value"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "literal" },
-            "value": {
+            "output": {
               "oneOf": [
-                { "type": "string" },
-                { "type": "number" },
-                { "type": "boolean" },
-                { "type": "null" }
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "response"
+                    },
+                    "statusCode": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/__schema2"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "body": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "headers": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema2"
+                      }
+                    }
+                  },
+                  "required": ["type", "statusCode", "body", "headers"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "throw"
+                    },
+                    "exceptionType": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["type", "exceptionType", "message"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "render"
+                    },
+                    "component": {
+                      "type": "string"
+                    },
+                    "props": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": ["type", "component"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "return"
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["type", "value"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "delegate"
+                    },
+                    "to": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "to"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "emit"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "payload": {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  },
+                  "required": ["type", "event"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "void"
+                    }
+                  },
+                  "required": ["type"],
+                  "additionalProperties": false
+                }
               ]
+            },
+            "effects": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "mutation"
+                      },
+                      "target": {
+                        "type": "string"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "enum": ["create", "update", "delete"]
+                      }
+                    },
+                    "required": ["type", "target", "operation"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "invocation"
+                      },
+                      "callee": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {}
+                      },
+                      "async": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["type", "callee", "args", "async"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "emission"
+                      },
+                      "event": {
+                        "type": "string"
+                      },
+                      "payload": {}
+                    },
+                    "required": ["type", "event"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "stateChange"
+                      },
+                      "variable": {
+                        "type": "string"
+                      },
+                      "newValue": {}
+                    },
+                    "required": ["type", "variable"],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "number"
+                },
+                "end": {
+                  "type": "number"
+                }
+              },
+              "required": ["start", "end"],
+              "additionalProperties": false
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "confidence": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": ["inferred_static", "inferred_ai", "declared", "stub"]
+                },
+                "level": {
+                  "type": "string",
+                  "enum": ["high", "medium", "low"]
+                }
+              },
+              "required": ["source", "level"],
+              "additionalProperties": false
+            },
+            "expectedInput": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "metadata": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
             }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "name"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "state" },
-            "name": { "type": "string" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "sourceText"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "unresolved" },
-            "sourceText": {
-              "type": "string",
-              "description": "Original source text when resolution failed."
-            }
-          }
+          },
+          "required": [
+            "id",
+            "conditions",
+            "output",
+            "effects",
+            "location",
+            "isDefault"
+          ],
+          "additionalProperties": false
         }
-      ]
+      },
+      "gaps": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "unhandledCase"
+            },
+            "conditions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema1"
+              }
+            },
+            "consequence": {
+              "type": "string",
+              "enum": [
+                "frameworkDefault",
+                "implicitThrow",
+                "fallthrough",
+                "unknown"
+              ]
+            },
+            "description": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "conditions", "consequence", "description"],
+          "additionalProperties": false
+        }
+      },
+      "confidence": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": ["inferred_static", "inferred_ai", "declared", "stub"]
+          },
+          "level": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          }
+        },
+        "required": ["source", "level"],
+        "additionalProperties": false
+      },
+      "metadata": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
     },
-
-    "Predicate": {
-      "description": "A condition that guards a transition. Structured when the extractor can decompose it, opaque when it can't.",
+    "required": [
+      "kind",
+      "location",
+      "identity",
+      "inputs",
+      "transitions",
+      "gaps",
+      "confidence"
+    ],
+    "additionalProperties": false
+  },
+  "$defs": {
+    "__schema0": {
       "oneOf": [
         {
           "type": "object",
-          "required": ["type", "subject", "negated"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "nullCheck" },
-            "subject": { "$ref": "#/definitions/ValueRef" },
-            "negated": { "type": "boolean" }
-          }
+            "type": {
+              "type": "string",
+              "const": "record"
+            },
+            "properties": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "spreads": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sourceText": {
+                    "type": "string"
+                  }
+                },
+                "required": ["sourceText"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["type", "properties"],
+          "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["type", "subject", "negated"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "truthinessCheck" },
-            "subject": { "$ref": "#/definitions/ValueRef" },
-            "negated": { "type": "boolean" }
-          }
+            "type": {
+              "type": "string",
+              "const": "dictionary"
+            },
+            "values": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "required": ["type", "values"],
+          "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["type", "left", "op", "right"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "comparison" },
-            "left": { "$ref": "#/definitions/ValueRef" },
+            "type": {
+              "type": "string",
+              "const": "array"
+            },
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "required": ["type", "items"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "literal"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "raw": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "integer"
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "number"
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "boolean"
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "null"
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "undefined"
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "union"
+            },
+            "variants": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          },
+          "required": ["type", "variants"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ref"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "name"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "nullCheck"
+            },
+            "subject": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "negated": {
+              "type": "boolean"
+            }
+          },
+          "required": ["type", "subject", "negated"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "truthinessCheck"
+            },
+            "subject": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "negated": {
+              "type": "boolean"
+            }
+          },
+          "required": ["type", "subject", "negated"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "comparison"
+            },
+            "left": {
+              "$ref": "#/$defs/__schema2"
+            },
             "op": {
               "type": "string",
               "enum": ["eq", "neq", "gt", "gte", "lt", "lte"]
             },
-            "right": { "$ref": "#/definitions/ValueRef" }
-          }
+            "right": {
+              "$ref": "#/$defs/__schema2"
+            }
+          },
+          "required": ["type", "left", "op", "right"],
+          "additionalProperties": false
         },
         {
           "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "typeCheck"
+            },
+            "subject": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "expectedType": {
+              "type": "string"
+            }
+          },
           "required": ["type", "subject", "expectedType"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "typeCheck" },
-            "subject": { "$ref": "#/definitions/ValueRef" },
-            "expectedType": { "type": "string" }
-          }
+          "additionalProperties": false
         },
         {
           "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "propertyExists"
+            },
+            "subject": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "property": {
+              "type": "string"
+            },
+            "negated": {
+              "type": "boolean"
+            }
+          },
           "required": ["type", "subject", "property", "negated"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "propertyExists" },
-            "subject": { "$ref": "#/definitions/ValueRef" },
-            "property": { "type": "string" },
-            "negated": { "type": "boolean" }
-          }
+          "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["type", "op", "operands"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "compound" },
-            "op": { "type": "string", "enum": ["and", "or"] },
+            "type": {
+              "type": "string",
+              "const": "compound"
+            },
+            "op": {
+              "type": "string",
+              "enum": ["and", "or"]
+            },
             "operands": {
               "type": "array",
-              "items": { "$ref": "#/definitions/Predicate" }
+              "items": {
+                "$ref": "#/$defs/__schema1"
+              }
             }
-          }
+          },
+          "required": ["type", "op", "operands"],
+          "additionalProperties": false
         },
         {
           "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "negation"
+            },
+            "operand": {
+              "$ref": "#/$defs/__schema1"
+            }
+          },
           "required": ["type", "operand"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "negation" },
-            "operand": { "$ref": "#/definitions/Predicate" }
-          }
+          "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["type", "callee", "args"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "call" },
-            "callee": { "type": "string" },
+            "type": {
+              "type": "string",
+              "const": "call"
+            },
+            "callee": {
+              "type": "string"
+            },
             "args": {
               "type": "array",
-              "items": { "$ref": "#/definitions/ValueRef" }
+              "items": {
+                "$ref": "#/$defs/__schema2"
+              }
             }
-          }
+          },
+          "required": ["type", "callee", "args"],
+          "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["type", "sourceText", "reason"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "opaque" },
-            "sourceText": {
+            "type": {
               "type": "string",
-              "description": "Original source text preserved when decomposition failed."
+              "const": "opaque"
+            },
+            "sourceText": {
+              "type": "string"
             },
             "reason": {
               "type": "string",
@@ -387,440 +965,208 @@
                 "unsupportedSyntax"
               ]
             }
-          }
+          },
+          "required": ["type", "sourceText", "reason"],
+          "additionalProperties": false
         }
       ]
     },
-
-    "TypeShape": {
-      "description": "The shape of a value — what fields it has, what type it is. Used for response bodies, expected inputs, and contract schemas.",
+    "__schema2": {
       "oneOf": [
         {
           "type": "object",
-          "required": ["type", "properties"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "record" },
-            "properties": {
-              "type": "object",
-              "additionalProperties": { "$ref": "#/definitions/TypeShape" },
-              "description": "Known fields and their shapes."
+            "type": {
+              "type": "string",
+              "const": "input"
             },
-            "spreads": {
+            "inputRef": {
+              "type": "string"
+            },
+            "path": {
               "type": "array",
               "items": {
-                "type": "object",
-                "required": ["sourceText"],
-                "additionalProperties": false,
-                "properties": { "sourceText": { "type": "string" } }
-              },
-              "description": "Spread expressions that contribute additional unknown fields."
+                "type": "string"
+              }
             }
-          }
+          },
+          "required": ["type", "inputRef", "path"],
+          "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["type", "values"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "dictionary" },
-            "values": { "$ref": "#/definitions/TypeShape" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "items"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "array" },
-            "items": { "$ref": "#/definitions/TypeShape" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "value"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "literal" },
-            "value": {
-              "oneOf": [
-                { "type": "string" },
-                { "type": "number" },
-                { "type": "boolean" }
-              ]
-            },
-            "raw": {
+            "type": {
               "type": "string",
-              "description": "Exact source text for numeric literals (precision preservation)."
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": { "type": { "const": "text" } }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": { "type": { "const": "integer" } }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": { "type": { "const": "number" } }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": { "type": { "const": "boolean" } }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": { "type": { "const": "null" } }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": { "type": { "const": "undefined" } }
-        },
-        {
-          "type": "object",
-          "required": ["type", "variants"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "union" },
-            "variants": {
-              "type": "array",
-              "items": { "$ref": "#/definitions/TypeShape" }
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "name"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "ref" },
+              "const": "dependency"
+            },
             "name": {
-              "type": "string",
-              "description": "Type name reference (e.g. \"User\", \"string\")."
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": { "type": { "const": "unknown" } }
-        }
-      ]
-    },
-
-    "Output": {
-      "description": "What the code unit produces at the end of a transition.",
-      "oneOf": [
-        {
-          "type": "object",
-          "required": ["type", "statusCode", "body", "headers"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "response" },
-            "statusCode": {
-              "oneOf": [
-                { "$ref": "#/definitions/ValueRef" },
-                { "type": "null" }
-              ]
+              "type": "string"
             },
-            "body": {
-              "oneOf": [
-                { "$ref": "#/definitions/TypeShape" },
-                { "type": "null" }
-              ]
-            },
-            "headers": {
-              "type": "object",
-              "additionalProperties": { "$ref": "#/definitions/ValueRef" }
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "exceptionType", "message"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "throw" },
-            "exceptionType": { "type": ["string", "null"] },
-            "message": { "type": ["string", "null"] }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "component"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "render" },
-            "component": { "type": "string" },
-            "props": { "type": "object" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "return" },
-            "value": {
-              "oneOf": [
-                { "$ref": "#/definitions/TypeShape" },
-                { "type": "null" }
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "to"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "delegate" },
-            "to": { "type": "string" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "event"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "emit" },
-            "event": { "type": "string" },
-            "payload": { "$ref": "#/definitions/TypeShape" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "void" }
-          }
-        }
-      ]
-    },
-
-    "Effect": {
-      "description": "A side effect observed during a transition (database write, API call, event emission).",
-      "oneOf": [
-        {
-          "type": "object",
-          "required": ["type", "target", "operation"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "mutation" },
-            "target": { "type": "string" },
-            "operation": {
-              "type": "string",
-              "enum": ["create", "update", "delete"]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "callee", "args", "async"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "invocation" },
-            "callee": { "type": "string" },
-            "args": { "type": "array" },
-            "async": { "type": "boolean" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "event"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "emission" },
-            "event": { "type": "string" },
-            "payload": {}
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "variable"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "stateChange" },
-            "variable": { "type": "string" },
-            "newValue": {}
-          }
-        }
-      ]
-    },
-
-    "Input": {
-      "description": "How data enters the code unit.",
-      "oneOf": [
-        {
-          "type": "object",
-          "required": ["type", "name", "position", "role", "shape"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "parameter" },
-            "name": { "type": "string" },
-            "position": { "type": "integer" },
-            "role": {
-              "type": "string",
-              "description": "Semantic role: \"request\", \"response\", \"pathParams\", \"requestBody\", etc."
-            },
-            "shape": {
-              "oneOf": [
-                { "$ref": "#/definitions/TypeShape" },
-                { "type": "null" }
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "name", "mechanism", "shape"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "injection" },
-            "name": { "type": "string" },
-            "mechanism": { "type": "string" },
-            "shape": {
-              "oneOf": [
-                { "$ref": "#/definitions/TypeShape" },
-                { "type": "null" }
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["type", "hook", "destructuredFields"],
-          "additionalProperties": false,
-          "properties": {
-            "type": { "const": "hookReturn" },
-            "hook": { "type": "string" },
-            "destructuredFields": {
+            "accessChain": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "type": "string"
+              }
             }
-          }
+          },
+          "required": ["type", "name", "accessChain"],
+          "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["type", "context", "accessedFields"],
-          "additionalProperties": false,
           "properties": {
-            "type": { "const": "contextValue" },
-            "context": { "type": "string" },
-            "accessedFields": { "type": "array", "items": { "type": "string" } }
-          }
+            "type": {
+              "type": "string",
+              "const": "derived"
+            },
+            "from": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "derivation": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "propertyAccess"
+                    },
+                    "property": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "property"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "methodCall"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "args": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["type", "method", "args"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "destructured"
+                    },
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "field"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "awaited"
+                    }
+                  },
+                  "required": ["type"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "indexAccess"
+                    },
+                    "index": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["type", "index"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": ["type", "from", "derivation"],
+          "additionalProperties": false
         },
         {
           "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "literal"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["type", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "state"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
           "required": ["type", "name"],
-          "additionalProperties": false,
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
           "properties": {
-            "type": { "const": "closure" },
-            "name": { "type": "string" }
-          }
+            "type": {
+              "type": "string",
+              "const": "unresolved"
+            },
+            "sourceText": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "sourceText"],
+          "additionalProperties": false
         }
       ]
-    },
-
-    "Transition": {
-      "type": "object",
-      "description": "A single execution path: conditions that must hold, the output produced, and side effects observed.",
-      "required": [
-        "id",
-        "conditions",
-        "output",
-        "effects",
-        "location",
-        "isDefault"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Content-addressable ID stable across branch reordering."
-        },
-        "conditions": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/Predicate" },
-          "description": "Guard conditions — all must hold for this transition to fire."
-        },
-        "output": { "$ref": "#/definitions/Output" },
-        "effects": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/Effect" }
-        },
-        "location": {
-          "type": "object",
-          "required": ["start", "end"],
-          "additionalProperties": false,
-          "properties": {
-            "start": { "type": "integer" },
-            "end": { "type": "integer" }
-          }
-        },
-        "isDefault": {
-          "type": "boolean",
-          "description": "True if this transition fires when no other conditions match."
-        },
-        "confidence": { "$ref": "#/definitions/ConfidenceInfo" },
-        "expectedInput": {
-          "$ref": "#/definitions/TypeShape",
-          "description": "For client code units: the fields the consumer reads from the response body in this branch."
-        }
-      }
-    },
-
-    "Gap": {
-      "type": "object",
-      "required": ["type", "conditions", "consequence", "description"],
-      "additionalProperties": false,
-      "properties": {
-        "type": { "const": "unhandledCase" },
-        "conditions": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/Predicate" }
-        },
-        "consequence": {
-          "type": "string",
-          "enum": [
-            "frameworkDefault",
-            "implicitThrow",
-            "fallthrough",
-            "unknown"
-          ]
-        },
-        "description": { "type": "string" }
-      }
-    },
-
-    "ConfidenceInfo": {
-      "type": "object",
-      "required": ["source", "level"],
-      "additionalProperties": false,
-      "properties": {
-        "source": {
-          "type": "string",
-          "enum": ["inferred_static", "inferred_ai", "declared", "stub"]
-        },
-        "level": { "type": "string", "enum": ["high", "medium", "low"] }
-      }
     }
   }
 }
