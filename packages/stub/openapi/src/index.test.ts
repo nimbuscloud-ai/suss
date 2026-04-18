@@ -346,20 +346,60 @@ describe("openApiToSummaries — basic mapping", () => {
     expect(def!.output.statusCode).toBeNull();
   });
 
-  it("skips range status codes like 2XX (v0 limitation)", () => {
+  it("expands range status codes (2XX, 4XX, 5XX) into transitions with a statusRange annotation", () => {
     const spec: OpenApiSpec = {
       openapi: "3.0.3",
       paths: {
         "/x": {
           get: {
             operationId: "x",
-            responses: { "2XX": { description: "any 2xx" } },
+            responses: {
+              "2XX": { description: "any 2xx" },
+              "4XX": { description: "any 4xx" },
+            },
           },
         },
       },
     };
     const summaries = openApiToSummaries(spec);
-    expect(summaries[0].transitions).toHaveLength(0);
+    const transitions = summaries[0].transitions;
+    expect(transitions).toHaveLength(2);
+
+    for (const t of transitions) {
+      if (t.output.type !== "response") {
+        throw new Error("expected response output");
+      }
+      expect(t.output.statusCode).toBeNull();
+      expect(t.isDefault).toBe(false);
+    }
+
+    const ranges = transitions.map((t) => {
+      const http = t.metadata?.http as Record<string, unknown> | undefined;
+      return http?.statusRange as
+        | { min: number; max: number; spec: string }
+        | undefined;
+    });
+    expect(ranges).toEqual([
+      { min: 200, max: 299, spec: "2XX" },
+      { min: 400, max: 499, spec: "4XX" },
+    ]);
+  });
+
+  it("accepts lowercase range codes like 5xx", () => {
+    const spec: OpenApiSpec = {
+      openapi: "3.0.3",
+      paths: {
+        "/x": {
+          get: {
+            operationId: "x",
+            responses: { "5xx": { description: "any 5xx" } },
+          },
+        },
+      },
+    };
+    const t = openApiToSummaries(spec)[0].transitions[0];
+    const http = t.metadata?.http as Record<string, unknown> | undefined;
+    expect(http?.statusRange).toEqual({ min: 500, max: 599, spec: "5xx" });
   });
 
   it("walks every HTTP method on a path item", () => {
@@ -813,6 +853,180 @@ describe("openApiToSummaries — schema feature coverage", () => {
       type: "array",
       items: { type: "text" },
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OpenAPI 3.1 features
+// ---------------------------------------------------------------------------
+
+describe("openApiToSummaries — OpenAPI 3.1 features", () => {
+  function responseBody(schema: unknown): OpenApiSpec {
+    return {
+      openapi: "3.1.0",
+      paths: {
+        "/x": {
+          get: {
+            operationId: "x",
+            responses: {
+              "200": {
+                description: "ok",
+                content: {
+                  "application/json": {
+                    // deliberately loosely-typed so we can pass 3.1 shapes
+                    // (type arrays, const) that the 3.0-biased test types
+                    // wouldn't otherwise accept.
+                    schema: schema as never,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+  }
+
+  function bodyOf(spec: OpenApiSpec) {
+    const t = openApiToSummaries(spec)[0].transitions[0];
+    if (t.output.type !== "response") {
+      throw new Error("expected response output");
+    }
+    return t.output.body;
+  }
+
+  it("3.1: type array including 'null' maps to a union with null", () => {
+    expect(bodyOf(responseBody({ type: ["string", "null"] }))).toEqual({
+      type: "union",
+      variants: [{ type: "text" }, { type: "null" }],
+    });
+  });
+
+  it("3.1: type array with a single 'null' maps to null", () => {
+    expect(bodyOf(responseBody({ type: ["null"] }))).toEqual({ type: "null" });
+  });
+
+  it("3.1: const narrows to a single literal", () => {
+    expect(bodyOf(responseBody({ const: "alpha" }))).toEqual({
+      type: "literal",
+      value: "alpha",
+    });
+  });
+
+  it("3.1: discriminator narrows each oneOf variant's propertyName to the mapping literal", () => {
+    const spec: OpenApiSpec = {
+      openapi: "3.1.0",
+      components: {
+        schemas: {
+          Cat: {
+            type: "object",
+            required: ["kind", "meow"],
+            properties: {
+              kind: { type: "string" },
+              meow: { type: "boolean" },
+            },
+          },
+          Dog: {
+            type: "object",
+            required: ["kind", "bark"],
+            properties: {
+              kind: { type: "string" },
+              bark: { type: "string" },
+            },
+          },
+        },
+      },
+      paths: {
+        "/pet": {
+          get: {
+            operationId: "getPet",
+            responses: {
+              "200": {
+                description: "a pet",
+                content: {
+                  "application/json": {
+                    schema: {
+                      oneOf: [
+                        { $ref: "#/components/schemas/Cat" },
+                        { $ref: "#/components/schemas/Dog" },
+                      ],
+                      discriminator: {
+                        propertyName: "kind",
+                        mapping: {
+                          cat: "#/components/schemas/Cat",
+                          dog: "#/components/schemas/Dog",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const body = bodyOf(spec);
+    if (body?.type !== "union") {
+      throw new Error("expected union body");
+    }
+    expect(body.variants).toHaveLength(2);
+
+    // Each variant should be a record whose `kind` is narrowed to the
+    // discriminator literal.
+    const [cat, dog] = body.variants;
+    if (cat.type !== "record" || dog.type !== "record") {
+      throw new Error("expected record variants");
+    }
+    expect(cat.properties.kind).toEqual({ type: "literal", value: "cat" });
+    expect(cat.properties.meow).toEqual({ type: "boolean" });
+    expect(dog.properties.kind).toEqual({ type: "literal", value: "dog" });
+    expect(dog.properties.bark).toEqual({ type: "text" });
+  });
+
+  it("3.1: discriminator without a mapping entry leaves the variant untouched", () => {
+    const spec: OpenApiSpec = {
+      openapi: "3.1.0",
+      components: {
+        schemas: {
+          Cat: {
+            type: "object",
+            properties: { kind: { type: "string" } },
+          },
+        },
+      },
+      paths: {
+        "/pet": {
+          get: {
+            operationId: "getPet",
+            responses: {
+              "200": {
+                description: "ok",
+                content: {
+                  "application/json": {
+                    schema: {
+                      oneOf: [{ $ref: "#/components/schemas/Cat" }],
+                      discriminator: { propertyName: "kind" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const body = bodyOf(spec);
+    if (body?.type !== "union") {
+      throw new Error("expected union body");
+    }
+    // Without mapping we don't narrow; the `kind` property stays as
+    // whatever the variant's own schema said it was.
+    if (body.variants[0].type !== "record") {
+      throw new Error("expected record variant");
+    }
+    expect(body.variants[0].properties.kind).toBeDefined();
   });
 });
 

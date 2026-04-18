@@ -83,13 +83,48 @@ export interface OpenApiMediaType {
  * OpenAPI Schema Object (subset).
  *
  * Carries either an inline shape or a `$ref` to a component. Inline shapes
- * mirror JSON Schema with the OpenAPI extensions we care about (`nullable`,
- * `oneOf`, `anyOf`, `enum`).
+ * mirror JSON Schema with the OpenAPI extensions we care about.
+ *
+ * Supports both OpenAPI 3.0 and 3.1:
+ *  - 3.0 uses `nullable: true` to mark a schema as nullable.
+ *  - 3.1 aligns with JSON Schema 2020-12 and uses `type: ["string", "null"]`
+ *    instead. 3.1 also adds `const` (a single-value shorthand for enum)
+ *    and makes `discriminator` a top-level schema concept.
+ *
+ * We accept both forms. `schemaToShape` normalizes them into the same
+ * TypeShape output.
  */
+export type SchemaTypeName =
+  | "object"
+  | "array"
+  | "string"
+  | "integer"
+  | "number"
+  | "boolean"
+  | "null";
+
+export interface OpenApiDiscriminator {
+  propertyName: string;
+  /**
+   * Mapping from discriminator value to `$ref` string. When present, the
+   * variant with a matching `$ref` in `oneOf`/`anyOf` has its
+   * `propertyName` narrowed to the exact literal value.
+   */
+  mapping?: Record<string, string>;
+}
+
 export interface OpenApiSchema {
   $ref?: string;
-  type?: "object" | "array" | "string" | "integer" | "number" | "boolean";
+  /**
+   * OpenAPI 3.0: a single type name.
+   * OpenAPI 3.1 / JSON Schema 2020-12: either a single name or an array
+   *   of names. When the array includes `"null"`, the schema is nullable.
+   */
+  type?: SchemaTypeName | SchemaTypeName[];
+  /** 3.0 only — 3.1 encodes nullability via `type: [..., "null"]`. */
   nullable?: boolean;
+  /** 3.1 / JSON Schema 2020-12 — a single-valued enum shorthand. */
+  const?: string | number | boolean | null;
   enum?: Array<string | number | boolean | null>;
   properties?: Record<string, OpenApiSchema>;
   required?: string[];
@@ -98,6 +133,7 @@ export interface OpenApiSchema {
   oneOf?: OpenApiSchema[];
   anyOf?: OpenApiSchema[];
   allOf?: OpenApiSchema[];
+  discriminator?: OpenApiDiscriminator;
   format?: string;
   description?: string;
   example?: unknown;

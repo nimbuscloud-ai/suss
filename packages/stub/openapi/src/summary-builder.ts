@@ -188,18 +188,16 @@ function buildTransitions(
     if (response === undefined) {
       continue;
     }
+
+    const body = bodyShape(response, ctx);
+
     if (code === "default") {
       // Default response — emit as the default transition with no status
       // literal. The checker can match it against any unhandled status.
       transitions.push({
         id: stubTransitionId(op, "default"),
         conditions: [],
-        output: {
-          type: "response",
-          statusCode: null,
-          body: bodyShape(response, ctx),
-          headers: {},
-        },
+        output: { type: "response", statusCode: null, body, headers: {} },
         effects: [],
         location: { start: 0, end: 0 },
         isDefault: true,
@@ -207,23 +205,47 @@ function buildTransitions(
       continue;
     }
 
-    const statusValue = parseStatusCode(code);
-    if (statusValue === null) {
+    const parsed = parseStatusCode(code);
+    if (parsed === null) {
       continue;
     }
 
+    if (parsed.kind === "literal") {
+      transitions.push({
+        id: stubTransitionId(op, code),
+        conditions: [],
+        output: {
+          type: "response",
+          statusCode: { type: "literal", value: parsed.value },
+          body,
+          headers: {},
+        },
+        effects: [],
+        location: { start: 0, end: 0 },
+        isDefault: false,
+      });
+      continue;
+    }
+
+    // Range code ("2XX", "4XX", …). The IR statusCode field is either a
+    // literal ValueRef or null; there's no first-class "range" variant.
+    // Emit a transition with statusCode: null and attach the range as
+    // per-transition metadata under http.statusRange so consumers that
+    // care (inspect, a future range-aware checker pass) can reason
+    // about it. The transition stays isDefault: false — it's a specific
+    // bucket, not the catch-all "default" response.
     transitions.push({
       id: stubTransitionId(op, code),
       conditions: [],
-      output: {
-        type: "response",
-        statusCode: { type: "literal", value: statusValue },
-        body: bodyShape(response, ctx),
-        headers: {},
-      },
+      output: { type: "response", statusCode: null, body, headers: {} },
       effects: [],
       location: { start: 0, end: 0 },
       isDefault: false,
+      metadata: {
+        http: {
+          statusRange: { min: parsed.min, max: parsed.max, spec: code },
+        },
+      },
     });
   }
 
@@ -244,12 +266,20 @@ function bodyShape(
   return schemaToShape(firstContent.schema, ctx);
 }
 
-function parseStatusCode(code: string): number | null {
-  // Accept numeric codes ("200") and keep range codes ("2XX") as null;
-  // range codes can't be checked against a specific provider response and
-  // the consumer side won't see them either. Documented as a v0 limitation.
+type ParsedStatus =
+  | { kind: "literal"; value: number }
+  | { kind: "range"; min: number; max: number };
+
+function parseStatusCode(code: string): ParsedStatus | null {
+  // Exact numeric code: "200", "404", "418".
   if (/^\d{3}$/.test(code)) {
-    return Number.parseInt(code, 10);
+    return { kind: "literal", value: Number.parseInt(code, 10) };
+  }
+  // Range code: "1XX" through "5XX", case-insensitive.
+  const range = /^([1-5])[xX][xX]$/.exec(code);
+  if (range !== null) {
+    const hundreds = Number.parseInt(range[1], 10);
+    return { kind: "range", min: hundreds * 100, max: hundreds * 100 + 99 };
   }
   return null;
 }
