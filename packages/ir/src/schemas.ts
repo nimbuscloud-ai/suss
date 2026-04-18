@@ -301,6 +301,31 @@ export const TypeShapeSchema: z.ZodType<TypeShapeT> = z.lazy(() =>
 );
 
 // ---------------------------------------------------------------------------
+// Render tree — component-style output (React JSX, Vue templates, etc.)
+// ---------------------------------------------------------------------------
+
+type RenderNodeT =
+  | {
+      type: "element";
+      tag: string;
+      children: RenderNodeT[];
+    }
+  | { type: "text"; value: string }
+  | { type: "expression"; sourceText: string };
+
+export const RenderNodeSchema: z.ZodType<RenderNodeT> = z.lazy(() =>
+  z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("element"),
+      tag: z.string(),
+      children: z.array(RenderNodeSchema),
+    }),
+    z.object({ type: z.literal("text"), value: z.string() }),
+    z.object({ type: z.literal("expression"), sourceText: z.string() }),
+  ]),
+);
+
+// ---------------------------------------------------------------------------
 // Inputs, Outputs, Effects
 // ---------------------------------------------------------------------------
 
@@ -347,6 +372,16 @@ export const OutputSchema = z.discriminatedUnion("type", [
     type: z.literal("render"),
     component: z.string(),
     props: z.record(z.string(), z.unknown()).optional(),
+    /**
+     * Optional full rendered-tree shape. Packs that understand their
+     * source language's render form (JSX, Vue templates, Svelte
+     * markup) populate this so cross-boundary checking can compare
+     * structural output against stubbed contracts (snapshots,
+     * Storybook stories, Figma variants). Consumers that only care
+     * about the root element read `component`; those that want the
+     * full tree read `root`.
+     */
+    root: RenderNodeSchema.optional(),
   }),
   z.object({
     type: z.literal("return"),

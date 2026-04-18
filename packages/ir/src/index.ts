@@ -28,6 +28,7 @@ import {
   type OpaqueReasonSchema,
   type OutputSchema,
   type PredicateSchema,
+  type RenderNodeSchema,
   type SourceLocationSchema,
   type SummaryDiffSchema,
   type TransitionSchema,
@@ -61,6 +62,7 @@ export type TypeShape = z.infer<typeof TypeShapeSchema>;
 export type Input = z.infer<typeof InputSchema>;
 export type Output = z.infer<typeof OutputSchema>;
 export type Effect = z.infer<typeof EffectSchema>;
+export type RenderNode = z.infer<typeof RenderNodeSchema>;
 
 export type Transition = z.infer<typeof TransitionSchema>;
 export type Gap = z.infer<typeof GapSchema>;

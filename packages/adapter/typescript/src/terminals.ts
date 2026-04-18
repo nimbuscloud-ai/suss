@@ -10,6 +10,7 @@ import {
 
 import { extractShape } from "./shapes.js";
 
+import type { RenderNode } from "@suss/behavioral-ir";
 import type {
   RawTerminal,
   TerminalExtraction,
@@ -436,6 +437,7 @@ function tryMatchReturnShape(
     component: null,
     delegateTarget: null,
     emitEvent: null,
+    renderTree: null,
     location: {
       start: node.getStartLineNumber(),
       end: node.getEndLineNumber(),
@@ -484,6 +486,7 @@ function tryMatchParameterMethodCall(
     component: null,
     delegateTarget: null,
     emitEvent: null,
+    renderTree: null,
     location: {
       start: node.getStartLineNumber(),
       end: node.getEndLineNumber(),
@@ -510,6 +513,7 @@ function tryMatchReturnStatement(
     component: null,
     delegateTarget: null,
     emitEvent: null,
+    renderTree: null,
     location: {
       start: node.getStartLineNumber(),
       end: node.getEndLineNumber(),
@@ -523,11 +527,8 @@ function tryMatchReturnStatement(
  * Match a return statement whose expression is a JSX element, JSX
  * fragment, or JSX self-closing element. Used by React (and any JSX
  * framework) to classify component outputs as `render` terminals,
- * recording the root element/component name in `component`.
- *
- * Scope for Phase 1.1 (the initial React extractor): capture the root
- * element name only. Nested tree structure, prop bindings, and event
- * handler wiring are deferred — see `docs/roadmap-react.md`.
+ * recording the root element name in `component` AND the full
+ * recursive render tree in `renderTree`.
  */
 function tryMatchJsxReturn(
   node: Node,
@@ -540,10 +541,15 @@ function tryMatchJsxReturn(
   if (expr === undefined) {
     return null;
   }
-  const component = jsxRootName(expr);
-  if (component === null) {
+  const tree = jsxToRenderNode(expr);
+  if (tree === null) {
     return null;
   }
+
+  // `component` is the root name for Phase 1.1 consumers and any
+  // tooling that doesn't want to walk the full tree. Fragments report
+  // "Fragment" (matches Phase 1.1 behavior).
+  const component = tree.type === "element" ? tree.tag : "Fragment";
 
   const terminal: RawTerminal = {
     kind: pattern.kind,
@@ -554,6 +560,7 @@ function tryMatchJsxReturn(
     component,
     delegateTarget: null,
     emitEvent: null,
+    renderTree: tree,
     location: {
       start: node.getStartLineNumber(),
       end: node.getEndLineNumber(),
@@ -564,31 +571,82 @@ function tryMatchJsxReturn(
 }
 
 /**
- * If `expr` is a JSX element or fragment, return a short identifying
- * name for its root. For `<div>…</div>` that's `"div"`; for
- * `<UserCard />` that's `"UserCard"`; for `<>…</>` that's
- * `"Fragment"`. Returns null if the expression isn't JSX — callers use
- * that to reject the match.
+ * Convert a JSX expression to a RenderNode recursively. Returns null
+ * if the expression isn't JSX (callers use that to reject the match).
  *
- * We deliberately don't resolve variables or expressions here: a
- * component that does `const el = <div/>; return el;` would currently
- * fall through. That's a known extractor limitation shared with the
- * other opaque-predicate fallbacks and is tracked as part of the
- * reduce-opaqueness-recursively direction.
+ * Scope for the initial tree extraction:
+ *   - Element / self-closing element → `element` node with tag and
+ *     child list.
+ *   - Fragment → `element` node with tag `"Fragment"`.
+ *   - Parenthesized JSX → unwrap one layer.
+ *   - JSX text content → `text` node with the trimmed literal.
+ *   - JSX expression containers (`{...}`) → `expression` node
+ *     carrying the source text. Opaque fallback for dynamic children,
+ *     inline conditionals, `.map()` calls, hook references, etc.
+ *     Phase 1.4 will special-case some of these; until then,
+ *     preserving source text keeps information legible without
+ *     committing to a shape we don't yet need.
+ *
+ * Attributes are NOT captured in this slice — tag + children only.
+ * Adding them is a straightforward follow-up once the first
+ * downstream consumer (Phase 2 Storybook stub) surfaces what
+ * attribute info it actually compares against.
  */
-function jsxRootName(expr: Node): string | null {
-  if (Node.isJsxElement(expr)) {
-    return expr.getOpeningElement().getTagNameNode().getText();
+function jsxToRenderNode(node: Node): RenderNode | null {
+  if (Node.isJsxElement(node)) {
+    const tag = node.getOpeningElement().getTagNameNode().getText();
+    const children = node
+      .getJsxChildren()
+      .map(jsxChildToRenderNode)
+      .filter((n): n is RenderNode => n !== null);
+    return { type: "element", tag, children };
   }
-  if (Node.isJsxSelfClosingElement(expr)) {
-    return expr.getTagNameNode().getText();
+  if (Node.isJsxSelfClosingElement(node)) {
+    return {
+      type: "element",
+      tag: node.getTagNameNode().getText(),
+      children: [],
+    };
   }
-  if (Node.isJsxFragment(expr)) {
-    return "Fragment";
+  if (Node.isJsxFragment(node)) {
+    const children = node
+      .getJsxChildren()
+      .map(jsxChildToRenderNode)
+      .filter((n): n is RenderNode => n !== null);
+    return { type: "element", tag: "Fragment", children };
   }
-  // Parenthesized JSX: `return (<div/>)` — unwrap one level.
-  if (Node.isParenthesizedExpression(expr)) {
-    return jsxRootName(expr.getExpression());
+  if (Node.isParenthesizedExpression(node)) {
+    return jsxToRenderNode(node.getExpression());
+  }
+  return null;
+}
+
+/**
+ * Map a single JSX child to a RenderNode. Whitespace-only JSX text
+ * (which appears between siblings) returns null so it doesn't
+ * pollute the tree with empty nodes.
+ */
+function jsxChildToRenderNode(child: Node): RenderNode | null {
+  if (Node.isJsxText(child)) {
+    const text = child.getLiteralText().trim();
+    if (text.length === 0) {
+      return null;
+    }
+    return { type: "text", value: text };
+  }
+  if (Node.isJsxExpression(child)) {
+    const inner = child.getExpression();
+    if (inner === undefined) {
+      return null;
+    }
+    return { type: "expression", sourceText: inner.getText() };
+  }
+  if (
+    Node.isJsxElement(child) ||
+    Node.isJsxSelfClosingElement(child) ||
+    Node.isJsxFragment(child)
+  ) {
+    return jsxToRenderNode(child);
   }
   return null;
 }
@@ -656,6 +714,7 @@ function tryMatchThrowExpression(
     component: null,
     delegateTarget: null,
     emitEvent: null,
+    renderTree: null,
     location: {
       start: node.getStartLineNumber(),
       end: node.getEndLineNumber(),
@@ -701,6 +760,7 @@ function tryMatchFunctionCall(
     component: null,
     delegateTarget: null,
     emitEvent: null,
+    renderTree: null,
     location: {
       start: node.getStartLineNumber(),
       end: node.getEndLineNumber(),

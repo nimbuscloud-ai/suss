@@ -331,6 +331,9 @@
                         "type": "string"
                       },
                       "additionalProperties": {}
+                    },
+                    "root": {
+                      "$ref": "#/$defs/__schema3"
                     }
                   },
                   "required": ["type", "component"],
@@ -1158,6 +1161,58 @@
             "type": {
               "type": "string",
               "const": "unresolved"
+            },
+            "sourceText": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "sourceText"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema3": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "element"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema3"
+              }
+            }
+          },
+          "required": ["type", "tag", "children"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "text"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "expression"
             },
             "sourceText": {
               "type": "string"
