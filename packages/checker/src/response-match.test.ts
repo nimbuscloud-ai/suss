@@ -8,6 +8,8 @@ import {
 
 import type { Predicate, Transition } from "@suss/behavioral-ir";
 
+const DEFAULT_STATUS: ReadonlySet<string> = new Set(["status", "statusCode"]);
+
 function txn(conditions: Predicate[]): Transition {
   return {
     id: "t",
@@ -96,7 +98,9 @@ describe("consumerExpectedStatuses", () => {
       op: "eq",
       right: { type: "literal", value: 404 },
     };
-    expect(consumerExpectedStatuses(txn([pred]))).toEqual([404]);
+    expect(consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS)).toEqual([
+      404,
+    ]);
   });
 
   it("finds status literals on input path ending in status", () => {
@@ -110,7 +114,9 @@ describe("consumerExpectedStatuses", () => {
         path: ["status"],
       },
     };
-    expect(consumerExpectedStatuses(txn([pred]))).toEqual([500]);
+    expect(consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS)).toEqual([
+      500,
+    ]);
   });
 
   it("finds status literals on dependency accessChain ending in statusCode", () => {
@@ -124,7 +130,9 @@ describe("consumerExpectedStatuses", () => {
       op: "eq",
       right: { type: "literal", value: 418 },
     };
-    expect(consumerExpectedStatuses(txn([pred]))).toEqual([418]);
+    expect(consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS)).toEqual([
+      418,
+    ]);
   });
 
   it("finds status literals on destructured derivations (`const { status }`)", () => {
@@ -138,7 +146,9 @@ describe("consumerExpectedStatuses", () => {
       op: "eq",
       right: { type: "literal", value: 404 },
     };
-    expect(consumerExpectedStatuses(txn([pred]))).toEqual([404]);
+    expect(consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS)).toEqual([
+      404,
+    ]);
   });
 
   it("finds status literals on err.response.status (try/catch shape)", () => {
@@ -159,7 +169,9 @@ describe("consumerExpectedStatuses", () => {
       op: "eq",
       right: { type: "literal", value: 404 },
     };
-    expect(consumerExpectedStatuses(txn([pred]))).toEqual([404]);
+    expect(consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS)).toEqual([
+      404,
+    ]);
   });
 
   it("walks into compound and negation predicates", () => {
@@ -192,7 +204,7 @@ describe("consumerExpectedStatuses", () => {
         },
       ],
     };
-    const found = consumerExpectedStatuses(txn([pred])).sort();
+    const found = consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS).sort();
     expect(found).toEqual([500, 503]);
   });
 
@@ -207,7 +219,7 @@ describe("consumerExpectedStatuses", () => {
       op: "gt",
       right: { type: "literal", value: 400 },
     };
-    expect(consumerExpectedStatuses(txn([pred]))).toEqual([]);
+    expect(consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS)).toEqual([]);
   });
 
   it("ignores comparisons against non-status ValueRefs", () => {
@@ -221,6 +233,52 @@ describe("consumerExpectedStatuses", () => {
       op: "eq",
       right: { type: "literal", value: 42 },
     };
-    expect(consumerExpectedStatuses(txn([pred]))).toEqual([]);
+    expect(consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS)).toEqual([]);
+  });
+
+  it("recognises a pack-defined status name not in the defaults", () => {
+    // Hypothetical pack: response status comes through `.responseStatus`
+    const pred: Predicate = {
+      type: "comparison",
+      left: {
+        type: "derived",
+        from: { type: "dependency", name: "client.get", accessChain: [] },
+        derivation: { type: "propertyAccess", property: "responseStatus" },
+      },
+      op: "eq",
+      right: { type: "literal", value: 418 },
+    };
+    // With defaults, the property name is unknown → no match
+    expect(consumerExpectedStatuses(txn([pred]), DEFAULT_STATUS)).toEqual([]);
+    // With the pack's accessors, recognised
+    expect(
+      consumerExpectedStatuses(txn([pred]), new Set(["responseStatus"])),
+    ).toEqual([418]);
+  });
+
+  it("recognises status accessors via destructured + dependency derivations", () => {
+    const destructured: Predicate = {
+      type: "comparison",
+      left: {
+        type: "derived",
+        from: { type: "dependency", name: "client.get", accessChain: [] },
+        derivation: { type: "destructured", field: "code" },
+      },
+      op: "eq",
+      right: { type: "literal", value: 503 },
+    };
+    const dependencyChain: Predicate = {
+      type: "comparison",
+      left: { type: "dependency", name: "res", accessChain: ["code"] },
+      op: "eq",
+      right: { type: "literal", value: 503 },
+    };
+    const accessors = new Set(["code"]);
+    expect(consumerExpectedStatuses(txn([destructured]), accessors)).toEqual([
+      503,
+    ]);
+    expect(consumerExpectedStatuses(txn([dependencyChain]), accessors)).toEqual(
+      [503],
+    );
   });
 });

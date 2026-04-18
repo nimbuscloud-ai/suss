@@ -1,3 +1,4 @@
+import { statusAccessorsFor } from "./declared-contract.js";
 import {
   consumerExpectedStatuses,
   makeBoundary,
@@ -27,8 +28,10 @@ export function checkConsumerSatisfaction(
     }
   }
 
+  const statusAccessors = statusAccessorsFor(consumer);
+
   for (const ct of consumer.transitions) {
-    const expected = consumerExpectedStatuses(ct);
+    const expected = consumerExpectedStatuses(ct, statusAccessors);
     for (const status of expected) {
       if (providerStatuses.has(status)) {
         continue;

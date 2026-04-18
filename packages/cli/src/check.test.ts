@@ -206,9 +206,11 @@ describe("check CLI command", () => {
       transition("t-200", { statusCode: 200, isDefault: true }),
     ]);
     providerSummary.metadata = {
-      declaredContract: {
-        framework: "ts-rest",
-        responses: [{ statusCode: 200 }],
+      http: {
+        declaredContract: {
+          framework: "ts-rest",
+          responses: [{ statusCode: 200 }],
+        },
       },
     };
     fs.writeFileSync(providerPath, JSON.stringify([providerSummary]));
@@ -311,7 +313,7 @@ describe("check CLI command", () => {
     ).toThrow("File not found");
   });
 
-  it("throws when summary JSON is not an array", () => {
+  it("throws with parse issues when summary JSON is not an array", () => {
     fs.writeFileSync(providerPath, JSON.stringify({ not: "an array" }));
     fs.writeFileSync(consumerPath, JSON.stringify([]));
     expect(() =>
@@ -319,7 +321,21 @@ describe("check CLI command", () => {
         providerFile: providerPath,
         consumerFile: consumerPath,
       }),
-    ).toThrow("Expected a JSON array");
+    ).toThrow(/Invalid summary file/);
+  });
+
+  it("throws with parse issues when a summary element is malformed", () => {
+    fs.writeFileSync(
+      providerPath,
+      JSON.stringify([{ kind: "handler" /* missing required fields */ }]),
+    );
+    fs.writeFileSync(consumerPath, JSON.stringify([]));
+    expect(() =>
+      check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+      }),
+    ).toThrow(/Invalid summary file/);
   });
 });
 

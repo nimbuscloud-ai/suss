@@ -1,3 +1,4 @@
+import { statusAccessorsFor } from "./declared-contract.js";
 import { predicatesMatch } from "./match.js";
 import {
   consumerExpectedStatuses,
@@ -5,6 +6,8 @@ import {
   hasOpaqueStatus,
   makeBoundary,
   makeSide,
+  refLooksLikeStatus,
+  type StatusAccessors,
 } from "./response-match.js";
 
 import type {
@@ -12,7 +15,6 @@ import type {
   Finding,
   Predicate,
   Transition,
-  ValueRef,
 } from "@suss/behavioral-ir";
 
 export function checkProviderCoverage(
@@ -21,6 +23,7 @@ export function checkProviderCoverage(
 ): Finding[] {
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
+  const statusAccessors = statusAccessorsFor(consumer);
 
   const consumerStatuses = new Set<number>();
   let consumerHasDefault = false;
@@ -28,7 +31,7 @@ export function checkProviderCoverage(
     if (ct.isDefault) {
       consumerHasDefault = true;
     }
-    for (const s of consumerExpectedStatuses(ct)) {
+    for (const s of consumerExpectedStatuses(ct, statusAccessors)) {
       consumerStatuses.add(s);
     }
   }
@@ -89,13 +92,13 @@ export function checkProviderCoverage(
       if (ct.isDefault && isSuccessStatus(status)) {
         return true;
       }
-      return consumerExpectedStatuses(ct).includes(status);
+      return consumerExpectedStatuses(ct, statusAccessors).includes(status);
     });
 
     // Extract non-status predicates from consumer transitions (the conditions
     // beyond "status === N" that distinguish sub-cases)
     const consumerNonStatusPredicates = consumerForStatus.flatMap((ct) =>
-      getNonStatusConditions(ct),
+      getNonStatusConditions(ct, statusAccessors),
     );
 
     // If the consumer has no conditions beyond the status check, it's
@@ -130,7 +133,7 @@ export function checkProviderCoverage(
         continue;
       }
 
-      const ptNonStatus = getNonStatusConditions(pt);
+      const ptNonStatus = getNonStatusConditions(pt, statusAccessors);
       if (ptNonStatus.length === 0) {
         continue;
       }
@@ -176,30 +179,22 @@ export function checkProviderCoverage(
  * Extract conditions from a transition that are NOT status-code comparisons.
  * These are the conditions that distinguish sub-cases within a single status code.
  */
-function getNonStatusConditions(t: Transition): Predicate[] {
-  return t.conditions.filter((p) => !isStatusPredicate(p));
+function getNonStatusConditions(
+  t: Transition,
+  accessors: StatusAccessors,
+): Predicate[] {
+  return t.conditions.filter((p) => !isStatusPredicate(p, accessors));
 }
 
-function isStatusPredicate(p: Predicate): boolean {
+function isStatusPredicate(p: Predicate, accessors: StatusAccessors): boolean {
   if (p.type === "comparison") {
-    return isStatusRef(p.left) || isStatusRef(p.right);
-  }
-  if (p.type === "negation") {
-    return isStatusPredicate(p.operand);
-  }
-  return false;
-}
-
-function isStatusRef(v: ValueRef): boolean {
-  if (v.type === "derived" && v.derivation.type === "propertyAccess") {
     return (
-      v.derivation.property === "status" ||
-      v.derivation.property === "statusCode"
+      refLooksLikeStatus(p.left, accessors) ||
+      refLooksLikeStatus(p.right, accessors)
     );
   }
-  if (v.type === "input") {
-    const last = v.path[v.path.length - 1];
-    return last === "status" || last === "statusCode";
+  if (p.type === "negation") {
+    return isStatusPredicate(p.operand, accessors);
   }
   return false;
 }

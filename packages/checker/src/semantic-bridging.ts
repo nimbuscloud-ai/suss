@@ -8,6 +8,7 @@
 // tests for the distinguishing value, the consumer collapses behaviorally
 // distinct cases.
 
+import { statusAccessorsFor } from "./declared-contract.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
@@ -380,6 +381,7 @@ export function checkSemanticBridging(
 ): Finding[] {
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
+  const statusAccessors = statusAccessorsFor(consumer);
 
   // Group provider transitions by status code
   const providerByStatus = new Map<number, Transition[]>();
@@ -407,7 +409,7 @@ export function checkSemanticBridging(
       if (ct.isDefault && status >= 200 && status < 300) {
         return true;
       }
-      return consumerExpectedStatuses(ct).includes(status);
+      return consumerExpectedStatuses(ct, statusAccessors).includes(status);
     });
 
     if (consumerForStatus.length === 0) {

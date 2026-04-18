@@ -88,4 +88,38 @@ describe("checkConsumerSatisfaction", () => {
       .sort();
     expect(expectedStatuses).toEqual(["ct-410", "ct-418"]);
   });
+
+  it("recognises pack-defined status accessors via metadata", () => {
+    // Consumer comes from a hypothetical pack whose response object exposes
+    // the HTTP status as `.responseStatus` rather than `.status`. Without
+    // metadata, the checker would not see the comparison as a status
+    // predicate and would think every consumer expectation went unmatched.
+    const responseStatusEq = (status: number) =>
+      ({
+        type: "comparison",
+        op: "eq",
+        left: {
+          type: "derived",
+          from: { type: "dependency", name: "client.get", accessChain: [] },
+          derivation: { type: "propertyAccess", property: "responseStatus" },
+        },
+        right: { type: "literal", value: status },
+      }) as const;
+
+    const p = provider("getUser", [
+      transition("t-200", { output: response(200), isDefault: true }),
+      transition("t-410", { output: response(410) }),
+    ]);
+    const c = consumer(
+      "UserPage",
+      [
+        transition("ct-410", {
+          conditions: [responseStatusEq(410)],
+          output: { type: "return", value: null },
+        }),
+      ],
+      { http: { statusAccessors: ["responseStatus"] } },
+    );
+    expect(checkConsumerSatisfaction(p, c)).toEqual([]);
+  });
 });

@@ -193,8 +193,9 @@ describe("extract — ts-rest", () => {
       },
     ]);
 
-    // Declared contract preserved in metadata
-    expect(getUser.metadata?.declaredContract).toMatchObject({
+    // Declared contract preserved in metadata (under the HTTP namespace)
+    const http = getUser.metadata?.http as Record<string, unknown> | undefined;
+    expect(http?.declaredContract).toMatchObject({
       framework: "core",
       responses: expect.arrayContaining([
         expect.objectContaining({ statusCode: 200 }),

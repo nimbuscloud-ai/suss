@@ -167,10 +167,11 @@ describe("tsRestFramework — integration", () => {
     expect(gap500!.consequence).toBe("frameworkDefault");
   });
 
-  it("attaches the declaredContract to summary metadata", () => {
+  it("attaches the declaredContract to summary metadata under metadata.http", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
-    const contract = getUser!.metadata?.declaredContract as
+    const http = getUser!.metadata?.http as Record<string, unknown> | undefined;
+    const contract = http?.declaredContract as
       | { responses: Array<{ statusCode: number }> }
       | undefined;
     expect(contract).toBeDefined();
