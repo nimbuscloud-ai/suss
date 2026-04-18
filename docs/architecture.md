@@ -14,24 +14,28 @@ Most analysis tools describe *structure* (a function has these parameters, retur
 
 ## Data flow
 
+Extraction is a straight line with one intermediate data shape, `RawCodeStructure`, between the AST-shaped layer (the adapter) and the assembly layer (the extractor):
+
 ```
 Source files
     │
-    │  Language Adapter (@suss/adapter-typescript)
+    │  Language adapter (@suss/adapter-typescript)
     │    loads project via compiler API (ts-morph)
-    │    uses Framework Pack patterns to discover code units
+    │    uses framework-pack patterns to discover code units
     │    for each unit: finds terminals, walks condition chains,
     │                    resolves subjects, reads declared contracts
     ▼
 RawCodeStructure
     │
-    │  Assembly Engine (@suss/extractor)
+    │  Assembly engine (@suss/extractor)
     │    normalizes predicates (wraps unstructured as opaque)
     │    detects gaps (declared ↔ produced mismatches)
     │    assesses confidence
     ▼
-BehavioralSummary[]   ← JSON, language/framework-agnostic
+BehavioralSummary[]   — JSON, language- and framework-agnostic
 ```
+
+See [`pipelines.md`](pipelines.md) for per-CLI-action walkthroughs.
 
 The split between adapter and extractor is deliberate. The extractor never sees an AST node — it works on `RawCodeStructure`, a plain data shape. This means:
 
@@ -179,28 +183,37 @@ tsRestFramework(): PatternPack {
 ## Package layout
 
 ```
-@suss/behavioral-ir          zero deps, types only. Install this to consume summaries.
+@suss/behavioral-ir          zod schemas, types, parsers. One peer dep on zod.
+    │                        Install this to consume summaries.
     │
-    ├─ @suss/extractor          assembly engine + PatternPack interface. No AST access.
+    ├─ @suss/extractor           assembly engine + PatternPack interface. No AST access.
     │     │
-    │     ├─ @suss/adapter-typescript     ts-morph-based extraction (provider + consumer)
+    │     ├─ @suss/adapter-typescript    ts-morph-based extraction (provider + consumer)
     │     │
-    │     ├─ @suss/framework-ts-rest      declarative patterns (handler + client discovery)
+    │     ├─ @suss/framework-ts-rest     declarative patterns (handler + client discovery)
     │     ├─ @suss/framework-react-router
     │     ├─ @suss/framework-express
-    │     └─ @suss/runtime-web            fetch call-site discovery
+    │     ├─ @suss/framework-fastify
+    │     ├─ @suss/runtime-web           fetch call-site discovery
+    │     └─ @suss/runtime-axios         axios call-site discovery
     │
-    └─ @suss/checker            pairwise cross-boundary checker. IR-only consumer.
+    ├─ @suss/stub-openapi            OpenAPI 3.x → BehavioralSummary[]
+    ├─ @suss/stub-aws-apigateway     API Gateway resource semantics (config → summaries)
+    ├─ @suss/stub-cloudformation     CFN / SAM → BehavioralSummary[]
+    │                                (delegates to openapi + aws-apigateway)
+    │
+    └─ @suss/checker             pairwise cross-boundary checker. IR-only consumer.
           │
-@suss/cli                      thin wrapper over extractor + checker
+       @suss/cli                 thin wrapper over extractor + checker + stubs
 ```
 
 Dependency rules (enforced by the layout):
 
-- `@suss/behavioral-ir` — zero dependencies. This is what downstream consumers install.
+- `@suss/behavioral-ir` — one peer dep on `zod`. Runtime validators (`parseSummaries`, `safeParseSummaries`) and the generated JSON Schema both come from the zod schemas. This is what downstream consumers install.
 - `@suss/extractor` — depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript` — depends on IR, extractor, ts-morph. This is the heavyweight package.
 - `@suss/framework-*` and `@suss/runtime-*` packs — depend only on `@suss/extractor` (for the `PatternPack` type). They're data, not logic. Runtime packs (e.g., `@suss/runtime-web` for `fetch`) use the same `PatternPack` interface but target built-in APIs rather than third-party frameworks.
+- `@suss/stub-*` packages — depend only on the IR (and on each other where they compose: the CloudFormation stub delegates to the OpenAPI and AWS API Gateway stubs). Produce `BehavioralSummary[]` from specs, manifests, or vendor docs; carry `confidence.source: "stub"`. See [`stubs.md`](stubs.md).
 - `@suss/checker` — depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or framework packs — operates on the serialized IR.
 - `@suss/cli` — depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs.
 
@@ -257,6 +270,14 @@ Static analysis of real codebases is always imperfect. suss handles this explici
 - **Gaps** — cases the code unit doesn't handle (declared-but-not-produced, produced-but-not-declared, uncaught exceptions, fall-through branches) are first-class output, not errors.
 - **Confidence levels** (`high` / `medium` / `low`) — computed from the ratio of opaque to structured predicates. A summary with 80% opaque conditions is labeled "low confidence" so consumers can treat it with appropriate skepticism.
 - **Graceful dependency resolution** — in-project code gets full extraction; typed external dependencies get type info; untyped ones are opaque. No configuration needed.
+
+## Boundary semantics are HTTP-shaped today
+
+Everything downstream of extraction — the checker, the pairing logic, the pack interfaces, the stubs — currently assumes REST-over-HTTP. The IR types themselves are mostly protocol-agnostic (every `Output` is a typed shape, every `Predicate` operates on `ValueRef`s), but the *cross-boundary* plumbing hardcodes HTTP status codes as the outcome discriminator, response bodies as the payload, and `(method, normalizedPath)` as the pairing key.
+
+This is a known shape and not a design flaw — suss has one concrete boundary semantics today, and designing a protocol-abstraction layer in the abstract (before a second concrete case forces the seams) tends to put the seams in the wrong places. When a second semantics lands (GraphQL is the planned forcing function, because it shares transport with REST but has totally different discriminator / payload / pairing shape), the checker gets refactored around a `BoundarySemantics` interface and `BoundaryBinding` splits into transport / semantics / recognition. See [`boundary-semantics.md`](boundary-semantics.md) for the target shape and the reasoning.
+
+Until then, small decisions that *could* stretch either way default to the shape that makes the eventual refactor cheaper — e.g. HTTP-scoped summary metadata is already namespaced under `metadata.http.*` so future semantics can own sibling namespaces without migration.
 
 ## What's deliberately not here
 
