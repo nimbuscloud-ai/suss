@@ -1,15 +1,372 @@
-{"total": {"lines":{"total":694,"covered":610,"skipped":0,"pct":87.89},"statements":{"total":702,"covered":618,"skipped":0,"pct":88.03},"functions":{"total":95,"covered":87,"skipped":0,"pct":91.57},"branches":{"total":596,"covered":498,"skipped":0,"pct":83.55},"branchesTrue":{"total":0,"covered":0,"skipped":0,"pct":100}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/body-compatibility.ts": {"lines":{"total":99,"covered":74,"skipped":0,"pct":74.74},"functions":{"total":10,"covered":10,"skipped":0,"pct":100},"statements":{"total":100,"covered":75,"skipped":0,"pct":75},"branches":{"total":84,"covered":58,"skipped":0,"pct":69.04}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/body-match.ts": {"lines":{"total":91,"covered":87,"skipped":0,"pct":95.6},"functions":{"total":8,"covered":8,"skipped":0,"pct":100},"statements":{"total":94,"covered":90,"skipped":0,"pct":95.74},"branches":{"total":112,"covered":105,"skipped":0,"pct":93.75}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/consumer-contract.ts": {"lines":{"total":39,"covered":35,"skipped":0,"pct":89.74},"functions":{"total":3,"covered":3,"skipped":0,"pct":100},"statements":{"total":39,"covered":35,"skipped":0,"pct":89.74},"branches":{"total":30,"covered":25,"skipped":0,"pct":83.33}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/consumer-satisfaction.ts": {"lines":{"total":23,"covered":22,"skipped":0,"pct":95.65},"functions":{"total":1,"covered":1,"skipped":0,"pct":100},"statements":{"total":23,"covered":22,"skipped":0,"pct":95.65},"branches":{"total":14,"covered":12,"skipped":0,"pct":85.71}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/contract-consistency.ts": {"lines":{"total":47,"covered":45,"skipped":0,"pct":95.74},"functions":{"total":3,"covered":3,"skipped":0,"pct":100},"statements":{"total":48,"covered":46,"skipped":0,"pct":95.83},"branches":{"total":26,"covered":24,"skipped":0,"pct":92.3}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/declared-contract.ts": {"lines":{"total":24,"covered":24,"skipped":0,"pct":100},"functions":{"total":6,"covered":6,"skipped":0,"pct":100},"statements":{"total":25,"covered":25,"skipped":0,"pct":100},"branches":{"total":27,"covered":27,"skipped":0,"pct":100}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/index.ts": {"lines":{"total":11,"covered":1,"skipped":0,"pct":9.09},"functions":{"total":5,"covered":1,"skipped":0,"pct":20},"statements":{"total":11,"covered":1,"skipped":0,"pct":9.09},"branches":{"total":12,"covered":0,"skipped":0,"pct":0}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/match.ts": {"lines":{"total":27,"covered":26,"skipped":0,"pct":96.29},"functions":{"total":5,"covered":5,"skipped":0,"pct":100},"statements":{"total":27,"covered":26,"skipped":0,"pct":96.29},"branches":{"total":37,"covered":36,"skipped":0,"pct":97.29}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/pairing.ts": {"lines":{"total":53,"covered":53,"skipped":0,"pct":100},"functions":{"total":4,"covered":4,"skipped":0,"pct":100},"statements":{"total":53,"covered":53,"skipped":0,"pct":100},"branches":{"total":26,"covered":26,"skipped":0,"pct":100}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/provider-coverage.ts": {"lines":{"total":63,"covered":43,"skipped":0,"pct":68.25},"functions":{"total":12,"covered":8,"skipped":0,"pct":66.66},"statements":{"total":64,"covered":44,"skipped":0,"pct":68.75},"branches":{"total":44,"covered":25,"skipped":0,"pct":56.81}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/response-match.ts": {"lines":{"total":47,"covered":45,"skipped":0,"pct":95.74},"functions":{"total":8,"covered":8,"skipped":0,"pct":100},"statements":{"total":47,"covered":45,"skipped":0,"pct":95.74},"branches":{"total":44,"covered":41,"skipped":0,"pct":93.18}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/semantic-bridging.ts": {"lines":{"total":156,"covered":141,"skipped":0,"pct":90.38},"functions":{"total":20,"covered":20,"skipped":0,"pct":100},"statements":{"total":157,"covered":142,"skipped":0,"pct":90.44},"branches":{"total":117,"covered":100,"skipped":0,"pct":85.47}}
-,"/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker/src/__fixtures__/pairs.ts": {"lines":{"total":14,"covered":14,"skipped":0,"pct":100},"functions":{"total":10,"covered":10,"skipped":0,"pct":100},"statements":{"total":14,"covered":14,"skipped":0,"pct":100},"branches":{"total":23,"covered":19,"skipped":0,"pct":82.6}}
+{
+  "total": {
+    "lines": {
+      "total": 694,
+      "covered": 610,
+      "skipped": 0,
+      "pct": 87.89
+    },
+    "statements": {
+      "total": 702,
+      "covered": 618,
+      "skipped": 0,
+      "pct": 88.03
+    },
+    "functions": {
+      "total": 95,
+      "covered": 87,
+      "skipped": 0,
+      "pct": 91.57
+    },
+    "branches": {
+      "total": 596,
+      "covered": 498,
+      "skipped": 0,
+      "pct": 83.55
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
+  "src/body-compatibility.ts": {
+    "lines": {
+      "total": 99,
+      "covered": 74,
+      "skipped": 0,
+      "pct": 74.74
+    },
+    "functions": {
+      "total": 10,
+      "covered": 10,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 100,
+      "covered": 75,
+      "skipped": 0,
+      "pct": 75
+    },
+    "branches": {
+      "total": 84,
+      "covered": 58,
+      "skipped": 0,
+      "pct": 69.04
+    }
+  },
+  "src/body-match.ts": {
+    "lines": {
+      "total": 91,
+      "covered": 87,
+      "skipped": 0,
+      "pct": 95.6
+    },
+    "functions": {
+      "total": 8,
+      "covered": 8,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 94,
+      "covered": 90,
+      "skipped": 0,
+      "pct": 95.74
+    },
+    "branches": {
+      "total": 112,
+      "covered": 105,
+      "skipped": 0,
+      "pct": 93.75
+    }
+  },
+  "src/consumer-contract.ts": {
+    "lines": {
+      "total": 39,
+      "covered": 35,
+      "skipped": 0,
+      "pct": 89.74
+    },
+    "functions": {
+      "total": 3,
+      "covered": 3,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 39,
+      "covered": 35,
+      "skipped": 0,
+      "pct": 89.74
+    },
+    "branches": {
+      "total": 30,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 83.33
+    }
+  },
+  "src/consumer-satisfaction.ts": {
+    "lines": {
+      "total": 23,
+      "covered": 22,
+      "skipped": 0,
+      "pct": 95.65
+    },
+    "functions": {
+      "total": 1,
+      "covered": 1,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 23,
+      "covered": 22,
+      "skipped": 0,
+      "pct": 95.65
+    },
+    "branches": {
+      "total": 14,
+      "covered": 12,
+      "skipped": 0,
+      "pct": 85.71
+    }
+  },
+  "src/contract-consistency.ts": {
+    "lines": {
+      "total": 47,
+      "covered": 45,
+      "skipped": 0,
+      "pct": 95.74
+    },
+    "functions": {
+      "total": 3,
+      "covered": 3,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 48,
+      "covered": 46,
+      "skipped": 0,
+      "pct": 95.83
+    },
+    "branches": {
+      "total": 26,
+      "covered": 24,
+      "skipped": 0,
+      "pct": 92.3
+    }
+  },
+  "src/declared-contract.ts": {
+    "lines": {
+      "total": 24,
+      "covered": 24,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 6,
+      "covered": 6,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 25,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 27,
+      "covered": 27,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
+  "src/index.ts": {
+    "lines": {
+      "total": 11,
+      "covered": 1,
+      "skipped": 0,
+      "pct": 9.09
+    },
+    "functions": {
+      "total": 5,
+      "covered": 1,
+      "skipped": 0,
+      "pct": 20
+    },
+    "statements": {
+      "total": 11,
+      "covered": 1,
+      "skipped": 0,
+      "pct": 9.09
+    },
+    "branches": {
+      "total": 12,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 0
+    }
+  },
+  "src/match.ts": {
+    "lines": {
+      "total": 27,
+      "covered": 26,
+      "skipped": 0,
+      "pct": 96.29
+    },
+    "functions": {
+      "total": 5,
+      "covered": 5,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 27,
+      "covered": 26,
+      "skipped": 0,
+      "pct": 96.29
+    },
+    "branches": {
+      "total": 37,
+      "covered": 36,
+      "skipped": 0,
+      "pct": 97.29
+    }
+  },
+  "src/pairing.ts": {
+    "lines": {
+      "total": 53,
+      "covered": 53,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 4,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 53,
+      "covered": 53,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 26,
+      "covered": 26,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
+  "src/provider-coverage.ts": {
+    "lines": {
+      "total": 63,
+      "covered": 43,
+      "skipped": 0,
+      "pct": 68.25
+    },
+    "functions": {
+      "total": 12,
+      "covered": 8,
+      "skipped": 0,
+      "pct": 66.66
+    },
+    "statements": {
+      "total": 64,
+      "covered": 44,
+      "skipped": 0,
+      "pct": 68.75
+    },
+    "branches": {
+      "total": 44,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 56.81
+    }
+  },
+  "src/response-match.ts": {
+    "lines": {
+      "total": 47,
+      "covered": 45,
+      "skipped": 0,
+      "pct": 95.74
+    },
+    "functions": {
+      "total": 8,
+      "covered": 8,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 47,
+      "covered": 45,
+      "skipped": 0,
+      "pct": 95.74
+    },
+    "branches": {
+      "total": 44,
+      "covered": 41,
+      "skipped": 0,
+      "pct": 93.18
+    }
+  },
+  "src/semantic-bridging.ts": {
+    "lines": {
+      "total": 156,
+      "covered": 141,
+      "skipped": 0,
+      "pct": 90.38
+    },
+    "functions": {
+      "total": 20,
+      "covered": 20,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 157,
+      "covered": 142,
+      "skipped": 0,
+      "pct": 90.44
+    },
+    "branches": {
+      "total": 117,
+      "covered": 100,
+      "skipped": 0,
+      "pct": 85.47
+    }
+  },
+  "src/__fixtures__/pairs.ts": {
+    "lines": {
+      "total": 14,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 10,
+      "covered": 10,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 14,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 23,
+      "covered": 19,
+      "skipped": 0,
+      "pct": 82.6
+    }
+  }
 }
