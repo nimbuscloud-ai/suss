@@ -8,8 +8,21 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 gives the threshold check access to the
+          # main-branch coverage baselines via `git show origin/main:...`.
+          # The default GITHUB_TOKEN has contents: write for same-repo
+          # pushes (main + same-repo PR branches).
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          # For pull_request events, checkout defaults to a detached
+          # merge commit; we need the real head ref so the auto-commit
+          # pushes back to the PR branch instead of a dangling SHA.
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -34,5 +47,32 @@ jobs:
       - name: Regenerate coverage badges
         run: node scripts/generate-coverage-badges.mjs
 
-      - name: Verify badges and coverage summaries are up to date
-        run: git diff --exit-code .github/badges/ '**/coverage/coverage-summary.json'
+      # On PRs: enforce no coverage degradation vs main. Drift in the
+      # committed coverage files is NOT failed — the auto-commit step
+      # below will push the refresh back to the PR branch. Regressions
+      # (line-coverage % below main's baseline) fail the build here.
+      - name: Coverage regression check (PRs)
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-coverage-threshold.mjs
+
+      # Auto-commit refreshed coverage on any same-repo push (main or
+      # same-repo PR branch). Fork PRs lack write permission; the step
+      # no-ops silently in that case. `[skip ci]` suppresses the
+      # follow-on CI run — safe because the regen is deterministic, so
+      # a second run would produce no diff anyway.
+      - name: Auto-commit refreshed coverage
+        if: |
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'pull_request' &&
+           github.event.pull_request.head.repo.full_name == github.repository)
+        run: |
+          if git diff --quiet .github/badges/ '**/coverage/coverage-summary.json'; then
+            echo "No coverage drift — skipping auto-commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/badges/ '**/coverage/coverage-summary.json'
+          git commit -m "chore: refresh coverage summaries and badges [skip ci]"
+          TARGET="${{ github.event.pull_request.head.ref || github.ref_name }}"
+          git push origin "HEAD:$TARGET"
