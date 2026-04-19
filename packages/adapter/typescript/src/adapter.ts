@@ -14,6 +14,7 @@ import {
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
+  packageExportBinding,
   restBinding,
 } from "@suss/behavioral-ir";
 import {
@@ -656,11 +657,27 @@ function extractFromSourceFile(
       // fall back to function-call semantics — the unit is a
       // TypeScript function with no REST shape attached. Consumer /
       // provider dispatch (via BOUNDARY_ROLE on `kind`) still works.
+      //
+      // `packageExportInfo` (from the `packageExports` discovery
+      // variant) supplies the stronger `package` + `exportPath`
+      // identity when the unit is a publicly-exported library
+      // function — use it to build a package-export binding so the
+      // checker can pair providers with consumer import sites
+      // once that side lands.
       if (raw.boundaryBinding === null) {
-        raw.boundaryBinding = functionCallBinding({
-          transport: pack.protocol,
-          recognition: pack.name,
-        });
+        if (unit.packageExportInfo !== undefined) {
+          raw.boundaryBinding = packageExportBinding({
+            transport: pack.protocol,
+            recognition: pack.name,
+            packageName: unit.packageExportInfo.packageName,
+            exportPath: unit.packageExportInfo.exportPath,
+          });
+        } else {
+          raw.boundaryBinding = functionCallBinding({
+            transport: pack.protocol,
+            recognition: pack.name,
+          });
+        }
       }
 
       summaries.push(assembleSummary(raw, options));
