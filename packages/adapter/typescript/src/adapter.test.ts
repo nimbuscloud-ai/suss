@@ -2279,7 +2279,7 @@ describe("inline JSX conditional decomposition", () => {
       frameworks: [reactPack],
     }).extractAll();
     const comp = summaries.find((s) => s.identity.name === "Map");
-    const out = comp?.transitions[0].output;
+    const out = comp!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2305,7 +2305,7 @@ describe("inline JSX conditional decomposition", () => {
       frameworks: [reactPack],
     }).extractAll();
     const comp = summaries.find((s) => s.identity.name === "Or");
-    const out = comp?.transitions[0].output;
+    const out = comp!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2331,7 +2331,7 @@ describe("inline JSX conditional decomposition", () => {
       frameworks: [reactPack],
     }).extractAll();
     const comp = summaries.find((s) => s.identity.name === "Neg");
-    const out = comp?.transitions[0].output;
+    const out = comp!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2366,7 +2366,7 @@ describe("inline JSX conditional decomposition", () => {
       frameworks: [reactPack],
     }).extractAll();
     const comp = summaries.find((s) => s.identity.name === "Undef");
-    const out = comp?.transitions[0].output;
+    const out = comp!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2397,7 +2397,7 @@ describe("inline JSX conditional decomposition", () => {
       frameworks: [reactPack],
     }).extractAll();
     const comp = summaries.find((s) => s.identity.name === "AndNonJsx");
-    const out = comp?.transitions[0].output;
+    const out = comp!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2423,7 +2423,7 @@ describe("inline JSX conditional decomposition", () => {
       frameworks: [reactPack],
     }).extractAll();
     const comp = summaries.find((s) => s.identity.name === "DataTernary");
-    const out = comp?.transitions[0].output;
+    const out = comp!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2449,7 +2449,7 @@ describe("inline JSX conditional decomposition", () => {
       frameworks: [reactPack],
     }).extractAll();
     const comp = summaries.find((s) => s.identity.name === "FalseLit");
-    const out = comp?.transitions[0].output;
+    const out = comp!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2480,7 +2480,10 @@ describe("inline JSX conditional decomposition", () => {
       frameworks: [reactPack],
     }).extractAll();
     const comp = summaries.find((s) => s.identity.name === "Paren");
-    const out = comp?.transitions[0].output;
+    if (!comp) {
+      throw new Error("Paren summary missing");
+    }
+    const out = comp.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
