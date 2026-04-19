@@ -29,7 +29,7 @@ These share identity (same component module + export) and share state (hooks/clo
 
 This reuses the HTTP abstraction without new concepts. A single Express handler file can register `app.get("/users", h1)` and `app.post("/users", h2)` — two code units sharing a module. Similarly, a React component file exports one default component whose render + handlers + effects are multiple code units sharing an identity prefix. The `BoundaryBinding.semantics` layer distinguishes them (`render` vs `event-handler(name="onClick")` vs `effect(index=0)`).
 
-This is also where the **theoretical grounding** comes in. In Daniel Jackson's concept-design framework (MIT, "Concept Design Moves" / "What You See Is What It Does"), a concept is a self-contained unit with state + actions + purpose, and synchronizations are rules of the form "when action A₁ in concept C₁ happens, action A₂ in concept C₂ happens." Under that framing:
+This is also where the **theoretical grounding** comes in. In Daniel Jackson's concept-design framework (MIT — see [*The Essence of Software*](https://essenceofsoftware.com/), [*Concept Design Moves*](https://people.csail.mit.edu/dnj/publications/nfm-design-moves-22.pdf), [*What You See Is What It Does*](https://arxiv.org/abs/2508.14511)), a concept is a self-contained unit with state + actions + purpose, and synchronizations are rules of the form "when action A₁ in concept C₁ happens, action A₂ in concept C₂ happens." Under that framing:
 
 - A suss code unit ≈ a concept's action (one triggerable behavior)
 - Shared closure/hook state ≈ the concept's state
@@ -43,7 +43,7 @@ Two deliberate divergences from Jackson worth stating:
 1. **Intent is absent.** Jackson concepts declare purpose top-down; suss infers behavior bottom-up. The closest proxy is `contractDisagreement` findings — they fire when observed behavior contradicts declared contracts, which is the closest suss gets to "purpose violated."
 2. **Genericity is absent.** Jackson concepts are reusable design primitives (like `Upvote`, `Follow`). Suss summaries are instance-specific. The recursive-opaqueness-reduction goal leaves open a path where recurring clusters surface as concept candidates, but that's future work, not v0.
 
-Further reading: Daniel Jackson, "Concept Design Moves" (NFM 2022); Jackson & Meng, "What You See Is What It Does" (SPLASH 2025).
+Further reading: Daniel Jackson, [*Concept Design Moves*](https://people.csail.mit.edu/dnj/publications/nfm-design-moves-22.pdf) (NFM 2022); Eagon Meng & Daniel Jackson, [*What You See Is What It Does*](https://arxiv.org/abs/2508.14511) (SPLASH Onward! 2025); Jackson, [*The Essence of Software*](https://essenceofsoftware.com/) (Princeton, 2021). Long-form mapping — audience indexing, failure modes, PRDs-as-concept-declarations — in [`concept-design.md`](concept-design.md).
 
 ## The boundary React actually has
 

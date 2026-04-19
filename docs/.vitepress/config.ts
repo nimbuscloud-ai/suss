@@ -117,6 +117,9 @@ export default defineConfig({
         items: [
           { text: "Status & decisions", link: "/internal/status" },
           { text: "Style guide", link: "/internal/style" },
+          { text: "Concept design", link: "/internal/concept-design" },
+          { text: "Quality", link: "/internal/quality" },
+          { text: "Forward-looking backlog", link: "/internal/backlog" },
           { text: "React roadmap", link: "/internal/roadmap-react" },
           { text: "Dogfooding", link: "/internal/dogfooding" },
         ],
