@@ -32,6 +32,25 @@ interface PatternPack {
 
 Let's walk through the ts-rest pack (`packages/framework/ts-rest/src/index.ts`) piece by piece.
 
+### Protocol
+
+Every pack declares a `protocol` string, used as the default `BoundaryBinding.protocol` for discovered units. `protocol` identifies the *transport class* — what shape the boundary crosses — not the framework itself (that's `BoundaryBinding.framework`, which comes from `pack.name`).
+
+Conventions shipped today:
+
+- **`"http"`** — any HTTP-transported boundary. REST APIs (ts-rest, Express, Fastify, React Router), HTTP clients (fetch, axios), OpenAPI / CloudFormation stubs describing HTTP endpoints. GraphQL-over-HTTP also uses `"http"` when it lands — the distinguishing semantics will live on a sibling field once `BoundarySemantics` is formalised.
+- **`"in-process"`** — boundaries that don't cross a network hop. React components (component ↔ DOM, render ↔ handler), custom hooks, intra-module cross-unit calls. Anything whose runtime is the language itself.
+
+Frameworks with new transport classes introduce new protocol strings. Plausible future values:
+
+- `"aws-sdk"` — AWS SDK calls where the transport-level envelope (`StatusCode`, `FunctionError`, `Payload`) is distinct from HTTP even though it rides HTTPS.
+- `"queue"` — message-queue boundaries (Kafka, SQS, SNS) where pairing is by topic, not URL.
+- `"grpc"` — gRPC calls; gRPC status codes live in a separate code space from HTTP.
+
+Rule of thumb: if your pack's pairing shape and payload semantics match an existing protocol's, reuse the string. If they don't, pick a new string that reads as "transport class," not as "framework name." React isn't a protocol (it has no wire format); `"in-process"` names what the boundary *is*.
+
+Note: `protocol` is a v0 shorthand. The `BoundarySemantics` refactor ([`docs/boundary-semantics.md`](boundary-semantics.md)) will eventually split transport from semantics as separate fields on `BoundaryBinding`. Current pack declarations remain valid when that lands — the new shape is strictly additive.
+
 ### Discovery
 
 ```typescript
@@ -371,11 +390,11 @@ A framework pack author doesn't need to understand:
 - How the extraction engine assembles summaries
 - How any other framework pack works
 
-That's the whole point of the declarative design. If writing a new pack requires touching any file outside `packages/framework/<name>/`, the pattern system has a gap that needs to be filled properly — don't work around it in the pack.
+That's the whole point of the declarative design. If writing a new pack requires touching any file outside `packages/framework/<name>/`, the pattern system has a gap that needs a structural fix — don't work around it in the pack.
 
 ## A worked example: the Fastify pack
 
-The shipped Fastify pack lives in [`packages/framework/fastify/`](../packages/framework/fastify/) — read it alongside this section. Fastify handlers look like:
+The shipped Fastify pack lives in [`packages/framework/fastify/`](https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/fastify) — read it alongside this section. Fastify handlers look like:
 
 ```typescript
 import Fastify from "fastify";

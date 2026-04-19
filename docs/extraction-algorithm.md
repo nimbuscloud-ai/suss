@@ -188,7 +188,7 @@ collectEarlyReturns(terminal, functionRoot):
 
 - **Multiple guards** — `if (!id) throw; if (!user) throw; return user;` contributes two early return conditions (both negative) to the final return. Both conditions must be false for the terminal to be reached.
 - **Nested early returns** — `if (a) { if (b) return; }` — for v0, treat the outer `if` as a single early return and record only `a`. The inner structure is a v1 refinement.
-- **Early returns in else branches** — `if (a) { ... } else { return; }` is structurally just a control flow split, not an "early return" in the flat sibling sense. It's handled by `collectAncestorBranches` instead.
+- **Early returns in else branches** — `if (a) { ... } else { return; }` is structurally a control-flow split, not an "early return" in the flat sibling sense. It's handled by `collectAncestorBranches` instead.
 - **Returns inside blocks that are not if-statements** — e.g., `for (...) { if (cond) return; }` — for v0, these are ignored. The loop iteration semantics are too complex to capture correctly.
 
 **Why this is separate from ancestor branches:** the two answer different questions. Ancestor branches ask "what conditions gate the branch I'm in?" Early returns ask "what conditions gated the flow *before* I got here?" Both apply to the same terminal simultaneously.
@@ -343,7 +343,7 @@ resolveSubject(expr):
             return { type: "unresolved", sourceText: expr.getText() }
 ```
 
-**Why the shape is shallow:** `resolveSubject` doesn't try to understand what `db.findById` does or what it returns. It just records "this value came from calling `db.findById`, and then we accessed `.repository.lastAnalyzedCommitHash`". That's enough for cross-boundary comparison to work — two predicates on different sides of a boundary can be recognized as testing the same thing — without the extractor needing to understand Prisma query semantics.
+**Why the shape is shallow:** `resolveSubject` doesn't try to understand what `db.findById` does or what it returns. It records "this value came from calling `db.findById`, and then we accessed `.repository.lastAnalyzedCommitHash`". That's enough for cross-boundary comparison to work — two predicates on different sides of a boundary can be recognized as testing the same thing — without the extractor needing to understand Prisma query semantics.
 
 **Dependency on the compiler:** this is the most expensive step. Every identifier lookup goes through the symbol table. For a 500-line handler with 50 conditions, this can dominate extraction time. Two optimizations worth knowing about:
 
@@ -450,6 +450,6 @@ Three properties must hold for the algorithm to be trusted:
 
 1. **Exhaustiveness** — every path through the function body maps to exactly one `RawBranch`. If not, the missing path becomes a gap, not a silent drop.
 2. **No false conditions** — a predicate that appears on a transition must actually gate that transition in the source code. It's fine to under-specify (fall back to opaque); it's not fine to report a condition that isn't really there.
-3. **Stable subjects across renames** — `ValueRef`s should be structurally equal across trivial renames. If a user renames `user` to `account`, the subject shape should still be `dependency("db.findById")` + property path — unchanged.
+3. **Stable subjects across renames** — `ValueRef`s should be structurally equal across mechanical renames. If a user renames `user` to `account`, the subject shape should still be `dependency("db.findById")` + property path — unchanged.
 
 Violations of #1 degrade confidence but don't invalidate the summary. Violations of #2 or #3 are bugs and must be fixed.

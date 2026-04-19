@@ -161,7 +161,7 @@ Emit these as standalone `BehavioralSummary` entries:
 - One transition: appropriate status (204 for CORS preflight), headers populated from configuration
 - `metadata.synthetic` naming the synthesis rule (e.g., `"cors-preflight"`)
 
-A synthesized summary is not a fiction. The platform genuinely responds at that boundary. Treating it as a real boundary lets a TypeScript consumer that does `fetch(path, { method: "OPTIONS" })` pair with it like any other endpoint.
+A synthesized summary is not a fiction. The platform genuinely responds at that boundary. Treating it like any other boundary lets a TypeScript consumer that does `fetch(path, { method: "OPTIONS" })` pair with it through the same matching rules.
 
 ## Pairing with extracted consumers
 

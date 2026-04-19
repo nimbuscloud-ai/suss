@@ -1,15 +1,39 @@
 # suss
 
-Static behavioral analysis for TypeScript. Given a function, suss answers: *under what conditions does this produce what outputs?*
+Static behavioral analysis for TypeScript. For every code unit at a boundary — HTTP handler, React component, event handler, client call site, queue consumer — suss answers: *under what conditions does it produce what outputs?*
 
 ```
 suss extract -p tsconfig.json -f ts-rest -o summaries.json
 suss inspect summaries.json
 ```
 
-## What it does
+## The idea
 
-suss reads your source code and produces **behavioral summaries** — structured, language-agnostic descriptions of every execution path through a handler or client function:
+Most tools describe what your code *should* do — specs, types, design docs. Some describe what your code *did* do — tests, snapshots, traces. Neither describes what your code *does*: every path, every branch, every output, across the whole surface where your code meets the outside world.
+
+suss fills that gap. It reads your source and produces **behavioral summaries** — structured descriptions of every execution path through every code unit at a boundary. The summary is the primary artifact, and it's useful in three directions:
+
+- **As documentation.** "What does this thing actually do?" reduces to reading a JSON file (or `suss inspect`, which renders it human-readably). Useful for code review, onboarding, impact analysis, architecture discussions — anywhere people need an accurate, current picture of behavior without reading 2,000 lines of source.
+- **To compare against intent.** Every spec you've written (OpenAPI, TypeScript types, Storybook stories, Prisma schemas, CloudFormation templates) asserts what *should* happen. `suss check` surfaces where code and intent disagree — with semantics that reflect what each kind of artifact actually claims.
+- **To compare against observations.** Every test, snapshot, and recording captures what *did* happen, once. The summary enumerates every path, so the suite's coverage — and its blind spots — becomes visible.
+
+The summary is the product. Checking is one thing you can do with it; others include generating docs, feeding AI context providers, enumerating test cases, and tracking boundary drift across releases. suss is a behavioral-understanding platform, not a linter.
+
+## Three kinds of truth
+
+A distinction that shapes everything: artifacts about code have different *epistemic characters*. Conflating them is the most common source of confusion when people ask "is this tool a spec? a test? documentation?"
+
+| Character | Answers | Examples | Completeness |
+|---|---|---|---|
+| **Specification** | *what should happen* | OpenAPI, TypeScript interfaces, Storybook stories, Prisma schemas | Under-specified — declares what's allowed, rarely when each case fires |
+| **Observation** | *what did happen, once* | Snapshots, Pact recordings, Playwright tests, production logs | Point-samples — covers only what was tested |
+| **Derivation** | *what the code does, across all paths* | A suss `BehavioralSummary` | Complete over paths; limited by analyzer fidelity |
+
+Interesting findings are *cross-character*: derivation has a path no specification declares (drift from intent); a specification declares a case no derivation can reach (dead promise); an observation shows something derivation says can't happen (analyzer gap or genuine bug). Each pair has its own severity and its own owner.
+
+See [`docs/contracts.md`](docs/contracts.md) for the full taxonomy and how it grounds the checker's finding semantics.
+
+## What a summary looks like
 
 ```
 GET /users/:id
@@ -24,43 +48,32 @@ GET /users/:id
     !! Declared response 500 is never produced by the handler
 ```
 
-The JSON output (`suss extract`) is a machine-readable format designed for consumption by other tools. The human output (`suss inspect`) is what you see above. Both describe the same thing: every behavioral path through the code.
-
-## How a behavioral summary is different from a spec
-
-| Tool | Describes | What's missing |
-|---|---|---|
-| **OpenAPI / JSON Schema** | Request and response *shapes* | The conditions under which each shape is produced |
-| **Pact / contract testing** | Concrete request/response *examples* | Coverage — the example set is always incomplete |
-| **TypeScript types** | The structural type of return values | Which values fire which paths, and where body fields originate |
-| **Behavioral summary** | *(conditions → outputs)* for every execution path | Nothing the code doesn't already determine |
-
-A spec says "the response has a `status` field that's a string." A behavioral summary says "the response's `status` field is `"deleted"` when `user.deletedAt` is truthy, and `user` came from `db.findById(params.id)`." The first lets you check shape; the second lets you check that a consumer's assumptions about what a `200` *means* still hold.
-
-A summary doesn't replace specs — they coexist. `suss extract` produces summaries from source code; `suss stub` produces summaries from specs (OpenAPI), manifests (CloudFormation/SAM), or vendor docs (the API Gateway resource-semantics layer at `@suss/stub-aws-apigateway`). Both feed the same `BehavioralSummary[]` shape. See [`docs/stubs.md`](docs/stubs.md).
+That's `suss inspect` on a ts-rest handler. The same summary as JSON is what `@suss/checker` and downstream tools consume. `suss extract` produces summaries from source code; `suss stub` produces summaries from specs (OpenAPI), manifests (CloudFormation/SAM), and vendor docs — both feed the same `BehavioralSummary[]` shape, so you can reason across hand-written handlers and third-party APIs (Stripe, AWS services, internal gateways) uniformly.
 
 ## What's modeled today
 
-**HTTP boundaries** are the shipped surface. Provider-side framework packs: ts-rest, React Router, Express, Fastify. Consumer-side runtime packs: `fetch`, axios, ts-rest's `initClient`. Stubs: OpenAPI 3.x, AWS API Gateway (REST + HTTP API) via CloudFormation/SAM templates with full configuration-driven behavior (authorizers, throttling, request validation, CORS preflight, integration timeouts).
+**HTTP boundaries** — the shipped surface. Framework packs: ts-rest, React Router, Express, Fastify. Client packs: `fetch`, axios, ts-rest's `initClient`. Stubs: OpenAPI 3.x, AWS API Gateway (REST + HTTP API) via CloudFormation/SAM with full configuration-driven behavior (authorizers, throttling, request validation, CORS preflight, integration timeouts).
 
-**The IR is protocol-agnostic.** `CodeUnitKind` already includes `consumer` (message queues), `worker`, `loader`, `action`, `component`, `hook`, `middleware`, `resolver`. The framework-pack and stub interfaces don't assume HTTP. GraphQL operations, gRPC methods, message-queue topics (Kafka, SQS, SNS, EventBridge), React component contracts, and other boundary types are in-scope as additional packs and stubs — they're follow-on work, not architectural changes. See [`docs/status.md`](docs/status.md) for the capability matrix and what's deferred.
+**React components** — in progress. Each component yields one `component`-kind summary for its render body plus one `handler`-kind summary per locally-authored event handler. Inline JSX conditionals, `useEffect` bodies as separate code units, Storybook as a stub source, and cross-shape contract agreement (inferred vs Storybook vs snapshots vs Playwright) are on the roadmap. See [`docs/roadmap-react.md`](docs/roadmap-react.md).
+
+**The IR is protocol-agnostic.** `CodeUnitKind` covers handler, loader, action, middleware, resolver, component, hook, consumer (message queues), worker, and client. Framework packs and stubs don't assume HTTP. GraphQL operations, gRPC methods, queue topics (Kafka, SQS, SNS, EventBridge), database-schema boundaries, and other domains are additive packs and stubs — follow-on work, not architectural change. See [`docs/status.md`](docs/status.md) for the capability matrix.
 
 ## What you can do with summaries
 
-**Cross-boundary checking.** `suss check` compares a provider's behavioral summary against a consumer's. It catches statuses the consumer doesn't handle, dead consumer branches, contract violations, body-field mismatches, and cases where the provider distinguishes sub-cases that the consumer collapses.
+**Understand unfamiliar code.** `suss inspect` shows what a code unit does — across every path — without having to read the source. Code review, onboarding, architecture conversations, PR comments all get a current, source-faithful artifact to anchor on.
+
+**Check against declared intent.** `suss check` pairs providers with consumers and surfaces drift: statuses the consumer doesn't handle, dead consumer branches, body-field mismatches, declared responses the code never produces, contract disagreements across overlapping sources.
 
 ```
 suss check provider.json consumer.json
 suss check --dir summaries/           # auto-pairs by method + path
 ```
 
-**Understand unfamiliar code.** `suss inspect` shows what a handler does without reading the source. Useful for code review, onboarding, and architecture discussions.
+**Check against third-party specs you don't own.** `suss stub --from openapi` (or `--from cloudformation`) turns a spec into the same `BehavioralSummary[]` shape. Your consumer can be checked against Stripe's OpenAPI, an internal team's API Gateway template, or any vendor contract, without access to their source.
 
-**Publish behavioral contracts.** Summaries are portable — paths are relative, the format is [versioned and documented](docs/behavioral-summary-format.md). Library authors can publish summaries alongside their packages so consumers get cross-boundary checking without the source code.
+**Publish behavioral contracts.** Summaries are portable — paths are relative, the format is [versioned and documented](docs/behavioral-summary-format.md). Library authors can ship summaries alongside their package so consumers get cross-boundary checking without the source.
 
-**Check against contracts you don't own.** `suss stub --from openapi` turns an OpenAPI 3.x specification into the same `BehavioralSummary[]` shape, so you can check your TS consumer against a third-party API (Stripe, an AWS service, an internal team's gateway) whose handlers you can't extract from source.
-
-**Build downstream tools.** The summary format is a foundation: documentation generators, AI context providers, test case enumerators, impact analyzers, architectural dashboards. Install `@suss/behavioral-ir` (one peer dep on `zod`) to consume the format with runtime validation. Non-TS consumers can validate against the published [JSON Schema](packages/ir/schema/behavioral-summary.schema.json) generated from the same source. See the [format spec](docs/behavioral-summary-format.md) for the consumption guide.
+**Build downstream tools.** The summary format is a foundation: documentation generators, AI context providers, test case enumerators, impact analyzers, architectural dashboards, design-review artifacts. Install `@suss/behavioral-ir` (one peer dep on `zod`) to consume it in TS with runtime validation. Non-TS consumers can validate against the generated [JSON Schema](packages/ir/schema/behavioral-summary.schema.json). See the [format spec](docs/behavioral-summary-format.md) for the consumption guide.
 
 ## Usage
 
@@ -127,7 +140,7 @@ suss stub --from openapi -i openapi.yaml -o summaries/stripe-provider.json
 suss stub --from cloudformation -i template.yaml -o summaries/api-provider.json
 ```
 
-Stubbed summaries carry `confidence.source: "stub"` and pair with extracted consumers exactly like real provider summaries.
+Stubbed summaries carry `confidence.source: "stub"` and pair with extracted consumers exactly like source-extracted provider summaries.
 
 ### Suppress accepted findings
 
@@ -184,7 +197,7 @@ const effective = applySuppressions(findings, mySuppressions);
 | [`@suss/adapter-typescript`](packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](.github/badges/coverage-typescript.svg) |
 | [`@suss/framework-ts-rest`](packages/framework/ts-rest) | Pattern pack for ts-rest. | ![](.github/badges/coverage-ts-rest.svg) |
 | [`@suss/framework-react-router`](packages/framework/react-router) | Pattern pack for React Router loaders/actions/components. | ![](.github/badges/coverage-react-router.svg) |
-| [`@suss/framework-react`](packages/framework/react) | Pattern pack for React function components (Phase 1.1: JSX-return → render output). | ![](.github/badges/coverage-react.svg) |
+| [`@suss/framework-react`](packages/framework/react) | Pattern pack for React function components. Components become `component`-kind summaries (render body + nested JSX tree); event handlers become sibling `handler`-kind summaries. | ![](.github/badges/coverage-react.svg) |
 | [`@suss/framework-express`](packages/framework/express) | Pattern pack for Express handlers. | ![](.github/badges/coverage-express.svg) |
 | [`@suss/framework-fastify`](packages/framework/fastify) | Pattern pack for Fastify handlers. | ![](.github/badges/coverage-fastify.svg) |
 | [`@suss/runtime-web`](packages/runtime/web) | Runtime pack for `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
@@ -197,7 +210,7 @@ const effective = applySuppressions(findings, mySuppressions);
 
 ## A complete example
 
-[`examples/petstore-axios-openapi/`](examples/petstore-axios-openapi/) is a runnable end-to-end demo: a small TypeScript axios consumer of the Petstore API, paired against the Petstore OpenAPI spec via `suss stub`. `make all` runs the full pipeline (extract → stub → check) and produces real findings — unhandled status codes plus consumer reads of fields the provider declares optional.
+[`examples/petstore-axios-openapi/`](examples/petstore-axios-openapi/) is a runnable end-to-end demo: a small TypeScript axios consumer of the Petstore API, paired against the Petstore OpenAPI spec via `suss stub`. `make all` runs the full pipeline (extract → stub → check) and produces actionable findings — unhandled status codes plus consumer reads of fields the provider declares optional.
 
 ## Docs
 
@@ -212,14 +225,14 @@ const effective = applySuppressions(findings, mySuppressions);
 - [`docs/suppressions.md`](docs/suppressions.md) — `.sussignore` file format and effects (`mark` / `downgrade` / `hide`) for accepted findings
 - [`docs/stubs.md`](docs/stubs.md) — boundary contracts authored from non-source-code inputs (specs, manifests, vendor docs); reader/semantics layering; conventions for platform-injected transitions
 - [`docs/contracts.md`](docs/contracts.md) — the five contract shapes (schema, examples, tests, snapshots, design), their epistemic characters (specification / observation / derivation), and how new domains get added
-- [`docs/roadmap-react.md`](docs/roadmap-react.md) — design-only: React as the first non-HTTP boundary, phased plan (inferred → Storybook → Figma → cross-shape checking), what the rollout commits us to
+- [`docs/roadmap-react.md`](docs/roadmap-react.md) — React as the first non-HTTP boundary: components as N code units (render + handlers + effects), phased plan (inferred → Storybook → cross-shape checking), Figma punted
 - [`docs/boundary-semantics.md`](docs/boundary-semantics.md) — design-only: the layered transport / semantics / recognition model, the `BoundarySemantics` refactor deferred until a second concrete protocol lands, and why GraphQL is the forcing function
 - [`docs/status.md`](docs/status.md) — phase-by-phase progress tracker, test counts, decisions log
 - [`docs/style.md`](docs/style.md) — code conventions (Biome, TypeScript, tests, monorepo)
 
 ## Status
 
-Stable surface: the [behavioral summary format](docs/behavioral-summary-format.md), the IR types in `@suss/behavioral-ir`, the extraction pipeline, and the cross-boundary checker. Pattern packs ship today for **ts-rest**, **React Router**, **Express**, **Fastify**, **fetch**, and **axios**. See [`docs/status.md`](docs/status.md) for the full capability matrix.
+Stable surface: the [behavioral summary format](docs/behavioral-summary-format.md), the IR types in `@suss/behavioral-ir`, the extraction pipeline, and the cross-boundary checker. Shipped packs: **ts-rest**, **React Router**, **Express**, **Fastify**, **fetch**, **axios**, plus early React component support (render body + event handlers). Stub generators: **OpenAPI 3.x**, **AWS API Gateway** (via CloudFormation/SAM). See [`docs/status.md`](docs/status.md) for the full capability matrix and [`docs/roadmap-react.md`](docs/roadmap-react.md) for the React arc.
 
 ## License
 

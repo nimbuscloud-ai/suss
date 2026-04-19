@@ -39,7 +39,7 @@ See [`pipelines.md`](pipelines.md) for per-CLI-action walkthroughs.
 
 The split between adapter and extractor is deliberate. The extractor never sees an AST node — it works on `RawCodeStructure`, a plain data shape. This means:
 
-1. **The extractor is trivially testable** with hand-crafted input. Tests run in milliseconds, no compiler involved.
+1. **The extractor is directly testable** with hand-crafted input. Tests run in milliseconds, no compiler involved.
 2. **Adding a new language** means writing a new adapter that produces `RawCodeStructure`. The extractor doesn't change.
 3. **Framework pack authors** never touch the adapter or extractor — they describe patterns declaratively.
 
@@ -178,7 +178,7 @@ tsRestFramework(): PatternPack {
 }
 ```
 
-**Confidence**: how much of a code unit's behavior was structurally analyzed vs. opaque. Computed as the ratio of opaque predicates to total predicates, bucketed into `high` / `medium` / `low`. Degrades gracefully when the extractor can't decompose something, so downstream consumers can treat low-confidence summaries with appropriate skepticism.
+**Confidence**: how much of a code unit's behavior was structurally analyzed vs. opaque. Computed as the ratio of opaque predicates to total predicates, bucketed into `high` / `medium` / `low`. Falls back to opaque predicates when the extractor can't decompose something, so downstream consumers can treat low-confidence summaries with appropriate skepticism.
 
 ## Package layout
 
@@ -264,10 +264,10 @@ This isn't worth refactoring while there are only two client packs (ts-rest, fet
 
 ## Degradation strategy
 
-Static analysis of real codebases is always imperfect. suss handles this explicitly rather than pretending it doesn't:
+Static analysis of production codebases is always imperfect. suss handles this explicitly rather than pretending it doesn't:
 
-- **Opaque predicates** — when the adapter can't decompose a condition expression, it preserves the source text and marks the predicate `opaque`. Downstream tools handle these honestly.
-- **Gaps** — cases the code unit doesn't handle (declared-but-not-produced, produced-but-not-declared, uncaught exceptions, fall-through branches) are first-class output, not errors.
+- **Opaque predicates** — when the adapter can't decompose a condition expression, it preserves the source text and marks the predicate `opaque`. Downstream tools see an explicit "we don't know" rather than a fabricated decomposition.
+- **Gaps** — cases the code unit doesn't handle (declared-but-not-produced, produced-but-not-declared, uncaught exceptions, fall-through branches) are top-level output, not errors.
 - **Confidence levels** (`high` / `medium` / `low`) — computed from the ratio of opaque to structured predicates. A summary with 80% opaque conditions is labeled "low confidence" so consumers can treat it with appropriate skepticism.
 - **Graceful dependency resolution** — in-project code gets full extraction; typed external dependencies get type info; untyped ones are opaque. No configuration needed.
 
