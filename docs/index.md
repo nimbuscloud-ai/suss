@@ -3,11 +3,11 @@ layout: home
 
 hero:
   name: suss
-  text: Static behavioral analysis for TypeScript
-  tagline: "For every code unit at a boundary — HTTP handler, React component, GraphQL resolver, client call site — suss answers: under what conditions does it produce what outputs?"
+  text: Extract every path your TypeScript code can take
+  tagline: "suss reads your source and writes down what every function, component, handler, and resolver actually does — one structured summary per boundary, complete across every branch. Compare summaries against specs, tests, or each other to find where intent and implementation diverge."
   actions:
     - theme: brand
-      text: Get started (15 min)
+      text: Get started
       link: /tutorial/get-started
     - theme: alt
       text: Why suss
@@ -18,29 +18,29 @@ hero:
 
 features:
   - title: Derivation, not specification
-    details: "suss reads your source and produces structured behavioral summaries — what the code *does*, across every path. Specifications declare what should happen; observations record what did happen once; derivation is the missing third character."
+    details: "Specs say what should happen. Tests record what happened, once. suss gives you the third thing: what the code does, derived from the source itself, complete across every path."
     link: /contracts
     linkText: Three kinds of truth
-  - title: Boundary-aware by construction
-    details: "A `BoundaryBinding` carries transport, semantics, and recognition as three sibling layers. REST, GraphQL (resolver + operation), and in-process function calls all coexist in the IR without retrofitting."
+  - title: One model across every boundary
+    details: "HTTP handlers, GraphQL resolvers, React components, and client call sites all get summarised in the same structured shape. Cross-boundary comparison becomes diffing two summaries."
     link: /boundary-semantics
     linkText: Boundary semantics
-  - title: Extensible via declarative packs
-    details: "Framework packs are data, not code. A pack describes how to recognize units in its framework (registrationCall, resolverMap, graphqlHookCall, …); the TypeScript adapter interprets them. New frameworks add one file; no fork of the analyzer."
+  - title: Add a framework in one file
+    details: "ts-rest, Express, Fastify, React, Apollo, and React Router ship in the box. Adding suss to Nest, Hono, or your internal framework is a small declarative pack — no fork of the analyser."
     link: /framework-packs
     linkText: Write a pack
-  - title: Cross-shape checking
-    details: "Once summaries exist as a uniform shape, anything producing them pairs automatically. OpenAPI stubs cross-check handler implementations. CloudFormation / SAM templates cross-check API Gateway integrations. Storybook stubs cross-check React components."
+  - title: Compare specs against implementations
+    details: "Point suss at your OpenAPI spec and your handler code; get findings where they disagree. Same for CloudFormation vs API Gateway, Storybook stories vs React components, and more."
     link: /cross-boundary-checking
     linkText: How checking works
-  - title: Multi-semantics pairing
-    details: "REST pairs by (method, path). GraphQL operations pair with resolvers by type and field, walking nested selections against the schema. Semantics is a discriminated union on the boundary — adding one adds a variant, not a rewrite."
+  - title: Pairing that speaks each protocol
+    details: "REST handlers pair with REST clients by method and path. GraphQL operations pair with resolvers by type and field, walking nested selections against your schema."
     link: /boundary-semantics
     linkText: The semantics layer
-  - title: Honest about limits
-    details: Opaque predicates are explicit when the analyzer can't decompose them. The internal decisions log records what's shipped, what's deferred, and why. Features land with real tests; deferrals land with concrete forcing-function criteria.
+  - title: Explicit about what it can't see
+    details: "When the analyser can't decompose a condition, it says so — an unresolved branch is a labelled gap, not a silent drop-out. The decisions log tracks what's shipped, what's deferred, and why."
     link: /internal/status
-    linkText: Status & decisions
+    linkText: Status &amp; decisions
 ---
 
 ## Quick start
