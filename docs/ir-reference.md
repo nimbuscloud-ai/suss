@@ -2,7 +2,7 @@
 
 A type-by-type walkthrough of `@suss/behavioral-ir`. The authoritative source is `packages/ir/src/index.ts`; this document explains *why* each type has the shape it does, when to use which variant, and how they compose.
 
-## `BehavioralSummary` — the top-level output
+## `BehavioralSummary`
 
 ```typescript
 interface BehavioralSummary {
@@ -83,7 +83,7 @@ Where a code unit connects to the outside world. A REST endpoint is the same bou
 
 **This shape is HTTP-biased today.** `protocol` is doing the work of both *transport* (wire protocol) and *semantics* (what the participants think they're doing); `framework` is doing the work of recognition (the specific library). `method` / `path` are REST-specific and would be empty for any non-REST boundary even if it's HTTP-transported. When a second boundary semantics lands (GraphQL is the planned forcing function), these fields split into `transport` + `semantics` (a discriminated union) + `recognition`. See [`boundary-semantics.md`](boundary-semantics.md) for the target shape. Until then, the checker, the pairing logic, and the pack interfaces all assume REST semantics.
 
-## `Transition` — the atomic unit of behavior
+## `Transition`
 
 ```typescript
 interface Transition {
@@ -124,7 +124,7 @@ A transition says: "when all of these conditions hold, this output is produced a
 
 Here the client reads `body.name` and `body.email` — if the provider's `200` transition returns a body without `email`, the checker flags a mismatch. `expectedInput` is absent on provider transitions and on client transitions where field tracking couldn't resolve the accesses.
 
-## `Predicate` — conditions that gate transitions
+## `Predicate`
 
 ```typescript
 type Predicate =
@@ -139,7 +139,7 @@ type Predicate =
   | { type: "opaque"; sourceText: string; reason: OpaqueReason };
 ```
 
-A discriminated union over test types. Each variant carries exactly the fields it needs — no optional bag of fields.
+Conditions that gate transitions. A discriminated union over test types, where each variant carries exactly the fields it needs — no optional bag of fields.
 
 **`truthinessCheck` vs. `nullCheck`.** JavaScript's `if (x)` tests truthiness, which is *not* the same as `x != null` — `0`, `""`, and `false` are also falsy. These are kept separate because cross-boundary reasoning about them is different: a nullness check is about the *value's existence*; a truthiness check is about its usefulness. Conflating them would cause false matches.
 
@@ -149,7 +149,7 @@ A discriminated union over test types. Each variant carries exactly the fields i
 
 **Why no `allof`/`anyof` with n-ary arrays directly.** `compound` already does that. Keeping one n-ary form (via the `operands` array) rather than adding separate binary and n-ary variants reduces the surface area.
 
-## `ValueRef` — references to values
+## `ValueRef`
 
 ```typescript
 type ValueRef =
@@ -181,7 +181,7 @@ A reference to a value within a code unit. Each variant identifies where the val
 2. **Cheap to compute** — no type inference, no deep following of calls
 3. **Language-agnostic** — Python's `db.find_by_id(id)` produces an analogous `ValueRef`
 
-## `Output` — what terminals produce
+## `Output`
 
 ```typescript
 type Output =
@@ -195,7 +195,7 @@ type Output =
   | { type: "void" };
 ```
 
-The universal set of output shapes. The framework pack determines which variants matter; the output type itself is framework-agnostic.
+What terminals produce — the universal set of output shapes. The framework pack determines which variants matter; the output type itself is framework-agnostic.
 
 **`response`** — an HTTP response. `statusCode` is a `ValueRef` (not a raw number) because it might be a dynamic value (`res.status(code).json(...)`). A literal 200 comes through as `{ type: "literal", value: 200 }`. This is a recent fix — earlier versions used `number | null` and lost the ability to represent dynamic codes.
 
@@ -331,7 +331,7 @@ Level is computed as the ratio of opaque predicates to total predicates:
 
 Consumers use confidence to decide how strictly to enforce findings. High-confidence provider/consumer mismatches are almost certainly user-visible bugs. Low-confidence ones might be false positives from opaque predicates; they deserve review but not a broken build.
 
-## `Finding` — the unit of cross-boundary output
+## `Finding`
 
 ```typescript
 type FindingKind =
@@ -367,9 +367,9 @@ What the pairwise checker emits. Each finding names the boundary, both sides of 
 
 **Severity drives CLI exit codes.** `suss check` exits non-zero when any `error`-severity finding is present; `warning` and `info` are reported but don't fail the process. Contract violations and unhandled provider cases are errors; dead consumer branches are warnings; `lowConfidence` is informational.
 
-## `RawCodeStructure` — the adapter-to-extractor interface
+## `RawCodeStructure`
 
-Defined in `@suss/extractor`, not `@suss/behavioral-ir`, because it's an implementation boundary inside the pipeline rather than part of the public output.
+The adapter-to-extractor interface. Defined in `@suss/extractor`, not `@suss/behavioral-ir`, because it's an implementation boundary inside the pipeline rather than part of the public output.
 
 ```typescript
 interface RawCodeStructure {
