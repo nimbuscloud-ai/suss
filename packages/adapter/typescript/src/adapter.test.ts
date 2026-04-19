@@ -1,7 +1,5 @@
 // adapter.test.ts — Integration tests for createTypeScriptAdapter (Task 2.5b)
 
-/** biome-ignore-all lint/style/noNonNullAssertion: pack fixtures guarantee field presence */
-
 import path from "node:path";
 
 import { Project } from "ts-morph";
@@ -127,6 +125,10 @@ function createFixtureProject(): Project {
 // ---------------------------------------------------------------------------
 // extractCodeStructure unit tests
 // ---------------------------------------------------------------------------
+
+const raise = (msg: string): never => {
+  throw new Error(msg);
+};
 
 describe("extractCodeStructure", () => {
   it("extracts parameters from a destructured ts-rest handler", () => {
@@ -471,7 +473,11 @@ describe("readContract", () => {
 
     expect(units).toHaveLength(1);
 
-    const result = readContract(units[0], tsRestPack.contractReading!);
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+    );
 
     expect(result).not.toBeNull();
     expect(result?.declaredContract.responses).toEqual([
@@ -498,7 +504,8 @@ describe("readContract", () => {
     const fn = file.getFunctions()[0];
     const result = readContract(
       { func: fn, kind: "handler", name: "standalone" },
-      tsRestPack.contractReading!,
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
     );
 
     expect(result).toBeNull();
@@ -533,7 +540,11 @@ describe("readContract", () => {
     expect(units[0].name).toBe("deleteUser");
 
     // deleteUser has no matching contract entry
-    const result = readContract(units[0], tsRestPack.contractReading!);
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+    );
     expect(result).toBeNull();
   });
 
@@ -564,7 +575,11 @@ describe("readContract", () => {
 
     expect(units).toHaveLength(1);
 
-    const result = readContract(units[0], tsRestPack.contractReading!);
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+    );
 
     expect(result).not.toBeNull();
     expect(result?.declaredContract.responses).toHaveLength(2);
@@ -596,7 +611,11 @@ describe("readContract", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const result = readContract(units[0], tsRestPack.contractReading!);
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+    );
 
     expect(result).not.toBeNull();
     if (result === null) {
@@ -643,7 +662,11 @@ describe("readContract", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const result = readContract(units[0], tsRestPack.contractReading!);
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+    );
 
     expect(result).not.toBeNull();
     expect(result?.declaredContract.responses).toEqual([{ statusCode: 200 }]);
@@ -671,7 +694,11 @@ describe("readContract", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const result = readContract(units[0], tsRestPack.contractReading!);
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+    );
 
     expect(result).not.toBeNull();
     expect(result?.boundaryBinding).toBeNull();
@@ -695,9 +722,10 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
       .find((f) => f.getFilePath().endsWith("handlers.ts"))
       ?.getFilePath();
 
-    expect(handlerPath).toBeDefined();
+    const resolvedHandlerPath =
+      handlerPath ?? raise("handlers.ts source file not loaded");
 
-    const summaries = adapter.extractFromFiles([handlerPath!]);
+    const summaries = adapter.extractFromFiles([resolvedHandlerPath]);
 
     // Should discover both getUser and createUser handlers
     expect(summaries).toHaveLength(2);
@@ -2278,8 +2306,10 @@ describe("inline JSX conditional decomposition", () => {
       project,
       frameworks: [reactPack],
     }).extractAll();
-    const comp = summaries.find((s) => s.identity.name === "Map");
-    const out = comp!.transitions[0].output;
+    const comp =
+      summaries.find((s) => s.identity.name === "Map") ??
+      raise("Map summary not found");
+    const out = comp.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2304,8 +2334,10 @@ describe("inline JSX conditional decomposition", () => {
       project,
       frameworks: [reactPack],
     }).extractAll();
-    const comp = summaries.find((s) => s.identity.name === "Or");
-    const out = comp!.transitions[0].output;
+    const comp =
+      summaries.find((s) => s.identity.name === "Or") ??
+      raise("Or summary not found");
+    const out = comp.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2330,8 +2362,10 @@ describe("inline JSX conditional decomposition", () => {
       project,
       frameworks: [reactPack],
     }).extractAll();
-    const comp = summaries.find((s) => s.identity.name === "Neg");
-    const out = comp!.transitions[0].output;
+    const comp =
+      summaries.find((s) => s.identity.name === "Neg") ??
+      raise("Neg summary not found");
+    const out = comp.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2365,8 +2399,10 @@ describe("inline JSX conditional decomposition", () => {
       project,
       frameworks: [reactPack],
     }).extractAll();
-    const comp = summaries.find((s) => s.identity.name === "Undef");
-    const out = comp!.transitions[0].output;
+    const comp =
+      summaries.find((s) => s.identity.name === "Undef") ??
+      raise("Undef summary not found");
+    const out = comp.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2396,8 +2432,10 @@ describe("inline JSX conditional decomposition", () => {
       project,
       frameworks: [reactPack],
     }).extractAll();
-    const comp = summaries.find((s) => s.identity.name === "AndNonJsx");
-    const out = comp!.transitions[0].output;
+    const comp =
+      summaries.find((s) => s.identity.name === "AndNonJsx") ??
+      raise("AndNonJsx summary not found");
+    const out = comp.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2422,8 +2460,10 @@ describe("inline JSX conditional decomposition", () => {
       project,
       frameworks: [reactPack],
     }).extractAll();
-    const comp = summaries.find((s) => s.identity.name === "DataTernary");
-    const out = comp!.transitions[0].output;
+    const comp =
+      summaries.find((s) => s.identity.name === "DataTernary") ??
+      raise("DataTernary summary not found");
+    const out = comp.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -2448,8 +2488,10 @@ describe("inline JSX conditional decomposition", () => {
       project,
       frameworks: [reactPack],
     }).extractAll();
-    const comp = summaries.find((s) => s.identity.name === "FalseLit");
-    const out = comp!.transitions[0].output;
+    const comp =
+      summaries.find((s) => s.identity.name === "FalseLit") ??
+      raise("FalseLit summary not found");
+    const out = comp.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }

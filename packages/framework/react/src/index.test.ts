@@ -1,5 +1,3 @@
-/** biome-ignore-all lint/style/noNonNullAssertion: fixture-driven tests narrow via summaries.find pattern */
-
 import path from "node:path";
 
 import { Project } from "ts-morph";
@@ -10,6 +8,10 @@ import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { reactFramework } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+const raise = (msg: string): never => {
+  throw new Error(msg);
+};
 
 // ---------------------------------------------------------------------------
 // Fixture project — loads fixtures/react/*.tsx in memory
@@ -99,9 +101,10 @@ describe("reactFramework — integration", () => {
   });
 
   it("Counter emits one Input per destructured prop (role = prop name, type resolved)", () => {
-    const counter = summaries.find((s) => s.identity.name === "Counter");
-    expect(counter).toBeDefined();
-    const inputs = counter!.inputs;
+    const counter =
+      summaries.find((s) => s.identity.name === "Counter") ??
+      raise("Counter summary not found");
+    const inputs = counter.inputs;
     const byName = new Map(
       inputs.map((i) => {
         if (i.type !== "parameter") {
@@ -135,9 +138,10 @@ describe("reactFramework — integration", () => {
   });
 
   it("Greeting emits a single whole-object Input (non-destructured)", () => {
-    const greeting = summaries.find((s) => s.identity.name === "Greeting");
-    expect(greeting).toBeDefined();
-    const inputs = greeting!.inputs;
+    const greeting =
+      summaries.find((s) => s.identity.name === "Greeting") ??
+      raise("Greeting summary not found");
+    const inputs = greeting.inputs;
     expect(inputs).toHaveLength(1);
     if (inputs[0].type !== "parameter") {
       throw new Error("expected parameter input");
@@ -147,9 +151,10 @@ describe("reactFramework — integration", () => {
   });
 
   it("UserCard has two transitions: early-return-null and render div", () => {
-    const userCard = summaries.find((s) => s.identity.name === "UserCard");
-    expect(userCard).toBeDefined();
-    const transitions = userCard!.transitions;
+    const userCard =
+      summaries.find((s) => s.identity.name === "UserCard") ??
+      raise("UserCard summary not found");
+    const transitions = userCard.transitions;
     // Source order: early return null first, then render path
     expect(transitions).toHaveLength(2);
     expect(transitions[0].output.type).toBe("return");
@@ -163,10 +168,11 @@ describe("reactFramework — integration", () => {
   });
 
   it("Nav renders a fragment (root element name is 'Fragment')", () => {
-    const nav = summaries.find((s) => s.identity.name === "Nav");
-    expect(nav).toBeDefined();
+    const nav =
+      summaries.find((s) => s.identity.name === "Nav") ??
+      raise("Nav summary not found");
     expect(nav?.transitions).toHaveLength(1);
-    const out = nav!.transitions[0].output;
+    const out = nav.transitions[0].output;
     expect(out.type).toBe("render");
     if (out.type === "render") {
       expect(out.component).toBe("Fragment");
@@ -174,10 +180,11 @@ describe("reactFramework — integration", () => {
   });
 
   it("Button renders a self-closing element wrapped in parens", () => {
-    const button = summaries.find((s) => s.identity.name === "Button");
-    expect(button).toBeDefined();
+    const button =
+      summaries.find((s) => s.identity.name === "Button") ??
+      raise("Button summary not found");
     expect(button?.transitions).toHaveLength(1);
-    const out = button!.transitions[0].output;
+    const out = button.transitions[0].output;
     expect(out.type).toBe("render");
     // <button type="button">...</button> is a regular (not self-closing)
     // JSX element — exercised to confirm getTagNameNode works across
@@ -192,9 +199,10 @@ describe("reactFramework — integration", () => {
   // -------------------------------------------------------------------
 
   it("UserCard's render branch carries a tree with the dynamic child as an expression node", () => {
-    const userCard = summaries.find((s) => s.identity.name === "UserCard");
-    expect(userCard).toBeDefined();
-    const renderTxn = userCard!.transitions[1];
+    const userCard =
+      summaries.find((s) => s.identity.name === "UserCard") ??
+      raise("UserCard summary not found");
+    const renderTxn = userCard.transitions[1];
     expect(renderTxn.output.type).toBe("render");
     if (renderTxn.output.type !== "render") {
       throw new Error("expected render");
@@ -216,8 +224,10 @@ describe("reactFramework — integration", () => {
   });
 
   it("Nav's fragment root contains two anchor elements with trimmed text children", () => {
-    const nav = summaries.find((s) => s.identity.name === "Nav");
-    const out = nav!.transitions[0].output;
+    const nav =
+      summaries.find((s) => s.identity.name === "Nav") ??
+      raise("nav summary not found");
+    const out = nav.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -239,8 +249,10 @@ describe("reactFramework — integration", () => {
   });
 
   it("Counter's render tree mixes elements, text, and dynamic expressions", () => {
-    const counter = summaries.find((s) => s.identity.name === "Counter");
-    const out = counter!.transitions[0].output;
+    const counter =
+      summaries.find((s) => s.identity.name === "Counter") ??
+      raise("counter summary not found");
+    const out = counter.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -267,11 +279,11 @@ describe("reactFramework — integration", () => {
   // -------------------------------------------------------------------
 
   it("Conditional decomposes `{isLoading && <span/>}` into a conditional with a null else", () => {
-    const conditional = summaries.find(
-      (s) => s.identity.name === "Conditional",
-    );
+    const conditional =
+      summaries.find((s) => s.identity.name === "Conditional") ??
+      raise("conditional summary not found");
     expect(conditional).toBeDefined();
-    const out = conditional!.transitions[0].output;
+    const out = conditional.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -293,10 +305,10 @@ describe("reactFramework — integration", () => {
   });
 
   it("Conditional decomposes `{error ? <div/> : <div/>}` into a conditional with both branches", () => {
-    const conditional = summaries.find(
-      (s) => s.identity.name === "Conditional",
-    );
-    const out = conditional!.transitions[0].output;
+    const conditional =
+      summaries.find((s) => s.identity.name === "Conditional") ??
+      raise("conditional summary not found");
+    const out = conditional.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -320,10 +332,10 @@ describe("reactFramework — integration", () => {
   });
 
   it("Conditional decomposes `{... ? <ul/> : null}` with a null else", () => {
-    const conditional = summaries.find(
-      (s) => s.identity.name === "Conditional",
-    );
-    const out = conditional!.transitions[0].output;
+    const conditional =
+      summaries.find((s) => s.identity.name === "Conditional") ??
+      raise("conditional summary not found");
+    const out = conditional.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -350,12 +362,12 @@ describe("reactFramework — integration", () => {
   // -------------------------------------------------------------------
 
   it("Counter's inline onClick becomes its own handler code unit", () => {
-    const handler = summaries.find(
-      (s) => s.identity.name === "Counter.button.onClick",
-    );
+    const handler =
+      summaries.find((s) => s.identity.name === "Counter.button.onClick") ??
+      raise("handler summary not found");
     expect(handler).toBeDefined();
     expect(handler?.kind).toBe("handler");
-    const meta = handler!.metadata?.react as
+    const meta = handler.metadata?.react as
       | {
           kind: string;
           component: string;
@@ -372,12 +384,12 @@ describe("reactFramework — integration", () => {
   });
 
   it("Form's named handler uses the declaration's identifier", () => {
-    const handler = summaries.find(
-      (s) => s.identity.name === "Form.handleSubmit",
-    );
+    const handler =
+      summaries.find((s) => s.identity.name === "Form.handleSubmit") ??
+      raise("handler summary not found");
     expect(handler).toBeDefined();
     expect(handler?.kind).toBe("handler");
-    const meta = handler!.metadata?.react as
+    const meta = handler.metadata?.react as
       | { propName: string; elementTag: string; localName?: string }
       | undefined;
     expect(meta?.propName).toBe("onSubmit");
@@ -398,9 +410,9 @@ describe("reactFramework — integration", () => {
   });
 
   it("Form's unique input.onChange handler has no disambiguation suffix", () => {
-    const handler = summaries.find(
-      (s) => s.identity.name === "Form.input.onChange",
-    );
+    const handler =
+      summaries.find((s) => s.identity.name === "Form.input.onChange") ??
+      raise("handler summary not found");
     expect(handler).toBeDefined();
     expect(handler?.kind).toBe("handler");
   });
@@ -440,31 +452,31 @@ describe("reactFramework — integration", () => {
       index: number;
       deps: string[] | null;
     };
-    const first = summaries.find(
-      (s) => s.identity.name === "EffectyComponent.effect#0",
-    );
-    const firstMeta = first!.metadata?.react as EffectMeta | undefined;
+    const first =
+      summaries.find((s) => s.identity.name === "EffectyComponent.effect#0") ??
+      raise("first summary not found");
+    const firstMeta = first.metadata?.react as EffectMeta | undefined;
     expect(firstMeta?.deps).toEqual([]);
 
-    const second = summaries.find(
-      (s) => s.identity.name === "EffectyComponent.effect#1",
-    );
-    const secondMeta = second!.metadata?.react as EffectMeta | undefined;
+    const second =
+      summaries.find((s) => s.identity.name === "EffectyComponent.effect#1") ??
+      raise("second summary not found");
+    const secondMeta = second.metadata?.react as EffectMeta | undefined;
     expect(secondMeta?.deps).toEqual(["userId"]);
 
-    const third = summaries.find(
-      (s) => s.identity.name === "EffectyComponent.effect#2",
-    );
-    const thirdMeta = third!.metadata?.react as EffectMeta | undefined;
+    const third =
+      summaries.find((s) => s.identity.name === "EffectyComponent.effect#2") ??
+      raise("third summary not found");
+    const thirdMeta = third.metadata?.react as EffectMeta | undefined;
     // No deps argument → every-render semantics. Represented as null
     // (distinct from `[]` which means mount-only).
     expect(thirdMeta?.deps).toBeNull();
   });
 
   it("useEffect summaries are handler-kind with react boundary binding", () => {
-    const effect = summaries.find(
-      (s) => s.identity.name === "EffectyComponent.effect#0",
-    );
+    const effect =
+      summaries.find((s) => s.identity.name === "EffectyComponent.effect#0") ??
+      raise("effect summary not found");
     expect(effect?.kind).toBe("handler");
     expect(effect?.identity.boundaryBinding?.recognition).toBe("react");
     // React uses the "in-process" transport class — no network hop.
@@ -472,9 +484,9 @@ describe("reactFramework — integration", () => {
   });
 
   it("handler summaries carry a react boundary binding", () => {
-    const handler = summaries.find(
-      (s) => s.identity.name === "Counter.button.onClick",
-    );
+    const handler =
+      summaries.find((s) => s.identity.name === "Counter.button.onClick") ??
+      raise("handler summary not found");
     expect(handler?.identity.boundaryBinding?.recognition).toBe("react");
     expect(handler?.identity.boundaryBinding?.transport).toBe("in-process");
   });
@@ -487,20 +499,22 @@ describe("reactFramework — integration", () => {
     // Counter's onClick body does side-effect work and falls off the
     // end — no explicit return. Without the fall-through opt-in, this
     // would show up with `transitions: []`.
-    const handler = summaries.find(
-      (s) => s.identity.name === "Counter.button.onClick",
-    );
+    const handler =
+      summaries.find((s) => s.identity.name === "Counter.button.onClick") ??
+      raise("handler summary not found");
     expect(handler?.transitions.length).toBeGreaterThan(0);
-    const defaultTxn = handler!.transitions.find((t) => t.isDefault);
+    const defaultTxn = handler.transitions.find((t) => t.isDefault);
     expect(defaultTxn).toBeDefined();
   });
 
   it("Counter's onClick handler carries `setCount` and `onChange` as invocation effects", () => {
-    const handler = summaries.find(
-      (s) => s.identity.name === "Counter.button.onClick",
-    );
-    const defaultTxn = handler!.transitions.find((t) => t.isDefault);
-    const callees = defaultTxn!.effects
+    const handler =
+      summaries.find((s) => s.identity.name === "Counter.button.onClick") ??
+      raise("handler summary not found");
+    const defaultTxn =
+      handler.transitions.find((t) => t.isDefault) ??
+      raise("default transition missing");
+    const callees = defaultTxn.effects
       .filter((e) => e.type === "invocation")
       .map((e) => (e.type === "invocation" ? e.callee : null))
       .filter((s): s is string => s !== null);
@@ -509,11 +523,13 @@ describe("reactFramework — integration", () => {
   });
 
   it("EffectyComponent's useEffect#0 body carries setValue as an invocation effect", () => {
-    const effect = summaries.find(
-      (s) => s.identity.name === "EffectyComponent.effect#0",
-    );
-    const defaultTxn = effect!.transitions.find((t) => t.isDefault);
-    const callees = defaultTxn!.effects
+    const effect =
+      summaries.find((s) => s.identity.name === "EffectyComponent.effect#0") ??
+      raise("effect summary not found");
+    const defaultTxn =
+      effect.transitions.find((t) => t.isDefault) ??
+      raise("default transition missing");
+    const callees = defaultTxn.effects
       .filter((e) => e.type === "invocation")
       .map((e) => (e.type === "invocation" ? e.callee : null));
     expect(callees).toContain("setValue");
@@ -524,8 +540,10 @@ describe("reactFramework — integration", () => {
   // -------------------------------------------------------------------
 
   it("Counter's button element carries type and onClick attrs on its render node", () => {
-    const counter = summaries.find((s) => s.identity.name === "Counter");
-    const out = counter!.transitions[0].output;
+    const counter =
+      summaries.find((s) => s.identity.name === "Counter") ??
+      raise("counter summary not found");
+    const out = counter.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -550,9 +568,11 @@ describe("reactFramework — integration", () => {
   });
 
   it("UserCard's div element omits attrs entirely when empty", () => {
-    const userCard = summaries.find((s) => s.identity.name === "UserCard");
+    const userCard =
+      summaries.find((s) => s.identity.name === "UserCard") ??
+      raise("userCard summary not found");
     // UserCard returns `<div>{user.name}</div>` — no attrs.
-    const renderTxn = userCard!.transitions[1];
+    const renderTxn = userCard.transitions[1];
     const out = renderTxn.output;
     if (out.type !== "render") {
       throw new Error("expected render");
@@ -566,8 +586,10 @@ describe("reactFramework — integration", () => {
   });
 
   it("Form's form element carries onSubmit attr referencing the local handler", () => {
-    const form = summaries.find((s) => s.identity.name === "Form");
-    const out = form!.transitions[0].output;
+    const form =
+      summaries.find((s) => s.identity.name === "Form") ??
+      raise("form summary not found");
+    const out = form.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -583,8 +605,10 @@ describe("reactFramework — integration", () => {
   });
 
   it("Greeting's single-element render tree has text and expression children", () => {
-    const greeting = summaries.find((s) => s.identity.name === "Greeting");
-    const out = greeting!.transitions[0].output;
+    const greeting =
+      summaries.find((s) => s.identity.name === "Greeting") ??
+      raise("greeting summary not found");
+    const out = greeting.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
