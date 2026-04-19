@@ -534,3 +534,173 @@ describe("packageExports — end-to-end summary", () => {
     expect(wrapReturn.value?.type).toBe("record");
   });
 });
+
+// ---------------------------------------------------------------------------
+// packageImport — consumer-side discovery
+// ---------------------------------------------------------------------------
+
+describe("discoverPackageImports", () => {
+  let root: string | null = null;
+
+  afterEach(() => {
+    if (root !== null) {
+      cleanup(root);
+      root = null;
+    }
+  });
+
+  it("emits one caller unit per (enclosing function × consumed binding)", () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/consumer",
+        }),
+      },
+      {
+        relPath: "tsconfig.json",
+        content: JSON.stringify({
+          compilerOptions: {
+            target: "es2022",
+            module: "esnext",
+            moduleResolution: "bundler",
+            strict: true,
+          },
+          include: ["src/**/*"],
+        }),
+      },
+      {
+        relPath: "src/consumer.ts",
+        content: `
+          import { parseSummary, safeParseSummary } from "@suss/behavioral-ir";
+          import { BehavioralSummarySchema } from "@suss/behavioral-ir/schemas";
+
+          export function loadOne(input: unknown) {
+            const s = parseSummary(input);
+            return s;
+          }
+
+          export function loadSafely(input: unknown) {
+            const r = safeParseSummary(input);
+            if (!r.success) {
+              throw new Error("bad");
+            }
+            return r.data;
+          }
+
+          export function validate(input: unknown) {
+            return BehavioralSummarySchema.parse(input);
+          }
+        `,
+      },
+    ]);
+
+    const project = new Project({
+      tsConfigFilePath: path.join(root, "tsconfig.json"),
+    });
+    const sf = project.getSourceFileOrThrow(path.join(root, "src/consumer.ts"));
+
+    const units = discoverUnits(sf, [
+      {
+        kind: "caller",
+        match: {
+          type: "packageImport",
+          packages: ["@suss/behavioral-ir", "@suss/behavioral-ir/schemas"],
+        },
+      },
+    ]);
+
+    const summary = units.map((u) => ({
+      name: u.name,
+      info: u.packageExportInfo,
+    }));
+    // loadOne calls parseSummary; loadSafely calls safeParseSummary;
+    // validate references BehavioralSummarySchema as a member, not a
+    // bare call — v0 only tracks bare Identifier call expressions,
+    // so .parse on a member is out of scope. The first two unit
+    // shapes are locked in here.
+    expect(summary).toContainEqual({
+      name: "loadOne",
+      info: {
+        packageName: "@suss/behavioral-ir",
+        exportPath: ["parseSummary"],
+      },
+    });
+    expect(summary).toContainEqual({
+      name: "loadSafely",
+      info: {
+        packageName: "@suss/behavioral-ir",
+        exportPath: ["safeParseSummary"],
+      },
+    });
+  });
+
+  it("produces function-call binding with package + exportPath on summaries", () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/consumer",
+        }),
+      },
+      {
+        relPath: "tsconfig.json",
+        content: JSON.stringify({
+          compilerOptions: {
+            target: "es2022",
+            module: "esnext",
+            moduleResolution: "bundler",
+            strict: true,
+          },
+          include: ["src/**/*"],
+        }),
+      },
+      {
+        relPath: "src/consumer.ts",
+        content: `
+          import { parseSummary } from "@suss/behavioral-ir";
+          export function loadOne(input: unknown) {
+            return parseSummary(input);
+          }
+        `,
+      },
+    ]);
+
+    const pack: PatternPack = {
+      name: "package-import:@ex/consumer",
+      languages: ["typescript"],
+      protocol: "in-process",
+      discovery: [
+        {
+          kind: "caller",
+          match: {
+            type: "packageImport",
+            packages: ["@suss/behavioral-ir"],
+          },
+        },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: {
+        type: "positionalParams",
+        params: [{ position: 0, role: "arg0" }],
+      },
+    };
+
+    const adapter = createTypeScriptAdapter({
+      tsConfigFilePath: path.join(root, "tsconfig.json"),
+      frameworks: [pack],
+    });
+    const summaries = adapter.extractAll();
+
+    const loadOne = summaries.find((s) => s.identity.name === "loadOne");
+    expect(loadOne).toBeDefined();
+    expect(loadOne?.kind).toBe("caller");
+    expect(loadOne?.identity.boundaryBinding?.semantics).toEqual({
+      name: "function-call",
+      package: "@suss/behavioral-ir",
+      exportPath: ["parseSummary"],
+    });
+  });
+});

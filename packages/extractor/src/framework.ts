@@ -194,6 +194,29 @@ export type DiscoveryMatch =
        * wants to treat default exports separately or not at all.
        */
       excludeNames?: string[];
+    }
+  | {
+      /**
+       * Consumer side of the package-export boundary. Scans source
+       * files for imports of the named packages and records every
+       * call site, emitting one `caller`-kind unit per enclosing
+       * function. Produced bindings carry
+       * `function-call { package, exportPath }` matching the
+       * provider summaries from `packageExports`.
+       *
+       * `packages` is a list of exact package names (possibly with a
+       * sub-path, e.g. `"@suss/behavioral-ir/schemas"`) whose imports
+       * to track. Pass multiple package names to track a family at
+       * once. Imports of any other package are ignored.
+       *
+       * v0 scope: named imports + default imports. Namespace imports
+       * (`import * as X from`) are not yet tracked. Re-imports within
+       * the consumer repo (consumer A imports from consumer B which
+       * re-exports from pkg) produce units against the intermediate,
+       * not the original — full symbol resolution is deferred.
+       */
+      type: "packageImport";
+      packages: string[];
     };
 
 export type BindingExtraction = {
