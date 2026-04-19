@@ -4,7 +4,7 @@ layout: home
 hero:
   name: suss
   text: Extract every path your TypeScript code can take
-  tagline: "suss reads your source and writes down what every function, component, handler, and resolver actually does — one structured summary per boundary, complete across every branch. Compare summaries against specs, tests, or each other to find where intent and implementation diverge."
+  tagline: "Summarise each handler, component, and resolver; pair any two summaries to find where intent and implementation disagree."
   actions:
     - theme: brand
       text: Get started
