@@ -504,10 +504,26 @@ function tryMatchReturnStatement(
     return null;
   }
 
+  // Capture the shape of the returned expression. Without this,
+  // every `return x;` surfaces as `-> return (default)` in inspect
+  // output regardless of what `x` is — opaque to downstream consumers
+  // that want to see the function's output. `extractShape` walks the
+  // expression structurally first (object literals, conditional
+  // expressions, identifiers resolved through AST) and falls back
+  // to the type checker for anything it can't decompose.
+  const expr = node.getExpression();
+  let body: RawTerminal["body"] = null;
+  if (expr !== undefined) {
+    const shape = extractShape(expr);
+    if (shape !== null) {
+      body = { typeText: null, shape };
+    }
+  }
+
   const terminal: RawTerminal = {
     kind: pattern.kind,
     statusCode: null,
-    body: null,
+    body,
     exceptionType: null,
     message: null,
     component: null,
