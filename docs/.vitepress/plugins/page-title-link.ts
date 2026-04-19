@@ -141,11 +141,20 @@ function processChildren(
         if (hrefPath) {
           const baseName = path.posix.basename(hrefPath, ".md");
           const textContent = inner.content.trim();
-          const isPlaceholder =
-            textContent === baseName ||
-            textContent === `${baseName}.md` ||
-            textContent === hrefPath ||
-            textContent === hrefPath.replace(/^\.\//, "");
+          const stripDocs = (s: string) => s.replace(/^docs\//, "");
+          const normalisedText = stripDocs(textContent);
+          const candidates = [
+            baseName,
+            `${baseName}.md`,
+            hrefPath,
+            hrefPath.replace(/^\.\//, ""),
+            stripDocs(hrefPath),
+            stripDocs(hrefPath.replace(/^\.\//, "")),
+          ];
+          const isPlaceholder = candidates.some(
+            (candidate) =>
+              candidate === textContent || candidate === normalisedText,
+          );
           if (isPlaceholder) {
             const resolved = resolve(href);
             if (resolved) {
