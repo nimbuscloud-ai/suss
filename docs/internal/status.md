@@ -145,7 +145,29 @@ Progress tracker. Updated as phases land.
 - **`!ImportValue` cross-stack tracking** — silently passed through. Useful for graph extraction across stacks; not load-bearing for behavioural summaries within a single template.
 - **Non-HTTP triggers** (`AWS::Lambda::EventSourceMapping`, `AWS::Events::Rule`, `AWS::SNS::Subscription`) — would each warrant their own resource-semantics package (`@suss/stub-aws-sqs`, `@suss/stub-aws-eventbridge`, etc.) following the same reader/semantics split as `aws-apigateway`. Out of scope while the focus is HTTP boundaries.
 
-## Phase 9+ — Deferred
+## Phase 9 — Package-export boundary (library provider + consumer pairing)
+
+*Treats a TypeScript package's public export surface as a boundary. Providers come from `packageExports` (resolving `package.json` entry points through `ts-morph`'s export graph); consumers come from `packageImport` (scanning import sites in the same repo or downstream repos that consume the published summaries). Unblocks suss-on-suss dogfooding and dependency-library analysis.*
+
+| Task | Status | Notes |
+|------|--------|-------|
+| 9.1 `library` + `caller` `CodeUnitKind` | ✅ | Provider + consumer sides of in-process `function-call` boundary; `BOUNDARY_ROLE` wired. |
+| 9.2 `function-call` identity extension | ✅ | `FunctionCallSemantics` gains optional `package` + `exportPath` alongside existing `module` / `exportName`; `packageExportBinding()` helper. |
+| 9.3 `packageExports` discovery variant | ✅ | Reads `package.json`, resolves reachable entry points (root + sub-path `exports`, `types` / `default` / `import` conditionals, fallback to `types`/`main`/`module`), maps `dist/*.d.ts` → `src/*.ts`, follows barrel re-exports via `getExportedDeclarations`. Pattern exports and `development` conditionals deferred (warnings). 7 resolver + handler tests. |
+| 9.4 `packageImport` discovery variant | ✅ | Walks named + default imports from a list of target package specs, records each bare-identifier call site, dedupes by (enclosing function × consumed binding). 2 tests. |
+| 9.5 `returnStatement` shape capture | ✅ | `tryMatchReturnStatement` now calls `extractShape(expr)` on the return expression so `Output.return.value` populates — prior gap left every non-object-literal return as `null`. Regression test covers three-branch string-literal classifier + record return. |
+| 9.6 `boundaryKey` for `function-call` | ✅ | Checker keys by `fn:<package>::<exportPath>` when both are set; other function-call units (intra-repo React components) still return null. |
+| 9.7 `suss inspect` if/elif/else tree | ✅ | Renders transitions as a decision tree with shared prefix collapsed; deeply-branched functions (`bodyShapesMatch` 33 transitions, `resolveSubject` 24) become readable. |
+| 9.8 Cross-package dogfood | ✅ | `scripts/dogfood.mjs` runs both discoveries across every `@suss/*` package; pairs providers and consumers via `pairSummaries`. Current run: 87 provider + 79 consumer summaries across 19 packages, 79 paired edges. Top consumed exports visible in the report. |
+
+### Deferred within Phase 9
+
+- **Factory-return follow-through.** `createTypeScriptAdapter()` returns an object whose methods aren't themselves top-level exports, so `packageExports` doesn't summarise them. Adding one-level return-type follow-through would capture factory-style APIs.
+- **Member-call chains on the consumer side.** `adapter.extractAll()` and `Schema.parse()` are not yet tracked — only bare-identifier calls are.
+- **Namespace imports.** `import * as X from "pkg"` isn't scanned.
+- **Pattern exports** (`./utils/*`) and `development` conditional resolution — surfaced as warnings.
+
+## Phase 10+ — Deferred
 
 | Item | Status | Notes |
 |------|--------|-------|

@@ -205,9 +205,22 @@ Produced bindings carry the stronger identity
 `{ transport: "in-process", semantics: { name: "function-call", package, exportPath }, recognition: <pack.name> }`,
 so sub-path exports identify as e.g. `@suss/behavioral-ir/schemas::BehavioralSummarySchema` (`exportPath = ["schemas", "BehavioralSummarySchema"]`). Root exports omit the sub-path segment.
 
-Used by the dogfood script — see `docs/internal/dogfooding.md` — to publish per-package contracts to `dist/suss-summaries.json`. The consumer half (cross-boundary checking against `import { fn } from "pkg"` sites) is not shipped yet; providers pair in the `function-call` direction once it lands.
+Used by the dogfood script — see `docs/internal/dogfooding.md` — to publish per-package contracts to `dist/suss-summaries.json`. Paired against consumer-side summaries produced by `packageImport` (below).
 
 v0 scope: resolves the `types` / `default` / `import` conditions on `exports`, falls back to `types` + `main` + `module` when no `exports` field is set. Pattern exports (`./utils/*`) and `development`-conditional resolution are deferred and surface as warnings on the resolver result.
+
+#### `packageImport`
+```typescript
+{
+  type: "packageImport";
+  packages: string[];  // exact module specifiers to match
+}
+```
+Consumer side of the package-export boundary. Scans source files for imports of the named packages and records every call site; each enclosing function becomes one `caller`-kind code unit per imported binding it invokes. Produced bindings identify as `function-call { package, exportPath }` matching the `packageExports` providers, so the checker's `pairSummaries` pairs them by `fn:<package>::<exportPath>`.
+
+Pass exact module specifiers (with any sub-path, e.g. `"@suss/behavioral-ir/schemas"`). Imports of any other package are ignored. Multiple call sites inside the same enclosing function to the same imported binding collapse to one unit; call sites to different bindings produce one unit each.
+
+v0 scope: named and default imports with bare-identifier call expressions. Namespace imports (`import * as X`) and member-call chains (`X.method()`) are deferred.
 
 ### `BindingExtraction`
 

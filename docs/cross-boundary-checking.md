@@ -4,7 +4,7 @@ Given behavioral summaries for two sides of a boundary — a provider (the handl
 
 This document is the canonical reference for how suss behavioral analysis works: the conceptual model, the analysis levels, what the checker does today, and where it's heading. For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
 
-**Shipping scope: HTTP (REST).** The checker's current logic assumes REST boundary semantics throughout — HTTP status code as the outcome discriminator, response body as the payload, `(method, normalizedPath)` as the pairing key, the 2xx range as "success." None of the check functions below generalize to non-HTTP boundaries yet. When a second semantics lands (GraphQL, Lambda-invoke, queue messages, gRPC), the check functions get refactored to dispatch through a `BoundarySemantics` interface rather than hardcoding REST operations. See [`boundary-semantics.md`](boundary-semantics.md) for the target shape.
+**Shipping scope: HTTP (REST), GraphQL resolver↔operation, and in-process function-call (package exports).** REST is the dispatch-dominant case — status code as the outcome discriminator, response body as the payload, `(method, normalizedPath)` as the pairing key. GraphQL resolvers pair by `(typeName, fieldName)`. In-process `function-call` pairs by `fn:<package>::<exportPath>` — introduced with the `packageExports` / `packageImport` discovery variants so a library's provider summaries pair with every caller that imports from it. See [`boundary-semantics.md`](boundary-semantics.md) for the layered model; see [`framework-packs.md`](framework-packs.md) for the discovery variants.
 
 ## The three contracts
 
