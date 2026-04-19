@@ -244,6 +244,82 @@ describe("inspect output snapshots", () => {
     fs.rmSync(path.dirname(filePath), { recursive: true });
     expect(output).toMatchSnapshot();
   });
+
+  it("renders library + caller summaries with function-call identity", () => {
+    const librarySummary: BehavioralSummary = {
+      kind: "library",
+      location: {
+        file: "src/binding.ts",
+        range: { start: 10, end: 20 },
+        exportName: "makeBinding",
+      },
+      identity: {
+        name: "makeBinding",
+        exportPath: ["makeBinding"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: {
+            name: "function-call",
+            package: "@ex/lib",
+            exportPath: ["makeBinding"],
+          },
+          recognition: "package-exports:@ex/lib",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "makeBinding:return:none:aaa0001",
+          conditions: [],
+          output: { type: "return", value: { type: "ref", name: "Binding" } },
+          effects: [],
+          location: { start: 10, end: 20 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const callerSummary: BehavioralSummary = {
+      kind: "caller",
+      location: {
+        file: "src/app.ts",
+        range: { start: 42, end: 55 },
+        exportName: "initApp",
+      },
+      identity: {
+        name: "initApp",
+        exportPath: ["initApp"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: {
+            name: "function-call",
+            package: "@ex/lib",
+            exportPath: ["makeBinding"],
+          },
+          recognition: "package-import:@ex/app",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "initApp:return:none:bbb0001",
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [],
+          location: { start: 42, end: 55 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+
+    const filePath = writeTempJson([librarySummary, callerSummary]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
 });
 
 // ---------------------------------------------------------------------------
