@@ -58,6 +58,67 @@ around the call. The checker's existing pairing machinery does
 the matching — no new pairing rule, just a new `boundaryKey`
 branch for `function-call` semantics with `package` + `exportPath`.
 
+## What the output looks like
+
+### Library provider
+
+`@suss/checker::predicatesMatch` is a fair mid-sized example — a
+4-branch dispatch that returns a string literal per branch:
+
+```
+@suss/checker::predicatesMatch
+  package-exports:@suss/checker library | packages/checker/src/predicates.ts:12
+
+    if  predicateContainsOpaque(a) || predicateContainsOpaque(b)
+      -> return "unknown"
+    elif  predicateContainsUnresolved(a) || predicateContainsUnresolved(b)
+      -> return "unknown"
+    elif  a.type !== b.type
+      -> return "nomatch"
+    else
+      -> return "match" | "nomatch"
+```
+
+Header reads "package `@suss/checker`, export `predicatesMatch`";
+provenance says the `package-exports:@suss/checker` pack produced
+a `library`-kind unit rooted at `predicates.ts:12`. Each branch
+shows the predicate that decides it and the literal return value
+for that path — no opaque conditions.
+
+### Consumer (caller)
+
+`checkDir` from `@suss/cli` consumes `@suss/checker::checkAll`:
+
+```
+checkDir → @suss/checker::checkAll
+  package-exports:@suss/cli caller | packages/cli/src/check.ts:104
+
+    if  !(fs.existsSync(path.resolve())) || !(fs.statSync(resolved).isDirectory())
+      -> throw Error
+    elif  fs.readdirSync(resolved).filter().length === 0
+      -> throw Error
+    else
+      -> return { findings, hasErrors, result }
+```
+
+Header shape is `caller → target` — `checkDir` is the enclosing
+function that contains the call; `@suss/checker::checkAll` is
+what it consumes. Its own decision tree has three branches: two
+input-validation throws and a happy-path return with the
+expected record shape.
+
+### Pairing
+
+When you run the checker across the union of all summaries, that
+consumer summary pairs with the provider summary for
+`@suss/checker::checkAll` via the key
+`fn:@suss/checker::checkAll`. Same machinery the REST checker
+has used for HTTP boundaries since day one — the key just comes
+from `function-call` semantics instead of `method + path`.
+
+For the full interpretation guide (header shapes, branch
+rendering, gap annotations), see [CLI reference: Reading the output](/reference/cli#reading-the-output).
+
 ## What this exercises
 
 - **`packageExports` discovery** — resolves `types` / `default` /
