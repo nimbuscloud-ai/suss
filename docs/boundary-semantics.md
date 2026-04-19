@@ -137,7 +137,7 @@ different keys:
 - **`module` / `exportName`** — a repo-relative module path (`"./components/Button"`) and a named export within it. Used by packs that pair inside a single repo — e.g. Storybook ↔ component pairing by identity name today; a future pass can tighten that to module pairing via these fields.
 - **`package` / `exportPath`** — a package name (`"@suss/behavioral-ir"`) and the path to the export within the package (`["schemas", "BehavioralSummarySchema"]`). Set by the `packageExports` discovery variant. Sub-path exports contribute the first segment; root exports omit it.
 
-A `React.Button` component discovered in-repo and the same component imported from a shipped package are *different bindings* — conflating the two would drop provenance. The checker's pairing key for `function-call` (landing with the consumer half) reads these slots separately.
+A `React.Button` component discovered in-repo and the same component imported from a shipped package are *different bindings* — conflating the two would drop provenance. The checker's pairing key for `function-call` reads these slots separately: `fn:<package>::<exportPath>` pairs package exports, intra-repo `module`/`exportName` pairing is deferred until a consumer pack uses it.
 
 ### Future semantics variants
 

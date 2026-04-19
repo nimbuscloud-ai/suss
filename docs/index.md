@@ -66,17 +66,22 @@ GET /users/:id
   ts-rest handler | handlers.ts:24
   Contract: 200, 404, 500
 
-    -> 404 { error }  when  !params.id
-    -> 404 { error }  when  params.id && !db.findById()
-    -> 404 { error }  when  params.id && db.findById() && db.findById().deletedAt
-    -> 200 { id, name, email }  (default)
+    if  !params.id
+      -> 404 { error }
+    elif  !db.findById()
+      -> 404 { error }
+    elif  db.findById().deletedAt
+      -> 404 { error }
+    else
+      -> 200 { id, name, email }
 
     !! Declared response 500 is never produced by the handler
 ```
 
-That's `suss inspect` on a ts-rest handler. Everything else in the
-system (checking, agreement, dedup, downstream tooling) consumes
-the JSON form of the same summary.
+That's `suss inspect` on a ts-rest handler. Every path through the
+function appears as a branch with its own output shape; everything
+else in the system (checking, agreement, dedup, downstream tooling)
+consumes the JSON form of the same summary.
 
 ## Where to next
 

@@ -244,7 +244,7 @@ The pipeline contract is strict: the adapter fills in `RawCodeStructure` (includ
 
 A framework pack is a `PatternPack` object describing patterns:
 
-- **Discovery patterns** — how to find code units (`namedExport` for React Router loaders, `registrationCall` for ts-rest handlers, `clientCall` for ts-rest `initClient` / `fetch`, `decorator` for FastAPI, `fileConvention` for Next.js)
+- **Discovery patterns** — how to find code units (`namedExport` for React Router loaders, `registrationCall` for ts-rest handlers, `clientCall` for ts-rest `initClient` / `fetch`, `decorator` for FastAPI, `fileConvention` for Next.js, `packageExports` / `packageImport` for a library's public API surface and the functions that consume it)
 - **Terminal patterns** — what counts as output (`returnShape` for `{ status, body }`, `parameterMethodCall` for `res.json()`, `throwExpression` for `throw httpErrorJson(...)`, `returnStatement` for any return in client functions)
 - **Binding extraction** — how to derive the HTTP method and path (from a registration call argument, from the filename, from a contract, from a client method name, or as a literal)
 - **Contract reading** — if the framework has declared contracts, how to find and read them
