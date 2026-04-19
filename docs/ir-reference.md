@@ -36,12 +36,15 @@ type CodeUnitKind =
   | "resolver"   // GraphQL resolver
   | "consumer"   // Message consumer (Kafka, SQS)
   | "client"     // API client call site (fetch, ts-rest initClient)
-  | "worker";    // Background worker, scheduled task
+  | "worker"     // Background worker, scheduled task
+  | "library";   // Function exposed through a package's public export surface
 ```
 
 The kind determines the behavioral model — specifically, how inputs arrive and what counts as output. Handlers take a request and produce a response. Components take props and state and produce a UI tree. Consumers take a message and produce effects. Clients call an upstream API and branch on the response.
 
 **`consumer` vs `client`.** Both sit on the receiving side of a boundary, but the behavioral model differs. A `consumer` receives a message and produces effects (mutation, emission, delegation). A `client` makes a request, branches on the response status, and reads fields from the response body — the interesting behavior is *what does the client expect the response to look like*, which feeds into cross-boundary body-shape comparison. The distinction matters because the checker applies different rules: client transitions carry `expectedInput` (the body shape the client reads), while consumer transitions carry effects.
+
+**`library`.** Provider side of an in-process `function-call` boundary — a function reached through a package's public export surface. Produced by the `packageExports` discovery variant (see `framework-packs.md`); the resulting binding carries `package` + `exportPath` identity. Distinct from `handler` (no HTTP shape), `component` (no JSX), and `hook` (not a React convention). The consumer counterpart (intra-repo import sites) is planned but not shipped.
 
 **Why it's a closed union.** Open strings would lose type safety. Framework packs can't invent new kinds; if a new framework needs a new kind, it needs an IR update first. This is deliberate — each kind carries assumptions about how the rest of the extraction works, and those assumptions need to be explicit.
 

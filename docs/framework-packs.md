@@ -190,6 +190,25 @@ Find client call sites — the consumer side of a boundary. The adapter finds im
 
 Used by ts-rest (`initClient` from `@ts-rest/core`) and `@suss/runtime-web` (`fetch` as global).
 
+#### `packageExports`
+```typescript
+{
+  type: "packageExports";
+  packageJsonPath: string;     // absolute path
+  subPaths?: string[];         // filter (default: all)
+  excludeNames?: string[];     // e.g. ["default"]
+}
+```
+Treat a TypeScript package's public export surface as a boundary. The adapter reads the given `package.json`, resolves every reachable entry point (root `.` plus any sub-path `exports` like `./schemas`), follows barrel re-exports through `ts-morph`, and emits one unit per exported function — provider side of an in-process `function-call` boundary.
+
+Produced bindings carry the stronger identity
+`{ transport: "in-process", semantics: { name: "function-call", package, exportPath }, recognition: <pack.name> }`,
+so sub-path exports identify as e.g. `@suss/behavioral-ir/schemas::BehavioralSummarySchema` (`exportPath = ["schemas", "BehavioralSummarySchema"]`). Root exports omit the sub-path segment.
+
+Used by the dogfood script — see `docs/internal/dogfooding.md` — to publish per-package contracts to `dist/suss-summaries.json`. The consumer half (cross-boundary checking against `import { fn } from "pkg"` sites) is not shipped yet; providers pair in the `function-call` direction once it lands.
+
+v0 scope: resolves the `types` / `default` / `import` conditions on `exports`, falls back to `types` + `main` + `module` when no `exports` field is set. Pattern exports (`./utils/*`) and `development`-conditional resolution are deferred and surface as warnings on the resolver result.
+
 ### `BindingExtraction`
 
 How to derive the HTTP method and path from a discovered code unit:

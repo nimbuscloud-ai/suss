@@ -12,169 +12,102 @@ with `node scripts/dogfood.mjs` (after `npm run build`).
 
 ## Setup
 
-The script uses the programmatic adapter (not the CLI) because
-half the value is feeling the in-process API. It runs three
-experiments, each pointed at a different workspace:
+The script walks every `@suss/*` package, builds a `packageExports`
+pack pointed at that package's `package.json`, and runs the
+adapter against the package's `tsconfig.json`. Each package gets
+one summary per reachable public export — root `exports` entry,
+sub-path exports (like `@suss/behavioral-ir/schemas`), and
+barrel re-exports are all resolved through `ts-morph`'s export
+graph.
 
-- **`packages/checker`** — a pure-TypeScript utility module
-  surface. No framework, no web server, just functions exported
-  from a library.
-- **`packages/cli`** — argv-dispatch + command runners. The
-  closest thing suss has to an "entry point" shape.
-- **`packages/framework/apollo`** — a pack definition. Declarative
-  data, one factory function.
+Per-package summaries land in `<pkg>/dist/suss-summaries.json` (the
+format proposed in `docs/behavioral-summary-format.md`'s "Publishing
+summaries" section — now shipping output). A consolidated roll-up
+lands in `scripts/dogfood-report.json`.
 
-Each experiment runs a hand-rolled dogfood pack — `namedExport`
-discovery with a list of "likely function names" (`checkAll`,
-`checkPair`, `pairSummaries`, …). No existing shipped pack matches
-suss's internals, so the pack is built inline in the script.
+## What the run produces
 
-## What I saw
+Current shape: **78 public exports across 19/19 `@suss/*`
+packages.** Every package participates — including the thin
+"one factory export" framework packs (`apolloFramework`,
+`reactFramework`, `expressFramework`, …) whose summaries are
+trivially one transition each. The substantial surfaces:
 
-### Pure-TS library surface (`@suss/checker`)
+| Package                   | Exports |
+|---------------------------|--------:|
+| `@suss/checker`           |      21 |
+| `@suss/adapter-typescript` |     13 |
+| `@suss/behavioral-ir`     |      10 |
+| `@suss/cli`               |       8 |
+| `@suss/extractor`         |       8 |
+| Various stubs / runtimes  |    1–2 each |
 
-Six summaries emerged. Confidence `high` on all of them; zero
-opaque predicates across four conditions:
+Every summary carries a
+`function-call { package, exportPath }` binding. Sub-path exports
+identify as e.g.
+`@suss/behavioral-ir/schemas::BehavioralSummarySchema` —
+distinguished from the root-export
+`@suss/behavioral-ir::BehavioralSummarySchema` so downstream
+consumer-pairing can key by the exact import path.
 
-```
-- handler pairGraphqlOperations  (2 transitions, 1 input)
-- handler checkPair              (1 transition,  2 inputs)
-- handler checkAll               (1 transition,  1 input)
-- handler pairSummaries          (1 transition,  1 input)
-- handler pairGraphqlOperations  (2 transitions, 1 input)   ← duplicate
-- handler pairSummaries          (1 transition,  1 input)   ← duplicate
-```
+## What this exercises
 
-The analysis worked — functions were discovered, branches were
-tracked, terminals were captured. Two duplicates appeared because
-the `namedExport` matcher found each function at both its
-originating module AND the barrel re-export in `index.ts`. The
-adapter's dedup key (function node + kind) doesn't collapse them
-because they're *different* function nodes (re-exports are
-separate symbols).
+- **`packageExports` discovery** — v0 resolver handles
+  conditional `exports` (`types` / `default` / `import`), the
+  `types`/`main`/`module` fallback, and uniform
+  `dist/*.d.ts` → `src/*.ts` rewrites. Pattern exports and
+  `development`-conditional resolution are deferred (surface as
+  warnings on the resolver result).
+- **`library` `CodeUnitKind`** — every emitted summary is
+  `kind: "library"`, slotting into `BOUNDARY_ROLE` as
+  `"provider"`. The matching consumer kind is deferred.
+- **Per-package contracts** — the generated
+  `dist/suss-summaries.json` files are exactly what the
+  behavioural-summary-format doc proposed shipping next to
+  compiled packages. Real provider contracts now exist.
 
-**Finding 1 — re-export dedup.** The adapter's dedup key is
-`(startOffset, endOffset, kind)`. Re-exports point at the original
-function so offsets match, but `getExportedDeclarations` yields
-both the re-export site AND the original; our namedExport walk
-visits each. Fix would be to dedupe by the resolved symbol
-identity (the underlying declaration), not the re-export location.
+## What's still out of scope
 
-### CLI dispatch (`@suss/cli`)
+- **Consumer side.** No pack scans `import { fn } from "@suss/…"`
+  call sites today. Pairing (checker `boundaryKey` for
+  `function-call`) is deferred until the consumer arc lands —
+  until then every `library` summary goes into
+  `unmatched.providers` at pairing time.
+- **Factory-return follow-through.** `createTypeScriptAdapter()`
+  returns an object with `extractAll()` / `extractFromFiles()`;
+  those methods aren't themselves top-level exports, so
+  `packageExports` doesn't currently summarise them. One-level
+  return-type follow-through would capture them; adding it
+  collides with some of the type-level analysis questions
+  tracked on the forward backlog.
+- **Declarative-data packs.** The framework packs (ts-rest,
+  Express, Fastify, React, React Router, Apollo) export a single
+  factory that returns a `PatternPack` data structure. Their
+  "public API" is structurally small — one summary per pack,
+  trivially bodied. That's correct: a pack is data, not
+  behaviour. The 19/19 coverage counts them as analysed, not as
+  substantive.
 
-Zero summaries. None of the canned names (`checkAll`, `checkPair`,
-…) appear in the CLI. The CLI's surface is `runCli(argv)` plus
-internal command handlers (`check`, `extract`, `inspect`, `stub`,
-`run`) — all shapes our dogfood pack didn't look for.
+## The in-process API still feels clean
 
-**Finding 2 — `namedExport` requires knowing the names.** A pack
-author has to enumerate entry-point names up front. That works
-for framework conventions (ts-rest's `loader`/`action`, Apollo's
-`ApolloServer`), but falls flat on arbitrary libraries where the
-"interesting" functions aren't conventionally named.
-
-The gap is: "discover every exported function." A new
-`DiscoveryMatch` variant — `allExports` or a regex over export
-names — would fill it. That's small scope; open question is
-whether it's useful beyond dogfooding or whether it surfaces so
-much noise that it's counterproductive.
-
-### Pack data (`@suss/framework-apollo`)
-
-One summary: the `apolloFramework()` factory. The pack's
-declarative `discovery` / `terminals` / `inputMapping` data
-produces no code units because it's data, not code. Expected, but
-revealing.
-
-**Finding 3 — declarative-data modules are invisible.** suss
-models *function-shaped code at boundaries*. A pack definition has
-no runtime-scheduling surface suss can recognise. That's correct!
-But it means 5 out of 19 workspace packages (the packs
-themselves) produce near-nothing under analysis. A downstream
-tool that wanted "every unit in the repo" couldn't use suss to
-enumerate them.
-
-## What this tells us
-
-### The current pack story is framework-first by design
-
-suss's packs describe boundaries — where your code meets the
-outside world. Pure-library modules and declarative-data modules
-don't have boundaries in that sense; they're internal
-implementation. The ts-rest pack knows about `.router(...)`; the
-React pack knows about JSX + `useEffect`; there's no
-"arbitrary TS function" pack because every exported function
-isn't structurally a boundary.
-
-That framing is the right one for the tool's positioning
-(behavioral understanding at boundaries), but it does mean:
-
-- **The "discover every function" use case is out of scope by
-  construction.** Documentation-generation tooling that wants
-  function-level summaries for a library would need to bring
-  its own pack. suss's API and IR support this (the adapter
-  handles `namedExport`; the summary format is kind-agnostic);
-  what's missing is the "allExports" / regex-named discovery
-  primitive.
-
-- **Packs validate themselves by being invisible to the tool.**
-  That's actually a useful property — a pack that produces no
-  summaries against real framework code means something's wrong
-  with the pack. Against suss's own code, though, it means the
-  pack is correctly doing nothing.
-
-### The adapter is mostly sound; the pack surface has ergonomic gaps
-
-The three findings above cluster into two categories:
-
-| Category         | Example                                           | Priority |
-|------------------|---------------------------------------------------|----------|
-| Semantic gap     | Re-export dedup by resolved symbol                | medium   |
-| Pack ergonomics  | No "all exports" or regex-named discovery         | low      |
-| Framing limit    | Declarative-data modules have no summaries        | wontfix  |
-
-The first one is a concrete code change with a clear test (a
-module that re-exports a function should yield one summary, not
-two). The second one is a feature wish. The third is a property.
-
-### The in-process API felt clean
-
-Building an ad-hoc pack inline, constructing the adapter, calling
-`extractAll()` — the API read naturally. The only rough edge was
-the `PatternPack` type's required `languages` / `discovery` /
-`terminals` / `inputMapping` fields, which all need to be
-provided even for a dogfood pack that doesn't care about several
-of them. Defaults on the pack type (or a `partialPack` builder)
-would reduce the boilerplate.
-
-## What didn't go wrong
-
-Things I expected to see and didn't:
-
-- **No opaque predicates in the checker surface.** Every
-  condition the analyzer encountered decomposed cleanly. That
-  includes comparisons, property accesses, and calls —
-  confidence `high` across all six summaries. Not a guarantee;
-  the checker's code uses shapes suss already understands.
-- **No crashes on re-exports, barrel files, or type-only
-  imports.** The ts-morph-backed discovery is resilient to
-  import patterns we didn't explicitly design for.
-- **Fast.** Three full-workspace extractions in under a second.
-  No performance surprises.
+Building the per-package pack inline, constructing the adapter,
+calling `extractAll()` reads naturally — the same properties the
+original three-experiment dogfood highlighted. The only remaining
+friction is that `PatternPack` still requires `languages` /
+`terminals` / `inputMapping` even for a pack that doesn't care
+about several of them; defaults on the type (or a `partialPack`
+builder) would reduce the boilerplate for ad-hoc usage.
 
 ## Follow-ups tracked
 
-Not landing these in this dogfood pass; they go on the backlog:
+Not landing in this pass; they go on the backlog:
 
-1. Fix re-export dedup by resolved symbol (Finding 1)
-2. Add `allExports` / regex-named `DiscoveryMatch` (Finding 2)
-3. Document the "packs are framework-specific" framing
-   prominently enough that users don't expect arbitrary-library
-   coverage (Finding 3 — partly a docs fix, partly a scope
-   statement)
-4. Consider defaults for `PatternPack` to reduce scaffolding
-   friction for ad-hoc usage (ergonomic)
-
-Each is small; none blocks the primary arc. The exercise worked —
-using the tool against its own source surfaced things the unit
-tests wouldn't, and all three findings are concrete.
+1. Consumer-side discovery (scan `import { fn } from "pkg"` sites).
+   Requires a new `CodeUnitKind` (`caller` or an extension of
+   `client`) and a `boundaryKey` rule for `function-call`.
+2. Factory-return follow-through for methods reachable via
+   `createX()` / class constructors.
+3. Broader conditional exports (`development`, pattern
+   exports `./utils/*`).
+4. Defaults on `PatternPack` to reduce scaffolding friction
+   (ergonomic, unchanged from the original dogfood run).

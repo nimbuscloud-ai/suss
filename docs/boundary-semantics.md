@@ -108,8 +108,10 @@ interface BoundaryBinding {
       }
     | {
         name: "function-call";
-        module?: string;
-        exportName?: string;
+        module?: string;        // repo-relative module path
+        exportName?: string;    // named export within that module
+        package?: string;       // package.json `name` — set for package exports
+        exportPath?: string[];  // sub-path + export trail — set for package exports
       };
 
   /** Pack-level recognition identity ("axios", "ts-rest", "openapi", …). */
@@ -123,10 +125,19 @@ semantic bridging all read `semantics.name === "rest"` and narrow to
 `method` + `path`. `function-call` is the escape hatch for in-process
 units (React components, bare function exports, Storybook stub
 components) that don't participate in REST pairing — it keeps the
-binding shape valid and carries optional `module` / `exportName` for
-future cross-module pairing (e.g. Storybook ↔ component pairing by
-identity name is already in place; a future version can tighten to
-module pairing via these fields).
+binding shape valid and carries optional identity fields for
+cross-module / cross-package pairing.
+
+#### Identity: package exports vs. intra-repo references
+
+`function-call` semantics carries two distinct identity slots because
+library consumers and intra-repo callers look each other up through
+different keys:
+
+- **`module` / `exportName`** — a repo-relative module path (`"./components/Button"`) and a named export within it. Used by packs that pair inside a single repo — e.g. Storybook ↔ component pairing by identity name today; a future pass can tighten that to module pairing via these fields.
+- **`package` / `exportPath`** — a package name (`"@suss/behavioral-ir"`) and the path to the export within the package (`["schemas", "BehavioralSummarySchema"]`). Set by the `packageExports` discovery variant. Sub-path exports contribute the first segment; root exports omit it.
+
+A `React.Button` component discovered in-repo and the same component imported from a shipped package are *different bindings* — conflating the two would drop provenance. The checker's pairing key for `function-call` (landing with the consumer half) reads these slots separately.
 
 ### Future semantics variants
 
