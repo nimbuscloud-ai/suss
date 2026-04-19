@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 87,
-      "covered": 82,
+      "total": 102,
+      "covered": 94,
       "skipped": 0,
-      "pct": 94.25
+      "pct": 92.15
     },
     "statements": {
-      "total": 88,
-      "covered": 83,
+      "total": 103,
+      "covered": 95,
       "skipped": 0,
-      "pct": 94.31
+      "pct": 92.23
     },
     "functions": {
-      "total": 27,
-      "covered": 27,
+      "total": 29,
+      "covered": 29,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 75,
-      "covered": 66,
+      "total": 87,
+      "covered": 74,
       "skipped": 0,
-      "pct": 88
+      "pct": 85.05
     },
     "branchesTrue": {
       "total": 0,
@@ -33,28 +33,28 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 85,
-      "covered": 80,
+      "total": 100,
+      "covered": 92,
       "skipped": 0,
-      "pct": 94.11
+      "pct": 92
     },
     "functions": {
-      "total": 25,
-      "covered": 25,
+      "total": 27,
+      "covered": 27,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 85,
-      "covered": 80,
+      "total": 100,
+      "covered": 92,
       "skipped": 0,
-      "pct": 94.11
+      "pct": 92
     },
     "branches": {
-      "total": 73,
-      "covered": 64,
+      "total": 85,
+      "covered": 72,
       "skipped": 0,
-      "pct": 87.67
+      "pct": 84.7
     }
   },
   "src/pack-helpers.ts": {
