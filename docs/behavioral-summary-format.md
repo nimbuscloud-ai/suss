@@ -182,7 +182,7 @@ The behavioral summary is a foundation, not an endpoint. Some things it enables:
 
 ## Publishing summaries
 
-Summaries are portable — `suss extract` produces relative file paths, and the format contains no machine-specific data. This means a library author can publish pre-built summaries alongside their package, and consumers get cross-boundary checking without the library's source code.
+Summaries are portable — `suss extract` produces relative file paths, and the format contains no machine-specific data. A library author can publish pre-built summaries alongside their package, and consumers get cross-boundary checking without the library's source code.
 
 ### Convention
 
@@ -192,21 +192,50 @@ Add a `suss` field to your `package.json` pointing to the summary file:
 {
   "name": "my-api",
   "suss": {
-    "summaries": "./suss-summaries.json"
+    "summaries": "./dist/suss-summaries.json"
   }
 }
 ```
 
-Then extract and include the file in your published package:
+Then extract and include the file in your published package. For plain public APIs — any function reachable through the package's `exports` / `main` / `module` / `types` — the `packageExports` discovery variant produces one summary per public export without enumerating names by hand:
 
-```sh
-suss extract -p tsconfig.json -f express -o suss-summaries.json
+```js
+// build-summaries.mjs
+import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+
+const pack = {
+  name: "package-exports:my-api",
+  languages: ["typescript"],
+  protocol: "in-process",
+  discovery: [{
+    kind: "library",
+    match: {
+      type: "packageExports",
+      packageJsonPath: new URL("./package.json", import.meta.url).pathname,
+    },
+  }],
+  terminals: [
+    { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    { kind: "throw",  match: { type: "throwExpression" }, extraction: {} },
+  ],
+  inputMapping: { type: "positionalParams", params: [] },
+};
+
+const adapter = createTypeScriptAdapter({
+  tsConfigFilePath: "./tsconfig.json",
+  frameworks: [pack],
+});
+fs.writeFileSync("dist/suss-summaries.json", JSON.stringify(adapter.extractAll(), null, 2));
 ```
+
+Framework-shaped APIs (Express / ts-rest / Apollo resolvers / …) use a framework pack in place of `packageExports` and produce REST- or GraphQL-semantics bindings the same way.
+
+suss itself ships this: `scripts/dogfood.mjs` runs the above shape against every `@suss/*` package and writes their `dist/suss-summaries.json` files. See `docs/internal/dogfooding.md` for the run output.
 
 Consumers can check against published summaries directly:
 
 ```sh
-suss check node_modules/my-api/suss-summaries.json my-consumer-summaries.json
+suss check node_modules/my-api/dist/suss-summaries.json my-consumer-summaries.json
 ```
 
 ### Community-maintained summaries
