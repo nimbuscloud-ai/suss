@@ -20,7 +20,8 @@
           "consumer",
           "client",
           "worker",
-          "library"
+          "library",
+          "caller"
         ]
       },
       "location": {

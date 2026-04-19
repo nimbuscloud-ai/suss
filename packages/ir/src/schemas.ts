@@ -30,6 +30,14 @@ export const CodeUnitKindSchema = z.enum([
    * consuming `import { fn } from "pkg"` are paired against these.
    */
   "library",
+  /**
+   * A function that calls into another package's public export surface
+   * — the consumer side of an in-process `function-call` boundary.
+   * Produced by the `packageImport` discovery variant, one unit per
+   * enclosing function that invokes an imported binding. Pairs with
+   * `library`-kind provider summaries by `package + exportPath`.
+   */
+  "caller",
 ]);
 
 export const ComparisonOpSchema = z.enum([
