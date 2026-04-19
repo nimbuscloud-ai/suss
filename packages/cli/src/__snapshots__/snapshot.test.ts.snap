@@ -66,8 +66,10 @@ exports[`inspect output snapshots > renders a client summary 1`] = `
 "GET /users/:id
   fetch client | src/pages/user.ts:5
 
-    -> throw Error  when  !fetch().ok
-    -> return  (default)
+    if  !fetch().ok
+      -> throw Error
+    else
+      -> return
 
 1 summaries inspected.
 "
@@ -78,9 +80,12 @@ exports[`inspect output snapshots > renders a handler with contract and body sha
   express handler | src/handlers/users.ts:10
   Contract: 200, 400, 404, 500
 
-    -> 400 { error }  when  !req.params.id
-    -> 404 { error }  when  db.findById() == null
-    -> 200 { id, name, email }  (default)
+    if  !req.params.id
+      -> 400 { error }
+    elif  db.findById() == null
+      -> 404 { error }
+    else
+      -> 200 { id, name, email }
 
 1 summaries inspected.
 "
@@ -91,15 +96,20 @@ exports[`inspect output snapshots > renders multiple summaries 1`] = `
   express handler | src/handlers/users.ts:10
   Contract: 200, 400, 404, 500
 
-    -> 400 { error }  when  !req.params.id
-    -> 404 { error }  when  db.findById() == null
-    -> 200 { id, name, email }  (default)
+    if  !req.params.id
+      -> 400 { error }
+    elif  db.findById() == null
+      -> 404 { error }
+    else
+      -> 200 { id, name, email }
 
 GET /users/:id
   fetch client | src/pages/user.ts:5
 
-    -> throw Error  when  !fetch().ok
-    -> return  (default)
+    if  !fetch().ok
+      -> throw Error
+    else
+      -> return
 
 2 summaries inspected.
 "
@@ -151,7 +161,16 @@ exports[`inspect variant rendering > renders every Predicate variant 1`] = `
   express handler | src/handlers/users.ts:10
   Contract: 200, 400, 404, 500
 
-    -> 200  when  1 !== 2 && req.query.id && db.findById() == null && typeof err === "Error" && !obj.has("id") && isValid(x) && a || b && !(1 > 0) && weirdSync()
+    if  1 !== 2
+      if  req.query.id
+        if  db.findById() == null
+          if  typeof err === "Error"
+            if  !obj.has("id")
+              if  isValid(x)
+                if  a || b
+                  if  1 > 0
+                  elif  weirdSync()
+                    -> 200
 
 1 summaries inspected.
 "
@@ -162,7 +181,11 @@ exports[`inspect variant rendering > renders every ValueRef and Derivation varia
   express handler | src/handlers/users.ts:10
   Contract: 200, 400, 404, 500
 
-    -> 200  when  db().result === 1 && arr.[0] === "x" && fetch().await.json().kind === "ok" && state.loaded === MAGIC
+    if  db().result === 1
+      if  arr.[0] === "x"
+        if  fetch().await.json().kind === "ok"
+          if  state.loaded === MAGIC
+            -> 200
 
 1 summaries inspected.
 "
@@ -195,7 +218,11 @@ exports[`inspect variant rendering > simplifies double negations and !truthiness
   express handler | src/handlers/users.ts:10
   Contract: 200, 400, 404, 500
 
-    -> 200  when  x && !y && z != null
+    if  !x
+    elif  y
+    elif  z == null
+    else
+      -> 200
 
 1 summaries inspected.
 "

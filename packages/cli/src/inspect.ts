@@ -186,32 +186,217 @@ function formatOutput(output: Output): string {
   return dispatchByType(OUTPUT_FORMATTERS, output);
 }
 
-function formatTransition(
-  t: Transition,
-  declaredStatuses: Set<number> | null,
-): string {
-  const output = formatOutput(t.output);
-  const conditions = t.conditions.map((c) => formatCondition(c)).join(" && ");
+// ---------------------------------------------------------------------------
+// if/elif/else transition rendering
+// ---------------------------------------------------------------------------
+//
+// Transitions come from a linear AST walk that accumulates path predicates:
+// T0's conditions are `[C0]`, T1's are `[!C0, C1]`, T2's are `[!C0, !C1, C2]`,
+// and so on. Rendered naively each branch repeats the full negation chain of
+// every prior branch, which drowns out the one predicate that actually
+// decided the branch.
+//
+// `renderTransitions` folds the transitions back into a decision tree, then
+// renders the tree as nested `if` / `elif` / `else` — shared prefix appears
+// once, elif collapses a one-predicate else-branch onto the same indent,
+// nested ifs indent further. Falls back to leaf output lines only at the
+// branches.
 
-  let line = `    -> ${output}`;
+type Leaf = {
+  output: Output;
+  isDefault: boolean;
+  declaredStatuses: Set<number> | null;
+};
 
-  if (t.isDefault) {
-    line += "  (default)";
-  } else if (conditions) {
-    line += `  when  ${conditions}`;
+type TreeNode =
+  | { kind: "empty" }
+  | { kind: "leaf"; leaf: Leaf }
+  | {
+      kind: "branch";
+      predicate: Predicate;
+      thenBranch: TreeNode;
+      elseBranch: TreeNode;
+    };
+
+function predicateEqual(a: Predicate, b: Predicate): boolean {
+  // Structural equality via JSON — predicates are plain zod-shaped data and
+  // the schemas fix key order, so round-tripping is stable. Good enough for
+  // display-time tree building; not a load-bearing invariant.
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function insertIntoTree(
+  node: TreeNode,
+  conditions: Predicate[],
+  i: number,
+  leaf: Leaf,
+): TreeNode {
+  if (i >= conditions.length) {
+    if (node.kind === "empty") {
+      return { kind: "leaf", leaf };
+    }
+    if (node.kind === "leaf") {
+      // Earlier transition already captured this slot; preserve precedence.
+      return node;
+    }
+    // Arrived at a branch node when the transition's conditions end mid-way.
+    // This happens when the assembler records a fall-through leaf whose
+    // condition list is shorter than a sibling's. Attach the leaf to the
+    // nearest empty else slot: that's the "if this branch's `if` didn't
+    // match" location. Walking down-and-right lets us land on the
+    // innermost empty else which corresponds to the fall-through.
+    return attachToDeepestEmptyElse(node, leaf);
   }
+  const cond = conditions[i];
+  const positive = cond.type !== "negation";
+  const pred = positive ? cond : cond.operand;
 
-  // Flag undeclared status codes
-  if (declaredStatuses !== null && t.output.type === "response") {
-    const sc = t.output.statusCode;
-    if (sc !== null && sc.type === "literal" && typeof sc.value === "number") {
-      if (!declaredStatuses.has(sc.value)) {
-        line += "  !! undeclared";
-      }
+  if (node.kind === "empty") {
+    const branch: TreeNode = {
+      kind: "branch",
+      predicate: pred,
+      thenBranch: { kind: "empty" },
+      elseBranch: { kind: "empty" },
+    };
+    return insertIntoTree(branch, conditions, i, leaf);
+  }
+  if (node.kind === "leaf") {
+    return node;
+  }
+  if (!predicateEqual(node.predicate, pred)) {
+    // Predicate shape mismatch at this depth. The transitions don't line up
+    // into a clean decision tree — fall back to treating the incoming
+    // condition as a fresh branch in the else slot.
+    return {
+      ...node,
+      elseBranch: insertIntoTree(node.elseBranch, conditions, i, leaf),
+    };
+  }
+  if (positive) {
+    return {
+      ...node,
+      thenBranch: insertIntoTree(node.thenBranch, conditions, i + 1, leaf),
+    };
+  }
+  return {
+    ...node,
+    elseBranch: insertIntoTree(node.elseBranch, conditions, i + 1, leaf),
+  };
+}
+
+function attachToDeepestEmptyElse(node: TreeNode, leaf: Leaf): TreeNode {
+  if (node.kind !== "branch") {
+    return node;
+  }
+  if (node.elseBranch.kind === "empty") {
+    return { ...node, elseBranch: { kind: "leaf", leaf } };
+  }
+  return {
+    ...node,
+    elseBranch: attachToDeepestEmptyElse(node.elseBranch, leaf),
+  };
+}
+
+function buildDecisionTree(transitions: Transition[]): TreeNode {
+  let root: TreeNode = { kind: "empty" };
+  for (const t of transitions) {
+    root = insertIntoTree(root, t.conditions, 0, {
+      output: t.output,
+      isDefault: t.isDefault,
+      declaredStatuses: null, // filled by caller wrapper
+    });
+  }
+  return root;
+}
+
+function renderLeaf(leaf: Leaf, indent: string): string {
+  let line = `${indent}-> ${formatOutput(leaf.output)}`;
+  if (leaf.declaredStatuses !== null && leaf.output.type === "response") {
+    const sc = leaf.output.statusCode;
+    if (
+      sc !== null &&
+      sc.type === "literal" &&
+      typeof sc.value === "number" &&
+      !leaf.declaredStatuses.has(sc.value)
+    ) {
+      line += "  !! undeclared";
     }
   }
-
   return line;
+}
+
+function renderNode(
+  node: TreeNode,
+  indent: string,
+  keyword: "if" | "elif",
+): string[] {
+  if (node.kind === "empty") {
+    return [];
+  }
+  if (node.kind === "leaf") {
+    return [renderLeaf(node.leaf, indent)];
+  }
+  const lines: string[] = [];
+  lines.push(`${indent}${keyword}  ${formatCondition(node.predicate)}`);
+  const inner = `${indent}  `;
+  lines.push(...renderThenSide(node.thenBranch, inner));
+
+  // Chain elif when the else side is a single branch; emit a bare `else`
+  // when it's a leaf.
+  let el: TreeNode = node.elseBranch;
+  while (el.kind === "branch") {
+    lines.push(`${indent}elif  ${formatCondition(el.predicate)}`);
+    lines.push(...renderThenSide(el.thenBranch, inner));
+    el = el.elseBranch;
+  }
+  if (el.kind === "leaf") {
+    lines.push(`${indent}else`);
+    lines.push(renderLeaf(el.leaf, inner));
+  }
+  return lines;
+}
+
+function renderThenSide(node: TreeNode, indent: string): string[] {
+  if (node.kind === "empty") {
+    return [];
+  }
+  if (node.kind === "leaf") {
+    return [renderLeaf(node.leaf, indent)];
+  }
+  return renderNode(node, indent, "if");
+}
+
+function renderTransitions(
+  transitions: Transition[],
+  declaredStatuses: Set<number> | null,
+): string[] {
+  // Propagate declaredStatuses onto every leaf so the undeclared-status
+  // annotation can be emitted without re-threading the argument through
+  // the recursion.
+  const tree = buildDecisionTree(transitions);
+  stampDeclaredStatuses(tree, declaredStatuses);
+  const baseIndent = "    ";
+  if (tree.kind === "leaf") {
+    return [renderLeaf(tree.leaf, baseIndent)];
+  }
+  if (tree.kind === "branch") {
+    return renderNode(tree, baseIndent, "if");
+  }
+  return [];
+}
+
+function stampDeclaredStatuses(
+  node: TreeNode,
+  declaredStatuses: Set<number> | null,
+): void {
+  if (node.kind === "leaf") {
+    node.leaf.declaredStatuses = declaredStatuses;
+    return;
+  }
+  if (node.kind === "branch") {
+    stampDeclaredStatuses(node.thenBranch, declaredStatuses);
+    stampDeclaredStatuses(node.elseBranch, declaredStatuses);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,9 +454,7 @@ function renderSummary(summary: BehavioralSummary): string {
   // Transitions
   if (summary.transitions.length > 0) {
     lines.push("");
-    for (const t of summary.transitions) {
-      lines.push(formatTransition(t, declaredStatuses));
-    }
+    lines.push(...renderTransitions(summary.transitions, declaredStatuses));
   }
 
   // Gaps
