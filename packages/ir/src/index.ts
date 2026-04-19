@@ -120,6 +120,8 @@ export function functionCallBinding(opts: {
   recognition: string;
   module?: string;
   exportName?: string;
+  package?: string;
+  exportPath?: string[];
 }): BoundaryBinding {
   return {
     transport: opts.transport,
@@ -127,9 +129,36 @@ export function functionCallBinding(opts: {
       name: "function-call",
       ...(opts.module !== undefined ? { module: opts.module } : {}),
       ...(opts.exportName !== undefined ? { exportName: opts.exportName } : {}),
+      ...(opts.package !== undefined ? { package: opts.package } : {}),
+      ...(opts.exportPath !== undefined ? { exportPath: opts.exportPath } : {}),
     },
     recognition: opts.recognition,
   };
+}
+
+/**
+ * Build a function-call binding that identifies a public package
+ * export — the provider side of a library boundary.
+ *
+ * Thin wrapper over `functionCallBinding` that keeps call sites
+ * declarative: the caller states "this is a package export" rather
+ * than having to remember to pass both `package` and `exportPath`.
+ * Transport defaults to `"in-process"` for typical TypeScript
+ * library consumption; cross-process deployments (an RPC-shim over
+ * a package export) can override.
+ */
+export function packageExportBinding(opts: {
+  transport?: string;
+  recognition: string;
+  packageName: string;
+  exportPath: string[];
+}): BoundaryBinding {
+  return functionCallBinding({
+    transport: opts.transport ?? "in-process",
+    recognition: opts.recognition,
+    package: opts.packageName,
+    exportPath: opts.exportPath,
+  });
 }
 
 /**
@@ -217,6 +246,7 @@ export const BOUNDARY_ROLE: Record<CodeUnitKind, BoundaryRole> = {
   worker: "provider",
   component: "provider",
   hook: "provider",
+  library: "provider",
   client: "consumer",
   consumer: "consumer",
 };

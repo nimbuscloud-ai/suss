@@ -11,6 +11,7 @@ import {
   graphqlResolverBinding,
   type Output,
   type Predicate,
+  packageExportBinding,
   parseSummaries,
   parseSummary,
   restBinding,
@@ -486,6 +487,35 @@ describe("binding constructors", () => {
       module: "./Button",
       exportName: "Button",
     });
+
+    const withPackage = functionCallBinding({
+      transport: "in-process",
+      recognition: "package-exports:@suss/behavioral-ir",
+      package: "@suss/behavioral-ir",
+      exportPath: ["parseSummary"],
+    });
+    expect(withPackage.semantics).toEqual({
+      name: "function-call",
+      package: "@suss/behavioral-ir",
+      exportPath: ["parseSummary"],
+    });
+  });
+
+  it("packageExportBinding wraps function-call with package identity", () => {
+    const b = packageExportBinding({
+      recognition: "package-exports:@suss/behavioral-ir",
+      packageName: "@suss/behavioral-ir",
+      exportPath: ["schemas", "BehavioralSummarySchema"],
+    });
+    expect(b).toEqual({
+      transport: "in-process",
+      semantics: {
+        name: "function-call",
+        package: "@suss/behavioral-ir",
+        exportPath: ["schemas", "BehavioralSummarySchema"],
+      },
+      recognition: "package-exports:@suss/behavioral-ir",
+    });
   });
 
   it("graphqlResolverBinding emits typeName + fieldName", () => {
@@ -544,16 +574,18 @@ describe("BOUNDARY_ROLE", () => {
       "consumer",
       "client",
       "worker",
+      "library",
     ];
     for (const kind of allKinds) {
       expect(BOUNDARY_ROLE[kind]).toMatch(/^(provider|consumer)$/);
     }
   });
 
-  it("classifies non-HTTP provider kinds (worker, component, hook) as providers", () => {
+  it("classifies non-HTTP provider kinds (worker, component, hook, library) as providers", () => {
     expect(BOUNDARY_ROLE.worker).toBe("provider");
     expect(BOUNDARY_ROLE.component).toBe("provider");
     expect(BOUNDARY_ROLE.hook).toBe("provider");
+    expect(BOUNDARY_ROLE.library).toBe("provider");
   });
 
   it("classifies client and consumer as consumers", () => {

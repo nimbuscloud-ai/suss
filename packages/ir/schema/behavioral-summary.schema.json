@@ -19,7 +19,8 @@
           "resolver",
           "consumer",
           "client",
-          "worker"
+          "worker",
+          "library"
         ]
       },
       "location": {
@@ -119,6 +120,15 @@
                           },
                           "exportName": {
                             "type": "string"
+                          },
+                          "package": {
+                            "type": "string"
+                          },
+                          "exportPath": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": ["name"],
