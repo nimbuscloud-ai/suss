@@ -5,23 +5,24 @@
 //
 //   1. Walks `packages/` for every `package.json` whose `name` starts
 //      with `@suss/`.
-//   2. For each package, builds a `packageExports` pack pointed at the
-//      package's `package.json`, then runs the adapter against the
-//      package's `tsconfig.json`.
-//   3. Writes per-package summaries to `<pkg>/dist/suss-summaries.json`
-//      — the format proposed in docs/behavioral-summary-format.md's
-//      "Publishing summaries" section, now actual output.
-//   4. Writes a consolidated roll-up to `scripts/dogfood-report.json`.
-//
-// Running this is the fastest way to see what happens when suss
-// analyses a real TypeScript codebase — its own. Observations go
-// into docs/internal/dogfooding.md.
+//   2. For each package, runs the adapter twice:
+//      - `packageExports` produces provider (`library`) summaries for
+//        the package's public API.
+//      - `packageImport` produces consumer (`caller`) summaries for
+//        every function that calls into another `@suss/*` package.
+//   3. Writes per-package summaries to `<pkg>/dist/suss-summaries.json`.
+//   4. Unions all summaries, runs the checker's `pairSummaries`, and
+//      reports paired provider↔consumer edges plus unmatched
+//      providers/consumers — the cross-package dependency graph as
+//      structured data.
+//   5. Writes a consolidated roll-up to `scripts/dogfood-report.json`.
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createTypeScriptAdapter } from "../packages/adapter/typescript/dist/index.js";
+import { pairSummaries } from "../packages/checker/dist/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,8 +76,17 @@ const report = {
   packages: [],
 };
 
-let totalSummaries = 0;
+let totalProviders = 0;
+let totalConsumers = 0;
 let totalPackagesWithExports = 0;
+const sussPackageNames = packages.map((p) => p.packageJson.name);
+// Also track sub-paths we know about so `@suss/behavioral-ir/schemas`
+// consumers pair correctly — the import-site matches the module
+// specifier exactly.
+const sussImportTargets = new Set(sussPackageNames);
+sussImportTargets.add("@suss/behavioral-ir/schemas");
+
+const allSummaries = [];
 
 for (const pkg of packages) {
   const name = pkg.packageJson.name;
@@ -100,6 +110,13 @@ for (const pkg of packages) {
         match: {
           type: "packageExports",
           packageJsonPath: pkg.packageJsonPath,
+        },
+      },
+      {
+        kind: "caller",
+        match: {
+          type: "packageImport",
+          packages: [...sussImportTargets].filter((p) => p !== name),
         },
       },
     ],
@@ -132,17 +149,32 @@ for (const pkg of packages) {
     continue;
   }
 
-  console.log(`  exports: ${summaries.length}`);
-  for (const s of summaries.slice(0, 6)) {
+  const providers = summaries.filter((s) => s.kind === "library");
+  const consumers = summaries.filter((s) => s.kind === "caller");
+
+  console.log(
+    `  providers: ${providers.length}  |  consumers: ${consumers.length}`,
+  );
+  for (const s of providers.slice(0, 4)) {
     const exportPath =
       s.identity.boundaryBinding?.semantics?.exportPath?.join(".") ??
       s.identity.name;
     console.log(
-      `    - ${exportPath}  (${s.transitions.length} transitions, ${s.inputs.length} inputs, ${s.confidence.level})`,
+      `    library ${exportPath}  (${s.transitions.length} trans, ${s.inputs.length} in)`,
     );
   }
-  if (summaries.length > 6) {
-    console.log(`    … +${summaries.length - 6} more`);
+  if (providers.length > 4) {
+    console.log(`    … +${providers.length - 4} more providers`);
+  }
+  for (const s of consumers.slice(0, 4)) {
+    const key =
+      s.identity.boundaryBinding?.semantics?.package +
+      "::" +
+      (s.identity.boundaryBinding?.semantics?.exportPath?.join(".") ?? "?");
+    console.log(`    caller  ${s.identity.name} → ${key}`);
+  }
+  if (consumers.length > 4) {
+    console.log(`    … +${consumers.length - 4} more consumers`);
   }
 
   const opaqueCount = summaries
@@ -153,10 +185,12 @@ for (const pkg of packages) {
     .flatMap((s) => s.transitions)
     .flatMap((t) => t.conditions).length;
 
-  if (summaries.length > 0) {
+  if (providers.length > 0) {
     totalPackagesWithExports += 1;
-    totalSummaries += summaries.length;
   }
+  totalProviders += providers.length;
+  totalConsumers += consumers.length;
+  allSummaries.push(...summaries);
 
   // Write per-package summaries file if dist/ exists.
   const distDir = path.join(pkg.dir, "dist");
@@ -174,11 +208,13 @@ for (const pkg of packages) {
     name,
     packageJson: path.relative(repoRoot, pkg.packageJsonPath),
     tsconfig: path.relative(repoRoot, tsconfig),
-    summaryCount: summaries.length,
+    providerCount: providers.length,
+    consumerCount: consumers.length,
     opaqueRatio: totalConditions === 0 ? null : opaqueCount / totalConditions,
     summaries: summaries.map((s) => ({
       name: s.identity.name,
       exportPath: s.identity.boundaryBinding?.semantics?.exportPath ?? null,
+      package: s.identity.boundaryBinding?.semantics?.package ?? null,
       kind: s.kind,
       file: path.relative(repoRoot, s.location.file),
       transitionCount: s.transitions.length,
@@ -191,14 +227,58 @@ for (const pkg of packages) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Cross-package pairing
+// ---------------------------------------------------------------------------
+
+console.log("\n=== Cross-package pairing ===");
+const pairing = pairSummaries(allSummaries);
+console.log(`  pairs:               ${pairing.pairs.length}`);
+console.log(`  unmatched providers: ${pairing.unmatched.providers.length}`);
+console.log(`  unmatched consumers: ${pairing.unmatched.consumers.length}`);
+console.log(`  noBinding:           ${pairing.unmatched.noBinding.length}`);
+
+// Group paired edges by provider package for a readable top-level map.
+const edgesByProvider = new Map();
+for (const pair of pairing.pairs) {
+  const providerPkg =
+    pair.provider.identity.boundaryBinding?.semantics?.package ?? "?";
+  const providerExport =
+    pair.provider.identity.boundaryBinding?.semantics?.exportPath?.join(".") ??
+    pair.provider.identity.name;
+  const providerKey = `${providerPkg}::${providerExport}`;
+  const bucket = edgesByProvider.get(providerKey) ?? [];
+  bucket.push({
+    consumerFunction: pair.consumer.identity.name,
+    consumerFile: path.relative(repoRoot, pair.consumer.location.file),
+  });
+  edgesByProvider.set(providerKey, bucket);
+}
+
+console.log("\n  top consumed exports:");
+const ranked = [...edgesByProvider.entries()].sort(
+  (a, b) => b[1].length - a[1].length,
+);
+for (const [key, consumers] of ranked.slice(0, 10)) {
+  console.log(`    ${key}  ← ${consumers.length} callers`);
+}
+
 report.totalPackages = packages.length;
 report.totalPackagesWithExports = totalPackagesWithExports;
-report.totalSummaries = totalSummaries;
+report.totalProviders = totalProviders;
+report.totalConsumers = totalConsumers;
+report.pairing = {
+  pairs: pairing.pairs.length,
+  unmatchedProviders: pairing.unmatched.providers.length,
+  unmatchedConsumers: pairing.unmatched.consumers.length,
+  noBinding: pairing.unmatched.noBinding.length,
+  edgesByProvider: Object.fromEntries(ranked),
+};
 
 const reportPath = path.join(__dirname, "dogfood-report.json");
 fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
 console.log(
-  `\nSummary: ${totalSummaries} public exports across ${totalPackagesWithExports}/${packages.length} @suss/* packages.`,
+  `\nSummary: ${totalProviders} provider + ${totalConsumers} consumer summaries across ${packages.length} @suss/* packages. ${pairing.pairs.length} cross-package edges paired.`,
 );
 console.log(`Report written to ${path.relative(repoRoot, reportPath)}`);
