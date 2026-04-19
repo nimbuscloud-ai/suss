@@ -39,8 +39,8 @@ features:
     linkText: Add to a project
   - title: Explicit about what it can't analyse
     details: "When a condition is too dynamic for static analysis, the branch is labelled unresolved rather than silently dropped. You see exactly where coverage stops."
-    link: /internal/status
-    linkText: "Status & decisions"
+    link: /motivation#what-suss-is-not
+    linkText: What suss is not
 ---
 
 ## Quick start
