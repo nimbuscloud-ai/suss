@@ -8,7 +8,7 @@ Related: [`stubs.md`](stubs.md) (schema-shaped stubs, the one shape shipped toda
 
 Suss started with HTTP, where the dominant contract shape is a schema — OpenAPI, ts-rest `responses`, CFN `MethodResponses`. All three describe the interface: what types flow across the boundary, with status codes and body schemas as the enumeration. Cross-boundary checking in suss today compares inferred behavior against a declared schema, end of story.
 
-That framing quietly assumes the schema is the whole contract. It isn't, even for HTTP — a Pact recording and an OpenAPI spec say different things, and teams use both for different purposes. When we look at other domains, the assumption breaks obviously:
+That framing quietly assumes the schema is the whole contract. It isn't, even for HTTP — a Pact recording and an OpenAPI spec say different things, and teams use both for different purposes. When we look at other domains, the assumption breaks outright:
 
 - A React component's full contract is never "the props interface." It's some combination of snapshots, Storybook scenarios, Playwright tests, Figma mocks, and accessibility specs. Each captures a different slice.
 - A database boundary's contract lives in a schema file *and* in migrations, *and* in seed data representing canonical states, *and* possibly in ER diagrams.
@@ -18,7 +18,7 @@ Suss positions itself as a "behavioral understanding platform." To honor that, w
 
 ## The taxonomy
 
-Five contract shapes. Any real domain tends to use several.
+Five contract shapes. Any substantive domain tends to use several.
 
 ### 1. Schema — "what types flow across?"
 
@@ -105,6 +105,12 @@ The most interesting findings come from cross-character comparison:
 - **Observation ⊄ Derivation** → something happened that the code shouldn't be able to produce (rare but high-signal; usually a bug)
 - **Derivation ⊄ Observation** → code reaches paths no test has covered; coverage signal, not a finding per se
 
+### Connection to concept design
+
+Daniel Jackson's concept-design framework (MIT — "Concept Design Moves," NFM 2022; "What You See Is What It Does," SPLASH 2025) describes software as concepts (self-contained units with state + actions + purpose) linked by synchronizations (explicit rules of the form "when action A₁ fires in concept C₁, action A₂ fires in concept C₂"). Synchronizations can only restrict behavior, never enable new behavior.
+
+The epistemic split above maps closely. A specification names a concept's *purpose and declared actions*; an observation records a single *synchronization firing*; a derivation enumerates the full *action space reachable from code*. Suss's `contractDisagreement` findings, fired when sources disagree about what actions exist at a boundary, are the closest proxy we have for "purpose violated" without requiring users to author intent declarations. See [`roadmap-react.md`](roadmap-react.md#react-components-are-n-code-units-not-one) for how this framing informs the React multi-code-unit decision.
+
 ## How suss absorbs contracts today, and the gap
 
 The only shape suss reads today is **schema**, and only three variants: OpenAPI, ts-rest `responses`, and CFN `MethodResponses`. Each is emitted as `metadata.http.declaredContract` on a summary. The checker's `checkContractConsistency` and `checkContractAgreement` both operate on this single shape.
@@ -123,11 +129,12 @@ Each new shape needs a package that reads artifacts in that shape and produces `
 - `@suss/stub-cloudformation` reads CFN (schema shape, via the aws-apigateway resource-semantics layer)
 - *`@suss/stub-storybook`* — reads `.stories.ts[x]` (spec shape, component domain)
 - *`@suss/stub-jest-snapshots`* — reads `__snapshots__` (observation shape, component domain)
-- *`@suss/stub-figma`* — reads Figma files (design shape, visual domain)
 - *`@suss/stub-playwright`* — reads spec files (observation/test shape, cross-domain)
 - *`@suss/stub-prisma`* — reads `.prisma` files (schema shape, database domain)
 
 (Italics = planned, not shipped.)
+
+**Figma (design shape) is deliberately punted for v0.** Design files are rarely committed to the repo, wireframes routinely diverge from ship, and the Figma REST API integration is expensive relative to the signal it feeds. A future opt-in `@suss/stub-figma-url` that reads a URL reference and emits a `lowConfidence` visual-intent signal is the likely re-entry point, never a source of hard findings. Design-as-contract is still in the taxonomy above because the *epistemic character* matters (intent is a distinct kind of truth); it's the *artifact pipeline* we're not building now.
 
 Each reader emits summaries tagged with a `provenance` (derived / independent / observed / intent — to be refined as implementation demands) so the checker can apply appropriate comparison logic.
 
@@ -179,10 +186,10 @@ Shipping all three in one go isn't required. React's plan ([`roadmap-react.md`](
 
 ## What this doc commits us to
 
-- No new checker logic will be added under the assumption that contracts are schema-shaped. Every non-trivial check will cite which shape(s) it operates on.
+- No new checker logic will be added under the assumption that contracts are schema-shaped. Every check will cite which shape(s) it operates on.
 - Shape-specific stub packages are expected to multiply. The `@suss/stub-*` naming pattern is explicit about this.
 - Metadata namespacing under `metadata.<domain>.<shape>.*` becomes the rule, not the exception.
-- The five-shape taxonomy is the working vocabulary. When a real artifact doesn't fit, we update the taxonomy rather than force it.
+- The five-shape taxonomy is the working vocabulary. When a concrete artifact doesn't fit, we update the taxonomy rather than force it.
 - Future contract-related design docs cite epistemic character explicitly when discussing checker behavior.
 
 ## What this doc does *not* commit us to

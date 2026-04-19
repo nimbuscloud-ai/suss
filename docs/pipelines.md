@@ -10,7 +10,7 @@ without grepping the source. For the static package picture, see
 
 Turns a TypeScript project into `BehavioralSummary[]`.
 
-The CLI does almost nothing itself. When the command runs, it dynamically imports `@suss/adapter-typescript` — that lazy-import matters because it's the only package that pulls in ts-morph (a non-trivial dependency), and commands like `inspect` or `stub` shouldn't pay that cost.
+The CLI does almost nothing itself. When the command runs, it dynamically imports `@suss/adapter-typescript` — that lazy-import matters because it's the only package that pulls in ts-morph (a multi-megabyte dependency), and commands like `inspect` or `stub` shouldn't pay that cost.
 
 The adapter then builds a ts-morph `Project` from the given `tsconfig`, walks every source file, and for each framework or runtime pack it's configured with, looks for discovery matches. A discovery match identifies one code unit (a handler, a client call site, a loader, …). For each matched unit the adapter runs the four extraction passes documented in [`extraction-algorithm.md`](extraction-algorithm.md) — terminal discovery, ancestor branch collection, early-return detection, and condition expression parsing — plus contract reading if the pack declares one. The output of that work per unit is a `RawCodeStructure`: a plain-data description with no AST references, ready to be serialized or tested against fixtures.
 

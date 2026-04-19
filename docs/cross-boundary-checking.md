@@ -126,7 +126,7 @@ Boundary: **can we statically resolve the function body to a single expression w
 
 **`expectedInput` captures what the consumer reads.** Each client transition has an optional `expectedInput: TypeShape` representing the response body fields the consumer accesses within that branch. This is inferred from property access chains on the response variable — no annotation needed.
 
-**Opaque predicates are honest.** When decomposition fails, the checker emits `lowConfidence` rather than a false negative.
+**Opaque predicates surface uncertainty explicitly.** When decomposition fails, the checker emits `lowConfidence` rather than a false negative.
 
 **Gaps carry forward.** Provider gaps (declared-but-not-produced, produced-but-not-declared) flow through the checker as `providerContractViolation` findings.
 

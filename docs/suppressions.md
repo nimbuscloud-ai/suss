@@ -58,7 +58,7 @@ A finding matches a rule when every specified field on the rule equals the corre
 
 ## When *not* to use suppressions
 
-- To fix a real bug. If the finding reflects genuine missing behavior, fix it rather than suppressing.
+- To paper over a bug. If the finding reflects genuine missing behavior, fix it rather than suppressing.
 - To silence a class of warnings because "we don't care about those yet." Use `--fail-on error` or `--fail-on none` instead — that's the threshold knob.
 - To paper over contract-spec drift between sources. Use the contract-anchored discrepancy detection (planned) — suppression is the right tool when you've *decided* to accept the drift, not before.
 
@@ -68,7 +68,7 @@ An earlier design included an `expires` field that would warn or fail when a sup
 
 - Cargo-cult dates ("expires: 1 year from now") are muscle memory without planning, not protection.
 - A soft expiry warning accumulates in logs and gets ignored.
-- A hard expiry re-introduces noise that teams just re-extend to avoid, teaching them to pick longer timeouts.
+- A hard expiry re-introduces noise that teams re-extend to avoid, teaching them to pick longer timeouts.
 
 The actual problem — suppressions outliving their rationale — is a human-judgment problem that software automation makes worse, not better. The mitigations that work:
 
@@ -76,11 +76,11 @@ The actual problem — suppressions outliving their rationale — is a human-jud
 - `suss check --no-suppressions` to audit what would fire if every suppression were removed. (Plan: add a `suss suppressions list` subcommand that shows every active rule + git-blame age when adoption warrants it.)
 - CI surfacing the count of suppressed findings as a secondary signal. Growth is a health trend.
 
-If suppression rot becomes a real problem with real users, we'll add observability first, and enforcement only if observability proves insufficient.
+If suppression rot becomes a material problem affecting production teams, we'll add observability first, and enforcement only if observability proves insufficient.
 
 ## Interaction with the `lowConfidence` finding kind
 
-The checker already emits `lowConfidence` findings when opaque predicates prevented it from reaching a definite conclusion ("couldn't tell"). That is orthogonal to suppression: a `lowConfidence` finding is not a suppressed finding, it's a *diagnostic* finding. You can suppress a `lowConfidence` finding like any other (`kind: lowConfidence` in a rule); you shouldn't treat unsuppressed low-confidence as silently-ignored — it's the tool honestly telling you "I don't know."
+The checker already emits `lowConfidence` findings when opaque predicates prevented it from reaching a definite conclusion ("couldn't tell"). That is orthogonal to suppression: a `lowConfidence` finding is not a suppressed finding, it's a *diagnostic* finding. You can suppress a `lowConfidence` finding like any other (`kind: lowConfidence` in a rule); you shouldn't treat unsuppressed low-confidence as silently-ignored — it's the tool explicitly telling you "I don't know."
 
 ## See also
 
