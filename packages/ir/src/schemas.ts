@@ -22,6 +22,14 @@ export const CodeUnitKindSchema = z.enum([
   "consumer",
   "client",
   "worker",
+  /**
+   * A function exposed through a TypeScript package's public export
+   * surface — i.e. reachable from the package's `package.json` entry
+   * points (`main` / `module` / `types` / `exports`). Provider side of
+   * an in-process `function-call` boundary: downstream callers
+   * consuming `import { fn } from "pkg"` are paired against these.
+   */
+  "library",
 ]);
 
 export const ComparisonOpSchema = z.enum([
@@ -153,6 +161,28 @@ export const FunctionCallSemanticsSchema = z.object({
   module: z.string().optional(),
   /** Named export within the module, when applicable. */
   exportName: z.string().optional(),
+  /**
+   * Package name (as written in `package.json`) when this identity
+   * refers to a public package export — e.g. `"@suss/behavioral-ir"`.
+   * Set alongside `exportPath` by packs that resolve a package's
+   * public surface (the `packageExports` discovery variant). Distinct
+   * from `module`, which is a repo-relative module path for
+   * intra-repo pairing.
+   */
+  package: z.string().optional(),
+  /**
+   * Path to the exported binding within the package, starting with
+   * the sub-path key when one is used. Examples:
+   *   `["parseSummary"]`              — root export
+   *   `["schemas", "BoundaryBindingSchema"]` — sub-path `./schemas`
+   *
+   * The first segment is the sub-path without the leading `./`
+   * (`"."` → omitted). The last segment is the exported name.
+   * Intermediate segments correspond to nested re-export structure
+   * when a pack records it; most v0 packs use one-or-two-segment
+   * paths.
+   */
+  exportPath: z.array(z.string()).optional(),
 });
 
 /**
