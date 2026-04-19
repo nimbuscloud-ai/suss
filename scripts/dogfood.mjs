@@ -1,17 +1,23 @@
-// Dogfood script — run suss's adapter against suss's own source
-// and see what falls out.
+// Dogfood script — run suss's adapter against every `@suss/*` package
+// and produce per-package API contracts.
 //
-// The point isn't to produce a shipping artifact; it's to sit in
-// the user's chair for a minute: "here's a TypeScript codebase, I
-// want summaries from it, what happens?" The observations go into
-// docs/dogfooding.md.
+// What this does:
 //
-// This intentionally uses the programmatic adapter (rather than the
-// CLI) because (a) half the value is seeing what the in-process API
-// feels like and (b) it lets us compare results across packs inline
-// without shelling out.
+//   1. Walks `packages/` for every `package.json` whose `name` starts
+//      with `@suss/`.
+//   2. For each package, builds a `packageExports` pack pointed at the
+//      package's `package.json`, then runs the adapter against the
+//      package's `tsconfig.json`.
+//   3. Writes per-package summaries to `<pkg>/dist/suss-summaries.json`
+//      — the format proposed in docs/behavioral-summary-format.md's
+//      "Publishing summaries" section, now actual output.
+//   4. Writes a consolidated roll-up to `scripts/dogfood-report.json`.
+//
+// Running this is the fastest way to see what happens when suss
+// analyses a real TypeScript codebase — its own. Observations go
+// into docs/internal/dogfooding.md.
 
-import { writeFileSync } from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,92 +26,123 @@ import { createTypeScriptAdapter } from "../packages/adapter/typescript/dist/ind
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
+const packagesRoot = path.join(repoRoot, "packages");
 
-// Three experiments, each pointed at a different slice of suss.
-// We run them serially and print a summary of each.
-const experiments = [
-  {
-    name: "checker (pure-ts utility module surface)",
-    tsconfig: path.join(repoRoot, "packages/checker/tsconfig.json"),
-  },
-  {
-    name: "cli (CLI dispatch + command runners)",
-    tsconfig: path.join(repoRoot, "packages/cli/tsconfig.json"),
-  },
-  {
-    name: "framework-apollo (pack + declarative discovery config)",
-    tsconfig: path.join(repoRoot, "packages/framework/apollo/tsconfig.json"),
-  },
-];
+// ---------------------------------------------------------------------------
+// Discover every @suss/* package
+// ---------------------------------------------------------------------------
 
-// A dogfood-only pack: discover every named export as a code unit.
-// `namedExport` with a wildcard `["*"]`? No — the discovery matcher
-// only takes concrete names. So we give it the names we think matter
-// in a utility module: whatever the adapter already recognises as
-// exported functions. Falling back to a handful of common names
-// surfaces roughly the right slice.
-//
-// This is the first real dogfood finding: we don't have a
-// "discover every exported function" primitive. The pack shape
-// assumes you know what entry-point names your framework declares.
-// See docs/dogfooding.md for the writeup.
-const dogfoodPack = {
-  name: "suss-internal",
-  languages: ["typescript"],
-  protocol: "in-process",
-  discovery: [
-    {
-      kind: "handler",
-      // Invent a handful of "likely function names" — `check*`,
-      // `pair*`, `extract*`, `discover*`. A discovery plugin that
-      // takes a regex or `"*"` would make this unnecessary.
-      match: {
-        type: "namedExport",
-        names: [
-          "checkAll",
-          "checkPair",
-          "pairSummaries",
-          "pairGraphqlOperations",
-          "extractFromSourceFile",
-          "discoverUnits",
-          "assembleSummary",
-          "apolloFramework",
-        ],
-      },
-    },
-  ],
-  terminals: [
-    { kind: "return", match: { type: "returnStatement" }, extraction: {} },
-    { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
-  ],
-  inputMapping: {
-    type: "positionalParams",
-    params: [
-      { position: 0, role: "arg0" },
-      { position: 1, role: "arg1" },
-      { position: 2, role: "arg2" },
-    ],
-  },
+const packageJsonPaths = [];
+for (const entry of fs.readdirSync(packagesRoot, { withFileTypes: true })) {
+  if (!entry.isDirectory()) {
+    continue;
+  }
+  const directChild = path.join(packagesRoot, entry.name, "package.json");
+  if (fs.existsSync(directChild)) {
+    packageJsonPaths.push(directChild);
+    continue;
+  }
+  // One level deeper (category dirs: framework/, runtime/, stub/, adapter/).
+  const nested = path.join(packagesRoot, entry.name);
+  for (const child of fs.readdirSync(nested, { withFileTypes: true })) {
+    if (!child.isDirectory()) {
+      continue;
+    }
+    const candidate = path.join(nested, child.name, "package.json");
+    if (fs.existsSync(candidate)) {
+      packageJsonPaths.push(candidate);
+    }
+  }
+}
+
+const packages = packageJsonPaths
+  .map((p) => ({
+    packageJsonPath: p,
+    packageJson: JSON.parse(fs.readFileSync(p, "utf8")),
+    dir: path.dirname(p),
+  }))
+  .filter((p) => typeof p.packageJson.name === "string")
+  .filter((p) => p.packageJson.name.startsWith("@suss/"));
+
+packages.sort((a, b) => a.packageJson.name.localeCompare(b.packageJson.name));
+
+// ---------------------------------------------------------------------------
+// Run the adapter per-package
+// ---------------------------------------------------------------------------
+
+const report = {
+  generatedAt: new Date().toISOString(),
+  packages: [],
 };
 
-const report = { experiments: [] };
+let totalSummaries = 0;
+let totalPackagesWithExports = 0;
 
-for (const exp of experiments) {
-  console.log(`\n=== ${exp.name} ===`);
-  console.log(`tsconfig: ${path.relative(repoRoot, exp.tsconfig)}`);
+for (const pkg of packages) {
+  const name = pkg.packageJson.name;
+  const tsconfig = path.join(pkg.dir, "tsconfig.json");
+  if (!fs.existsSync(tsconfig)) {
+    console.log(`\n=== ${name} ===`);
+    console.log("  skipped: no tsconfig.json");
+    report.packages.push({ name, skipped: "no tsconfig.json" });
+    continue;
+  }
+
+  console.log(`\n=== ${name} ===`);
+
+  const pack = {
+    name: `package-exports:${name}`,
+    languages: ["typescript"],
+    protocol: "in-process",
+    discovery: [
+      {
+        kind: "library",
+        match: {
+          type: "packageExports",
+          packageJsonPath: pkg.packageJsonPath,
+        },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+    ],
+    inputMapping: {
+      type: "positionalParams",
+      params: [
+        { position: 0, role: "arg0" },
+        { position: 1, role: "arg1" },
+        { position: 2, role: "arg2" },
+        { position: 3, role: "arg3" },
+      ],
+    },
+  };
 
   const adapter = createTypeScriptAdapter({
-    tsConfigFilePath: exp.tsconfig,
-    frameworks: [dogfoodPack],
+    tsConfigFilePath: tsconfig,
+    frameworks: [pack],
   });
 
-  const summaries = adapter.extractAll();
+  let summaries;
+  try {
+    summaries = adapter.extractAll();
+  } catch (err) {
+    console.log(`  error: ${err.message}`);
+    report.packages.push({ name, error: err.message });
+    continue;
+  }
 
-  console.log(`  summaries: ${summaries.length}`);
-  for (const s of summaries) {
+  console.log(`  exports: ${summaries.length}`);
+  for (const s of summaries.slice(0, 6)) {
+    const exportPath =
+      s.identity.boundaryBinding?.semantics?.exportPath?.join(".") ??
+      s.identity.name;
     console.log(
-      `    - ${s.kind} ${s.identity.name}  (${s.transitions.length} transitions, ${s.inputs.length} inputs, confidence ${s.confidence.level})`,
+      `    - ${exportPath}  (${s.transitions.length} transitions, ${s.inputs.length} inputs, ${s.confidence.level})`,
     );
+  }
+  if (summaries.length > 6) {
+    console.log(`    … +${summaries.length - 6} more`);
   }
 
   const opaqueCount = summaries
@@ -115,19 +152,35 @@ for (const exp of experiments) {
   const totalConditions = summaries
     .flatMap((s) => s.transitions)
     .flatMap((t) => t.conditions).length;
-  console.log(
-    `  opaque predicates: ${opaqueCount}/${totalConditions} (${totalConditions === 0 ? "—" : `${Math.round((opaqueCount / totalConditions) * 100)}%`})`,
-  );
 
-  report.experiments.push({
-    name: exp.name,
-    tsconfig: path.relative(repoRoot, exp.tsconfig),
+  if (summaries.length > 0) {
+    totalPackagesWithExports += 1;
+    totalSummaries += summaries.length;
+  }
+
+  // Write per-package summaries file if dist/ exists.
+  const distDir = path.join(pkg.dir, "dist");
+  const summariesPath = path.join(distDir, "suss-summaries.json");
+  if (fs.existsSync(distDir)) {
+    fs.writeFileSync(summariesPath, JSON.stringify(summaries, null, 2));
+    console.log(
+      `  wrote ${path.relative(repoRoot, summariesPath)} (${summaries.length} summaries)`,
+    );
+  } else {
+    console.log("  skipped summary file: dist/ not present (run build first)");
+  }
+
+  report.packages.push({
+    name,
+    packageJson: path.relative(repoRoot, pkg.packageJsonPath),
+    tsconfig: path.relative(repoRoot, tsconfig),
     summaryCount: summaries.length,
     opaqueRatio: totalConditions === 0 ? null : opaqueCount / totalConditions,
     summaries: summaries.map((s) => ({
       name: s.identity.name,
+      exportPath: s.identity.boundaryBinding?.semantics?.exportPath ?? null,
       kind: s.kind,
-      file: s.location.file,
+      file: path.relative(repoRoot, s.location.file),
       transitionCount: s.transitions.length,
       inputCount: s.inputs.length,
       confidence: s.confidence.level,
@@ -138,6 +191,14 @@ for (const exp of experiments) {
   });
 }
 
-const outPath = path.join(repoRoot, "scripts", "dogfood-report.json");
-writeFileSync(outPath, JSON.stringify(report, null, 2));
-console.log(`\nFull report written to ${path.relative(repoRoot, outPath)}`);
+report.totalPackages = packages.length;
+report.totalPackagesWithExports = totalPackagesWithExports;
+report.totalSummaries = totalSummaries;
+
+const reportPath = path.join(__dirname, "dogfood-report.json");
+fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+
+console.log(
+  `\nSummary: ${totalSummaries} public exports across ${totalPackagesWithExports}/${packages.length} @suss/* packages.`,
+);
+console.log(`Report written to ${path.relative(repoRoot, reportPath)}`);
