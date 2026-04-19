@@ -4,7 +4,7 @@ Version: **v0** (draft)
 
 A behavioral summary is a structured, language-agnostic description of a code unit's behavior. It answers: *under what conditions does this function produce what outputs?*
 
-This document describes the JSON format. The authoritative source of truth is the zod schema in [`packages/ir/src/schemas.ts`](../packages/ir/src/schemas.ts); the [`behavioral-summary.schema.json`](../packages/ir/schema/behavioral-summary.schema.json) JSON Schema is generated from it at build time and committed for non-TypeScript consumers (Python, Go, etc.) that want to validate without running JS.
+This document describes the JSON format. The authoritative source of truth is the zod schema in [`packages/ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/ir/src/schemas.ts); the [`behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/ir/schema/behavioral-summary.schema.json) JSON Schema is generated from it at build time and committed for non-TypeScript consumers (Python, Go, etc.) that want to validate without running JS.
 
 ## File format
 
@@ -211,7 +211,7 @@ suss check node_modules/my-api/suss-summaries.json my-consumer-summaries.json
 
 ### Community-maintained summaries
 
-For libraries that don't publish their own summaries, a community repository can maintain them — similar to DefinitelyTyped for type definitions. The same `BehavioralSummary[]` format applies; the summaries just come from a different source.
+For libraries that don't publish their own summaries, a community repository can maintain them — similar to DefinitelyTyped for type definitions. The same `BehavioralSummary[]` format applies; the summaries come from a different source.
 
 ### Stub summaries
 
@@ -230,4 +230,4 @@ Tools can use this to adjust how much they trust the summary.
 Two consumption paths:
 
 - **TypeScript / JavaScript:** install `@suss/behavioral-ir` (one peer dep on `zod`) and use `parseSummaries(json)` for validate-and-narrow, or `safeParseSummaries(json)` to handle errors without throwing. Types (`BehavioralSummary`, `Transition`, `Predicate`, …) are derived from the same schemas via `z.infer`.
-- **Other languages:** validate against [`packages/ir/schema/behavioral-summary.schema.json`](../packages/ir/schema/behavioral-summary.schema.json). It is generated from the zod schema at build time (`npm run build` in `packages/ir/`), so it is always in sync with the runtime parsers and never hand-edited.
+- **Other languages:** validate against [`packages/ir/schema/behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/ir/schema/behavioral-summary.schema.json). It is generated from the zod schema at build time (`npm run build` in `packages/ir/`), so it is always in sync with the runtime parsers and never hand-edited.
