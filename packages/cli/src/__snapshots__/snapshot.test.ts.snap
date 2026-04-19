@@ -91,6 +91,21 @@ exports[`inspect output snapshots > renders a handler with contract and body sha
 "
 `;
 
+exports[`inspect output snapshots > renders library + caller summaries with function-call identity 1`] = `
+"@ex/lib::makeBinding
+  package-exports:@ex/lib library | src/binding.ts:10
+
+    -> return Binding
+
+initApp → @ex/lib::makeBinding
+  package-import:@ex/app caller | src/app.ts:42
+
+    -> return
+
+2 summaries inspected.
+"
+`;
+
 exports[`inspect output snapshots > renders multiple summaries 1`] = `
 "GET /users/:id
   express handler | src/handlers/users.ts:10

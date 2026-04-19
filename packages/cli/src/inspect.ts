@@ -419,9 +419,28 @@ function renderSummary(summary: BehavioralSummary): string {
       ? binding.semantics
       : null;
 
-  // Header: endpoint or function name
+  // Header: endpoint, function-call identity, or bare function name.
+  // Function-call bindings that carry a package + exportPath render with
+  // the consumer's target visible: `checkAll → @suss/ir::parseSummary`
+  // for callers, `@suss/ir::parseSummary` for library providers.
+  const fn =
+    binding !== null && binding.semantics.name === "function-call"
+      ? binding.semantics
+      : null;
   if (rest !== null && (rest.method !== "" || rest.path !== "")) {
     lines.push(`${rest.method} ${rest.path}`.trim());
+  } else if (
+    fn !== null &&
+    fn.package !== undefined &&
+    fn.exportPath !== undefined &&
+    fn.exportPath.length > 0
+  ) {
+    const target = `${fn.package}::${fn.exportPath.join(".")}`;
+    if (summary.kind === "caller") {
+      lines.push(`${summary.identity.name} → ${target}`);
+    } else {
+      lines.push(target);
+    }
   } else {
     lines.push(summary.identity.name);
   }
