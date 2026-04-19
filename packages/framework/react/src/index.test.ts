@@ -1,3 +1,5 @@
+/** biome-ignore-all lint/style/noNonNullAssertion: fixture-driven tests narrow via summaries.find pattern */
+
 import path from "node:path";
 
 import { Project } from "ts-morph";
@@ -99,7 +101,7 @@ describe("reactFramework — integration", () => {
   it("Counter emits one Input per destructured prop (role = prop name, type resolved)", () => {
     const counter = summaries.find((s) => s.identity.name === "Counter");
     expect(counter).toBeDefined();
-    const inputs = counter?.inputs;
+    const inputs = counter!.inputs;
     const byName = new Map(
       inputs.map((i) => {
         if (i.type !== "parameter") {
@@ -135,7 +137,7 @@ describe("reactFramework — integration", () => {
   it("Greeting emits a single whole-object Input (non-destructured)", () => {
     const greeting = summaries.find((s) => s.identity.name === "Greeting");
     expect(greeting).toBeDefined();
-    const inputs = greeting?.inputs;
+    const inputs = greeting!.inputs;
     expect(inputs).toHaveLength(1);
     if (inputs[0].type !== "parameter") {
       throw new Error("expected parameter input");
@@ -147,7 +149,7 @@ describe("reactFramework — integration", () => {
   it("UserCard has two transitions: early-return-null and render div", () => {
     const userCard = summaries.find((s) => s.identity.name === "UserCard");
     expect(userCard).toBeDefined();
-    const transitions = userCard?.transitions;
+    const transitions = userCard!.transitions;
     // Source order: early return null first, then render path
     expect(transitions).toHaveLength(2);
     expect(transitions[0].output.type).toBe("return");
@@ -164,7 +166,7 @@ describe("reactFramework — integration", () => {
     const nav = summaries.find((s) => s.identity.name === "Nav");
     expect(nav).toBeDefined();
     expect(nav?.transitions).toHaveLength(1);
-    const out = nav?.transitions[0].output;
+    const out = nav!.transitions[0].output;
     expect(out.type).toBe("render");
     if (out.type === "render") {
       expect(out.component).toBe("Fragment");
@@ -175,7 +177,7 @@ describe("reactFramework — integration", () => {
     const button = summaries.find((s) => s.identity.name === "Button");
     expect(button).toBeDefined();
     expect(button?.transitions).toHaveLength(1);
-    const out = button?.transitions[0].output;
+    const out = button!.transitions[0].output;
     expect(out.type).toBe("render");
     // <button type="button">...</button> is a regular (not self-closing)
     // JSX element — exercised to confirm getTagNameNode works across
@@ -192,7 +194,7 @@ describe("reactFramework — integration", () => {
   it("UserCard's render branch carries a tree with the dynamic child as an expression node", () => {
     const userCard = summaries.find((s) => s.identity.name === "UserCard");
     expect(userCard).toBeDefined();
-    const renderTxn = userCard?.transitions[1];
+    const renderTxn = userCard!.transitions[1];
     expect(renderTxn.output.type).toBe("render");
     if (renderTxn.output.type !== "render") {
       throw new Error("expected render");
@@ -215,7 +217,7 @@ describe("reactFramework — integration", () => {
 
   it("Nav's fragment root contains two anchor elements with trimmed text children", () => {
     const nav = summaries.find((s) => s.identity.name === "Nav");
-    const out = nav?.transitions[0].output;
+    const out = nav!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -238,7 +240,7 @@ describe("reactFramework — integration", () => {
 
   it("Counter's render tree mixes elements, text, and dynamic expressions", () => {
     const counter = summaries.find((s) => s.identity.name === "Counter");
-    const out = counter?.transitions[0].output;
+    const out = counter!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -269,7 +271,7 @@ describe("reactFramework — integration", () => {
       (s) => s.identity.name === "Conditional",
     );
     expect(conditional).toBeDefined();
-    const out = conditional?.transitions[0].output;
+    const out = conditional!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -294,7 +296,7 @@ describe("reactFramework — integration", () => {
     const conditional = summaries.find(
       (s) => s.identity.name === "Conditional",
     );
-    const out = conditional?.transitions[0].output;
+    const out = conditional!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -321,7 +323,7 @@ describe("reactFramework — integration", () => {
     const conditional = summaries.find(
       (s) => s.identity.name === "Conditional",
     );
-    const out = conditional?.transitions[0].output;
+    const out = conditional!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -353,7 +355,7 @@ describe("reactFramework — integration", () => {
     );
     expect(handler).toBeDefined();
     expect(handler?.kind).toBe("handler");
-    const meta = handler?.metadata?.react as
+    const meta = handler!.metadata?.react as
       | {
           kind: string;
           component: string;
@@ -375,7 +377,7 @@ describe("reactFramework — integration", () => {
     );
     expect(handler).toBeDefined();
     expect(handler?.kind).toBe("handler");
-    const meta = handler?.metadata?.react as
+    const meta = handler!.metadata?.react as
       | { propName: string; elementTag: string; localName?: string }
       | undefined;
     expect(meta?.propName).toBe("onSubmit");
@@ -441,19 +443,19 @@ describe("reactFramework — integration", () => {
     const first = summaries.find(
       (s) => s.identity.name === "EffectyComponent.effect#0",
     );
-    const firstMeta = first?.metadata?.react as EffectMeta | undefined;
+    const firstMeta = first!.metadata?.react as EffectMeta | undefined;
     expect(firstMeta?.deps).toEqual([]);
 
     const second = summaries.find(
       (s) => s.identity.name === "EffectyComponent.effect#1",
     );
-    const secondMeta = second?.metadata?.react as EffectMeta | undefined;
+    const secondMeta = second!.metadata?.react as EffectMeta | undefined;
     expect(secondMeta?.deps).toEqual(["userId"]);
 
     const third = summaries.find(
       (s) => s.identity.name === "EffectyComponent.effect#2",
     );
-    const thirdMeta = third?.metadata?.react as EffectMeta | undefined;
+    const thirdMeta = third!.metadata?.react as EffectMeta | undefined;
     // No deps argument → every-render semantics. Represented as null
     // (distinct from `[]` which means mount-only).
     expect(thirdMeta?.deps).toBeNull();
@@ -489,7 +491,7 @@ describe("reactFramework — integration", () => {
       (s) => s.identity.name === "Counter.button.onClick",
     );
     expect(handler?.transitions.length).toBeGreaterThan(0);
-    const defaultTxn = handler?.transitions.find((t) => t.isDefault);
+    const defaultTxn = handler!.transitions.find((t) => t.isDefault);
     expect(defaultTxn).toBeDefined();
   });
 
@@ -497,8 +499,8 @@ describe("reactFramework — integration", () => {
     const handler = summaries.find(
       (s) => s.identity.name === "Counter.button.onClick",
     );
-    const defaultTxn = handler?.transitions.find((t) => t.isDefault);
-    const callees = defaultTxn?.effects
+    const defaultTxn = handler!.transitions.find((t) => t.isDefault);
+    const callees = defaultTxn!.effects
       .filter((e) => e.type === "invocation")
       .map((e) => (e.type === "invocation" ? e.callee : null))
       .filter((s): s is string => s !== null);
@@ -510,8 +512,8 @@ describe("reactFramework — integration", () => {
     const effect = summaries.find(
       (s) => s.identity.name === "EffectyComponent.effect#0",
     );
-    const defaultTxn = effect?.transitions.find((t) => t.isDefault);
-    const callees = defaultTxn?.effects
+    const defaultTxn = effect!.transitions.find((t) => t.isDefault);
+    const callees = defaultTxn!.effects
       .filter((e) => e.type === "invocation")
       .map((e) => (e.type === "invocation" ? e.callee : null));
     expect(callees).toContain("setValue");
@@ -523,7 +525,7 @@ describe("reactFramework — integration", () => {
 
   it("Counter's button element carries type and onClick attrs on its render node", () => {
     const counter = summaries.find((s) => s.identity.name === "Counter");
-    const out = counter?.transitions[0].output;
+    const out = counter!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -550,7 +552,7 @@ describe("reactFramework — integration", () => {
   it("UserCard's div element omits attrs entirely when empty", () => {
     const userCard = summaries.find((s) => s.identity.name === "UserCard");
     // UserCard returns `<div>{user.name}</div>` — no attrs.
-    const renderTxn = userCard?.transitions[1];
+    const renderTxn = userCard!.transitions[1];
     const out = renderTxn.output;
     if (out.type !== "render") {
       throw new Error("expected render");
@@ -565,7 +567,7 @@ describe("reactFramework — integration", () => {
 
   it("Form's form element carries onSubmit attr referencing the local handler", () => {
     const form = summaries.find((s) => s.identity.name === "Form");
-    const out = form?.transitions[0].output;
+    const out = form!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
@@ -582,7 +584,7 @@ describe("reactFramework — integration", () => {
 
   it("Greeting's single-element render tree has text and expression children", () => {
     const greeting = summaries.find((s) => s.identity.name === "Greeting");
-    const out = greeting?.transitions[0].output;
+    const out = greeting!.transitions[0].output;
     if (out.type !== "render") {
       throw new Error("expected render");
     }
