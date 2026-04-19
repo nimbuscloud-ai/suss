@@ -1,4 +1,17 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { defineConfig } from "vitepress";
+
+import { glossary } from "./glossary.js";
+import { glossaryLinkPlugin } from "./plugins/glossary-link.js";
+import { pageTitleLinkPlugin } from "./plugins/page-title-link.js";
+import { sourceFileLinkPlugin } from "./plugins/source-file-link.js";
+
+const docsRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 
 // VitePress config — the site reads straight from docs/*.md, so
 // every existing markdown file is already a routeable page. The
@@ -135,8 +148,28 @@ export default defineConfig({
   // Mermaid / extra markdown flavour can land later; for v0 the
   // default pipeline handles the existing docs (no custom
   // containers, no mermaid embeds).
+  //
+  // The three custom plugins below add cross-doc wiring the source
+  // markdown shouldn't have to maintain by hand:
+  //   1. glossaryLinkPlugin — auto-link inline-code IR types
+  //      (`BoundaryBinding`, `Transition`, …) to their reference section.
+  //   2. sourceFileLinkPlugin — auto-link inline-code repo paths
+  //      (`packages/ir/src/schemas.ts`, `scripts/dogfood.mjs`) to
+  //      the corresponding GitHub blob/tree URL.
+  //   3. pageTitleLinkPlugin — rewrite placeholder-style internal
+  //      markdown link text (`[some-page.md](some-page.md)`) to use
+  //      the target page's h1 / frontmatter title.
   markdown: {
     lineNumbers: false,
+    config: (md) => {
+      md.use(glossaryLinkPlugin, { glossary });
+      md.use(sourceFileLinkPlugin, {
+        githubBlobBase: "https://github.com/nimbuscloud-ai/suss/blob/main",
+        githubTreeBase: "https://github.com/nimbuscloud-ai/suss/tree/main",
+        prefixes: ["packages/", "scripts/", "fixtures/"],
+      });
+      md.use(pageTitleLinkPlugin, { docsRoot });
+    },
   },
 
   // The existing docs cross-link to source files via relative
