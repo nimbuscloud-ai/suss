@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: suss
-  text: Extract every path your TypeScript code can take
-  tagline: "Summarise each handler, component, and resolver; pair any two summaries to find where intent and implementation disagree."
+  text: Extract every execution path your TypeScript code takes
+  tagline: "Structured summaries you can compare against specs, tests, or other implementations."
   actions:
     - theme: brand
       text: Get started
@@ -22,7 +22,7 @@ features:
     link: /contracts
     linkText: Three kinds of truth
   - title: One model across every boundary
-    details: "HTTP handlers, GraphQL resolvers, React components, and client call sites all get summarised in the same structured shape. Cross-boundary comparison becomes diffing two summaries."
+    details: "HTTP handlers, GraphQL resolvers, React components, and client call sites all produce the same structured summary. No separate analyser per framework; comparing across boundaries reduces to diffing two summaries of the same shape."
     link: /boundary-semantics
     linkText: Boundary semantics
   - title: Add a framework in one file
@@ -30,17 +30,9 @@ features:
     link: /framework-packs
     linkText: Write a pack
   - title: Compare specs against implementations
-    details: "Point suss at your OpenAPI spec and your handler code; get findings where they disagree. Same for CloudFormation vs API Gateway, Storybook stories vs React components, and more."
+    details: "Point suss at your OpenAPI spec and your handler code; findings come back where they disagree. The same mechanism pairs CloudFormation against API Gateway integrations, Storybook stories against React components, or a provider against any of its consumers."
     link: /cross-boundary-checking
     linkText: How checking works
-  - title: Pairing that speaks each protocol
-    details: "REST handlers pair with REST clients by method and path. GraphQL operations pair with resolvers by type and field, walking nested selections against your schema."
-    link: /boundary-semantics
-    linkText: The semantics layer
-  - title: Explicit about what it can't see
-    details: "When the analyser can't decompose a condition, it says so — an unresolved branch is a labelled gap, not a silent drop-out. The decisions log tracks what's shipped, what's deferred, and why."
-    link: /internal/status
-    linkText: Status &amp; decisions
 ---
 
 ## Quick start
@@ -75,7 +67,7 @@ GET /users/:id
 ```
 
 That's `suss inspect` on a ts-rest handler. Everything else in the
-system — checking, agreement, dedup, downstream tooling — consumes
+system (checking, agreement, dedup, downstream tooling) consumes
 the JSON form of the same summary.
 
 ## Where to next
