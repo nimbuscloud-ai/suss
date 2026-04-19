@@ -1,54 +1,68 @@
-// Prettify internal markdown links whose visible text is the raw
-// filename or href. Rewrite the text to the target page's first h1 (or
-// frontmatter `title`, if present).
+// Prettify internal markdown links with the target page's title, and
+// auto-link bare inline-code references to markdown files.
 //
-// Matches links where the text is obviously a placeholder:
-//   - [boundary-semantics.md](boundary-semantics.md)
-//   - [./framework-packs](./framework-packs)
-//   - [cross-boundary-checking](/cross-boundary-checking.md)
-// Leaves intentional link text alone — if the author wrote
-// `[see the semantics doc](boundary-semantics.md)`, the text doesn't
-// match the filename pattern and the plugin is a no-op.
+// Behaviour 1 — link-text rewrite:
+//   - [boundary-semantics.md](boundary-semantics.md) → [Boundary semantics](…)
+//   - [./framework-packs](./framework-packs) → [Framework Packs](…)
+//   - [cross-boundary-checking](/cross-boundary-checking.md) → […](…)
+// Leaves intentional link text alone — `[see the semantics doc](…)`
+// doesn't match the filename pattern, so it's a no-op.
+//
+// Behaviour 2 — inline-code auto-link:
+//   - `docs/architecture.md` → <a href="/architecture">Architecture</a>
+//   - `boundary-semantics.md` → <a href="/boundary-semantics">Boundary semantics</a>
+// Triggers only when the code content resolves to a file inside docs/
+// and the target has a readable title. Prose authors don't have to
+// reach for full markdown link syntax to get a titled link.
 
 import fs from "node:fs";
 import path from "node:path";
 
 import type MarkdownIt from "markdown-it";
 import type StateCore from "markdown-it/lib/rules_core/state_core.js";
+import type Token from "markdown-it/lib/token.js";
 
 export interface PageTitleLinkOptions {
   /** Absolute path to the docs root (the directory holding the markdown files). */
   docsRoot: string;
+  /** CSS class applied to auto-generated links. */
+  className?: string;
 }
+
+const MD_REFERENCE = /^(?:\.\/|\.\.\/|\/)?(?:docs\/)?[a-zA-Z0-9_\-/]+\.md$/;
 
 export function pageTitleLinkPlugin(
   md: MarkdownIt,
   options: PageTitleLinkOptions,
 ): void {
-  const { docsRoot } = options;
-  const titleCache = new Map<string, string | null>();
+  const { docsRoot, className = "suss-doc-link" } = options;
+  const titleCache = new Map<
+    string,
+    { title: string; relPath: string } | null
+  >();
 
-  function resolveTitle(currentRelPath: string, href: string): string | null {
-    if (/^[a-z]+:\/\//i.test(href) || href.startsWith("//")) {
+  function resolveDocRef(
+    currentRelPath: string,
+    ref: string,
+  ): { title: string; relPath: string } | null {
+    if (/^[a-z]+:\/\//i.test(ref) || ref.startsWith("//")) {
       return null;
     }
 
-    const [hrefPath] = href.split("#");
-    if (!hrefPath) {
+    const [refPath] = ref.split("#");
+    if (!refPath) {
       return null;
     }
 
-    const normalisedHref = hrefPath.endsWith(".md")
-      ? hrefPath
-      : `${hrefPath}.md`;
+    const normalisedRef = refPath.endsWith(".md") ? refPath : `${refPath}.md`;
+    const stripped = normalisedRef.replace(/^docs\//, "");
 
     const currentDir = path.posix.dirname(currentRelPath);
-    const joined = normalisedHref.startsWith("/")
-      ? normalisedHref.slice(1)
-      : path.posix.normalize(path.posix.join(currentDir, normalisedHref));
+    const joined = stripped.startsWith("/")
+      ? stripped.slice(1)
+      : path.posix.normalize(path.posix.join(currentDir, stripped));
 
     if (joined.startsWith("..")) {
-      // Escapes docs/ — leave it alone.
       return null;
     }
 
@@ -63,8 +77,13 @@ export function pageTitleLinkPlugin(
     }
 
     const title = readTitle(abs);
-    titleCache.set(joined, title);
-    return title;
+    if (!title) {
+      titleCache.set(joined, null);
+      return null;
+    }
+    const entry = { title, relPath: joined };
+    titleCache.set(joined, entry);
+    return entry;
   }
 
   md.core.ruler.push("suss_page_title_link", (state: StateCore) => {
@@ -76,59 +95,102 @@ export function pageTitleLinkPlugin(
         continue;
       }
 
-      const children = token.children;
-      for (let i = 0; i < children.length - 2; i++) {
-        const open = children[i];
-        const inner = children[i + 1];
-        const close = children[i + 2];
-        if (open.type !== "link_open" || close.type !== "link_close") {
-          continue;
-        }
-        // Accept either plain text (`[foo](foo.md)`) or a single code_inline
-        // child (`` [`foo.md`](foo.md) ``) as the link content. Anything
-        // richer (multi-child, nested formatting) is left alone — treat
-        // that as deliberate authorial link text.
-        if (inner.type !== "text" && inner.type !== "code_inline") {
-          continue;
-        }
-
-        const hrefAttr = open.attrs?.find(([key]) => key === "href");
-        if (!hrefAttr) {
-          continue;
-        }
-        const href = hrefAttr[1];
-        const [hrefPath] = href.split("#");
-        if (!hrefPath) {
-          continue;
-        }
-
-        const baseName = path.posix.basename(hrefPath, ".md");
-        const fullPathCandidate = hrefPath.replace(/^\.\//, "");
-        const textContent = inner.content.trim();
-        const isPlaceholder =
-          textContent === baseName ||
-          textContent === `${baseName}.md` ||
-          textContent === hrefPath ||
-          textContent === fullPathCandidate;
-        if (!isPlaceholder) {
-          continue;
-        }
-
-        const title = resolveTitle(currentRel, href);
-        if (!title) {
-          continue;
-        }
-
-        // Convert the inner node into a plain text token carrying the
-        // resolved title. For a code_inline wrapper we drop the <code>
-        // styling since the rewritten text is prose, not an identifier.
-        inner.type = "text";
-        inner.tag = "";
-        inner.content = title;
-        inner.markup = "";
-      }
+      token.children = processChildren(
+        token.children,
+        state,
+        (ref) => resolveDocRef(currentRel, ref),
+        className,
+      );
     }
   });
+}
+
+function processChildren(
+  children: Token[],
+  state: StateCore,
+  resolve: (ref: string) => { title: string; relPath: string } | null,
+  className: string,
+): Token[] {
+  const result: Token[] = [];
+  let nestedLinkDepth = 0;
+  let index = 0;
+
+  while (index < children.length) {
+    const child = children[index];
+
+    if (child.type === "link_open") {
+      nestedLinkDepth += 1;
+    }
+    if (child.type === "link_close") {
+      nestedLinkDepth = Math.max(0, nestedLinkDepth - 1);
+    }
+
+    // Behaviour 1 — rewrite link text when it's a placeholder (filename-as-text).
+    if (
+      nestedLinkDepth > 0 &&
+      child.type === "link_open" &&
+      children[index + 2]?.type === "link_close" &&
+      (children[index + 1]?.type === "text" ||
+        children[index + 1]?.type === "code_inline")
+    ) {
+      const inner = children[index + 1];
+      const hrefAttr = child.attrs?.find(([key]) => key === "href");
+      if (hrefAttr) {
+        const href = hrefAttr[1];
+        const [hrefPath] = href.split("#");
+        if (hrefPath) {
+          const baseName = path.posix.basename(hrefPath, ".md");
+          const textContent = inner.content.trim();
+          const isPlaceholder =
+            textContent === baseName ||
+            textContent === `${baseName}.md` ||
+            textContent === hrefPath ||
+            textContent === hrefPath.replace(/^\.\//, "");
+          if (isPlaceholder) {
+            const resolved = resolve(href);
+            if (resolved) {
+              inner.type = "text";
+              inner.tag = "";
+              inner.content = resolved.title;
+              inner.markup = "";
+            }
+          }
+        }
+      }
+      result.push(child);
+      index += 1;
+      continue;
+    }
+
+    // Behaviour 2 — auto-link inline-code doc references outside any
+    // existing link.
+    if (nestedLinkDepth === 0 && child.type === "code_inline") {
+      const content = child.content;
+      if (MD_REFERENCE.test(content)) {
+        const resolved = resolve(content);
+        if (resolved) {
+          const href = "/" + resolved.relPath.replace(/\.md$/, "");
+          const textToken = new state.Token("text", "", 0);
+          textToken.content = resolved.title;
+
+          const open = new state.Token("link_open", "a", 1);
+          open.attrs = [
+            ["href", href],
+            ["class", className],
+          ];
+          const close = new state.Token("link_close", "a", -1);
+          result.push(open, textToken, close);
+          index += 1;
+          continue;
+        }
+      }
+    }
+
+    result.push(child);
+    index += 1;
+  }
+
+  return result;
 }
 
 function readTitle(abs: string): string | null {
