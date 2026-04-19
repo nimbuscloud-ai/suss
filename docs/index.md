@@ -18,21 +18,29 @@ hero:
 
 features:
   - title: Derivation, not specification
-    details: "Specs say what should happen. Tests record what happened, once. suss gives you the third thing: what the code does, derived from the source itself, complete across every path."
+    details: "Specs declare what should happen. Tests record what happened, once. suss derives the third thing: what the code actually does, on every path."
     link: /contracts
     linkText: Three kinds of truth
   - title: One model across every boundary
-    details: "HTTP handlers, GraphQL resolvers, React components, and client call sites all produce the same structured summary. No separate analyser per framework; comparing across boundaries reduces to diffing two summaries of the same shape."
+    details: "HTTP handlers, GraphQL resolvers, React components, and client call sites all produce the same structured summary. Comparing across boundaries reduces to diffing two summaries."
     link: /boundary-semantics
     linkText: Boundary semantics
   - title: Add a framework in one file
-    details: "ts-rest, Express, Fastify, React, Apollo, and React Router ship in the box. Adding suss to Nest, Hono, or your internal framework is a small declarative pack — no fork of the analyser."
+    details: "ts-rest, Express, Fastify, React, Apollo, and React Router ship in the box. New frameworks are a small declarative pack — no fork of the analyser."
     link: /framework-packs
     linkText: Write a pack
-  - title: Compare specs against implementations
-    details: "Point suss at your OpenAPI spec and your handler code; findings come back where they disagree. The same mechanism pairs CloudFormation against API Gateway integrations, Storybook stories against React components, or a provider against any of its consumers."
+  - title: Find where artifacts disagree
+    details: "Point suss at two artifacts and it reports where they diverge. OpenAPI against handlers, CloudFormation against API Gateway, Storybook against components, provider against consumer."
     link: /cross-boundary-checking
     linkText: How checking works
+  - title: Runs on the code you already have
+    details: "No annotations, no decorators, no rewrites. Point suss at your tsconfig and get summaries from the source as it stands today."
+    link: /guides/add-to-project
+    linkText: Add to a project
+  - title: Explicit about what it can't analyse
+    details: "When a condition is too dynamic for static analysis, the branch is labelled unresolved rather than silently dropped. You see exactly where coverage stops."
+    link: /internal/status
+    linkText: "Status & decisions"
 ---
 
 ## Quick start
