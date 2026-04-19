@@ -54,10 +54,9 @@ const handlerSummary: BehavioralSummary = {
     name: "getUser",
     exportPath: ["getUser"],
     boundaryBinding: {
-      protocol: "http",
-      method: "GET",
-      path: "/users/:id",
-      framework: "express",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/:id" },
+      recognition: "express",
     },
   },
   inputs: [
@@ -182,10 +181,9 @@ const clientSummary: BehavioralSummary = {
     name: "loadUser",
     exportPath: ["loadUser"],
     boundaryBinding: {
-      protocol: "http",
-      method: "GET",
-      path: "/users/:id",
-      framework: "fetch",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/:id" },
+      recognition: "fetch",
     },
   },
   inputs: [],

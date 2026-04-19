@@ -93,10 +93,9 @@ describe("extract — ts-rest", () => {
     expect(getUser.identity.name).toBe("getUser");
     expect(getUser.identity.exportPath).toEqual(["getUser"]);
     expect(getUser.identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/users/:id",
-      framework: "core",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/:id" },
+      recognition: "core",
     });
 
     // Inputs: single destructured {params} mapped to pathParams
@@ -288,8 +287,9 @@ describe("extract — express", () => {
       expect(s.kind).toBe("handler");
       expect(s.identity.name).toBe("get");
       expect(s.identity.boundaryBinding).toEqual({
-        protocol: "http",
-        framework: "express",
+        transport: "http",
+        semantics: { name: "function-call" },
+        recognition: "express",
       });
       expect(s.gaps).toEqual([]);
     }
@@ -431,8 +431,9 @@ describe("extract — react-router", () => {
     expect(summaries.map((s) => s.kind).sort()).toEqual(["action", "loader"]);
     for (const s of summaries) {
       expect(s.identity.boundaryBinding).toEqual({
-        protocol: "http",
-        framework: "react-router",
+        transport: "http",
+        semantics: { name: "function-call" },
+        recognition: "react-router",
       });
       expect(s.gaps).toEqual([]);
     }
@@ -676,8 +677,12 @@ describe("consumer extraction — fetch", () => {
       expect(health).toBeDefined();
       if (health) {
         expect(health.kind).toBe("client");
-        expect(health.identity.boundaryBinding?.path).toBe("/health");
-        expect(health.identity.boundaryBinding?.method).toBe("GET");
+        const sem = health.identity.boundaryBinding?.semantics;
+        expect(sem?.name).toBe("rest");
+        if (sem?.name === "rest") {
+          expect(sem.path).toBe("/health");
+          expect(sem.method).toBe("GET");
+        }
         expect(health.transitions.length).toBeGreaterThanOrEqual(2);
       }
 

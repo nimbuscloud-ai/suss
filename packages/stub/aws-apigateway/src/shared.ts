@@ -4,6 +4,8 @@
 // contracts that produce 502/504/429 and the CORS preflight synthesis
 // are identical. Centralize them here so both layers stay in lockstep.
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type {
   CorsConfig,
@@ -136,12 +138,12 @@ export function buildCorsPreflightSummary(
     identity: {
       name: ownerKey,
       exportPath: null,
-      boundaryBinding: {
-        protocol: PROTOCOL,
+      boundaryBinding: restBinding({
+        transport: PROTOCOL,
         method: "OPTIONS",
         path,
-        framework: FRAMEWORK,
-      },
+        recognition: FRAMEWORK,
+      }),
     },
     inputs: [],
     transitions: [transition],

@@ -245,7 +245,7 @@ function renderHuman(
     }
     lines.push(`  consumer: ${formatSide(f.consumer, confidence)}`);
     lines.push(
-      `  boundary: ${f.boundary.framework} (${f.boundary.protocol})${formatRoute(f.boundary)}`,
+      `  boundary: ${f.boundary.recognition} (${f.boundary.transport})${formatRoute(f.boundary)}`,
     );
   }
   lines.push("─".repeat(60));
@@ -288,12 +288,14 @@ function formatSide(
 }
 
 function formatRoute(boundary: Finding["boundary"]): string {
-  if (boundary.method !== undefined || boundary.path !== undefined) {
-    const method = boundary.method ?? "";
-    const p = boundary.path ?? "";
-    return ` ${method} ${p}`.trimEnd();
+  if (boundary.semantics.name !== "rest") {
+    return "";
   }
-  return "";
+  const { method, path } = boundary.semantics;
+  if (method === "" && path === "") {
+    return "";
+  }
+  return ` ${method} ${path}`.trimEnd();
 }
 
 function renderDirHuman(

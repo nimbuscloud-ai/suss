@@ -54,10 +54,9 @@ describe("axiosRuntime — integration", () => {
     expect(summaries[0].kind).toBe("client");
     expect(summaries[0].identity.name).toBe("getUser");
     expect(summaries[0].identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/users/1",
-      framework: "axios",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "axios",
     });
   });
 
@@ -86,12 +85,20 @@ describe("axiosRuntime — integration", () => {
     const summaries = adapter.extractAll();
 
     const post = summaries.find((s) => s.identity.name === "createUser");
-    expect(post?.identity.boundaryBinding?.method).toBe("POST");
-    expect(post?.identity.boundaryBinding?.path).toBe("/users");
+    const postSem = post?.identity.boundaryBinding?.semantics;
+    expect(postSem?.name).toBe("rest");
+    if (postSem?.name === "rest") {
+      expect(postSem.method).toBe("POST");
+      expect(postSem.path).toBe("/users");
+    }
 
     const del = summaries.find((s) => s.identity.name === "deleteUser");
-    expect(del?.identity.boundaryBinding?.method).toBe("DELETE");
-    expect(del?.identity.boundaryBinding?.path).toBe("/users/1");
+    const delSem = del?.identity.boundaryBinding?.semantics;
+    expect(delSem?.name).toBe("rest");
+    if (delSem?.name === "rest") {
+      expect(delSem.method).toBe("DELETE");
+      expect(delSem.path).toBe("/users/1");
+    }
   });
 
   it("produces transitions for branches in the consumer function", () => {
@@ -146,10 +153,9 @@ describe("axiosRuntime — integration", () => {
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.name).toBe("getUser");
     expect(summaries[0].identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/users/1",
-      framework: "axios",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "axios",
     });
   });
 
@@ -179,8 +185,10 @@ describe("axiosRuntime — integration", () => {
     const summaries = adapter.extractAll();
     expect(summaries).toHaveLength(2);
     const get = summaries.find((s) => s.identity.name === "getUser");
-    expect(get?.identity.boundaryBinding?.method).toBe("GET");
+    const getSem = get?.identity.boundaryBinding?.semantics;
+    expect(getSem?.name === "rest" ? getSem.method : null).toBe("GET");
     const del = summaries.find((s) => s.identity.name === "deleteUser");
-    expect(del?.identity.boundaryBinding?.method).toBe("DELETE");
+    const delSem = del?.identity.boundaryBinding?.semantics;
+    expect(delSem?.name === "rest" ? delSem.method : null).toBe("DELETE");
   });
 });

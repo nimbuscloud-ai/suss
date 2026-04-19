@@ -40,10 +40,9 @@ const twoPathRaw: RawCodeStructure = {
     exportPath: ["getUser"],
   },
   boundaryBinding: {
-    protocol: "http",
-    method: "GET",
-    path: "/users/:id",
-    framework: "express",
+    transport: "http",
+    semantics: { name: "rest", method: "GET", path: "/users/:id" },
+    recognition: "express",
   },
   parameters: [
     { name: "req", position: 0, role: "request", typeText: "Request" },

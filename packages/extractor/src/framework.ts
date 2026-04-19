@@ -46,6 +46,112 @@ export type DiscoveryMatch =
        * `axios.get(...)`.
        */
       factoryMethods?: string[];
+    }
+  | {
+      /**
+       * A constructor or factory call that takes a configuration object
+       * containing a resolver map — the idiomatic GraphQL code-first
+       * shape. The map is two levels deep: outer keys are GraphQL type
+       * names (`Query`, `Mutation`, `Subscription`, or object-type
+       * names like `User`); inner keys are field names whose values
+       * are resolver functions.
+       *
+       * Example (Apollo Server v4):
+       * ```ts
+       * new ApolloServer({
+       *   typeDefs,
+       *   resolvers: {
+       *     Query:    { users: async () => {...} },
+       *     Mutation: { createUser: async (_, {input}) => {...} },
+       *     User:     { fullName: (parent) => `${parent.first} ${parent.last}` },
+       *   },
+       * });
+       * ```
+       *
+       * Each inner function becomes one discovered unit whose binding
+       * semantics is `graphql-resolver(typeName, fieldName)`. Matches
+       * both `new Ctor(cfg)` and `ctor(cfg)` — Apollo's standalone
+       * server uses `new`, yoga uses a bare call.
+       */
+      type: "resolverMap";
+      importModule: string;
+      importName: string;
+      /**
+       * Name of the property on the config object that holds the
+       * resolver map. Defaults to `"resolvers"` when unset, matching
+       * Apollo / yoga / graphql-tools convention.
+       */
+      mapProperty?: string;
+      /**
+       * GraphQL type names whose fields we DON'T treat as resolvers —
+       * opt-out for meta-types like `Subscription` that we may want
+       * to handle differently later. Unset means discover every type.
+       */
+      excludeTypes?: string[];
+    }
+  | {
+      /**
+       * Consumer-side GraphQL hook call — the canonical Apollo Client
+       * and urql shape. Each call to one of the listed hooks becomes
+       * a `client`-kind code unit whose binding semantics is
+       * `graphql-operation(operationType, operationName?)`. The
+       * operation identity comes from parsing the first argument's
+       * gql-tagged template literal — either inline or resolved
+       * through one const-binding of an identifier.
+       *
+       * Example:
+       * ```ts
+       * import { gql, useQuery } from "@apollo/client";
+       * const GET_USER = gql`query GetUser($id: ID!) { user(id: $id) { id } }`;
+       * function UserPage({ id }) {
+       *   const { data } = useQuery(GET_USER, { variables: { id } });
+       *   ...
+       * }
+       * ```
+       *
+       * The adapter records the operation name / type on the
+       * DiscoveredUnit's `operationInfo`; binding construction uses
+       * that to emit `graphql-operation(...)`. Inline `gql`-less
+       * string arguments and cross-module gql documents are left
+       * for a follow-up — v0 covers the dominant shape.
+       */
+      type: "graphqlHookCall";
+      importModule: string;
+      /**
+       * Hook names to match on that import (e.g. `["useQuery",
+       * "useMutation", "useSubscription"]`). Each hook is reported
+       * as `kind = "client"` by default; packs can override via the
+       * enclosing `DiscoveryPattern.kind`.
+       */
+      hookNames: string[];
+    }
+  | {
+      /**
+       * Imperative Apollo-Client-style call — `client.query({ query })`,
+       * `client.mutate({ mutation })`, `client.subscribe({ query })`.
+       * Distinct from hook calls because the document lives on a
+       * config-object property rather than the first positional arg.
+       * Discovery is gated on an import of the named constructor
+       * (typically `ApolloClient`) to reduce false positives — any
+       * method-named "query" on a random object could look like this
+       * shape.
+       *
+       * Each entry in `methods` specifies the method name that gets
+       * called on the client (`"query"` / `"mutate"` / `"subscribe"`)
+       * and the config-object property that holds the gql document
+       * (`"query"` / `"mutation"` / `"query"` respectively). The
+       * method name drives the operation type (query / mutation /
+       * subscription) when the gql document's header is anonymous;
+       * a named document's header wins otherwise.
+       */
+      type: "graphqlImperativeCall";
+      importModule: string;
+      importName: string;
+      methods: Array<{
+        methodName: string;
+        documentKey: string;
+        operationType: "query" | "mutation" | "subscription";
+      }>;
     };
 
 export type BindingExtraction = {
@@ -109,6 +215,21 @@ export type TerminalMatch =
        * classify component outputs as `render` terminals.
        */
       type: "jsxReturn";
+    }
+  | {
+      /**
+       * Synthetic terminal for the implicit fall-through at the end of a
+       * function body. Fires when the function has no explicit
+       * `ReturnStatement` / `ThrowStatement` as its last statement —
+       * covers the common case of handler / effect bodies that execute
+       * side-effects and return `undefined` implicitly. Without this,
+       * handler summaries come out with `transitions: []` because
+       * `findTerminals` has nothing to match. Packs that always expect
+       * explicit returns (HTTP handlers) shouldn't include this in
+       * their terminals; packs for callback bodies (React handlers,
+       * `useEffect` bodies, Node `.on(...)` callbacks) should.
+       */
+      type: "functionFallthrough";
     };
 
 export interface TerminalExtraction {
@@ -230,9 +351,98 @@ export interface PatternPack {
   contractReading?: ContractPattern;
   inputMapping: InputMappingPattern;
   /**
+   * Transport (wire protocol) used in the `BoundaryBinding.transport`
+   * of discovered units. Every pack states its transport explicitly
+   * rather than leaning on a hardcoded HTTP default — "what transport
+   * does this pack cover?" is a question every pack should have to
+   * answer, and making the field required keeps future packs (React,
+   * GraphQL, Lambda-invoke, queues) from silently inheriting an
+   * HTTP-shaped default that doesn't fit.
+   *
+   * The pack's `name` separately populates `BoundaryBinding.recognition`
+   * on produced summaries — so `{ transport, recognition }` come from
+   * the pack directly, and `semantics` is derived by the adapter from
+   * the discovery pattern's binding-extraction rules.
+   */
+  protocol: string;
+  /**
    * Semantics of properties on the API response object (consumer side).
    * Tells the adapter how to resolve derived properties like `.ok` or
    * `.json()` to structured IR constructs instead of leaving them opaque.
    */
   responseSemantics?: ResponsePropertyMapping[];
+  /**
+   * Synthesize additional code units from a parent unit's body —
+   * "one user-authored construct implicitly spawns multiple
+   * runtime-scheduled units." Used when a framework's runtime
+   * schedules callbacks that aren't visible as top-level declarations:
+   * React event handlers on JSX elements, React `useEffect` bodies,
+   * Node `emitter.on("event", handler)`, class-component lifecycle
+   * methods, and similar.
+   *
+   * `ctx` is typed `unknown` here because the extractor has no
+   * knowledge of which adapter is driving it; each language adapter
+   * defines its own context shape (e.g. `TsSubUnitContext` in
+   * `@suss/adapter-typescript`) with the primitives packs need to
+   * walk the parent's AST. Packs import and cast to the adapter
+   * context they're written against — the cast is the explicit
+   * "this pack requires the TypeScript adapter" contract.
+   *
+   * Returned units are fed through the adapter's extraction pipeline
+   * the same way top-level discovered units are, so each becomes its
+   * own `BehavioralSummary`. Carry per-unit `terminals` and
+   * `inputMapping` on the `DiscoveredUnit` if the sub-unit's shape
+   * differs from the parent pack's defaults.
+   */
+  subUnits?: (
+    parent: DiscoveredSubUnitParent,
+    ctx: unknown,
+  ) => DiscoveredSubUnit[];
+}
+
+/**
+ * Minimal handle-shaped description of the parent code unit that
+ * `subUnits` operates within. `func` is left opaque here — the
+ * language adapter brands its own FunctionRoot type. This interface
+ * lives in the extractor only so `PatternPack` can name it;
+ * adapter-level context types (`TsSubUnitContext`) narrow `func` to
+ * a concrete AST handle.
+ */
+export interface DiscoveredSubUnitParent {
+  /** Handle to the parent's function body. Opaque at extractor level. */
+  func: unknown;
+  /** Discovered name of the parent (e.g. "Counter"). */
+  name: string;
+  /** Kind of the parent (usually "component", "handler", etc.). */
+  kind: string;
+}
+
+/**
+ * What a pack's `subUnits` hook returns per synthesized child. The
+ * adapter pipes each of these through the same extraction + assembly
+ * pipeline used for top-level-discovered units.
+ */
+export interface DiscoveredSubUnit {
+  /** Function body handle, opaque here. */
+  func: unknown;
+  /** IR code-unit kind (e.g. "handler"). */
+  kind: string;
+  /** Qualified name (e.g. "Counter.button.onClick"). */
+  name: string;
+  /**
+   * Terminal patterns to extract from this sub-unit's body. Defaults
+   * to `return` + `throw` when unset — fits handlers / effects cleanly.
+   */
+  terminals?: TerminalPattern[];
+  /**
+   * Input mapping for this sub-unit. Defaults to an empty positional
+   * mapping when unset — event handlers with one arg should pass
+   * `{ type: "positionalParams", params: [{ position: 0, role: "event" }] }`.
+   */
+  inputMapping?: InputMappingPattern;
+  /**
+   * Metadata merged onto the resulting summary's `metadata` field.
+   * Packs use this to stamp provenance (`metadata.react = { kind: "handler", ... }`).
+   */
+  metadata?: Record<string, unknown>;
 }

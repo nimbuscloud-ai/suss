@@ -87,8 +87,9 @@ describe("fastifyFramework — integration", () => {
       expect(s.kind).toBe("handler");
       expect(s.identity.name).toBe("get");
       expect(s.identity.boundaryBinding).toEqual({
-        protocol: "http",
-        framework: "fastify",
+        transport: "http",
+        semantics: { name: "function-call" },
+        recognition: "fastify",
       });
     }
   });
@@ -96,7 +97,7 @@ describe("fastifyFramework — integration", () => {
   it("maps positional params (request, reply) to framework roles", () => {
     const main = summaries.find((s) => s.transitions.length === 4);
     expect(main).toBeDefined();
-    const roles = main!.inputs
+    const roles = main?.inputs
       .filter((i) => i.type === "parameter")
       .map((i) => (i.type === "parameter" ? i.role : null));
     expect(roles).toEqual(["request", "reply"]);
@@ -111,7 +112,7 @@ describe("fastifyFramework — integration", () => {
     //   2. !user                     → reply.code(404).send(...)   → 404
     //   3. user.role === "admin"     → reply.send(...)             → 200 (default)
     //   4. default                   → reply.send(user)            → 200 (default)
-    const statusCodes = main!.transitions.map((t) =>
+    const statusCodes = main?.transitions.map((t) =>
       t.output.type === "response" ? t.output.statusCode : "not-response",
     );
     expect(statusCodes).toEqual([
@@ -121,14 +122,17 @@ describe("fastifyFramework — integration", () => {
       { type: "literal", value: 200 },
     ]);
 
-    expect(main!.transitions.map((t) => t.isDefault)).toEqual([
+    expect(main?.transitions.map((t) => t.isDefault)).toEqual([
       false,
       false,
       false,
       true,
     ]);
 
-    for (const t of main!.transitions) {
+    if (!main) {
+      throw new Error("main summary missing");
+    }
+    for (const t of main.transitions) {
       expect(t.output.type).toBe("response");
     }
   });

@@ -3,6 +3,7 @@ import type { PatternPack } from "@suss/extractor";
 export function webFetchRuntime(): PatternPack {
   return {
     name: "fetch",
+    protocol: "http",
     languages: ["typescript"],
 
     discovery: [

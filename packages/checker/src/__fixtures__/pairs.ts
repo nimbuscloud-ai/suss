@@ -1,3 +1,5 @@
+import { functionCallBinding } from "@suss/behavioral-ir";
+
 import type {
   BehavioralSummary,
   Gap,
@@ -83,10 +85,14 @@ export function provider(
     identity: {
       name,
       exportPath: [name],
-      boundaryBinding: {
-        protocol: "http",
-        framework: opts?.framework ?? "ts-rest",
-      },
+      // No REST routing on the fixture: tests that need one use
+      // `providerWithPath` which overrides the binding. Function-call
+      // semantics keep the binding valid under the new schema without
+      // pretending a method/path were extracted.
+      boundaryBinding: functionCallBinding({
+        transport: "http",
+        recognition: opts?.framework ?? "ts-rest",
+      }),
     },
     inputs: [],
     transitions,
@@ -169,7 +175,10 @@ export function consumer(
     identity: {
       name,
       exportPath: [name],
-      boundaryBinding: { protocol: "http", framework: "fetch" },
+      boundaryBinding: functionCallBinding({
+        transport: "http",
+        recognition: "fetch",
+      }),
     },
     inputs: [],
     transitions,

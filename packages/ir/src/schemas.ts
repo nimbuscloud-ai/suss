@@ -49,11 +49,49 @@ export const FindingKindSchema = z.enum([
   /**
    * Two or more providers at the same boundary declare contracts that
    * disagree — e.g. OpenAPI spec says statuses {200, 400, 404} but the
-   * CFN template's MethodResponses says {200, 400, 404, 500}. Emitted
+   * CFN template's MethodResponses says {200, 400, 404, _500}. Emitted
    * by checkContractAgreement; attribution lists every contributing
    * source in `Finding.sources`.
    */
   "contractDisagreement",
+  /**
+   * A declared-scenario source (Storybook story, fixture, example
+   * payload) references a prop / arg the target unit doesn't declare
+   * as an input. Almost always means the scenario is outdated — the
+   * component removed or renamed a prop but the scenario wasn't
+   * updated. Emitted by the component/story agreement check.
+   */
+  "scenarioArgUnknown",
+  /**
+   * A component has a conditional branch that depends on a prop,
+   * and no declared scenario (Storybook story, fixture, etc.)
+   * exercises that branch. Emitted by the component/story
+   * agreement check — a genuine behavioral gap: the component
+   * has logic that no story tests, so changes to that branch
+   * can regress silently.
+   */
+  "scenarioCoverageGap",
+  /**
+   * A GraphQL consumer operation selects a root-level field
+   * (Query.*, Mutation.*, Subscription.*) that no provider
+   * resolver implements. Emitted by the operation→resolver
+   * pairing pass when an operation touches a field for which
+   * no `graphql-resolver(typeName, fieldName)` summary exists
+   * in the visible set. A strong signal the consumer is out
+   * of sync with the deployed schema — either the operation
+   * got stale or the resolver was removed.
+   */
+  "graphqlFieldNotImplemented",
+  /**
+   * A GraphQL consumer operation selects a nested field on an
+   * object type that the provider's schema doesn't declare.
+   * Example: operation selects `pet { deletedAt }` but the
+   * schema's `Pet` type has no `deletedAt` field. Emitted by
+   * the nested-selection pass when the provider's
+   * `metadata.graphql.schemaSdl` surfaces a type whose field
+   * set excludes the consumer's selection.
+   */
+  "graphqlSelectionFieldUnknown",
 ]);
 
 export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);
@@ -77,12 +115,90 @@ export const SourceLocationSchema = z.object({
   exportName: z.string().nullable(),
 });
 
-export const BoundaryBindingSchema = z.object({
-  protocol: z.string(),
-  method: z.string().optional(),
-  path: z.string().optional(),
-  framework: z.string(),
+// ---------------------------------------------------------------------------
+// Boundary binding — three-layer model (see docs/boundary-semantics.md)
+// ---------------------------------------------------------------------------
+//
+// `transport` is the wire/carrier (http, in-process, aws-https, etc).
+// `semantics` is the discriminated union the checker dispatches on — what
+//  the participants think they're doing (REST resource, in-process function
+//  call, GraphQL operation when that lands).
+// `recognition` is the pack identity that produced this binding ("ts-rest",
+//  "react", "openapi-stub", …) — used for provenance and pack-level dedupe,
+//  not for pairing or discriminator dispatch.
+
+export const RestSemanticsSchema = z.object({
+  name: z.literal("rest"),
+  /** Uppercase HTTP method ("GET", "POST", …). */
+  method: z.string(),
+  /** Normalized route path ("/users/{id}"). */
+  path: z.string(),
+  /**
+   * Status codes the producing source explicitly declared (OpenAPI
+   * responses, CFN MethodResponses, ts-rest router statuses). Kept here
+   * so the pairing layer can still see them without unwrapping metadata.
+   * Empty / absent for inferred sources.
+   */
   declaredResponses: z.array(z.number()).optional(),
+});
+
+export const FunctionCallSemanticsSchema = z.object({
+  name: z.literal("function-call"),
+  /**
+   * Optional module identifier for cross-unit references
+   * (e.g. `"./components/Button"` for a React component, or the TS
+   * module path for a bare function export). Packs that don't do
+   * cross-module pairing can leave it unset.
+   */
+  module: z.string().optional(),
+  /** Named export within the module, when applicable. */
+  exportName: z.string().optional(),
+});
+
+/**
+ * Provider-side GraphQL resolver. One resolver binds one
+ * (typeName, fieldName) pair. Discrimination at the resolver level
+ * rather than field level — each resolver function is the smallest
+ * independently-schedulable unit, and partial-null / per-field error
+ * behavior is a property of the resolver, not the surrounding type.
+ *
+ * Pairing key: `${typeName}.${fieldName}`. Transport-agnostic —
+ * resolvers run under Apollo Server (HTTP), AppSync (aws-https /
+ * AppSync integration), yoga, or stitched gateways alike.
+ */
+export const GraphqlResolverSemanticsSchema = z.object({
+  name: z.literal("graphql-resolver"),
+  /** GraphQL type the resolver attaches to: "Query", "Mutation", "Subscription", or an object-type name like "User". */
+  typeName: z.string(),
+  /** Field name on that type. */
+  fieldName: z.string(),
+});
+
+/**
+ * Consumer-side GraphQL operation — a document sent from client to
+ * server. Binds to an operation by name + operation type. Pairs with
+ * the matching resolver(s) at runtime; checking is more involved
+ * than REST pairing (one operation can touch many resolvers via
+ * selection set), and is deferred until the consumer-side pack lands.
+ */
+export const GraphqlOperationSemanticsSchema = z.object({
+  name: z.literal("graphql-operation"),
+  /** Optional operation name — anonymous queries / mutations leave this unset. */
+  operationName: z.string().optional(),
+  operationType: z.enum(["query", "mutation", "subscription"]),
+});
+
+export const SemanticsSchema = z.discriminatedUnion("name", [
+  RestSemanticsSchema,
+  FunctionCallSemanticsSchema,
+  GraphqlResolverSemanticsSchema,
+  GraphqlOperationSemanticsSchema,
+]);
+
+export const BoundaryBindingSchema = z.object({
+  transport: z.string(),
+  semantics: SemanticsSchema,
+  recognition: z.string(),
 });
 
 export const CodeUnitIdentitySchema = z.object({
@@ -308,20 +424,65 @@ type RenderNodeT =
   | {
       type: "element";
       tag: string;
+      /**
+       * Raw JSX attributes on the opening element, keyed by name and
+       * mapped to the *source text* of the attribute's value. String-
+       * literal attributes include their surrounding quotes (`type="button"`
+       * → `"\"button\""`); expression-valued attributes include the full
+       * expression (`onClick` → `"() => setCount(count + 1)"`); boolean
+       * shorthand attributes (`<input disabled>`) map to the empty
+       * string. No interpretation happens here — consumers that care
+       * about event semantics (React's `onX` convention, Storybook's
+       * `play` function targets) apply their own naming rules to
+       * resolve handler summary identities. Omitted when the element
+       * has no attributes (keeps tree output terse for text-heavy
+       * templates).
+       */
+      attrs?: Record<string, string> | undefined;
       children: RenderNodeT[];
     }
   | { type: "text"; value: string }
-  | { type: "expression"; sourceText: string };
+  | { type: "expression"; sourceText: string }
+  | {
+      // Inline JSX conditionals: `{cond && <X/>}`, `{cond ? <A/> : <B/>}`,
+      // `{cond ? <A/> : null}`. The `condition` carries the test
+      // expression's source text verbatim — downstream consumers that
+      // want a structured predicate can re-parse it, but preserving the
+      // text means the summary stays legible without binding to the
+      // current predicate decomposer.
+      //
+      // `whenTrue` is the branch rendered when the condition is truthy.
+      // `whenFalse` is the branch rendered when falsy; null means the
+      // conditional has no else (the `cond && <X/>` case) or the else
+      // is explicitly `null` in source. Both alternatives render
+      // nothing when absent — React treats `null`, `false`, and
+      // `undefined` children as empty. Deliberately avoiding `then` /
+      // `else` to sidestep the thenable-lookalike footgun: any object
+      // with a `then` property can trip loose duck-typing checks in
+      // older libraries, and the ESTree `consequent` / `alternate`
+      // vocabulary needs parser-author context to read.
+      type: "conditional";
+      condition: string;
+      whenTrue: RenderNodeT;
+      whenFalse: RenderNodeT | null;
+    };
 
 export const RenderNodeSchema: z.ZodType<RenderNodeT> = z.lazy(() =>
   z.discriminatedUnion("type", [
     z.object({
       type: z.literal("element"),
       tag: z.string(),
+      attrs: z.record(z.string(), z.string()).optional(),
       children: z.array(RenderNodeSchema),
     }),
     z.object({ type: z.literal("text"), value: z.string() }),
     z.object({ type: z.literal("expression"), sourceText: z.string() }),
+    z.object({
+      type: z.literal("conditional"),
+      condition: z.string(),
+      whenTrue: RenderNodeSchema,
+      whenFalse: RenderNodeSchema.nullable(),
+    }),
   ]),
 );
 

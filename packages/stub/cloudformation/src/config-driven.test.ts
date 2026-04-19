@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { cloudFormationToSummaries } from "./index.js";
 
-import type { Output } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Output } from "@suss/behavioral-ir";
 
 function statusFromOutput(output: Output): number | null {
   if (output.type !== "response" || output.statusCode === null) {
@@ -15,15 +15,21 @@ function statusFromOutput(output: Output): number | null {
   return typeof v === "number" ? v : null;
 }
 
+function restOf(
+  summary: BehavioralSummary,
+): { method: string; path: string } | null {
+  const s = summary.identity.boundaryBinding?.semantics;
+  return s?.name === "rest" ? { method: s.method, path: s.path } : null;
+}
+
 function statusesFor(
   summaries: ReturnType<typeof cloudFormationToSummaries>,
   match: { method: string; path: string },
 ): number[] {
-  const summary = summaries.find(
-    (s) =>
-      s.identity.boundaryBinding?.method === match.method &&
-      s.identity.boundaryBinding?.path === match.path,
-  );
+  const summary = summaries.find((s) => {
+    const rest = restOf(s);
+    return rest?.method === match.method && rest.path === match.path;
+  });
   if (summary === undefined) {
     return [];
   }
@@ -469,12 +475,10 @@ describe("SAM CorsConfiguration", () => {
       },
     });
     const optionsSummaries = summaries.filter(
-      (s) => s.identity.boundaryBinding?.method === "OPTIONS",
+      (s) => restOf(s)?.method === "OPTIONS",
     );
     expect(optionsSummaries).toHaveLength(1);
-    expect(optionsSummaries[0].identity.boundaryBinding?.path).toBe(
-      "/users/{id}",
-    );
+    expect(restOf(optionsSummaries[0])?.path).toBe("/users/{id}");
   });
 
   it("HTTP API CorsConfiguration synthesizes OPTIONS preflight", () => {
@@ -498,11 +502,9 @@ describe("SAM CorsConfiguration", () => {
         },
       },
     });
-    const options = summaries.filter(
-      (s) => s.identity.boundaryBinding?.method === "OPTIONS",
-    );
+    const options = summaries.filter((s) => restOf(s)?.method === "OPTIONS");
     expect(options).toHaveLength(1);
-    expect(options[0].identity.boundaryBinding?.path).toBe("/items");
+    expect(restOf(options[0])?.path).toBe("/items");
   });
 
   it("CorsConfiguration as a bare string (single allowed origin)", () => {
@@ -529,9 +531,7 @@ describe("SAM CorsConfiguration", () => {
         },
       },
     });
-    const options = summaries.find(
-      (s) => s.identity.boundaryBinding?.method === "OPTIONS",
-    );
+    const options = summaries.find((s) => restOf(s)?.method === "OPTIONS");
     expect(options).toBeDefined();
     if (options !== undefined) {
       const out = options.transitions[0].output;
@@ -569,9 +569,7 @@ describe("SAM CorsConfiguration", () => {
         },
       },
     });
-    const options = summaries.filter(
-      (s) => s.identity.boundaryBinding?.method === "OPTIONS",
-    );
+    const options = summaries.filter((s) => restOf(s)?.method === "OPTIONS");
     expect(options).toHaveLength(0);
   });
 });

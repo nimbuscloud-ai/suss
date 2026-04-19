@@ -7,6 +7,7 @@ import type { PatternPack } from "@suss/extractor";
 export function expressFramework(): PatternPack {
   return {
     name: "express",
+    protocol: "http",
     languages: ["typescript", "javascript"],
 
     // Express exposes the routable via either `Router()` (named) or

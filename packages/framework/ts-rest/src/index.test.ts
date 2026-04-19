@@ -77,22 +77,20 @@ describe("tsRestFramework — integration", () => {
   it("getUser binds method/path from the contract", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
-    expect(getUser!.identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/users/:id",
-      framework: "core",
+    expect(getUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/:id" },
+      recognition: "core",
     });
   });
 
   it("createUser binds method/path from the contract", () => {
     const createUser = summaries.find((s) => s.identity.name === "createUser");
     expect(createUser).toBeDefined();
-    expect(createUser!.identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "POST",
-      path: "/users",
-      framework: "core",
+    expect(createUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "POST", path: "/users" },
+      recognition: "core",
     });
   });
 
@@ -105,14 +103,14 @@ describe("tsRestFramework — integration", () => {
     //   2. !user         → 404
     //   3. user.deletedAt → 404
     //   4. default       → 200
-    expect(getUser!.transitions).toHaveLength(4);
-    const statusCodes = getUser!.transitions.map((t) =>
+    expect(getUser?.transitions).toHaveLength(4);
+    const statusCodes = getUser?.transitions.map((t) =>
       t.output.type === "response" && t.output.statusCode?.type === "literal"
         ? t.output.statusCode.value
         : null,
     );
     expect(statusCodes).toEqual([404, 404, 404, 200]);
-    expect(getUser!.transitions.map((t) => t.isDefault)).toEqual([
+    expect(getUser?.transitions.map((t) => t.isDefault)).toEqual([
       false,
       false,
       false,
@@ -123,14 +121,14 @@ describe("tsRestFramework — integration", () => {
   it("createUser assembles two returnShape transitions (400, 201)", () => {
     const createUser = summaries.find((s) => s.identity.name === "createUser");
     expect(createUser).toBeDefined();
-    expect(createUser!.transitions).toHaveLength(2);
-    const statusCodes = createUser!.transitions.map((t) =>
+    expect(createUser?.transitions).toHaveLength(2);
+    const statusCodes = createUser?.transitions.map((t) =>
       t.output.type === "response" && t.output.statusCode?.type === "literal"
         ? t.output.statusCode.value
         : null,
     );
     expect(statusCodes).toEqual([400, 201]);
-    expect(createUser!.transitions.map((t) => t.isDefault)).toEqual([
+    expect(createUser?.transitions.map((t) => t.isDefault)).toEqual([
       false,
       true,
     ]);
@@ -139,7 +137,7 @@ describe("tsRestFramework — integration", () => {
   it("destructuredObject inputMapping maps params → pathParams and body → requestBody", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
-    const paramsInput = getUser!.inputs.find(
+    const paramsInput = getUser?.inputs.find(
       (i) => i.type === "parameter" && i.name === "params",
     );
     expect(paramsInput).toBeDefined();
@@ -148,7 +146,7 @@ describe("tsRestFramework — integration", () => {
     }
 
     const createUser = summaries.find((s) => s.identity.name === "createUser");
-    const bodyInput = createUser!.inputs.find(
+    const bodyInput = createUser?.inputs.find(
       (i) => i.type === "parameter" && i.name === "body",
     );
     expect(bodyInput).toBeDefined();
@@ -160,22 +158,22 @@ describe("tsRestFramework — integration", () => {
   it("surfaces contract-side gaps (getUser declares 500 but never produces it)", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
-    const gap500 = getUser!.gaps.find((g) => g.description.includes("500"));
+    const gap500 = getUser?.gaps.find((g) => g.description.includes("500"));
     expect(gap500).toBeDefined();
-    expect(gap500!.type).toBe("unhandledCase");
-    expect(gap500!.description).toContain("never produced");
-    expect(gap500!.consequence).toBe("frameworkDefault");
+    expect(gap500?.type).toBe("unhandledCase");
+    expect(gap500?.description).toContain("never produced");
+    expect(gap500?.consequence).toBe("frameworkDefault");
   });
 
   it("attaches the declaredContract to summary metadata under metadata.http", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
-    const http = getUser!.metadata?.http as Record<string, unknown> | undefined;
+    const http = getUser?.metadata?.http as Record<string, unknown> | undefined;
     const contract = http?.declaredContract as
       | { responses: Array<{ statusCode: number }> }
       | undefined;
     expect(contract).toBeDefined();
-    const declaredStatuses = contract!.responses
+    const declaredStatuses = contract?.responses
       .map((r) => r.statusCode)
       .sort();
     expect(declaredStatuses).toEqual([200, 404, 500]);

@@ -5,9 +5,11 @@
 
 import { Node } from "ts-morph";
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import { shapeFromNodeType } from "./type-shapes.js";
 
-import type { TypeShape } from "@suss/behavioral-ir";
+import type { BoundaryBinding, TypeShape } from "@suss/behavioral-ir";
 import type { ContractPattern, RawDeclaredContract } from "@suss/extractor";
 import type { DiscoveredUnit } from "./discovery.js";
 
@@ -17,12 +19,7 @@ import type { DiscoveredUnit } from "./discovery.js";
 
 export interface ContractReadResult {
   declaredContract: RawDeclaredContract;
-  boundaryBinding: {
-    protocol: string;
-    method?: string;
-    path?: string;
-    framework: string;
-  } | null;
+  boundaryBinding: BoundaryBinding | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -51,6 +48,29 @@ function extractDeclaredBody(node: Node | undefined): TypeShape | null {
 }
 
 /**
+ * Walk up one step from the handler function to find the property
+ * node that lives on the handlers object. Two shapes:
+ *   - Arrow/function expr: `func` is a value assigned to a
+ *     PropertyAssignment → return the PropertyAssignment.
+ *   - Method shorthand: `func` IS a MethodDeclaration → return it.
+ * Anything else (a standalone top-level function, an expression
+ * statement, a function-declaration not in a router) returns null.
+ */
+function resolveHandlerPropNode(func: Node): Node | null {
+  const parent = func.getParent();
+  if (parent === undefined) {
+    return null;
+  }
+  if (Node.isPropertyAssignment(parent)) {
+    return parent;
+  }
+  if (Node.isMethodDeclaration(func)) {
+    return func;
+  }
+  return null;
+}
+
+/**
  * Walk up from the handler function node to find the enclosing .router() call.
  *
  * Expected parent chain:
@@ -64,20 +84,8 @@ function findRouterCall(unit: DiscoveredUnit): {
   handlerName: string;
 } | null {
   const func = unit.func;
-  const current: Node = func;
-
-  // Walk up to the PropertyAssignment or MethodDeclaration
-  const parent = current.getParent();
-  if (parent === undefined) {
-    return null;
-  }
-
-  let propNode: Node;
-  if (Node.isPropertyAssignment(parent)) {
-    propNode = parent;
-  } else if (Node.isMethodDeclaration(func)) {
-    propNode = func;
-  } else {
+  const propNode = resolveHandlerPropNode(func);
+  if (propNode === null) {
     return null;
   }
 
@@ -265,19 +273,14 @@ function extractEndpointContract(
     return null;
   }
 
-  const boundaryBinding: {
-    protocol: string;
-    method?: string;
-    path?: string;
-    framework: string;
-  } | null =
+  const boundaryBinding: BoundaryBinding | null =
     method !== undefined || path !== undefined
-      ? {
-          protocol: "http",
-          ...(method !== undefined ? { method } : {}),
-          ...(path !== undefined ? { path } : {}),
-          framework,
-        }
+      ? restBinding({
+          transport: "http",
+          method: method ?? "",
+          path: path ?? "",
+          recognition: framework,
+        })
       : null;
 
   // Contract-reading packs (ts-rest, ts-rest clients) read a contract

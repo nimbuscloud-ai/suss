@@ -234,10 +234,7 @@ function extractStories(sf: SourceFile): StoryInfo[] {
 
       const argsProp = objLit.getProperty("args");
       const args: Record<string, string> = {};
-      if (
-        argsProp !== undefined &&
-        argsProp.isKind(SyntaxKind.PropertyAssignment)
-      ) {
+      if (argsProp?.isKind(SyntaxKind.PropertyAssignment)) {
         const argsInit = argsProp.getInitializer();
         if (argsInit?.isKind(SyntaxKind.ObjectLiteralExpression)) {
           for (const prop of argsInit.getProperties()) {

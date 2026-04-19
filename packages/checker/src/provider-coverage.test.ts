@@ -153,7 +153,7 @@ describe("checkProviderCoverage", () => {
       }),
     ]);
     const findings = checkProviderCoverage(p, c);
-    expect(findings[0].boundary.framework).toBe("ts-rest");
+    expect(findings[0].boundary.recognition).toBe("ts-rest");
   });
 });
 

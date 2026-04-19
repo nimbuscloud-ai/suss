@@ -125,7 +125,7 @@ describe("apolloFramework — integration", () => {
   it("Query.user branches on args.id — one throw transition, one return", () => {
     const userQuery = summaries.find((s) => s.identity.name === "Query.user");
     expect(userQuery).toBeDefined();
-    const outputs = userQuery!.transitions.map((t) => t.output.type);
+    const outputs = userQuery?.transitions.map((t) => t.output.type);
     expect(outputs).toContain("throw");
     expect(outputs).toContain("return");
   });

@@ -4,6 +4,8 @@
 // authorizer set is restricted, throttling lives at API/stage level
 // only, and CORS is API-wide rather than per-method.
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import {
   buildCorsPreflightSummary,
   FRAMEWORK,
@@ -140,12 +142,12 @@ function buildRouteSummary(
     identity: {
       name: ownerKey,
       exportPath: null,
-      boundaryBinding: {
-        protocol: PROTOCOL,
+      boundaryBinding: restBinding({
+        transport: PROTOCOL,
         method: parsed.method,
         path: parsed.path,
-        framework: FRAMEWORK,
-      },
+        recognition: FRAMEWORK,
+      }),
     },
     inputs: [],
     transitions,

@@ -1,21 +1,24 @@
 // @suss/framework-react — PatternPack for React function components.
 //
-// Phase 1.1 scope (see docs/roadmap-react.md): discover function
-// components, classify their JSX-returning terminals as `render`
-// outputs carrying the root element name, and rely on the adapter's
-// existing branching/early-return infrastructure to produce one
-// transition per rendered path. Explicitly deferred: prop shape
-// extraction, hook analysis, nested render-tree structure, event
-// handler body behavior, class components, HOCs, React Server
-// Components.
+// Discovers default-exported function components, classifies
+// JSX-returning terminals as `render` outputs, and synthesizes
+// sibling sub-units (event handlers + useEffect bodies) via
+// `subUnits`. React's runtime schedules those callbacks distinctly
+// from the render body — different inputs, different outputs,
+// different firing triggers — so each becomes its own
+// BehavioralSummary sharing the component's identity prefix.
 //
 // Discovery uses `namedExport: ["default"]` as the initial signal — a
-// file whose default export is a component. This matches the React
-// Router convention already understood by `@suss/framework-react-router`
-// and the predominant codebase layout. Named-export components (e.g.
-// `export function UserCard(...)` without being the default) are
-// intentionally out of scope for this slice; tackled when we have a
-// second signal to prove this discovery rule needs expansion.
+// file whose default export is a component. Named-export components
+// (e.g. `export function UserCard(...)` without being the default)
+// are deferred until a second signal motivates broader discovery.
+//
+// Deferred: class components, HOC-wrapped defaults, React Server
+// Component specifics, custom-hook-as-code-unit discovery (hooks are
+// already pickable via dep-call tracking; promoting them to
+// first-class summaries follows in a later phase).
+
+import { reactSubUnits } from "./sub-units.js";
 
 import type { PatternPack } from "@suss/extractor";
 
@@ -23,6 +26,16 @@ export function reactFramework(): PatternPack {
   return {
     name: "react",
     languages: ["typescript", "javascript"],
+    // React doesn't have its own wire protocol — it's a framework
+    // running inside a JS runtime, and its boundaries
+    // (component ↔ DOM, render ↔ handler, etc.) don't cross a
+    // network hop. `"in-process"` names that transport class and
+    // will be shared with future in-process packs (custom hooks,
+    // module-internal cross-unit work). Framework identity stays on
+    // `BoundaryBinding.framework` = "react" — that's what
+    // distinguishes React-rendered boundaries from, say, a Preact
+    // pack or an arbitrary TS function-call boundary.
+    protocol: "in-process",
 
     discovery: [
       {
@@ -68,6 +81,8 @@ export function reactFramework(): PatternPack {
       type: "componentProps",
       paramPosition: 0,
     },
+
+    subUnits: reactSubUnits,
   };
 }
 

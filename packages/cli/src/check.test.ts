@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { functionCallBinding, restBinding } from "@suss/behavioral-ir";
+
 import { check, checkDir } from "./check.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -73,12 +75,12 @@ function provider(
     identity: {
       name,
       exportPath: [name],
-      boundaryBinding: {
-        protocol: "http",
-        framework: "ts-rest",
+      boundaryBinding: restBinding({
+        transport: "http",
+        recognition: "ts-rest",
         method: "GET",
         path: `/${name}`,
-      },
+      }),
     },
     inputs: [],
     transitions,
@@ -101,7 +103,10 @@ function consumer(
     identity: {
       name,
       exportPath: [name],
-      boundaryBinding: { protocol: "http", framework: "fetch" },
+      boundaryBinding: functionCallBinding({
+        transport: "http",
+        recognition: "fetch",
+      }),
     },
     inputs: [],
     transitions,
@@ -623,12 +628,12 @@ function providerWithRoute(
     identity: {
       name,
       exportPath: [name],
-      boundaryBinding: {
-        protocol: "http",
-        framework: "ts-rest",
+      boundaryBinding: restBinding({
+        transport: "http",
+        recognition: "ts-rest",
         method,
         path: routePath,
-      },
+      }),
     },
     inputs: [],
     transitions,
@@ -653,12 +658,12 @@ function consumerWithRoute(
     identity: {
       name,
       exportPath: [name],
-      boundaryBinding: {
-        protocol: "http",
-        framework: "fetch",
+      boundaryBinding: restBinding({
+        transport: "http",
+        recognition: "fetch",
         method,
         path: routePath,
-      },
+      }),
     },
     inputs: [],
     transitions,

@@ -5,6 +5,7 @@ import type { PatternPack } from "@suss/extractor";
 export function reactRouterFramework(): PatternPack {
   return {
     name: "react-router",
+    protocol: "http",
     languages: ["typescript", "javascript"],
 
     discovery: [

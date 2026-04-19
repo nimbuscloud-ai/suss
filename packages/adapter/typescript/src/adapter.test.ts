@@ -1,5 +1,7 @@
 // adapter.test.ts — Integration tests for createTypeScriptAdapter (Task 2.5b)
 
+/** biome-ignore-all lint/style/noNonNullAssertion: pack fixtures guarantee field presence */
+
 import path from "node:path";
 
 import { Project } from "ts-morph";
@@ -9,7 +11,38 @@ import { createTypeScriptAdapter, extractCodeStructure } from "./adapter.js";
 import { readContract } from "./contract.js";
 import { discoverUnits } from "./discovery.js";
 
+import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
+
+function restMethodOf(
+  target:
+    | BehavioralSummary
+    | { boundaryBinding: BoundaryBinding | null }
+    | null
+    | undefined,
+): string | null {
+  const binding =
+    target && "identity" in target
+      ? target.identity.boundaryBinding
+      : (target?.boundaryBinding ?? null);
+  const sem = binding?.semantics;
+  return sem?.name === "rest" ? sem.method : null;
+}
+
+function restPathOf(
+  target:
+    | BehavioralSummary
+    | { boundaryBinding: BoundaryBinding | null }
+    | null
+    | undefined,
+): string | null {
+  const binding =
+    target && "identity" in target
+      ? target.identity.boundaryBinding
+      : (target?.boundaryBinding ?? null);
+  const sem = binding?.semantics;
+  return sem?.name === "rest" ? sem.path : null;
+}
 
 // ---------------------------------------------------------------------------
 // ts-rest framework pack (same as @suss/framework-ts-rest)
@@ -17,6 +50,7 @@ import type { PatternPack } from "@suss/extractor";
 
 const tsRestPack: PatternPack = {
   name: "ts-rest",
+  protocol: "http",
   languages: ["typescript"],
   discovery: [
     {
@@ -445,10 +479,9 @@ describe("readContract", () => {
       { statusCode: 404 },
     ]);
     expect(result?.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/users/:id",
-      framework: "core",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/:id" },
+      recognition: "core",
     });
   });
 
@@ -535,7 +568,7 @@ describe("readContract", () => {
 
     expect(result).not.toBeNull();
     expect(result?.declaredContract.responses).toHaveLength(2);
-    expect(result?.boundaryBinding?.method).toBe("GET");
+    expect(restMethodOf(result ?? null)).toBe("GET");
   });
 
   it("extracts body TypeShape from c.type<T>() declarations", () => {
@@ -830,8 +863,8 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 
     expect(getUser).toBeDefined();
     expect(getUser?.identity.boundaryBinding).toBeDefined();
-    expect(getUser?.identity.boundaryBinding?.method).toBe("GET");
-    expect(getUser?.identity.boundaryBinding?.path).toBe("/users/:id");
+    expect(restMethodOf(getUser)).toBe("GET");
+    expect(restPathOf(getUser)).toBe("/users/:id");
   });
 
   it("extractAll skips declaration files", () => {
@@ -1036,6 +1069,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 describe("consumer extraction", () => {
   const fetchPack: PatternPack = {
     name: "fetch",
+    protocol: "http",
     languages: ["typescript"],
     discovery: [
       {
@@ -1118,10 +1152,9 @@ describe("consumer extraction", () => {
     const summaries = adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/health",
-      framework: "fetch",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/health" },
+      recognition: "fetch",
     });
   });
 
@@ -1143,7 +1176,7 @@ describe("consumer extraction", () => {
     });
     const summaries = adapter.extractAll();
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/pet/{petId}");
+    expect(restPathOf(summaries[0])).toBe("/pet/{petId}");
   });
 
   it("extracts a template literal with no substitutions as the literal text", () => {
@@ -1163,7 +1196,7 @@ describe("consumer extraction", () => {
       frameworks: [fetchPack],
     });
     const summaries = adapter.extractAll();
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/health");
+    expect(restPathOf(summaries[0])).toBe("/health");
   });
 
   it("extracts a template-literal path with multiple substitutions", () => {
@@ -1183,9 +1216,7 @@ describe("consumer extraction", () => {
       frameworks: [fetchPack],
     });
     const summaries = adapter.extractAll();
-    expect(summaries[0].identity.boundaryBinding?.path).toBe(
-      "/pet/{petId}/comments/{commentId}",
-    );
+    expect(restPathOf(summaries[0])).toBe("/pet/{petId}/comments/{commentId}");
   });
 
   it("uses the trailing property name when the substitution is a property access", () => {
@@ -1206,7 +1237,7 @@ describe("consumer extraction", () => {
       frameworks: [fetchPack],
     });
     const summaries = adapter.extractAll();
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/users/{id}");
+    expect(restPathOf(summaries[0])).toBe("/users/{id}");
   });
 
   it("falls back to {param} when the substitution is not a simple identifier", () => {
@@ -1226,7 +1257,7 @@ describe("consumer extraction", () => {
       frameworks: [fetchPack],
     });
     const summaries = adapter.extractAll();
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/search/{param}");
+    expect(restPathOf(summaries[0])).toBe("/search/{param}");
   });
 
   it("extracts method from options argument", () => {
@@ -1247,8 +1278,8 @@ describe("consumer extraction", () => {
     });
     const summaries = adapter.extractAll();
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].identity.boundaryBinding?.method).toBe("POST");
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/users");
+    expect(restMethodOf(summaries[0])).toBe("POST");
+    expect(restPathOf(summaries[0])).toBe("/users");
   });
 
   it("defaults method to GET when no options argument", () => {
@@ -1269,7 +1300,7 @@ describe("consumer extraction", () => {
     });
     const summaries = adapter.extractAll();
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].identity.boundaryBinding?.method).toBe("GET");
+    expect(restMethodOf(summaries[0])).toBe("GET");
   });
 
   it("omits path when URL is non-literal", () => {
@@ -1291,7 +1322,9 @@ describe("consumer extraction", () => {
     });
     const summaries = adapter.extractAll();
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].identity.boundaryBinding?.path).toBeUndefined();
+    // Non-literal URL: method extracted, path left empty (signals
+    // "unresolved" to the wrapper-expansion post-pass).
+    expect(restPathOf(summaries[0])).toBe("");
   });
 
   it("produces status-code conditions the checker can read", () => {
@@ -1350,6 +1383,7 @@ describe("consumer extraction", () => {
 describe("response property semantics", () => {
   const fetchPackWithSemantics: PatternPack = {
     name: "fetch",
+    protocol: "http",
     languages: ["typescript"],
     discovery: [
       {
@@ -1567,6 +1601,7 @@ describe("client-side contract resolution via fromClientMethod", () => {
   // ts-rest pack so readContractForClientCall finds the contract object.
   const tsRestClientPack: PatternPack = {
     name: "ts-rest",
+    protocol: "http",
     languages: ["typescript"],
     discovery: [
       {
@@ -1630,10 +1665,9 @@ describe("client-side contract resolution via fromClientMethod", () => {
     expect(consumer).toBeDefined();
     expect(consumer?.kind).toBe("client");
     expect(consumer?.identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/users/:id",
-      framework: "ts-rest",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/:id" },
+      recognition: "ts-rest",
     });
   });
 
@@ -1667,11 +1701,13 @@ describe("client-side contract resolution via fromClientMethod", () => {
     });
     const summaries = adapter.extractAll();
     const consumer = summaries.find((s) => s.identity.name === "ping");
-    // Discovery still finds the function; the binding falls back to just
-    // protocol+framework because fromClientMethod can't resolve.
+    // Discovery still finds the function; the binding falls back to a
+    // rest-shaped entry with empty method/path because fromClientMethod
+    // can't resolve the method+path from the contract.
     expect(consumer?.identity.boundaryBinding).toEqual({
-      protocol: "http",
-      framework: "ts-rest",
+      transport: "http",
+      semantics: { name: "rest", method: "", path: "" },
+      recognition: "ts-rest",
     });
   });
 });
@@ -1686,6 +1722,7 @@ describe("wrapper expansion", () => {
   // tests don't require the real axios npm dep.
   const axiosLikePack: PatternPack = {
     name: "axios",
+    protocol: "http",
     languages: ["typescript"],
     discovery: [
       {
@@ -1762,16 +1799,17 @@ describe("wrapper expansion", () => {
     // (synthesised with the literal/template-literal path from the call site).
     const wrapper = summaries.find((s) => s.identity.name === "getJson");
     expect(wrapper).toBeDefined();
-    expect(wrapper?.identity.boundaryBinding?.path).toBeUndefined();
+    // Wrapper: method extracted, path empty (unresolved — path is a
+    // parameter, not a literal).
+    expect(restPathOf(wrapper)).toBe("");
 
     const caller = summaries.find((s) => s.identity.name === "getPet");
     expect(caller).toBeDefined();
     expect(caller?.kind).toBe("client");
     expect(caller?.identity.boundaryBinding).toEqual({
-      protocol: "http",
-      framework: "axios",
-      method: "GET",
-      path: "/pet/{id}",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/pet/{id}" },
+      recognition: "axios",
     });
     expect(caller?.confidence.level).toBe("low");
     expect(
@@ -1821,7 +1859,7 @@ describe("wrapper expansion", () => {
           (s.metadata as { derivedFromWrapper?: unknown } | undefined)
             ?.derivedFromWrapper !== undefined,
       )
-      .map((s) => s.identity.boundaryBinding?.path)
+      .map((s) => restPathOf(s))
       .sort();
     expect(callerPaths).toEqual(["/pet/findByStatus", "/pet/{id}"]);
   });
@@ -1900,7 +1938,7 @@ describe("wrapper expansion", () => {
     });
     const summaries = adapter.extractAll();
     const caller = summaries.find((s) => s.identity.name === "getCount");
-    expect(caller?.identity.boundaryBinding?.path).toBe("/count");
+    expect(restPathOf(caller)).toBe("/count");
   });
 
   it("respects export-keyword boundary on enclosing function lookup", () => {
@@ -1980,7 +2018,7 @@ describe("wrapper expansion", () => {
     // including `status` (which would have been filtered as a non-body
     // property by the hardcoded fallback before responseSemantics: [] was
     // set on the synthetic pack).
-    const withInput = caller!.transitions.find(
+    const withInput = caller?.transitions.find(
       (t) => t.expectedInput?.type === "record",
     );
     expect(withInput).toBeDefined();
@@ -1990,5 +2028,474 @@ describe("wrapper expansion", () => {
     } else {
       throw new Error("expected record expectedInput on wrapper-call branch");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sub-unit synthesis plumbing (generic — pack.subUnits → summaries)
+// ---------------------------------------------------------------------------
+//
+// Framework-specific sub-unit behavior (React event handler discovery,
+// useEffect body analysis, etc.) is tested in @suss/framework-react's
+// integration suite. Here we only exercise the adapter's plumbing: a
+// pack that declares `subUnits` should have it called, returned units
+// should be piped through extraction + assembly, and inheritance of
+// parent metadata / boundary bindings should be correct.
+
+describe("subUnits plumbing", () => {
+  function makeProject() {
+    return new Project({
+      useInMemoryFileSystem: true,
+      compilerOptions: {
+        strict: true,
+        target: 99,
+        module: 99,
+        moduleResolution: 100,
+        skipLibCheck: true,
+      },
+    });
+  }
+
+  const testPack: PatternPack = {
+    name: "test-pack",
+    protocol: "in-process",
+    languages: ["typescript"],
+    discovery: [
+      { kind: "handler", match: { type: "namedExport", names: ["default"] } },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+    subUnits: (parent) => {
+      // Return a single synthetic sub-unit using the parent's own
+      // function body — the adapter doesn't care what we return, only
+      // that the plumbing processes it.
+      return [
+        {
+          func: parent.func,
+          kind: "handler",
+          name: `${parent.name}.synthetic`,
+          metadata: { custom: { note: "from-subUnits" } },
+        },
+      ];
+    },
+  };
+
+  it("calls pack.subUnits and produces a summary per returned unit", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/Subject.ts",
+      `
+        export default function subject() {
+          return 42;
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [testPack],
+    });
+    const summaries = adapter.extractAll();
+
+    const synthetic = summaries.find((s) =>
+      s.identity.name.endsWith(".synthetic"),
+    );
+    expect(synthetic).toBeDefined();
+    expect(synthetic?.kind).toBe("handler");
+    const meta = synthetic?.metadata?.custom as { note?: string } | undefined;
+    expect(meta?.note).toBe("from-subUnits");
+  });
+
+  it("sub-unit summaries inherit the parent's boundary binding", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/Subject.ts",
+      `
+        export default function subject() { return 42; }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [testPack],
+    });
+    const summaries = adapter.extractAll();
+
+    const parent = summaries.find((s) => s.identity.name === "subject");
+    const sub = summaries.find((s) => s.identity.name === "subject.synthetic");
+    // Inherited binding: parent's framework / protocol propagate.
+    expect(sub?.identity.boundaryBinding).toEqual(
+      parent?.identity.boundaryBinding,
+    );
+  });
+
+  it("packs without subUnits produce no sub-units", () => {
+    const { subUnits: _omit, ...rest } = testPack;
+    const noSubUnitsPack: PatternPack = rest;
+    const project = makeProject();
+    project.createSourceFile(
+      "/Subject.ts",
+      `
+        export default function subject() { return 42; }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [noSubUnitsPack],
+    });
+    const summaries = adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+  });
+
+  it("sub-unit terminals default to `return` + `throw` when unset", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/Subject.ts",
+      `
+        export default function subject() {
+          if (true) { throw new Error("bad"); }
+          return 42;
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [testPack],
+    });
+    const summaries = adapter.extractAll();
+    const sub = summaries.find((s) => s.identity.name === "subject.synthetic");
+    const outputTypes = new Set(sub?.transitions.map((t) => t.output.type));
+    // Body has one throw + one return — both should surface as
+    // transitions in the sub-unit because the default terminal set
+    // covers them.
+    expect(outputTypes.has("throw")).toBe(true);
+    expect(outputTypes.has("return")).toBe(true);
+  });
+
+  it("sub-unit custom terminals / inputMapping override the adapter defaults", () => {
+    const customPack: PatternPack = {
+      ...testPack,
+      subUnits: (parent) => [
+        {
+          func: parent.func,
+          kind: "handler",
+          name: `${parent.name}.custom`,
+          terminals: [
+            // Intentionally include only `return` — any thrown values
+            // should NOT appear as throw terminals.
+            {
+              kind: "return",
+              match: { type: "returnStatement" },
+              extraction: {},
+            },
+          ],
+          inputMapping: {
+            type: "positionalParams",
+            params: [{ position: 0, role: "first" }],
+          },
+        },
+      ],
+    };
+    const project = makeProject();
+    project.createSourceFile(
+      "/Subject.ts",
+      `
+        export default function subject(x: number) {
+          if (x < 0) { throw new Error("bad"); }
+          return x;
+        }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [customPack],
+    });
+    const summaries = adapter.extractAll();
+    const sub = summaries.find((s) => s.identity.name === "subject.custom");
+    expect(sub).toBeDefined();
+    // Only the `return` terminal is configured, so no throw transition.
+    expect(sub?.transitions.some((t) => t.output.type === "throw")).toBe(false);
+    // The custom input mapping should surface the first param as role "first".
+    const input = sub?.inputs[0];
+    if (input !== undefined && input.type === "parameter") {
+      expect(input.role).toBe("first");
+    } else {
+      throw new Error("expected parameter input");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Inline JSX conditional decomposition (Phase 1.4)
+// ---------------------------------------------------------------------------
+
+describe("inline JSX conditional decomposition", () => {
+  const reactPack: PatternPack = {
+    name: "react",
+    protocol: "in-process",
+    languages: ["typescript"],
+    discovery: [
+      { kind: "component", match: { type: "namedExport", names: ["default"] } },
+    ],
+    terminals: [
+      { kind: "render", match: { type: "jsxReturn" }, extraction: {} },
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ],
+    inputMapping: { type: "componentProps", paramPosition: 0 },
+  };
+
+  function makeProject() {
+    return new Project({
+      useInMemoryFileSystem: true,
+      compilerOptions: {
+        strict: true,
+        target: 99,
+        module: 99,
+        moduleResolution: 100,
+        skipLibCheck: true,
+        jsx: 4,
+      },
+    });
+  }
+
+  function rootOf(summaries: ReturnType<typeof Array.prototype.at>) {
+    // placeholder — not used; see explicit root extraction in each test
+    return summaries;
+  }
+  void rootOf; // silence unused-lint if we don't reach the helper path
+
+  it("expression that isn't a JSX pattern stays as an opaque `expression` node", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/Map.tsx",
+      `
+        export default function Map(props: { items: string[] }) {
+          return <ul>{props.items.map((i) => i)}</ul>;
+        }
+      `,
+    );
+    const summaries = createTypeScriptAdapter({
+      project,
+      frameworks: [reactPack],
+    }).extractAll();
+    const comp = summaries.find((s) => s.identity.name === "Map");
+    const out = comp?.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    expect(root.children[0].type).toBe("expression");
+  });
+
+  it("`{x || <Fallback/>}` stays opaque — `||` is not decomposed", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/Or.tsx",
+      `
+        export default function Or(props: { label: string }) {
+          return <div>{props.label || <span>fallback</span>}</div>;
+        }
+      `,
+    );
+    const summaries = createTypeScriptAdapter({
+      project,
+      frameworks: [reactPack],
+    }).extractAll();
+    const comp = summaries.find((s) => s.identity.name === "Or");
+    const out = comp?.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    expect(root.children[0].type).toBe("expression");
+  });
+
+  it("`{cond ? nonJsx : <Fallback/>}` negates the condition and promotes the JSX branch", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/Neg.tsx",
+      `
+        export default function Neg(props: { label: string; has: boolean }) {
+          return <div>{props.has ? props.label : <span>empty</span>}</div>;
+        }
+      `,
+    );
+    const summaries = createTypeScriptAdapter({
+      project,
+      frameworks: [reactPack],
+    }).extractAll();
+    const comp = summaries.find((s) => s.identity.name === "Neg");
+    const out = comp?.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    const child = root.children[0];
+    if (child.type !== "conditional") {
+      throw new Error("expected conditional with negated condition");
+    }
+    expect(child.condition).toBe("!(props.has)");
+    expect(child.whenFalse).toBeNull();
+    if (child.whenTrue.type !== "element") {
+      throw new Error("expected element whenTrue");
+    }
+    expect(child.whenTrue.tag).toBe("span");
+  });
+
+  it("`undefined` identifier in a ternary branch reads as no-render", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/Undef.tsx",
+      `
+        export default function Undef(props: { show: boolean }) {
+          return <div>{props.show ? <span>hi</span> : undefined}</div>;
+        }
+      `,
+    );
+    const summaries = createTypeScriptAdapter({
+      project,
+      frameworks: [reactPack],
+    }).extractAll();
+    const comp = summaries.find((s) => s.identity.name === "Undef");
+    const out = comp?.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    const child = root.children[0];
+    if (child.type !== "conditional") {
+      throw new Error("expected conditional");
+    }
+    expect(child.condition).toBe("props.show");
+    expect(child.whenFalse).toBeNull();
+  });
+
+  it("`cond && <nonJsx>` stays opaque when the right side isn't statically JSX", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/AndNonJsx.tsx",
+      `
+        export default function AndNonJsx(props: { show: boolean; label: string }) {
+          return <div>{props.show && props.label}</div>;
+        }
+      `,
+    );
+    const summaries = createTypeScriptAdapter({
+      project,
+      frameworks: [reactPack],
+    }).extractAll();
+    const comp = summaries.find((s) => s.identity.name === "AndNonJsx");
+    const out = comp?.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    expect(root.children[0].type).toBe("expression");
+  });
+
+  it("ternary with neither branch statically JSX stays opaque", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/DataTernary.tsx",
+      `
+        export default function DataTernary(props: { show: boolean; a: string; b: string }) {
+          return <div>{props.show ? props.a : props.b}</div>;
+        }
+      `,
+    );
+    const summaries = createTypeScriptAdapter({
+      project,
+      frameworks: [reactPack],
+    }).extractAll();
+    const comp = summaries.find((s) => s.identity.name === "DataTernary");
+    const out = comp?.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    expect(root.children[0].type).toBe("expression");
+  });
+
+  it("`false` literal in a ternary branch reads as no-render", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/FalseLit.tsx",
+      `
+        export default function FalseLit(props: { show: boolean }) {
+          return <div>{props.show ? <span>hi</span> : false}</div>;
+        }
+      `,
+    );
+    const summaries = createTypeScriptAdapter({
+      project,
+      frameworks: [reactPack],
+    }).extractAll();
+    const comp = summaries.find((s) => s.identity.name === "FalseLit");
+    const out = comp?.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    const child = root.children[0];
+    if (child.type !== "conditional") {
+      throw new Error("expected conditional");
+    }
+    expect(child.condition).toBe("props.show");
+    expect(child.whenFalse).toBeNull();
+  });
+
+  it("parenthesised JSX inside a conditional unwraps correctly", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "/Paren.tsx",
+      `
+        export default function Paren(props: { ok: boolean }) {
+          return <div>{props.ok && (<span>yes</span>)}</div>;
+        }
+      `,
+    );
+    const summaries = createTypeScriptAdapter({
+      project,
+      frameworks: [reactPack],
+    }).extractAll();
+    const comp = summaries.find((s) => s.identity.name === "Paren");
+    const out = comp?.transitions[0].output;
+    if (out.type !== "render") {
+      throw new Error("expected render");
+    }
+    const root = out.root;
+    if (root?.type !== "element") {
+      throw new Error("expected element root");
+    }
+    const child = root.children[0];
+    if (child.type !== "conditional") {
+      throw new Error("expected conditional");
+    }
+    expect(child.condition).toBe("props.ok");
+    if (child.whenTrue.type !== "element") {
+      throw new Error("expected element whenTrue");
+    }
+    expect(child.whenTrue.tag).toBe("span");
   });
 });

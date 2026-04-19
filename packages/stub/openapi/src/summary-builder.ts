@@ -1,5 +1,7 @@
 // summary-builder.ts — Build BehavioralSummary objects from OpenAPI operations.
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import { newContext, schemaToShape } from "./schema-to-shape.js";
 import { isHttpMethod } from "./spec.js";
 
@@ -84,12 +86,12 @@ function buildSummary(
     identity: {
       name,
       exportPath: null,
-      boundaryBinding: {
-        protocol: "http",
+      boundaryBinding: restBinding({
+        transport: "http",
         method: upper,
         path,
-        framework: "openapi",
-      },
+        recognition: "openapi",
+      }),
     },
     inputs,
     transitions,

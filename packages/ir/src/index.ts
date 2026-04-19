@@ -29,6 +29,7 @@ import {
   type OutputSchema,
   type PredicateSchema,
   type RenderNodeSchema,
+  type SemanticsSchema,
   type SourceLocationSchema,
   type SummaryDiffSchema,
   type TransitionSchema,
@@ -50,7 +51,131 @@ export type FindingSeverity = z.infer<typeof FindingSeveritySchema>;
 
 export type SourceLocation = z.infer<typeof SourceLocationSchema>;
 export type BoundaryBinding = z.infer<typeof BoundaryBindingSchema>;
+export type Semantics = z.infer<typeof SemanticsSchema>;
+export type RestSemantics = Extract<Semantics, { name: "rest" }>;
+export type FunctionCallSemantics = Extract<
+  Semantics,
+  { name: "function-call" }
+>;
+export type GraphqlResolverSemantics = Extract<
+  Semantics,
+  { name: "graphql-resolver" }
+>;
+export type GraphqlOperationSemantics = Extract<
+  Semantics,
+  { name: "graphql-operation" }
+>;
 export type CodeUnitIdentity = z.infer<typeof CodeUnitIdentitySchema>;
+
+// ---------------------------------------------------------------------------
+// Boundary binding constructors
+// ---------------------------------------------------------------------------
+//
+// Keep these here (not in a pack-helpers module) so every package that
+// produces a summary — pattern packs, stubs, tests — can build a
+// binding without pulling in the extractor. They're the only blessed
+// constructors: direct `{ transport, semantics, recognition }` literals
+// are fine too but must keep the three-layer discipline.
+
+/**
+ * Build a REST-semantics binding. Every HTTP pack/stub that represents
+ * a routable endpoint produces this shape. The semantics is locked to
+ * `"rest"`; only the transport (usually `"http"` or `"https"`) and
+ * recognition identity vary.
+ *
+ * `method` and `path` can be passed as empty strings to signal
+ * "not yet resolved" — used by the adapter's wrapper-expansion pass
+ * where the concrete path is known only at caller sites. Pairing
+ * code in the checker treats empty method/path as unplaced.
+ */
+export function restBinding(opts: {
+  transport: string;
+  method: string;
+  path: string;
+  recognition: string;
+  declaredResponses?: number[];
+}): BoundaryBinding {
+  return {
+    transport: opts.transport,
+    semantics: {
+      name: "rest",
+      method: opts.method.toUpperCase(),
+      path: opts.path,
+      ...(opts.declaredResponses !== undefined
+        ? { declaredResponses: opts.declaredResponses }
+        : {}),
+    },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * Build a function-call-semantics binding. Used by in-process packs
+ * (React components, custom-hook boundaries, bare TS function
+ * exports). `module` and `exportName` are optional — packs that don't
+ * do cross-module pairing can leave them unset.
+ */
+export function functionCallBinding(opts: {
+  transport: string;
+  recognition: string;
+  module?: string;
+  exportName?: string;
+}): BoundaryBinding {
+  return {
+    transport: opts.transport,
+    semantics: {
+      name: "function-call",
+      ...(opts.module !== undefined ? { module: opts.module } : {}),
+      ...(opts.exportName !== undefined ? { exportName: opts.exportName } : {}),
+    },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * Build a graphql-resolver-semantics binding. Used by Apollo / AppSync /
+ * yoga packs and schema-first stubs. Transport varies by deployment:
+ * `"http"` for Apollo Server, `"aws-https"` for AppSync, etc.
+ */
+export function graphqlResolverBinding(opts: {
+  transport: string;
+  recognition: string;
+  typeName: string;
+  fieldName: string;
+}): BoundaryBinding {
+  return {
+    transport: opts.transport,
+    semantics: {
+      name: "graphql-resolver",
+      typeName: opts.typeName,
+      fieldName: opts.fieldName,
+    },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * Build a graphql-operation-semantics binding — the consumer side of
+ * a GraphQL boundary. Anonymous operations leave `operationName` unset.
+ */
+export function graphqlOperationBinding(opts: {
+  transport: string;
+  recognition: string;
+  operationType: "query" | "mutation" | "subscription";
+  operationName?: string;
+}): BoundaryBinding {
+  return {
+    transport: opts.transport,
+    semantics: {
+      name: "graphql-operation",
+      operationType: opts.operationType,
+      ...(opts.operationName !== undefined
+        ? { operationName: opts.operationName }
+        : {}),
+    },
+    recognition: opts.recognition,
+  };
+}
 export type ConfidenceInfo = z.infer<typeof ConfidenceInfoSchema>;
 
 export type Literal = z.infer<typeof LiteralSchema>;

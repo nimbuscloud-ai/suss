@@ -1,16 +1,16 @@
 # Boundary semantics
 
-Design-only. Captures the layered model for boundary descriptions and the
-refactor arc the checker will take when a second protocol lands. Today's
-implementation is HTTP-shaped throughout; this doc exists so we can make
-small decisions now in a way that's consistent with where we're heading,
-and so we have a single north star when the second protocol forces the
-abstraction.
+Captures the layered model for boundary descriptions. As of Phase A
+(the BoundarySemantics refactor), the IR's `BoundaryBinding` carries
+all three layers explicitly. GraphQL, Lambda-invoke, and queue
+semantics remain future work — the interfaces below are structured so
+each lands as a discriminated-union variant without reshaping the
+existing REST paths.
 
 ## The three layers
 
-A "boundary" in suss is conceptually three things, and we currently smush
-them all into `BoundaryBinding.protocol` + `BoundaryBinding.framework`:
+A "boundary" in suss is conceptually three things, which the IR
+carries as sibling fields on `BoundaryBinding`:
 
 ### Transport
 
@@ -45,9 +45,15 @@ checking actually cares about.
   payload is job arguments. Pairing key: queue name + job name.
 - **In-process function call** — discriminated by thrown exception type vs
   normal return; payload is the return value.
-- **React parent-child render** — discriminated by which child component is
-  rendered; payload is props passed to that child. Pairing key: component
-  name.
+- **React component ↔ DOM** — a single component source yields *multiple*
+  code units sharing a component identity: the render body (inputs=props/
+  state/context, output=JSX tree), one code unit per event handler
+  (inputs=synthetic event + closed-over state, outputs=state mutations +
+  callback-prop invocations), and one per `useEffect` body
+  (inputs=dependency array, outputs=side-effects + optional cleanup).
+  Discriminator is the unit kind; payload is the tree-or-effect produced.
+  Pairing key: `(component identity, unit kind, unit name?)`. See
+  [`roadmap-react.md`](roadmap-react.md) for the multi-unit framing.
 - **gRPC unary call** — discriminated by gRPC status enum (its own code
   space, *not* HTTP status); payload is the response message. Pairing
   key: `(service, method)`.
@@ -80,33 +86,9 @@ is what today's `PatternPack` already describes and what
 Recognition is a per-pack concern. Semantics determines what the pack is
 ultimately describing, not what the recognition rules look like.
 
-## What the current code conflates
+## Shipped shape (Phase A)
 
-- `BoundaryBinding.protocol: string` is doing the work of *both* transport
-  and semantics with no distinction (`"http"` covers everything from REST
-  to GraphQL to Lambda-invoke over HTTPS).
-- `BoundaryBinding.framework: string` is doing the work of recognition
-  identity ("ts-rest", "express", "fetch", "axios") but only for HTTP
-  frameworks.
-- `BoundaryBinding.(method, path)` are REST-specific and would be empty
-  for any non-REST semantics even if they're HTTP-transported (e.g. a
-  GraphQL endpoint served at a single path).
-- Pairing is hardcoded to `(method, normalizedPath)` in
-  `packages/checker/src/pairing.ts`.
-- The checker's helpers — `extractResponseStatus`,
-  `consumerExpectedStatuses`, `bodyAccessorsFor`, `statusAccessorsFor`,
-  the 2xx success-range heuristic in provider-coverage — all encode REST
-  semantics.
-
-None of this is wrong today; REST is our one concrete case. But each
-piece quietly assumes the shape will never change.
-
-## The target shape
-
-When we need a second semantics, the cleanest destination looks something
-like:
-
-### `BoundaryBinding` splits
+`packages/ir/src/schemas.ts` exports `BoundaryBinding` as:
 
 ```ts
 interface BoundaryBinding {
@@ -114,32 +96,101 @@ interface BoundaryBinding {
   transport: string;
 
   /**
-   * What the participants think they're doing. This determines how the
-   * checker dispatches.
+   * What the participants think they're doing. The checker dispatches
+   * on the discriminator (`semantics.name`).
    */
   semantics:
-    | { name: "rest"; method: string; path: string }
-    | { name: "graphql"; operationName: string; operationType: "query" | "mutation" | "subscription" }
-    | { name: "lambda-invoke"; functionName: string; qualifier?: string }
-    | { name: "kafka-message"; topic: string }
-    | { name: "queue-job"; queue: string; jobName: string }
-    | { name: "function-call"; module: string; exportName: string }
-    | { name: "react-render"; component: string };
+    | {
+        name: "rest";
+        method: string;
+        path: string;
+        declaredResponses?: number[];
+      }
+    | {
+        name: "function-call";
+        module?: string;
+        exportName?: string;
+      };
 
-  /** Pack-level recognition identity ("axios", "ts-rest", "apollo-client"). */
+  /** Pack-level recognition identity ("axios", "ts-rest", "openapi", …). */
   recognition: string;
 }
 ```
 
-Tools that only care about transport stay happy; tools that care about
-semantics (the checker) dispatch on the discriminated union.
+`REST` is the dispatch-dominant case today — pairing, provider coverage,
+consumer satisfaction, body compatibility, contract agreement, and
+semantic bridging all read `semantics.name === "rest"` and narrow to
+`method` + `path`. `function-call` is the escape hatch for in-process
+units (React components, bare function exports, Storybook stub
+components) that don't participate in REST pairing — it keeps the
+binding shape valid and carries optional `module` / `exportName` for
+future cross-module pairing (e.g. Storybook ↔ component pairing by
+identity name is already in place; a future version can tighten to
+module pairing via these fields).
 
-### `BoundarySemantics` interface
+### Future semantics variants
+
+These aren't implemented; they're the shapes the IR will grow into
+when the forcing function arrives. Each lands as an additional
+discriminated-union variant:
+
+- `{ name: "graphql-resolver"; typeName: string; fieldName: string }` —
+  code-first resolvers (Apollo, Nexus, Pothos).
+- `{ name: "graphql-operation"; operationName?: string; operationType: "query" | "mutation" | "subscription" }` —
+  client-side operation pairing.
+- `{ name: "lambda-invoke"; functionName: string; qualifier?: string }` —
+  AWS SDK direct invokes.
+- `{ name: "queue-job"; queue: string; jobName: string }` — SQS, BullMQ,
+  Celery.
+- `{ name: "kafka-message"; topic: string }`.
+
+Anything that would shift REST's method/path out of `semantics` belongs
+in its own variant — we don't retrofit existing variants.
+
+### Pack helpers
+
+`@suss/behavioral-ir` exports two builder helpers so packs don't
+hand-roll the shape:
 
 ```ts
-interface BoundarySemantics<Binding extends BoundaryBinding> {
+restBinding({ transport, method, path, recognition, declaredResponses? })
+functionCallBinding({ transport, recognition, module?, exportName? })
+```
+
+`method === ""` or `path === ""` on a `rest` binding signals
+"extracted but unresolved" — the adapter's wrapper-expansion post-pass
+uses this to detect forwarding wrappers whose path only resolves at
+caller sites. The checker's `boundaryKey` returns `null` for these,
+keeping them out of automatic pairing.
+
+## Dispatching on semantics
+
+The checker's internal shape is:
+
+- `pairing.boundaryKey(binding)` — returns `"METHOD /path"` for rest,
+  null otherwise.
+- `contract-agreement.ts` / `dedupe.ts` — use `boundaryKey` for
+  grouping, treating non-rest bindings as un-paired.
+- `cli/check.ts` formatting — falls back to
+  `${recognition} (${transport})` when semantics isn't rest.
+- `cli/inspect.ts` rendering — reads `semantics.name === "rest"` and
+  renders `METHOD path`; otherwise shows the function name.
+
+When GraphQL lands, each of these grows one dispatch arm rather than
+branching on `transport === "http"` or similar transport-coupled
+checks.
+
+### Future: BoundarySemantics dispatch table
+
+Today each check function narrows `binding.semantics.name === "rest"`
+inline. That's fine for one semantics variant. The landing point when
+we have two+ variants is a shared interface that each semantics
+implements:
+
+```ts
+interface BoundarySemantics<S extends Semantics> {
   /** How pairing keys are derived from this binding. */
-  pairingKey(binding: Binding): string | null;
+  pairingKey(binding: { semantics: S; transport: string }): string | null;
 
   /** What discriminator identifies this transition's outcome. */
   extractDiscriminator(transition: Transition): Discriminator | null;
@@ -161,15 +212,12 @@ interface BoundarySemantics<Binding extends BoundaryBinding> {
 }
 ```
 
-The checker's high-level flow (`checkPair`, `checkAll`) stays the same; each
-check function (provider coverage, consumer satisfaction, body
-compatibility, semantic bridging) is rewritten to call the semantics
-interface instead of hardcoding REST operations.
-
-Today's HTTP-specific helpers become the `"rest"` implementation. `GraphQL`
-gets its own implementation where the discriminator is error-presence and
-per-field nullability rather than a status code. `Lambda-invoke` gets its
-own implementation where the discriminator is `FunctionError` vocabulary.
+Registry lookup happens by `semantics.name`. `checkPair` / `checkAll`
+don't change shape; each check function reads the appropriate
+semantics via the registry instead of narrowing inline. Extraction of
+the inline narrows into a registry is a follow-up once a second
+variant lands — the shape is known but not worth the abstraction
+until there's a concrete second case to check it against.
 
 ### Metadata stays namespaced by semantics
 
@@ -188,7 +236,7 @@ expansion post-pass).
 
 ### Boundaries compose
 
-A real-world invocation often crosses more than one boundary. An HTTP
+A production invocation often crosses more than one boundary. An HTTP
 client hitting API Gateway → Lambda is *two* boundaries composed:
 
 1. REST: client → API Gateway
@@ -197,50 +245,51 @@ client hitting API Gateway → Lambda is *two* boundaries composed:
 We partly handle this today via stubs — the API Gateway stub encodes the
 Lambda integration → HTTP response mapping, so checking the HTTP client
 against the API Gateway stub implicitly accounts for Lambda semantics.
-Long-term, composition could become first-class: a transition's output
-could reference another boundary it triggers, and checking becomes a
+Long-term, composition could become explicit in the IR: a transition's
+output could reference another boundary it triggers, and checking becomes a
 graph traversal. Tabled; stubs are adequate for now.
 
-## What we're not doing today
+## What's shipped vs what's deferred
 
-The target shape above is a full refactor. Doing it now is premature: we
-have one concrete semantics (REST), and architectures designed in the
-abstract without a second concrete case to check against usually put the
-seams in the wrong places — GraphQL's per-field errors, Lambda's
-invocation failure modes, and gRPC's trailing metadata each surface
-decisions you won't predict in the abstract.
+Shipped (Phase A):
 
-The committed moves today:
+1. `BoundaryBinding` carries `transport`, `semantics`, `recognition`
+   as top-level fields. The type is the single source of truth;
+   `restBinding` / `functionCallBinding` builders live in
+   `@suss/behavioral-ir`.
+2. `rest` + `function-call` semantics variants. Every pack and stub
+   emits one or the other.
+3. HTTP metadata is namespaced under `metadata.http.*`. Packs never
+   write the flat form.
+4. Pairing delegates to `boundaryKey` which dispatches on
+   `semantics.name` — `function-call` summaries are left unmatched
+   rather than fabricating a REST key.
 
-1. **Namespace HTTP metadata under `metadata.http.*`** (already done).
-2. **Pair by `(method, normalizedPath)` only for HTTP boundaries** (would
-   be an early-follow move; today's pairing code hardcodes it, and
-   non-HTTP summaries would be rejected by `pairSummaries` going into
-   `noBinding`). Gate when we add a protocol where pairing shape differs.
-3. **Keep `BoundaryBinding` as-is** until a second semantics lands.
+Deferred (need a concrete consumer to force the shape):
+
+1. A `BoundarySemantics<S>` dispatch table (above). Inline narrows are
+   adequate for one dominant semantics.
+2. GraphQL variants — both resolver-level (`graphql-resolver`) and
+   client-side operation-level (`graphql-operation`). See the next
+   section for why this is the forcing function.
+3. Lambda-invoke and queue-based variants. These surface when the
+   first non-HTTPS transport lands.
 
 ## The forcing function
 
-When a second semantics lands, it forces all the above. My recommendation
-for which one to pick:
+The immediate forcing function is GraphQL. It shares transport (HTTP)
+with REST but has entirely different semantics — resolver-level
+dispatch (not method/path), error-presence + per-field null
+discriminator (not status code), typed `data` payload (not arbitrary
+body shape). Landing Apollo first (code-first resolvers, provider
+side) surfaces resolver semantics cleanly before consumer shape
+differences muddy the picture.
 
-**Pick GraphQL first.** It's the cleanest forcing function because it
-shares transport with REST but has completely different boundary
-semantics. That surfaces the transport/semantics split without the
-additional variable of a brand-new transport. All of the per-field
-error / partial-data / operation-name-vs-method-path surprises come out
-clean.
-
-**Pick Lambda-invoke (or AWS SDK calls generally) second.** That's the
-forcing function for "transport completely drops out of the abstraction"
-— a Lambda invoke is behaviorally identical whether it's called from an
-AWS SDK on a laptop or from API Gateway over a different HTTPS hop.
-Getting this right fixes `BoundaryBinding`'s misleading coupling to HTTP
-in a way REST → GraphQL alone wouldn't.
-
-**Don't let either of these land before we have a concrete consumer.**
-The worst outcome is a semantics registry with no consumer, locking us
-into an abstraction that didn't need to survive first contact.
+Lambda-invoke is the forcing function for "transport completely drops
+out of the abstraction" — a Lambda invoke is behaviorally identical
+whether the SDK call goes out from a laptop or from API Gateway's
+integration. Today's HTTP-coupled defaults would silently break. Not
+on the immediate path; the Apollo → AppSync arc lands first.
 
 ## Related decisions
 
@@ -253,6 +302,6 @@ See also:
   dependency shape and protocol assumptions.
 - [`docs/framework-packs.md`](framework-packs.md) — how packs describe
   recognition today; extension points when semantics becomes a
-  first-class axis.
+  top-level axis.
 - [`docs/stubs.md`](stubs.md) — boundary layering via the API Gateway
-  stub is a precursor to first-class boundary composition.
+  stub is a precursor to explicit boundary composition.

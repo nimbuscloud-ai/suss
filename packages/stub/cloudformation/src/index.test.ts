@@ -9,6 +9,18 @@ import {
   cloudFormationToSummaries,
 } from "./index.js";
 
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+function restPathOf(summary: BehavioralSummary): string | null {
+  const s = summary.identity.boundaryBinding?.semantics;
+  return s?.name === "rest" ? s.path : null;
+}
+
+function restMethodOf(summary: BehavioralSummary): string | null {
+  const s = summary.identity.boundaryBinding?.semantics;
+  return s?.name === "rest" ? s.method : null;
+}
+
 const inlineOpenApi = {
   openapi: "3.0.3",
   info: { title: "users-api", version: "1.0.0" },
@@ -56,10 +68,9 @@ describe("cloudFormationToSummaries — resource shapes", () => {
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.name).toBe("getUser");
     expect(summaries[0].identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/users/{id}",
-      framework: "openapi",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "openapi",
     });
   });
 
@@ -201,10 +212,9 @@ describe("cloudFormationToSummaries — AWS::ApiGateway::Method", () => {
     const s = summaries[0];
     expect(s.kind).toBe("handler");
     expect(s.identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/pets/{petId}",
-      framework: "apigateway",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/pets/{petId}" },
+      recognition: "apigateway",
     });
     const codes = s.transitions
       .map((t) =>
@@ -289,7 +299,7 @@ describe("cloudFormationToSummaries — AWS::ApiGateway::Method", () => {
         },
       },
     });
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/");
+    expect(restPathOf(summaries[0])).toBe("/");
   });
 
   it("recognises Fn::GetAtt references in ResourceId", () => {
@@ -315,7 +325,7 @@ describe("cloudFormationToSummaries — AWS::ApiGateway::Method", () => {
         },
       },
     });
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/x");
+    expect(restPathOf(summaries[0])).toBe("/x");
   });
 
   it("accepts a bare-string ResourceId (parsers that drop the !Ref tag)", () => {
@@ -331,7 +341,7 @@ describe("cloudFormationToSummaries — AWS::ApiGateway::Method", () => {
         },
       },
     });
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/y");
+    expect(restPathOf(summaries[0])).toBe("/y");
   });
 });
 
@@ -351,10 +361,9 @@ describe("cloudFormationToSummaries — AWS::ApiGatewayV2::Route", () => {
     });
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/pets/{petId}",
-      framework: "apigateway",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/pets/{petId}" },
+      recognition: "apigateway",
     });
     expect(summaries[0].transitions[0].isDefault).toBe(true);
   });
@@ -427,7 +436,7 @@ describe("cloudFormationFileToSummaries — file loading", () => {
     try {
       const summaries = cloudFormationFileToSummaries(file);
       expect(summaries).toHaveLength(1);
-      expect(summaries[0].identity.boundaryBinding?.path).toBe("/ping");
+      expect(restPathOf(summaries[0])).toBe("/ping");
     } finally {
       fs.rmSync(tmp, { recursive: true });
     }
@@ -460,8 +469,8 @@ describe("cloudFormationFileToSummaries — file loading", () => {
     try {
       const summaries = cloudFormationFileToSummaries(file);
       expect(summaries).toHaveLength(1);
-      expect(summaries[0].identity.boundaryBinding?.path).toBe("/pets");
-      expect(summaries[0].identity.boundaryBinding?.method).toBe("GET");
+      expect(restPathOf(summaries[0])).toBe("/pets");
+      expect(restMethodOf(summaries[0])).toBe("GET");
     } finally {
       fs.rmSync(tmp, { recursive: true });
     }

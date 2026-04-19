@@ -39,6 +39,7 @@ function discoveryForVerb(
 export function axiosRuntime(): PatternPack {
   return {
     name: "axios",
+    protocol: "http",
     languages: ["typescript", "javascript"],
 
     discovery: HTTP_METHODS.map(discoveryForVerb),

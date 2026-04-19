@@ -6,10 +6,14 @@ import {
   type CodeUnitKind,
   diffSummaries,
   type Finding,
+  functionCallBinding,
+  graphqlOperationBinding,
+  graphqlResolverBinding,
   type Output,
   type Predicate,
   parseSummaries,
   parseSummary,
+  restBinding,
   safeParseSummaries,
   safeParseSummary,
   type Transition,
@@ -168,7 +172,11 @@ describe("diffSummaries", () => {
   it("Finding discriminated union narrows on kind and severity", () => {
     const finding: Finding = {
       kind: "unhandledProviderCase",
-      boundary: { protocol: "http", framework: "ts-rest" },
+      boundary: {
+        transport: "http",
+        semantics: { name: "function-call" },
+        recognition: "ts-rest",
+      },
       provider: {
         summary: "src/handlers/users.ts::getUser",
         transitionId: "t-200",
@@ -339,10 +347,9 @@ describe("BehavioralSummaryArraySchema", () => {
           name: "loadUser",
           exportPath: ["loadUser"],
           boundaryBinding: {
-            protocol: "http",
-            method: "GET",
-            path: "/users/:id",
-            framework: "fetch",
+            transport: "http",
+            semantics: { name: "rest", method: "GET", path: "/users/:id" },
+            recognition: "fetch",
           },
         },
         inputs: [],
@@ -429,6 +436,98 @@ describe("BehavioralSummaryArraySchema", () => {
     const parsed = parseSummaries([minimal]);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].kind).toBe("handler");
+  });
+});
+
+describe("binding constructors", () => {
+  it("restBinding uppercases method and omits declaredResponses when absent", () => {
+    const b = restBinding({
+      transport: "http",
+      method: "get",
+      path: "/x",
+      recognition: "axios",
+    });
+    expect(b).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/x" },
+      recognition: "axios",
+    });
+  });
+
+  it("restBinding preserves declaredResponses when given", () => {
+    const b = restBinding({
+      transport: "http",
+      method: "GET",
+      path: "/x",
+      recognition: "openapi",
+      declaredResponses: [200, 404],
+    });
+    if (b.semantics.name !== "rest") {
+      throw new Error("expected rest semantics");
+    }
+    expect(b.semantics.declaredResponses).toEqual([200, 404]);
+  });
+
+  it("functionCallBinding emits function-call semantics with optional fields", () => {
+    const base = functionCallBinding({
+      transport: "in-process",
+      recognition: "react",
+    });
+    expect(base.semantics).toEqual({ name: "function-call" });
+
+    const withModule = functionCallBinding({
+      transport: "in-process",
+      recognition: "react",
+      module: "./Button",
+      exportName: "Button",
+    });
+    expect(withModule.semantics).toEqual({
+      name: "function-call",
+      module: "./Button",
+      exportName: "Button",
+    });
+  });
+
+  it("graphqlResolverBinding emits typeName + fieldName", () => {
+    const b = graphqlResolverBinding({
+      transport: "http",
+      recognition: "apollo",
+      typeName: "Query",
+      fieldName: "users",
+    });
+    expect(b).toEqual({
+      transport: "http",
+      semantics: {
+        name: "graphql-resolver",
+        typeName: "Query",
+        fieldName: "users",
+      },
+      recognition: "apollo",
+    });
+  });
+
+  it("graphqlOperationBinding records operation type; operationName optional", () => {
+    const anon = graphqlOperationBinding({
+      transport: "http",
+      recognition: "apollo-client",
+      operationType: "mutation",
+    });
+    expect(anon.semantics).toEqual({
+      name: "graphql-operation",
+      operationType: "mutation",
+    });
+
+    const named = graphqlOperationBinding({
+      transport: "http",
+      recognition: "apollo-client",
+      operationType: "query",
+      operationName: "GetUser",
+    });
+    expect(named.semantics).toEqual({
+      name: "graphql-operation",
+      operationType: "query",
+      operationName: "GetUser",
+    });
   });
 });
 

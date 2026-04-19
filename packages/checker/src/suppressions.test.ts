@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import {
   applySuppressions,
   countsForThreshold,
@@ -13,12 +15,12 @@ import type { Finding } from "@suss/behavioral-ir";
 function finding(overrides: Partial<Finding> = {}): Finding {
   const base: Finding = {
     kind: "deadConsumerBranch",
-    boundary: {
-      protocol: "http",
-      framework: "fetch",
+    boundary: restBinding({
+      transport: "http",
+      recognition: "fetch",
       method: "GET",
       path: "/pet/:id",
-    },
+    }),
     provider: {
       summary: "src/handlers/pet.ts::getPet",
       location: {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import { dedupeFindings } from "./dedupe.js";
 
 import type { Finding } from "@suss/behavioral-ir";
@@ -7,12 +9,12 @@ import type { Finding } from "@suss/behavioral-ir";
 function finding(overrides: Partial<Finding> = {}): Finding {
   const base: Finding = {
     kind: "deadConsumerBranch",
-    boundary: {
-      protocol: "http",
-      framework: "openapi",
+    boundary: restBinding({
+      transport: "http",
+      recognition: "openapi",
       method: "GET",
       path: "/pet/:id",
-    },
+    }),
     provider: {
       summary: "src/stubs/petstore-openapi.json::getPet",
       location: {
@@ -113,7 +115,12 @@ describe("dedupeFindings", () => {
   it("does not collapse findings for different boundaries", () => {
     const f1 = finding();
     const f2 = finding({
-      boundary: { ...finding().boundary, path: "/order/:id" },
+      boundary: restBinding({
+        transport: "http",
+        recognition: "openapi",
+        method: "GET",
+        path: "/order/:id",
+      }),
     });
     const out = dedupeFindings([f1, f2]);
     expect(out).toHaveLength(2);

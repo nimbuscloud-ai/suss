@@ -594,21 +594,34 @@ function tryMatchJsxReturn(
  */
 function jsxToRenderNode(node: Node): RenderNode | null {
   if (Node.isJsxElement(node)) {
-    const tag = node.getOpeningElement().getTagNameNode().getText();
+    const opening = node.getOpeningElement();
+    const tag = opening.getTagNameNode().getText();
+    const attrs = collectJsxAttributes(opening);
     const children = node
       .getJsxChildren()
       .map(jsxChildToRenderNode)
       .filter((n): n is RenderNode => n !== null);
-    return { type: "element", tag, children };
-  }
-  if (Node.isJsxSelfClosingElement(node)) {
     return {
       type: "element",
-      tag: node.getTagNameNode().getText(),
+      tag,
+      children,
+      ...(attrs !== null ? { attrs } : {}),
+    };
+  }
+  if (Node.isJsxSelfClosingElement(node)) {
+    const tag = node.getTagNameNode().getText();
+    const attrs = collectJsxAttributes(node);
+    return {
+      type: "element",
+      tag,
       children: [],
+      ...(attrs !== null ? { attrs } : {}),
     };
   }
   if (Node.isJsxFragment(node)) {
+    // Fragments don't have attributes — the `<>...</>` syntax forbids
+    // them, and `<React.Fragment key={...}>` is a JSX element, not a
+    // fragment node.
     const children = node
       .getJsxChildren()
       .map(jsxChildToRenderNode)
@@ -619,6 +632,54 @@ function jsxToRenderNode(node: Node): RenderNode | null {
     return jsxToRenderNode(node.getExpression());
   }
   return null;
+}
+
+/**
+ * Build the `attrs` record for a JSX opening / self-closing element.
+ * Returns null when the element has no attributes — the caller then
+ * omits the field entirely so the render tree stays terse for
+ * attribute-free markup. Spreads (`{...props}`) are preserved as a
+ * single entry keyed on the empty string with the spread expression's
+ * source text as the value; multiple spreads collapse (source order
+ * is lost), but the raw source is still accessible via the original
+ * JSX range for consumers that need it.
+ */
+function collectJsxAttributes(
+  opening:
+    | import("ts-morph").JsxOpeningElement
+    | import("ts-morph").JsxSelfClosingElement,
+): Record<string, string> | null {
+  const entries: Record<string, string> = {};
+  for (const attr of opening.getAttributes()) {
+    if (Node.isJsxSpreadAttribute(attr)) {
+      // Record spreads under a bucket keyed "...expr" so consumers can
+      // see them without clobbering a named attribute.
+      const exprText = attr.getExpression().getText();
+      entries[`...${exprText}`] = exprText;
+      continue;
+    }
+    if (!Node.isJsxAttribute(attr)) {
+      continue;
+    }
+    const name = attr.getNameNode().getText();
+    const initializer = attr.getInitializer();
+    if (initializer === undefined) {
+      // Boolean-shorthand attribute (`<input disabled>`).
+      entries[name] = "";
+      continue;
+    }
+    if (Node.isJsxExpression(initializer)) {
+      const inner = initializer.getExpression();
+      entries[name] = inner !== undefined ? inner.getText() : "";
+      continue;
+    }
+    // String-literal-valued attribute (`type="button"`). Keep the
+    // full source text including quotes — downstream consumers can
+    // strip if they want, but preserving raw text is consistent with
+    // the expression case.
+    entries[name] = initializer.getText();
+  }
+  return Object.keys(entries).length > 0 ? entries : null;
 }
 
 /**
@@ -639,7 +700,7 @@ function jsxChildToRenderNode(child: Node): RenderNode | null {
     if (inner === undefined) {
       return null;
     }
-    return { type: "expression", sourceText: inner.getText() };
+    return jsxExpressionToRenderNode(inner);
   }
   if (
     Node.isJsxElement(child) ||
@@ -649,6 +710,114 @@ function jsxChildToRenderNode(child: Node): RenderNode | null {
     return jsxToRenderNode(child);
   }
   return null;
+}
+
+/**
+ * Decompose the expression inside a `{...}` JSX child. The Phase 1.4
+ * patterns we recognise:
+ *
+ *   {cond && <X/>}          → conditional(cond, <X/>, null)
+ *   {cond ? <A/> : <B/>}    → conditional(cond, <A/>, <B/>)
+ *   {cond ? <A/> : null}    → conditional(cond, <A/>, null)
+ *
+ * Anything else (identifiers, property access, `.map()` calls, function
+ * calls, JSX references that aren't inline-constructed) falls through
+ * to the opaque `expression` node with source text preserved. We
+ * deliberately don't recurse into arbitrary expressions — if the
+ * conditional's branches aren't JSX or null, the whole thing stays
+ * opaque so downstream tools don't confuse "we decomposed this" with
+ * "we understood this." `||` is left opaque: the common idiom
+ * `value || <Fallback/>` renders the fallback when `value` is falsy,
+ * which is already captured by treating it as an expression whose
+ * source text tells the reader what's happening.
+ */
+function jsxExpressionToRenderNode(expr: Node): RenderNode {
+  if (Node.isParenthesizedExpression(expr)) {
+    return jsxExpressionToRenderNode(expr.getExpression());
+  }
+
+  if (Node.isBinaryExpression(expr)) {
+    const op = expr.getOperatorToken().getText();
+    if (op === "&&") {
+      const right = renderAlternative(unwrapParens(expr.getRight()));
+      if (right.kind === "jsx") {
+        return {
+          type: "conditional",
+          condition: expr.getLeft().getText(),
+          whenTrue: right.node,
+          whenFalse: null,
+        };
+      }
+    }
+  }
+
+  if (Node.isConditionalExpression(expr)) {
+    const truthy = renderAlternative(unwrapParens(expr.getWhenTrue()));
+    const falsy = renderAlternative(unwrapParens(expr.getWhenFalse()));
+
+    if (truthy.kind === "jsx") {
+      return {
+        type: "conditional",
+        condition: expr.getCondition().getText(),
+        whenTrue: truthy.node,
+        whenFalse: falsy.kind === "jsx" ? falsy.node : null,
+      };
+    }
+    if (falsy.kind === "jsx") {
+      // {cond ? someValue : <Fallback/>} — decompose with the condition
+      // negated textually. We can't invert an arbitrary expression
+      // structurally, so the `!(...)` wrap keeps the source text legible.
+      return {
+        type: "conditional",
+        condition: `!(${expr.getCondition().getText()})`,
+        whenTrue: falsy.node,
+        whenFalse: null,
+      };
+    }
+  }
+
+  return { type: "expression", sourceText: expr.getText() };
+}
+
+type AlternativeResult =
+  | { kind: "jsx"; node: RenderNode }
+  | { kind: "noRender" }
+  | { kind: "notStatic" };
+
+/**
+ * Classify one branch of a JSX conditional.
+ *   - JSX element / fragment → a renderable node.
+ *   - `null` / `false` / `undefined` literal → renders nothing (React's
+ *     own "no render" conventions).
+ *   - Anything else → don't decompose the enclosing conditional.
+ */
+function renderAlternative(node: Node): AlternativeResult {
+  if (Node.isNullLiteral(node)) {
+    return { kind: "noRender" };
+  }
+  if (Node.isFalseLiteral(node)) {
+    return { kind: "noRender" };
+  }
+  if (Node.isIdentifier(node) && node.getText() === "undefined") {
+    return { kind: "noRender" };
+  }
+  if (
+    Node.isJsxElement(node) ||
+    Node.isJsxSelfClosingElement(node) ||
+    Node.isJsxFragment(node)
+  ) {
+    const tree = jsxToRenderNode(node);
+    if (tree !== null) {
+      return { kind: "jsx", node: tree };
+    }
+  }
+  return { kind: "notStatic" };
+}
+
+function unwrapParens(node: Node): Node {
+  return Node.isParenthesizedExpression(node)
+    ? unwrapParens(node.getExpression())
+    : node;
 }
 
 function tryMatchThrowExpression(
@@ -662,40 +831,11 @@ function tryMatchThrowExpression(
 
   const thrownExpr = node.getExpression();
   const constructorPattern = match.constructorPattern;
-
-  let callArgs: Expression[] | null = null;
-  let exceptionType: string | null = null;
-
-  if (Node.isCallExpression(thrownExpr)) {
-    const calleeText = thrownExpr.getExpression().getText();
-    exceptionType = calleeText;
-
-    if (constructorPattern !== undefined) {
-      if (!calleeText.startsWith(constructorPattern)) {
-        return null;
-      }
-    }
-
-    callArgs = thrownExpr.getArguments() as Expression[];
-  } else if (Node.isNewExpression(thrownExpr)) {
-    const calleeText = thrownExpr.getExpression().getText();
-    exceptionType = calleeText;
-
-    if (constructorPattern !== undefined) {
-      if (!calleeText.startsWith(constructorPattern)) {
-        return null;
-      }
-    }
-
-    callArgs = (thrownExpr.getArguments() ?? []) as Expression[];
-  } else {
-    // Identifier or other expression
-    if (constructorPattern !== undefined) {
-      return null;
-    }
-    // Any throw matches when no constructorPattern
-    exceptionType = thrownExpr.getText();
+  const classified = classifyThrownExpression(thrownExpr, constructorPattern);
+  if (classified === null) {
+    return null;
   }
+  const { callArgs, exceptionType } = classified;
 
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
@@ -722,6 +862,43 @@ function tryMatchThrowExpression(
   };
 
   return { node, terminal };
+}
+
+/**
+ * Inspect a `throw <expr>` expression and produce the (exceptionType,
+ * callArgs) pair the terminal builder needs. Three shapes:
+ *   - `throw fn(args)`          — callExpression; callArgs filled.
+ *   - `throw new Ctor(args)`    — newExpression; callArgs filled.
+ *   - `throw err` / `throw obj` — identifier / member / etc; no args.
+ *
+ * When the match specifies `constructorPattern`, the leading portion
+ * of the callee text has to match it; anything else returns null.
+ * Without a pattern, any throw matches and `exceptionType` is the
+ * thrown expression's text.
+ */
+function classifyThrownExpression(
+  thrown: Node,
+  constructorPattern: string | undefined,
+): { callArgs: Expression[] | null; exceptionType: string } | null {
+  if (Node.isCallExpression(thrown) || Node.isNewExpression(thrown)) {
+    const calleeText = thrown.getExpression().getText();
+    if (
+      constructorPattern !== undefined &&
+      !calleeText.startsWith(constructorPattern)
+    ) {
+      return null;
+    }
+    return {
+      callArgs: (thrown.getArguments() ?? []) as Expression[],
+      exceptionType: calleeText,
+    };
+  }
+  // Any-other-shape throw. If the pattern constrains a specific
+  // constructor, this bare-identifier (or member access) can't match.
+  if (constructorPattern !== undefined) {
+    return null;
+  }
+  return { callArgs: null, exceptionType: thrown.getText() };
 }
 
 function tryMatchFunctionCall(
@@ -814,6 +991,9 @@ export function findTerminals(
       } else if (pattern.match.type === "functionCall") {
         found = tryMatchFunctionCall(node, pattern, pattern.match);
       }
+      // `functionFallthrough` is not matched per-node — the assembly
+      // pass emits it as a branch-level fallback when no other
+      // terminal covers the function's default-path exit.
 
       if (found !== null) {
         results.push(found);
@@ -823,4 +1003,59 @@ export function findTerminals(
   });
 
   return results;
+}
+
+/**
+ * Does the function's last statement leave control flow dangling (i.e.
+ * no explicit `return` / `throw`)? Used by the assembly pass to decide
+ * whether to synthesise a fall-through terminal.
+ *
+ * Arrow functions with an expression body (`() => expr`) already
+ * "return" the expression's value — nothing falls through. Function
+ * bodies that are a block fall through when the last statement isn't
+ * a terminator.
+ */
+export function functionMayFallThrough(func: FunctionRoot): boolean {
+  const body = func.getBody();
+  if (body === undefined) {
+    return false;
+  }
+  if (!Node.isBlock(body)) {
+    return false;
+  }
+  const statements = body.getStatements();
+  if (statements.length === 0) {
+    return true;
+  }
+  const last = statements[statements.length - 1];
+  if (Node.isReturnStatement(last) || Node.isThrowStatement(last)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Build a synthetic fall-through terminal anchored at the closing of
+ * the function body. Used by the assembly pass when no other terminal
+ * covers the function's default-path exit.
+ */
+export function makeFallthroughTerminal(func: FunctionRoot): FoundTerminal {
+  const body = func.getBody();
+  const anchor: Node = body ?? func;
+  const line = anchor.getEndLineNumber();
+  return {
+    node: anchor,
+    terminal: {
+      kind: "return",
+      statusCode: null,
+      body: null,
+      exceptionType: null,
+      message: null,
+      component: null,
+      delegateTarget: null,
+      emitEvent: null,
+      renderTree: null,
+      location: { start: line, end: line },
+    },
+  };
 }

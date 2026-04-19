@@ -11,8 +11,16 @@ import {
 } from "ts-morph";
 
 import {
+  functionCallBinding,
+  graphqlOperationBinding,
+  graphqlResolverBinding,
+  restBinding,
+} from "@suss/behavioral-ir";
+import {
   assembleSummary,
   type BindingExtraction,
+  type DiscoveredSubUnit,
+  type DiscoveredSubUnitParent,
   type DiscoveryPattern,
   type ExtractorOptions,
   type InputMappingPattern,
@@ -22,15 +30,18 @@ import {
   type RawDependencyCall,
   type RawParameter,
   type ResponsePropertyMapping,
+  type TerminalPattern,
 } from "@suss/extractor";
 
 import { extractRawBranches } from "./assembly.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
 import { collectClientFieldAccesses } from "./field-accesses.js";
+import { createTsSubUnitContext } from "./sub-unit-context.js";
 
 import type {
   BehavioralSummary,
+  BoundaryBinding,
   CodeUnitKind,
   Predicate,
   ValueRef,
@@ -420,12 +431,7 @@ function extractConsumerBinding(
   unit: DiscoveredUnit,
   pattern: DiscoveryPattern,
   pack: PatternPack,
-): {
-  protocol: string;
-  method?: string;
-  path?: string;
-  framework: string;
-} | null {
+): BoundaryBinding | null {
   const callSite = unit.callSite;
   if (callSite === undefined) {
     return null;
@@ -436,25 +442,19 @@ function extractConsumerBinding(
     return null;
   }
 
-  let method: string | undefined;
-  let path: string | undefined;
+  const method = extractBindingMethod(binding, callSite, pack);
+  const path = extractBindingPath(binding, callSite, pack);
 
-  method = extractBindingMethod(binding, callSite, pack);
-  path = extractBindingPath(binding, callSite, pack);
-
-  const result: {
-    protocol: string;
-    method?: string;
-    path?: string;
-    framework: string;
-  } = { protocol: "http", framework: pack.name };
-  if (method !== undefined) {
-    result.method = method;
-  }
-  if (path !== undefined) {
-    result.path = path;
-  }
-  return result;
+  // Consumer bindings without both method and path can't be placed as
+  // REST. Return a rest-shaped partial so downstream code can still
+  // see what was extracted — `path` staying empty is the signal
+  // wrapper-expansion uses to detect forwarding wrappers.
+  return restBinding({
+    transport: pack.protocol,
+    method: method ?? "",
+    path: path ?? "",
+    recognition: pack.name,
+  });
 }
 
 function extractBindingMethod(
@@ -550,13 +550,15 @@ function resolveContractField(
     callSite.methodName,
     pack.contractReading,
   );
-  if (result === null) {
+  if (result === null || result.boundaryBinding === null) {
     return undefined;
   }
-  if (field === "method") {
-    return result.boundaryBinding?.method;
+  const semantics = result.boundaryBinding.semantics;
+  if (semantics.name !== "rest") {
+    return undefined;
   }
-  return result.boundaryBinding?.path;
+  const value = field === "method" ? semantics.method : semantics.path;
+  return value === "" ? undefined : value;
 }
 
 // ---------------------------------------------------------------------------
@@ -583,7 +585,56 @@ function extractFromSourceFile(
       const matchedPattern =
         unit.pattern ?? pack.discovery.find((d) => d.kind === unit.kind);
 
-      if (unit.callSite !== undefined && matchedPattern !== undefined) {
+      if (unit.resolverInfo !== undefined) {
+        // GraphQL resolver (code-first): bind directly from the
+        // discovery-derived typeName + fieldName. No REST shape
+        // applies; skip the REST binding-extraction path.
+        raw.boundaryBinding = graphqlResolverBinding({
+          transport: pack.protocol,
+          recognition: pack.name,
+          typeName: unit.resolverInfo.typeName,
+          fieldName: unit.resolverInfo.fieldName,
+        });
+        // When the pack captured typeDefs alongside the resolver
+        // map (Apollo code-first), carry the SDL through so the
+        // checker can walk nested selections against the return
+        // type's fields — the parallel of what stub-appsync
+        // already does for schema-first AppSync resolvers.
+        if (unit.resolverInfo.schemaSdl !== undefined) {
+          raw.graphqlSchemaSdl = unit.resolverInfo.schemaSdl;
+        }
+      } else if (unit.operationInfo !== undefined) {
+        // GraphQL operation (consumer-side hook): bind from the
+        // parsed operation header. Same logic as resolvers — skip
+        // the REST binding-extraction path since the shape is
+        // already determined at discovery time by graphql-js.
+        raw.boundaryBinding = graphqlOperationBinding({
+          transport: pack.protocol,
+          recognition: pack.name,
+          operationType: unit.operationInfo.operationType,
+          ...(unit.operationInfo.operationName !== undefined
+            ? { operationName: unit.operationInfo.operationName }
+            : {}),
+        });
+        // Carry the raw document through so the checker's pairing
+        // layer can re-parse if it needs shapes we don't surface.
+        raw.graphqlDocument = unit.operationInfo.document;
+        // Each `$name: Type` variable in the operation header
+        // becomes an Input on the summary. Role `"variable"` keeps
+        // them distinguishable from positional callback params when
+        // the same unit has both (rare, but possible if a hook
+        // argument forwards a callback).
+        for (const v of unit.operationInfo.variables) {
+          raw.parameters.push({
+            name: v.name,
+            position: raw.parameters.length,
+            role: "variable",
+            // `v.type` already prints the `!` suffix for non-null
+            // types; don't re-append.
+            typeText: v.type,
+          });
+        }
+      } else if (unit.callSite !== undefined && matchedPattern !== undefined) {
         // Consumer: extract binding from call site
         const binding = extractConsumerBinding(unit, matchedPattern, pack);
         if (binding !== null) {
@@ -600,12 +651,16 @@ function extractFromSourceFile(
         }
       }
 
-      // Fill in a default boundary binding if none from contract
+      // Fill in a default boundary binding if none from contract.
+      // Without a discovery-derived rest binding to carry method/path,
+      // fall back to function-call semantics — the unit is a
+      // TypeScript function with no REST shape attached. Consumer /
+      // provider dispatch (via BOUNDARY_ROLE on `kind`) still works.
       if (raw.boundaryBinding === null) {
-        raw.boundaryBinding = {
-          protocol: "http",
-          framework: pack.name,
-        };
+        raw.boundaryBinding = functionCallBinding({
+          transport: pack.protocol,
+          recognition: pack.name,
+        });
       }
 
       summaries.push(assembleSummary(raw, options));
@@ -658,10 +713,14 @@ function expandWrapperCallers(
       continue;
     }
     const binding = s.identity.boundaryBinding;
+    // Wrappers are rest-shaped clients whose path came back empty
+    // (method extracted, path unresolved — the `path` param is a
+    // function parameter, not a literal). Everything else skips.
     if (
       binding === null ||
-      binding.method === undefined ||
-      binding.path !== undefined
+      binding.semantics.name !== "rest" ||
+      binding.semantics.method === "" ||
+      binding.semantics.path !== ""
     ) {
       continue;
     }
@@ -743,7 +802,7 @@ function locateFunction(
 
 function synthesizeCallerSummaries(
   wrapper: WrapperInfo,
-  project: Project,
+  _project: Project,
   options?: ExtractorOptions,
 ): BehavioralSummary[] {
   // Find the wrapper's identifier so we can ask ts-morph for references.
@@ -886,6 +945,8 @@ function buildCallerSummary(
   const sf = callerFunc.getSourceFile();
   const file = sf.getFilePath();
   const wrapperBinding = wrapper.summary.identity.boundaryBinding;
+  const wrapperRest =
+    wrapperBinding?.semantics.name === "rest" ? wrapperBinding.semantics : null;
 
   // Run the caller through the same extraction pipeline used for direct
   // clientCall consumers. The wrapper call site stands in for the API call
@@ -897,7 +958,13 @@ function buildCallerSummary(
   // wrapper return value are already body-relative — there's no `data`
   // or `body` key to filter.
   const syntheticPack: PatternPack = {
-    name: wrapperBinding?.framework ?? "unknown",
+    name: wrapperBinding?.recognition ?? "unknown",
+    // Wrapper-expansion synthesizes summaries whose boundary binding
+    // is overwritten immediately below, so the pack's protocol is a
+    // placeholder. Inherit the wrapper's transport when present to
+    // avoid inventing identity; fall back to "http" because wrapper
+    // expansion only applies to HTTP clients today.
+    protocol: wrapperBinding?.transport ?? "http",
     languages: ["typescript"],
     discovery: [],
     terminals: [
@@ -923,14 +990,12 @@ function buildCallerSummary(
   };
 
   const raw = extractCodeStructure(unit, syntheticPack, file);
-  raw.boundaryBinding = {
-    protocol: wrapperBinding?.protocol ?? "http",
-    framework: wrapperBinding?.framework ?? "unknown",
-    ...(wrapperBinding?.method !== undefined
-      ? { method: wrapperBinding.method }
-      : {}),
+  raw.boundaryBinding = restBinding({
+    transport: wrapperBinding?.transport ?? "http",
+    method: wrapperRest?.method ?? "",
     path,
-  };
+    recognition: wrapperBinding?.recognition ?? "unknown",
+  });
 
   const summary = assembleSummary(raw, options);
   // Stitch wrapper-origin metadata so consumers can trace synthesised
@@ -1016,7 +1081,164 @@ export function createTypeScriptAdapter(
         );
       }
 
-      return expandWrapperCallers(summaries, project, config.extractorOptions);
+      const withWrappers = expandWrapperCallers(
+        summaries,
+        project,
+        config.extractorOptions,
+      );
+      return synthesizeSubUnits(
+        withWrappers,
+        project,
+        config.frameworks,
+        config.extractorOptions,
+      );
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Sub-unit synthesis (generic: driven by pack.subUnits)
+// ---------------------------------------------------------------------------
+//
+// Some frameworks' runtimes schedule N user-authored callbacks from one
+// source-level construct: React components spawn event handlers and
+// effect bodies; Node EventEmitter usage spawns `.on(...)` handlers;
+// GraphQL types spawn field resolvers; class components spawn lifecycle
+// methods. The pack describes these via its optional `subUnits` hook:
+// given a parent DiscoveredUnit and a TypeScript-adapter context, it
+// returns child DiscoveredUnits each carrying its own extraction spec.
+//
+// The adapter's role is: iterate summaries, find their originating
+// pack, invoke `subUnits`, pipe every returned unit through the same
+// extraction + assembly pipeline used for top-level discovery, and
+// stamp pack-supplied metadata onto each resulting summary.
+
+function synthesizeSubUnits(
+  summaries: BehavioralSummary[],
+  project: Project,
+  frameworks: PatternPack[],
+  options?: ExtractorOptions,
+): BehavioralSummary[] {
+  const packByRecognition = new Map<string, PatternPack>();
+  for (const pack of frameworks) {
+    packByRecognition.set(pack.name, pack);
+  }
+
+  const synthesized: BehavioralSummary[] = [];
+  const subUnitCtx = createTsSubUnitContext();
+
+  for (const parent of summaries) {
+    const binding = parent.identity.boundaryBinding;
+    if (binding === null) {
+      continue;
+    }
+    const pack = packByRecognition.get(binding.recognition);
+    if (pack?.subUnits === undefined) {
+      continue;
+    }
+
+    const parentFunc = locateFunction(parent, project);
+    if (parentFunc === null) {
+      continue;
+    }
+
+    const parentHandle: DiscoveredSubUnitParent = {
+      func: parentFunc,
+      name: parent.identity.name,
+      kind: parent.kind,
+    };
+
+    const subUnits = pack.subUnits(parentHandle, subUnitCtx);
+    const filePath = parentFunc.getSourceFile().getFilePath();
+
+    for (const subUnit of subUnits) {
+      const summary = buildSubUnitSummary(subUnit, parent, filePath, options);
+      if (summary !== null) {
+        synthesized.push(summary);
+      }
+    }
+  }
+
+  return [...summaries, ...synthesized];
+}
+
+const DEFAULT_SUB_UNIT_TERMINALS: TerminalPattern[] = [
+  { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+  { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+  // Sub-units are callbacks — event handlers, `useEffect` bodies,
+  // Node listeners — that routinely fall off the end returning
+  // `undefined`. Opt into fall-through here so synthesised summaries
+  // get a default transition even without an explicit return. HTTP
+  // packs (Express / Fastify / ts-rest handlers) deliberately do NOT
+  // opt in: a handler that falls through without sending a response
+  // is a bug and should surface as "no transitions" for the gap
+  // detector to flag.
+  {
+    kind: "return",
+    match: { type: "functionFallthrough" },
+    extraction: {},
+  },
+];
+
+const DEFAULT_SUB_UNIT_INPUT_MAPPING: InputMappingPattern = {
+  type: "positionalParams",
+  params: [],
+};
+
+function buildSubUnitSummary(
+  subUnit: DiscoveredSubUnit,
+  parent: BehavioralSummary,
+  filePath: string,
+  options?: ExtractorOptions,
+): BehavioralSummary | null {
+  const func = subUnit.func as FunctionRoot;
+
+  // Build a minimal pack scaffolding just for this extraction. The
+  // pack is ephemeral — it never ships in a framework list; it's here
+  // only to parameterise `extractCodeStructure` for the sub-unit body.
+  const scaffoldPack: PatternPack = {
+    name: "sub-unit",
+    // Scaffold protocol is overwritten below by the parent's
+    // inherited boundary binding. Pick a placeholder that won't
+    // collide with a shipped pack identity.
+    protocol: "sub-unit-scaffold",
+    languages: ["typescript", "javascript"],
+    discovery: [],
+    terminals: subUnit.terminals ?? DEFAULT_SUB_UNIT_TERMINALS,
+    inputMapping: subUnit.inputMapping ?? DEFAULT_SUB_UNIT_INPUT_MAPPING,
+  };
+
+  const unit: DiscoveredUnit = {
+    func,
+    kind: subUnit.kind,
+    name: subUnit.name,
+  };
+
+  const raw = extractCodeStructure(unit, scaffoldPack, filePath);
+
+  // Inherit the parent's boundary binding wholesale. Sub-units share
+  // the parent's runtime — a React component's handler is bound to
+  // the same React framework; a Node EventEmitter `.on()` handler is
+  // bound to the same Node runtime. This keeps re-entry through
+  // `synthesizeSubUnits` (if it ever becomes recursive) routing
+  // correctly, and means the pack doesn't have to re-declare its
+  // own identity on every sub-unit.
+  if (parent.identity.boundaryBinding !== null) {
+    raw.boundaryBinding = parent.identity.boundaryBinding;
+  }
+
+  const summary = assembleSummary(raw, options);
+  if (
+    subUnit.metadata !== undefined &&
+    Object.keys(subUnit.metadata).length > 0
+  ) {
+    summary.metadata = {
+      ...(summary.metadata ?? {}),
+      ...subUnit.metadata,
+    };
+  }
+  // Sub-units are inferred indirectly and often have thin effect
+  // coverage until the effect-body capture work lands. Mark medium.
+  summary.confidence = { source: "inferred_static", level: "medium" };
+  return summary;
 }

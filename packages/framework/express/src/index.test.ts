@@ -37,7 +37,7 @@ function runAdapter(): BehavioralSummary[] {
 }
 
 // ---------------------------------------------------------------------------
-// Structural sanity checks — cheap, keep us honest about exported shape
+// Structural sanity checks — cheap, catch accidental changes to exported shape
 // ---------------------------------------------------------------------------
 
 describe("expressFramework — pack shape", () => {
@@ -64,16 +64,17 @@ describe("expressFramework — integration", () => {
 
   it("discovers every router.<method> handler in the fixture", () => {
     // Three handlers — all registered via router.get(...) so identity.name
-    // comes from the registration method verb. boundaryBinding today only
-    // carries protocol + framework (method/path extraction for non-contract
-    // frameworks is not wired up yet).
+    // comes from the registration method verb. Method/path extraction for
+    // non-contract registrationCall packs isn't wired up yet, so these fall
+    // back to function-call semantics on the "http" transport.
     expect(summaries).toHaveLength(3);
     for (const s of summaries) {
       expect(s.kind).toBe("handler");
       expect(s.identity.name).toBe("get");
       expect(s.identity.boundaryBinding).toEqual({
-        protocol: "http",
-        framework: "express",
+        transport: "http",
+        semantics: { name: "function-call" },
+        recognition: "express",
       });
     }
   });
@@ -83,7 +84,7 @@ describe("expressFramework — integration", () => {
     // unambiguously without depending on source order.
     const main = summaries.find((s) => s.transitions.length === 4);
     expect(main).toBeDefined();
-    const roles = main!.inputs
+    const roles = main?.inputs
       .filter((i) => i.type === "parameter")
       .map((i) => (i.type === "parameter" ? i.role : null));
     expect(roles).toEqual(["request", "response", "next"]);
@@ -98,7 +99,7 @@ describe("expressFramework — integration", () => {
     //   2. !user                     → res.status(404).json(...)   → 404
     //   3. user.role === "admin"     → res.json(...)               → 200 (default)
     //   4. default                   → res.json(user)              → 200 (default)
-    const statusCodes = main!.transitions.map((t) =>
+    const statusCodes = main?.transitions.map((t) =>
       t.output.type === "response" ? t.output.statusCode : "not-response",
     );
     expect(statusCodes).toEqual([
@@ -109,7 +110,7 @@ describe("expressFramework — integration", () => {
     ]);
 
     // Only the last transition is implicit default.
-    expect(main!.transitions.map((t) => t.isDefault)).toEqual([
+    expect(main?.transitions.map((t) => t.isDefault)).toEqual([
       false,
       false,
       false,
@@ -117,7 +118,10 @@ describe("expressFramework — integration", () => {
     ]);
 
     // All four outputs are responses (no throws, no render in this fixture).
-    for (const t of main!.transitions) {
+    if (!main) {
+      throw new Error("main summary missing");
+    }
+    for (const t of main.transitions) {
       expect(t.output.type).toBe("response");
     }
   });

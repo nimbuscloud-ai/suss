@@ -6,7 +6,17 @@ import {
   restApiToSummaries,
 } from "./index.js";
 
-import type { Output, Predicate } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Output, Predicate } from "@suss/behavioral-ir";
+
+function restMethodOf(summary: BehavioralSummary): string | null {
+  const s = summary.identity.boundaryBinding?.semantics;
+  return s?.name === "rest" ? s.method : null;
+}
+
+function restPathOf(summary: BehavioralSummary): string | null {
+  const s = summary.identity.boundaryBinding?.semantics;
+  return s?.name === "rest" ? s.path : null;
+}
 
 function baseEndpoint(
   overrides: Partial<RestEndpointConfig> = {},
@@ -65,17 +75,13 @@ describe("restApiToSummaries — baseline", () => {
     );
 
     expect(summaries).toHaveLength(2);
-    const get = summaries.find(
-      (s) => s.identity.boundaryBinding?.path === "/a",
-    );
-    const post = summaries.find(
-      (s) => s.identity.boundaryBinding?.path === "/b",
-    );
+    const get = summaries.find((s) => restPathOf(s) === "/a");
+    const post = summaries.find((s) => restPathOf(s) === "/b");
     if (get === undefined || post === undefined) {
       throw new Error("expected both endpoints to be present");
     }
-    expect(get.identity.boundaryBinding?.method).toBe("GET");
-    expect(post.identity.boundaryBinding?.method).toBe("POST");
+    expect(restMethodOf(get)).toBe("GET");
+    expect(restMethodOf(post)).toBe("POST");
     // Mock integrations would suppress 502/504; lambda-proxy adds them.
     expect(statuses(get)).toEqual([200, 404, 502, 504]);
     expect(statuses(post)).toEqual([201, 502, 504]);
@@ -266,12 +272,8 @@ describe("restApiToSummaries — CORS", () => {
       }),
     );
 
-    const preflights = summaries.filter(
-      (s) => s.identity.boundaryBinding?.method === "OPTIONS",
-    );
-    expect(
-      preflights.map((p) => p.identity.boundaryBinding?.path).sort(),
-    ).toEqual(["/a", "/b"]);
+    const preflights = summaries.filter((s) => restMethodOf(s) === "OPTIONS");
+    expect(preflights.map((p) => restPathOf(p)).sort()).toEqual(["/a", "/b"]);
 
     const headers = preflights[0].transitions[0].output;
     if (headers.type !== "response") {
