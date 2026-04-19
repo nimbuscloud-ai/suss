@@ -31,7 +31,7 @@ Prefer `import type` for type-only imports — Biome enforces this and it keeps 
 
 - Discriminated unions use `type` as the discriminant field, consistently. Never `kind`, never `style`.
 - Prefer discriminated unions over loose interfaces with optional fields. A `{ type: "X"; requiredField: string }` variant is better than `{ type: "X"; requiredField?: string }` with documentation.
-- Use `Record<Key, Value>` maps with exhaustive key types (`Record<Union["type"], Handler>`) instead of `switch` statements for dispatch. This makes exhaustiveness a type error if a variant is added.
+- **DispatchTable over `switch`.** For dispatch on a discriminated union, use a `Record` keyed by the discriminant — e.g. `const handlers: Record<Event["type"], Handler> = { created, deleted, … }` — rather than a `switch` statement. We call this the *DispatchTable* pattern; it makes exhaustiveness a type error when a new variant lands, and keeps each handler a named, independently testable function.
 - `as const` for literal narrowing when necessary, but prefer proper typing at the declaration site.
 - Avoid `any`. Use `unknown` for genuinely-unknown data and narrow at the boundary.
 - Avoid type assertions (`as X`) unless you've exhausted type narrowing. If you need them, comment why.
@@ -74,7 +74,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/). Format:
 
 **Types:** `feat`, `fix`, `docs`, `test`, `chore`, `refactor`, `perf`
 
-**Scopes** (optional but encouraged in a monorepo): `ir`, `extractor`, `adapter`, `cli`, `express`, `react-router`, `ts-rest`. Omit scope for cross-cutting changes.
+**Scopes** (optional but encouraged in a monorepo): the affected package name — e.g. `ir`, `adapter`, `extractor`, `checker`, `cli`, any framework pack (`ts-rest`, `express`, `fastify`, `react`, `react-router`, `apollo`, …), any runtime pack (`axios`, `web`, `apollo-client`), any stub source (`openapi`, `cloudformation`, `storybook`, `appsync`, …), or `docs` / `scripts` when the change lives outside packages. This list is illustrative, not exhaustive; use the shortest scope that names what changed, combine with commas when a commit cuts across several, and omit scope entirely for genuinely cross-cutting changes.
 
 **Guidelines:**
 - Each commit should have a single primary intent. Split mixed changes (e.g. a feature + a doc update + a test fix) into separate commits.
