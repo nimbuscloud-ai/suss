@@ -127,6 +127,97 @@ No JSON output mode — inspect is always human-formatted. For
 programmatic consumption, read the summary files directly (they
 ARE JSON).
 
+### Reading the output
+
+Every summary renders as a **header** (identity + provenance)
+followed by the **decision tree** (one branch per execution
+path with its condition and output).
+
+```
+GET /users/:id
+  ts-rest handler | handlers.ts:24
+  Contract: 200, 404, 500
+
+    if  !params.id
+      -> 404 { error }
+    elif  !db.findById()
+      -> 404 { error }
+    elif  db.findById().deletedAt
+      -> 404 { error }
+    else
+      -> 200 { id, name, email }
+
+    !! Declared response 500 is never produced by the handler
+```
+
+#### Header
+
+**Line 1 — identity.** Three shapes appear depending on the
+binding's semantics:
+
+| Shape | Means |
+|---|---|
+| `METHOD /path` | REST summary — a handler or client for an HTTP endpoint. |
+| `@pkg::exportPath` | Library provider — a function published through a package's public API (`packageExports` discovery). |
+| `fnName → @pkg::exportPath` | Caller (consumer) — a function that calls into another package. Left of `→` is the caller's own name; right is the target it consumes. |
+| `fnName` (no arrow, no method) | Fallback for other kinds (`component`, `hook`, `worker`, ...) where identity is just the function name. |
+
+**Line 2 — provenance.** `{pack-recognition} {kind} | {file}:{line}`.
+The pack name tells you which discovery variant produced it; the
+kind is one of `handler` / `loader` / `component` / `hook` /
+`library` / `caller` / `client` / etc. (see
+[`ir-reference.md`](/ir-reference) for the full list).
+
+**Line 3 (optional) — declared contract.** For REST summaries
+with a declared contract, shows the statuses the contract
+declares: `Contract: 200, 404, 500`.
+
+#### Branches
+
+Each branch reads like an `if` in the source:
+
+```
+    if  <predicate>
+      -> <output>
+    elif  <predicate>
+      -> <output>
+    else
+      -> <output>
+```
+
+- `if` / `elif` / `else` mirror source-level control flow.
+  Nested `if` inside a branch indents further.
+- **Predicates** render as JavaScript-like expressions —
+  `!params.id`, `user.deletedAt`, `actual.type === "ref"`,
+  `predicateContainsOpaque(a) || predicateContainsOpaque(b)`.
+  Shared prefixes across branches are collapsed so each branch
+  shows only the condition that decides it.
+- **Outputs** —
+  - `-> 200 { id, name, email }` — REST response with a literal
+    status and a body shape. `{ ... }` is a record; keys show
+    inferred properties. A `[…]` means array; primitives render
+    as `string` / `int` / `bool` / `null`; unions as
+    `"match" | "nomatch"`.
+  - `-> return <shape>` — function return. `-> return` alone
+    means empty return.
+  - `-> throw Error` — exception; exception type shown when
+    known.
+  - `-> render <Component />` — component render output.
+
+An `elif` line with no `->` underneath it is a tree-building
+artifact: the decision tree walked past that predicate but the
+actual leaf lives deeper in a nested `if`. Not an empty branch
+in source.
+
+#### Flags
+
+Annotations that start with `!!`:
+
+| Shape | Means |
+|---|---|
+| Top-level `!! <description>` | A gap — the declared contract says a status exists but no branch produces it, or a branch produces a status the contract doesn't declare. |
+| Trailing `!! undeclared` on an output | That output's status code isn't in the declared contract for this endpoint. |
+
 ### Exit codes
 
 - `0` — rendered successfully.
