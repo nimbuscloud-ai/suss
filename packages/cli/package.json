@@ -62,11 +62,15 @@
     "@suss/framework-react": "*",
     "@suss/framework-express": "*",
     "@suss/framework-fastify": "*",
+    "@suss/framework-apollo": "*",
     "@suss/runtime-web": "*",
     "@suss/runtime-axios": "*",
+    "@suss/runtime-apollo-client": "*",
     "@suss/stub-aws-apigateway": "*",
     "@suss/stub-openapi": "*",
     "@suss/stub-cloudformation": "*",
+    "@suss/stub-storybook": "*",
+    "@suss/stub-appsync": "*",
     "yaml": "^2.4.0"
   },
   "devDependencies": {

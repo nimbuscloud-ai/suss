@@ -6,7 +6,17 @@ import {
   httpApiToSummaries,
 } from "./index.js";
 
-import type { Output } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Output } from "@suss/behavioral-ir";
+
+function restMethodOf(summary: BehavioralSummary): string | null {
+  const s = summary.identity.boundaryBinding?.semantics;
+  return s?.name === "rest" ? s.method : null;
+}
+
+function restPathOf(summary: BehavioralSummary): string | null {
+  const s = summary.identity.boundaryBinding?.semantics;
+  return s?.name === "rest" ? s.path : null;
+}
 
 function baseRoute(overrides: Partial<HttpRouteConfig> = {}): HttpRouteConfig {
   return {
@@ -52,8 +62,8 @@ describe("httpApiToSummaries", () => {
       }),
     );
     expect(summaries).toHaveLength(2);
-    expect(summaries[0].identity.boundaryBinding?.method).toBe("GET");
-    expect(summaries[1].identity.boundaryBinding?.method).toBe("POST");
+    expect(restMethodOf(summaries[0])).toBe("GET");
+    expect(restMethodOf(summaries[1])).toBe("POST");
   });
 
   it("skips $default and malformed route keys", () => {
@@ -67,7 +77,7 @@ describe("httpApiToSummaries", () => {
       }),
     );
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/ok");
+    expect(restPathOf(summaries[0])).toBe("/ok");
   });
 
   it("adds 401 + 403 + 502 + 504 with a JWT authorizer", () => {
@@ -125,12 +135,11 @@ describe("httpApiToSummaries", () => {
         ],
       }),
     );
-    const preflights = summaries.filter(
-      (s) => s.identity.boundaryBinding?.method === "OPTIONS",
-    );
-    expect(
-      preflights.map((p) => p.identity.boundaryBinding?.path).sort(),
-    ).toEqual(["/admin", "/users"]);
+    const preflights = summaries.filter((s) => restMethodOf(s) === "OPTIONS");
+    expect(preflights.map((p) => restPathOf(p)).sort()).toEqual([
+      "/admin",
+      "/users",
+    ]);
   });
 
   it("identitySourceRequired=false suppresses 401", () => {
@@ -172,9 +181,7 @@ describe("httpApiToSummaries", () => {
         routes: [baseRoute()],
       }),
     );
-    const preflight = summaries.find(
-      (s) => s.identity.boundaryBinding?.method === "OPTIONS",
-    );
+    const preflight = summaries.find((s) => restMethodOf(s) === "OPTIONS");
     if (preflight === undefined) {
       throw new Error("expected preflight");
     }

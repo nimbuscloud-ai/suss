@@ -14,7 +14,6 @@ import { extract } from "./extract.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 import { stub } from "./stub.js";
 
-import type { CheckResult } from "./check.js";
 import type { StubSource } from "./stub.js";
 
 export const USAGE = `
@@ -35,7 +34,9 @@ Commands:
 
 Options (extract):
   -p, --project    Path to tsconfig.json (required)
-  -f, --framework  Framework name: ts-rest, react-router, express, fastify, fetch, axios (repeatable)
+  -f, --framework  Framework name. Repeatable. Built-in: ts-rest, react-router,
+                   express, fastify, react, apollo, fetch, axios, apollo-client.
+                   Custom packs resolve via @suss/framework-<name>.
   -o, --output     Write JSON to file instead of stdout
   --files          Specific source files to extract from
   --gaps           Gap handling: strict (default), permissive, silent
@@ -47,7 +48,7 @@ Options (check):
   --fail-on        Exit non-zero threshold: error (default), warning, info, none
 
 Options (stub):
-  --from           Stub source kind: openapi, cloudformation
+  --from           Stub source kind: openapi, cloudformation, storybook, appsync
   -o, --output     Write JSON to file instead of stdout
 
 Exit codes:
@@ -218,26 +219,24 @@ function runCheck(args: string[]): number {
     ...(failOn !== undefined ? { failOn } : {}),
   };
 
-  let result: CheckResult;
-
   if (values.dir !== undefined) {
-    result = checkDir({ dir: values.dir, ...shared });
-  } else {
-    if (positionals.length < 2) {
-      process.stderr.write(
-        "Error: check requires two summary file paths or --dir <directory>\n",
-      );
-      process.stderr.write(`${USAGE}\n`);
-      return 1;
-    }
-
-    result = check({
-      providerFile: positionals[0],
-      consumerFile: positionals[1],
-      ...shared,
-    });
+    const result = checkDir({ dir: values.dir, ...shared });
+    return result.hasErrors ? 1 : 0;
   }
 
+  if (positionals.length < 2) {
+    process.stderr.write(
+      "Error: check requires two summary file paths or --dir <directory>\n",
+    );
+    process.stderr.write(`${USAGE}\n`);
+    return 1;
+  }
+
+  const result = check({
+    providerFile: positionals[0],
+    consumerFile: positionals[1],
+    ...shared,
+  });
   return result.hasErrors ? 1 : 0;
 }
 
@@ -257,9 +256,9 @@ async function runStub(args: string[]): Promise<number> {
     process.stderr.write(`${USAGE}\n`);
     return 1;
   }
-  if (from !== "openapi" && from !== "cloudformation") {
+  if (from !== "openapi" && from !== "cloudformation" && from !== "storybook") {
     process.stderr.write(
-      `Error: unknown --from value "${from}". Supported: openapi, cloudformation\n`,
+      `Error: unknown --from value "${from}". Supported: openapi, cloudformation, storybook\n`,
     );
     return 1;
   }

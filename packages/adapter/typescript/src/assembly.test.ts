@@ -1022,6 +1022,125 @@ describe("edge cases", () => {
     expect(branches).toHaveLength(0);
   });
 
+  it("emits a fall-through terminal when the pack opts in and nothing covers the default path", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler() {
+        setCount(1);
+        onChange(1);
+      }
+    `,
+    );
+
+    const patterns: TerminalPattern[] = [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    expect(branches).toHaveLength(1);
+    expect(branches[0].isDefault).toBe(true);
+    // Invocation effects capture the body's bare calls.
+    const callees = branches[0].effects
+      .filter((e) => e.type === "invocation")
+      .map((e) => (e.type === "invocation" ? e.callee : null));
+    expect(callees).toEqual(["setCount", "onChange"]);
+  });
+
+  it("does not emit fall-through when the pack didn't opt in", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler() {
+        setCount(1);
+      }
+    `,
+    );
+
+    const patterns: TerminalPattern[] = [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    expect(branches).toHaveLength(0);
+  });
+
+  it("does not emit fall-through when an existing default terminal covers the exit", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler() {
+        return { status: 200, body: { ok: true } };
+      }
+    `,
+    );
+
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "response",
+        match: { type: "returnShape", requiredProperties: ["status", "body"] },
+        extraction: {
+          statusCode: { from: "property", name: "status" },
+          body: { from: "property", name: "body" },
+        },
+      },
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    // Only one terminal — the explicit return — because it covers the
+    // default path. Fall-through suppressed.
+    expect(branches).toHaveLength(1);
+  });
+
+  it("invocation effects skip calls whose line matches a matched terminal", () => {
+    // Express-style: `res.json(body)` at the end is the terminal.
+    // Its expression-statement-ness would otherwise make it an
+    // invocation effect too — the deduplication keeps it out.
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler(req: any, res: any) {
+        logger.info("entry");
+        res.status(200).json({ ok: true });
+      }
+    `,
+    );
+
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "response",
+        match: {
+          type: "parameterMethodCall",
+          parameterPosition: 1,
+          methodChain: ["status", "json"],
+        },
+        extraction: {
+          statusCode: { from: "argument", position: 0 },
+          body: { from: "argument", position: 0 },
+        },
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    expect(branches).toHaveLength(1);
+    const callees = branches[0].effects
+      .filter((e) => e.type === "invocation")
+      .map((e) => (e.type === "invocation" ? e.callee : null));
+    // logger.info shows up; res.status(...).json(...) doesn't
+    // double-count because its line is a terminal line.
+    expect(callees).toEqual(["logger.info"]);
+  });
+
   it("handles deeply nested if chains (4 levels)", () => {
     const project = createProject();
     const fn = getExportedFunction(

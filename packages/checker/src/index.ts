@@ -1,22 +1,56 @@
 import { checkBodyCompatibility } from "./body-compatibility.js";
+import { checkComponentStoryAgreement } from "./component-story-agreement.js";
 import { checkConsumerContract } from "./consumer-contract.js";
 import { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 import { checkContractAgreement } from "./contract-agreement.js";
 import { checkContractConsistency } from "./contract-consistency.js";
 import { dedupeFindings } from "./dedupe.js";
+import { pairGraphqlOperations } from "./graphql-pairing.js";
 import { pairSummaries } from "./pairing.js";
 import { checkProviderCoverage } from "./provider-coverage.js";
 import { checkSemanticBridging } from "./semantic-bridging.js";
 
-import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  BoundaryBinding,
+  Finding,
+} from "@suss/behavioral-ir";
+
+/**
+ * Human-readable pairing key for unmatched-summary reporting. Mirrors
+ * `boundaryKey` but falls back to the semantics name when the binding
+ * isn't REST-shaped (so a function-call client unable to pair still
+ * shows something meaningful in the CLI's unmatched list).
+ */
+function describeBinding(binding: BoundaryBinding): string {
+  const sem = binding.semantics;
+  if (sem.name === "rest") {
+    const method = sem.method || "ANY";
+    const path = sem.path || "?";
+    return `${method.toUpperCase()} ${path}`;
+  }
+  if (sem.name === "graphql-resolver") {
+    return `${sem.typeName}.${sem.fieldName}`;
+  }
+  if (sem.name === "graphql-operation") {
+    const label = sem.operationName ?? "<anonymous>";
+    return `${sem.operationType} ${label}`;
+  }
+  return `${sem.name}:${binding.recognition}`;
+}
 
 export { checkBodyCompatibility } from "./body-compatibility.js";
 export { bodyShapesMatch } from "./body-match.js";
+export { checkComponentStoryAgreement } from "./component-story-agreement.js";
 export { checkConsumerContract } from "./consumer-contract.js";
 export { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
 export { checkContractAgreement } from "./contract-agreement.js";
 export { checkContractConsistency } from "./contract-consistency.js";
 export { dedupeFindings } from "./dedupe.js";
+export {
+  type GraphqlPairingResult,
+  pairGraphqlOperations,
+} from "./graphql-pairing.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
 export {
   boundaryKey,
@@ -73,12 +107,21 @@ export interface CheckAllResult {
  * single pair is unchanged.
  */
 export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
-  const { pairs, unmatched } = pairSummaries(summaries);
+  const { pairs: restPairs, unmatched: restUnmatched } =
+    pairSummaries(summaries);
+  const graphql = pairGraphqlOperations(summaries);
 
-  const findings: Finding[] = [];
+  const findings: Finding[] = [...graphql.findings];
   const pairInfo: CheckAllResult["pairs"] = [];
 
-  for (const { provider, consumer, key } of pairs) {
+  // REST pairs run through the full check-pair machinery
+  // (provider coverage, consumer satisfaction, body / contract
+  // checks). GraphQL pairs surface in `pairInfo` for discoverability
+  // but skip checkPair — the REST checks all key on status-code +
+  // response shape, which doesn't apply to resolvers. Per-semantics
+  // checks for GraphQL land alongside `pairGraphqlOperations` when
+  // a concrete case motivates them.
+  for (const { provider, consumer, key } of restPairs) {
     findings.push(...checkPair(provider, consumer));
     pairInfo.push({
       key,
@@ -86,6 +129,23 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
       consumer: consumer.identity.name,
     });
   }
+  // Track which summaries got at least one graphql pairing so they
+  // don't double-surface as unmatched below.
+  const graphqlMatched = new Set<BehavioralSummary>();
+  for (const { provider, consumer, key } of graphql.pairs) {
+    graphqlMatched.add(provider);
+    graphqlMatched.add(consumer);
+    pairInfo.push({
+      key,
+      provider: provider.identity.name,
+      consumer: consumer.identity.name,
+    });
+  }
+  const unmatched = {
+    providers: restUnmatched.providers.filter((s) => !graphqlMatched.has(s)),
+    consumers: restUnmatched.consumers.filter((s) => !graphqlMatched.has(s)),
+    noBinding: restUnmatched.noBinding.filter((s) => !graphqlMatched.has(s)),
+  };
 
   // Layer 2: cross-source contract agreement. Runs independently of
   // pairing — it compares each boundary's declared contracts against
@@ -93,6 +153,14 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // represent disagreement BETWEEN sources, not inconsistency within
   // a single source (which is Layer 1's job).
   findings.push(...checkContractAgreement(summaries));
+
+  // Cross-shape agreement for React: pair Storybook stub summaries
+  // with inferred component summaries by component name and emit
+  // findings for scenario-arg-vs-component-input mismatches. Sits
+  // alongside contract agreement because it's the same "multiple
+  // declared views of the same boundary" shape, just with a
+  // different payload (args vs declaredContract).
+  findings.push(...checkComponentStoryAgreement(summaries));
 
   return {
     findings: dedupeFindings(findings),
@@ -102,14 +170,14 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
         name: s.identity.name,
         key:
           s.identity.boundaryBinding !== null
-            ? `${(s.identity.boundaryBinding.method ?? "ANY").toUpperCase()} ${s.identity.boundaryBinding.path ?? "?"}`
+            ? describeBinding(s.identity.boundaryBinding)
             : null,
       })),
       consumers: unmatched.consumers.map((s) => ({
         name: s.identity.name,
         key:
           s.identity.boundaryBinding !== null
-            ? `${(s.identity.boundaryBinding.method ?? "ANY").toUpperCase()} ${s.identity.boundaryBinding.path ?? "?"}`
+            ? describeBinding(s.identity.boundaryBinding)
             : null,
       })),
       noBinding: unmatched.noBinding.map((s) => s.identity.name),

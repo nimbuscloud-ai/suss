@@ -61,7 +61,7 @@ describe("generateSummariesFromStories — CSF3 basics", () => {
     );
     const primary = summaries.find((s) => s.identity.name === "Button.Primary");
     expect(primary?.transitions).toHaveLength(1);
-    const txn = primary!.transitions[0];
+    const txn = primary?.transitions[0];
     expect(txn.isDefault).toBe(true);
     if (txn.output.type !== "render") {
       throw new Error("expected render output");

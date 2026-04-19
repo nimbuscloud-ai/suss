@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  functionCallBinding,
+  graphqlResolverBinding,
+  restBinding,
+} from "@suss/behavioral-ir";
+
+import {
   consumer,
   provider,
   response,
@@ -58,40 +64,50 @@ describe("normalizePath", () => {
 
 describe("boundaryKey", () => {
   it("returns method + normalized path", () => {
-    const binding: BoundaryBinding = {
-      protocol: "http",
+    const binding: BoundaryBinding = restBinding({
+      transport: "http",
       method: "GET",
       path: "/users/:id",
-      framework: "ts-rest",
-    };
+      recognition: "ts-rest",
+    });
     expect(boundaryKey(binding)).toBe("GET /users/{id}");
   });
 
-  it("defaults method to ANY", () => {
-    const binding: BoundaryBinding = {
-      protocol: "http",
-      path: "/health",
-      framework: "express",
-    };
-    expect(boundaryKey(binding)).toBe("ANY /health");
-  });
-
-  it("returns null when path is undefined", () => {
-    const binding: BoundaryBinding = {
-      protocol: "http",
+  it("returns null when path is empty (unresolved wrapper)", () => {
+    const binding: BoundaryBinding = restBinding({
+      transport: "http",
       method: "GET",
-      framework: "express",
-    };
+      path: "",
+      recognition: "fetch",
+    });
     expect(boundaryKey(binding)).toBeNull();
   });
 
+  it("returns null for function-call semantics", () => {
+    const binding: BoundaryBinding = functionCallBinding({
+      transport: "in-process",
+      recognition: "react",
+    });
+    expect(boundaryKey(binding)).toBeNull();
+  });
+
+  it("keys graphql-resolver by gql:<Type>.<field>", () => {
+    const binding = graphqlResolverBinding({
+      transport: "http",
+      recognition: "apollo",
+      typeName: "Query",
+      fieldName: "users",
+    });
+    expect(boundaryKey(binding)).toBe("gql:Query.users");
+  });
+
   it("uppercases method", () => {
-    const binding: BoundaryBinding = {
-      protocol: "http",
+    const binding: BoundaryBinding = restBinding({
+      transport: "http",
       method: "get",
       path: "/users",
-      framework: "fetch",
-    };
+      recognition: "fetch",
+    });
     expect(boundaryKey(binding)).toBe("GET /users");
   });
 });
@@ -112,12 +128,12 @@ function providerWithPath(
     ...base,
     identity: {
       ...base.identity,
-      boundaryBinding: {
-        protocol: "http",
+      boundaryBinding: restBinding({
+        transport: "http",
         method,
         path,
-        framework: "ts-rest",
-      },
+        recognition: "ts-rest",
+      }),
     },
   };
 }
@@ -134,12 +150,12 @@ function consumerWithPath(
     ...base,
     identity: {
       ...base.identity,
-      boundaryBinding: {
-        protocol: "http",
+      boundaryBinding: restBinding({
+        transport: "http",
         method,
         path,
-        framework: "fetch",
-      },
+        recognition: "fetch",
+      }),
     },
   };
 }
@@ -219,7 +235,10 @@ describe("pairSummaries", () => {
       identity: {
         name: "x",
         exportPath: null,
-        boundaryBinding: { protocol: "http", framework: "express" },
+        boundaryBinding: functionCallBinding({
+          transport: "http",
+          recognition: "express",
+        }),
       },
       inputs: [],
       transitions: [],

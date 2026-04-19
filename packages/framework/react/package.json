@@ -46,10 +46,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@suss/adapter-typescript": "*",
     "@suss/extractor": "*"
   },
   "devDependencies": {
-    "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
     "ts-morph": "*",
     "tsup": "*",

@@ -7,6 +7,7 @@ import type { PatternPack } from "@suss/extractor";
 export function fastifyFramework(): PatternPack {
   return {
     name: "fastify",
+    protocol: "http",
     languages: ["typescript", "javascript"],
 
     // Fastify exposes the routable via either default `Fastify` or

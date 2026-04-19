@@ -16,12 +16,20 @@ const BUILTIN_FRAMEWORKS: Record<
   string,
   () => Promise<{ default: () => PatternPack }>
 > = {
+  // HTTP framework packs (providers).
   "ts-rest": () => import("@suss/framework-ts-rest"),
   "react-router": () => import("@suss/framework-react-router"),
   express: () => import("@suss/framework-express"),
   fastify: () => import("@suss/framework-fastify"),
+  // React components + event handlers + useEffect bodies.
+  react: () => import("@suss/framework-react"),
+  // GraphQL code-first resolver discovery (Apollo Server).
+  apollo: () => import("@suss/framework-apollo"),
+  // HTTP client runtimes (consumers).
   fetch: () => import("@suss/runtime-web"),
   axios: () => import("@suss/runtime-axios"),
+  // GraphQL consumer hooks / imperative client calls.
+  "apollo-client": () => import("@suss/runtime-apollo-client"),
 };
 
 async function resolveFramework(name: string): Promise<PatternPack> {

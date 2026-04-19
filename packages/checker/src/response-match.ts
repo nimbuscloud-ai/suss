@@ -144,8 +144,9 @@ export function makeBoundary(
   return (
     provider.identity.boundaryBinding ??
     consumer.identity.boundaryBinding ?? {
-      protocol: "unknown",
-      framework: "unknown",
+      transport: "unknown",
+      semantics: { name: "function-call" },
+      recognition: "unknown",
     }
   );
 }

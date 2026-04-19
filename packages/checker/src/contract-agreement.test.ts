@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import { checkContractAgreement } from "./contract-agreement.js";
 
 import type { BehavioralSummary, TypeShape } from "@suss/behavioral-ir";
@@ -19,12 +21,12 @@ function providerWithContract(
     identity: {
       name,
       exportPath: null,
-      boundaryBinding: {
-        protocol: "http",
+      boundaryBinding: restBinding({
+        transport: "http",
         method: "GET",
         path: "/pet/:id",
-        framework,
-      },
+        recognition: framework,
+      }),
     },
     inputs: [],
     transitions: [],
@@ -196,10 +198,16 @@ describe("checkContractAgreement", () => {
       },
     );
     // Force the second source to use brace syntax.
-    if (b.identity.boundaryBinding !== null) {
+    if (
+      b.identity.boundaryBinding !== null &&
+      b.identity.boundaryBinding.semantics.name === "rest"
+    ) {
       b.identity.boundaryBinding = {
         ...b.identity.boundaryBinding,
-        path: "/pet/{id}",
+        semantics: {
+          ...b.identity.boundaryBinding.semantics,
+          path: "/pet/{id}",
+        },
       };
     }
     const findings = checkContractAgreement([a, b]);

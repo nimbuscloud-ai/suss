@@ -65,7 +65,7 @@ Location is file + line range. Identity is symbolic: *what* is this code unit, r
 
 **`exportPath` as a string array, not a dotted string.** Deep module namespaces (`namespace.submodule.getUser`) show up in some frameworks; arrays are easier to compare than strings.
 
-**`boundaryBinding` is first-class nullable.** Utility functions, custom hooks, and internal helpers don't participate in cross-service contracts. They can still have behavioral summaries, but they don't have a boundary to bind to. Explicit `null` forces consumers to handle that case.
+**`boundaryBinding` is explicitly nullable.** Utility functions, custom hooks, and internal helpers don't participate in cross-service contracts. They can still have behavioral summaries, but they don't have a boundary to bind to. Explicit `null` forces consumers to handle that case.
 
 ## `BoundaryBinding`
 
@@ -145,7 +145,7 @@ A discriminated union over test types. Each variant carries exactly the fields i
 
 **`compound` vs. `negation` as separate variants.** `compound` handles `and` and `or` but not `not`, because `not` of a `not` collapses to the operand. Keeping `negation` separate makes simplification rewrites easy.
 
-**`opaque` is first-class, not an error.** When the extractor can't decompose a condition expression, it wraps it in an opaque predicate that preserves the source text and records why. Downstream tools get the message "this branch exists but we don't know exactly what gates it" and can decide how to handle it.
+**`opaque` is an explicit variant, not an error.** When the extractor can't decompose a condition expression, it wraps it in an opaque predicate that preserves the source text and records why. Downstream tools get the message "this branch exists but we don't know exactly what gates it" and can decide how to handle it.
 
 **Why no `allof`/`anyof` with n-ary arrays directly.** `compound` already does that. Keeping one n-ary form (via the `operands` array) rather than adding separate binary and n-ary variants reduces the surface area.
 
@@ -177,7 +177,7 @@ A reference to a value within a code unit. Each variant identifies where the val
 
 **Why the shape is shallow.** The goal is cross-boundary comparison, not full semantic understanding. Two predicates that both test `the result of db.findById(id).deletedAt` should be recognizable as referring to the same subject — even if the extractor has no idea what `findById` does semantically. Shallow references are:
 
-1. **Stable** — trivial renames don't change them
+1. **Stable** — mechanical renames don't change them
 2. **Cheap to compute** — no type inference, no deep following of calls
 3. **Language-agnostic** — Python's `db.find_by_id(id)` produces an analogous `ValueRef`
 
@@ -250,7 +250,7 @@ A simplified type shape, sufficient for describing response bodies and return va
 
 #### `undefined` on the wire
 
-`undefined` is modeled for source fidelity (optional fields, explicit `undefined` returns), but JSON omits it. A record with `email: undefined` serializes to a response body where `email` is simply absent. Downstream contract checkers should treat `{ value: T | undefined }` and `{ value?: T }` as equivalent at the wire boundary.
+`undefined` is modeled for source fidelity (optional fields, explicit `undefined` returns), but JSON omits it. A record with `email: undefined` serializes to a response body where `email` is absent. Downstream contract checkers should treat `{ value: T | undefined }` and `{ value?: T }` as equivalent at the wire boundary.
 
 #### Serde / codec contracts (open design space)
 
@@ -296,7 +296,7 @@ interface Gap {
 }
 ```
 
-A case the code unit doesn't explicitly handle. Gaps are first-class output, not errors — "I can see that this case exists but I can't determine what happens" is useful information for downstream tools.
+A case the code unit doesn't explicitly handle. Gaps are top-level output, not errors — "I can see that this case exists but I can't determine what happens" is useful information for downstream tools.
 
 **`consequence`** tells you what actually happens in the unhandled case:
 
@@ -321,7 +321,7 @@ How much of the behavior was structurally analyzed vs. opaque, and where the inf
 - **`inferred_static`** — structural analysis of the source code (the common case)
 - **`inferred_ai`** — future: LLM-assisted semantic labels on opaque predicates
 - **`declared`** — the summary was authored, not extracted (e.g., for community stubs)
-- **`stub`** — a placeholder with no real information
+- **`stub`** — a placeholder with no extracted information
 
 Level is computed as the ratio of opaque predicates to total predicates:
 
@@ -329,7 +329,7 @@ Level is computed as the ratio of opaque predicates to total predicates:
 - `ratio < 0.5` → `medium`
 - `ratio >= 0.5` → `low`
 
-Consumers use confidence to decide how strictly to enforce findings. High-confidence provider/consumer mismatches are almost certainly real bugs. Low-confidence ones might be false positives from opaque predicates; they deserve review but not a broken build.
+Consumers use confidence to decide how strictly to enforce findings. High-confidence provider/consumer mismatches are almost certainly user-visible bugs. Low-confidence ones might be false positives from opaque predicates; they deserve review but not a broken build.
 
 ## `Finding` — the unit of cross-boundary output
 
@@ -359,11 +359,11 @@ interface Finding {
 }
 ```
 
-What the pairwise checker emits. Each finding names the boundary, both sides of it, and a human-readable description. The full algorithm and each finding kind live in [`cross-boundary-checking.md`](cross-boundary-checking.md); this section is just the type surface.
+What the pairwise checker emits. Each finding names the boundary, both sides of it, and a human-readable description. The full algorithm and each finding kind live in [`cross-boundary-checking.md`](cross-boundary-checking.md); this section covers the type surface.
 
 **Why both sides are always named.** Even when only one side is at fault (e.g., `providerContractViolation` is structurally about provider-vs-contract), the finding still points at the consumer summary it was checked against — so tooling can attribute the finding to a specific pairing rather than a free-floating provider. `transitionId` is the optional field; the two `summary` references are required.
 
-**Why findings live in `@suss/behavioral-ir`, not in the checker package.** Other tools (diff viewers, aggregation layers, the product) consume findings the same way they consume summaries. Keeping the shape in the IR package means no downstream consumer depends on `@suss/checker` just to read a finding.
+**Why findings live in `@suss/behavioral-ir`, not in the checker package.** Other tools (diff viewers, aggregation layers, the product) consume findings the same way they consume summaries. Keeping the shape in the IR package means no downstream consumer depends on `@suss/checker` only to read a finding.
 
 **Severity drives CLI exit codes.** `suss check` exits non-zero when any `error`-severity finding is present; `warning` and `info` are reported but don't fail the process. Contract violations and unhandled provider cases are errors; dead consumer branches are warnings; `lowConfidence` is informational.
 

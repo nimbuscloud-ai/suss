@@ -79,26 +79,93 @@
               {
                 "type": "object",
                 "properties": {
-                  "protocol": {
+                  "transport": {
                     "type": "string"
                   },
-                  "method": {
-                    "type": "string"
+                  "semantics": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "const": "rest"
+                          },
+                          "method": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "declaredResponses": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "required": ["name", "method", "path"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "const": "function-call"
+                          },
+                          "module": {
+                            "type": "string"
+                          },
+                          "exportName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["name"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "const": "graphql-resolver"
+                          },
+                          "typeName": {
+                            "type": "string"
+                          },
+                          "fieldName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["name", "typeName", "fieldName"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "const": "graphql-operation"
+                          },
+                          "operationName": {
+                            "type": "string"
+                          },
+                          "operationType": {
+                            "type": "string",
+                            "enum": ["query", "mutation", "subscription"]
+                          }
+                        },
+                        "required": ["name", "operationType"],
+                        "additionalProperties": false
+                      }
+                    ]
                   },
-                  "path": {
+                  "recognition": {
                     "type": "string"
-                  },
-                  "framework": {
-                    "type": "string"
-                  },
-                  "declaredResponses": {
-                    "type": "array",
-                    "items": {
-                      "type": "number"
-                    }
                   }
                 },
-                "required": ["protocol", "framework"],
+                "required": ["transport", "semantics", "recognition"],
                 "additionalProperties": false
               },
               {
@@ -1183,6 +1250,15 @@
             "tag": {
               "type": "string"
             },
+            "attrs": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
             "children": {
               "type": "array",
               "items": {
@@ -1219,6 +1295,33 @@
             }
           },
           "required": ["type", "sourceText"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "conditional"
+            },
+            "condition": {
+              "type": "string"
+            },
+            "whenTrue": {
+              "$ref": "#/$defs/__schema3"
+            },
+            "whenFalse": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema3"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["type", "condition", "whenTrue", "whenFalse"],
           "additionalProperties": false
         }
       ]

@@ -42,10 +42,9 @@ describe("webFetchRuntime — integration", () => {
     expect(summaries[0].kind).toBe("client");
     expect(summaries[0].identity.name).toBe("getUser");
     expect(summaries[0].identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/users/1",
-      framework: "fetch",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "fetch",
     });
   });
 
@@ -67,8 +66,12 @@ describe("webFetchRuntime — integration", () => {
     });
     const summaries = adapter.extractAll();
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].identity.boundaryBinding?.method).toBe("POST");
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/users");
+    const sem = summaries[0].identity.boundaryBinding?.semantics;
+    expect(sem?.name).toBe("rest");
+    if (sem?.name === "rest") {
+      expect(sem.method).toBe("POST");
+      expect(sem.path).toBe("/users");
+    }
   });
 
   it("produces transitions from branches in the consumer function", () => {

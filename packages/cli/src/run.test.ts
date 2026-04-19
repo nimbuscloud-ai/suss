@@ -55,10 +55,9 @@ const minimalSummary: BehavioralSummary = {
     name: "h",
     exportPath: ["h"],
     boundaryBinding: {
-      protocol: "http",
-      method: "GET",
-      path: "/x",
-      framework: "test",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/x" },
+      recognition: "test",
     },
   },
   inputs: [],
@@ -88,10 +87,9 @@ const matchingConsumer: BehavioralSummary = {
     name: "c",
     exportPath: ["c"],
     boundaryBinding: {
-      protocol: "http",
-      method: "GET",
-      path: "/x",
-      framework: "test",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/x" },
+      recognition: "test",
     },
   },
   transitions: [

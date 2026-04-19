@@ -1,0 +1,63 @@
+Resources:
+  PetApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: PetStore
+      AuthenticationType: AMAZON_COGNITO_USER_POOLS
+
+  PetSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId:
+        Ref: PetApi
+      Definition: |
+        type Pet {
+          id: ID!
+          name: String!
+          species: String!
+        }
+        type Query {
+          pets: [Pet!]!
+          pet(id: ID!): Pet
+        }
+        type Mutation {
+          createPet(name: String!, species: String!): Pet!
+        }
+
+  PetsDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId:
+        Ref: PetApi
+      Name: PetsTable
+
+  QueryPetsResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: PetApi
+      TypeName: Query
+      FieldName: pets
+      DataSourceName:
+        Ref: PetsDataSource
+
+  QueryPetResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: PetApi
+      TypeName: Query
+      FieldName: pet
+      DataSourceName:
+        Ref: PetsDataSource
+      Kind: UNIT
+
+  MutationCreatePetResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: PetApi
+      TypeName: Mutation
+      FieldName: createPet
+      DataSourceName:
+        Ref: PetsDataSource

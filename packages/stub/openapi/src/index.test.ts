@@ -6,7 +6,18 @@ import { describe, expect, it } from "vitest";
 
 import { openApiFileToSummaries, openApiToSummaries } from "./index.js";
 
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "./index.js";
+
+function restMethodOf(summary: BehavioralSummary): string | null {
+  const s = summary.identity.boundaryBinding?.semantics;
+  return s?.name === "rest" ? s.method : null;
+}
+
+function restPathOf(summary: BehavioralSummary): string | null {
+  const s = summary.identity.boundaryBinding?.semantics;
+  return s?.name === "rest" ? s.path : null;
+}
 
 // ---------------------------------------------------------------------------
 // Fixture specs — hand-built so each test reads on one screen
@@ -109,10 +120,9 @@ describe("openApiToSummaries — basic mapping", () => {
     expect(s.kind).toBe("handler");
     expect(s.identity.name).toBe("getUser");
     expect(s.identity.boundaryBinding).toEqual({
-      protocol: "http",
-      method: "GET",
-      path: "/users/{id}",
-      framework: "openapi",
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "openapi",
     });
     expect(s.confidence).toEqual({ source: "stub", level: "high" });
   });
@@ -141,10 +151,10 @@ describe("openApiToSummaries — basic mapping", () => {
         t.output.statusCode.value === 200,
     );
     expect(ok).toBeDefined();
-    if (ok!.output.type !== "response") {
+    if (ok?.output.type !== "response") {
       throw new Error("expected response output");
     }
-    expect(ok!.output.body).toEqual({
+    expect(ok?.output.body).toEqual({
       type: "record",
       properties: {
         id: { type: "text" },
@@ -340,10 +350,10 @@ describe("openApiToSummaries — basic mapping", () => {
     const summaries = openApiToSummaries(spec);
     const def = summaries[0].transitions.find((t) => t.isDefault);
     expect(def).toBeDefined();
-    if (def!.output.type !== "response") {
+    if (def?.output.type !== "response") {
       throw new Error("expected response output");
     }
-    expect(def!.output.statusCode).toBeNull();
+    expect(def?.output.statusCode).toBeNull();
   });
 
   it("expands range status codes (2XX, 4XX, 5XX) into transitions with a statusRange annotation", () => {
@@ -423,9 +433,7 @@ describe("openApiToSummaries — basic mapping", () => {
       },
     };
     const summaries = openApiToSummaries(spec);
-    const methods = summaries
-      .map((s) => s.identity.boundaryBinding?.method)
-      .sort();
+    const methods = summaries.map((s) => restMethodOf(s)).sort();
     expect(methods).toEqual(["DELETE", "GET", "POST"]);
   });
 });
@@ -1066,7 +1074,7 @@ paths:
     try {
       const summaries = openApiFileToSummaries(file);
       expect(summaries).toHaveLength(1);
-      expect(summaries[0].identity.boundaryBinding?.path).toBe("/ping");
+      expect(restPathOf(summaries[0])).toBe("/ping");
     } finally {
       fs.rmSync(tmp, { recursive: true });
     }
@@ -1117,7 +1125,7 @@ describe("openApiToSummaries — pairing", () => {
     // pins the boundary key shape; cross-package wiring is exercised
     // separately in the checker package.
     const summaries = openApiToSummaries(minimalSpec);
-    expect(summaries[0].identity.boundaryBinding?.path).toBe("/users/{id}");
-    expect(summaries[0].identity.boundaryBinding?.method).toBe("GET");
+    expect(restPathOf(summaries[0])).toBe("/users/{id}");
+    expect(restMethodOf(summaries[0])).toBe("GET");
   });
 });

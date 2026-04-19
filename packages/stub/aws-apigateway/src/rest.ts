@@ -5,6 +5,8 @@
 // owns the AWS API Gateway v1 (REST) resource semantics: which platform
 // transitions appear given which configuration knobs.
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import {
   buildCorsPreflightSummary,
   FRAMEWORK,
@@ -92,8 +94,8 @@ function buildEndpointSummary(
 
   // Endpoints with no integration status codes AND no platform
   // contributions still need at least one transition so they pair
-  // with consumers. Default isDefault transition is the honest fallback
-  // — manifest didn't tell us what the integration returns.
+  // with consumers. Default isDefault transition is the under-specified
+  // fallback — manifest didn't tell us what the integration returns.
   if (transitions.length === 0) {
     transitions.push({
       id: `${ownerKey}:integration:default`,
@@ -124,12 +126,12 @@ function buildEndpointSummary(
     identity: {
       name: ownerKey,
       exportPath: null,
-      boundaryBinding: {
-        protocol: PROTOCOL,
+      boundaryBinding: restBinding({
+        transport: PROTOCOL,
         method,
         path: endpoint.path,
-        framework: FRAMEWORK,
-      },
+        recognition: FRAMEWORK,
+      }),
     },
     inputs: [],
     transitions,

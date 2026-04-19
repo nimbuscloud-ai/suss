@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 
 import type {
   BehavioralSummary,
+  BoundaryBinding,
   CodeUnitKind,
   ConfidenceInfo,
   Effect,
@@ -22,6 +23,8 @@ export { httpRouteDiscovery } from "./pack-helpers.js";
 export type {
   BindingExtraction,
   ContractPattern,
+  DiscoveredSubUnit,
+  DiscoveredSubUnitParent,
   DiscoveryMatch,
   DiscoveryPattern,
   InputMappingPattern,
@@ -163,12 +166,13 @@ export interface RawCodeStructure {
     exportName: string | null;
     exportPath: string[] | null;
   };
-  boundaryBinding: {
-    protocol: string;
-    method?: string;
-    path?: string;
-    framework: string;
-  } | null;
+  /**
+   * Three-layer boundary description (`transport`, `semantics`,
+   * `recognition`). See `@suss/behavioral-ir`'s `BoundaryBinding`.
+   * Null when the unit participates in no cross-unit boundary —
+   * helpers, pure utilities, and anything the adapter can't place.
+   */
+  boundaryBinding: BoundaryBinding | null;
   parameters: RawParameter[];
   branches: RawBranch[];
   dependencyCalls: RawDependencyCall[];
@@ -192,6 +196,25 @@ export interface RawCodeStructure {
    * `summary.metadata.http.statusAccessors`.
    */
   statusAccessors?: string[];
+  /**
+   * Raw GraphQL document source attached to consumer-side graphql
+   * summaries (the inner text of a `useQuery(gql\`...\`)` call).
+   * Assembled into `summary.metadata.graphql.document` for the
+   * checker's pairing layer to parse. Deliberately untouched here —
+   * the extractor has no dependency on graphql-js; parsing happens
+   * at check time.
+   */
+  graphqlDocument?: string;
+  /**
+   * Raw GraphQL schema SDL attached to provider-side resolver
+   * summaries. For schema-first stubs (AppSync), the SDL IS the
+   * schema. For code-first frameworks (Apollo Server), the SDL
+   * comes from the `typeDefs` config option when statically
+   * resolvable. Surfaced as `summary.metadata.graphql.schemaSdl`
+   * so the checker can use the return-type field set when pairing
+   * nested consumer selections.
+   */
+  graphqlSchemaSdl?: string;
 }
 
 // =============================================================================
@@ -293,6 +316,7 @@ export function assembleSummary(
   const confidence = assessConfidence(raw);
   const inputs: Input[] = raw.parameters.map(paramToInput);
 
+  const metadata = buildMetadata(raw);
   return {
     kind: raw.identity.kind,
     location: {
@@ -309,19 +333,31 @@ export function assembleSummary(
     transitions,
     gaps,
     confidence,
-    ...(buildHttpMetadata(raw) !== null
-      ? { metadata: { http: buildHttpMetadata(raw) } }
-      : {}),
+    ...(metadata !== null ? { metadata } : {}),
   };
 }
 
 /**
- * HTTP-scoped summary metadata, nested under `metadata.http` so the key
- * space is explicitly scoped to HTTP boundaries. A future GraphQL /
- * Lambda-invoke / queue pack would use its own sibling namespace (e.g.
- * `metadata.graphql.*`, `metadata.lambda.*`) without collision. See
- * `docs/boundary-semantics.md` for the broader model.
+ * Assemble summary-level metadata, namespaced by semantics family.
+ * `metadata.http.*` for REST shapes (declared contracts, body/status
+ * accessors); `metadata.graphql.*` for GraphQL shapes (operation
+ * documents, eventually per-variable type info). See
+ * `docs/boundary-semantics.md` for the broader model — each semantics
+ * gets its own metadata key space so they can evolve independently.
  */
+function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
+  const metadata: Record<string, unknown> = {};
+  const http = buildHttpMetadata(raw);
+  if (http !== null) {
+    metadata.http = http;
+  }
+  const graphql = buildGraphqlMetadata(raw);
+  if (graphql !== null) {
+    metadata.graphql = graphql;
+  }
+  return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
 function buildHttpMetadata(
   raw: RawCodeStructure,
 ): Record<string, unknown> | null {
@@ -336,6 +372,19 @@ function buildHttpMetadata(
     http.statusAccessors = raw.statusAccessors;
   }
   return Object.keys(http).length > 0 ? http : null;
+}
+
+function buildGraphqlMetadata(
+  raw: RawCodeStructure,
+): Record<string, unknown> | null {
+  const graphql: Record<string, unknown> = {};
+  if (raw.graphqlDocument !== undefined) {
+    graphql.document = raw.graphqlDocument;
+  }
+  if (raw.graphqlSchemaSdl !== undefined) {
+    graphql.schemaSdl = raw.graphqlSchemaSdl;
+  }
+  return Object.keys(graphql).length > 0 ? graphql : null;
 }
 
 // =============================================================================

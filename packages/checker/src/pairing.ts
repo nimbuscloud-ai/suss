@@ -36,17 +36,32 @@ export function normalizePath(path: string): string {
 
 /**
  * Compute a stable string key from a boundary binding for grouping.
- * Returns null when the binding has no path (can't be paired automatically).
+ * Dispatches on `semantics.name`:
+ *   - `rest` → `"METHOD /normalized/path"` (null if method or path empty)
+ *   - `graphql-resolver` → `"gql:<TypeName>.<fieldName>"` (resolver-level
+ *     pairing — a consumer operation that targets the same resolver
+ *     would key here too once the resolver-selection mapping lands).
+ *   - `graphql-operation` → null for v0 (operation-level pairing needs
+ *     to map to N resolver-level keys; deferred with the consumer arc).
+ *   - `function-call` → null (in-process units don't pair automatically).
+ *
+ * When a second semantics with a richer pairing rule lands, this
+ * collapses into a semantics-dispatch lookup instead of inline narrows.
  */
 export function boundaryKey(binding: BoundaryBinding): string | null {
-  if (binding.path === undefined) {
-    return null;
+  const semantics = binding.semantics;
+  if (semantics.name === "rest") {
+    if (semantics.method === "" || semantics.path === "") {
+      return null;
+    }
+    const method = semantics.method.toUpperCase();
+    const path = normalizePath(semantics.path);
+    return `${method} ${path}`;
   }
-
-  const method = (binding.method ?? "ANY").toUpperCase();
-  const path = normalizePath(binding.path);
-
-  return `${method} ${path}`;
+  if (semantics.name === "graphql-resolver") {
+    return `gql:${semantics.typeName}.${semantics.fieldName}`;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

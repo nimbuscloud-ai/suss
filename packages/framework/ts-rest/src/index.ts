@@ -5,6 +5,7 @@ import type { PatternPack } from "@suss/extractor";
 export function tsRestFramework(): PatternPack {
   return {
     name: "ts-rest",
+    protocol: "http",
     languages: ["typescript"],
 
     discovery: [

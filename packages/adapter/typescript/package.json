@@ -48,6 +48,7 @@
   "dependencies": {
     "@suss/behavioral-ir": "*",
     "@suss/extractor": "*",
+    "graphql": "^16.8.0",
     "ts-morph": "^23.0.0"
   },
   "devDependencies": {

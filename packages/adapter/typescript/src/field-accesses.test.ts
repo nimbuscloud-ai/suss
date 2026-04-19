@@ -104,6 +104,7 @@ describe("findResponseVariable", () => {
 
 const fetchPack: PatternPack = {
   name: "fetch",
+  protocol: "http",
   languages: ["typescript"],
   discovery: [
     {

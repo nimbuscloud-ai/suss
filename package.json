@@ -23,11 +23,15 @@
     "packages/framework/react",
     "packages/framework/express",
     "packages/framework/fastify",
+    "packages/framework/apollo",
     "packages/runtime/web",
     "packages/runtime/axios",
+    "packages/runtime/apollo-client",
     "packages/stub/openapi",
     "packages/stub/aws-apigateway",
     "packages/stub/cloudformation",
+    "packages/stub/storybook",
+    "packages/stub/appsync",
     "packages/checker",
     "packages/cli"
   ],
@@ -39,7 +43,8 @@
     "@vitest/coverage-v8": "^4.0.0",
     "vitest": "^4.0.0",
     "tsup": "^8.0.0",
-    "turbo": "latest"
+    "turbo": "latest",
+    "vitepress": "^1.5.0"
   },
   "engines": {
     "node": ">=22"
@@ -54,7 +59,10 @@
     "typecheck": "turbo typecheck",
     "prepare": "husky",
     "badges": "node scripts/generate-coverage-badges.mjs",
-    "test:badges": "npm test && npm run badges"
+    "test:badges": "npm test && npm run badges",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "lint-staged": {
     "*": [

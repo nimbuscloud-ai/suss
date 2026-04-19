@@ -229,12 +229,14 @@ function formatGap(g: Gap): string {
 function renderSummary(summary: BehavioralSummary): string {
   const lines: string[] = [];
   const binding = summary.identity.boundaryBinding;
+  const rest =
+    binding !== null && binding.semantics.name === "rest"
+      ? binding.semantics
+      : null;
 
   // Header: endpoint or function name
-  if (binding?.method || binding?.path) {
-    const method = binding.method ?? "";
-    const endpoint = binding.path ?? "";
-    lines.push(`${method} ${endpoint}`.trim());
+  if (rest !== null && (rest.method !== "" || rest.path !== "")) {
+    lines.push(`${rest.method} ${rest.path}`.trim());
   } else {
     lines.push(summary.identity.name);
   }
@@ -242,7 +244,7 @@ function renderSummary(summary: BehavioralSummary): string {
   // Metadata line
   const meta: string[] = [];
   if (binding !== null) {
-    meta.push(`${binding.framework} ${summary.kind}`);
+    meta.push(`${binding.recognition} ${summary.kind}`);
   }
   meta.push(`${summary.location.file}:${summary.location.range.start}`);
   if (summary.confidence.level !== "high") {
@@ -326,12 +328,30 @@ export function inspect(options: InspectOptions): void {
 
 function summaryKey(s: BehavioralSummary): string {
   const binding = s.identity.boundaryBinding;
-  if (binding?.method || binding?.path) {
-    const method = binding.method ?? "*";
-    const endpoint = binding.path ?? "*";
-    return `${s.kind}:${method} ${endpoint}`;
+  if (binding !== null && binding.semantics.name === "rest") {
+    const { method, path } = binding.semantics;
+    if (method !== "" || path !== "") {
+      return `${s.kind}:${method || "*"} ${path || "*"}`;
+    }
   }
   return `${s.kind}::${s.identity.name}`;
+}
+
+/**
+ * Human-readable `METHOD path` for a REST-shaped binding, or null
+ * when the summary has no placeable REST routing (function-call
+ * semantics, or REST with empty method/path from a partial
+ * extraction).
+ */
+function restKey(s: BehavioralSummary): string | null {
+  const sem = s.identity.boundaryBinding?.semantics;
+  if (sem?.name !== "rest") {
+    return null;
+  }
+  if (sem.method === "" && sem.path === "") {
+    return null;
+  }
+  return `${sem.method} ${sem.path}`;
 }
 
 function renderTransitionShort(t: Transition): string {
@@ -359,7 +379,7 @@ function renderDiff(
 
   const binding = before.identity.boundaryBinding;
   if (binding !== null) {
-    lines.push(`  ${binding.framework} ${before.kind}`);
+    lines.push(`  ${binding.recognition} ${before.kind}`);
   }
 
   lines.push(`  ${total} change${total === 1 ? "" : "s"}`);
@@ -529,15 +549,13 @@ export function inspectDir(options: DirOptions): void {
     for (const [key, group] of pairsByKey) {
       process.stdout.write(`  ${key}\n`);
       for (const p of group.providers) {
-        const binding = p.identity.boundaryBinding;
-        const fw = binding?.framework ?? "?";
+        const fw = p.identity.boundaryBinding?.recognition ?? "?";
         process.stdout.write(
           `    provider: ${p.identity.name} (${fw}, ${p.transitions.length} transitions)\n`,
         );
       }
       for (const c of group.consumers) {
-        const binding = c.identity.boundaryBinding;
-        const fw = binding?.framework ?? "?";
+        const fw = c.identity.boundaryBinding?.recognition ?? "?";
         process.stdout.write(
           `    client:   ${c.identity.name} (${fw}, ${c.transitions.length} transitions)\n`,
         );
@@ -555,19 +573,13 @@ export function inspectDir(options: DirOptions): void {
     }
     process.stdout.write(`${unmatchedCount} unmatched:\n`);
     for (const p of providers) {
-      const key =
-        p.identity.boundaryBinding?.method && p.identity.boundaryBinding.path
-          ? `${p.identity.boundaryBinding.method} ${p.identity.boundaryBinding.path}`
-          : "no path";
+      const key = restKey(p) ?? "no path";
       process.stdout.write(
         `  ${p.identity.name} (${key}) — no matching client\n`,
       );
     }
     for (const c of consumers) {
-      const key =
-        c.identity.boundaryBinding?.method && c.identity.boundaryBinding.path
-          ? `${c.identity.boundaryBinding.method} ${c.identity.boundaryBinding.path}`
-          : "no path";
+      const key = restKey(c) ?? "no path";
       process.stdout.write(
         `  ${c.identity.name} (${key}) — no matching provider\n`,
       );

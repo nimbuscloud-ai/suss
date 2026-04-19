@@ -48,7 +48,8 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "*"
+    "@suss/behavioral-ir": "*",
+    "graphql": "^16.8.0"
   },
   "devDependencies": {
     "tsup": "*",

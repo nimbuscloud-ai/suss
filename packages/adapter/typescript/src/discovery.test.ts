@@ -942,3 +942,672 @@ describe("multiple patterns combined", () => {
     expect(units).toHaveLength(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// resolverMap discovery
+// ---------------------------------------------------------------------------
+
+function makeResolverMapPattern(
+  overrides: Partial<
+    Extract<DiscoveryPattern["match"], { type: "resolverMap" }>
+  > = {},
+): DiscoveryPattern {
+  return {
+    kind: "resolver",
+    match: {
+      type: "resolverMap",
+      importModule: "@apollo/server",
+      importName: "ApolloServer",
+      mapProperty: "resolvers",
+      ...overrides,
+    },
+  };
+}
+
+describe("resolverMap discovery", () => {
+  it("finds resolvers via shorthand `new ApolloServer({ resolvers })`", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      const resolvers = {
+        Query: { ping: () => "pong", users: async () => [] },
+        Mutation: { signIn: async () => ({ token: "x" }) },
+      };
+      new ApolloServer({ typeDefs: "", resolvers });
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const names = units.map((u) => u.name).sort();
+    expect(names).toEqual(["Mutation.signIn", "Query.ping", "Query.users"]);
+    for (const u of units) {
+      expect(u.kind).toBe("resolver");
+      expect(u.resolverInfo).toBeDefined();
+    }
+    const ping = units.find((u) => u.name === "Query.ping");
+    expect(ping?.resolverInfo).toEqual({
+      typeName: "Query",
+      fieldName: "ping",
+    });
+  });
+
+  it("finds resolvers via inline `resolvers: { ... }`", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      new ApolloServer({
+        typeDefs: "",
+        resolvers: {
+          Query: { ping: () => "pong" },
+        },
+      });
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
+  it("peels `satisfies Resolvers` around the resolvers const", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      type R = Record<string, Record<string, (...a: unknown[]) => unknown>>;
+      const resolvers = {
+        Query: { ping: () => "pong" },
+      } satisfies R;
+      new ApolloServer({ typeDefs: "", resolvers });
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
+  it("discovers method-shorthand resolver functions", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      new ApolloServer({
+        typeDefs: "",
+        resolvers: {
+          Mutation: {
+            async signIn(_: unknown, args: { name: string }) {
+              return { token: args.name };
+            },
+          },
+        },
+      });
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    expect(units.map((u) => u.name)).toEqual(["Mutation.signIn"]);
+  });
+
+  it("honors excludeTypes", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      new ApolloServer({
+        typeDefs: "",
+        resolvers: {
+          Query:        { ping: () => "pong" },
+          Subscription: { onTick: () => "tick" },
+        },
+      });
+    `,
+    );
+    const units = discoverUnits(file, [
+      makeResolverMapPattern({ excludeTypes: ["Subscription"] }),
+    ]);
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
+  it("skips non-function values inside a type's field map", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      new ApolloServer({
+        typeDefs: "",
+        resolvers: {
+          Query: {
+            ping: () => "pong",
+            banner: "HELLO",       // string, not a function
+          },
+        },
+      });
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
+  it("returns nothing when the ApolloServer import is absent", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      const resolvers = { Query: { ping: () => "pong" } };
+      const server = { resolvers };
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("returns nothing when the constructor arg isn't an object literal", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      declare const config: any;
+      new ApolloServer(config);
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("returns nothing when resolvers is absent from the config", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      new ApolloServer({ typeDefs: "" });
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("returns nothing when resolvers can't be traced to an object literal", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      declare const dynamicResolvers: any;
+      new ApolloServer({ typeDefs: "", resolvers: dynamicResolvers });
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("also matches a bare call (`apolloServer({ resolvers: {...} })`), not just `new`", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      ApolloServer({
+        typeDefs: "",
+        resolvers: { Query: { ping: () => "pong" } },
+      });
+    `,
+    );
+    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// graphqlHookCall discovery (consumer side — Apollo client)
+// ---------------------------------------------------------------------------
+
+function makeGraphqlHookPattern(
+  overrides: Partial<
+    Extract<DiscoveryPattern["match"], { type: "graphqlHookCall" }>
+  > = {},
+): DiscoveryPattern {
+  return {
+    kind: "client",
+    match: {
+      type: "graphqlHookCall",
+      importModule: "@apollo/client",
+      hookNames: ["useQuery", "useMutation", "useSubscription"],
+      ...overrides,
+    },
+  };
+}
+
+describe("graphqlHookCall discovery", () => {
+  it("extracts operation identity from an inline gql tagged template", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      export function usePet() {
+        return useQuery(gql\`query GetPet { pet { id } }\`);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo).toMatchObject({
+      operationType: "query",
+      operationName: "GetPet",
+    });
+    expect(units[0].operationInfo?.document).toContain("query GetPet");
+    expect(units[0].kind).toBe("client");
+  });
+
+  it("chases a const-bound gql document to its declaration", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const GET_PET = gql\`query GetPet { pet { id } }\`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo?.operationName).toBe("GetPet");
+  });
+
+  it("records mutation operationType", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useMutation } from "@apollo/client";
+      export function useCreatePet() {
+        return useMutation(gql\`mutation CreatePet { createPet { id } }\`);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo).toMatchObject({
+      operationType: "mutation",
+      operationName: "CreatePet",
+    });
+  });
+
+  it("records subscription operationType", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useSubscription } from "@apollo/client";
+      export function useTicks() {
+        return useSubscription(gql\`subscription OnTick { tick }\`);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.operationType).toBe("subscription");
+  });
+
+  it("handles anonymous queries (no operation name)", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      export function usePing() {
+        return useQuery(gql\`query { ping }\`);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo).toMatchObject({ operationType: "query" });
+    expect(units[0].operationInfo?.operationName).toBeUndefined();
+    expect(units[0].name).toBe("usePing.<anon-query>");
+  });
+
+  it("handles the shorthand `{ ... }` anonymous query", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      export function usePing() {
+        return useQuery(gql\`{ ping }\`);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo).toMatchObject({ operationType: "query" });
+  });
+
+  it("honors import aliases", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery as useApolloQuery } from "@apollo/client";
+      export function usePet() {
+        return useApolloQuery(gql\`query GetPet { pet { id } }\`);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].callSite?.methodName).toBe("useQuery"); // canonical preserved
+  });
+
+  it("returns [] when the module isn't imported", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      declare function useQuery(doc: unknown): unknown;
+      export function usePet() {
+        return useQuery({ query: "x" });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("skips calls whose first argument isn't a gql-tagged template", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      declare const doc: unknown;
+      export function usePet() {
+        return useQuery(doc as any);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("skips tagged templates whose tag isn't `gql`", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      function css(strings: TemplateStringsArray) { return strings[0]; }
+      export function usePet() {
+        return useQuery(css\`query GetPet { pet { id } }\` as any);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("skips hook calls with no arguments", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      export function usePet() {
+        return (useQuery as any)();
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("skips calls whose enclosing scope isn't a function", () => {
+    // Top-level `useQuery(GET)` not inside any function — rare but
+    // possible in a module-scope setup. Discovery should bail rather
+    // than attach to the module.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const GET = gql\`query G { a }\`;
+      useQuery(GET);
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("names via variable declaration when the enclosing function is an arrow", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      export const usePet = () => useQuery(gql\`query GetPet { pet { id } }\`);
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].name).toBe("usePet.GetPet");
+  });
+
+  it("surfaces variable declarations from the operation header", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      export function usePet() {
+        return useQuery(gql\`query GetPet($id: ID!, $name: String) { pet(id: $id) { id } }\`);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.variables).toEqual([
+      { name: "id", type: "ID!", required: true },
+      { name: "name", type: "String", required: false },
+    ]);
+  });
+
+  it("captures nested selection set per root field", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      export function usePet() {
+        return useQuery(gql\`query GetPet { pet { id name } pets { count } }\`);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.rootFields).toEqual(["pet", "pets"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// graphqlImperativeCall discovery
+// ---------------------------------------------------------------------------
+
+function makeImperativePattern(): DiscoveryPattern {
+  return {
+    kind: "client",
+    match: {
+      type: "graphqlImperativeCall",
+      importModule: "@apollo/client",
+      importName: "ApolloClient",
+      methods: [
+        {
+          methodName: "query",
+          documentKey: "query",
+          operationType: "query",
+        },
+        {
+          methodName: "mutate",
+          documentKey: "mutation",
+          operationType: "mutation",
+        },
+      ],
+    },
+  };
+}
+
+describe("graphqlImperativeCall discovery", () => {
+  it("finds client.query({ query: gql`...` })", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      declare const client: ApolloClient<unknown>;
+      export async function loadPet() {
+        return client.query({ query: gql\`query LoadPet { pet { id } }\` });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("loadPet.LoadPet");
+    expect(units[0].operationInfo?.operationType).toBe("query");
+  });
+
+  it("finds client.mutate({ mutation: gql`...` })", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      declare const client: ApolloClient<unknown>;
+      export async function createPet() {
+        return client.mutate({ mutation: gql\`mutation CreatePet { createPet { id } }\` });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units[0].operationInfo?.operationType).toBe("mutation");
+    expect(units[0].operationInfo?.operationName).toBe("CreatePet");
+  });
+
+  it("resolves a const-bound document to its declaration", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      const LOAD = gql\`query LoadPet { pet { id } }\`;
+      declare const client: ApolloClient<unknown>;
+      export async function loadPet() {
+        return client.query({ query: LOAD });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units[0].operationInfo?.operationName).toBe("LoadPet");
+  });
+
+  it("returns [] when ApolloClient isn't imported", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql } from "@apollo/client";
+      declare const client: { query: (o: unknown) => Promise<unknown> };
+      export async function loadPet() {
+        return client.query({ query: gql\`query LoadPet { pet { id } }\` });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("skips method calls whose method name isn't in the spec", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      declare const client: any;
+      export async function run() {
+        return client.somethingElse({ query: gql\`query G { g }\` });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("skips calls missing the document-key property", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      declare const client: any;
+      export async function run() {
+        return client.query({ variables: {} } as any);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units).toEqual([]);
+  });
+
+  it("uses the method spec's operationType for anonymous docs", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      declare const client: ApolloClient<unknown>;
+      export async function loadPet() {
+        return client.query({ query: gql\`{ pet { id } }\` });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    // Anonymous doc — method spec declares operationType: "query".
+    expect(units[0].operationInfo?.operationType).toBe("query");
+    expect(units[0].operationInfo?.operationName).toBeUndefined();
+  });
+
+  it("resolves shorthand `{ query }` when the binding is a gql-tagged const", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      const query = gql\`query ShorthandQ { pet { id } }\`;
+      declare const client: ApolloClient<unknown>;
+      export async function run() {
+        return client.query({ query });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units[0].operationInfo?.operationName).toBe("ShorthandQ");
+  });
+
+  it("names an anonymous-arrow-in-IIFE caller as <anon>", () => {
+    // Exercises `functionNameOrAnon`'s fall-through branch — the
+    // enclosing function is an arrow whose parent is NOT a
+    // variable declaration (e.g. passed inline to an IIFE).
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      declare const client: ApolloClient<unknown>;
+      (async () => {
+        await client.query({ query: gql\`query IIFE { pet { id } }\` });
+      })();
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("<anon>.IIFE");
+  });
+});

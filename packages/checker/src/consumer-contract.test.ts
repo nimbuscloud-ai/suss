@@ -22,7 +22,7 @@ const unknown: TypeShape = { type: "unknown" };
 function consumerWithFields(
   name: string,
   statusCode: number,
-  fields: Record<string, TypeShape>,
+  _fields: Record<string, TypeShape>,
 ) {
   return consumer(name, [
     transition("ct", {

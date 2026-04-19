@@ -76,8 +76,9 @@ describe("reactRouterFramework — integration", () => {
     expect(kinds).toEqual(["action", "loader"]);
     for (const s of summaries) {
       expect(s.identity.boundaryBinding).toEqual({
-        protocol: "http",
-        framework: "react-router",
+        transport: "http",
+        semantics: { name: "function-call" },
+        recognition: "react-router",
       });
     }
   });
@@ -92,14 +93,14 @@ describe("reactRouterFramework — integration", () => {
     //   3. json({ user })                                 → default response, 200
     // json()/data() default to 200, redirect() defaults to 302 via
     // the pack's defaultStatusCode extraction.
-    expect(loader!.transitions).toHaveLength(3);
-    const statuses = loader!.transitions.map((t) =>
+    expect(loader?.transitions).toHaveLength(3);
+    const statuses = loader?.transitions.map((t) =>
       t.output.type === "response" && t.output.statusCode?.type === "literal"
         ? t.output.statusCode.value
         : null,
     );
     expect(statuses).toEqual([200, 302, 200]);
-    expect(loader!.transitions.map((t) => t.isDefault)).toEqual([
+    expect(loader?.transitions.map((t) => t.isDefault)).toEqual([
       false,
       false,
       true,
@@ -109,8 +110,11 @@ describe("reactRouterFramework — integration", () => {
   it("loader uses singleObjectParam mapping — params destructure is the sole input", () => {
     const loader = summaries.find((s) => s.kind === "loader");
     expect(loader).toBeDefined();
-    expect(loader!.inputs).toHaveLength(1);
-    const [input] = loader!.inputs;
+    if (!loader) {
+      throw new Error("loader summary missing");
+    }
+    expect(loader.inputs).toHaveLength(1);
+    const [input] = loader.inputs;
     expect(input.type).toBe("parameter");
     if (input.type === "parameter") {
       expect(input.position).toBe(0);
@@ -125,9 +129,12 @@ describe("reactRouterFramework — integration", () => {
     // Two terminals:
     //   1. json({ error: "name required" }, { status: 400 })  → response, null status
     //   2. redirect(`/users/${params.id}`)                    → default response
-    expect(action!.transitions).toHaveLength(2);
-    expect(action!.transitions.map((t) => t.isDefault)).toEqual([false, true]);
-    for (const t of action!.transitions) {
+    if (!action) {
+      throw new Error("action summary missing");
+    }
+    expect(action.transitions).toHaveLength(2);
+    expect(action.transitions.map((t) => t.isDefault)).toEqual([false, true]);
+    for (const t of action.transitions) {
       expect(t.output.type).toBe("response");
     }
   });

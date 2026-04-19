@@ -100,4 +100,55 @@ describe("stub CLI command", () => {
       }),
     ).rejects.toThrow(/Unknown stub source/);
   });
+
+  it("emits story summaries from a Storybook CSF file via --from storybook", async () => {
+    const storiesFile = path.resolve(
+      __dirname,
+      "../../../fixtures/storybook/Button.stories.tsx",
+    );
+    const out: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      out.push(chunk.toString());
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const summaries = await stub({ from: "storybook", spec: storiesFile });
+      expect(summaries.length).toBeGreaterThan(0);
+      const names = summaries.map((s) => s.identity.name).sort();
+      expect(names).toContain("Button.Primary");
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  });
+
+  it("walks a directory for `.stories.ts[x]` files when --from storybook targets a dir", async () => {
+    const storiesDir = path.resolve(__dirname, "../../../fixtures/storybook");
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    try {
+      const summaries = await stub({ from: "storybook", spec: storiesDir });
+      // Multiple story files in the directory — expect multiple
+      // component prefixes in the output.
+      const components = new Set(
+        summaries.map(
+          (s) =>
+            (
+              s.metadata?.component as
+                | { storybook?: { component?: string } }
+                | undefined
+            )?.storybook?.component,
+        ),
+      );
+      expect(components.size).toBeGreaterThan(1);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  });
+
+  it("rejects a storybook spec path that doesn't exist", async () => {
+    await expect(
+      stub({ from: "storybook", spec: "/nonexistent/Stories.tsx" }),
+    ).rejects.toThrow(/No stories found/);
+  });
 });
