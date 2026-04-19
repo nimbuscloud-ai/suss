@@ -446,4 +446,91 @@ describe("packageExports — end-to-end summary", () => {
     expect(binding?.transport).toBe("in-process");
     expect(binding?.recognition).toBe("package-exports:@ex/lib");
   });
+
+  it("captures return-expression shape on returnStatement terminals", () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/lib",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      {
+        relPath: "tsconfig.json",
+        content: JSON.stringify({
+          compilerOptions: {
+            target: "es2022",
+            module: "esnext",
+            moduleResolution: "bundler",
+            strict: true,
+          },
+          include: ["src/**/*"],
+        }),
+      },
+      {
+        relPath: "src/index.ts",
+        content: `
+          export function classify(x: number) {
+            if (x < 0) {
+              return "negative";
+            }
+            if (x === 0) {
+              return "zero";
+            }
+            return "positive";
+          }
+
+          export function wrap(name: string) {
+            return { kind: "box", name };
+          }
+        `,
+      },
+    ]);
+
+    const pkgJson = path.join(root, "package.json");
+    const pack: PatternPack = {
+      name: "package-exports:@ex/lib",
+      languages: ["typescript"],
+      protocol: "in-process",
+      discovery: [
+        {
+          kind: "library",
+          match: { type: "packageExports", packageJsonPath: pkgJson },
+        },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: {
+        type: "positionalParams",
+        params: [{ position: 0, role: "arg0" }],
+      },
+    };
+
+    const adapter = createTypeScriptAdapter({
+      tsConfigFilePath: path.join(root, "tsconfig.json"),
+      frameworks: [pack],
+    });
+    const summaries = adapter.extractAll();
+
+    const classify = summaries.find((s) => s.identity.name === "classify");
+    const returnValues = classify?.transitions.map((t) =>
+      t.output.type === "return" ? t.output.value : null,
+    );
+    // Each branch returns a distinct string literal — without the shape
+    // fix these would all be null.
+    expect(returnValues).toEqual([
+      { type: "literal", value: "negative" },
+      { type: "literal", value: "zero" },
+      { type: "literal", value: "positive" },
+    ]);
+
+    const wrap = summaries.find((s) => s.identity.name === "wrap");
+    const wrapReturn = wrap?.transitions[0].output;
+    if (wrapReturn?.type !== "return") {
+      throw new Error("expected return output");
+    }
+    expect(wrapReturn.value?.type).toBe("record");
+  });
 });
