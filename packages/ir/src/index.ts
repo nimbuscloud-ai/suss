@@ -249,6 +249,7 @@ export const BOUNDARY_ROLE: Record<CodeUnitKind, BoundaryRole> = {
   library: "provider",
   client: "consumer",
   consumer: "consumer",
+  caller: "consumer",
 };
 
 // ---------------------------------------------------------------------------

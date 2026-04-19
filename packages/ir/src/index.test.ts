@@ -575,6 +575,7 @@ describe("BOUNDARY_ROLE", () => {
       "client",
       "worker",
       "library",
+      "caller",
     ];
     for (const kind of allKinds) {
       expect(BOUNDARY_ROLE[kind]).toMatch(/^(provider|consumer)$/);
@@ -588,8 +589,9 @@ describe("BOUNDARY_ROLE", () => {
     expect(BOUNDARY_ROLE.library).toBe("provider");
   });
 
-  it("classifies client and consumer as consumers", () => {
+  it("classifies client, consumer, and caller as consumers", () => {
     expect(BOUNDARY_ROLE.client).toBe("consumer");
     expect(BOUNDARY_ROLE.consumer).toBe("consumer");
+    expect(BOUNDARY_ROLE.caller).toBe("consumer");
   });
 });
