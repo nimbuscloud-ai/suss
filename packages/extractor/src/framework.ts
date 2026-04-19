@@ -152,6 +152,48 @@ export type DiscoveryMatch =
         documentKey: string;
         operationType: "query" | "mutation" | "subscription";
       }>;
+    }
+  | {
+      /**
+       * Treats a TypeScript package's public export surface as a
+       * boundary. The adapter reads `package.json` at
+       * `packageJsonPath`, resolves each reachable entry point
+       * (root `.` and any sub-path `exports`), follows barrel
+       * re-exports, and emits one discovered unit per exported
+       * function — provider side of an in-process `function-call`
+       * boundary.
+       *
+       * Produced bindings carry identity
+       * `{ transport: "in-process",
+       *    semantics: { name: "function-call",
+       *                 package: <pkg.name>,
+       *                 exportPath: [...] },
+       *    recognition: <pack.name> }`.
+       *
+       * Sub-path exports identify as e.g.
+       * `@suss/behavioral-ir/schemas::BehavioralSummarySchema` —
+       * `exportPath = ["schemas", "BehavioralSummarySchema"]`.
+       * Root exports omit the sub-path segment.
+       *
+       * v0 scope: resolves `types` / `default` / `import` conditions
+       * on `exports`, falls back to `types` + `main` + `module`
+       * when no `exports` field is set. Pattern exports (`./utils/*`)
+       * and `development`-conditional resolution are deferred.
+       */
+      type: "packageExports";
+      /** Absolute path to the package's `package.json`. */
+      packageJsonPath: string;
+      /**
+       * Restrict to these `exports` keys (without leading `./`).
+       * The root export is keyed `"."`. Unset means all resolvable
+       * sub-paths.
+       */
+      subPaths?: string[];
+      /**
+       * Export names to skip — typically `["default"]` when a pack
+       * wants to treat default exports separately or not at all.
+       */
+      excludeNames?: string[];
     };
 
 export type BindingExtraction = {
