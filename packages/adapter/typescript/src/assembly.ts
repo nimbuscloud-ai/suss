@@ -1,12 +1,11 @@
 // assembly.ts — Compose Steps 1-4 into RawBranch[] (Task 2.5)
 
 import {
-  type ConditionInfo,
   collectAncestorConditionInfos,
   collectEarlyReturnConditionInfos,
+  conditionInfoToRawCondition,
 } from "./conditions.js";
 import { extractInvocationEffects } from "./invocation-effects.js";
-import { parseConditionExpression } from "./predicates.js";
 import {
   findTerminals,
   functionMayFallThrough,
@@ -24,18 +23,6 @@ import type { FunctionRoot } from "./conditions.js";
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-function conditionInfoToRawCondition(info: ConditionInfo): RawCondition {
-  const structured =
-    info.expression !== null ? parseConditionExpression(info.expression) : null;
-
-  return {
-    sourceText: info.sourceText,
-    structured,
-    polarity: info.polarity,
-    source: info.source,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Main exported function

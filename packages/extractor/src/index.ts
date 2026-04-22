@@ -118,6 +118,14 @@ export type RawEffect =
       callee: string;
       args: EffectArg[];
       async: boolean;
+      /**
+       * Ancestor if/switch/ternary conditions that gate reaching this
+       * call. Populated for calls nested inside conditional blocks or
+       * loop bodies; empty for top-level (always-fires) calls.
+       * Converts to `Effect.preconditions: Predicate[]` in the IR —
+       * same RawCondition → Predicate pipeline transitions use.
+       */
+      preconditions?: RawCondition[];
     }
   | { type: "emission"; event: string }
   | { type: "stateChange"; variable: string };
@@ -309,20 +317,9 @@ export function assembleSummary(
 ): BehavioralSummary {
   const transitions: Transition[] = raw.branches.map((branch) => {
     // Conditions with structured: null become opaque predicates — never silently dropped.
-    const conditions: Predicate[] = branch.conditions.map((c) => {
-      const pred: Predicate =
-        c.structured !== null
-          ? c.structured
-          : {
-              type: "opaque",
-              sourceText: c.sourceText,
-              reason: "complexExpression",
-            };
-
-      return c.polarity === "negative"
-        ? { type: "negation", operand: pred }
-        : pred;
-    });
+    const conditions: Predicate[] = branch.conditions.map(
+      rawConditionToPredicate,
+    );
 
     const transition: Transition = {
       id: makeTransitionId(raw.identity.name, branch),
@@ -577,6 +574,24 @@ export function terminalToOutput(terminal: RawTerminal): Output {
   return terminalConverters[terminal.kind](terminal);
 }
 
+/**
+ * Convert a RawCondition (adapter-level, carries structured Predicate
+ * when available or source-text fallback) to the IR's Predicate shape.
+ * Mirrors the conversion used for transition conditions — opaque fallback
+ * when structured is null, negation wrapper when polarity is negative.
+ */
+function rawConditionToPredicate(c: RawCondition): Predicate {
+  const pred: Predicate =
+    c.structured !== null
+      ? c.structured
+      : {
+          type: "opaque",
+          sourceText: c.sourceText,
+          reason: "complexExpression",
+        };
+  return c.polarity === "negative" ? { type: "negation", operand: pred } : pred;
+}
+
 type EffectConverters = {
   [K in RawEffect["type"]]: (e: Extract<RawEffect, { type: K }>) => Effect;
 };
@@ -587,12 +602,18 @@ const effectConverters: EffectConverters = {
     target: e.target,
     operation: e.operation,
   }),
-  invocation: (e) => ({
-    type: "invocation",
-    callee: e.callee,
-    args: e.args,
-    async: e.async,
-  }),
+  invocation: (e) => {
+    const invocation: Extract<Effect, { type: "invocation" }> = {
+      type: "invocation",
+      callee: e.callee,
+      args: e.args,
+      async: e.async,
+    };
+    if (e.preconditions !== undefined && e.preconditions.length > 0) {
+      invocation.preconditions = e.preconditions.map(rawConditionToPredicate);
+    }
+    return invocation;
+  },
   emission: (e) => ({ type: "emission", event: e.event }),
   stateChange: (e) => ({ type: "stateChange", variable: e.variable }),
 };
