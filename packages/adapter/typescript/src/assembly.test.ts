@@ -1293,6 +1293,33 @@ describe("edge cases", () => {
     ]);
   });
 
+  it("captures template literal source text when substitutions prevent concrete value", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function emit(stage: string, id: string) {
+        logger.info(\`stage=\${stage} id=\${id}\`);
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      { kind: "template", sourceText: "`stage=${stage} id=${id}`" },
+    ]);
+  });
+
   it("captures nested object-of-objects and array literals", () => {
     const project = createProject();
     const fn = getExportedFunction(
