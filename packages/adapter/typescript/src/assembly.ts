@@ -139,8 +139,11 @@ export function extractRawBranches(
       const terminalLines = new Set(
         rawBranches.map((b) => b.terminal.location.start),
       );
+      // Container-building calls (spread / array-element composition)
+      // are never themselves terminals, so they skip the terminal-line
+      // dedup that catches `res.json(body)`-as-both-terminal-and-call.
       defaultBranch.effects = invocations
-        .filter((i) => !terminalLines.has(i.line))
+        .filter((i) => i.neverTerminal || !terminalLines.has(i.line))
         .map((i) => i.effect);
     }
   }
