@@ -117,17 +117,57 @@ function findRouterCall(unit: DiscoveredUnit): {
 }
 
 /**
- * Given a contract reference node (an Identifier or expression), resolve it
- * to the object literal that defines the contract routes.
+ * Given a contract reference node, resolve it to the object literal that
+ * defines the contract routes.
  *
  * Expected shapes:
- *   - Identifier → follows symbol to VariableDeclaration → initializer is c.router({ ... })
- *   - Inline object literal (unlikely but handle it)
+ *   - ObjectLiteralExpression → already the routes literal
+ *   - Identifier → follow symbol to VariableDeclaration → initializer is
+ *     `c.router({ ... })` (or a direct object literal)
+ *   - PropertyAccessExpression → composed contracts like
+ *     `s.router(apiContract.internal, { ... })`. Resolve the base to its
+ *     routes literal, pick the named property, and recurse on the value
+ *     (usually another identifier bound to `subContract.router({ ... })`).
  */
 function resolveContractObject(contractArg: Node): Node | null {
   // If it's already an object literal, return it
   if (Node.isObjectLiteralExpression(contractArg)) {
     return contractArg;
+  }
+
+  // Composed contracts: `apiContract.internal` — resolve the base to its
+  // routes literal, then pick the property whose name matches the access.
+  // The property's value is typically another identifier bound to a
+  // sub-contract (`internal: internalApi`); recursion handles the chain.
+  if (Node.isPropertyAccessExpression(contractArg)) {
+    const base = resolveContractObject(contractArg.getExpression());
+    if (base === null || !Node.isObjectLiteralExpression(base)) {
+      return null;
+    }
+    const propName = contractArg.getName();
+    for (const prop of base.getProperties()) {
+      if (!Node.isPropertyAssignment(prop)) {
+        continue;
+      }
+      if (prop.getName() !== propName) {
+        continue;
+      }
+      const value = prop.getInitializer();
+      if (value === undefined) {
+        return null;
+      }
+      if (Node.isObjectLiteralExpression(value)) {
+        return value;
+      }
+      if (Node.isIdentifier(value) || Node.isPropertyAccessExpression(value)) {
+        return resolveContractObject(value);
+      }
+      if (Node.isCallExpression(value)) {
+        return unwrapContractInit(value);
+      }
+      return null;
+    }
+    return null;
   }
 
   // Follow the identifier to its declaration
