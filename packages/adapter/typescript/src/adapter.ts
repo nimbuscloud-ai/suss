@@ -603,10 +603,24 @@ function extractFromSourceFile(
   const summaries: BehavioralSummary[] = [];
   const filePath = sourceFile.getFilePath();
 
+  // Cross-pack dedup: when two packs both claim the same (function, kind)
+  // — e.g. React and React Router both discovering a default-exported
+  // component — the first pack wins and later packs skip. Pack order in
+  // `frameworks` is the user's precedence signal: `-f react -f react-router`
+  // gives React components; `-f react-router -f react` gives RR-labeled
+  // components. Without this the same source function would produce two
+  // independent summaries at different recognition labels.
+  const claimed = new Set<string>();
+
   for (const pack of frameworks) {
     const units = discoverUnits(sourceFile, pack.discovery);
 
     for (const unit of units) {
+      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}`;
+      if (claimed.has(claimKey)) {
+        continue;
+      }
+      claimed.add(claimKey);
       const raw = extractCodeStructure(unit, pack, filePath);
 
       // The discovery pattern that produced this unit is attached by
