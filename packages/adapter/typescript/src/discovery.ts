@@ -105,7 +105,7 @@ export interface DiscoveredUnit {
 // ---------------------------------------------------------------------------
 
 /** Extract FunctionRoot from something that might be a function or wrap one. */
-function toFunctionRoot(node: Node): FunctionRoot | null {
+export function toFunctionRoot(node: Node): FunctionRoot | null {
   if (
     Node.isFunctionDeclaration(node) ||
     Node.isFunctionExpression(node) ||
