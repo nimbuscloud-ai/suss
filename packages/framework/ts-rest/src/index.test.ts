@@ -14,9 +14,13 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 // ---------------------------------------------------------------------------
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/ts-rest");
+const composedFixturesDir = path.resolve(
+  __dirname,
+  "../../../../fixtures/ts-rest-composed",
+);
 
-function runAdapter(): BehavioralSummary[] {
-  const project = new Project({
+function makeProject(): Project {
+  return new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
       strict: true,
@@ -26,7 +30,23 @@ function runAdapter(): BehavioralSummary[] {
       skipLibCheck: true,
     },
   });
+}
+
+function runAdapter(): BehavioralSummary[] {
+  const project = makeProject();
   project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
+
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: [tsRestFramework()],
+  });
+
+  return adapter.extractAll();
+}
+
+function runComposedAdapter(): BehavioralSummary[] {
+  const project = makeProject();
+  project.addSourceFilesAtPaths(path.join(composedFixturesDir, "**/*.ts"));
 
   const adapter = createTypeScriptAdapter({
     project,
@@ -188,5 +208,48 @@ describe("tsRestFramework — integration", () => {
         }
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Composed contracts — `s.router(apiContract.internal, { ... })`
+// ---------------------------------------------------------------------------
+//
+// Real-world ts-rest servers compose a top-level contract from sub-namespaces
+// (`c.router({ events: eventsApi, internal: internalApi })`) and register
+// handlers against a property access on that top-level (`apiContract.events`,
+// `apiContract.internal`). Without PropertyAccess resolution the handlers
+// fall back to `function-call` semantics even though the pack matches the
+// registration call.
+
+describe("tsRestFramework — composed contracts", () => {
+  let summaries: BehavioralSummary[];
+  beforeAll(() => {
+    summaries = runComposedAdapter();
+  }, 90_000);
+
+  it("discovers handlers across both sub-namespaces", () => {
+    const names = summaries.map((s) => s.identity.name).sort();
+    expect(names).toEqual(["fetchThing", "recordEvent"]);
+  });
+
+  it("binds method/path from the composed contract (events sub-namespace)", () => {
+    const recordEvent = summaries.find(
+      (s) => s.identity.name === "recordEvent",
+    );
+    expect(recordEvent?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "POST", path: "/events" },
+      recognition: "core",
+    });
+  });
+
+  it("binds method/path from the composed contract (internal sub-namespace)", () => {
+    const fetchThing = summaries.find((s) => s.identity.name === "fetchThing");
+    expect(fetchThing?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/things/:id" },
+      recognition: "core",
+    });
   });
 });
