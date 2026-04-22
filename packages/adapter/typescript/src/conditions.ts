@@ -98,8 +98,16 @@ export function collectAncestorConditionInfos(
       const switchStmt = current.getParent()?.getParent();
       if (switchStmt !== undefined && Node.isSwitchStatement(switchStmt)) {
         const switchExpr = switchStmt.getExpression().getText();
-        const caseExpr = (current as CaseClause).getExpression().getText();
-        const condText = `${switchExpr} === ${caseExpr}`;
+        const labels = collectFallthroughCaseLabels(current as CaseClause);
+        // One label: `x === "a"`. Multiple (fallthrough): disjunction
+        // `x === "a" || x === "b"`. Each predecessor case with an empty
+        // body falls through to this one's body, so the return fires
+        // for any of their match values too — capturing only the
+        // direct case label would silently narrow the branch.
+        const condText =
+          labels.length === 1
+            ? `${switchExpr} === ${labels[0]}`
+            : labels.map((l) => `${switchExpr} === ${l}`).join(" || ");
         // Synthetic condition — no single Expression node to preserve
         result.unshift(
           makeConditionInfo(condText, "positive", "explicit", null),
@@ -293,4 +301,27 @@ function isAncestorOrSelf(maybeAncestor: Node, node: Node): boolean {
     current = current.getParent();
   }
   return false;
+}
+
+/**
+ * Collect the case-expression labels whose match value would cause
+ * `caseClause`'s body to execute. This is the direct label, plus
+ * every previous sibling CaseClause whose statement body is empty
+ * (classic JS fallthrough — `case "a": case "b": doThing();`).
+ *
+ * Returns labels in source order (outermost/earliest first).
+ */
+function collectFallthroughCaseLabels(caseClause: CaseClause): string[] {
+  const labels: string[] = [caseClause.getExpression().getText()];
+  let prev = caseClause.getPreviousSibling();
+  while (prev !== undefined && Node.isCaseClause(prev)) {
+    const prevClause = prev as CaseClause;
+    if (prevClause.getStatements().length === 0) {
+      labels.unshift(prevClause.getExpression().getText());
+      prev = prev.getPreviousSibling();
+    } else {
+      break;
+    }
+  }
+  return labels;
 }

@@ -181,6 +181,59 @@ describe("fixture-switch.ts — collectAncestorBranches", () => {
 });
 
 // ---------------------------------------------------------------------------
+// fixture-switch-fallthrough.ts — fallthrough + nested block cases
+// ---------------------------------------------------------------------------
+
+describe("fixture-switch-fallthrough.ts — classify fallthrough", () => {
+  const sourceFile = loadFixture("fixture-switch-fallthrough.ts");
+  const func = getFunction(sourceFile, "classify");
+  const returns = getReturnNodes(func);
+
+  it("finds three returns — the fallthrough case ('a') has no body of its own", () => {
+    expect(returns).toHaveLength(3);
+  });
+
+  it("the 'ab' return picks up both case labels via fallthrough — `kind === 'a' || kind === 'b'`", () => {
+    const r = returns[0];
+    const conditions = collectAncestorBranches(r, func);
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0].sourceText).toBe('kind === "a" || kind === "b"');
+  });
+
+  it("the 'c' case return picks up its case label", () => {
+    const r = returns[1];
+    const conditions = collectAncestorBranches(r, func);
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0].sourceText).toBe('kind === "c"');
+  });
+
+  it("default return has no ancestor conditions today", () => {
+    const r = returns[2];
+    const conditions = collectAncestorBranches(r, func);
+    expect(conditions).toHaveLength(0);
+  });
+});
+
+describe("fixture-switch-fallthrough.ts — classifyBlock nested-block case", () => {
+  const sourceFile = loadFixture("fixture-switch-fallthrough.ts");
+  const func = getFunction(sourceFile, "classifyBlock");
+  const returns = getReturnNodes(func);
+
+  it("case with a block body still picks up the case label", () => {
+    const r = returns[0];
+    const conditions = collectAncestorBranches(r, func);
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0].sourceText).toBe('kind === "x"');
+  });
+
+  it("default with a block body has no ancestor conditions today", () => {
+    const r = returns[1];
+    const conditions = collectAncestorBranches(r, func);
+    expect(conditions).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // fixture-try-catch.ts
 // ---------------------------------------------------------------------------
 
