@@ -87,18 +87,22 @@ export interface RawTerminal {
 }
 
 /**
- * A structured capture of an invocation argument. Only literal values
- * (string, number, boolean) and object literals whose fields resolve
- * to literal values are captured. Everything else is recorded as
- * `null` in the corresponding positional slot — the caller still
- * knows how many arguments the call had, but the value is opaque.
+ * A structured capture of an invocation argument. Literal values
+ * (string, number, boolean), object/array literals, template literals,
+ * identifier references, and nested call expressions are all captured
+ * as structured variants so readers can see *what* was passed even when
+ * the runtime value isn't statically resolvable. `null` is reserved for
+ * the rare case where the argument shape doesn't match any variant
+ * (type assertions with computed operands, arithmetic, etc.) — the
+ * caller still knows how many arguments the call had.
  *
  * Useful for recognising literal-string discriminators like
  * `findings.push({ kind: "scenarioCoverageGap" })` or
- * `dispatch({ type: "USER_LOGGED_IN" })` at the summary level, so
+ * `dispatch({ type: "USER_LOGGED_IN" })` at the summary level, and for
+ * preserving argument *shape* (`{ userId, count }`, `getUser(id)`) so
  * downstream consumers (AI agents, error-taxonomy tooling,
- * release-note generators) can tell which error or action a
- * function emits without re-reading source.
+ * release-note generators) can reason about composition without
+ * re-reading source.
  */
 export type EffectArg =
   | { kind: "string"; value: string }
@@ -113,6 +117,25 @@ export type EffectArg =
    * for log messages, computed keys, and dedup-style key builders.
    */
   | { kind: "template"; sourceText: string }
+  /**
+   * Identifier reference — a bare variable (`userId`), a property-access
+   * chain (`user.profile.email`, `process.env.DATABASE_URL`), or an
+   * element-access chain (`config["host"]`). `name` holds the full
+   * source text so readers can tell which binding flowed into the call
+   * without inferring it from context. Identifiers that resolve to a
+   * module-level `const` with a simple initializer (literal, process.env
+   * access, etc.) are inlined to the initializer's EffectArg form so
+   * closure-over-constants doesn't hide the actual value at call sites.
+   */
+  | { kind: "identifier"; name: string }
+  /**
+   * Nested call expression passed as an argument — `log(formatError(e))`,
+   * `enqueue(buildPayload(ctx))`, inline composition. `callee` is the
+   * source text of the call target; `args` recurses with bounded depth,
+   * so `formatError(e)` reads as `{ callee: "formatError", args: [...] }`
+   * rather than an opaque null.
+   */
+  | { kind: "call"; callee: string; args: EffectArg[] }
   | null;
 
 export type RawEffect =

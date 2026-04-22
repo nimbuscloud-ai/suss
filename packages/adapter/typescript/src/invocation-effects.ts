@@ -189,12 +189,56 @@ function extractArg(node: Node, depth: number): EffectArg {
   if (Node.isTemplateExpression(node)) {
     return { kind: "template", sourceText: node.getText() };
   }
+  // Identifier and access-chain references. Property/element access
+  // chains (`user.profile.email`, `process.env.QUEUE_URL`, `config["host"]`)
+  // are captured with their full source text as the identifier name.
+  // Bare identifiers get an extra hop of resolution: if the identifier
+  // is bound at module level to a simple initializer (literal, property
+  // access, template, nested call), inline that initializer's EffectArg
+  // form instead of the identifier name. That collapses the closure-
+  // over-constants indirection — `const QUEUE_URL = process.env.QUEUE_URL;
+  // send(QUEUE_URL)` reads the same as `send(process.env.QUEUE_URL)` at
+  // the call site.
+  if (Node.isIdentifier(node)) {
+    const inlined = inlineModuleBinding(node, depth);
+    if (inlined !== null) {
+      return inlined;
+    }
+    return { kind: "identifier", name: node.getText() };
+  }
+  if (
+    Node.isPropertyAccessExpression(node) ||
+    Node.isElementAccessExpression(node)
+  ) {
+    return { kind: "identifier", name: node.getText() };
+  }
   if (depth <= 0) {
     return null;
+  }
+  // Nested call — `log(formatError(e))`, `enqueue(buildPayload(ctx))`.
+  // Recurse into the arguments with decremented depth so the shape of
+  // the composition survives in the summary.
+  if (Node.isCallExpression(node)) {
+    return {
+      kind: "call",
+      callee: node.getExpression().getText(),
+      args: node.getArguments().map((a) => extractArg(a, depth - 1)),
+    };
   }
   if (Node.isObjectLiteralExpression(node)) {
     const fields: Record<string, EffectArg> = {};
     for (const prop of node.getProperties()) {
+      if (Node.isShorthandPropertyAssignment(prop)) {
+        const nameNode = prop.getNameNode();
+        if (Node.isIdentifier(nameNode)) {
+          // `{ userId }` — shorthand expands to `{ userId: userId }`.
+          fields[nameNode.getText()] = {
+            kind: "identifier",
+            name: nameNode.getText(),
+          };
+        }
+        continue;
+      }
       if (!Node.isPropertyAssignment(prop)) {
         continue;
       }
@@ -213,25 +257,19 @@ function extractArg(node: Node, depth: number): EffectArg {
       if (initializer === undefined) {
         continue;
       }
-      const captured = extractArg(initializer, depth - 1);
-      if (captured !== null) {
-        fields[name] = captured;
-      }
-    }
-    if (Object.keys(fields).length === 0) {
-      return null;
+      // Record every named field, even when the value is opaque — the
+      // field *name* is information about the call's shape. Previously
+      // null-valued fields were skipped and all-null objects collapsed
+      // to null; that lost the shape itself.
+      fields[name] = extractArg(initializer, depth - 1);
     }
     return { kind: "object", fields };
   }
   if (Node.isArrayLiteralExpression(node)) {
+    // Preserve positional slots even when elements are opaque; keep the
+    // array shape even when every slot is null so readers see a call
+    // took an array argument rather than an unknown single value.
     const items = node.getElements().map((el) => extractArg(el, depth - 1));
-    // Preserve positional slots even when some elements are opaque;
-    // `[1, user.id, 3]` reads as `[1, null, 3]` with two captured
-    // integers and one opaque middle slot. All-null arrays become
-    // null themselves — consistent with object-of-all-nulls.
-    if (items.every((i) => i === null)) {
-      return null;
-    }
     return { kind: "array", items };
   }
   return null;
@@ -251,6 +289,95 @@ function collectPreconditions(node: Node, func: FunctionRoot): RawCondition[] {
   return collectAncestorConditionInfos(node, func).map(
     conditionInfoToRawCondition,
   );
+}
+
+/**
+ * If `ident` resolves to a module-level `const X = <expr>` whose
+ * initializer is something extractArg can produce directly (literal,
+ * property/element access chain, template, nested call), return that
+ * initializer's EffectArg form. Returns null when the identifier is a
+ * function parameter, imported from another module, bound to something
+ * with defaults / computation / ambiguous shape, or can't be resolved.
+ *
+ * This is the "closure-over-constants" fix: `const QUEUE_URL =
+ * process.env.QUEUE_URL; send(QUEUE_URL, ...)` reads the same at the
+ * call site as `send(process.env.QUEUE_URL, ...)`. Same for any
+ * simple module-level binding — string literals, numeric constants,
+ * aliased property chains. One hop only, same file only, so we don't
+ * traverse arbitrary alias graphs.
+ */
+function inlineModuleBinding(ident: Node, depth: number): EffectArg {
+  if (!Node.isIdentifier(ident)) {
+    return null;
+  }
+  const symbol = ident.getSymbol();
+  if (symbol === undefined) {
+    return null;
+  }
+  for (const decl of symbol.getDeclarations()) {
+    if (!Node.isVariableDeclaration(decl)) {
+      continue;
+    }
+    // Only follow module-level declarations — local consts (inside a
+    // function body) are already opaque-by-scope to this summary; the
+    // closure-over pattern we're targeting is file-scope constants
+    // aliased to runtime / platform values.
+    if (!isModuleScoped(decl)) {
+      continue;
+    }
+    const init = decl.getInitializer();
+    if (init === undefined) {
+      continue;
+    }
+    const unwrapped = unwrapCasts(init);
+    // Re-enter extractArg on the initializer — covers literals,
+    // property access (`process.env.X`, `config.url`), templates,
+    // nested calls, everything else extractArg knows about. Depth
+    // is decremented so a chain of module-level aliases can't loop
+    // forever through self-referential code.
+    const captured = extractArg(unwrapped, depth - 1);
+    if (captured !== null) {
+      return captured;
+    }
+  }
+  return null;
+}
+
+function isModuleScoped(decl: Node): boolean {
+  // Module-level consts sit inside a VariableDeclarationList → VariableStatement
+  // whose parent is the SourceFile. Anything else (a VariableStatement nested
+  // in a Block / function body / loop) is local scope.
+  let current: Node | undefined = decl.getParent();
+  while (current !== undefined) {
+    if (Node.isSourceFile(current)) {
+      return true;
+    }
+    if (
+      Node.isVariableDeclarationList(current) ||
+      Node.isVariableStatement(current)
+    ) {
+      current = current.getParent();
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
+function unwrapCasts(node: Node): Node {
+  if (Node.isParenthesizedExpression(node)) {
+    return unwrapCasts(node.getExpression());
+  }
+  if (Node.isAsExpression(node)) {
+    return unwrapCasts(node.getExpression());
+  }
+  if (Node.isNonNullExpression(node)) {
+    return unwrapCasts(node.getExpression());
+  }
+  if (Node.isSatisfiesExpression(node)) {
+    return unwrapCasts(node.getExpression());
+  }
+  return node;
 }
 
 /**

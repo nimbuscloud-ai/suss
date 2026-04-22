@@ -1264,7 +1264,10 @@ describe("edge cases", () => {
     expect(loggerEffect.args).toEqual([{ kind: "string", value: "emitted" }]);
   });
 
-  it("leaves non-literal args as null positional slots", () => {
+  it("captures identifier and property-access args as structured references", () => {
+    // Property-access chains like `input.message` are references to
+    // bindings — preserve the source text so readers can tell which
+    // value flowed into the call, not just that *something* did.
     const project = createProject();
     const fn = getExportedFunction(
       project,
@@ -1287,9 +1290,212 @@ describe("edge cases", () => {
       throw new Error("expected invocation effect");
     }
     expect(effect.args).toEqual([
-      null,
+      { kind: "identifier", name: "input.message" },
       { kind: "number", value: 42 },
       { kind: "boolean", value: true },
+    ]);
+  });
+
+  it("captures bare identifiers and element-access chains", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler(userId: string, config: any) {
+        queue.send(userId, process.env.QUEUE_URL, config["region"]);
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      { kind: "identifier", name: "userId" },
+      { kind: "identifier", name: "process.env.QUEUE_URL" },
+      { kind: "identifier", name: 'config["region"]' },
+    ]);
+  });
+
+  it("captures nested call expressions as structured call args", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler(ctx: any) {
+        log(formatError(ctx.err), buildPayload(ctx));
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      {
+        kind: "call",
+        callee: "formatError",
+        args: [{ kind: "identifier", name: "ctx.err" }],
+      },
+      {
+        kind: "call",
+        callee: "buildPayload",
+        args: [{ kind: "identifier", name: "ctx" }],
+      },
+    ]);
+  });
+
+  it("inlines module-level const bindings with simple initializers", () => {
+    // Closure-over-constants: `const QUEUE_URL = process.env.QUEUE_URL;
+    // send(QUEUE_URL, ...)` should read the same at the call site as
+    // `send(process.env.QUEUE_URL, ...)`. The extractor resolves the
+    // identifier back to its module-level initializer, unwrapping
+    // `as T` / `!` / parens, and recurses.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "mod.ts",
+      `
+      const QUEUE_URL = process.env.QUEUE_URL as string;
+      const MAX_RETRIES = 3;
+      const DEFAULT_REGION = "us-east-1";
+      export function enqueue(msg: string) {
+        queue.send(QUEUE_URL, msg, MAX_RETRIES, DEFAULT_REGION);
+      }
+    `,
+    );
+    const fn = file.getFunctions().find((f) => f.isExported()) as FunctionRoot;
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      { kind: "identifier", name: "process.env.QUEUE_URL" },
+      { kind: "identifier", name: "msg" },
+      { kind: "number", value: 3 },
+      { kind: "string", value: "us-east-1" },
+    ]);
+  });
+
+  it("does NOT inline when the module-level initializer has a default / fallback", () => {
+    // `const QUEUE_URL = process.env.QUEUE_URL ?? "fallback"` is a binary
+    // expression, not a pure read — extractArg doesn't structurally
+    // capture `??` (opaque at v1), so inlining bails and the identifier
+    // stays as its bare source-text name.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "mod.ts",
+      `
+      const QUEUE_URL = process.env.QUEUE_URL ?? "fallback";
+      export function enqueue() {
+        queue.send(QUEUE_URL);
+      }
+    `,
+    );
+    const fn = file.getFunctions().find((f) => f.isExported()) as FunctionRoot;
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    // Identifier falls through to its bare name — not the initializer.
+    expect(effect.args).toEqual([{ kind: "identifier", name: "QUEUE_URL" }]);
+  });
+
+  it("does NOT inline locally-scoped consts — only module-level bindings", () => {
+    // A `const` inside a function body is already part of its own
+    // summary's behaviour; inlining it here would leak local state
+    // into the calling summary. Only file-scope bindings collapse.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "mod.ts",
+      `
+      export function handler() {
+        const QUEUE_URL = process.env.QUEUE_URL;
+        queue.send(QUEUE_URL);
+      }
+    `,
+    );
+    const fn = file.getFunctions().find((f) => f.isExported()) as FunctionRoot;
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([{ kind: "identifier", name: "QUEUE_URL" }]);
+  });
+
+  it("preserves object shape with named fields even when values are opaque", () => {
+    // `{ userId, count }` (shorthand) + fully-opaque field values
+    // should still read as an object with `userId` and `count` keys —
+    // the shape is information the caller deliberately wrote down.
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function emit(userId: string, count: number, opaque: any) {
+        dispatch({ userId, count, extra: opaque + 1 });
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      {
+        kind: "object",
+        fields: {
+          userId: { kind: "identifier", name: "userId" },
+          count: { kind: "identifier", name: "count" },
+          extra: null,
+        },
+      },
     ]);
   });
 
