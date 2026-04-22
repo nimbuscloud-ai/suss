@@ -105,6 +105,7 @@ export type EffectArg =
   | { kind: "number"; value: number }
   | { kind: "boolean"; value: boolean }
   | { kind: "object"; fields: Record<string, EffectArg> }
+  | { kind: "array"; items: EffectArg[] }
   | null;
 
 export type RawEffect =

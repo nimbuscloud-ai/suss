@@ -1293,6 +1293,62 @@ describe("edge cases", () => {
     ]);
   });
 
+  it("captures nested object-of-objects and array literals", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function emit() {
+        dispatch({
+          type: "USER_ACTION",
+          payload: {
+            userId: "u-123",
+            context: { request: "req-9" },
+          },
+          tags: ["login", "sso"],
+        });
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      {
+        kind: "object",
+        fields: {
+          type: { kind: "string", value: "USER_ACTION" },
+          payload: {
+            kind: "object",
+            fields: {
+              userId: { kind: "string", value: "u-123" },
+              context: {
+                kind: "object",
+                fields: { request: { kind: "string", value: "req-9" } },
+              },
+            },
+          },
+          tags: {
+            kind: "array",
+            items: [
+              { kind: "string", value: "login" },
+              { kind: "string", value: "sso" },
+            ],
+          },
+        },
+      },
+    ]);
+  });
+
   it("captures spread calls in a returned array literal", () => {
     // Orchestrator pattern: checkPair composes sub-check results
     // via `return [...f(), ...g()]`. The spread's inner call is a
