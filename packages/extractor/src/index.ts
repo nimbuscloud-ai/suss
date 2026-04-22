@@ -106,6 +106,13 @@ export type EffectArg =
   | { kind: "boolean"; value: boolean }
   | { kind: "object"; fields: Record<string, EffectArg> }
   | { kind: "array"; items: EffectArg[] }
+  /**
+   * Template literal with interpolation (`` `Error: ${e.message}` ``).
+   * The resolved runtime value is unknown, but the source text is
+   * preserved so readers can see which variables compose it — useful
+   * for log messages, computed keys, and dedup-style key builders.
+   */
+  | { kind: "template"; sourceText: string }
   | null;
 
 export type RawEffect =

@@ -181,6 +181,14 @@ function extractArg(node: Node, depth: number): EffectArg {
   if (Node.isFalseLiteral(node)) {
     return { kind: "boolean", value: false };
   }
+  // Template literals with substitutions (`Error: ${x}`) — preserve
+  // source text so the composition is visible even when runtime
+  // value isn't resolvable. Simple template literals without
+  // substitutions already match Node.isNoSubstitutionTemplateLiteral
+  // above and flow through as `{ kind: "string" }`.
+  if (Node.isTemplateExpression(node)) {
+    return { kind: "template", sourceText: node.getText() };
+  }
   if (depth <= 0) {
     return null;
   }
