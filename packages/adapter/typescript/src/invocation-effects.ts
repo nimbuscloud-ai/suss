@@ -1,23 +1,23 @@
-// invocation-effects.ts — Capture bare call-expression statements as
-// `invocation` RawEffects. Phase 1.5b: handler / useEffect-body /
-// callback summaries were shipping with `effects: []` because the
-// existing `extractDependencyCalls` pass only picks up calls whose
-// result is assigned to a variable. That misses the bulk of effect
-// calls in callback bodies — `setCount(n);`, `onChange(value);`,
-// `document.title = x;`, `emitter.emit("x", y);` — which fire for
-// side effect and discard the result.
+// invocation-effects.ts — Capture call expressions as `invocation`
+// RawEffects. Two patterns covered:
 //
-// Scope for v0:
-//   * Collect every `CallExpression` whose parent is an
-//     `ExpressionStatement` inside the function body.
+//   1. Bare expression-statement calls — `setCount(n);`,
+//      `onChange(value);`, `emitter.emit("x", y);`. Result is
+//      discarded; the call fires for side effect.
+//   2. Container-building calls — `return [...checkProviderCoverage(p, c),
+//      ...checkConsumerSatisfaction(p, c)]` and similar. The call's
+//      return value is composed into an array or object literal;
+//      the call still *fires* when the container expression
+//      evaluates. Without this, orchestrator functions that
+//      compose sub-checks via spread show `effects: []` and the
+//      graph has no edges through them.
+//
+// Scope:
 //   * Skip nested function bodies — their calls belong to those
 //     functions' summaries.
-//   * Don't try to classify semantics. All captured calls become
-//     `invocation` effects with the callee's source text. Follow-up:
-//     recognise `setState` from `useState(...)` destructuring as
-//     `stateChange`, callback-prop invocations as `emission`, etc.
-//   * Async detection via `Node.isAwaitExpression` on the call's
-//     parent.
+//   * Don't classify semantics. All captured calls become
+//     `invocation` effects with the callee's source text.
+//   * Async detection via `Node.isAwaitExpression` on the call.
 
 import { type CallExpression, Node } from "ts-morph";
 
@@ -27,10 +27,19 @@ import type { FunctionRoot } from "./conditions.js";
 export interface InvocationEffectLocation {
   effect: RawEffect;
   /**
-   * Start line of the containing `ExpressionStatement`. Used by the
+   * Start line of the containing statement (expression statement or
+   * the statement enclosing a container-building call). Used by the
    * assembly pass to assign effects to the right branch.
    */
   line: number;
+  /**
+   * True when the effect is a container-building call (spread or
+   * direct element in an array/object literal) rather than an
+   * expression-statement call. Container calls are never themselves
+   * terminals, so the assembly-level terminal-line dedup must skip
+   * them — otherwise single-line orchestrators lose their effects.
+   */
+  neverTerminal: boolean;
 }
 
 export function extractInvocationEffects(
@@ -49,25 +58,96 @@ export function extractInvocationEffects(
       traversal.skip();
       return;
     }
-    if (!Node.isExpressionStatement(node)) {
+
+    // Case 1: bare expression statement — `foo();`, `await foo();`.
+    if (Node.isExpressionStatement(node)) {
+      const { call, async } = unwrapCall(node.getExpression());
+      if (call !== null) {
+        results.push({
+          effect: {
+            type: "invocation",
+            callee: call.getExpression().getText(),
+            async,
+          },
+          line: node.getStartLineNumber(),
+          neverTerminal: false,
+        });
+      }
       return;
     }
-    const expr = node.getExpression();
-    const { call, async } = unwrapCall(expr);
-    if (call === null) {
+
+    // Case 2: spread-element call in an array/object literal —
+    // `[...foo()]`, `{...foo()}`. The spread could be inside a
+    // return, a variable declaration, a function argument — in
+    // each case the call still fires when the container is built.
+    if (Node.isSpreadElement(node)) {
+      const parent = node.getParent();
+      if (
+        parent !== undefined &&
+        (Node.isArrayLiteralExpression(parent) ||
+          Node.isObjectLiteralExpression(parent))
+      ) {
+        const { call, async } = unwrapCall(node.getExpression());
+        if (call !== null) {
+          results.push({
+            effect: {
+              type: "invocation",
+              callee: call.getExpression().getText(),
+              async,
+            },
+            line: enclosingStatementLine(node),
+            neverTerminal: true,
+          });
+        }
+      }
       return;
     }
-    results.push({
-      effect: {
-        type: "invocation",
-        callee: call.getExpression().getText(),
-        async,
-      },
-      line: node.getStartLineNumber(),
-    });
+
+    // Case 3: direct call element in an array literal or property
+    // assignment value — `[foo(), bar()]`, `{ key: foo() }`. These
+    // also fire when the container evaluates. Skip arguments to
+    // other calls (`foo(bar())`) — those are argument positions,
+    // not composition positions.
+    if (Node.isCallExpression(node)) {
+      const parent = node.getParent();
+      if (parent === undefined) {
+        return;
+      }
+      const isArrayElement = Node.isArrayLiteralExpression(parent);
+      const isPropertyValue =
+        Node.isPropertyAssignment(parent) && parent.getInitializer() === node;
+      if (isArrayElement || isPropertyValue) {
+        results.push({
+          effect: {
+            type: "invocation",
+            callee: node.getExpression().getText(),
+            async: false,
+          },
+          line: enclosingStatementLine(node),
+          neverTerminal: true,
+        });
+      }
+    }
   });
 
   return results;
+}
+
+/**
+ * Walk up from a composition-position call to find the enclosing
+ * statement line. This is what should be used for branch
+ * attribution — the line of the statement that contains the
+ * container expression.
+ */
+function enclosingStatementLine(node: Node): number {
+  let current: Node | undefined = node;
+  while (current !== undefined) {
+    if (Node.isStatement(current)) {
+      return current.getStartLineNumber();
+    }
+    current = current.getParent();
+  }
+  return node.getStartLineNumber();
 }
 
 /**

@@ -1141,6 +1141,107 @@ describe("edge cases", () => {
     expect(callees).toEqual(["logger.info"]);
   });
 
+  it("captures spread calls in a returned array literal", () => {
+    // Orchestrator pattern: checkPair composes sub-check results
+    // via `return [...f(), ...g()]`. The spread's inner call is a
+    // real invocation that fires when the array is built.
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function runAll(input: any) {
+        return [
+          ...stepOne(input),
+          ...stepTwo(input),
+          ...stepThree(input),
+        ];
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    expect(branches).toHaveLength(1);
+    const callees = branches[0].effects
+      .filter((e) => e.type === "invocation")
+      .map((e) => (e.type === "invocation" ? e.callee : null));
+    expect(callees).toEqual(["stepOne", "stepTwo", "stepThree"]);
+  });
+
+  it("captures direct call elements and property-value calls in a returned literal", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function composeResult(input: any) {
+        return {
+          first: computeFirst(input),
+          rest: [secondary(input), tertiary(input)],
+        };
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    expect(branches).toHaveLength(1);
+    const callees = branches[0].effects
+      .filter((e) => e.type === "invocation")
+      .map((e) => (e.type === "invocation" ? e.callee : null));
+    expect(callees).toEqual(["computeFirst", "secondary", "tertiary"]);
+  });
+
+  it("container calls survive terminal-line dedup on single-line returns", () => {
+    // `return [...f(), ...g()]` has the terminal (return statement)
+    // and the spread calls all on the same line. Before the fix,
+    // line-based dedup filtered out the container calls; now they
+    // pass because they're tagged `neverTerminal`.
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function oneLiner(input: any) { return [...foo(input), ...bar(input)]; }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const callees = branches[0].effects
+      .filter((e) => e.type === "invocation")
+      .map((e) => (e.type === "invocation" ? e.callee : null));
+    expect(callees).toEqual(["foo", "bar"]);
+  });
+
+  it("does not capture call expressions in argument positions", () => {
+    // `foo(bar())` — bar is an argument to foo, not a composition
+    // sibling. The expression-statement-level foo call IS captured;
+    // the nested bar should not be double-captured.
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler(input: any) {
+        logger.info(formatMessage(input));
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const callees = branches[0].effects
+      .filter((e) => e.type === "invocation")
+      .map((e) => (e.type === "invocation" ? e.callee : null));
+    expect(callees).toEqual(["logger.info"]);
+  });
+
   it("handles deeply nested if chains (4 levels)", () => {
     const project = createProject();
     const fn = getExportedFunction(
