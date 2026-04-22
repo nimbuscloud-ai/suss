@@ -1099,6 +1099,88 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 // pack discovery + wrapper expansion + sub-unit synthesis. Stops at
 // node_modules / declaration files / higher-order indirection.
 
+describe("createTypeScriptAdapter — cross-pack dedup", () => {
+  it("produces one summary per (function, kind) even when multiple packs discover the same unit", () => {
+    // Two packs, both discovering the same default-exported function as
+    // a `component`. Before cross-pack dedup this produced two summaries
+    // at different `recognition` labels. First pack wins — user controls
+    // precedence via the frameworks[] order.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "Button.tsx",
+      `
+      export default function Button({ label }: { label: string }) {
+        return <button>{label}</button>;
+      }
+    `,
+    );
+
+    const packA: PatternPack = {
+      name: "pack-a",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [
+        {
+          kind: "component",
+          match: { type: "namedExport", names: ["default"] },
+        },
+      ],
+      terminals: [
+        { kind: "render", match: { type: "jsxReturn" }, extraction: {} },
+      ],
+      inputMapping: { type: "componentProps", paramPosition: 0 },
+    };
+    const packB: PatternPack = { ...packA, name: "pack-b" };
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [packA, packB],
+    });
+
+    const summaries = adapter
+      .extractAll()
+      .filter((s) => s.identity.name === "Button");
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.boundaryBinding?.recognition).toBe("pack-a");
+  });
+
+  it("respects framework order — first-listed wins", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "Thing.tsx",
+      "export default function Thing() { return <div />; }",
+    );
+    const makePack = (name: string): PatternPack => ({
+      name,
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [
+        {
+          kind: "component",
+          match: { type: "namedExport", names: ["default"] },
+        },
+      ],
+      terminals: [
+        { kind: "render", match: { type: "jsxReturn" }, extraction: {} },
+      ],
+      inputMapping: { type: "componentProps", paramPosition: 0 },
+    });
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [makePack("react-router"), makePack("react")],
+    });
+
+    const summaries = adapter
+      .extractAll()
+      .filter((s) => s.identity.name === "Thing");
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.boundaryBinding?.recognition).toBe(
+      "react-router",
+    );
+  });
+});
+
 describe("createTypeScriptAdapter — reachable closure", () => {
   it("discovers internal helpers transitively called from a handler", () => {
     const project = new Project({ useInMemoryFileSystem: true });
