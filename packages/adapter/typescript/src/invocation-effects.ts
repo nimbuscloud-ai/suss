@@ -149,14 +149,20 @@ export function extractInvocationEffects(
 
 /**
  * Extract structured arguments from a CallExpression. Captures
- * literal values (strings, numbers, booleans) and object literals
- * whose fields resolve to literals. Everything else becomes `null`
- * in the positional slot — the caller retains the argument count
- * but the value is opaque. Recursion is capped at object-of-literals
- * to keep the representation tight.
+ * literal values (strings, numbers, booleans), object literals
+ * whose fields resolve to literals, and array literals whose
+ * elements resolve to literals. Anything not a literal becomes
+ * `null` in the positional slot — the caller retains the argument
+ * count but the value is opaque.
+ *
+ * Depth is bounded to prevent runaway on pathological source, but
+ * set high enough that realistic patterns (stage metadata, nested
+ * event payloads, error objects with contexts) survive intact.
  */
+const MAX_ARG_DEPTH = 8;
+
 function extractArgs(call: CallExpression): EffectArg[] {
-  return call.getArguments().map((arg) => extractArg(arg, 2));
+  return call.getArguments().map((arg) => extractArg(arg, MAX_ARG_DEPTH));
 }
 
 function extractArg(node: Node, depth: number): EffectArg {
@@ -175,7 +181,10 @@ function extractArg(node: Node, depth: number): EffectArg {
   if (Node.isFalseLiteral(node)) {
     return { kind: "boolean", value: false };
   }
-  if (depth > 0 && Node.isObjectLiteralExpression(node)) {
+  if (depth <= 0) {
+    return null;
+  }
+  if (Node.isObjectLiteralExpression(node)) {
     const fields: Record<string, EffectArg> = {};
     for (const prop of node.getProperties()) {
       if (!Node.isPropertyAssignment(prop)) {
@@ -205,6 +214,17 @@ function extractArg(node: Node, depth: number): EffectArg {
       return null;
     }
     return { kind: "object", fields };
+  }
+  if (Node.isArrayLiteralExpression(node)) {
+    const items = node.getElements().map((el) => extractArg(el, depth - 1));
+    // Preserve positional slots even when some elements are opaque;
+    // `[1, user.id, 3]` reads as `[1, null, 3]` with two captured
+    // integers and one opaque middle slot. All-null arrays become
+    // null themselves — consistent with object-of-all-nulls.
+    if (items.every((i) => i === null)) {
+      return null;
+    }
+    return { kind: "array", items };
   }
   return null;
 }
