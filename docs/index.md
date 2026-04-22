@@ -88,7 +88,7 @@ consumes the JSON form of the same summary.
 - **I want to try it in 15 minutes.** → [Tutorial: Get started](/tutorial/get-started).
 - **I want to add it to my project.** → [Add suss to a project](/guides/add-to-project) → [Set up CI](/guides/ci-integration).
 - **I want to look up a flag or finding.** → [CLI reference](/reference/cli) · [Findings catalog](/reference/findings).
-- **I want to understand the premise.** → [Motivation](/motivation) → [Three kinds of truth](/contracts).
+- **I want to understand the premise.** → [Why behavioral summaries](/why-behavioral-summaries) → [Motivation](/motivation) → [Three kinds of truth](/contracts).
 - **I want to extract from a new framework.** → [Framework packs](/framework-packs).
 - **I want the summary format.** → [Behavioral summary format](/behavioral-summary-format) → [IR reference](/ir-reference).
 - **I want to know what's shipped.** → [Status & decisions](/internal/status).

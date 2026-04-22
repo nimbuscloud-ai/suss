@@ -101,6 +101,10 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: "Motivation", link: "/motivation" },
+          {
+            text: "Why behavioral summaries",
+            link: "/why-behavioral-summaries",
+          },
           { text: "Architecture", link: "/architecture" },
           { text: "Three kinds of truth", link: "/contracts" },
           { text: "Boundary semantics", link: "/boundary-semantics" },

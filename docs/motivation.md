@@ -1,5 +1,7 @@
 # Motivation
 
+*If you're arriving cold and want the "why this layer exists at all" argument before the gap-with-other-tools story, [Why behavioral summaries](/why-behavioral-summaries) is the companion to this page.*
+
 ## The problem
 
 Every boundary between two units of code — a function call, a component render, an HTTP handler hit, a resolver dispatch — carries behavioral assumptions the caller makes about the callee. Those assumptions are almost never recorded in a form a tool can check. The gap between "the types line up" and "the behavior lines up" is a class of divergence no existing tool catches.
@@ -46,11 +48,14 @@ suss extracts:
 - **Predicates** that gate each transition (`!user`, `user.deletedAt`, default)
 - **Subjects** that trace `user` back to its origin (`db.findById`) — stable across rename boundaries
 - **Outputs** with status codes and body type references
+- **Effects** with structured arguments — objects preserve their field shape, identifiers and nested calls preserve the composition, so `logger.error({ userId, pullRequestId }, "not found")` reads as the named fields it was, not as "something opaque"
 - **Gaps** — e.g., if the ts-rest contract declares `200 | 404 | 500` but the handler never produces 500
 
 This is enough information for a downstream tool to say: "the consumer at this call site assumes `200` means `isActive`, but the provider's `200` branch fires when `user.deletedAt` is truthy — these don't match."
 
 The handler is one shape of code unit; the same summary shape comes out of React components (what each branch renders under what prop/state conditions), GraphQL resolvers (what each field returns when), Apollo / axios / fetch call sites (what status codes each client site expects), and function-to-function calls within a process. A summary is `(unit, boundary, transitions)`; everything else — framework, transport, semantics — is metadata the pairing layer reads.
+
+**Closure over entry points.** Framework packs find a service's entry points (handlers, components, resolvers, consumer call sites). Every function statically reachable from there — orchestrators, helpers, internal library code — is summarised too, as a `library` unit. This means internal behaviour that no framework shape recognises (e.g. an SQS-consumer orchestrator invoked through a pattern the packs don't model) still appears in the output as long as *some* pack-recognised entry point calls into it. Unused utilities never reached from any entry point are skipped — the closure naturally filters to the code that actually matters.
 
 ## What suss produces (and what it doesn't)
 

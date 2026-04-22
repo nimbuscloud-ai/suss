@@ -33,23 +33,25 @@ by `fn:<package>::<exportPath>`.
 
 ## What the run produces
 
-**87 provider + 79 consumer summaries across 19/19 `@suss/*`
-packages. 79 cross-package edges paired.**
+**335 provider + 82 consumer + 248 reachable-closure library summaries across 19/19 `@suss/*` packages. 82 cross-package edges paired.**
+
+The 248 `library` summaries come from the transitive-closure pass — every internal helper a pack-recognised entry point reaches through a static call chain gets its own summary, with `recognition: "reachable"` distinguishing them from pack-discovered units.
 
 Top consumed exports (packages most depended on by others in the
 suss monorepo):
 
 | Export | Callers |
 |--------|--------:|
-| `@suss/adapter-typescript::createTypeScriptAdapter` | 20 |
+| `@suss/adapter-typescript::createTypeScriptAdapter` | 21 |
 | `@suss/behavioral-ir::restBinding` | 19 |
-| `@suss/behavioral-ir::functionCallBinding` | 10 |
+| `@suss/behavioral-ir::functionCallBinding` | 11 |
 | `@suss/behavioral-ir::graphqlResolverBinding` | 4 |
 | `@suss/checker::checkAll` | 4 |
-| `@suss/extractor::assembleSummary` | 3 |
+| `@suss/extractor::assembleSummary` | 4 |
 | `@suss/behavioral-ir::graphqlOperationBinding` | 2 |
 | `@suss/behavioral-ir::safeParseSummaries` | 2 |
 | `@suss/checker::applySuppressions` | 2 |
+| `@suss/extractor::httpRouteDiscovery` | 2 |
 
 Every edge is a behavioural pair: the provider summary describes
 what the called function does (per-branch conditions + outputs);

@@ -91,18 +91,58 @@ Response bodies and expected inputs use `TypeShape` — a recursive type describ
 
 ## Boundary bindings
 
-A boundary binding connects a code unit to an API endpoint:
+A boundary binding connects a code unit to an API endpoint. It has three layers — `transport` (wire: `"http"`, `"in-process"`), `semantics` (discriminated union: `rest`, `function-call`, `graphql-resolver`, `graphql-operation`), and `recognition` (which pack matched the unit, or `"reachable"` for units discovered through transitive closure rather than a pack pattern):
 
 ```json
 {
-  "protocol": "http",
-  "method": "GET",
-  "path": "/users/:id",
-  "framework": "ts-rest"
+  "transport": "http",
+  "semantics": { "name": "rest", "method": "GET", "path": "/users/:id" },
+  "recognition": "core"
 }
 ```
 
-Two summaries with matching `(method, path)` describe opposite sides of the same boundary — a provider and a consumer. This is how cross-boundary checking works: pair summaries by boundary, then compare transitions.
+Two summaries with matching `semantics` (pairing is semantics-specific — REST pairs by `(method, normalizedPath)`; `function-call` pairs by `package::exportPath`) describe opposite sides of the same boundary — a provider and a consumer. This is how cross-boundary checking works: pair summaries by boundary, then compare transitions.
+
+`recognition: "reachable"` identifies library summaries produced by transitive closure — internal functions called from a pack-recognised entry point but not themselves matched by any pack. They have no pairing identity yet, so they're not cross-checked, but their transitions and effects are fully extracted.
+
+## Effects and argument shape
+
+Every transition carries zero or more `effects` that fire on that path — mutations, emissions, state changes, and — most commonly — `invocation` effects recording a function call with its structured arguments:
+
+```json
+{
+  "type": "invocation",
+  "callee": "logger.error",
+  "async": false,
+  "args": [
+    {
+      "kind": "object",
+      "fields": {
+        "userId": { "kind": "identifier", "name": "userId" },
+        "requestId": { "kind": "identifier", "name": "ctx.requestId" }
+      }
+    },
+    { "kind": "string", "value": "pull request not found" }
+  ]
+}
+```
+
+The `EffectArg` union covers:
+
+- **`string` / `number` / `boolean`** — resolved literal values
+- **`object` / `array`** — composite shapes, preserved even when individual field / element values are opaque (so the *shape* of a call's payload survives even when specific values don't)
+- **`identifier`** — variable or property-access reference (`userId`, `user.profile.email`, `process.env.QUEUE_URL`, `config["host"]`). The `name` holds the full source text so readers can tell which binding flowed in.
+- **`call`** — nested call expression (`log(formatError(e))` reads as `{ kind: "call", callee: "formatError", args: [...] }`).
+- **`template`** — template literal with substitutions; source text preserved so `` `Error: ${e.message}` `` keeps its composition visible.
+- **`null`** — genuinely opaque (type assertions with computed operands, arithmetic, etc.) — the positional slot is preserved but the value isn't structured.
+
+Object and array shapes are preserved even when every field or element is opaque, so the *keys* a call supplied remain visible as evidence of the caller's intent. Throw terminals surface static message strings (`throw new Error("msg")` → `terminal.message: "msg"`) and template source text for interpolated messages.
+
+### Throws: what's modelled, what isn't
+
+Throw terminals describe what a function *explicitly* throws: `throw new Error("...")`, `throw new HttpError(...)`, etc. Bare rethrows inside a catch block (`try { ... } catch (e) { throw e }`) get enriched with `transition.metadata.rethrow.possibleSources` — the union of throws from the try body's call sites, read off those callees' summaries (one-hop, same-project only).
+
+Not modelled today: *propagated* throws — the implicit throw paths of a function that calls a throwing callee without a try/catch. `function x() { y(); }` can throw whatever `y` throws, but the summary doesn't record this. Consumers who want full propagation can walk the transitive closure themselves (the call graph is already in the summaries). This is an explicit non-goal for v0 — modelling it faithfully runs into diminishing returns fast (every function transitively calls something that can throw TypeError / RangeError / etc.), and the framing question "where does the catalog of known throws end?" has no clean answer. Revisit when a concrete use case motivates a specific slice.
 
 ## Confidence
 
