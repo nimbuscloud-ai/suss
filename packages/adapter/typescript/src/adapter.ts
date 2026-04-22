@@ -38,6 +38,8 @@ import { extractRawBranches } from "./assembly.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
 import { collectClientFieldAccesses } from "./field-accesses.js";
+import { expandReachableClosure } from "./reachable-closure.js";
+import { enrichRethrows } from "./rethrow-enrichment.js";
 import { createTsSubUnitContext } from "./sub-unit-context.js";
 
 import type {
@@ -99,6 +101,33 @@ function extractParameters(
           name: param.getName(),
           position: 0,
           role: "request",
+          typeText: null,
+        });
+      }
+    }
+  } else if (inputMapping.type === "allPositional") {
+    // Emit one Input per declared parameter. Destructured object bindings
+    // expand into one Input per bound name (same as destructuredObject),
+    // so `(ctx, { userId, count })` reads as three inputs.
+    for (let i = 0; i < params.length; i++) {
+      const param = params[i];
+      const nameNode = param.getNameNode();
+      if (Node.isObjectBindingPattern(nameNode)) {
+        for (const element of nameNode.getElements()) {
+          const name = element.getName();
+          result.push({
+            name,
+            position: i,
+            role: inputMapping.defaultRole ?? name,
+            typeText: null,
+          });
+        }
+      } else {
+        const name = param.getName();
+        result.push({
+          name,
+          position: i,
+          role: inputMapping.defaultRole ?? name,
           typeText: null,
         });
       }
@@ -1040,6 +1069,16 @@ export interface TypeScriptAdapterConfig {
   project?: Project;
   frameworks: PatternPack[];
   extractorOptions?: ExtractorOptions;
+  /**
+   * Include library summaries for every function reachable through a
+   * static call edge from a pack-discovered unit. Defaults to `true` —
+   * internal orchestrators, helpers, and utilities that frameworks
+   * don't recognise become `library`-kind summaries with
+   * `recognition: "reachable"` so readers can see their behaviour.
+   * Set to `false` for pack-only extraction (smaller output; only the
+   * units packs explicitly claim).
+   */
+  includeReachable?: boolean;
 }
 
 export interface TypeScriptAdapter {
@@ -1103,12 +1142,32 @@ export function createTypeScriptAdapter(
         project,
         config.extractorOptions,
       );
-      return synthesizeSubUnits(
+      const withSubUnits = synthesizeSubUnits(
         withWrappers,
         project,
         config.frameworks,
         config.extractorOptions,
       );
+      // Transitive-closure pass: every function reachable through a static
+      // call edge from an already-summarized unit becomes a `library`
+      // summary. Gated by `includeReachable` (default true) so callers
+      // can opt out for pack-only extraction.
+      const withClosure =
+        config.includeReachable !== false
+          ? expandReachableClosure(
+              withSubUnits,
+              project,
+              config.extractorOptions,
+            )
+          : withSubUnits;
+
+      // Rethrow enrichment: bare `throw err` inside a catch block picks
+      // up `transition.metadata.rethrow.possibleSources` — the set of
+      // exceptions its enclosing try block's call sites could produce,
+      // read off those callees' summaries. Runs last so every callee's
+      // throw terminals (including reachable-closure ones) are available
+      // to consult.
+      return enrichRethrows(withClosure, project);
     },
   };
 }

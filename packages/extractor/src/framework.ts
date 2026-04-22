@@ -378,6 +378,19 @@ export type InputMappingPattern =
       paramPosition: number;
       /** Role for the single Input when the param is not destructured. Defaults to "props". */
       wholeParamRole?: string;
+    }
+  | {
+      /**
+       * Emit one `Input` per declared parameter, in source order, with
+       * `role = param name` (or `defaultRole` when set). Used by the
+       * reachable-closure pass for internal library functions — there
+       * is no framework-declared role space, so the caller-visible
+       * name IS the role. Captures destructured-parameter bindings the
+       * same way `destructuredObject` does, so `(ctx, { userId })`
+       * reads as two inputs: `ctx` and `userId`.
+       */
+      type: "allPositional";
+      defaultRole?: string;
     };
 
 // =============================================================================

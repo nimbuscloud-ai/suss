@@ -1091,6 +1091,482 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Reachable-closure (transitive library discovery)
+// ---------------------------------------------------------------------------
+//
+// Every function reachable through a static call edge from a pack-discovered
+// unit becomes a `library` summary with `recognition: "reachable"`. Seeds:
+// pack discovery + wrapper expansion + sub-unit synthesis. Stops at
+// node_modules / declaration files / higher-order indirection.
+
+describe("createTypeScriptAdapter — reachable closure", () => {
+  it("discovers internal helpers transitively called from a handler", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function fetchFromDb(id: string): { id: string } | null {
+        if (id === "") return null;
+        return { id };
+      }
+      export function formatResponse(row: { id: string }) {
+        return { id: row.id, label: "ok" };
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { fetchFromDb, formatResponse } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        getThing: async ({ params }: { params: { id: string } }) => {
+          const row = fetchFromDb(params.id);
+          if (!row) return { status: 404 as const, body: { error: "missing" } };
+          return { status: 200 as const, body: formatResponse(row) };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const byName = Object.fromEntries(
+      summaries.map((s) => [s.identity.name, s]),
+    );
+
+    // Handler discovered by the ts-rest pack, helpers reached via closure.
+    expect(byName.getThing).toBeDefined();
+    expect(byName.fetchFromDb).toBeDefined();
+    expect(byName.formatResponse).toBeDefined();
+
+    expect(byName.fetchFromDb.kind).toBe("library");
+    expect(byName.fetchFromDb.identity.boundaryBinding).toEqual({
+      transport: "in-process",
+      semantics: { name: "function-call" },
+      recognition: "reachable",
+    });
+  });
+
+  it("transitively reaches helpers called by other helpers", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function outer(ctx: { id: string }) {
+        return inner(ctx.id);
+      }
+      export function inner(id: string) {
+        return { id, inner: true };
+      }
+      export function unused(x: string) {
+        return x;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { outer } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        go: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: outer(params) };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const names = adapter.extractAll().map((s) => s.identity.name);
+    expect(names).toContain("outer");
+    expect(names).toContain("inner");
+    // `unused` is never reached from a seed → no summary for it.
+    expect(names).not.toContain("unused");
+  });
+
+  it("stops at declaration-file boundaries (skips external deps)", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      declare const db: { findById(id: string): { id: string } | null };
+      const s = initServer();
+      export const router = s.router({} as any, {
+        get: async ({ params }: { params: { id: string } }) => {
+          const row = db.findById(params.id);
+          return { status: 200 as const, body: row };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    // Only the handler — db.findById is `declare const`, not a reachable
+    // function in our code.
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.name).toBe("get");
+  });
+
+  it("opt-out via includeReachable: false yields only pack-discovered units", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      "export function helper(x: string) { return x; }",
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { helper } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        go: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: { v: helper(params.id) } };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+      includeReachable: false,
+    });
+
+    const summaries = adapter.extractAll();
+    expect(summaries.map((s) => s.identity.name)).toEqual(["go"]);
+  });
+
+  it("deduplicates when the same helper is reached from multiple seeds", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      "export function shared(x: string) { return x.toUpperCase(); }",
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { shared } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        a: async () => ({ status: 200 as const, body: shared("a") }),
+        b: async () => ({ status: 200 as const, body: shared("b") }),
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const names = adapter
+      .extractAll()
+      .map((s) => s.identity.name)
+      .sort();
+    // Exactly one `shared` summary despite two reach paths.
+    expect(names.filter((n) => n === "shared")).toHaveLength(1);
+    expect(names).toEqual(["a", "b", "shared"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rethrow enrichment — cross-summary error-taxonomy composition
+// ---------------------------------------------------------------------------
+//
+// `throw err` inside a catch block resolves to null message/exceptionType
+// at the throw site. The post-pass walks the enclosing try block's call
+// sites and collects those callees' throw-terminal messages into
+// `transition.metadata.rethrow.possibleSources`.
+
+describe("createTypeScriptAdapter — rethrow enrichment", () => {
+  it("populates rethrow.possibleSources from direct callees' throws", () => {
+    // `wrapper` is reachable via closure and uses a bare rethrow over
+    // `loadUser`. The rethrow enrichment pass should walk the try
+    // block's call sites, find `loadUser` in the summary set, and
+    // attribute its two throw terminals to the rethrow.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function loadUser(id: string) {
+        if (!id) throw new Error("missing id");
+        if (id.length < 3) throw new Error("id too short");
+        return { id };
+      }
+
+      export function wrapper(id: string) {
+        try {
+          return loadUser(id);
+        } catch (err) {
+          throw err;
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { wrapper } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        get: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: wrapper(params.id) };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = adapter.extractAll();
+    const wrapperSummary = summaries.find((s) => s.identity.name === "wrapper");
+    expect(wrapperSummary).toBeDefined();
+
+    const rethrowTransition = wrapperSummary?.transitions.find(
+      (t) => t.output.type === "throw",
+    );
+    expect(rethrowTransition).toBeDefined();
+
+    const rethrowMeta = rethrowTransition?.metadata?.rethrow as
+      | { possibleSources: Array<{ via: string; message: string | null }> }
+      | undefined;
+    expect(rethrowMeta).toBeDefined();
+
+    const messages = rethrowMeta?.possibleSources.map((s) => s.message).sort();
+    expect(messages).toEqual(["id too short", "missing id"]);
+
+    // Every source attributes to `loadUser`.
+    expect(
+      rethrowMeta?.possibleSources.every((s) => s.via === "loadUser"),
+    ).toBe(true);
+  });
+
+  it("does NOT enrich throws that already carry a static message", () => {
+    // `throw new Error("literal")` is not a rethrow candidate — its
+    // message is already captured from the constructor. Enrichment
+    // should leave it alone.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function direct() {
+        throw new Error("direct");
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { direct } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        get: async () => {
+          return { status: 200 as const, body: { v: direct() } };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const helper = adapter
+      .extractAll()
+      .find((s) => s.identity.name === "direct");
+    const throwTransition = helper?.transitions.find(
+      (t) => t.output.type === "throw",
+    );
+    expect(throwTransition).toBeDefined();
+    expect(throwTransition?.metadata?.rethrow).toBeUndefined();
+  });
+
+  it("unions throws from every call site in a single try body", () => {
+    // `try { a(); b(); c(); } catch (e) { throw e; }` — any of a/b/c
+    // could have thrown, so the rethrow's possibleSources should be the
+    // union of all their throw terminals. `c` doesn't throw; its absence
+    // from the sources is a correctness check on its own.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function a() { throw new Error("a-err"); }
+      export function b() { throw new Error("b-err"); }
+      export function c() { return 42; }
+
+      export function tryAll() {
+        try {
+          a();
+          b();
+          c();
+        } catch (err) {
+          throw err;
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { tryAll } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        get: async () => {
+          tryAll();
+          return { status: 200 as const, body: { ok: true } };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const fn = adapter.extractAll().find((s) => s.identity.name === "tryAll");
+    const rethrow = fn?.transitions.find((t) => t.output.type === "throw");
+    const meta = rethrow?.metadata?.rethrow as
+      | { possibleSources: Array<{ via: string; message: string | null }> }
+      | undefined;
+    expect(meta).toBeDefined();
+
+    const sources = [...(meta?.possibleSources ?? [])].sort((x, y) =>
+      x.via.localeCompare(y.via),
+    );
+    expect(sources.map((s) => s.via)).toEqual(["a", "b"]);
+    expect(sources.map((s) => s.message)).toEqual(["a-err", "b-err"]);
+  });
+
+  it("enriches each rethrow independently when a function has multiple try-catches", () => {
+    // Two separate try/catches, each wrapping a different callee —
+    // each rethrow should pick up only its own try body's throws, not
+    // a merged union across the function.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function a() { throw new Error("a-err"); }
+      export function b() { throw new Error("b-err"); }
+
+      export function twoRethrows() {
+        try { a(); } catch (e) { throw e; }
+        try { b(); } catch (e) { throw e; }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { twoRethrows } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        get: async () => {
+          twoRethrows();
+          return { status: 200 as const, body: { ok: true } };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const fn = adapter
+      .extractAll()
+      .find((s) => s.identity.name === "twoRethrows");
+    expect(fn).toBeDefined();
+
+    const throwTransitions = fn?.transitions.filter(
+      (t) => t.output.type === "throw",
+    );
+    expect(throwTransitions).toHaveLength(2);
+
+    // Extract each rethrow's possibleSources, sorted by line so the
+    // first-throw / second-throw pairing is stable.
+    const byLocation = [...(throwTransitions ?? [])].sort(
+      (x, y) => x.location.start - y.location.start,
+    );
+    const firstMeta = byLocation[0].metadata?.rethrow as
+      | { possibleSources: Array<{ via: string; message: string | null }> }
+      | undefined;
+    const secondMeta = byLocation[1].metadata?.rethrow as
+      | { possibleSources: Array<{ via: string; message: string | null }> }
+      | undefined;
+
+    // Each rethrow enriches from its own try body only.
+    expect(firstMeta?.possibleSources.map((s) => s.via)).toEqual(["a"]);
+    expect(firstMeta?.possibleSources.map((s) => s.message)).toEqual(["a-err"]);
+    expect(secondMeta?.possibleSources.map((s) => s.via)).toEqual(["b"]);
+    expect(secondMeta?.possibleSources.map((s) => s.message)).toEqual([
+      "b-err",
+    ]);
+  });
+
+  it("does NOT enrich rethrows outside a try-catch", () => {
+    // `throw err` where `err` is just a parameter (no enclosing
+    // try-catch) isn't the pattern we're enriching. The enrichment
+    // walks the *try body's* call sites; without an enclosing try,
+    // there's nothing to walk.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function rethrowsInput(err: Error) {
+        throw err;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { rethrowsInput } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        get: async () => {
+          return { status: 200 as const, body: { v: rethrowsInput(new Error("x")) } };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const helper = adapter
+      .extractAll()
+      .find((s) => s.identity.name === "rethrowsInput");
+    const throwTransition = helper?.transitions.find(
+      (t) => t.output.type === "throw",
+    );
+    expect(throwTransition).toBeDefined();
+    expect(throwTransition?.metadata?.rethrow).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Consumer discovery + extraction
 // ---------------------------------------------------------------------------
 
