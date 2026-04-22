@@ -54,15 +54,22 @@ The handler is one shape of code unit; the same summary shape comes out of React
 
 ## What suss produces (and what it doesn't)
 
-suss is an extraction tool. Its output is `BehavioralSummary[]` — structured JSON describing a codebase's behavior. The tool itself doesn't check, compare, aggregate, alert, or track changes over time. Those are separate concerns that take summaries as input.
+suss's product is the `BehavioralSummary[]` — structured JSON describing what each code unit does under what conditions. The CLI bundles four kinds of work over those summaries:
 
-Natural consumers of summaries:
+- `suss extract` — derive summaries from TypeScript source.
+- `suss stub` — produce summaries from declared contracts (OpenAPI, CloudFormation, Storybook CSF3, AppSync).
+- `suss check` — pair providers with consumers (two files, or a whole directory) and report cross-boundary findings. See [cross-boundary-checking.md](cross-boundary-checking.md).
+- `suss inspect` — render a summary file or directory as human-readable text, or `--diff BEFORE AFTER` to see which behavioral cases a change added, removed, or altered.
 
-- **Pairwise checkers** — compare a provider's summary against a consumer's summary and flag mismatches. `suss check` covers this locally; see [cross-boundary-checking.md](cross-boundary-checking.md).
-- **Diff tools** — given two summaries of the same code unit across commits, surface which behavioral cases a change added, removed, or altered.
-- **Aggregators** — ingest summaries from many services, maintain a cross-service view, track evolution over time, alert on regressions. Out of scope for this repository.
+See the [CLI reference](/reference/cli) for the full flag and exit-code surface.
 
-The extraction tool is deliberately scoped small: produce clean, comparable, language-agnostic data and stop there. Any analysis layer — local pairwise, organizational, continuous — consumes summaries as input. That separation matters because the value of every analysis layer scales with how many projects produce summaries, so the priority for suss is that producing summaries is cheap, universal, and doesn't demand configuration.
+Deliberately out of scope for this repository:
+
+- **Cross-service aggregation.** Ingesting summaries from many services, maintaining a cross-org view, tracking evolution over time, alerting on regressions. Each is its own operational concern; the summary format is what lets such tools exist without sharing suss's internals.
+- **Continuous monitoring.** suss runs on demand (locally, in CI). It doesn't run as a daemon, poll repositories, or push findings to external systems.
+- **Authorial intent.** suss derives what the code does; it doesn't invent what the code *should* do. Declared contracts (OpenAPI, ts-rest `responses`, CFN `MethodResponses`, Storybook stories) are the shape nearest to intent, and the checker compares them against derivation rather than replacing derivation with declaration.
+
+The scope is deliberately narrow: produce clean, comparable, language-agnostic data, and provide enough built-in pairing and rendering to demonstrate the data is useful. Any further analysis layer — cross-service, continuous, organisation-scoped — consumes summaries as input. That separation matters because the value of every analysis layer scales with how many projects produce summaries, so suss's priority is that producing summaries is cheap, universal, and doesn't demand configuration.
 
 ## Relationship to prior work
 
