@@ -860,13 +860,14 @@ function tryMatchThrowExpression(
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);
+  const message = extractThrowMessage(callArgs);
 
   const terminal: RawTerminal = {
     kind: "throw",
     statusCode,
     body,
     exceptionType,
-    message: null,
+    message,
     component: null,
     delegateTarget: null,
     emitEvent: null,
@@ -878,6 +879,39 @@ function tryMatchThrowExpression(
   };
 
   return { node, terminal };
+}
+
+/**
+ * Pull the literal message string out of a thrown constructor's arguments.
+ * Covers the two dominant shapes:
+ *
+ *   throw new Error("boom");            // message = "boom"
+ *   throw new HttpError(404, "boom");   // message = "boom"  (first string arg)
+ *
+ * The first string-literal argument (StringLiteral or no-substitution
+ * template literal) is returned regardless of position, so constructors
+ * that put the code before the message still surface the message. Template
+ * literals with substitutions (`Error: ${e}`) preserve their source text —
+ * runtime value isn't resolvable, but the composition stays visible.
+ * Returns null when no static message is present (no string args, or the
+ * thrown expression is a bare identifier / member access).
+ */
+function extractThrowMessage(callArgs: Expression[] | null): string | null {
+  if (callArgs === null) {
+    return null;
+  }
+  for (const arg of callArgs) {
+    if (
+      Node.isStringLiteral(arg) ||
+      Node.isNoSubstitutionTemplateLiteral(arg)
+    ) {
+      return arg.getLiteralValue();
+    }
+    if (Node.isTemplateExpression(arg)) {
+      return arg.getText();
+    }
+  }
+  return null;
 }
 
 /**

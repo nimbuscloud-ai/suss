@@ -763,6 +763,70 @@ describe("throwExpression — matching", () => {
 
     expect(terminals).toHaveLength(1);
     expect(terminals[0].terminal.exceptionType).toBe("Error");
+    expect(terminals[0].terminal.message).toBe("msg");
+  });
+
+  it("captures a literal message from the first string arg regardless of position", () => {
+    // `new HttpError(404, "not found")` — message is the second arg.
+    // The extractor should still surface it, since the dominant shape
+    // in the wild is `new Ctor(code, message)` not just `new Error(message)`.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare class HttpError { constructor(status: number, message: string); }
+      function handler() {
+        throw new HttpError(404, "not found");
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeThrowPattern()]);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.message).toBe("not found");
+  });
+
+  it("preserves template literal source text when message has substitutions", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function handler(id: string) {
+        throw new Error(\`pull request \${id} not found\`);
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeThrowPattern()]);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.message).toBe(
+      "`pull request ${id} not found`",
+    );
+  });
+
+  it("leaves message null when no static string is present", () => {
+    // `throw err` — bare identifier, no callArgs.
+    // `throw new Error(someVariable)` — no static string.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function a(err: Error) { throw err; }
+      function b(s: string) { throw new Error(s); }
+    `,
+    );
+
+    const funcA = file.getFunctions()[0] as FunctionRoot;
+    const funcB = file.getFunctions()[1] as FunctionRoot;
+    const terminalsA = findTerminals(funcA, [makeThrowPattern()]);
+    const terminalsB = findTerminals(funcB, [makeThrowPattern()]);
+
+    expect(terminalsA[0].terminal.message).toBeNull();
+    expect(terminalsB[0].terminal.message).toBeNull();
   });
 
   it("matches throw httpErrorJson(404, { message: 'Not found' }) with constructorPattern 'httpErrorJson'", () => {
