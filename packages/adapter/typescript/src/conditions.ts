@@ -11,6 +11,8 @@ import {
   Node,
 } from "ts-morph";
 
+import { parseConditionExpression } from "./predicates.js";
+
 import type { RawCondition } from "@suss/extractor";
 
 export type FunctionRoot =
@@ -301,6 +303,23 @@ function isAncestorOrSelf(maybeAncestor: Node, node: Node): boolean {
     current = current.getParent();
   }
   return false;
+}
+
+/**
+ * Convert a ConditionInfo (adapter-level: Expression + metadata) to
+ * a RawCondition (IR-bound shape: structured Predicate or source
+ * text fallback). Shared between branch-condition assembly and
+ * effect-precondition capture.
+ */
+export function conditionInfoToRawCondition(info: ConditionInfo): RawCondition {
+  const structured =
+    info.expression !== null ? parseConditionExpression(info.expression) : null;
+  return {
+    sourceText: info.sourceText,
+    structured,
+    polarity: info.polarity,
+    source: info.source,
+  };
 }
 
 /**

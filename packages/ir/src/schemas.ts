@@ -606,6 +606,15 @@ export const EffectSchema = z.discriminatedUnion("type", [
     callee: z.string(),
     args: z.array(z.unknown()),
     async: z.boolean(),
+    /**
+     * Ancestor conditions that gate reaching this call within its
+     * enclosing transition — populated for calls nested inside
+     * conditional blocks (`if (result === "nomatch") findings.push(...)`)
+     * or loop bodies. Absent for unconditional, always-fires calls.
+     * Same shape as Transition.conditions: opaque fallback when the
+     * source condition couldn't be decomposed structurally.
+     */
+    preconditions: z.array(PredicateSchema).optional(),
   }),
   z.object({
     type: z.literal("emission"),

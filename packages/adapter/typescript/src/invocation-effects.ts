@@ -21,8 +21,13 @@
 
 import { type CallExpression, Node } from "ts-morph";
 
-import type { EffectArg, RawEffect } from "@suss/extractor";
-import type { FunctionRoot } from "./conditions.js";
+import {
+  collectAncestorConditionInfos,
+  conditionInfoToRawCondition,
+  type FunctionRoot,
+} from "./conditions.js";
+
+import type { EffectArg, RawCondition, RawEffect } from "@suss/extractor";
 
 export interface InvocationEffectLocation {
   effect: RawEffect;
@@ -63,12 +68,14 @@ export function extractInvocationEffects(
     if (Node.isExpressionStatement(node)) {
       const { call, async } = unwrapCall(node.getExpression());
       if (call !== null) {
+        const preconditions = collectPreconditions(node, func);
         results.push({
           effect: {
             type: "invocation",
             callee: call.getExpression().getText(),
             args: extractArgs(call),
             async,
+            ...(preconditions.length > 0 ? { preconditions } : {}),
           },
           line: node.getStartLineNumber(),
           neverTerminal: false,
@@ -90,12 +97,14 @@ export function extractInvocationEffects(
       ) {
         const { call, async } = unwrapCall(node.getExpression());
         if (call !== null) {
+          const preconditions = collectPreconditions(node, func);
           results.push({
             effect: {
               type: "invocation",
               callee: call.getExpression().getText(),
               args: extractArgs(call),
               async,
+              ...(preconditions.length > 0 ? { preconditions } : {}),
             },
             line: enclosingStatementLine(node),
             neverTerminal: true,
@@ -119,12 +128,14 @@ export function extractInvocationEffects(
       const isPropertyValue =
         Node.isPropertyAssignment(parent) && parent.getInitializer() === node;
       if (isArrayElement || isPropertyValue) {
+        const preconditions = collectPreconditions(node, func);
         results.push({
           effect: {
             type: "invocation",
             callee: node.getExpression().getText(),
             args: extractArgs(node),
             async: false,
+            ...(preconditions.length > 0 ? { preconditions } : {}),
           },
           line: enclosingStatementLine(node),
           neverTerminal: true,
@@ -196,6 +207,22 @@ function extractArg(node: Node, depth: number): EffectArg {
     return { kind: "object", fields };
   }
   return null;
+}
+
+/**
+ * Collect the ancestor if/switch/ternary conditions that gate
+ * reaching `node` within `func`. Reuses the same walker transitions
+ * use for `conditions`; produces RawConditions that downstream
+ * convert to Predicates in the IR.
+ *
+ * For a call inside `if (result === "nomatch") { findings.push(...) }`
+ * this returns `[result === "nomatch"]` as a positive RawCondition.
+ * For a call inside an else branch, the condition is negated.
+ */
+function collectPreconditions(node: Node, func: FunctionRoot): RawCondition[] {
+  return collectAncestorConditionInfos(node, func).map(
+    conditionInfoToRawCondition,
+  );
 }
 
 /**

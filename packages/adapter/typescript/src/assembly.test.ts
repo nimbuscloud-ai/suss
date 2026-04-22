@@ -1141,6 +1141,80 @@ describe("edge cases", () => {
     expect(callees).toEqual(["logger.info"]);
   });
 
+  it("captures ancestor-if preconditions on nested invocation effects", () => {
+    // Canonical pattern: accumulator function walks a collection,
+    // conditionally pushes findings. Each push should carry the
+    // if-condition that gates it.
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function check(items: any[]) {
+        const findings: string[] = [];
+        for (const item of items) {
+          if (item.result === "nomatch") {
+            findings.push("unhandledProviderCase");
+          } else if (item.result === "unknown") {
+            findings.push("lowConfidence");
+          }
+        }
+        return findings;
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const invocations = branches[0].effects.filter(
+      (e) => e.type === "invocation",
+    );
+    expect(invocations).toHaveLength(2);
+    const [first, second] = invocations;
+    if (first.type !== "invocation" || second.type !== "invocation") {
+      throw new Error("expected invocation effects");
+    }
+    // First push fires when item.result === "nomatch"
+    expect(first.preconditions).toBeDefined();
+    expect(first.preconditions?.[0].sourceText).toBe(
+      'item.result === "nomatch"',
+    );
+    expect(first.preconditions?.[0].polarity).toBe("positive");
+    // Second push fires in the else-if — negated nomatch AND positive unknown
+    expect(second.preconditions).toBeDefined();
+    expect(second.preconditions?.length).toBe(2);
+    expect(second.preconditions?.[0].sourceText).toBe(
+      'item.result === "nomatch"',
+    );
+    expect(second.preconditions?.[0].polarity).toBe("negative");
+    expect(second.preconditions?.[1].sourceText).toBe(
+      'item.result === "unknown"',
+    );
+    expect(second.preconditions?.[1].polarity).toBe("positive");
+  });
+
+  it("leaves preconditions unset for unconditional top-level invocations", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function straight(input: any) {
+        logger.info("start");
+        return input;
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const invocation = branches[0].effects.find((e) => e.type === "invocation");
+    if (invocation === undefined || invocation.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(invocation.preconditions).toBeUndefined();
+  });
+
   it("captures literal-string args and object-literal fields on invocation effects", () => {
     // `findings.push({ kind: "X", severity: "error" })` is the
     // canonical error-taxonomy pattern. Without capturing the kind

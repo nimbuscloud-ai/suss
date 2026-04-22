@@ -520,6 +520,12 @@
                       },
                       "async": {
                         "type": "boolean"
+                      },
+                      "preconditions": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/__schema1"
+                        }
                       }
                     },
                     "required": ["type", "callee", "args", "async"],
