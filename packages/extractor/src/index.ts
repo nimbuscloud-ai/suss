@@ -86,13 +86,39 @@ export interface RawTerminal {
   location: { start: number; end: number };
 }
 
+/**
+ * A structured capture of an invocation argument. Only literal values
+ * (string, number, boolean) and object literals whose fields resolve
+ * to literal values are captured. Everything else is recorded as
+ * `null` in the corresponding positional slot — the caller still
+ * knows how many arguments the call had, but the value is opaque.
+ *
+ * Useful for recognising literal-string discriminators like
+ * `findings.push({ kind: "scenarioCoverageGap" })` or
+ * `dispatch({ type: "USER_LOGGED_IN" })` at the summary level, so
+ * downstream consumers (AI agents, error-taxonomy tooling,
+ * release-note generators) can tell which error or action a
+ * function emits without re-reading source.
+ */
+export type EffectArg =
+  | { kind: "string"; value: string }
+  | { kind: "number"; value: number }
+  | { kind: "boolean"; value: boolean }
+  | { kind: "object"; fields: Record<string, EffectArg> }
+  | null;
+
 export type RawEffect =
   | {
       type: "mutation";
       target: string;
       operation: "create" | "update" | "delete";
     }
-  | { type: "invocation"; callee: string; async: boolean }
+  | {
+      type: "invocation";
+      callee: string;
+      args: EffectArg[];
+      async: boolean;
+    }
   | { type: "emission"; event: string }
   | { type: "stateChange"; variable: string };
 
@@ -564,7 +590,7 @@ const effectConverters: EffectConverters = {
   invocation: (e) => ({
     type: "invocation",
     callee: e.callee,
-    args: [],
+    args: e.args,
     async: e.async,
   }),
   emission: (e) => ({ type: "emission", event: e.event }),

@@ -717,16 +717,23 @@ describe("effectToIR", () => {
     });
   });
 
-  it("converts an invocation effect, seeding an empty args list", () => {
+  it("converts an invocation effect, passing args through", () => {
     const effect: RawEffect = {
       type: "invocation",
       callee: "sendEmail",
+      args: [
+        { kind: "string", value: "welcome" },
+        { kind: "object", fields: { to: { kind: "string", value: "x@y.z" } } },
+      ],
       async: true,
     };
     expect(effectToIR(effect)).toEqual({
       type: "invocation",
       callee: "sendEmail",
-      args: [],
+      args: [
+        { kind: "string", value: "welcome" },
+        { kind: "object", fields: { to: { kind: "string", value: "x@y.z" } } },
+      ],
       async: true,
     });
   });

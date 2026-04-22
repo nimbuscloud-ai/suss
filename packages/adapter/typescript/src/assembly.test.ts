@@ -1141,6 +1141,84 @@ describe("edge cases", () => {
     expect(callees).toEqual(["logger.info"]);
   });
 
+  it("captures literal-string args and object-literal fields on invocation effects", () => {
+    // `findings.push({ kind: "X", severity: "error" })` is the
+    // canonical error-taxonomy pattern. Without capturing the kind
+    // field, readers can see that push happens but not which
+    // finding was emitted.
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function emit(findings: any[]) {
+        findings.push({ kind: "scenarioCoverageGap", severity: "error" });
+        logger.info("emitted");
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const pushEffect = branches[0].effects.find(
+      (e) => e.type === "invocation" && e.callee === "findings.push",
+    );
+    expect(pushEffect).toBeDefined();
+    if (pushEffect === undefined || pushEffect.type !== "invocation") {
+      throw new Error("expected findings.push invocation");
+    }
+    expect(pushEffect.args).toEqual([
+      {
+        kind: "object",
+        fields: {
+          kind: { kind: "string", value: "scenarioCoverageGap" },
+          severity: { kind: "string", value: "error" },
+        },
+      },
+    ]);
+
+    const loggerEffect = branches[0].effects.find(
+      (e) => e.type === "invocation" && e.callee === "logger.info",
+    );
+    if (loggerEffect === undefined || loggerEffect.type !== "invocation") {
+      throw new Error("expected logger.info invocation");
+    }
+    expect(loggerEffect.args).toEqual([{ kind: "string", value: "emitted" }]);
+  });
+
+  it("leaves non-literal args as null positional slots", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler(input: any) {
+        logger.info(input.message, 42, true);
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns);
+    const effect = branches[0].effects[0];
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      null,
+      { kind: "number", value: 42 },
+      { kind: "boolean", value: true },
+    ]);
+  });
+
   it("captures spread calls in a returned array literal", () => {
     // Orchestrator pattern: checkPair composes sub-check results
     // via `return [...f(), ...g()]`. The spread's inner call is a

@@ -21,7 +21,7 @@
 
 import { type CallExpression, Node } from "ts-morph";
 
-import type { RawEffect } from "@suss/extractor";
+import type { EffectArg, RawEffect } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
 
 export interface InvocationEffectLocation {
@@ -67,6 +67,7 @@ export function extractInvocationEffects(
           effect: {
             type: "invocation",
             callee: call.getExpression().getText(),
+            args: extractArgs(call),
             async,
           },
           line: node.getStartLineNumber(),
@@ -93,6 +94,7 @@ export function extractInvocationEffects(
             effect: {
               type: "invocation",
               callee: call.getExpression().getText(),
+              args: extractArgs(call),
               async,
             },
             line: enclosingStatementLine(node),
@@ -121,6 +123,7 @@ export function extractInvocationEffects(
           effect: {
             type: "invocation",
             callee: node.getExpression().getText(),
+            args: extractArgs(node),
             async: false,
           },
           line: enclosingStatementLine(node),
@@ -131,6 +134,68 @@ export function extractInvocationEffects(
   });
 
   return results;
+}
+
+/**
+ * Extract structured arguments from a CallExpression. Captures
+ * literal values (strings, numbers, booleans) and object literals
+ * whose fields resolve to literals. Everything else becomes `null`
+ * in the positional slot — the caller retains the argument count
+ * but the value is opaque. Recursion is capped at object-of-literals
+ * to keep the representation tight.
+ */
+function extractArgs(call: CallExpression): EffectArg[] {
+  return call.getArguments().map((arg) => extractArg(arg, 2));
+}
+
+function extractArg(node: Node, depth: number): EffectArg {
+  if (
+    Node.isStringLiteral(node) ||
+    Node.isNoSubstitutionTemplateLiteral(node)
+  ) {
+    return { kind: "string", value: node.getLiteralValue() };
+  }
+  if (Node.isNumericLiteral(node)) {
+    return { kind: "number", value: node.getLiteralValue() };
+  }
+  if (Node.isTrueLiteral(node)) {
+    return { kind: "boolean", value: true };
+  }
+  if (Node.isFalseLiteral(node)) {
+    return { kind: "boolean", value: false };
+  }
+  if (depth > 0 && Node.isObjectLiteralExpression(node)) {
+    const fields: Record<string, EffectArg> = {};
+    for (const prop of node.getProperties()) {
+      if (!Node.isPropertyAssignment(prop)) {
+        continue;
+      }
+      const nameNode = prop.getNameNode();
+      if (
+        !Node.isIdentifier(nameNode) &&
+        !Node.isStringLiteral(nameNode) &&
+        !Node.isNoSubstitutionTemplateLiteral(nameNode)
+      ) {
+        continue;
+      }
+      const name = Node.isIdentifier(nameNode)
+        ? nameNode.getText()
+        : nameNode.getLiteralValue();
+      const initializer = prop.getInitializer();
+      if (initializer === undefined) {
+        continue;
+      }
+      const captured = extractArg(initializer, depth - 1);
+      if (captured !== null) {
+        fields[name] = captured;
+      }
+    }
+    if (Object.keys(fields).length === 0) {
+      return null;
+    }
+    return { kind: "object", fields };
+  }
+  return null;
 }
 
 /**
