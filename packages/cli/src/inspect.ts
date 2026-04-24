@@ -459,7 +459,12 @@ function renderLeaf(
  */
 function renderEffect(effect: Effect, ctx: PerSummaryRenderCtx): string | null {
   if (effect.type === "invocation") {
-    const callee = effect.callee;
+    // Normalize the callee text — extractors that capture a raw
+    // multi-line source region (`arr\n  .filter(...)\n  .join`) would
+    // otherwise emit newlines that break the tree pipe on every
+    // continuation. Same treatment as the other source-text render
+    // paths (predicates, unresolved refs, dependency names).
+    const callee = normalizeSourceText(effect.callee);
     // Check whether this callee spawned a sub-unit for the current
     // parent summary. If so, render the sub-unit reference instead
     // of the raw callee — `+ ComponentName.effect#0 →` is more
@@ -810,6 +815,38 @@ export interface DiffOptions {
   after: string;
 }
 
+/**
+ * A single summary's body can run long — 80+ lines for large branch
+ * trees. By the time the reader has scrolled past the initial file
+ * header, they no longer know which file the current body belongs to.
+ * Every N body lines, re-emit a compact continuation marker under
+ * the summary's body prefix so the file name stays within view.
+ * Short summaries are unaffected.
+ */
+const LONG_SUMMARY_THRESHOLD_LINES = 40;
+
+function injectContinuationMarkers(
+  rendered: string,
+  layout: SummaryLayout,
+  file: string,
+): string {
+  const lines = rendered.split("\n");
+  // Threshold is measured on body lines (everything after the elbow
+  // header). Short summaries get no continuation markers.
+  if (lines.length - 1 <= LONG_SUMMARY_THRESHOLD_LINES) {
+    return rendered;
+  }
+  const out: string[] = [lines[0]];
+  for (let i = 1; i < lines.length; i++) {
+    out.push(lines[i]);
+    const bodyIdx = i;
+    if (bodyIdx % LONG_SUMMARY_THRESHOLD_LINES === 0 && i < lines.length - 1) {
+      out.push(`${layout.bodyPrefix}↳ ${file} (cont.)`);
+    }
+  }
+  return out.join("\n");
+}
+
 export function inspect(options: InspectOptions): void {
   const filePath = path.resolve(options.file);
 
@@ -853,7 +890,10 @@ export function inspect(options: InspectOptions): void {
         bodyPrefix: isLast ? "   " : "│  ",
         inFileGroup: true,
       };
-      process.stdout.write(`${renderSummary(group[i], ctx, layout)}\n`);
+      const rendered = renderSummary(group[i], ctx, layout);
+      process.stdout.write(
+        `${injectContinuationMarkers(rendered, layout, file)}\n`,
+      );
       // Blank line between siblings. The pipe continues through the
       // spacer so the visual tree stays unbroken; the last summary
       // doesn't get one — the next iteration either starts a new file
