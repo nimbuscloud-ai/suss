@@ -165,6 +165,46 @@ describe("returnShape — basic matching", () => {
     });
   });
 
+  it("returnShape with unresolvable extraction (from: 'argument') falls back to the full returned object", () => {
+    // React Router loaders declare `body: { from: "argument", position: 0 }`
+    // on their returnShape terminal — that source isn't valid for
+    // returnShape (no call-arg list), so extraction used to produce null.
+    // The sensible default is "the returned object IS the body."
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      async function loader() {
+        return { modules: [{ id: "a" }] };
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "return",
+      match: { type: "returnShape" },
+      extraction: {
+        body: { from: "argument", position: 0 },
+      },
+    };
+
+    const terminals = findTerminals(func, [pattern]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.body?.shape).toEqual({
+      type: "record",
+      properties: {
+        modules: {
+          type: "array",
+          items: {
+            type: "record",
+            properties: { id: { type: "literal", value: "a" } },
+          },
+        },
+      },
+    });
+  });
+
   it("matches return {} with NO required properties (plain returnShape)", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -1700,7 +1740,11 @@ describe("extraction edge cases", () => {
     expect(terminals[0].terminal.statusCode).toBeNull();
   });
 
-  it("no extraction config → all null", () => {
+  it("no extraction config → body defaults to full returned object shape", () => {
+    // returnShape's natural semantic is "the returned object IS the body."
+    // When a pack doesn't specify body extraction (or specifies an argument-
+    // based one that doesn't apply), fall back to the whole returned object
+    // so callers get a useful shape instead of bare `-> return`.
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
@@ -1721,6 +1765,12 @@ describe("extraction edge cases", () => {
     const terminals = findTerminals(func, [pattern]);
     expect(terminals).toHaveLength(1);
     expect(terminals[0].terminal.statusCode).toBeNull();
-    expect(terminals[0].terminal.body).toBeNull();
+    expect(terminals[0].terminal.body?.shape).toEqual({
+      type: "record",
+      properties: {
+        status: { type: "literal", value: 200, raw: "200" },
+        body: { type: "record", properties: {} },
+      },
+    });
   });
 });
