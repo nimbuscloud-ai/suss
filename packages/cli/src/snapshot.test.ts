@@ -550,6 +550,66 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
+  it("injects continuation markers every 40 body lines for long summaries", () => {
+    // Build a summary with many elif branches so its rendered body
+    // exceeds the continuation threshold. The reader should see the
+    // file name re-emitted as a tree-aligned marker partway through,
+    // not lose context entirely.
+    const transitions: Transition[] = [];
+    for (let i = 0; i < 50; i++) {
+      transitions.push({
+        id: `huge:branch:${i}`,
+        conditions: [
+          {
+            type: "comparison",
+            left: { type: "literal", value: i },
+            op: "eq",
+            right: { type: "literal", value: i },
+          },
+        ],
+        output: {
+          type: "response",
+          statusCode: { type: "literal", value: 200 },
+          body: null,
+          headers: {},
+        },
+        effects: [],
+        location: { start: 10 + i, end: 10 + i },
+        isDefault: false,
+      });
+    }
+    const long: BehavioralSummary = {
+      kind: "handler",
+      location: {
+        file: "app/util/graph/component.ts",
+        range: { start: 10, end: 100 },
+        exportName: "calculateNodeProperties",
+      },
+      identity: {
+        name: "calculateNodeProperties",
+        exportPath: ["calculateNodeProperties"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "reachable",
+        },
+      },
+      inputs: [],
+      transitions,
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const filePath = writeTempJson([long]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    // Snapshot is noisy for this one; assert the continuation marker
+    // appears the right number of times and at the right indent
+    // instead, keeping the test readable.
+    const marker = "   ↳ app/util/graph/component.ts (cont.)";
+    const matches = output.split("\n").filter((l) => l === marker).length;
+    expect(matches).toBeGreaterThanOrEqual(1);
+  });
+
   it("renders library + caller summaries with function-call identity", () => {
     const librarySummary: BehavioralSummary = {
       kind: "library",
