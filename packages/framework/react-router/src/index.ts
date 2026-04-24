@@ -2,6 +2,35 @@
 
 import type { PatternPack } from "@suss/extractor";
 
+/**
+ * Status codes for the `http-errors` package's named constructors.
+ * React Router loaders / actions throw `httpErrorJson(new HttpError.X())`
+ * and the arg's class name is the status source. Kept as a module-scope
+ * constant so pack consumers can inspect / extend the mapping.
+ */
+const HTTP_ERRORS_CODES: Record<string, number> = {
+  BadRequest: 400,
+  Unauthorized: 401,
+  PaymentRequired: 402,
+  Forbidden: 403,
+  NotFound: 404,
+  MethodNotAllowed: 405,
+  NotAcceptable: 406,
+  RequestTimeout: 408,
+  Conflict: 409,
+  Gone: 410,
+  PayloadTooLarge: 413,
+  UnsupportedMediaType: 415,
+  ImATeapot: 418,
+  UnprocessableEntity: 422,
+  TooManyRequests: 429,
+  InternalServerError: 500,
+  NotImplemented: 501,
+  BadGateway: 502,
+  ServiceUnavailable: 503,
+  GatewayTimeout: 504,
+};
+
 export function reactRouterFramework(): PatternPack {
   return {
     name: "react-router",
@@ -68,14 +97,21 @@ export function reactRouterFramework(): PatternPack {
         },
       },
       {
-        // Loaders can throw httpErrorJson(statusCode, body)
+        // Loaders throw `httpErrorJson(new HttpError.NotFound("…"))` from
+        // the `http-errors` package. The arg's class name carries the
+        // status: resolve through `argumentConstructor` rather than taking
+        // the arg's raw source text as a status value.
         kind: "throw",
         match: {
           type: "throwExpression",
           constructorPattern: "httpErrorJson",
         },
         extraction: {
-          statusCode: { from: "argument", position: 0 },
+          statusCode: {
+            from: "argumentConstructor",
+            position: 0,
+            codes: HTTP_ERRORS_CODES,
+          },
           body: { from: "argument", position: 1 },
         },
       },
