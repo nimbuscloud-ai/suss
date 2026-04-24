@@ -550,6 +550,105 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
+  it("path-qualifies cross-file follow references on effects", () => {
+    // Two files. A handler in `src/handler.ts` calls `syncRepositories`
+    // (same file) and `fetchFromVcs` (defined in `src/vcs.ts`). The
+    // same-file ref stays bare; the cross-file ref qualifies with the
+    // target's path-sans-extension so the reader knows where to look.
+    const vcsHelper: BehavioralSummary = {
+      kind: "library",
+      location: {
+        file: "src/vcs.ts",
+        range: { start: 1, end: 5 },
+        exportName: "fetchFromVcs",
+      },
+      identity: {
+        name: "fetchFromVcs",
+        exportPath: ["fetchFromVcs"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "reachable",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "fetchFromVcs:return",
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [],
+          location: { start: 1, end: 5 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const handler: BehavioralSummary = {
+      kind: "handler",
+      location: {
+        file: "src/handler.ts",
+        range: { start: 10, end: 20 },
+        exportName: "action",
+      },
+      identity: {
+        name: "action",
+        exportPath: ["action"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "react-router",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "action:return",
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [
+            {
+              type: "invocation",
+              callee: "syncRepositories",
+              args: [],
+              async: false,
+            },
+            {
+              type: "invocation",
+              callee: "fetchFromVcs",
+              args: [],
+              async: false,
+            },
+          ],
+          location: { start: 10, end: 20 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    // `syncRepositories` as a same-file summary; distinct from the
+    // cross-file `fetchFromVcs` above.
+    const syncRepositories: BehavioralSummary = {
+      ...vcsHelper,
+      location: {
+        file: "src/handler.ts",
+        range: { start: 30, end: 35 },
+        exportName: "syncRepositories",
+      },
+      identity: {
+        ...vcsHelper.identity,
+        name: "syncRepositories",
+        exportPath: ["syncRepositories"],
+      },
+    };
+    const filePath = writeTempJson([handler, syncRepositories, vcsHelper]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
   it("expands render subtrees so branches sharing a root stay distinguishable", () => {
     // Two branches of the same component both render `<Container />`
     // but with different children. Inspect should surface the
