@@ -339,6 +339,138 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
+  it("qualifies generic names (loader/action/default) with file path", () => {
+    // Two route files both exporting a `loader` — bare `loader` as a
+    // header is ambiguous; inspect should prefix with the relative
+    // file path (minus extension) so readers can tell them apart.
+    const loaderA: BehavioralSummary = {
+      kind: "loader",
+      location: {
+        file: "app/routes/_app.tsx",
+        range: { start: 10, end: 20 },
+        exportName: "loader",
+      },
+      identity: {
+        name: "loader",
+        exportPath: ["loader"],
+        boundaryBinding: {
+          transport: "http",
+          semantics: { name: "function-call" },
+          recognition: "react-router",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "l1",
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [],
+          location: { start: 10, end: 20 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const loaderB: BehavioralSummary = {
+      ...loaderA,
+      location: { ...loaderA.location, file: "app/routes/_app.admin.tsx" },
+    };
+    const filePath = writeTempJson([loaderA, loaderB]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
+  it("replaces useEffect effect with a reference to its spawned sub-unit", () => {
+    // A React component with two `useEffect` calls spawns two
+    // sub-units (`Foo.effect#0`, `Foo.effect#1`). Rather than rendering
+    // `+ useEffect` twice on the parent's effect list, inspect should
+    // reference each sub-unit directly. The sub-unit summaries are
+    // immediately readable below.
+    const parent: BehavioralSummary = {
+      kind: "component",
+      location: {
+        file: "src/Foo.tsx",
+        range: { start: 10, end: 40 },
+        exportName: "Foo",
+      },
+      identity: {
+        name: "Foo",
+        exportPath: ["Foo"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "react",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "foo-render",
+          conditions: [],
+          output: { type: "render", component: "div" },
+          effects: [
+            {
+              type: "invocation",
+              callee: "useEffect",
+              args: [],
+              async: false,
+            },
+            {
+              type: "invocation",
+              callee: "useEffect",
+              args: [],
+              async: false,
+            },
+          ],
+          location: { start: 10, end: 40 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const mkEffect = (i: number): BehavioralSummary => ({
+      kind: "handler",
+      location: {
+        file: "src/Foo.tsx",
+        range: { start: 12 + i, end: 13 + i },
+        exportName: `effect#${i}`,
+      },
+      identity: {
+        name: `Foo.effect#${i}`,
+        exportPath: [`effect#${i}`],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "react",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: `fe${i}`,
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [],
+          location: { start: 12 + i, end: 13 + i },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+      metadata: {
+        react: { kind: "effect", component: "Foo", index: i, deps: null },
+      },
+    });
+    const filePath = writeTempJson([parent, mkEffect(0), mkEffect(1)]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
   it("renders library + caller summaries with function-call identity", () => {
     const librarySummary: BehavioralSummary = {
       kind: "library",
