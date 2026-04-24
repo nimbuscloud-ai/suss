@@ -55,6 +55,30 @@ import type { FunctionRoot } from "./conditions.js";
 // Parameter extraction
 // ---------------------------------------------------------------------------
 
+/**
+ * Expand a destructured parameter binding pattern into its bound names.
+ * Handles both `{ a, b }` and `[a, b]` forms. Rest elements (`...rest`)
+ * surface under their rest-binding name; array holes (`[, , a]`) are
+ * skipped. Returns null when the node isn't a binding pattern, so callers
+ * can fall back to treating the parameter as a single value.
+ */
+function bindingPatternNames(nameNode: Node): string[] | null {
+  if (Node.isObjectBindingPattern(nameNode)) {
+    return nameNode.getElements().map((e) => e.getName());
+  }
+  if (Node.isArrayBindingPattern(nameNode)) {
+    const names: string[] = [];
+    for (const element of nameNode.getElements()) {
+      if (Node.isOmittedExpression(element)) {
+        continue;
+      }
+      names.push(element.getName());
+    }
+    return names;
+  }
+  return null;
+}
+
 function extractParameters(
   func: FunctionRoot,
   inputMapping: InputMappingPattern,
@@ -89,9 +113,9 @@ function extractParameters(
     const param = params[0];
     if (param !== undefined) {
       const nameNode = param.getNameNode();
-      if (Node.isObjectBindingPattern(nameNode)) {
-        for (const element of nameNode.getElements()) {
-          const name = element.getName();
+      const boundNames = bindingPatternNames(nameNode);
+      if (boundNames !== null) {
+        for (const name of boundNames) {
           const role = inputMapping.knownProperties[name] ?? name;
           result.push({ name, position: 0, role, typeText: null });
         }
@@ -106,15 +130,16 @@ function extractParameters(
       }
     }
   } else if (inputMapping.type === "allPositional") {
-    // Emit one Input per declared parameter. Destructured object bindings
-    // expand into one Input per bound name (same as destructuredObject),
-    // so `(ctx, { userId, count })` reads as three inputs.
+    // Emit one Input per declared parameter. Destructured bindings
+    // (object or array) expand into one Input per bound name, so
+    // `(ctx, { userId, count })` reads as three inputs and
+    // `([state, setState]) => ...` reads as two.
     for (let i = 0; i < params.length; i++) {
       const param = params[i];
       const nameNode = param.getNameNode();
-      if (Node.isObjectBindingPattern(nameNode)) {
-        for (const element of nameNode.getElements()) {
-          const name = element.getName();
+      const boundNames = bindingPatternNames(nameNode);
+      if (boundNames !== null) {
+        for (const name of boundNames) {
           result.push({
             name,
             position: i,

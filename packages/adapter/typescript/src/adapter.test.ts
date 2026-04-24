@@ -157,6 +157,36 @@ describe("extractCodeStructure", () => {
     expect(raw.identity.kind).toBe("handler");
   });
 
+  it("extracts parameters from an ArrayBindingPattern under allPositional", () => {
+    // `([state, setState]) => ...` — common in callbacks that destructure
+    // tuple returns. Each bound name should surface as its own Input.
+    // Omitted-expression holes (`[, b]`) are skipped.
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      export const handler = ([state, setState, , rest]: [string, (s: string) => void, number, unknown]) => {
+        return state;
+      };
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const allPositionalPack: PatternPack = {
+      ...tsRestPack,
+      name: "all-positional",
+      discovery: [
+        { kind: "handler", match: { type: "namedExport", names: ["handler"] } },
+      ],
+      inputMapping: { type: "allPositional" },
+    };
+    const units = discoverUnits(file, allPositionalPack.discovery);
+    expect(units).toHaveLength(1);
+
+    const raw = extractCodeStructure(units[0], allPositionalPack, "test.ts");
+    expect(raw.parameters).toEqual([
+      { name: "state", position: 0, role: "state", typeText: null },
+      { name: "setState", position: 0, role: "setState", typeText: null },
+      { name: "rest", position: 0, role: "rest", typeText: null },
+    ]);
+  });
+
   it("extracts dependency calls from function body", () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
