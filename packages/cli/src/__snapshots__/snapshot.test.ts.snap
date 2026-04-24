@@ -83,6 +83,24 @@ exports[`inspect output snapshots > expands render subtrees so branches sharing 
 "
 `;
 
+exports[`inspect output snapshots > path-qualifies cross-file follow references on effects 1`] = `
+"src/handler.ts
+├─ action  (react-router handler | line 10)
+│      -> return
+│        + syncRepositories →
+│        + src/vcs.fetchFromVcs →
+│
+└─ syncRepositories  (reachable library | line 30)
+       -> return
+
+src/vcs.ts
+└─ fetchFromVcs  (reachable library | line 1)
+       -> return
+
+3 summaries inspected.
+"
+`;
+
 exports[`inspect output snapshots > qualifies generic names (loader/action/default) with file path 1`] = `
 "app/routes/_app.tsx
 └─ loader  (react-router loader | line 10)
@@ -131,9 +149,9 @@ exports[`inspect output snapshots > renders effects under each transition with f
 src/handler.ts
 └─ submit  (reachable handler | line 10)
        -> return
-         + formatPayload →
+         + src/helpers.formatPayload →
          + logger.info
-         + utils.formatPayload →
+         + src/helpers.formatPayload →
 
 2 summaries inspected.
 "

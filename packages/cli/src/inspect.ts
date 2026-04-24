@@ -325,12 +325,17 @@ type Leaf = {
  */
 interface RenderCtx {
   /**
-   * Names of every summary in the file currently being inspected, for
-   * the `→` reference marker when an effect's callee resolves to
-   * another summary. Kept as a plain Set — render passes one file at
-   * a time.
+   * Map from a summary's identity name (both full name and last dotted
+   * segment, so `Form.onSubmit` and `onSubmit` both resolve) to the
+   * relative file path it lives in. Used to both flag an effect's
+   * callee as a known follow target and decide whether to render the
+   * `→` reference bare (same file) or path-qualified (cross-file, so
+   * readers know which file-group to scroll to). Collisions under a
+   * given name map to the first summary encountered — ambiguous names
+   * are already path-qualified at the header level via
+   * `ambiguousNames`, so the bare-name fallback here is safe.
    */
-  summaryNames: Set<string>;
+  fileByName: Map<string, string>;
   /**
    * For each parent summary (keyed by `identity.name`), the sub-units
    * that were spawned by a specific callee in the parent's body,
@@ -363,11 +368,21 @@ interface RenderCtx {
 interface PerSummaryRenderCtx {
   readonly base: RenderCtx;
   readonly parentName: string;
+  /**
+   * File of the summary currently being rendered. Effects whose callee
+   * resolves to a summary in a *different* file get path-qualified so
+   * readers skimming the output know which file-group to scroll to.
+   */
+  readonly parentFile: string;
   readonly spawnerUsed: Map<string, number>;
 }
 
-function perSummary(base: RenderCtx, parentName: string): PerSummaryRenderCtx {
-  return { base, parentName, spawnerUsed: new Map() };
+function perSummary(
+  base: RenderCtx,
+  parentName: string,
+  parentFile: string,
+): PerSummaryRenderCtx {
+  return { base, parentName, parentFile, spawnerUsed: new Map() };
 }
 
 /**
@@ -574,10 +589,11 @@ function renderEffect(effect: Effect, ctx: PerSummaryRenderCtx): string | null {
     if (spawned !== null) {
       return `+ ${spawned} →`;
     }
-    const followMark = isFollowTarget(callee, ctx.base.summaryNames)
-      ? " →"
-      : "";
-    return `+ ${callee}${followMark}`;
+    const target = resolveFollowTarget(callee, ctx);
+    if (target !== null) {
+      return `+ ${target} →`;
+    }
+    return `+ ${callee}`;
   }
   if (effect.type === "mutation") {
     return `+ mutate ${effect.target} (${effect.operation})`;
@@ -617,21 +633,43 @@ function consumeSpawnedSubUnit(
 }
 
 /**
- * Is this effect's callee a reference to another summary in the set?
- * Match in precedence: full callee text, then the last dotted segment
- * (so `utils.formatError` resolves against a `formatError` summary),
- * then the qualified React sub-unit name if the callee happens to
- * read that way (e.g. `Form.onSubmit`).
+ * If the callee resolves to a known summary, return the display text
+ * for a follow reference: the bare name for same-file targets, or
+ * `<relative/path/without-ext>.<name>` for cross-file ones so the
+ * reader knows which file-group to scroll to. Resolution matches the
+ * full callee text first, then the last dotted segment so
+ * `utils.formatError` still resolves against a `formatError` summary.
+ * Returns null when the callee isn't summarized anywhere.
  */
-function isFollowTarget(callee: string, names: Set<string>): boolean {
-  if (names.has(callee)) {
-    return true;
+function resolveFollowTarget(
+  callee: string,
+  ctx: PerSummaryRenderCtx,
+): string | null {
+  const byName = ctx.base.fileByName;
+  // Prefer a full-callee match (`"Form.onSubmit"` → `Form.onSubmit`) so
+  // sub-unit names with dots stay intact. Fall back to the last dotted
+  // segment, and when that's what matched, render the resolved name
+  // rather than the original callee text — otherwise a cross-file
+  // `utils.formatPayload` resolves against a `formatPayload` summary
+  // and renders nonsense like `src/helpers.utils.formatPayload`.
+  let resolved: string | null = null;
+  if (byName.has(callee)) {
+    resolved = callee;
+  } else {
+    const last = callee.split(".").pop();
+    if (last !== undefined && last !== callee && byName.has(last)) {
+      resolved = last;
+    }
   }
-  const last = callee.split(".").pop();
-  if (last !== undefined && last !== callee && names.has(last)) {
-    return true;
+  if (resolved === null) {
+    return null;
   }
-  return false;
+  const targetFile = byName.get(resolved) ?? ctx.parentFile;
+  if (targetFile === ctx.parentFile) {
+    return callee;
+  }
+  const stripped = targetFile.replace(/\.[^./]+$/, "");
+  return `${stripped}.${resolved}`;
 }
 
 function renderNode(
@@ -756,7 +794,7 @@ function renderSummary(
   ctx: RenderCtx,
   layout: SummaryLayout = STANDALONE_LAYOUT,
 ): string {
-  const perCtx = perSummary(ctx, summary.identity.name);
+  const perCtx = perSummary(ctx, summary.identity.name, summary.location.file);
   const lines: string[] = [];
 
   // Single header line: `<name> (<recognition> <kind> | line N [| confidence])`.
@@ -1011,13 +1049,21 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
   // Every summary name in the file — inspect's `→` follow-reference
   // marker uses this to flag effects whose callee is itself summarized.
   // Includes the full identity name and the last dotted segment so
-  // `Form.onSubmit` and `onSubmit` both resolve.
-  const names = new Set<string>();
+  // `Form.onSubmit` and `onSubmit` both resolve. Parallel `fileByName`
+  // carries where each name lives so cross-file refs can be path-
+  // qualified in the effect render.
+  const fileByName = new Map<string, string>();
   for (const s of summaries) {
-    names.add(s.identity.name);
+    // First write wins on collisions — ambiguous names are already
+    // qualified at the header level via `ambiguousNames`, so the
+    // `fileByName` lookup on a colliding bare name only needs to
+    // succeed often enough to mark it as summarized somewhere.
+    if (!fileByName.has(s.identity.name)) {
+      fileByName.set(s.identity.name, s.location.file);
+    }
     const last = s.identity.name.split(".").pop();
-    if (last !== undefined) {
-      names.add(last);
+    if (last !== undefined && !fileByName.has(last)) {
+      fileByName.set(last, s.location.file);
     }
   }
 
@@ -1082,7 +1128,7 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     spawnerIndex.set(parent, ordered);
   }
 
-  return { summaryNames: names, spawnerIndex, ambiguousNames };
+  return { fileByName, spawnerIndex, ambiguousNames };
 }
 
 // ---------------------------------------------------------------------------
