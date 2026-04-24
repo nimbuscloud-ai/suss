@@ -500,26 +500,51 @@ function tryMatchReturnStatement(
   node: Node,
   pattern: TerminalPattern,
 ): FoundTerminal | null {
-  if (!Node.isReturnStatement(node)) {
-    return null;
-  }
-
-  // Capture the shape of the returned expression. Without this,
-  // every `return x;` surfaces as `-> return (default)` in inspect
-  // output regardless of what `x` is — opaque to downstream consumers
-  // that want to see the function's output. `extractShape` walks the
-  // expression structurally first (object literals, conditional
-  // expressions, identifiers resolved through AST) and falls back
-  // to the type checker for anything it can't decompose.
-  const expr = node.getExpression();
-  let body: RawTerminal["body"] = null;
-  if (expr !== undefined) {
-    const shape = extractShape(expr);
-    if (shape !== null) {
-      body = { typeText: null, shape };
+  // Explicit `return expr;`
+  if (Node.isReturnStatement(node)) {
+    const expr = node.getExpression();
+    // Capture the shape of the returned expression. Without this,
+    // every `return x;` surfaces as `-> return (default)` in inspect
+    // output regardless of what `x` is — opaque to downstream consumers
+    // that want to see the function's output. `extractShape` walks the
+    // expression structurally first (object literals, conditional
+    // expressions, identifiers resolved through AST) and falls back
+    // to the type checker for anything it can't decompose.
+    let body: RawTerminal["body"] = null;
+    if (expr !== undefined) {
+      const shape = extractShape(expr);
+      if (shape !== null) {
+        body = { typeText: null, shape };
+      }
     }
+    return buildReturnTerminal(node, pattern, body);
   }
 
+  // Expression-body arrow: `(v) => setValue(v)` or `() => cond ? a : b`.
+  // The body expression IS the return value. The per-node walker skips
+  // into nested arrow bodies, so we only match the outermost arrow
+  // (which IS the function being analysed) here — nested callbacks get
+  // their own findTerminals pass when they're themselves discovered.
+  if (Node.isArrowFunction(node)) {
+    const body = node.getBody();
+    if (body === undefined || Node.isBlock(body)) {
+      return null;
+    }
+    // `body` is an Expression node.
+    const shape = extractShape(body);
+    const terminalBody: RawTerminal["body"] =
+      shape !== null ? { typeText: null, shape } : null;
+    return buildReturnTerminal(body, pattern, terminalBody);
+  }
+
+  return null;
+}
+
+function buildReturnTerminal(
+  locationNode: Node,
+  pattern: TerminalPattern,
+  body: RawTerminal["body"],
+): FoundTerminal {
   const terminal: RawTerminal = {
     kind: pattern.kind,
     statusCode: null,
@@ -531,12 +556,11 @@ function tryMatchReturnStatement(
     emitEvent: null,
     renderTree: null,
     location: {
-      start: node.getStartLineNumber(),
-      end: node.getEndLineNumber(),
+      start: locationNode.getStartLineNumber(),
+      end: locationNode.getEndLineNumber(),
     },
   };
-
-  return { node, terminal };
+  return { node: locationNode, terminal };
 }
 
 /**
@@ -550,10 +574,17 @@ function tryMatchJsxReturn(
   node: Node,
   pattern: TerminalPattern,
 ): FoundTerminal | null {
-  if (!Node.isReturnStatement(node)) {
-    return null;
+  // Normal `return <X />` — returns JSX from a block-body function.
+  // Expression-body arrow `() => <X />` — the body expression IS JSX.
+  let expr: Node | undefined;
+  if (Node.isReturnStatement(node)) {
+    expr = node.getExpression();
+  } else if (Node.isArrowFunction(node)) {
+    const body = node.getBody();
+    if (body !== undefined && !Node.isBlock(body)) {
+      expr = body;
+    }
   }
-  const expr = node.getExpression();
   if (expr === undefined) {
     return null;
   }
@@ -1051,6 +1082,32 @@ export function findTerminals(
       }
     }
   });
+
+  // Fallback for expression-body arrows (`(v) => setValue(v)`, `() => <X />`):
+  // the function IS its own implicit return, but `forEachDescendant` doesn't
+  // include `func` itself, and the descendant walk's matchers target
+  // ReturnStatement / JsxElement-inside-return. When nothing matched but
+  // `func` is an expression-body arrow, give the return + JSX matchers a
+  // chance at the arrow node itself. Skipped when the descendant walk found
+  // something (e.g. `(args) => ({ status, body })` already matched
+  // returnShape on the inner ObjectLiteralExpression).
+  if (results.length === 0 && Node.isArrowFunction(func)) {
+    const body = func.getBody();
+    if (body !== undefined && !Node.isBlock(body)) {
+      for (const pattern of patterns) {
+        let found: FoundTerminal | null = null;
+        if (pattern.match.type === "returnStatement") {
+          found = tryMatchReturnStatement(func, pattern);
+        } else if (pattern.match.type === "jsxReturn") {
+          found = tryMatchJsxReturn(func, pattern);
+        }
+        if (found !== null) {
+          results.push(found);
+          break;
+        }
+      }
+    }
+  }
 
   return results;
 }

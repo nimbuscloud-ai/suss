@@ -269,6 +269,70 @@ describe("returnShape — arrow expression body", () => {
     });
   });
 
+  it("returnStatement pattern matches expression-body arrows (React event handler shape)", () => {
+    // `(v) => setValue(v)` — inline event handler, no block, no
+    // explicit return statement. The returnStatement matcher should
+    // synthesise a return terminal from the expression body so the
+    // summary isn't empty.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare function setValue(v: string): void;
+      const onChange = (v: string) => setValue(v);
+    `,
+    );
+    const varDecl = file.getVariableDeclarations()[0];
+    const func = varDecl.getInitializerOrThrow() as FunctionRoot;
+    const terminals = findTerminals(func, [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.kind).toBe("return");
+  });
+
+  it("jsxReturn pattern matches expression-body arrows returning JSX", () => {
+    // `() => <Foo />` — inline arrow returning JSX (common for tiny
+    // components and render-prop callbacks).
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.tsx",
+      "const Cmp = () => <div>hi</div>;",
+    );
+    const varDecl = file.getVariableDeclarations()[0];
+    const func = varDecl.getInitializerOrThrow() as FunctionRoot;
+    const terminals = findTerminals(func, [
+      { kind: "render", match: { type: "jsxReturn" }, extraction: {} },
+    ]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.kind).toBe("render");
+    expect(terminals[0].terminal.component).toBe("div");
+  });
+
+  it("expression-body arrow fallback does NOT double-match when returnShape already fired", () => {
+    // When a pack's terminals include both returnShape and
+    // returnStatement (some packs do for generality), an arrow like
+    // `(args) => ({ status, body })` should produce exactly one
+    // terminal — the returnShape match on the inner object — not two.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      "const handler = async () => ({ status: 200, body: {} });",
+    );
+    const varDecl = file.getVariableDeclarations()[0];
+    const func = varDecl.getInitializerOrThrow() as FunctionRoot;
+    const terminals = findTerminals(func, [
+      makeReturnShapePattern(["status", "body"]),
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ]);
+    expect(terminals).toHaveLength(1);
+    // returnShape won via descendant walk; returnStatement fallback skipped.
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
+  });
+
   it("does NOT match nested object inside expression body (only the outer object)", () => {
     const project = createProject();
     const file = project.createSourceFile(
