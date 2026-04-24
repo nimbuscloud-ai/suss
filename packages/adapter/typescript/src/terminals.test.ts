@@ -1713,6 +1713,118 @@ describe("extraction — from: 'constructor'", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// extraction — from: "argumentConstructor" peeks into wrapped new-expressions
+// ---------------------------------------------------------------------------
+
+describe("extraction — from: 'argumentConstructor'", () => {
+  it("resolves a wrapped `throw wrap(new X.Y())` via the arg's constructor name", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare function httpErrorJson(e: unknown): never;
+      declare const HttpError: { NotFound: new (msg: string) => Error };
+      function handler() {
+        throw httpErrorJson(new HttpError.NotFound("missing"));
+      }
+    `,
+    );
+
+    const func = file
+      .getFunctions()
+      .find((f) => f.getName() === "handler") as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "throw",
+      match: { type: "throwExpression", constructorPattern: "httpErrorJson" },
+      extraction: {
+        statusCode: {
+          from: "argumentConstructor",
+          position: 0,
+          codes: { "HttpError.NotFound": 404, NotFound: 404 },
+        },
+      },
+    };
+
+    const terminals = findTerminals(func, [pattern]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 404,
+    });
+  });
+
+  it("falls back to the last dot-segment when the full name is not mapped", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare function httpErrorJson(e: unknown): never;
+      declare const HttpError: { BadRequest: new () => Error };
+      function handler() {
+        throw httpErrorJson(new HttpError.BadRequest());
+      }
+    `,
+    );
+
+    const func = file
+      .getFunctions()
+      .find((f) => f.getName() === "handler") as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "throw",
+      match: { type: "throwExpression", constructorPattern: "httpErrorJson" },
+      extraction: {
+        statusCode: {
+          from: "argumentConstructor",
+          position: 0,
+          codes: { BadRequest: 400 },
+        },
+      },
+    };
+
+    const terminals = findTerminals(func, [pattern]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 400,
+    });
+  });
+
+  it("returns null when the wrapped arg isn't a new-expression", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare function httpErrorJson(e: unknown): never;
+      declare const err: Error;
+      function handler() {
+        throw httpErrorJson(err);
+      }
+    `,
+    );
+
+    const func = file
+      .getFunctions()
+      .find((f) => f.getName() === "handler") as FunctionRoot;
+    const pattern: TerminalPattern = {
+      kind: "throw",
+      match: { type: "throwExpression", constructorPattern: "httpErrorJson" },
+      extraction: {
+        statusCode: {
+          from: "argumentConstructor",
+          position: 0,
+          codes: { NotFound: 404 },
+        },
+      },
+    };
+
+    const terminals = findTerminals(func, [pattern]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toBeNull();
+    expect(terminals[0].terminal.exceptionType).toBe("httpErrorJson");
+  });
+});
+
 describe("extraction edge cases", () => {
   it("throw with property extraction for statusCode returns null (v0 limitation)", () => {
     const project = createProject();
