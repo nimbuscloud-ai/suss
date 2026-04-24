@@ -12,6 +12,7 @@ import { pairSummaries } from "@suss/checker";
 import type {
   BehavioralSummary,
   Derivation,
+  Effect,
   Gap,
   Output,
   Predicate,
@@ -204,9 +205,25 @@ function formatOutput(output: Output): string {
 
 type Leaf = {
   output: Output;
+  effects: Effect[];
   isDefault: boolean;
   declaredStatuses: Set<number> | null;
 };
+
+/**
+ * Render context threaded through the tree walker so leaf rendering
+ * can mark effects that reach into other summaries in the same file
+ * (the `→` follow-reference hint).
+ */
+interface RenderCtx {
+  /**
+   * Names of every summary in the file currently being inspected, for
+   * the `→` reference marker when an effect's callee resolves to
+   * another summary. Kept as a plain Set — render passes one file at
+   * a time.
+   */
+  summaryNames: Set<string>;
+}
 
 type TreeNode =
   | { kind: "empty" }
@@ -302,6 +319,7 @@ function buildDecisionTree(transitions: Transition[]): TreeNode {
   for (const t of transitions) {
     root = insertIntoTree(root, t.conditions, 0, {
       output: t.output,
+      effects: t.effects,
       isDefault: t.isDefault,
       declaredStatuses: null, // filled by caller wrapper
     });
@@ -309,7 +327,8 @@ function buildDecisionTree(transitions: Transition[]): TreeNode {
   return root;
 }
 
-function renderLeaf(leaf: Leaf, indent: string): string {
+function renderLeaf(leaf: Leaf, indent: string, ctx: RenderCtx): string[] {
+  const lines: string[] = [];
   let line = `${indent}-> ${formatOutput(leaf.output)}`;
   if (leaf.declaredStatuses !== null && leaf.output.type === "response") {
     const sc = leaf.output.statusCode;
@@ -322,53 +341,114 @@ function renderLeaf(leaf: Leaf, indent: string): string {
       line += "  !! undeclared";
     }
   }
-  return line;
+  lines.push(line);
+  // Effects, rendered as compact cross-references. Each effect is one
+  // line at the same indent as the terminal, prefixed `+ `. When an
+  // effect's callee resolves to a summary in the same file, append a
+  // `→` marker to signal "this has its own summary nearby — follow
+  // it for detail." No arg expansion in the default view; the idea
+  // is a navigable index, not an inline function body.
+  for (const effect of leaf.effects) {
+    const rendered = renderEffect(effect, ctx);
+    if (rendered !== null) {
+      lines.push(`${indent}  ${rendered}`);
+    }
+  }
+  return lines;
+}
+
+/**
+ * Short, reference-style effect rendering. Only invocation effects
+ * surface by default — mutation/emission/stateChange are folded in
+ * too, but invocation is the dominant case and the one readers care
+ * about for "what did this handler call."
+ */
+function renderEffect(effect: Effect, ctx: RenderCtx): string | null {
+  if (effect.type === "invocation") {
+    const callee = effect.callee;
+    const followMark = isFollowTarget(callee, ctx.summaryNames) ? " →" : "";
+    return `+ ${callee}${followMark}`;
+  }
+  if (effect.type === "mutation") {
+    return `+ mutate ${effect.target} (${effect.operation})`;
+  }
+  if (effect.type === "emission") {
+    return `+ emit ${effect.event}`;
+  }
+  if (effect.type === "stateChange") {
+    return `+ state ${effect.variable}`;
+  }
+  return null;
+}
+
+/**
+ * Is this effect's callee a reference to another summary in the set?
+ * Match in precedence: full callee text, then the last dotted segment
+ * (so `utils.formatError` resolves against a `formatError` summary),
+ * then the qualified React sub-unit name if the callee happens to
+ * read that way (e.g. `Form.onSubmit`).
+ */
+function isFollowTarget(callee: string, names: Set<string>): boolean {
+  if (names.has(callee)) {
+    return true;
+  }
+  const last = callee.split(".").pop();
+  if (last !== undefined && last !== callee && names.has(last)) {
+    return true;
+  }
+  return false;
 }
 
 function renderNode(
   node: TreeNode,
   indent: string,
   keyword: "if" | "elif",
+  ctx: RenderCtx,
 ): string[] {
   if (node.kind === "empty") {
     return [];
   }
   if (node.kind === "leaf") {
-    return [renderLeaf(node.leaf, indent)];
+    return renderLeaf(node.leaf, indent, ctx);
   }
   const lines: string[] = [];
   lines.push(`${indent}${keyword}  ${formatCondition(node.predicate)}`);
   const inner = `${indent}  `;
-  lines.push(...renderThenSide(node.thenBranch, inner));
+  lines.push(...renderThenSide(node.thenBranch, inner, ctx));
 
   // Chain elif when the else side is a single branch; emit a bare `else`
   // when it's a leaf.
   let el: TreeNode = node.elseBranch;
   while (el.kind === "branch") {
     lines.push(`${indent}elif  ${formatCondition(el.predicate)}`);
-    lines.push(...renderThenSide(el.thenBranch, inner));
+    lines.push(...renderThenSide(el.thenBranch, inner, ctx));
     el = el.elseBranch;
   }
   if (el.kind === "leaf") {
     lines.push(`${indent}else`);
-    lines.push(renderLeaf(el.leaf, inner));
+    lines.push(...renderLeaf(el.leaf, inner, ctx));
   }
   return lines;
 }
 
-function renderThenSide(node: TreeNode, indent: string): string[] {
+function renderThenSide(
+  node: TreeNode,
+  indent: string,
+  ctx: RenderCtx,
+): string[] {
   if (node.kind === "empty") {
     return [];
   }
   if (node.kind === "leaf") {
-    return [renderLeaf(node.leaf, indent)];
+    return renderLeaf(node.leaf, indent, ctx);
   }
-  return renderNode(node, indent, "if");
+  return renderNode(node, indent, "if", ctx);
 }
 
 function renderTransitions(
   transitions: Transition[],
   declaredStatuses: Set<number> | null,
+  ctx: RenderCtx,
 ): string[] {
   // Propagate declaredStatuses onto every leaf so the undeclared-status
   // annotation can be emitted without re-threading the argument through
@@ -377,10 +457,10 @@ function renderTransitions(
   stampDeclaredStatuses(tree, declaredStatuses);
   const baseIndent = "    ";
   if (tree.kind === "leaf") {
-    return [renderLeaf(tree.leaf, baseIndent)];
+    return renderLeaf(tree.leaf, baseIndent, ctx);
   }
   if (tree.kind === "branch") {
-    return renderNode(tree, baseIndent, "if");
+    return renderNode(tree, baseIndent, "if", ctx);
   }
   return [];
 }
@@ -411,7 +491,7 @@ function formatGap(g: Gap): string {
 // Summary rendering
 // ---------------------------------------------------------------------------
 
-function renderSummary(summary: BehavioralSummary): string {
+function renderSummary(summary: BehavioralSummary, ctx: RenderCtx): string {
   const lines: string[] = [];
   const binding = summary.identity.boundaryBinding;
   const rest =
@@ -473,7 +553,9 @@ function renderSummary(summary: BehavioralSummary): string {
   // Transitions
   if (summary.transitions.length > 0) {
     lines.push("");
-    lines.push(...renderTransitions(summary.transitions, declaredStatuses));
+    lines.push(
+      ...renderTransitions(summary.transitions, declaredStatuses, ctx),
+    );
   }
 
   // Gaps
@@ -513,15 +595,32 @@ export function inspect(options: InspectOptions): void {
 
   const content = fs.readFileSync(filePath, "utf-8");
   const summaries = parseSummaryFile(filePath, content);
+  const ctx = buildRenderCtx(summaries);
 
   for (let i = 0; i < summaries.length; i++) {
     if (i > 0) {
       process.stdout.write("\n");
     }
-    process.stdout.write(`${renderSummary(summaries[i])}\n`);
+    process.stdout.write(`${renderSummary(summaries[i], ctx)}\n`);
   }
 
   process.stdout.write(`\n${summaries.length} summaries inspected.\n`);
+}
+
+function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
+  // Every summary name in the file — inspect's `→` follow-reference
+  // marker uses this to flag effects whose callee is itself summarized.
+  // Includes the full identity name and the last dotted segment so
+  // `Form.onSubmit` and `onSubmit` both resolve.
+  const names = new Set<string>();
+  for (const s of summaries) {
+    names.add(s.identity.name);
+    const last = s.identity.name.split(".").pop();
+    if (last !== undefined) {
+      names.add(last);
+    }
+  }
+  return { summaryNames: names };
 }
 
 // ---------------------------------------------------------------------------
