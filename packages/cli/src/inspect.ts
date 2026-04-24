@@ -87,6 +87,18 @@ function formatBodyShape(shape: TypeShape | null | undefined): string {
 // Condition rendering (human-readable)
 // ---------------------------------------------------------------------------
 
+/**
+ * Collapse runs of whitespace (including newlines) to a single space
+ * and trim. Source-text fields captured from the TypeScript AST —
+ * opaque predicates, unresolved ValueRefs, dependency names that span
+ * multi-line call expressions — carry the original formatting. Without
+ * normalization those newlines break the tree prefix on every
+ * continuation line.
+ */
+function normalizeSourceText(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
+
 const CONDITION_FORMATTERS: DispatchTable<Predicate, string> = {
   comparison: (p) =>
     `${formatRef(p.left)} ${formatOp(p.op)} ${formatRef(p.right)}`,
@@ -114,7 +126,7 @@ const CONDITION_FORMATTERS: DispatchTable<Predicate, string> = {
   call: (p) => `${p.callee}(${p.args.map(formatRef).join(", ")})`,
   propertyExists: (p) =>
     `${p.negated ? "!" : ""}${formatRef(p.subject)}.has("${p.property}")`,
-  opaque: (p) => p.sourceText,
+  opaque: (p) => normalizeSourceText(p.sourceText),
 };
 
 function formatCondition(p: Predicate): string {
@@ -137,13 +149,23 @@ const REF_FORMATTERS: DispatchTable<ValueRef, string> = {
   literal: (v) => JSON.stringify(v.value),
   input: (v) =>
     v.path.length > 0 ? `${v.inputRef}.${v.path.join(".")}` : v.inputRef,
-  dependency: (v) =>
-    v.accessChain.length > 0
-      ? `${v.name}().${v.accessChain.join(".")}`
-      : `${v.name}()`,
-  derived: (v) => `${formatRef(v.from)}.${formatDerivation(v.derivation)}`,
+  dependency: (v) => {
+    const name = normalizeSourceText(v.name);
+    return v.accessChain.length > 0
+      ? `${name}().${v.accessChain.join(".")}`
+      : `${name}()`;
+  },
+  derived: (v) => {
+    const deriv = formatDerivation(v.derivation);
+    // Index access reads `foo[0]`, not `foo.[0]` — the leading dot we
+    // prefix for propertyAccess / destructured / methodCall / awaited
+    // isn't part of the bracket syntax. Other derivations still use
+    // `.` as the separator.
+    const sep = v.derivation.type === "indexAccess" ? "" : ".";
+    return `${formatRef(v.from)}${sep}${deriv}`;
+  },
   state: (v) => `state.${v.name}`,
-  unresolved: (v) => v.sourceText,
+  unresolved: (v) => normalizeSourceText(v.sourceText),
 };
 
 function formatRef(v: ValueRef): string {

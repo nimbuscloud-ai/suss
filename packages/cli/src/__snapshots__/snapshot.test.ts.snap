@@ -224,7 +224,7 @@ exports[`inspect variant rendering > renders every ValueRef and Derivation varia
 └─ GET /users/:id  (express handler | line 10)
      Contract: 200, 400, 404, 500
        if  db().result === 1
-         if  arr.[0] === "x"
+         if  arr[0] === "x"
            if  fetch().await.json().kind === "ok"
              if  state.loaded === MAGIC
                -> 200
