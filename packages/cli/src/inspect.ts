@@ -823,7 +823,7 @@ export interface DiffOptions {
  * the summary's body prefix so the file name stays within view.
  * Short summaries are unaffected.
  */
-const LONG_SUMMARY_THRESHOLD_LINES = 40;
+const LONG_SUMMARY_THRESHOLD_LINES = 50;
 
 function injectContinuationMarkers(
   rendered: string,

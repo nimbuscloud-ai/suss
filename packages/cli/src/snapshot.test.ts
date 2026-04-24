@@ -550,7 +550,7 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
-  it("injects continuation markers every 40 body lines for long summaries", () => {
+  it("injects continuation markers every 50 body lines for long summaries", () => {
     // Build a summary with many elif branches so its rendered body
     // exceeds the continuation threshold. The reader should see the
     // file name re-emitted as a tree-aligned marker partway through,
