@@ -471,6 +471,85 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
+  it("renders useEffect deps: mount-only, every-render, and dep list", () => {
+    // Three useEffect sub-units under one parent, each exercising one
+    // of the three deps cases. Inspect should distinguish them in the
+    // header's parenthesized metadata so a reader can tell scheduling
+    // behavior at a glance.
+    const parent: BehavioralSummary = {
+      kind: "component",
+      location: {
+        file: "src/Bar.tsx",
+        range: { start: 1, end: 30 },
+        exportName: "Bar",
+      },
+      identity: {
+        name: "Bar",
+        exportPath: ["Bar"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "react",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "bar-render",
+          conditions: [],
+          output: { type: "render", component: "div" },
+          effects: [],
+          location: { start: 1, end: 30 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const mkEffect = (i: number, deps: string[] | null): BehavioralSummary => ({
+      kind: "handler",
+      location: {
+        file: "src/Bar.tsx",
+        range: { start: 10 + i, end: 11 + i },
+        exportName: `effect#${i}`,
+      },
+      identity: {
+        name: `Bar.effect#${i}`,
+        exportPath: [`effect#${i}`],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "react",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: `be${i}`,
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [],
+          location: { start: 10 + i, end: 11 + i },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+      metadata: {
+        react: { kind: "effect", component: "Bar", index: i, deps },
+      },
+    });
+    const filePath = writeTempJson([
+      parent,
+      mkEffect(0, null),
+      mkEffect(1, []),
+      mkEffect(2, ["user", "prefs.locale"]),
+    ]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
   it("renders library + caller summaries with function-call identity", () => {
     const librarySummary: BehavioralSummary = {
       kind: "library",

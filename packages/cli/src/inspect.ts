@@ -762,11 +762,35 @@ function summaryMetadata(summary: BehavioralSummary): string {
 }
 
 function unitKindLabel(summary: BehavioralSummary): string {
-  const react = summary.metadata?.react as { kind?: string } | undefined;
+  const react = summary.metadata?.react as
+    | { kind?: string; deps?: string[] | null }
+    | undefined;
   if (react?.kind === "effect") {
-    return "useEffect";
+    return `useEffect${formatEffectDeps(react.deps)}`;
   }
   return summary.kind;
+}
+
+/**
+ * Render a useEffect's deps suffix. Three cases carry different
+ * scheduling meaning and should be distinguishable at a glance:
+ *   - `null` (deps argument absent): body runs after every render
+ *   - `[]` (empty array): body runs once on mount
+ *   - `[x, y, ...]`: body runs when any listed dep changes
+ * Source-text entries get whitespace-normalized so a multi-line
+ * dep expression doesn't break the tree prefix.
+ */
+function formatEffectDeps(deps: string[] | null | undefined): string {
+  if (deps === undefined) {
+    return "";
+  }
+  if (deps === null) {
+    return " (every render)";
+  }
+  if (deps.length === 0) {
+    return " (mount)";
+  }
+  return ` [${deps.map(normalizeSourceText).join(", ")}]`;
 }
 
 // ---------------------------------------------------------------------------

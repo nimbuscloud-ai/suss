@@ -153,6 +153,24 @@ src/pages/user.ts
 "
 `;
 
+exports[`inspect output snapshots > renders useEffect deps: mount-only, every-render, and dep list 1`] = `
+"src/Bar.tsx
+├─ Bar  (react component | line 1)
+│      -> render <div />
+│
+├─ Bar.effect#0  (react useEffect (every render) | line 10)
+│      -> return
+│
+├─ Bar.effect#1  (react useEffect (mount) | line 11)
+│      -> return
+│
+└─ Bar.effect#2  (react useEffect [user, prefs.locale] | line 12)
+       -> return
+
+4 summaries inspected.
+"
+`;
+
 exports[`inspect output snapshots > replaces useEffect effect with a reference to its spawned sub-unit 1`] = `
 "src/Foo.tsx
 ├─ Foo  (react component | line 10)
@@ -160,10 +178,10 @@ exports[`inspect output snapshots > replaces useEffect effect with a reference t
 │        + Foo.effect#0 →
 │        + Foo.effect#1 →
 │
-├─ Foo.effect#0  (react useEffect | line 12)
+├─ Foo.effect#0  (react useEffect (every render) | line 12)
 │      -> return
 │
-└─ Foo.effect#1  (react useEffect | line 13)
+└─ Foo.effect#1  (react useEffect (every render) | line 13)
        -> return
 
 3 summaries inspected.
