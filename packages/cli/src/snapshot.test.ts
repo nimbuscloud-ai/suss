@@ -550,6 +550,87 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
+  it("expands render subtrees so branches sharing a root stay distinguishable", () => {
+    // Two branches of the same component both render `<Container />`
+    // but with different children. Inspect should surface the
+    // children — otherwise the branches look identical.
+    const component: BehavioralSummary = {
+      kind: "component",
+      location: {
+        file: "src/App.tsx",
+        range: { start: 1, end: 40 },
+        exportName: "App",
+      },
+      identity: {
+        name: "App",
+        exportPath: ["App"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "react",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "app:render:loggedIn",
+          conditions: [
+            {
+              type: "truthinessCheck",
+              subject: { type: "input", inputRef: "user", path: [] },
+              negated: false,
+            },
+          ],
+          output: {
+            type: "render",
+            component: "Container",
+            root: {
+              type: "element",
+              tag: "Container",
+              attrs: { fluid: "" },
+              children: [
+                { type: "element", tag: "Header", children: [] },
+                {
+                  type: "element",
+                  tag: "Main",
+                  children: [
+                    { type: "element", tag: "Dashboard", children: [] },
+                  ],
+                },
+              ],
+            },
+          },
+          effects: [],
+          location: { start: 10, end: 20 },
+          isDefault: false,
+        },
+        {
+          id: "app:render:loggedOut",
+          conditions: [],
+          output: {
+            type: "render",
+            component: "Container",
+            root: {
+              type: "element",
+              tag: "Container",
+              attrs: { fluid: "" },
+              children: [{ type: "element", tag: "LoginForm", children: [] }],
+            },
+          },
+          effects: [],
+          location: { start: 25, end: 35 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const filePath = writeTempJson([component]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
   it("injects continuation markers every 50 body lines for long summaries", () => {
     // Build a summary with many elif branches so its rendered body
     // exceeds the continuation threshold. The reader should see the
