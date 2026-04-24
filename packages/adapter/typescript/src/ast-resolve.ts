@@ -86,6 +86,22 @@ function resolve(
     return resolveCall(node, extractShape, next);
   }
 
+  // `await fn()`: the resolved value's shape equals the call's return
+  // shape. AST-level resolution into the function's body preserves
+  // literal narrowness that would otherwise widen through the type
+  // checker. Only peel when the operand is a CallExpression — for
+  // identifier / property-access operands the declaration-site type
+  // (`Promise<T>`) differs from the resolved type (`T`), and the
+  // type-checker fallback in `extractShape` handles those correctly on
+  // the outer `await` node.
+  if (Node.isAwaitExpression(node)) {
+    const inner = node.getExpression();
+    if (Node.isCallExpression(inner)) {
+      return resolve(inner, extractShape, next);
+    }
+    return null;
+  }
+
   return null;
 }
 
