@@ -1,16 +1,16 @@
 {
   "total": {
     "lines": {
-      "total": 3067,
-      "covered": 2489,
+      "total": 3074,
+      "covered": 2496,
       "skipped": 0,
-      "pct": 81.15
+      "pct": 81.19
     },
     "statements": {
-      "total": 3088,
-      "covered": 2509,
+      "total": 3095,
+      "covered": 2516,
       "skipped": 0,
-      "pct": 81.25
+      "pct": 81.29
     },
     "functions": {
       "total": 276,
@@ -19,10 +19,10 @@
       "pct": 91.66
     },
     "branches": {
-      "total": 2511,
-      "covered": 1809,
+      "total": 2519,
+      "covered": 1817,
       "skipped": 0,
-      "pct": 72.04
+      "pct": 72.13
     },
     "branchesTrue": {
       "total": 0,
@@ -85,10 +85,10 @@
   },
   "src/ast-resolve.ts": {
     "lines": {
-      "total": 188,
-      "covered": 132,
+      "total": 193,
+      "covered": 137,
       "skipped": 0,
-      "pct": 70.21
+      "pct": 70.98
     },
     "functions": {
       "total": 20,
@@ -97,16 +97,16 @@
       "pct": 90
     },
     "statements": {
-      "total": 190,
-      "covered": 134,
+      "total": 195,
+      "covered": 139,
       "skipped": 0,
-      "pct": 70.52
+      "pct": 71.28
     },
     "branches": {
-      "total": 146,
-      "covered": 102,
+      "total": 150,
+      "covered": 106,
       "skipped": 0,
-      "pct": 69.86
+      "pct": 70.66
     }
   },
   "src/conditions.ts": {
@@ -449,10 +449,10 @@
   },
   "src/terminals.ts": {
     "lines": {
-      "total": 392,
-      "covered": 341,
+      "total": 394,
+      "covered": 343,
       "skipped": 0,
-      "pct": 86.98
+      "pct": 87.05
     },
     "functions": {
       "total": 27,
@@ -461,16 +461,16 @@
       "pct": 96.29
     },
     "statements": {
-      "total": 393,
-      "covered": 342,
+      "total": 395,
+      "covered": 344,
       "skipped": 0,
-      "pct": 87.02
+      "pct": 87.08
     },
     "branches": {
-      "total": 327,
-      "covered": 261,
+      "total": 331,
+      "covered": 265,
       "skipped": 0,
-      "pct": 79.81
+      "pct": 80.06
     }
   },
   "src/type-shapes.ts": {
