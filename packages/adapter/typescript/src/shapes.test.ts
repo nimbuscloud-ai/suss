@@ -533,6 +533,28 @@ describe("extractShape", () => {
       });
     });
 
+    it("await fn() resolves through AST to the function's literal return", () => {
+      // `await fn()` where fn has a single literal return: the AST path
+      // preserves the literal narrowness that the type checker would
+      // widen to `string`. Without await-unwrapping in resolve(), we'd
+      // fall straight to the type checker and get `{ kind: text }`.
+      const sf = parseExpressionWithPrelude(
+        'async function fn() { return { kind: "ok" as const }; }\nasync function _run() { return await fn(); }',
+        "1",
+      ).getSourceFile();
+      const awaitNodes = sf.getDescendantsOfKind(SyntaxKind.AwaitExpression);
+      const awaited = awaitNodes.find((n) =>
+        n.getExpression().getText().includes("fn("),
+      );
+      if (awaited === undefined) {
+        throw new Error("await fn() not found");
+      }
+      expect(extractShape(awaited)).toEqual({
+        type: "record",
+        properties: { kind: { type: "literal", value: "ok" } },
+      });
+    });
+
     it("optional fields produce union-with-undefined", () => {
       const expr = parseExpressionWithPrelude(
         "declare const user: { id: string; email?: string };",
