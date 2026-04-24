@@ -16,6 +16,7 @@ import type {
   Gap,
   Output,
   Predicate,
+  RenderNode,
   SummaryDiff,
   Transition,
   TypeShape,
@@ -207,6 +208,91 @@ const OUTPUT_FORMATTERS: DispatchTable<Output, string> = {
 
 function formatOutput(output: Output): string {
   return dispatchByType(OUTPUT_FORMATTERS, output);
+}
+
+/**
+ * Format a render node's attributes in-line: `<Container fluid id={x}>`.
+ * Empty-string values are boolean-shorthand attrs (`<input disabled>`);
+ * non-empty values get brace-wrapped so they read as JSX attribute
+ * expressions. Attrs are source-text verbatim from the extractor, so
+ * whitespace-normalize before printing.
+ */
+function formatRenderAttrs(attrs: Record<string, string> | undefined): string {
+  if (attrs === undefined) {
+    return "";
+  }
+  const entries = Object.entries(attrs);
+  if (entries.length === 0) {
+    return "";
+  }
+  const parts = entries.map(([k, v]) => {
+    if (v === "") {
+      return k;
+    }
+    return `${k}={${normalizeSourceText(v)}}`;
+  });
+  const joined = parts.join(" ");
+  // Cap the per-tag attr string so attr-heavy elements don't dominate
+  // the line. The full attrs remain in the IR for consumers that need
+  // them — this is inspect's readability heuristic.
+  const MAX_ATTR_WIDTH = 60;
+  if (joined.length > MAX_ATTR_WIDTH) {
+    return ` ${parts.slice(0, 2).join(" ")} ...`;
+  }
+  return ` ${joined}`;
+}
+
+/**
+ * Does the root render node carry more than a single bare self-closing
+ * element? Used to decide whether the inline `render <Foo />` form is
+ * lossless or whether the subtree expansion is needed to preserve
+ * per-branch differentiation (children, attrs, conditionals, text).
+ */
+function hasRenderedContent(root: RenderNode): boolean {
+  if (root.type !== "element") {
+    return true;
+  }
+  if (root.children.length > 0) {
+    return true;
+  }
+  return root.attrs !== undefined && Object.keys(root.attrs).length > 0;
+}
+
+/**
+ * Walk a render tree into indented lines. Elements render as
+ * JSX-style open tags (`<Tag attrs>` ... `</Tag>`), leaf elements
+ * collapse to self-closing (`<Leaf />`). Conditional nodes carry their
+ * condition's source text verbatim, ternary branches indent under it.
+ */
+function formatRenderNode(node: RenderNode, indent: string): string[] {
+  if (node.type === "text") {
+    return [`${indent}"${node.value}"`];
+  }
+  if (node.type === "expression") {
+    return [`${indent}{${normalizeSourceText(node.sourceText)}}`];
+  }
+  if (node.type === "conditional") {
+    const cond = normalizeSourceText(node.condition);
+    const lines: string[] = [];
+    lines.push(`${indent}{${cond} ?`);
+    lines.push(...formatRenderNode(node.whenTrue, `${indent}  `));
+    if (node.whenFalse !== null) {
+      lines.push(`${indent}:`);
+      lines.push(...formatRenderNode(node.whenFalse, `${indent}  `));
+    }
+    lines.push(`${indent}}`);
+    return lines;
+  }
+  const attrs = formatRenderAttrs(node.attrs);
+  if (node.children.length === 0) {
+    return [`${indent}<${node.tag}${attrs} />`];
+  }
+  const lines: string[] = [`${indent}<${node.tag}${attrs}>`];
+  for (const child of node.children) {
+    lines.push(...formatRenderNode(child, `${indent}  `));
+  }
+  lines.push(`${indent}</${node.tag}>`);
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
@@ -423,19 +509,33 @@ function renderLeaf(
   ctx: PerSummaryRenderCtx,
 ): string[] {
   const lines: string[] = [];
-  let line = `${indent}-> ${formatOutput(leaf.output)}`;
-  if (leaf.declaredStatuses !== null && leaf.output.type === "response") {
-    const sc = leaf.output.statusCode;
-    if (
-      sc !== null &&
-      sc.type === "literal" &&
-      typeof sc.value === "number" &&
-      !leaf.declaredStatuses.has(sc.value)
-    ) {
-      line += "  !! undeclared";
+  // When a render terminal carries a full subtree, emit `-> render`
+  // on the terminal line and expand the tree below it. Two branches
+  // that share a root component but differ in children or attrs stay
+  // distinguishable — which the `render <Component />` collapsed form
+  // couldn't express.
+  if (
+    leaf.output.type === "render" &&
+    leaf.output.root !== undefined &&
+    hasRenderedContent(leaf.output.root)
+  ) {
+    lines.push(`${indent}-> render`);
+    lines.push(...formatRenderNode(leaf.output.root, `${indent}  `));
+  } else {
+    let line = `${indent}-> ${formatOutput(leaf.output)}`;
+    if (leaf.declaredStatuses !== null && leaf.output.type === "response") {
+      const sc = leaf.output.statusCode;
+      if (
+        sc !== null &&
+        sc.type === "literal" &&
+        typeof sc.value === "number" &&
+        !leaf.declaredStatuses.has(sc.value)
+      ) {
+        line += "  !! undeclared";
+      }
     }
+    lines.push(line);
   }
-  lines.push(line);
   // Effects, rendered as compact cross-references. Each effect is one
   // line at the same indent as the terminal, prefixed `+ `. When an
   // effect's callee resolves to a summary in the same file, append a

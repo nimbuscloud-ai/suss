@@ -62,6 +62,27 @@ exports[`inspect --dir output snapshots > shows unmatched summaries 1`] = `
 "
 `;
 
+exports[`inspect output snapshots > expands render subtrees so branches sharing a root stay distinguishable 1`] = `
+"src/App.tsx
+└─ App  (react component | line 1)
+       if  user
+         -> render
+           <Container fluid>
+             <Header />
+             <Main>
+               <Dashboard />
+             </Main>
+           </Container>
+       else
+         -> render
+           <Container fluid>
+             <LoginForm />
+           </Container>
+
+1 summaries inspected.
+"
+`;
+
 exports[`inspect output snapshots > qualifies generic names (loader/action/default) with file path 1`] = `
 "app/routes/_app.tsx
 └─ loader  (react-router loader | line 10)
