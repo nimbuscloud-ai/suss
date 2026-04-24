@@ -237,6 +237,14 @@ interface RenderCtx {
    * has its own summary immediately below.
    */
   spawnerIndex: Map<string, Map<string, string[]>>;
+  /**
+   * Identity names that appear on more than one summary in this file.
+   * `Index` is the common React Router case (every route file's
+   * default export often ends up named `Index`), but any collision
+   * across files needs the file-path qualification to stay legible.
+   * Populated at ctx-build time from the full summary list.
+   */
+  ambiguousNames: Set<string>;
 }
 
 /**
@@ -270,9 +278,15 @@ const GENERIC_NAMES = new Set([
   "handleRequest",
 ]);
 
-function qualifyGenericName(summary: BehavioralSummary): string {
+function qualifyGenericName(
+  summary: BehavioralSummary,
+  ambiguousNames: Set<string>,
+): string {
   const name = summary.identity.name;
-  if (!GENERIC_NAMES.has(name)) {
+  // Qualify when the name is a known convention *or* collides with
+  // another summary in the file — both cases leave the bare name
+  // ambiguous to a reader skimming the output.
+  if (!GENERIC_NAMES.has(name) && !ambiguousNames.has(name)) {
     return name;
   }
   const stripped = summary.location.file.replace(/\.[^./]+$/, "");
@@ -585,51 +599,47 @@ function formatGap(g: Gap): string {
 // Summary rendering
 // ---------------------------------------------------------------------------
 
-function renderSummary(summary: BehavioralSummary, ctx: RenderCtx): string {
+/**
+ * How a summary renders inside a file-group tree:
+ *   - `elbow` ("├─ " or "└─ ") precedes the header line
+ *   - `bodyPrefix` ("│ " for non-last, "  " for last) precedes every
+ *     subsequent line (contract, transitions, gaps)
+ */
+interface SummaryLayout {
+  readonly elbow: string;
+  readonly bodyPrefix: string;
+  /**
+   * When true, the summary is rendered under a file-group header and
+   * the file path provides disambiguation context — bare `loader` /
+   * `Index` is unambiguous within a file. When false (standalone),
+   * generic / colliding names get path-qualified so they don't read
+   * as interchangeable.
+   */
+  readonly inFileGroup: boolean;
+}
+
+const STANDALONE_LAYOUT: SummaryLayout = {
+  elbow: "",
+  bodyPrefix: "",
+  inFileGroup: false,
+};
+
+function renderSummary(
+  summary: BehavioralSummary,
+  ctx: RenderCtx,
+  layout: SummaryLayout = STANDALONE_LAYOUT,
+): string {
   const perCtx = perSummary(ctx, summary.identity.name);
   const lines: string[] = [];
-  const binding = summary.identity.boundaryBinding;
-  const rest =
-    binding !== null && binding.semantics.name === "rest"
-      ? binding.semantics
-      : null;
 
-  // Header: endpoint, function-call identity, or bare function name.
-  // Function-call bindings that carry a package + exportPath render with
-  // the consumer's target visible: `checkAll → @suss/ir::parseSummary`
-  // for callers, `@suss/ir::parseSummary` for library providers.
-  const fn =
-    binding !== null && binding.semantics.name === "function-call"
-      ? binding.semantics
-      : null;
-  if (rest !== null && (rest.method !== "" || rest.path !== "")) {
-    lines.push(`${rest.method} ${rest.path}`.trim());
-  } else if (
-    fn !== null &&
-    fn.package !== undefined &&
-    fn.exportPath !== undefined &&
-    fn.exportPath.length > 0
-  ) {
-    const target = `${fn.package}::${fn.exportPath.join(".")}`;
-    if (summary.kind === "caller") {
-      lines.push(`${summary.identity.name} → ${target}`);
-    } else {
-      lines.push(target);
-    }
-  } else {
-    lines.push(qualifyGenericName(summary));
-  }
+  // Single header line: `<name> (<recognition> <kind> | line N [| confidence])`.
+  // Collapsed from the old two-line form — file path lives in the
+  // file-group header one level up, so repeating it here is noise.
+  const headerName = summaryHeaderName(summary, ctx, layout);
+  const metadata = summaryMetadata(summary);
+  lines.push(`${layout.elbow}${headerName}  (${metadata})`);
 
-  // Metadata line
-  const meta: string[] = [];
-  if (binding !== null) {
-    meta.push(`${binding.recognition} ${summary.kind}`);
-  }
-  meta.push(`${summary.location.file}:${summary.location.range.start}`);
-  if (summary.confidence.level !== "high") {
-    meta.push(`confidence: ${summary.confidence.level}`);
-  }
-  lines.push(`  ${meta.join(" | ")}`);
+  const bodyLines: string[] = [];
 
   // Contract line
   const http = summary.metadata?.http as Record<string, unknown> | undefined;
@@ -642,26 +652,99 @@ function renderSummary(summary: BehavioralSummary, ctx: RenderCtx): string {
       .map((r: { statusCode: number }) => r.statusCode)
       .sort((a: number, b: number) => a - b);
     declaredStatuses = new Set(statuses);
-    lines.push(`  Contract: ${statuses.join(", ")}`);
+    bodyLines.push(`  Contract: ${statuses.join(", ")}`);
   }
 
   // Transitions
   if (summary.transitions.length > 0) {
-    lines.push("");
-    lines.push(
+    bodyLines.push(
       ...renderTransitions(summary.transitions, declaredStatuses, perCtx),
     );
   }
 
   // Gaps
   if (summary.gaps.length > 0) {
-    lines.push("");
+    bodyLines.push("");
     for (const gap of summary.gaps) {
-      lines.push(formatGap(gap));
+      bodyLines.push(formatGap(gap));
     }
   }
 
+  for (const line of bodyLines) {
+    lines.push(`${layout.bodyPrefix}${line}`);
+  }
+
   return lines.join("\n");
+}
+
+/**
+ * The left side of the collapsed header: endpoint for REST, identity
+ * target for function-call callers/library, qualified bare name
+ * otherwise.
+ */
+function summaryHeaderName(
+  summary: BehavioralSummary,
+  ctx: RenderCtx,
+  layout: SummaryLayout,
+): string {
+  const binding = summary.identity.boundaryBinding;
+  const rest =
+    binding !== null && binding.semantics.name === "rest"
+      ? binding.semantics
+      : null;
+  const fn =
+    binding !== null && binding.semantics.name === "function-call"
+      ? binding.semantics
+      : null;
+  if (rest !== null && (rest.method !== "" || rest.path !== "")) {
+    return `${rest.method} ${rest.path}`.trim();
+  }
+  if (
+    fn !== null &&
+    fn.package !== undefined &&
+    fn.exportPath !== undefined &&
+    fn.exportPath.length > 0
+  ) {
+    const target = `${fn.package}::${fn.exportPath.join(".")}`;
+    return summary.kind === "caller"
+      ? `${summary.identity.name} → ${target}`
+      : target;
+  }
+  // Inside a file-group, the file path is already visible in the
+  // group header — bare name is unambiguous. Only qualify when the
+  // summary is standalone.
+  if (layout.inFileGroup) {
+    return summary.identity.name;
+  }
+  return qualifyGenericName(summary, ctx.ambiguousNames);
+}
+
+/**
+ * The parenthesized right side of the header. React `useEffect`
+ * sub-units (`metadata.react.kind === "effect"`) surface as
+ * `react useEffect` instead of the bland `react handler` — both are
+ * `kind: "handler"` summaries, but readers of inspect want to
+ * distinguish "event handler" from "effect body".
+ */
+function summaryMetadata(summary: BehavioralSummary): string {
+  const parts: string[] = [];
+  const binding = summary.identity.boundaryBinding;
+  if (binding !== null) {
+    parts.push(`${binding.recognition} ${unitKindLabel(summary)}`);
+  }
+  parts.push(`line ${summary.location.range.start}`);
+  if (summary.confidence.level !== "high") {
+    parts.push(`confidence: ${summary.confidence.level}`);
+  }
+  return parts.join(" | ");
+}
+
+function unitKindLabel(summary: BehavioralSummary): string {
+  const react = summary.metadata?.react as { kind?: string } | undefined;
+  if (react?.kind === "effect") {
+    return "useEffect";
+  }
+  return summary.kind;
 }
 
 // ---------------------------------------------------------------------------
@@ -692,11 +775,47 @@ export function inspect(options: InspectOptions): void {
   const summaries = parseSummaryFile(filePath, content);
   const ctx = buildRenderCtx(summaries);
 
-  for (let i = 0; i < summaries.length; i++) {
-    if (i > 0) {
+  // Group by file; within each file, order by line number. File insertion
+  // order (first time a file is seen in the summary list) is preserved as
+  // the between-group order — usually meaningful since extractors walk
+  // files in some natural sequence. Each group renders under its file
+  // header with elbow / body-prefix tree decoration.
+  const byFile = new Map<string, BehavioralSummary[]>();
+  for (const s of summaries) {
+    const list = byFile.get(s.location.file);
+    if (list === undefined) {
+      byFile.set(s.location.file, [s]);
+    } else {
+      list.push(s);
+    }
+  }
+  for (const list of byFile.values()) {
+    list.sort((a, b) => a.location.range.start - b.location.range.start);
+  }
+
+  let first = true;
+  for (const [file, group] of byFile) {
+    if (!first) {
       process.stdout.write("\n");
     }
-    process.stdout.write(`${renderSummary(summaries[i], ctx)}\n`);
+    first = false;
+    process.stdout.write(`${file}\n`);
+    for (let i = 0; i < group.length; i++) {
+      const isLast = i === group.length - 1;
+      const layout: SummaryLayout = {
+        elbow: isLast ? "└─ " : "├─ ",
+        bodyPrefix: isLast ? "   " : "│  ",
+        inFileGroup: true,
+      };
+      process.stdout.write(`${renderSummary(group[i], ctx, layout)}\n`);
+      // Blank line between siblings. The pipe continues through the
+      // spacer so the visual tree stays unbroken; the last summary
+      // doesn't get one — the next iteration either starts a new file
+      // group (with its own spacing) or ends the output.
+      if (!isLast) {
+        process.stdout.write("│\n");
+      }
+    }
   }
 
   process.stdout.write(`\n${summaries.length} summaries inspected.\n`);
@@ -713,6 +832,20 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     const last = s.identity.name.split(".").pop();
     if (last !== undefined) {
       names.add(last);
+    }
+  }
+
+  // Identity names that appear on more than one summary — those need
+  // file-path qualification in the header so `Index` at _app._index.tsx
+  // vs `Index` at _app.tsx don't render indistinguishably.
+  const nameCounts = new Map<string, number>();
+  for (const s of summaries) {
+    nameCounts.set(s.identity.name, (nameCounts.get(s.identity.name) ?? 0) + 1);
+  }
+  const ambiguousNames = new Set<string>();
+  for (const [name, count] of nameCounts) {
+    if (count > 1) {
+      ambiguousNames.add(name);
     }
   }
 
@@ -763,7 +896,7 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     spawnerIndex.set(parent, ordered);
   }
 
-  return { summaryNames: names, spawnerIndex };
+  return { summaryNames: names, spawnerIndex, ambiguousNames };
 }
 
 // ---------------------------------------------------------------------------

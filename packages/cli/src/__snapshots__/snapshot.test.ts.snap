@@ -63,236 +63,205 @@ exports[`inspect --dir output snapshots > shows unmatched summaries 1`] = `
 `;
 
 exports[`inspect output snapshots > qualifies generic names (loader/action/default) with file path 1`] = `
-"app/routes/_app.loader
-  react-router loader | app/routes/_app.tsx:10
+"app/routes/_app.tsx
+└─ loader  (react-router loader | line 10)
+       -> return
 
-    -> return
-
-app/routes/_app.admin.loader
-  react-router loader | app/routes/_app.admin.tsx:10
-
-    -> return
+app/routes/_app.admin.tsx
+└─ loader  (react-router loader | line 10)
+       -> return
 
 2 summaries inspected.
 "
 `;
 
 exports[`inspect output snapshots > renders a client summary 1`] = `
-"GET /users/:id
-  fetch client | src/pages/user.ts:5
-
-    if  !fetch().ok
-      -> throw Error
-    else
-      -> return
+"src/pages/user.ts
+└─ GET /users/:id  (fetch client | line 5)
+       if  !fetch().ok
+         -> throw Error
+       else
+         -> return
 
 1 summaries inspected.
 "
 `;
 
 exports[`inspect output snapshots > renders a handler with contract and body shapes 1`] = `
-"GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    if  !req.params.id
-      -> 400 { error }
-    elif  db.findById() == null
-      -> 404 { error }
-    else
-      -> 200 { id, name, email }
+"src/handlers/users.ts
+└─ GET /users/:id  (express handler | line 10)
+     Contract: 200, 400, 404, 500
+       if  !req.params.id
+         -> 400 { error }
+       elif  db.findById() == null
+         -> 404 { error }
+       else
+         -> 200 { id, name, email }
 
 1 summaries inspected.
 "
 `;
 
 exports[`inspect output snapshots > renders effects under each transition with follow-reference marker 1`] = `
-"formatPayload
-  reachable library | src/helpers.ts:1
+"src/helpers.ts
+└─ formatPayload  (reachable library | line 1)
+       -> return
 
-    -> return
-
-submit
-  reachable handler | src/handler.ts:10
-
-    -> return
-      + formatPayload →
-      + logger.info
-      + utils.formatPayload →
+src/handler.ts
+└─ submit  (reachable handler | line 10)
+       -> return
+         + formatPayload →
+         + logger.info
+         + utils.formatPayload →
 
 2 summaries inspected.
 "
 `;
 
 exports[`inspect output snapshots > renders library + caller summaries with function-call identity 1`] = `
-"@ex/lib::makeBinding
-  package-exports:@ex/lib library | src/binding.ts:10
+"src/binding.ts
+└─ @ex/lib::makeBinding  (package-exports:@ex/lib library | line 10)
+       -> return Binding
 
-    -> return Binding
-
-initApp → @ex/lib::makeBinding
-  package-import:@ex/app caller | src/app.ts:42
-
-    -> return
+src/app.ts
+└─ initApp → @ex/lib::makeBinding  (package-import:@ex/app caller | line 42)
+       -> return
 
 2 summaries inspected.
 "
 `;
 
 exports[`inspect output snapshots > renders multiple summaries 1`] = `
-"GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
+"src/handlers/users.ts
+└─ GET /users/:id  (express handler | line 10)
+     Contract: 200, 400, 404, 500
+       if  !req.params.id
+         -> 400 { error }
+       elif  db.findById() == null
+         -> 404 { error }
+       else
+         -> 200 { id, name, email }
 
-    if  !req.params.id
-      -> 400 { error }
-    elif  db.findById() == null
-      -> 404 { error }
-    else
-      -> 200 { id, name, email }
-
-GET /users/:id
-  fetch client | src/pages/user.ts:5
-
-    if  !fetch().ok
-      -> throw Error
-    else
-      -> return
+src/pages/user.ts
+└─ GET /users/:id  (fetch client | line 5)
+       if  !fetch().ok
+         -> throw Error
+       else
+         -> return
 
 2 summaries inspected.
 "
 `;
 
 exports[`inspect output snapshots > replaces useEffect effect with a reference to its spawned sub-unit 1`] = `
-"Foo
-  react component | src/Foo.tsx:10
-
-    -> render <div />
-      + Foo.effect#0 →
-      + Foo.effect#1 →
-
-Foo.effect#0
-  react handler | src/Foo.tsx:12
-
-    -> return
-
-Foo.effect#1
-  react handler | src/Foo.tsx:13
-
-    -> return
+"src/Foo.tsx
+├─ Foo  (react component | line 10)
+│      -> render <div />
+│        + Foo.effect#0 →
+│        + Foo.effect#1 →
+│
+├─ Foo.effect#0  (react useEffect | line 12)
+│      -> return
+│
+└─ Foo.effect#1  (react useEffect | line 13)
+       -> return
 
 3 summaries inspected.
 "
 `;
 
 exports[`inspect variant rendering > renders every Output variant 1`] = `
-"GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    -> throw ValidationError
-
-GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    -> render <ErrorPage />
-
-GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    -> return string
-
-GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    -> delegate -> next
-
-GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    -> emit "user.created"
-
-GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    -> void
+"src/handlers/users.ts
+├─ GET /users/:id  (express handler | line 10)
+│    Contract: 200, 400, 404, 500
+│      -> throw ValidationError
+│
+├─ GET /users/:id  (express handler | line 10)
+│    Contract: 200, 400, 404, 500
+│      -> render <ErrorPage />
+│
+├─ GET /users/:id  (express handler | line 10)
+│    Contract: 200, 400, 404, 500
+│      -> return string
+│
+├─ GET /users/:id  (express handler | line 10)
+│    Contract: 200, 400, 404, 500
+│      -> delegate -> next
+│
+├─ GET /users/:id  (express handler | line 10)
+│    Contract: 200, 400, 404, 500
+│      -> emit "user.created"
+│
+└─ GET /users/:id  (express handler | line 10)
+     Contract: 200, 400, 404, 500
+       -> void
 
 6 summaries inspected.
 "
 `;
 
 exports[`inspect variant rendering > renders every Predicate variant 1`] = `
-"GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    if  1 !== 2
-      if  req.query.id
-        if  db.findById() == null
-          if  typeof err === "Error"
-            if  !obj.has("id")
-              if  isValid(x)
-                if  a || b
-                  if  1 > 0
-                  elif  weirdSync()
-                    -> 200
+"src/handlers/users.ts
+└─ GET /users/:id  (express handler | line 10)
+     Contract: 200, 400, 404, 500
+       if  1 !== 2
+         if  req.query.id
+           if  db.findById() == null
+             if  typeof err === "Error"
+               if  !obj.has("id")
+                 if  isValid(x)
+                   if  a || b
+                     if  1 > 0
+                     elif  weirdSync()
+                       -> 200
 
 1 summaries inspected.
 "
 `;
 
 exports[`inspect variant rendering > renders every ValueRef and Derivation variant 1`] = `
-"GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    if  db().result === 1
-      if  arr.[0] === "x"
-        if  fetch().await.json().kind === "ok"
-          if  state.loaded === MAGIC
-            -> 200
+"src/handlers/users.ts
+└─ GET /users/:id  (express handler | line 10)
+     Contract: 200, 400, 404, 500
+       if  db().result === 1
+         if  arr.[0] === "x"
+           if  fetch().await.json().kind === "ok"
+             if  state.loaded === MAGIC
+               -> 200
 
 1 summaries inspected.
 "
 `;
 
 exports[`inspect variant rendering > renders every primitive TypeShape variant in body shapes 1`] = `
-"GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    -> 200 { text, int, num, bool, n }
+"src/handlers/users.ts
+└─ GET /users/:id  (express handler | line 10)
+     Contract: 200, 400, 404, 500
+       -> 200 { text, int, num, bool, n }
 
 1 summaries inspected.
 "
 `;
 
 exports[`inspect variant rendering > renders union, array, dictionary, ref, literal, undefined, unknown TypeShapes 1`] = `
-"GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    -> 200 { tags, byKey, shape, literal, ... }
+"src/handlers/users.ts
+└─ GET /users/:id  (express handler | line 10)
+     Contract: 200, 400, 404, 500
+       -> 200 { tags, byKey, shape, literal, ... }
 
 1 summaries inspected.
 "
 `;
 
 exports[`inspect variant rendering > simplifies double negations and !truthinessCheck via the negation handler 1`] = `
-"GET /users/:id
-  express handler | src/handlers/users.ts:10
-  Contract: 200, 400, 404, 500
-
-    if  !x
-    elif  y
-    elif  z == null
-    else
-      -> 200
+"src/handlers/users.ts
+└─ GET /users/:id  (express handler | line 10)
+     Contract: 200, 400, 404, 500
+       if  !x
+       elif  y
+       elif  z == null
+       else
+         -> 200
 
 1 summaries inspected.
 "
