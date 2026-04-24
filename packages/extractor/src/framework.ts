@@ -301,7 +301,17 @@ export interface TerminalExtraction {
   statusCode?:
     | { from: "property"; name: string } // { status: 200 } → name: "status"
     | { from: "argument"; position: number; minArgs?: number } // res.status(200) → position: 0
-    | { from: "constructor"; codes: Record<string, number> }; // throw new NotFound() → 404 via { NotFound: 404 }
+    | { from: "constructor"; codes: Record<string, number> } // throw new NotFound() → 404 via { NotFound: 404 }
+    | {
+        // throw wrap(new NotFound(...)) → peek into the arg at `position` and
+        // match its constructor name against `codes`. Covers wrapper patterns
+        // like React Router's `httpErrorJson(new HttpError.NotFound("…"))`,
+        // where the class of the arg — not the top-level thrown expression —
+        // carries the status.
+        from: "argumentConstructor";
+        position: number;
+        codes: Record<string, number>;
+      };
   body?:
     | { from: "property"; name: string } // { body: data } → name: "body"
     | { from: "argument"; position: number; minArgs?: number }; // res.json(data) → position: 0

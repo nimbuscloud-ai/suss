@@ -152,6 +152,30 @@ function extractStatusCode(ctx: ExtractionContext): RawTerminal["statusCode"] {
   return null;
 }
 
+/**
+ * Resolve a constructor's text (e.g. `HttpError.NotFound`) against a pack
+ * codes map, trying the full text first and falling back to the last
+ * dot-segment so bare `NotFound` also resolves. Returns null on no match
+ * rather than guessing.
+ */
+function matchConstructorCode(
+  ctorText: string,
+  codes: Record<string, number>,
+): RawTerminal["statusCode"] {
+  const fullMatch = codes[ctorText];
+  if (fullMatch !== undefined) {
+    return { type: "literal", value: fullMatch };
+  }
+  const lastSegment = ctorText.split(".").pop();
+  if (lastSegment !== undefined && lastSegment !== ctorText) {
+    const segMatch = codes[lastSegment];
+    if (segMatch !== undefined) {
+      return { type: "literal", value: segMatch };
+    }
+  }
+  return null;
+}
+
 function extractStatusCodeFromRule(
   ctx: ExtractionContext,
 ): RawTerminal["statusCode"] {
@@ -168,18 +192,23 @@ function extractStatusCodeFromRule(
     if (ctx.exceptionType === undefined) {
       return null;
     }
-    const fullMatch = sc.codes[ctx.exceptionType];
-    if (fullMatch !== undefined) {
-      return { type: "literal", value: fullMatch };
+    return matchConstructorCode(ctx.exceptionType, sc.codes);
+  }
+
+  if (sc.from === "argumentConstructor") {
+    // Wrapper pattern: `throw wrap(new NotFound(...))`. The arg at the
+    // configured position carries the status via its class name. Only
+    // throwCallArgs is relevant — this source doesn't make sense for
+    // parameterMethodCall terminals (no thrown-value wrapping there).
+    if (ctx.throwCallArgs === undefined) {
+      return null;
     }
-    const lastSegment = ctx.exceptionType.split(".").pop();
-    if (lastSegment !== undefined && lastSegment !== ctx.exceptionType) {
-      const segMatch = sc.codes[lastSegment];
-      if (segMatch !== undefined) {
-        return { type: "literal", value: segMatch };
-      }
+    const arg = ctx.throwCallArgs[sc.position];
+    if (arg === undefined || !Node.isNewExpression(arg)) {
+      return null;
     }
-    return null;
+    const ctorText = arg.getExpression().getText();
+    return matchConstructorCode(ctorText, sc.codes);
   }
 
   if (sc.from === "property") {
