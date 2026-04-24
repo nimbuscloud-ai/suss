@@ -223,6 +223,60 @@ interface RenderCtx {
    * a time.
    */
   summaryNames: Set<string>;
+  /**
+   * For each parent summary (keyed by `identity.name`), the sub-units
+   * that were spawned by a specific callee in the parent's body,
+   * ordered by the source index the pack recorded. Example: for a
+   * React component `ContainerVersionView` with three `useEffect(...)`
+   * calls, this carries
+   * `{ "ContainerVersionView" → { "useEffect" → ["...effect#0", "...effect#1", "...effect#2"] } }`.
+   * When rendering the parent's effect list, a `+ useEffect` line is
+   * replaced by a reference to the spawned sub-unit so the reader
+   * isn't told "this called useEffect" three times — they're told
+   * "this spawned `effect#0`, `effect#1`, `effect#2`," each of which
+   * has its own summary immediately below.
+   */
+  spawnerIndex: Map<string, Map<string, string[]>>;
+}
+
+/**
+ * Per-summary mutable state for the effect renderer: we count how many
+ * times each spawning callee has already been replaced so subsequent
+ * encounters pick the next sub-unit in order.
+ */
+interface PerSummaryRenderCtx {
+  readonly base: RenderCtx;
+  readonly parentName: string;
+  readonly spawnerUsed: Map<string, number>;
+}
+
+function perSummary(base: RenderCtx, parentName: string): PerSummaryRenderCtx {
+  return { base, parentName, spawnerUsed: new Map() };
+}
+
+/**
+ * Summary names whose identity is generic enough that the path-free
+ * header carries zero information — routing conventions dominated by
+ * React Router / Remix / Express / default-exporting files. When the
+ * name is one of these, prefix it with the relative file path (minus
+ * extension) so a reader skimming inspect output can distinguish
+ * `app/routes/_app.loader` from `app/routes/_app.admin/route.loader`.
+ */
+const GENERIC_NAMES = new Set([
+  "default",
+  "loader",
+  "action",
+  "handler",
+  "handleRequest",
+]);
+
+function qualifyGenericName(summary: BehavioralSummary): string {
+  const name = summary.identity.name;
+  if (!GENERIC_NAMES.has(name)) {
+    return name;
+  }
+  const stripped = summary.location.file.replace(/\.[^./]+$/, "");
+  return `${stripped}.${name}`;
 }
 
 type TreeNode =
@@ -327,7 +381,11 @@ function buildDecisionTree(transitions: Transition[]): TreeNode {
   return root;
 }
 
-function renderLeaf(leaf: Leaf, indent: string, ctx: RenderCtx): string[] {
+function renderLeaf(
+  leaf: Leaf,
+  indent: string,
+  ctx: PerSummaryRenderCtx,
+): string[] {
   const lines: string[] = [];
   let line = `${indent}-> ${formatOutput(leaf.output)}`;
   if (leaf.declaredStatuses !== null && leaf.output.type === "response") {
@@ -363,10 +421,21 @@ function renderLeaf(leaf: Leaf, indent: string, ctx: RenderCtx): string[] {
  * too, but invocation is the dominant case and the one readers care
  * about for "what did this handler call."
  */
-function renderEffect(effect: Effect, ctx: RenderCtx): string | null {
+function renderEffect(effect: Effect, ctx: PerSummaryRenderCtx): string | null {
   if (effect.type === "invocation") {
     const callee = effect.callee;
-    const followMark = isFollowTarget(callee, ctx.summaryNames) ? " →" : "";
+    // Check whether this callee spawned a sub-unit for the current
+    // parent summary. If so, render the sub-unit reference instead
+    // of the raw callee — `+ ComponentName.effect#0 →` is more
+    // informative than `+ useEffect` three times in a row when the
+    // sub-unit summaries are right below.
+    const spawned = consumeSpawnedSubUnit(ctx, callee);
+    if (spawned !== null) {
+      return `+ ${spawned} →`;
+    }
+    const followMark = isFollowTarget(callee, ctx.base.summaryNames)
+      ? " →"
+      : "";
     return `+ ${callee}${followMark}`;
   }
   if (effect.type === "mutation") {
@@ -379,6 +448,31 @@ function renderEffect(effect: Effect, ctx: RenderCtx): string | null {
     return `+ state ${effect.variable}`;
   }
   return null;
+}
+
+/**
+ * When the current parent summary has sub-units spawned by this callee,
+ * return the name of the next one in order and advance the counter.
+ * Returns null when no more sub-units remain or no relationship exists.
+ */
+function consumeSpawnedSubUnit(
+  ctx: PerSummaryRenderCtx,
+  callee: string,
+): string | null {
+  const byCallee = ctx.base.spawnerIndex.get(ctx.parentName);
+  if (byCallee === undefined) {
+    return null;
+  }
+  const subUnits = byCallee.get(callee);
+  if (subUnits === undefined) {
+    return null;
+  }
+  const used = ctx.spawnerUsed.get(callee) ?? 0;
+  if (used >= subUnits.length) {
+    return null;
+  }
+  ctx.spawnerUsed.set(callee, used + 1);
+  return subUnits[used];
 }
 
 /**
@@ -403,7 +497,7 @@ function renderNode(
   node: TreeNode,
   indent: string,
   keyword: "if" | "elif",
-  ctx: RenderCtx,
+  ctx: PerSummaryRenderCtx,
 ): string[] {
   if (node.kind === "empty") {
     return [];
@@ -434,7 +528,7 @@ function renderNode(
 function renderThenSide(
   node: TreeNode,
   indent: string,
-  ctx: RenderCtx,
+  ctx: PerSummaryRenderCtx,
 ): string[] {
   if (node.kind === "empty") {
     return [];
@@ -448,7 +542,7 @@ function renderThenSide(
 function renderTransitions(
   transitions: Transition[],
   declaredStatuses: Set<number> | null,
-  ctx: RenderCtx,
+  ctx: PerSummaryRenderCtx,
 ): string[] {
   // Propagate declaredStatuses onto every leaf so the undeclared-status
   // annotation can be emitted without re-threading the argument through
@@ -492,6 +586,7 @@ function formatGap(g: Gap): string {
 // ---------------------------------------------------------------------------
 
 function renderSummary(summary: BehavioralSummary, ctx: RenderCtx): string {
+  const perCtx = perSummary(ctx, summary.identity.name);
   const lines: string[] = [];
   const binding = summary.identity.boundaryBinding;
   const rest =
@@ -522,7 +617,7 @@ function renderSummary(summary: BehavioralSummary, ctx: RenderCtx): string {
       lines.push(target);
     }
   } else {
-    lines.push(summary.identity.name);
+    lines.push(qualifyGenericName(summary));
   }
 
   // Metadata line
@@ -554,7 +649,7 @@ function renderSummary(summary: BehavioralSummary, ctx: RenderCtx): string {
   if (summary.transitions.length > 0) {
     lines.push("");
     lines.push(
-      ...renderTransitions(summary.transitions, declaredStatuses, ctx),
+      ...renderTransitions(summary.transitions, declaredStatuses, perCtx),
     );
   }
 
@@ -620,7 +715,55 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
       names.add(last);
     }
   }
-  return { summaryNames: names };
+
+  // Spawner index: detect sub-units whose metadata records a parent
+  // and spawning callee + source index, group by parent, order by
+  // index. Today this is React-shaped only (`metadata.react.kind ===
+  // "effect"` with `component` + `index`); the shape is generic —
+  // any pack that emits sub-units with parent + spawner + index
+  // metadata benefits from the same rendering.
+  const spawnerIndex = new Map<string, Map<string, string[]>>();
+  interface SpawnEntry {
+    subUnit: string;
+    index: number;
+  }
+  const gather: Map<string, Map<string, SpawnEntry[]>> = new Map();
+  for (const s of summaries) {
+    const react = s.metadata?.react as
+      | { kind?: string; component?: string; index?: number }
+      | undefined;
+    if (
+      react?.kind !== "effect" ||
+      typeof react.component !== "string" ||
+      typeof react.index !== "number"
+    ) {
+      continue;
+    }
+    let byCallee = gather.get(react.component);
+    if (byCallee === undefined) {
+      byCallee = new Map();
+      gather.set(react.component, byCallee);
+    }
+    const callee = "useEffect";
+    let entries = byCallee.get(callee);
+    if (entries === undefined) {
+      entries = [];
+      byCallee.set(callee, entries);
+    }
+    entries.push({ subUnit: s.identity.name, index: react.index });
+  }
+  for (const [parent, byCallee] of gather) {
+    const ordered = new Map<string, string[]>();
+    for (const [callee, entries] of byCallee) {
+      ordered.set(
+        callee,
+        entries.sort((a, b) => a.index - b.index).map((e) => e.subUnit),
+      );
+    }
+    spawnerIndex.set(parent, ordered);
+  }
+
+  return { summaryNames: names, spawnerIndex };
 }
 
 // ---------------------------------------------------------------------------

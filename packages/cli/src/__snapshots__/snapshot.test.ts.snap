@@ -62,6 +62,21 @@ exports[`inspect --dir output snapshots > shows unmatched summaries 1`] = `
 "
 `;
 
+exports[`inspect output snapshots > qualifies generic names (loader/action/default) with file path 1`] = `
+"app/routes/_app.loader
+  react-router loader | app/routes/_app.tsx:10
+
+    -> return
+
+app/routes/_app.admin.loader
+  react-router loader | app/routes/_app.admin.tsx:10
+
+    -> return
+
+2 summaries inspected.
+"
+`;
+
 exports[`inspect output snapshots > renders a client summary 1`] = `
 "GET /users/:id
   fetch client | src/pages/user.ts:5
@@ -145,6 +160,28 @@ GET /users/:id
       -> return
 
 2 summaries inspected.
+"
+`;
+
+exports[`inspect output snapshots > replaces useEffect effect with a reference to its spawned sub-unit 1`] = `
+"Foo
+  react component | src/Foo.tsx:10
+
+    -> render <div />
+      + Foo.effect#0 →
+      + Foo.effect#1 →
+
+Foo.effect#0
+  react handler | src/Foo.tsx:12
+
+    -> return
+
+Foo.effect#1
+  react handler | src/Foo.tsx:13
+
+    -> return
+
+3 summaries inspected.
 "
 `;
 
