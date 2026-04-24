@@ -426,7 +426,17 @@ function tryMatchReturnShape(
     returnedObj: obj,
   };
   const statusCode = extractStatusCode(ctx);
-  const body = extractBody(ctx);
+  // For a returnShape terminal, the returned object IS the body. `extractBody`
+  // only knows how to pull from `ctx.calls` (parameterMethodCall) or
+  // `ctx.throwCallArgs` (throw) — neither applies here — so a pack that
+  // specifies `body: { from: "argument", position: 0 }` gets null back, even
+  // though the obvious answer is "use the whole returned object". Fall back
+  // to the returned object's shape when `extractBody` came up empty and
+  // extraction didn't specifically select a property via `from: "property"`.
+  let body = extractBody(ctx);
+  if (body === null && pattern.extraction.body?.from !== "property") {
+    body = { typeText: obj.getText(), shape: extractShape(obj) };
+  }
 
   const terminal: RawTerminal = {
     kind: pattern.kind,
