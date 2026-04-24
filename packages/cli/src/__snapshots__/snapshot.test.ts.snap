@@ -91,6 +91,24 @@ exports[`inspect output snapshots > renders a handler with contract and body sha
 "
 `;
 
+exports[`inspect output snapshots > renders effects under each transition with follow-reference marker 1`] = `
+"formatPayload
+  reachable library | src/helpers.ts:1
+
+    -> return
+
+submit
+  reachable handler | src/handler.ts:10
+
+    -> return
+      + formatPayload →
+      + logger.info
+      + utils.formatPayload →
+
+2 summaries inspected.
+"
+`;
+
 exports[`inspect output snapshots > renders library + caller summaries with function-call identity 1`] = `
 "@ex/lib::makeBinding
   package-exports:@ex/lib library | src/binding.ts:10

@@ -245,6 +245,100 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
+  it("renders effects under each transition with follow-reference marker", () => {
+    // A handler whose body calls other functions — some of which are
+    // themselves summarized in the same file (get the `→` marker),
+    // others are external (no marker).
+    const helperSummary: BehavioralSummary = {
+      kind: "library",
+      location: {
+        file: "src/helpers.ts",
+        range: { start: 1, end: 3 },
+        exportName: "formatPayload",
+      },
+      identity: {
+        name: "formatPayload",
+        exportPath: ["formatPayload"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "reachable",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "formatPayload:return:none:fp01",
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [],
+          location: { start: 1, end: 3 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const withEffects: BehavioralSummary = {
+      kind: "handler",
+      location: {
+        file: "src/handler.ts",
+        range: { start: 10, end: 20 },
+        exportName: "submit",
+      },
+      identity: {
+        name: "submit",
+        exportPath: ["submit"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "reachable",
+        },
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: "submit:return:none:s01",
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [
+            // Intra-file summary — `formatPayload` should match and
+            // get the `→` marker.
+            {
+              type: "invocation",
+              callee: "formatPayload",
+              args: [],
+              async: false,
+            },
+            // External — no summary, no marker.
+            {
+              type: "invocation",
+              callee: "logger.info",
+              args: [],
+              async: false,
+            },
+            // Dotted callee whose last segment IS in the set.
+            {
+              type: "invocation",
+              callee: "utils.formatPayload",
+              args: [],
+              async: false,
+            },
+          ],
+          location: { start: 10, end: 20 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+
+    const filePath = writeTempJson([helperSummary, withEffects]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toMatchSnapshot();
+  });
+
   it("renders library + caller summaries with function-call identity", () => {
     const librarySummary: BehavioralSummary = {
       kind: "library",
