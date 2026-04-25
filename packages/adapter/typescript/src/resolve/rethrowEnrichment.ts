@@ -28,10 +28,10 @@
 
 import { Node, type Project } from "ts-morph";
 
-import { createSourceFileLookup } from "./sourceFileLookup.js";
+import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { FunctionRoot } from "./conditions.js";
+import type { FunctionRoot } from "../conditions.js";
 
 interface RethrowSource {
   /** Name of the callee inside the try block whose throw we might be propagating. */

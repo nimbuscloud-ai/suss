@@ -37,14 +37,17 @@ import {
 } from "@suss/extractor";
 
 import { extractRawBranches } from "./assembly.js";
+import {
+  createLazyProject,
+  readTsconfigFileList,
+} from "./bootstrap/lazyProjectInit.js";
+import { computePackApplicability } from "./bootstrap/preFilter.js";
 import { type CacheLayer, createCacheLayer } from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
-import { collectClientFieldAccesses } from "./fieldAccesses.js";
-import { createLazyProject, readTsconfigFileList } from "./lazyProjectInit.js";
-import { computePackApplicability } from "./preFilter.js";
-import { expandReachableClosure } from "./reachableClosure.js";
-import { enrichRethrows } from "./rethrowEnrichment.js";
+import { expandReachableClosure } from "./resolve/reachableClosure.js";
+import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
+import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 import { createTsSubUnitContext } from "./subUnitContext.js";
 import { createTimer, type TimingReport } from "./timing.js";
 import { computeAdapterPacksDigest } from "./version.js";

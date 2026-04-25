@@ -8,7 +8,7 @@ import {
   type ParameterDeclaration,
 } from "ts-morph";
 
-import { extractShape } from "./shapes.js";
+import { extractShape } from "./shapes/shapes.js";
 
 import type { RenderNode } from "@suss/behavioral-ir";
 import type {
