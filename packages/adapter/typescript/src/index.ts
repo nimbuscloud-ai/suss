@@ -12,7 +12,7 @@ export { parseConditionExpression } from "./predicates.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";
-export { findTerminals } from "./terminals.js";
+export { findTerminals } from "./terminals/index.js";
 export { ADAPTER_VERSION, computeAdapterPacksDigest } from "./version.js";
 
 export type {
@@ -26,5 +26,5 @@ export type {
   TsJsxAttributeLocation,
   TsSubUnitContext,
 } from "./subUnitContext.js";
-export type { FoundTerminal } from "./terminals.js";
+export type { FoundTerminal } from "./terminals/index.js";
 export type { Timer, TimingReport } from "./timing.js";
