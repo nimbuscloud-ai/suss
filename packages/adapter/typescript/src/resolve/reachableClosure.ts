@@ -25,6 +25,7 @@ import { functionCallBinding } from "@suss/behavioral-ir";
 import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 
 import { extractCodeStructure } from "../adapter.js";
+import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
 
@@ -314,6 +315,7 @@ export function expandReachableClosure(
   seeds: BehavioralSummary[],
   project: Project,
   options?: ExtractorOptions,
+  projectFileSet?: ReadonlySet<string>,
 ): BehavioralSummary[] {
   const covered = new Set<string>();
   const worklist: FunctionRoot[] = [];
@@ -346,6 +348,20 @@ export function expandReachableClosure(
         continue;
       }
       covered.add(key);
+      // Lazy-add: ts-morph's symbol resolution loaded the candidate's
+      // source file into the underlying program but didn't register it
+      // with the project's source-file tracker. Without an explicit
+      // add, downstream passes (rethrow enrichment, partial-hit
+      // closure dedup) can't find the file via project.getSourceFiles().
+      // Guarded by projectFileSet so we never pollute the project with
+      // paths outside the tsconfig include.
+      if (projectFileSet !== undefined) {
+        lazyAddSourceFile(
+          project,
+          projectFileSet,
+          candidate.func.getSourceFile().getFilePath(),
+        );
+      }
       reached.push(extractReachableSummary(candidate, options));
       worklist.push(candidate.func);
     }

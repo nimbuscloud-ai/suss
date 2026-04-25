@@ -88,6 +88,14 @@ export function readTsconfigFileList(tsConfigFilePath: string): string[] {
  * closure pass when symbol resolution lands on a non-candidate
  * file that's still part of the tsconfig include set. Returns null
  * for paths outside the project file set (e.g. node_modules).
+ *
+ * Always calls `addSourceFileAtPath` even when `getSourceFile`
+ * already returns a SourceFile. ts-morph's type checker can
+ * surface a SourceFile via symbol resolution without putting it
+ * in `project.getSourceFiles()`; downstream passes that enumerate
+ * the project list (rethrow enrichment, partial-hit closure dedup)
+ * miss those silently. addSourceFileAtPath is idempotent — a true
+ * no-op when the file is genuinely already in the tracker.
  */
 export function lazyAddSourceFile(
   project: Project,
@@ -96,10 +104,6 @@ export function lazyAddSourceFile(
 ): SourceFile | null {
   if (!projectFileSet.has(filePath)) {
     return null;
-  }
-  const existing = project.getSourceFile(filePath);
-  if (existing !== undefined) {
-    return existing;
   }
   try {
     return project.addSourceFileAtPath(filePath);
