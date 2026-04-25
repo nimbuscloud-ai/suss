@@ -1,4 +1,4 @@
-// ast-resolve.ts — Walk the AST to resolve terminal expressions to their
+// astResolve.ts — Walk the AST to resolve terminal expressions to their
 // defining value.
 //
 // The type checker is our fallback for identifiers, property access, and

@@ -1,4 +1,4 @@
-// sub-unit-context.ts — Primitives the TypeScript adapter exposes to
+// subUnitContext.ts — Primitives the TypeScript adapter exposes to
 // packs whose `subUnits` hook needs to walk the parent's AST.
 //
 // The PatternPack.subUnits signature in @suss/extractor takes `ctx:

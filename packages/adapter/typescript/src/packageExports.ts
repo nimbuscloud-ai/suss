@@ -1,4 +1,4 @@
-// package-exports.ts — resolve the reachable source files behind a
+// packageExports.ts — resolve the reachable source files behind a
 // package's public API.
 //
 // Reads a package.json, walks its `exports` / `main` / `module` /

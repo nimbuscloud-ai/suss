@@ -1,4 +1,4 @@
-// source-file-lookup.ts — O(1) path → SourceFile map for the
+// sourceFileLookup.ts — O(1) path → SourceFile map for the
 // post-extraction passes (rethrow enrichment, reachable closure)
 // that need to locate the function a summary describes by its
 // `summary.location.file` path.

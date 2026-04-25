@@ -5,7 +5,7 @@ import {
   collectEarlyReturnConditionInfos,
   conditionInfoToRawCondition,
 } from "./conditions.js";
-import { extractInvocationEffects } from "./invocation-effects.js";
+import { extractInvocationEffects } from "./invocationEffects.js";
 import {
   findTerminals,
   functionMayFallThrough,

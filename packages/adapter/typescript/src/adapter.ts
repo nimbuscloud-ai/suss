@@ -40,12 +40,12 @@ import { extractRawBranches } from "./assembly.js";
 import { type CacheLayer, createCacheLayer } from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
-import { collectClientFieldAccesses } from "./field-accesses.js";
+import { collectClientFieldAccesses } from "./fieldAccesses.js";
 import { createLazyProject, readTsconfigFileList } from "./lazyProjectInit.js";
 import { computePackApplicability } from "./preFilter.js";
-import { expandReachableClosure } from "./reachable-closure.js";
-import { enrichRethrows } from "./rethrow-enrichment.js";
-import { createTsSubUnitContext } from "./sub-unit-context.js";
+import { expandReachableClosure } from "./reachableClosure.js";
+import { enrichRethrows } from "./rethrowEnrichment.js";
+import { createTsSubUnitContext } from "./subUnitContext.js";
 import { createTimer, type TimingReport } from "./timing.js";
 import { computeAdapterPacksDigest } from "./version.js";
 

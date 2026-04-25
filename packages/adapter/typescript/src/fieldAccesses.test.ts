@@ -2,7 +2,7 @@ import { Node, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "./adapter.js";
-import { findResponseVariable } from "./field-accesses.js";
+import { findResponseVariable } from "./fieldAccesses.js";
 
 import type { PatternPack } from "@suss/extractor";
 

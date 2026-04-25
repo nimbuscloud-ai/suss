@@ -1,4 +1,4 @@
-// invocation-effects.ts — Capture call expressions as `invocation`
+// invocationEffects.ts — Capture call expressions as `invocation`
 // RawEffects. Two patterns covered:
 //
 //   1. Bare expression-statement calls — `setCount(n);`,

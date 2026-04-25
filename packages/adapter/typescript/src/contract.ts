@@ -7,7 +7,7 @@ import { Node } from "ts-morph";
 
 import { restBinding } from "@suss/behavioral-ir";
 
-import { shapeFromNodeType } from "./type-shapes.js";
+import { shapeFromNodeType } from "./typeShapes.js";
 
 import type { BoundaryBinding, TypeShape } from "@suss/behavioral-ir";
 import type { ContractPattern, RawDeclaredContract } from "@suss/extractor";

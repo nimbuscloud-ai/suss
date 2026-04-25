@@ -8,10 +8,10 @@ export { extractRawBranches } from "./assembly.js";
 export { collectAncestorBranches, collectEarlyReturns } from "./conditions.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery.js";
-export { collectClientFieldAccesses } from "./field-accesses.js";
+export { collectClientFieldAccesses } from "./fieldAccesses.js";
 export { parseConditionExpression } from "./predicates.js";
-export { createTsSubUnitContext } from "./sub-unit-context.js";
 export { resolveSubject } from "./subjects.js";
+export { createTsSubUnitContext } from "./subUnitContext.js";
 export { findTerminals } from "./terminals.js";
 export { ADAPTER_VERSION, computeAdapterPacksDigest } from "./version.js";
 
@@ -25,6 +25,6 @@ export type { ClientCallSite, DiscoveredUnit } from "./discovery.js";
 export type {
   TsJsxAttributeLocation,
   TsSubUnitContext,
-} from "./sub-unit-context.js";
+} from "./subUnitContext.js";
 export type { FoundTerminal } from "./terminals.js";
 export type { Timer, TimingReport } from "./timing.js";

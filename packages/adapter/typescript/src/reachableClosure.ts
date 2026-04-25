@@ -1,4 +1,4 @@
-// reachable-closure.ts — transitive-closure library discovery
+// reachableClosure.ts — transitive-closure library discovery
 //
 // After pack-based discovery produces summaries for handlers, components,
 // resolvers, and consumers, this pass walks the call graph from those
@@ -26,7 +26,7 @@ import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 
 import { extractCodeStructure } from "./adapter.js";
 import { type DiscoveredUnit, toFunctionRoot } from "./discovery.js";
-import { createSourceFileLookup } from "./source-file-lookup.js";
+import { createSourceFileLookup } from "./sourceFileLookup.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";

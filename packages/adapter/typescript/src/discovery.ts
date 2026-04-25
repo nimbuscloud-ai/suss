@@ -24,7 +24,7 @@ import {
 import {
   type ResolvedPackageExport,
   resolvePackageExports,
-} from "./package-exports.js";
+} from "./packageExports.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";

@@ -1,4 +1,4 @@
-// field-accesses.ts — Collect property accesses on the API response variable
+// fieldAccesses.ts — Collect property accesses on the API response variable
 //
 // After a consumer branches on status, it reads fields from the response body.
 // This module traces those accesses and builds a TypeShape representing what
