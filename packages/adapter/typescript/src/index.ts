@@ -19,7 +19,7 @@ export type {
   TypeScriptAdapter,
   TypeScriptAdapterConfig,
 } from "./adapter.js";
-export type { CacheDiagnostic } from "./cache.js";
+export type { CacheDiagnostic, CacheLookup } from "./cache.js";
 export type { FunctionRoot } from "./conditions.js";
 export type { ContractReadResult } from "./contract.js";
 export type { ClientCallSite, DiscoveredUnit } from "./discovery/index.js";

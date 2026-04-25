@@ -19,32 +19,30 @@ describe("formatCacheDiagnostic", () => {
     expect(out).toContain("no-manifest");
   });
 
-  it("renders a miss with a partial-reuse breakdown", () => {
+  it("renders a partial-hit with the file-churn breakdown", () => {
     const diag: CacheDiagnostic = {
-      kind: "miss",
-      missReason: "files-changed",
+      kind: "partial-hit",
       partial: {
-        wouldReuse: 2585,
-        wouldInvalidate: 1,
+        reusedSummaries: 2585,
+        filesToReExtract: 1,
         addedFiles: 0,
         removedFiles: 0,
         changedFiles: 1,
       },
     };
     const out = formatCacheDiagnostic(diag);
-    expect(out).toContain("files-changed");
+    expect(out).toContain("partial-hit");
     expect(out).toContain("1 changed");
-    expect(out).toContain("would reuse 2585");
-    expect(out).toContain("invalidate 1");
+    expect(out).toContain("reused 2585");
+    expect(out).toContain("re-extracted 1");
   });
 
-  it("includes added / removed counts in the partial breakdown", () => {
+  it("includes added / removed counts in the partial-hit breakdown", () => {
     const diag: CacheDiagnostic = {
-      kind: "miss",
-      missReason: "files-changed",
+      kind: "partial-hit",
       partial: {
-        wouldReuse: 100,
-        wouldInvalidate: 5,
+        reusedSummaries: 100,
+        filesToReExtract: 6,
         addedFiles: 3,
         removedFiles: 2,
         changedFiles: 1,
