@@ -157,6 +157,34 @@ function extractParameters(
         });
       }
     }
+  } else if (inputMapping.type === "decoratedParams") {
+    // NestJS-style: each parameter's first decorator names its role
+    // (e.g. `@Args() id` → role "args"). Unmatched parameters fall
+    // back to `defaultRole` when set, or skip when unset, so a stray
+    // injected service doesn't surface as an input.
+    for (let i = 0; i < params.length; i++) {
+      const param = params[i];
+      const decorators = param.getDecorators();
+      let matchedRole: string | null = null;
+      for (const decorator of decorators) {
+        const decoratorName = decorator.getName();
+        const role = inputMapping.decoratorRoleMap[decoratorName];
+        if (role !== undefined) {
+          matchedRole = role;
+          break;
+        }
+      }
+      const role = matchedRole ?? inputMapping.defaultRole;
+      if (role === undefined) {
+        continue;
+      }
+      result.push({
+        name: param.getName(),
+        position: i,
+        role,
+        typeText: null,
+      });
+    }
   } else if (inputMapping.type === "componentProps") {
     const param = params[inputMapping.paramPosition];
     if (param !== undefined) {

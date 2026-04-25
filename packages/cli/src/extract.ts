@@ -25,6 +25,8 @@ const BUILTIN_FRAMEWORKS: Record<
   react: () => import("@suss/framework-react"),
   // GraphQL code-first resolver discovery (Apollo Server).
   apollo: () => import("@suss/framework-apollo"),
+  // GraphQL resolver discovery via NestJS decorators.
+  "nestjs-graphql": () => import("@suss/framework-nestjs-graphql"),
   // HTTP client runtimes (consumers).
   fetch: () => import("@suss/runtime-web"),
   axios: () => import("@suss/runtime-axios"),

@@ -1,0 +1,59 @@
+{
+  "name": "@suss/framework-nestjs-graphql",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Pattern pack for extracting suss behavioral summaries from NestJS GraphQL resolvers (decorator-driven, @nestjs/graphql).",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "framework-pack",
+    "nestjs",
+    "graphql",
+    "static-analysis"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/nestjs-graphql#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/framework/nestjs-graphql"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/extractor": "*"
+  },
+  "devDependencies": {
+    "@suss/adapter-typescript": "*",
+    "@suss/behavioral-ir": "*",
+    "ts-morph": "*",
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}
