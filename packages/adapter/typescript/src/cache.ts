@@ -1,27 +1,38 @@
-// cache.ts — coarse-grained on-disk extraction cache.
+// cache.ts — on-disk extraction cache with coarse + partial-reuse tiers.
 //
-// Two-tier strategy. This file handles the COARSE tier:
+// Coarse tier (always active):
 //
-//   coarse key = (adapter version, pack versions, tsconfig path,
+//   coarse key = (adapter version, pack versions, tsconfig stamp,
 //                 sorted [(file path, mtime, size)] for include set)
 //
 // On a warm run with no changes, computing the coarse key takes one
 // fs.stat per file (~5µs each, ~25ms for 5,500 files) — no reads, no
 // AST work, no extraction. Match → return previous run's summaries
-// verbatim. Miss → fall through to full extraction, write a fresh
-// manifest, and return.
+// verbatim.
+//
+// Partial-reuse tier (Phase 4b):
+//
+//   When the file set differs but the schema / packs / tsconfig still
+//   match, partition cached summaries into:
+//     - kept           — summaries whose location.file is unchanged
+//                        AND whose kind isn't library (closure-derived
+//                        units get rebuilt from the merged set)
+//     - filesToExtract — changed ∪ added (the per-file extract scope)
+//   The adapter re-extracts only those files, merges with kept, and
+//   re-runs the closure / rethrow phases over the merged set.
+//
+// Soundness limit: invalidation is keyed on location.file. Type-shape
+// extraction can pull types from imported files; a type change in an
+// untouched importer's dep is NOT detected and can produce a stale
+// shape on a kept summary. Same trade-off TypeScript's incremental
+// compilation accepts. `--no-cache` or deleting `.suss/cache/` forces
+// a full re-extract for callers that need the strict guarantee.
 //
 // Mtime can lie (false positives — content unchanged but stat says
 // touched). False positives are recoverable: we just re-extract and
 // the result is the same. False negatives (cache hit when content
 // changed) require touching files in-place without updating mtime;
 // not a workflow we support.
-//
-// Phase 4a: each summary in the manifest carries a `dependsOn` set
-// of files whose change would invalidate it. The cache still acts
-// on the coarse key (all-or-nothing) — but on a miss we walk the
-// stored deps and report what fine-grained invalidation WOULD
-// have given us. Phase 4b will activate the partial-reuse path.
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -60,29 +71,27 @@ interface Manifest {
 }
 
 /**
- * Reported by `tryHitWithDiagnostic`. Always returned alongside
- * the hit/miss decision; the consumer decides whether to act on
- * the partial-reuse counts.
+ * Reported by `lookup`. Surfaces what the cache decided and, for
+ * partial-hits, the file-churn breakdown so callers can render a
+ * diagnostic.
  */
 export interface CacheDiagnostic {
-  kind: "hit" | "miss";
+  kind: "hit" | "partial-hit" | "miss";
   /** Reason the lookup missed (only set when kind === "miss"). */
   missReason?:
     | "no-manifest"
     | "schema-mismatch"
     | "packs-changed"
-    | "tsconfig-changed"
-    | "files-changed";
+    | "tsconfig-changed";
   /**
-   * Counts that show what fine-grained invalidation WOULD have
-   * salvaged. Only populated when missReason === "files-changed"
-   * (the other miss reasons invalidate every summary regardless).
+   * Counts describing the file churn that produced a partial hit.
+   * Only populated when kind === "partial-hit".
    */
   partial?: {
-    /** Cached summaries whose dep set didn't intersect changed files. */
-    wouldReuse: number;
-    /** Cached summaries whose deps include at least one changed file. */
-    wouldInvalidate: number;
+    /** Cached summaries whose location.file is in the unchanged set. */
+    reusedSummaries: number;
+    /** Files the adapter needs to re-extract per-file from. */
+    filesToReExtract: number;
     /** Files added to the include set since the cached run. */
     addedFiles: number;
     /** Files removed from the include set since the cached run. */
@@ -92,28 +101,50 @@ export interface CacheDiagnostic {
   };
 }
 
+/**
+ * Result of a cache lookup. The adapter dispatches on `kind`:
+ *
+ *   - "hit"          — the entire summary set is valid; return it
+ *                      verbatim, skip extraction.
+ *   - "partial-hit"  — `kept` is correct as far as their location.file
+ *                      went; re-extract `filesToExtract` per-file and
+ *                      re-run the closure / rethrow passes over the
+ *                      merged set.
+ *   - "miss"         — manifest absent or coarse keys (schema, packs,
+ *                      tsconfig) changed; full re-extract.
+ */
+export type CacheLookup =
+  | {
+      kind: "hit";
+      summaries: BehavioralSummary[];
+      diagnostic: CacheDiagnostic;
+    }
+  | {
+      kind: "partial-hit";
+      kept: BehavioralSummary[];
+      filesToExtract: string[];
+      diagnostic: CacheDiagnostic;
+    }
+  | { kind: "miss"; diagnostic: CacheDiagnostic };
+
 export interface CacheLayer {
   /**
-   * Look up summaries for the current Project state. Returns null
-   * on any cache miss (no manifest, schema mismatch, packs changed,
-   * file added/removed/touched). The lookup is stat-only — no
-   * file reads, no AST work.
+   * Convenience wrapper around `lookup` that collapses partial-hits
+   * to misses. Returns the full summary list on a clean hit, null
+   * otherwise. Phase-1 callers that don't want partial-reuse logic
+   * call this and fall through to a full re-extract on miss.
    */
   tryHit(input: CacheInput): Promise<BehavioralSummary[] | null>;
   /**
-   * Same as `tryHit` but also reports what fine-grained
-   * invalidation would have salvaged on a miss. Phase 4a uses the
-   * diagnostic to surface the partial-reuse opportunity without
-   * acting on it.
+   * Full lookup with the partial-hit decision. The adapter uses this
+   * to decide between full reuse, partial reuse, and full re-extract.
+   * The lookup is stat-only — no file reads, no AST work.
    */
-  tryHitWithDiagnostic(input: CacheInput): Promise<{
-    summaries: BehavioralSummary[] | null;
-    diagnostic: CacheDiagnostic;
-  }>;
+  lookup(input: CacheInput): Promise<CacheLookup>;
   /**
    * Persist a fresh extraction's summaries to the cache, keyed
-   * against the same Project state. Subsequent `tryHit` calls
-   * with the same state return these summaries.
+   * against the same Project state. Subsequent `lookup` calls with
+   * the same state return them.
    */
   write(input: CacheInput, summaries: BehavioralSummary[]): Promise<void>;
 }
@@ -142,8 +173,8 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
   if (cacheDir === null) {
     return {
       tryHit: async () => null,
-      tryHitWithDiagnostic: async () => ({
-        summaries: null,
+      lookup: async () => ({
+        kind: "miss",
         diagnostic: { kind: "miss", missReason: "no-manifest" },
       }),
       write: async () => {},
@@ -152,29 +183,60 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
   const manifestPath = path.join(cacheDir, "manifest.json");
   return {
     async tryHit(input: CacheInput): Promise<BehavioralSummary[] | null> {
-      const result = await loadAndCheck(manifestPath, input);
-      if (result.kind === "hit") {
-        return result.summaries;
-      }
-      return null;
+      const result = await this.lookup(input);
+      return result.kind === "hit" ? result.summaries : null;
     },
-    async tryHitWithDiagnostic(input: CacheInput): Promise<{
-      summaries: BehavioralSummary[] | null;
-      diagnostic: CacheDiagnostic;
-    }> {
-      const result = await loadAndCheck(manifestPath, input);
-      if (result.kind === "hit") {
+    async lookup(input: CacheInput): Promise<CacheLookup> {
+      const manifest = await readManifest(manifestPath);
+      if (manifest === null) {
+        return missDiag("no-manifest");
+      }
+      if (manifest.schemaVersion !== SCHEMA_VERSION) {
+        return missDiag("schema-mismatch");
+      }
+      if (manifest.adapterPacksDigest !== input.adapterPacksDigest) {
+        return missDiag("packs-changed");
+      }
+      const currentTsconfigStamp = await stampTsconfig(input.tsconfigPath);
+      if (!fileStampEquals(manifest.tsconfigStamp, currentTsconfigStamp)) {
+        return missDiag("tsconfig-changed");
+      }
+      const currentFiles = await resolveFileStamps(input);
+      const partition = partitionByFileChurn(manifest, currentFiles);
+      if (partition.changedSet.size === 0 && partition.added.length === 0) {
         return {
-          summaries: result.summaries,
+          kind: "hit",
+          summaries: manifest.summaries.map((c) => c.summary),
           diagnostic: { kind: "hit" },
         };
       }
+      // Keep every cached summary whose location.file is unchanged —
+      // including library-kind summaries discovered by the closure pass.
+      // A library summary is a description of its own function's body;
+      // if that file didn't change, the description is still valid.
+      // The closure walk's `covered` set will dedup against these
+      // kept summaries when it walks from new entry points, so
+      // re-derivation only happens for genuinely new callees.
+      // Orphan library summaries (no entry point reaches them after a
+      // change) are acceptable — they're correct descriptions, just
+      // unreferenced by the pairing layer.
+      const kept = manifest.summaries
+        .filter((c) => !partition.changedSet.has(c.summary.location.file))
+        .map((c) => c.summary);
+      const filesToExtract = [...partition.changed, ...partition.added];
       return {
-        summaries: null,
+        kind: "partial-hit",
+        kept,
+        filesToExtract,
         diagnostic: {
-          kind: "miss",
-          missReason: result.reason,
-          ...(result.partial !== undefined ? { partial: result.partial } : {}),
+          kind: "partial-hit",
+          partial: {
+            reusedSummaries: kept.length,
+            filesToReExtract: filesToExtract.length,
+            addedFiles: partition.added.length,
+            removedFiles: partition.removed.length,
+            changedFiles: partition.changed.length,
+          },
         },
       };
     },
@@ -197,44 +259,73 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
   };
 }
 
-type LoadResult =
-  | { kind: "hit"; summaries: BehavioralSummary[] }
-  | {
-      kind: "miss";
-      reason: NonNullable<CacheDiagnostic["missReason"]>;
-      partial?: NonNullable<CacheDiagnostic["partial"]>;
-    };
-
-async function loadAndCheck(
-  manifestPath: string,
-  input: CacheInput,
-): Promise<LoadResult> {
-  const manifest = await readManifest(manifestPath);
-  if (manifest === null) {
-    return { kind: "miss", reason: "no-manifest" };
-  }
-  if (manifest.schemaVersion !== SCHEMA_VERSION) {
-    return { kind: "miss", reason: "schema-mismatch" };
-  }
-  if (manifest.adapterPacksDigest !== input.adapterPacksDigest) {
-    return { kind: "miss", reason: "packs-changed" };
-  }
-  const currentTsconfigStamp = await stampTsconfig(input.tsconfigPath);
-  if (!fileStampEquals(manifest.tsconfigStamp, currentTsconfigStamp)) {
-    return { kind: "miss", reason: "tsconfig-changed" };
-  }
-  const currentFiles = await resolveFileStamps(input);
-  if (!fileStampsEqual(manifest.files, currentFiles)) {
-    return {
-      kind: "miss",
-      reason: "files-changed",
-      partial: computePartialReuse(manifest, currentFiles),
-    };
-  }
+function missDiag(reason: NonNullable<CacheDiagnostic["missReason"]>): {
+  kind: "miss";
+  diagnostic: CacheDiagnostic;
+} {
   return {
-    kind: "hit",
-    summaries: manifest.summaries.map((c) => c.summary),
+    kind: "miss",
+    diagnostic: { kind: "miss", missReason: reason },
   };
+}
+
+interface FilePartition {
+  /** Files unchanged between manifest and current run. */
+  unchanged: string[];
+  /** Files whose mtime/size differs (excludes added/removed). */
+  changed: string[];
+  /** Files in the current set but not in the manifest. */
+  added: string[];
+  /** Files in the manifest but not in the current set. */
+  removed: string[];
+  /**
+   * Convenience set of every file the adapter must treat as "not
+   * reusable" for partial-hit invalidation: changed ∪ removed. New
+   * files aren't in here because they have no cached summaries to
+   * invalidate yet.
+   */
+  changedSet: Set<string>;
+}
+
+function partitionByFileChurn(
+  manifest: Manifest,
+  currentFiles: FileStamp[],
+): FilePartition {
+  const oldByPath = new Map(manifest.files.map((f) => [f.path, f] as const));
+  const newByPath = new Map(currentFiles.map((f) => [f.path, f] as const));
+
+  const unchanged: string[] = [];
+  const changed: string[] = [];
+  const added: string[] = [];
+  const removed: string[] = [];
+
+  for (const [pathStr, newStamp] of newByPath) {
+    const oldStamp = oldByPath.get(pathStr);
+    if (oldStamp === undefined) {
+      added.push(pathStr);
+      continue;
+    }
+    if (fileStampEquals(oldStamp, newStamp)) {
+      unchanged.push(pathStr);
+    } else {
+      changed.push(pathStr);
+    }
+  }
+  for (const [pathStr] of oldByPath) {
+    if (!newByPath.has(pathStr)) {
+      removed.push(pathStr);
+    }
+  }
+
+  const changedSet = new Set<string>();
+  for (const p of changed) {
+    changedSet.add(p);
+  }
+  for (const p of removed) {
+    changedSet.add(p);
+  }
+
+  return { unchanged, changed, added, removed, changedSet };
 }
 
 /**
@@ -269,62 +360,6 @@ function attachDeps(summaries: BehavioralSummary[]): CachedSummary[] {
     }
     return { summary, dependsOn: [...deps].sort() };
   });
-}
-
-/**
- * Partition cached summaries by whether their dep set intersects the
- * set of changed files. Phase 4a only reports the counts; phase 4b
- * will return the kept set + the file list that needs re-extraction.
- */
-function computePartialReuse(
-  manifest: Manifest,
-  currentFiles: FileStamp[],
-): NonNullable<CacheDiagnostic["partial"]> {
-  const oldByPath = new Map(manifest.files.map((f) => [f.path, f] as const));
-  const newByPath = new Map(currentFiles.map((f) => [f.path, f] as const));
-
-  const changed = new Set<string>();
-  let addedFiles = 0;
-  let removedFiles = 0;
-  let changedFiles = 0;
-
-  for (const [pathStr, newStamp] of newByPath) {
-    const oldStamp = oldByPath.get(pathStr);
-    if (oldStamp === undefined) {
-      addedFiles += 1;
-      changed.add(pathStr);
-      continue;
-    }
-    if (!fileStampEquals(oldStamp, newStamp)) {
-      changedFiles += 1;
-      changed.add(pathStr);
-    }
-  }
-  for (const [pathStr] of oldByPath) {
-    if (!newByPath.has(pathStr)) {
-      removedFiles += 1;
-      changed.add(pathStr);
-    }
-  }
-
-  let wouldReuse = 0;
-  let wouldInvalidate = 0;
-  for (const cached of manifest.summaries) {
-    const intersects = cached.dependsOn.some((dep) => changed.has(dep));
-    if (intersects) {
-      wouldInvalidate += 1;
-    } else {
-      wouldReuse += 1;
-    }
-  }
-
-  return {
-    wouldReuse,
-    wouldInvalidate,
-    addedFiles,
-    removedFiles,
-    changedFiles,
-  };
 }
 
 async function readManifest(manifestPath: string): Promise<Manifest | null> {
@@ -410,16 +445,4 @@ function fileStampEquals(a: FileStamp | null, b: FileStamp | null): boolean {
     return false;
   }
   return a.path === b.path && a.mtimeMs === b.mtimeMs && a.size === b.size;
-}
-
-function fileStampsEqual(a: FileStamp[], b: FileStamp[]): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  for (let i = 0; i < a.length; i++) {
-    if (!fileStampEquals(a[i], b[i])) {
-      return false;
-    }
-  }
-  return true;
 }

@@ -1347,22 +1347,28 @@ export function createTypeScriptAdapter(
                 ? { tsconfigPath: config.tsConfigFilePath }
                 : {}),
             };
-      const { summaries: cached, diagnostic } = await timer.timeAsync(
-        "cache.tryHit",
-        () => cache.tryHitWithDiagnostic(cacheInput),
+      const lookup = await timer.timeAsync("cache.lookup", () =>
+        cache.lookup(cacheInput),
       );
       if (config.onCacheDiagnostic !== undefined) {
-        config.onCacheDiagnostic(diagnostic);
+        config.onCacheDiagnostic(lookup.diagnostic);
       }
-      if (cached !== null) {
+      if (lookup.kind === "hit") {
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return cached;
+        return lookup.summaries;
       }
+      const partial = lookup.kind === "partial-hit" ? lookup : null;
 
-      // Cache miss: run the lazy bootstrap so the rest of the
-      // pipeline has the candidate set loaded.
+      // Cache miss / partial hit: run the lazy bootstrap so the rest
+      // of the pipeline has the candidate set loaded. On a partial
+      // hit we additionally pull in:
+      //   - filesToExtract (per-file extract needs them loaded)
+      //   - every kept summary's location.file (closure pass needs to
+      //     locate kept summaries' AST nodes by file+range; if a file
+      //     isn't loaded the locate fails and closure re-emits the
+      //     summary as a duplicate).
       if (lazyEligible) {
         const lazy = await timer.timeAsync("lazyProjectInit", () =>
           createLazyProject(
@@ -1377,10 +1383,26 @@ export function createTypeScriptAdapter(
           // for downstream consumers.
           project.addSourceFileAtPath(sf.getFilePath());
         }
+        if (partial !== null) {
+          const partialFiles = new Set<string>(partial.filesToExtract);
+          for (const summary of partial.kept) {
+            partialFiles.add(summary.location.file);
+          }
+          for (const fp of partialFiles) {
+            try {
+              project.addSourceFileAtPath(fp);
+            } catch {
+              // File listed in tsconfig but disappeared between the
+              // cache-list collection and addSourceFileAtPath — skip
+              // silently; subsequent phases tolerate missing files.
+            }
+          }
+        }
         lazyBootstrapped = true;
       }
 
-      const summaries: BehavioralSummary[] = [];
+      const summaries: BehavioralSummary[] =
+        partial !== null ? [...partial.kept] : [];
 
       // One project enumeration, reused across phases. `getSourceFiles`
       // walks the directory tree internally — calling it per-phase
@@ -1400,8 +1422,19 @@ export function createTypeScriptAdapter(
         computePackApplicability(sourceFiles, config.frameworks),
       );
 
+      // Per-file extract: the FULL pass walks every source file; the
+      // partial-hit pass walks only the changed/added subset and
+      // merges them with the kept summaries above.
+      const filesToExtractSet =
+        partial !== null ? new Set(partial.filesToExtract) : null;
       timer.time("extract per-file", () => {
         for (const sourceFile of sourceFiles) {
+          if (
+            filesToExtractSet !== null &&
+            !filesToExtractSet.has(sourceFile.getFilePath())
+          ) {
+            continue;
+          }
           const applicablePacks = packsByFile.get(sourceFile);
           if (applicablePacks === undefined) {
             continue;
@@ -1441,6 +1474,24 @@ export function createTypeScriptAdapter(
               ),
             )
           : withSubUnits;
+
+      // Closure expansion creates summaries for callee functions whose
+      // SourceFile ts-morph loaded via symbol resolution but which
+      // were never added to the project's source-file tracker. Add
+      // them now so the rethrow-enrichment lookup (which scans
+      // project.getSourceFiles()) can locate them. Without this,
+      // rethrow enrichment silently skips closure-derived summaries
+      // — the same gap warm-with-changes used to expose by accident.
+      timer.time("syncClosureSourceFiles", () => {
+        for (const summary of withClosure) {
+          try {
+            project.addSourceFileAtPath(summary.location.file);
+          } catch {
+            // File listed in a summary but unreadable now — skip;
+            // subsequent passes tolerate missing files.
+          }
+        }
+      });
 
       // Rethrow enrichment: bare `throw err` inside a catch block picks
       // up `transition.metadata.rethrow.possibleSources` — the set of
