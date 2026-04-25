@@ -197,6 +197,52 @@ export type DiscoveryMatch =
     }
   | {
       /**
+       * Class methods that carry a specific decorator, on classes that
+       * carry a specific class-level decorator. Used by NestJS-style
+       * frameworks where resolvers / handlers / controllers are
+       * declared by decorator, not by registering a function in an
+       * object literal.
+       *
+       * Discovery gates on an `importModule` of `classDecorator` and
+       * each `methodDecorators` entry — random user-defined decorators
+       * with the same names won't trip the matcher.
+       *
+       * For a NestJS GraphQL pack:
+       * `{ importModule: "@nestjs/graphql",
+       *    classDecorator: "Resolver",
+       *    methodDecorators: ["Query", "Mutation", "ResolveField",
+       *                       "Subscription"] }`
+       *
+       * The adapter populates `DiscoveredUnit.resolverInfo` so the
+       * produced binding carries `graphql-resolver(typeName, fieldName)`.
+       * `typeName` resolves from the class decorator's first argument
+       * (`@Resolver(() => User)` → `"User"`); when the class decorator
+       * has no argument it defaults to the operation kind (`"Query"`,
+       * `"Mutation"`, `"Subscription"`). `fieldName` reads the method
+       * decorator's `{ name }` option override when present, otherwise
+       * the method name.
+       */
+      type: "decoratedMethod";
+      /**
+       * The module a pack-recognised decorator must be imported from
+       * for discovery to fire. Codebases sometimes wrap framework
+       * decorators in their own re-exports (NestJS apps frequently
+       * declare `MetadataResolver` / `CoreResolver` factories that
+       * compose `@Resolver()` with extra metadata). When that happens,
+       * the import-module gate would miss them; pass an array of
+       * accepted modules and any one match suffices.
+       */
+      importModule: string | string[];
+      /**
+       * Class decorator names to recognise. The first entry that
+       * appears on a class wins for typeName extraction (the rest are
+       * fallbacks for codebases with multiple wrapper styles).
+       */
+      classDecorators: string[];
+      methodDecorators: string[];
+    }
+  | {
+      /**
        * Consumer side of the package-export boundary. Scans source
        * files for imports of the named packages and records every
        * call site, emitting one `caller`-kind unit per enclosing
@@ -410,6 +456,27 @@ export type InputMappingPattern =
        * reads as two inputs: `ctx` and `userId`.
        */
       type: "allPositional";
+      defaultRole?: string;
+    }
+  | {
+      /**
+       * Decorator-driven parameter mapping (NestJS-style). For each
+       * declared parameter, the adapter reads the parameter's first
+       * decorator and looks up its name in `decoratorRoleMap` —
+       * matched decorators map the parameter to that role; unmatched
+       * parameters fall back to `defaultRole` (or skip when unset).
+       *
+       * For `@nestjs/graphql` resolvers:
+       * `{ "Args": "args", "Parent": "parent",
+       *    "Context": "context", "Info": "info" }`.
+       *
+       * Decorator gating is by name only — multiple frameworks
+       * defining `@Args` would all map. Packs that need to
+       * disambiguate by import module add it later when the use case
+       * justifies the cost.
+       */
+      type: "decoratedParams";
+      decoratorRoleMap: Record<string, string>;
       defaultRole?: string;
     };
 

@@ -1674,3 +1674,137 @@ describe("graphqlImperativeCall discovery", () => {
     expect(units[0].name).toBe("<anon>.IIFE");
   });
 });
+
+// ---------------------------------------------------------------------------
+// decoratedMethod discovery (NestJS-style)
+// ---------------------------------------------------------------------------
+
+function makeDecoratedMethodPattern(
+  overrides: Partial<
+    Extract<DiscoveryPattern["match"], { type: "decoratedMethod" }>
+  > = {},
+): DiscoveryPattern {
+  return {
+    kind: "resolver",
+    match: {
+      type: "decoratedMethod",
+      importModule: "@nestjs/graphql",
+      classDecorators: ["Resolver"],
+      methodDecorators: ["Query", "Mutation", "ResolveField", "Subscription"],
+      ...overrides,
+    },
+  };
+}
+
+describe("decoratedMethod discovery", () => {
+  it("returns no units when the framework module isn't imported", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      // No @nestjs/graphql import — the file just happens to have
+      // a class with a Resolver decorator from elsewhere.
+      declare const Resolver: ClassDecorator;
+      declare const Query: MethodDecorator;
+      @Resolver
+      class Stub {
+        @Query
+        ping() { return "pong"; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units).toHaveLength(0);
+  });
+
+  it("returns no units when a class lacks the class-level decorator", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { Query } from "@nestjs/graphql";
+      class NotAResolver {
+        @Query()
+        ping() { return "pong"; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units).toHaveLength(0);
+  });
+
+  it("accepts wrapper class decorators imported from project paths", () => {
+    // Match the Twenty pattern: project-internal `@MetadataResolver`
+    // factory composed from `@Resolver()` from `@nestjs/graphql`. The
+    // gate accepts the wrapper because at least one method decorator
+    // (`Query`) is imported from the framework module.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "src/foo.resolver.ts",
+      `
+      import { Query } from "@nestjs/graphql";
+      import { MetadataResolver } from "src/internal/metadata-resolver.decorator";
+
+      @MetadataResolver(() => Foo)
+      class FooResolver {
+        @Query()
+        all(): Foo[] { return []; }
+      }
+      declare class Foo {}
+    `,
+    );
+    const units = discoverUnits(file, [
+      makeDecoratedMethodPattern({
+        classDecorators: ["Resolver", "MetadataResolver"],
+      }),
+    ]);
+    expect(units).toHaveLength(1);
+    expect(units[0].resolverInfo).toEqual({
+      typeName: "Foo",
+      fieldName: "all",
+    });
+  });
+
+  it("falls back to the operation kind for typeName when @Resolver() is bare", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { Mutation, Resolver } from "@nestjs/graphql";
+      @Resolver()
+      class Bare {
+        @Mutation()
+        signOut() { return true; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units[0].resolverInfo).toEqual({
+      typeName: "Mutation",
+      fieldName: "signOut",
+    });
+  });
+
+  it("ignores methods without a recognised method-level decorator", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { Query, Resolver } from "@nestjs/graphql";
+      @Resolver(() => Pet)
+      class PetResolver {
+        @Query()
+        all(): Pet[] { return []; }
+
+        // No GraphQL decorator — a plain method on the class
+        // shouldn't surface as a resolver.
+        format(p: Pet): string { return p.id; }
+      }
+      declare class Pet { id: string; }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].resolverInfo?.fieldName).toBe("all");
+  });
+});
