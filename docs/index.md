@@ -62,26 +62,36 @@ suss inspect summaries/provider.json
 ## What a summary looks like
 
 ```
-GET /users/:id
-  ts-rest handler | handlers.ts:24
-  Contract: 200, 404, 500
+src/handlers.ts
+└─ GET /users/:id  (ts-rest handler | line 24)
+     Contract: 200, 404, 500
+       if  !params.id
+         -> 404 { error }
+       elif  !db.findById()
+         -> 404 { error }
+       elif  db.findById().deletedAt
+         -> 404 { error }
+       else
+         -> 200 { id, name, email }
+           + logger.info
+           + auditLog →
 
-    if  !params.id
-      -> 404 { error }
-    elif  !db.findById()
-      -> 404 { error }
-    elif  db.findById().deletedAt
-      -> 404 { error }
-    else
-      -> 200 { id, name, email }
+     !! Declared response 500 is never produced by the handler
 
-    !! Declared response 500 is never produced by the handler
+1 summaries inspected.
 ```
 
-That's `suss inspect` on a ts-rest handler. Every path through the
-function appears as a branch with its own output shape; everything
-else in the system (checking, agreement, dedup, downstream tooling)
-consumes the JSON form of the same summary.
+That's `suss inspect` on a ts-rest handler. The header line names
+the endpoint, recognition pack, kind, and source line. The decision
+tree shows every execution path as a branch with its own output
+shape. The `+` lines under an output are the side-effects on that
+path; the `→` marker points to other summaries nearby. The flat
+`!!` annotation is a gap — the contract declared a 500 the handler
+can't produce.
+
+Everything else in the system (checking, agreement, dedup,
+downstream tooling) consumes the JSON form of the same summary.
+`inspect` is a renderer over it.
 
 ## Where to next
 

@@ -294,7 +294,12 @@ Once a terminal is matched, how to pull out the status code and body:
   statusCode?:
     | { from: "property"; name: string }                              // { status: 200 } → "status"
     | { from: "argument"; position: number; minArgs?: number }        // res.status(200) → position: 0
-    | { from: "constructor"; codes: Record<string, number> };         // throw new NotFound() → 404 via { NotFound: 404 }
+    | { from: "constructor"; codes: Record<string, number> }          // throw new NotFound() → 404 via { NotFound: 404 }
+    | {
+        from: "argumentConstructor";
+        position: number;
+        codes: Record<string, number>;
+      };                                                              // throw wrap(new NotFound()) → 404 via the arg's class
   body?:
     | { from: "property"; name: string }                              // { body: data } → "body"
     | { from: "argument"; position: number; minArgs?: number };       // res.json(data) → position: 0
@@ -311,6 +316,10 @@ The **`{ from: "constructor"; codes }`** case maps constructor names to status c
 2. **Last dot-segment fallback.** If the full name misses, it tries the final segment: `codes["NotFound"]`. This lets packs write `{ NotFound: 404 }` once and have it work for both bare `NotFoundError` and namespaced `createError.NotFound` styles.
 
 Only `throwExpression` matchers carry an exception type, so `from: "constructor"` is a no-op for other matcher types (it returns null rather than guessing).
+
+The **`{ from: "argumentConstructor"; position; codes }`** case is the wrapper-shaped variant: when the thrown expression wraps a constructed error (`throw httpErrorJson(new HttpError.NotFound("..."))`), the status sits on the *arg's* class, not the top-level thrown function. Set `position` to the arg's index in the wrapper call. Resolution uses the same full-text-first / last-segment fallback as `from: "constructor"`. Only `throwExpression` matchers reach this source — for other terminals it returns null.
+
+For a returnShape terminal where no extraction explicitly selects a property, the body defaults to the full returned object's shape — the natural reading of "the returned object IS the body." Configure `body: { from: "property", name: "..." }` only when the body is one named property of a `{ status, body }` -style return object.
 
 ### `InputMappingPattern` variants
 
@@ -510,6 +519,6 @@ inputMapping: {
 
 **Contracts.** Fastify supports JSON Schema validation attached to route options inline with the handler. v0 doesn't declare a `contractReading` and relies on inferred transitions alone.
 
-**Limitations the pack documents.** Fastify also lets handlers serialise a returned value as the response body (`return user`). The current `TerminalExtraction` has no shape for "the whole returned expression as the body" — it can only read named properties of an object literal. So the Fastify pack doesn't match `return value` shapes today; users wanting full coverage write `return reply.send(value)` instead.
+**Known gap.** Fastify also lets handlers serialise a returned value as the response body (`return user`). The current pack only matches `reply.send(...)` and similar method calls — `return user` paths produce no transition. The fix is pack-level: add a `returnShape` or `returnStatement` terminal (the underlying extraction supports both). Tracked but not yet shipped.
 
 The whole pack is ~120 lines of declarative data plus an integration test against an in-memory ts-morph project.
