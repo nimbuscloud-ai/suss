@@ -11,7 +11,7 @@ import { shapeFromNodeType } from "./shapes/typeShapes.js";
 
 import type { BoundaryBinding, TypeShape } from "@suss/behavioral-ir";
 import type { ContractPattern, RawDeclaredContract } from "@suss/extractor";
-import type { DiscoveredUnit } from "./discovery.js";
+import type { DiscoveredUnit } from "./discovery/index.js";
 
 // ---------------------------------------------------------------------------
 // Result type — includes both contract data and extracted binding

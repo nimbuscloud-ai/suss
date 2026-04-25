@@ -7,7 +7,7 @@ export {
 export { extractRawBranches } from "./assembly.js";
 export { collectAncestorBranches, collectEarlyReturns } from "./conditions.js";
 export { readContract, readContractForClientCall } from "./contract.js";
-export { discoverUnits } from "./discovery.js";
+export { discoverUnits } from "./discovery/index.js";
 export { parseConditionExpression } from "./predicates.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 export { resolveSubject } from "./subjects.js";
@@ -21,7 +21,7 @@ export type {
 } from "./adapter.js";
 export type { FunctionRoot } from "./conditions.js";
 export type { ContractReadResult } from "./contract.js";
-export type { ClientCallSite, DiscoveredUnit } from "./discovery.js";
+export type { ClientCallSite, DiscoveredUnit } from "./discovery/index.js";
 export type {
   TsJsxAttributeLocation,
   TsSubUnitContext,

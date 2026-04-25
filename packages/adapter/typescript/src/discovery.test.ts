@@ -3,7 +3,7 @@
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { discoverUnits } from "./discovery.js";
+import { discoverUnits } from "./discovery/index.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 
