@@ -13,6 +13,9 @@ docs/.vitepress/cache/
 # Dogfood output (regenerated on demand via `node scripts/dogfood.mjs`)
 scripts/dogfood-report.json
 
+# Per-package extraction cache (local to each working tree)
+**/.suss/
+
 # Claude Code
 PLAN.md
 CLAUDE.md
