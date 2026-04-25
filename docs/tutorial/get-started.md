@@ -107,15 +107,26 @@ export async function loadUser(id: string) {
 
 ## Step 4. Extract and check
 
-Extract summaries from both sides:
+### Extract — turn source into structured summaries
 
 ```bash
 npx suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
 npx suss extract -p tsconfig.json -f axios -o summaries/consumer.json
 ```
 
-Each produces a JSON file with one or more `BehavioralSummary`
-objects. Have a look:
+`extract` walks the source pointed at by `tsconfig.json` and runs
+the framework pack(s) you name with `-f`. The pack tells suss what
+to discover: `ts-rest` finds router handlers and contract
+declarations; `axios` finds call sites that send HTTP requests.
+The output is a JSON file with one `BehavioralSummary` per
+discovered unit — a structured description of every execution path
+through that function: which conditions decide which output, what
+shape the output has, what effects fire along the way.
+
+This is the canonical artifact. Everything else (`inspect`,
+`check`, downstream tooling) consumes this JSON.
+
+Have a look:
 
 ```bash
 npx suss inspect summaries/provider.json
@@ -124,20 +135,40 @@ npx suss inspect summaries/provider.json
 You'll see something like:
 
 ```
-GET /users/:id
-  ts-rest handler | handler.ts:15
-  Contract: 200, 404
+src/handler.ts
+└─ GET /users/:id  (ts-rest handler | line 15)
+     Contract: 200, 404
+       if  !params.id
+         -> 404 { error }
+       elif  !findUser()
+         -> 404 { error }
+       else
+         -> 200 { id, name }
 
-    -> 404 { error }  when  !params.id
-    -> 404 { error }  when  params.id && !findUser()
-    -> 200 { id, name }  (default)
+1 summaries inspected.
 ```
 
-Now pair them:
+The header names the endpoint, the recognition pack, the kind, and
+the source line. The decision tree shows every path the handler
+can take. The `Contract:` line shows what the ts-rest contract
+declares — handy for spotting a gap between declaration and
+implementation.
+
+`inspect` is a renderer; nothing here is computed by `inspect`
+that isn't already in the JSON. Read [the CLI reference](/reference/cli#suss-inspect)
+for the full grammar of the output.
+
+### Check — pair providers with consumers
 
 ```bash
 npx suss check summaries/provider.json summaries/consumer.json
 ```
+
+`check` reads two summary files, pairs them by their boundary key
+(here, `(GET, /users/:id)`), and runs each pair through agreement
+checks: every status the provider produces should have a consumer
+branch that handles it; every status the contract declares should
+have a producer; body shapes should be structurally compatible.
 
 Expected output:
 
@@ -151,7 +182,9 @@ Expected output:
 
 suss read both files, matched them on `(GET, /users/:id)`, and
 noticed the consumer's branches don't cover all provider
-outcomes.
+outcomes. The finding names the boundary, both sides, and the
+exact disagreement — no global "compliance score", just a
+concrete pair-level fact.
 
 ## Step 5. Introduce drift
 

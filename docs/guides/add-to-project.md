@@ -1,8 +1,29 @@
 # Add suss to an existing project
 
-For real integrations, not the tutorial. Assumes you already have
-a TypeScript project with an HTTP boundary, a GraphQL boundary,
-or a React component tree.
+For full integrations, not the tutorial. Assumes you already have a
+TypeScript project with an HTTP boundary, a GraphQL boundary, or a
+React component tree.
+
+## What you're setting up
+
+Three things, in order:
+
+1. **Framework packs** — declarative descriptions of how a given
+   framework expresses its boundaries (where handlers register,
+   how status codes get attached to responses, etc.). One pack per
+   framework you use. Without a pack, suss has nothing to
+   discover.
+2. **Extraction** — running `suss extract` against your source to
+   produce the structured summaries. You commit nothing to do
+   this; analysis is static.
+3. **Pairing** — running `suss check` to compare the summaries
+   across boundaries. This is where suss earns its keep: comparing
+   provider against consumer, contract against handler, story
+   against component.
+
+The output of (2) is a JSON file. The input to (3) is a JSON file
+or two. You can stop at (2) if all you want is "what do my
+handlers do" — the summaries are useful in their own right.
 
 ## Install the pieces you need
 
@@ -41,9 +62,14 @@ You don't have to install everything. Common combinations:
 ## Point suss at your tsconfig
 
 `suss extract` reads your `tsconfig.json` to get the same type
-resolution your compiler sees. Use the tsconfig that matches the
-source you want analyzed — often the app's `tsconfig.json`, but
-for monorepos you'll typically run it per-package.
+resolution your compiler sees — same `paths` aliases, same
+`moduleResolution`, same `lib` set. Without that, references that
+cross package boundaries (`@app/lib/db`, monorepo workspace
+imports) wouldn't resolve and most type information would be lost.
+
+Use the tsconfig that matches the source you want analyzed —
+often the app's `tsconfig.json`, but for monorepos you'll
+typically run it per-package.
 
 ```bash
 # Provider side: ts-rest handlers
@@ -69,6 +95,13 @@ npx suss check summaries/provider.json summaries/consumer.json
 npx suss check --dir summaries/
 ```
 
+`check` reads the JSON files, groups summaries into provider /
+consumer pairs by their boundary key (e.g. `(GET, /users/:id)`),
+and runs each pair through the agreement checks. Output is a list
+of findings naming the boundary, both sides, and what disagrees.
+There's no aggregate score — every finding is a concrete pair-level
+fact you can act on.
+
 Findings print to stdout; non-zero exit code when there are
 errors. Flags:
 
@@ -79,7 +112,12 @@ errors. Flags:
 ## Add a third-party spec
 
 When you consume an API you don't own (Stripe, an internal team,
-a third-party), pull its OpenAPI spec into the same shape:
+a third-party), you don't have the source — so `extract` can't run
+on it. Instead, run `stub` over the API's specification. Stubs are
+summaries with the same shape as `extract`'s output, declared
+behavior rather than derived: "this is what the spec says
+happens." Once a stub exists, `check` pairs it with your client
+the same way it would pair two extracted summaries.
 
 ```bash
 npx suss stub --from openapi stripe-openapi.json -o summaries/stripe.json
