@@ -5,11 +5,9 @@
 //
 // `project.getSourceFiles()` walks the directory tree on every call;
 // scanning that result per-summary turned the locate step into the
-// dominant cost on monorepo-scale extracts (Twenty's NestJS backend
-// at ~2,500 summaries was 88% of CPU in these passes). Building the
-// lookup once and indexing by absolute path takes per-summary
-// locate from O(N source files × tree walk) down to O(1 + one tree
-// walk).
+// dominant cost on monorepo-scale extracts. Building the lookup
+// once and indexing by absolute path takes per-summary locate from
+// O(N source files × tree walk) down to O(1 + one tree walk).
 //
 // `summary.location.file` is the source file's absolute path during
 // extraction (the CLI rewrites it to a project-relative path AFTER
