@@ -700,6 +700,18 @@ function extractFromSourceFile(
         if (unit.resolverInfo.schemaSdl !== undefined) {
           raw.graphqlSchemaSdl = unit.resolverInfo.schemaSdl;
         }
+      } else if (unit.routeInfo !== undefined) {
+        // NestJS-style REST controller: bind directly from the
+        // discovery-derived (method, path). Same shape as Express /
+        // Fastify produce via `bindingExtraction`, but without the
+        // registration-call walking — decorators carry the route
+        // statically on the method itself.
+        raw.boundaryBinding = restBinding({
+          transport: pack.protocol,
+          recognition: pack.name,
+          method: unit.routeInfo.method,
+          path: unit.routeInfo.path,
+        });
       } else if (unit.operationInfo !== undefined) {
         // GraphQL operation (consumer-side hook): bind from the
         // parsed operation header. Same logic as resolvers — skip

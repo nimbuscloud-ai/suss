@@ -64,6 +64,7 @@
     "@suss/framework-fastify": "*",
     "@suss/framework-apollo": "*",
     "@suss/framework-nestjs-graphql": "*",
+    "@suss/framework-nestjs-rest": "*",
     "@suss/runtime-web": "*",
     "@suss/runtime-axios": "*",
     "@suss/runtime-apollo-client": "*",
