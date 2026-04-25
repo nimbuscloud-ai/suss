@@ -24,13 +24,13 @@ import { Node, type Project, type SourceFile } from "ts-morph";
 import { functionCallBinding } from "@suss/behavioral-ir";
 import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 
-import { extractCodeStructure } from "./adapter.js";
-import { type DiscoveredUnit, toFunctionRoot } from "./discovery.js";
-import { createSourceFileLookup } from "./sourceFileLookup.js";
+import { extractCodeStructure } from "../adapter.js";
+import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
+import { type DiscoveredUnit, toFunctionRoot } from "../discovery.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
-import type { FunctionRoot } from "./conditions.js";
+import type { FunctionRoot } from "../conditions.js";
 
 // ---------------------------------------------------------------------------
 // The "reachable" pack — terminals and input mapping for library functions

@@ -33,7 +33,7 @@ import {
   SyntaxKind,
 } from "ts-morph";
 
-import { resolveNodeFromAst } from "./astResolve.js";
+import { resolveNodeFromAst } from "../resolve/astResolve.js";
 import { shapeFromNodeType } from "./typeShapes.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";

@@ -25,7 +25,7 @@ import {
   collectAncestorConditionInfos,
   conditionInfoToRawCondition,
   type FunctionRoot,
-} from "./conditions.js";
+} from "../conditions.js";
 
 import type { EffectArg, RawCondition, RawEffect } from "@suss/extractor";
 

@@ -2,7 +2,7 @@
 
 import { type Expression, Node, SyntaxKind } from "ts-morph";
 
-import { resolveCallableBody } from "./astResolve.js";
+import { resolveCallableBody } from "./resolve/astResolve.js";
 import { resolveSubject } from "./subjects.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
