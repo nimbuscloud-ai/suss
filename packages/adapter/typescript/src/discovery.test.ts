@@ -1221,6 +1221,69 @@ describe("graphqlHookCall discovery", () => {
     expect(units[0].operationInfo?.operationName).toBe("GetPet");
   });
 
+  it("resolves a TypedDocumentNode reference produced by GraphQL Code Generator", () => {
+    // Codegen-shaped call sites pass a generated DocumentNode object
+    // literal (not a `gql` template) to the hook. The discovery
+    // walks the identifier to its declaration, evaluates the JSON-
+    // shaped AST, and round-trips through `print()` so the operation
+    // header matches the same code path as gql-tagged templates.
+    const project = createProject();
+    const generated = project.createSourceFile(
+      "generated.ts",
+      `
+      export const GetPetDocument = {
+        kind: "Document",
+        definitions: [
+          {
+            kind: "OperationDefinition",
+            operation: "query",
+            name: { kind: "Name", value: "GetPet" },
+            variableDefinitions: [
+              {
+                kind: "VariableDefinition",
+                variable: { kind: "Variable", name: { kind: "Name", value: "id" } },
+                type: { kind: "NonNullType", type: { kind: "NamedType", name: { kind: "Name", value: "ID" } } },
+              },
+            ],
+            selectionSet: {
+              kind: "SelectionSet",
+              selections: [
+                { kind: "Field", name: { kind: "Name", value: "pet" }, selectionSet: { kind: "SelectionSet", selections: [{ kind: "Field", name: { kind: "Name", value: "id" } }] } },
+              ],
+            },
+          },
+        ],
+      } as unknown as { kind: "Document"; definitions: unknown[] };
+    `,
+    );
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      import { GetPetDocument } from "./generated";
+      export function usePet() {
+        return useQuery(GetPetDocument);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    // Touch the generated file so the symbol resolution doesn't
+    // garbage-collect it (avoids unused-import warnings in some
+    // ts-morph configurations).
+    expect(generated.getFilePath()).toContain("generated.ts");
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo).toMatchObject({
+      operationType: "query",
+      operationName: "GetPet",
+    });
+    expect(units[0].operationInfo?.variables[0]).toMatchObject({
+      name: "id",
+      type: "ID!",
+      required: true,
+    });
+    expect(units[0].operationInfo?.rootFields).toEqual(["pet"]);
+  });
+
   it("records mutation operationType", () => {
     const project = createProject();
     const file = project.createSourceFile(
