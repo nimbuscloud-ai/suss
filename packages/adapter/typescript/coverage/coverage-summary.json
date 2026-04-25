@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 3175,
-      "covered": 2577,
+      "total": 3260,
+      "covered": 2628,
       "skipped": 0,
-      "pct": 81.16
+      "pct": 80.61
     },
     "statements": {
-      "total": 3197,
-      "covered": 2598,
+      "total": 3283,
+      "covered": 2649,
       "skipped": 0,
-      "pct": 81.26
+      "pct": 80.68
     },
     "functions": {
-      "total": 283,
-      "covered": 260,
+      "total": 287,
+      "covered": 264,
       "skipped": 0,
-      "pct": 91.87
+      "pct": 91.98
     },
     "branches": {
-      "total": 2608,
-      "covered": 1883,
+      "total": 2672,
+      "covered": 1916,
       "skipped": 0,
-      "pct": 72.2
+      "pct": 71.7
     },
     "branchesTrue": {
       "total": 0,
@@ -33,10 +33,10 @@
   },
   "src/adapter.ts": {
     "lines": {
-      "total": 394,
-      "covered": 341,
+      "total": 409,
+      "covered": 342,
       "skipped": 0,
-      "pct": 86.54
+      "pct": 83.61
     },
     "functions": {
       "total": 41,
@@ -45,16 +45,16 @@
       "pct": 95.12
     },
     "statements": {
-      "total": 400,
-      "covered": 346,
+      "total": 416,
+      "covered": 347,
       "skipped": 0,
-      "pct": 86.5
+      "pct": 83.41
     },
     "branches": {
-      "total": 327,
-      "covered": 250,
+      "total": 335,
+      "covered": 251,
       "skipped": 0,
-      "pct": 76.45
+      "pct": 74.92
     }
   },
   "src/assembly.ts": {
@@ -163,28 +163,28 @@
   },
   "src/discovery.ts": {
     "lines": {
-      "total": 702,
-      "covered": 571,
+      "total": 772,
+      "covered": 621,
       "skipped": 0,
-      "pct": 81.33
+      "pct": 80.44
     },
     "functions": {
-      "total": 50,
-      "covered": 50,
+      "total": 54,
+      "covered": 54,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 704,
-      "covered": 573,
+      "total": 774,
+      "covered": 623,
       "skipped": 0,
-      "pct": 81.39
+      "pct": 80.49
     },
     "branches": {
-      "total": 606,
-      "covered": 432,
+      "total": 662,
+      "covered": 464,
       "skipped": 0,
-      "pct": 71.28
+      "pct": 70.09
     }
   },
   "src/field-accesses.ts": {
