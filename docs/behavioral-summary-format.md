@@ -210,6 +210,11 @@ Summaries are designed for machine consumption. Common operations:
 
 The format is stable enough to build on. Pin your tools to `v0` and check the schema version before parsing.
 
+For `suss inspect`'s human-readable rendering — the form you'd paste
+into a review or AI prompt — see [the inspect format stability section](/reference/cli#format-stability).
+The JSON is canonical; the text rendering is curated for reading and
+not meant to be parsed.
+
 ## What you can build on this
 
 The behavioral summary is a foundation, not an endpoint. Some things it enables:
