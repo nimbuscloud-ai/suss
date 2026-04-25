@@ -3,7 +3,7 @@
 import { Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { findTerminals } from "./terminals.js";
+import { findTerminals } from "./terminals/index.js";
 
 import type { TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";

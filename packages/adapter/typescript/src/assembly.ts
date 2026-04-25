@@ -10,7 +10,7 @@ import {
   findTerminals,
   functionMayFallThrough,
   makeFallthroughTerminal,
-} from "./terminals.js";
+} from "./terminals/index.js";
 
 import type {
   RawBranch,
