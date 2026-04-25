@@ -1,4 +1,4 @@
-// package-exports.test.ts — resolver + discovery handler tests for
+// packageExports.test.ts — resolver + discovery handler tests for
 // the packageExports pack variant.
 
 import fs from "node:fs";
@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "./adapter.js";
 import { clearPackageExportsCache, discoverUnits } from "./discovery.js";
-import { resolvePackageExports } from "./package-exports.js";
+import { resolvePackageExports } from "./packageExports.js";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 

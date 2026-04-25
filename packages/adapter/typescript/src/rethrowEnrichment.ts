@@ -1,4 +1,4 @@
-// rethrow-enrichment.ts — populate rethrow provenance on throw terminals
+// rethrowEnrichment.ts — populate rethrow provenance on throw terminals
 //
 // A bare `throw err` inside a catch block has no constructor, no literal
 // message, no static exception type we can resolve at the throw site.
@@ -28,7 +28,7 @@
 
 import { Node, type Project } from "ts-morph";
 
-import { createSourceFileLookup } from "./source-file-lookup.js";
+import { createSourceFileLookup } from "./sourceFileLookup.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";

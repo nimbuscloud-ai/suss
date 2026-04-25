@@ -1,4 +1,4 @@
-// type-shapes.ts — Translate a ts-morph Type into a TypeShape.
+// typeShapes.ts — Translate a ts-morph Type into a TypeShape.
 //
 // This is the type-checker fallback for `extractShape`: when a syntactic walk
 // of an expression can't decompose it (e.g. a bare identifier, a call, a
