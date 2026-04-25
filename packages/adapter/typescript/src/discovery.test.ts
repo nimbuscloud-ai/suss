@@ -1808,3 +1808,130 @@ describe("decoratedMethod discovery", () => {
     expect(units[0].resolverInfo?.fieldName).toBe("all");
   });
 });
+
+// ---------------------------------------------------------------------------
+// decoratedRoute discovery (NestJS-style REST controllers)
+// ---------------------------------------------------------------------------
+
+function makeDecoratedRoutePattern(
+  overrides: Partial<
+    Extract<DiscoveryPattern["match"], { type: "decoratedRoute" }>
+  > = {},
+): DiscoveryPattern {
+  return {
+    kind: "handler",
+    match: {
+      type: "decoratedRoute",
+      importModule: "@nestjs/common",
+      classDecorators: ["Controller"],
+      methodDecoratorRouteMap: {
+        Get: "GET",
+        Post: "POST",
+        Put: "PUT",
+        Delete: "DELETE",
+      },
+      ...overrides,
+    },
+  };
+}
+
+describe("decoratedRoute discovery", () => {
+  it("returns no units when the framework module isn't imported", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      // No @nestjs/common import — the file just happens to have
+      // a class with a Controller decorator from elsewhere.
+      declare const Controller: ClassDecorator;
+      declare const Get: MethodDecorator;
+      @Controller
+      class Stub {
+        @Get
+        ping() { return "pong"; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
+    expect(units).toHaveLength(0);
+  });
+
+  it("returns no units when a class lacks the controller decorator", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { Get } from "@nestjs/common";
+      class NotAController {
+        @Get()
+        ping() { return "pong"; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
+    expect(units).toHaveLength(0);
+  });
+
+  it("joins class-prefix and method-suffix into a leading-slash path", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "users.controller.ts",
+      `
+      import { Controller, Get, Post } from "@nestjs/common";
+      @Controller("users")
+      class UsersController {
+        @Get(":id")
+        one() { return null; }
+
+        @Post()
+        create() { return null; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
+    const byName = Object.fromEntries(units.map((u) => [u.name, u.routeInfo]));
+    expect(byName).toEqual({
+      "UsersController.one": { method: "GET", path: "/users/:id" },
+      "UsersController.create": { method: "POST", path: "/users" },
+    });
+  });
+
+  it("handles bare @Controller() and bare @Get() as path '/'", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "root.controller.ts",
+      `
+      import { Controller, Get } from "@nestjs/common";
+      @Controller()
+      class RootController {
+        @Get()
+        index() { return null; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
+    expect(units[0].routeInfo).toEqual({ method: "GET", path: "/" });
+  });
+
+  it("ignores methods without a recognised verb decorator", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "users.controller.ts",
+      `
+      import { Controller, Get } from "@nestjs/common";
+      @Controller("users")
+      class UsersController {
+        @Get()
+        list() { return []; }
+
+        // No verb decorator — a plain helper on the controller
+        // shouldn't surface as a route.
+        format(_id: string): string { return "ok"; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].routeInfo?.method).toBe("GET");
+  });
+});

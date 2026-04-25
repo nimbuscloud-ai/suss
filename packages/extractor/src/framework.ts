@@ -243,6 +243,40 @@ export type DiscoveryMatch =
     }
   | {
       /**
+       * NestJS-style REST controller discovery. Class decorated with
+       * `@Controller(pathPrefix?)`; methods decorated with
+       * `@Get(subpath?)` / `@Post` / `@Put` / `@Delete` / etc. The
+       * decorator NAME determines the HTTP method via
+       * `methodDecoratorRouteMap`; the route path is the class
+       * decorator's first arg + the method decorator's first arg
+       * (slash-joined, both optional).
+       *
+       * Same wrapper-decorator tolerance as `decoratedMethod`: the
+       * import-module gate fires on at least one method-route
+       * decorator from the framework module, but class decorators
+       * match by name only so project-internal wrappers
+       * (`@PublicController` / `@AuthedController` factories
+       * composing `@Controller()`) work without per-project pack
+       * config.
+       *
+       * The adapter populates `DiscoveredUnit.routeInfo` so the
+       * produced binding carries `rest(method, path)`.
+       */
+      type: "decoratedRoute";
+      importModule: string | string[];
+      classDecorators: string[];
+      /**
+       * Decorator name → HTTP method. NestJS uses one decorator per
+       * verb (`@Get` / `@Post` / `@Put` / `@Delete` / `@Patch` /
+       * `@Options` / `@Head` / `@All`); other frameworks may follow
+       * the same convention. The values become the `method` field on
+       * the produced REST binding; `"*"` is acceptable for catch-all
+       * decorators.
+       */
+      methodDecoratorRouteMap: Record<string, string>;
+    }
+  | {
+      /**
        * Consumer side of the package-export boundary. Scans source
        * files for imports of the named packages and records every
        * call site, emitting one `caller`-kind unit per enclosing

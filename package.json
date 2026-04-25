@@ -25,6 +25,7 @@
     "packages/framework/fastify",
     "packages/framework/apollo",
     "packages/framework/nestjs-graphql",
+    "packages/framework/nestjs-rest",
     "packages/runtime/web",
     "packages/runtime/axios",
     "packages/runtime/apollo-client",
