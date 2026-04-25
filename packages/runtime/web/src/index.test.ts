@@ -6,7 +6,7 @@ import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { webFetchRuntime } from "./index.js";
 
 describe("webFetchRuntime — pack shape", () => {
-  it("exposes a consumer discovery pattern for global fetch", () => {
+  it("exposes a consumer discovery pattern for global fetch", async () => {
     const pack = webFetchRuntime();
     expect(pack.name).toBe("fetch");
     expect(pack.discovery).toHaveLength(1);
@@ -18,7 +18,7 @@ describe("webFetchRuntime — pack shape", () => {
 });
 
 describe("webFetchRuntime — integration", () => {
-  it("discovers a function that calls fetch() with literal URL", () => {
+  it("discovers a function that calls fetch() with literal URL", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -37,7 +37,7 @@ describe("webFetchRuntime — integration", () => {
       project,
       frameworks: [webFetchRuntime()],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(summaries[0].kind).toBe("client");
     expect(summaries[0].identity.name).toBe("getUser");
@@ -48,7 +48,7 @@ describe("webFetchRuntime — integration", () => {
     });
   });
 
-  it("extracts method from options object", () => {
+  it("extracts method from options object", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -64,7 +64,7 @@ describe("webFetchRuntime — integration", () => {
       project,
       frameworks: [webFetchRuntime()],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     const sem = summaries[0].identity.boundaryBinding?.semantics;
     expect(sem?.name).toBe("rest");
@@ -74,7 +74,7 @@ describe("webFetchRuntime — integration", () => {
     }
   });
 
-  it("produces transitions from branches in the consumer function", () => {
+  it("produces transitions from branches in the consumer function", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -93,7 +93,7 @@ describe("webFetchRuntime — integration", () => {
       project,
       frameworks: [webFetchRuntime()],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(summaries[0].transitions.length).toBeGreaterThanOrEqual(1);
   });

@@ -41,6 +41,11 @@ export function apolloClientRuntime(): PatternPack {
           importModule: "@apollo/client",
           hookNames: ["useQuery", "useMutation", "useSubscription"],
         },
+        // Prefix match: covers `@apollo/client` AND `@apollo/client/react`
+        // AND `@apollo/client/...` sub-paths in one go. The `importModule`
+        // on the match itself stays exact-match for discovery's own
+        // gating.
+        requiresImport: ["@apollo/client"],
       },
       // Newer re-exports split per-runtime ("@apollo/client/react").
       // Apollo's current stable major is one path; the react-only
@@ -52,6 +57,7 @@ export function apolloClientRuntime(): PatternPack {
           importModule: "@apollo/client/react",
           hookNames: ["useQuery", "useMutation", "useSubscription"],
         },
+        requiresImport: ["@apollo/client"],
       },
       // Imperative client — covers server-side data fetching,
       // Next.js getServerSideProps, Node scripts, anywhere calling
@@ -84,6 +90,7 @@ export function apolloClientRuntime(): PatternPack {
             },
           ],
         },
+        requiresImport: ["@apollo/client"],
       },
     ],
 

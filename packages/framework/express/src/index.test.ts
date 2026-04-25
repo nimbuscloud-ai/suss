@@ -15,7 +15,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/express");
 
-function runAdapter(): BehavioralSummary[] {
+async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
@@ -33,7 +33,7 @@ function runAdapter(): BehavioralSummary[] {
     frameworks: [expressFramework()],
   });
 
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -58,8 +58,8 @@ describe("expressFramework — pack shape", () => {
 describe("expressFramework — integration", () => {
   // ts-morph project setup dominates — build the summaries once and reuse.
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runAdapter();
+  beforeAll(async () => {
+    summaries = await runAdapter();
   }, 90_000);
 
   it("discovers every router.<method> handler in the fixture", () => {

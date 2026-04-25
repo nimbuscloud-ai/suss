@@ -45,6 +45,13 @@ export function reactRouterFramework(): PatternPack {
           method: { type: "literal", value: "GET" },
           path: { type: "fromFilename" },
         },
+        // Empty gate: route files often re-export `loader` /
+        // `action` from non-router-importing modules
+        // (server-side data functions, shared util re-exports).
+        // A heuristic gate would miss those. The dispatch is
+        // cheap (just looks at named exports), so paying the
+        // walk on every file is acceptable.
+        requiresImport: [],
       },
       {
         kind: "action",
@@ -53,10 +60,12 @@ export function reactRouterFramework(): PatternPack {
           method: { type: "literal", value: "POST" },
           path: { type: "fromFilename" },
         },
+        requiresImport: [],
       },
       {
         kind: "component",
         match: { type: "namedExport", names: ["default"] },
+        requiresImport: [],
       },
     ],
 

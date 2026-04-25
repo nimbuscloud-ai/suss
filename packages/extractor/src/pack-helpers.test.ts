@@ -23,6 +23,7 @@ describe("httpRouteDiscovery", () => {
         method: { type: "fromRegistration", position: "methodName" },
         path: { type: "fromRegistration", position: 0 },
       },
+      requiresImport: ["express"],
     });
     expect(patterns[1].match).toMatchObject({ importName: "express" });
   });

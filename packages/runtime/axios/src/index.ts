@@ -33,6 +33,7 @@ function discoveryForVerb(
       method: { type: "literal", value: verb.toUpperCase() },
       path: { type: "fromArgumentLiteral", position: 0 },
     },
+    requiresImport: ["axios"],
   };
 }
 

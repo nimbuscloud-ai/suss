@@ -50,5 +50,6 @@ export function httpRouteDiscovery(opts: {
       method: { type: "fromRegistration", position: "methodName" },
       path: { type: "fromRegistration", position: 0 },
     },
+    requiresImport: [opts.importModule],
   }));
 }

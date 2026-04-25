@@ -21,6 +21,11 @@ export function tsRestFramework(): PatternPack {
           method: { type: "fromContract" },
           path: { type: "fromContract" },
         },
+        // Pre-filter to ts-rest server callers. The `@ts-rest/`
+        // prefix sweeps any of the framework's adapters in one
+        // go (`@ts-rest/express` / `@ts-rest/fastify` /
+        // `@ts-rest/nest` / etc.).
+        requiresImport: ["@ts-rest"],
       },
       {
         kind: "client",
@@ -33,6 +38,7 @@ export function tsRestFramework(): PatternPack {
           method: { type: "fromClientMethod" },
           path: { type: "fromClientMethod" },
         },
+        requiresImport: ["@ts-rest"],
       },
     ],
 

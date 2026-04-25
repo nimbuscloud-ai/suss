@@ -18,7 +18,7 @@ const fixturesDir = path.resolve(
   "../../../../fixtures/react-router",
 );
 
-function runAdapter(): BehavioralSummary[] {
+async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
@@ -36,7 +36,7 @@ function runAdapter(): BehavioralSummary[] {
     frameworks: [reactRouterFramework()],
   });
 
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -64,8 +64,8 @@ describe("reactRouterFramework — pack shape", () => {
 describe("reactRouterFramework — integration", () => {
   // ts-morph project setup dominates — build the summaries once and reuse.
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runAdapter();
+  beforeAll(async () => {
+    summaries = await runAdapter();
   }, 90_000);
 
   it("discovers both loader and action kinds from named exports", () => {

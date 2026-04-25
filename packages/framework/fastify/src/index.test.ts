@@ -15,7 +15,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/fastify");
 
-function runAdapter(): BehavioralSummary[] {
+async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
@@ -33,7 +33,7 @@ function runAdapter(): BehavioralSummary[] {
     frameworks: [fastifyFramework()],
   });
 
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -77,8 +77,8 @@ describe("fastifyFramework — pack shape", () => {
 
 describe("fastifyFramework — integration", () => {
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runAdapter();
+  beforeAll(async () => {
+    summaries = await runAdapter();
   }, 90_000);
 
   it("discovers every app.<method> handler in the fixture", () => {

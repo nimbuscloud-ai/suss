@@ -13,6 +13,7 @@ export { parseConditionExpression } from "./predicates.js";
 export { createTsSubUnitContext } from "./sub-unit-context.js";
 export { resolveSubject } from "./subjects.js";
 export { findTerminals } from "./terminals.js";
+export { ADAPTER_VERSION, computeAdapterPacksDigest } from "./version.js";
 
 export type {
   TypeScriptAdapter,

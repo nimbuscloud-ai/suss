@@ -131,7 +131,7 @@ const raise = (msg: string): never => {
 };
 
 describe("extractCodeStructure", () => {
-  it("extracts parameters from a destructured ts-rest handler", () => {
+  it("extracts parameters from a destructured ts-rest handler", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -157,7 +157,7 @@ describe("extractCodeStructure", () => {
     expect(raw.identity.kind).toBe("handler");
   });
 
-  it("extracts parameters from an ArrayBindingPattern under allPositional", () => {
+  it("extracts parameters from an ArrayBindingPattern under allPositional", async () => {
     // `([state, setState]) => ...` — common in callbacks that destructure
     // tuple returns. Each bound name should surface as its own Input.
     // Omitted-expression holes (`[, b]`) are skipped.
@@ -187,7 +187,7 @@ describe("extractCodeStructure", () => {
     ]);
   });
 
-  it("extracts dependency calls from function body", () => {
+  it("extracts dependency calls from function body", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -211,7 +211,7 @@ describe("extractCodeStructure", () => {
     expect(raw.dependencyCalls[0].async).toBe(true);
   });
 
-  it("extracts branches with conditions and terminals", () => {
+  it("extracts branches with conditions and terminals", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -249,7 +249,7 @@ describe("extractCodeStructure", () => {
     expect(raw.branches[1].isDefault).toBe(true);
   });
 
-  it("extracts positional parameters (Express style)", () => {
+  it("extracts positional parameters (Express style)", async () => {
     const expressPack: PatternPack = {
       ...tsRestPack,
       name: "express",
@@ -285,7 +285,7 @@ describe("extractCodeStructure", () => {
     ]);
   });
 
-  it("extracts non-destructured object parameter", () => {
+  it("extracts non-destructured object parameter", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -305,7 +305,7 @@ describe("extractCodeStructure", () => {
     ]);
   });
 
-  it("handles expression-body arrow with no dependency calls", () => {
+  it("handles expression-body arrow with no dependency calls", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -323,7 +323,7 @@ describe("extractCodeStructure", () => {
     expect(raw.branches[0].isDefault).toBe(true);
   });
 
-  it("extracts multiple dependency calls including sync", () => {
+  it("extracts multiple dependency calls including sync", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -350,7 +350,7 @@ describe("extractCodeStructure", () => {
     expect(raw.dependencyCalls[1].async).toBe(true);
   });
 
-  it("handles handler with no parameters", () => {
+  it("handles handler with no parameters", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -368,7 +368,7 @@ describe("extractCodeStructure", () => {
     expect(raw.parameters).toEqual([]);
   });
 
-  it("extracts dependency calls nested inside if/try blocks", () => {
+  it("extracts dependency calls nested inside if/try blocks", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -406,7 +406,7 @@ describe("extractCodeStructure", () => {
     expect(raw.dependencyCalls[2].async).toBe(false);
   });
 
-  it("extracts ternary return branches as separate branches with conditions", () => {
+  it("extracts ternary return branches as separate branches with conditions", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -444,7 +444,7 @@ describe("extractCodeStructure", () => {
     expect(raw.branches[1].conditions[0].polarity).toBe("negative");
   });
 
-  it("extracts destructured dependency call assignedTo as null", () => {
+  it("extracts destructured dependency call assignedTo as null", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initServer } from "@ts-rest/express";
@@ -473,7 +473,7 @@ describe("extractCodeStructure", () => {
 // ---------------------------------------------------------------------------
 
 describe("readContract", () => {
-  it("reads contract responses from same-file contract definition", () => {
+  it("reads contract responses from same-file contract definition", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initContract } from "@ts-rest/core";
@@ -521,7 +521,7 @@ describe("readContract", () => {
     });
   });
 
-  it("returns null when handler is not in a router call", () => {
+  it("returns null when handler is not in a router call", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       export async function standalone() {
@@ -541,7 +541,7 @@ describe("readContract", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when handler name does not match any contract endpoint", () => {
+  it("returns null when handler name does not match any contract endpoint", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initContract } from "@ts-rest/core";
@@ -578,7 +578,7 @@ describe("readContract", () => {
     expect(result).toBeNull();
   });
 
-  it("reads contract for method-shorthand handlers", () => {
+  it("reads contract for method-shorthand handlers", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initContract } from "@ts-rest/core";
@@ -616,7 +616,7 @@ describe("readContract", () => {
     expect(restMethodOf(result ?? null)).toBe("GET");
   });
 
-  it("extracts body TypeShape from c.type<T>() declarations", () => {
+  it("extracts body TypeShape from c.type<T>() declarations", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initContract } from "@ts-rest/core";
@@ -668,7 +668,7 @@ describe("readContract", () => {
     });
   });
 
-  it("omits body when response schema is not a c.type<T>() call", () => {
+  it("omits body when response schema is not a c.type<T>() call", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initContract } from "@ts-rest/core";
@@ -702,7 +702,7 @@ describe("readContract", () => {
     expect(result?.declaredContract.responses).toEqual([{ statusCode: 200 }]);
   });
 
-  it("returns null boundaryBinding when contract has no method or path", () => {
+  it("returns null boundaryBinding when contract has no method or path", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initContract } from "@ts-rest/core";
@@ -740,7 +740,7 @@ describe("readContract", () => {
 // ---------------------------------------------------------------------------
 
 describe("createTypeScriptAdapter — ts-rest fixtures", () => {
-  it("extracts summaries from fixture handler file", () => {
+  it("extracts summaries from fixture handler file", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
@@ -755,7 +755,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     const resolvedHandlerPath =
       handlerPath ?? raise("handlers.ts source file not loaded");
 
-    const summaries = adapter.extractFromFiles([resolvedHandlerPath]);
+    const summaries = await adapter.extractFromFiles([resolvedHandlerPath]);
 
     // Should discover both getUser and createUser handlers
     expect(summaries).toHaveLength(2);
@@ -764,14 +764,14 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(names).toEqual(["createUser", "getUser"]);
   });
 
-  it("getUser handler has correct transitions", () => {
+  it("getUser handler has correct transitions", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
@@ -805,14 +805,14 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(getUser?.transitions[2].isDefault).toBe(false);
   });
 
-  it("getUser handler has correct inputs", () => {
+  it("getUser handler has correct inputs", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
@@ -828,14 +828,14 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     }
   });
 
-  it("getUser handler detects contract gap for undeclared 500", () => {
+  it("getUser handler detects contract gap for undeclared 500", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
@@ -847,14 +847,14 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(gap500?.description).toContain("never produced");
   });
 
-  it("getUser handler has dependency call for db.findById", () => {
+  it("getUser handler has dependency call for db.findById", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
@@ -865,28 +865,28 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(http?.declaredContract).toBeDefined();
   });
 
-  it("getUser handler has high confidence when all conditions are structured", () => {
+  it("getUser handler has high confidence when all conditions are structured", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
     expect(getUser?.confidence.level).toBe("high");
   });
 
-  it("createUser handler has correct transitions", () => {
+  it("createUser handler has correct transitions", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const createUser = summaries.find((s) => s.identity.name === "createUser");
 
     expect(createUser).toBeDefined();
@@ -909,14 +909,14 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(statusCodes).toEqual([400, 201]);
   });
 
-  it("getUser handler has boundary binding from contract", () => {
+  it("getUser handler has boundary binding from contract", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
@@ -925,7 +925,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(restPathOf(getUser)).toBe("/users/:id");
   });
 
-  it("extractAll skips declaration files", () => {
+  it("extractAll skips declaration files", async () => {
     const project = createFixtureProject();
 
     // Add a .d.ts file — should be skipped
@@ -939,21 +939,21 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     // Should still only find handlers from handlers.ts
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual(["createUser", "getUser"]);
   });
 
-  it("getUser conditions are structured predicates, not opaque", () => {
+  it("getUser conditions are structured predicates, not opaque", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
 
@@ -1013,14 +1013,14 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     }
   });
 
-  it("createUser guard condition has compound or predicate", () => {
+  it("createUser guard condition has compound or predicate", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const createUser = summaries.find((s) => s.identity.name === "createUser");
     expect(createUser).toBeDefined();
     if (createUser === undefined) {
@@ -1035,7 +1035,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(t0.conditions.length).toBeGreaterThan(0);
   });
 
-  it("produces reverse gap when handler returns undeclared status", () => {
+  it("produces reverse gap when handler returns undeclared status", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       import { initContract } from "@ts-rest/core";
@@ -1065,7 +1065,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
       project,
       frameworks: [tsRestPack],
     });
-    const summaries = adapter.extractFromFiles([file.getFilePath()]);
+    const summaries = await adapter.extractFromFiles([file.getFilePath()]);
 
     expect(summaries).toHaveLength(1);
 
@@ -1077,7 +1077,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(reverseGap?.description).toContain("not declared");
   });
 
-  it("gapHandling: silent suppresses all gaps", () => {
+  it("gapHandling: silent suppresses all gaps", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
@@ -1085,14 +1085,14 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
       extractorOptions: { gapHandling: "silent" },
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const getUser = summaries.find((s) => s.identity.name === "getUser");
 
     expect(getUser).toBeDefined();
     expect(getUser?.gaps).toEqual([]);
   });
 
-  it("file with no matching handlers produces empty result", () => {
+  it("file with no matching handlers produces empty result", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const source = `
       export function helper(x: number) { return x + 1; }
@@ -1104,18 +1104,18 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toEqual([]);
   });
 
-  it("extractFromFiles silently skips nonexistent paths", () => {
+  it("extractFromFiles silently skips nonexistent paths", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractFromFiles(["/does/not/exist.ts"]);
+    const summaries = await adapter.extractFromFiles(["/does/not/exist.ts"]);
     expect(summaries).toEqual([]);
   });
 });
@@ -1130,7 +1130,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 // node_modules / declaration files / higher-order indirection.
 
 describe("createTypeScriptAdapter — cross-pack dedup", () => {
-  it("produces one summary per (function, kind) even when multiple packs discover the same unit", () => {
+  it("produces one summary per (function, kind) even when multiple packs discover the same unit", async () => {
     // Two packs, both discovering the same default-exported function as
     // a `component`. Before cross-pack dedup this produced two summaries
     // at different `recognition` labels. First pack wins — user controls
@@ -1167,14 +1167,14 @@ describe("createTypeScriptAdapter — cross-pack dedup", () => {
       frameworks: [packA, packB],
     });
 
-    const summaries = adapter
-      .extractAll()
-      .filter((s) => s.identity.name === "Button");
+    const summaries = (await adapter.extractAll()).filter(
+      (s) => s.identity.name === "Button",
+    );
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.boundaryBinding?.recognition).toBe("pack-a");
   });
 
-  it("respects framework order — first-listed wins", () => {
+  it("respects framework order — first-listed wins", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "Thing.tsx",
@@ -1201,9 +1201,9 @@ describe("createTypeScriptAdapter — cross-pack dedup", () => {
       frameworks: [makePack("react-router"), makePack("react")],
     });
 
-    const summaries = adapter
-      .extractAll()
-      .filter((s) => s.identity.name === "Thing");
+    const summaries = (await adapter.extractAll()).filter(
+      (s) => s.identity.name === "Thing",
+    );
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.boundaryBinding?.recognition).toBe(
       "react-router",
@@ -1212,7 +1212,7 @@ describe("createTypeScriptAdapter — cross-pack dedup", () => {
 });
 
 describe("createTypeScriptAdapter — reachable closure", () => {
-  it("discovers internal helpers transitively called from a handler", () => {
+  it("discovers internal helpers transitively called from a handler", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "helpers.ts",
@@ -1246,7 +1246,7 @@ describe("createTypeScriptAdapter — reachable closure", () => {
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const byName = Object.fromEntries(
       summaries.map((s) => [s.identity.name, s]),
     );
@@ -1264,7 +1264,7 @@ describe("createTypeScriptAdapter — reachable closure", () => {
     });
   });
 
-  it("transitively reaches helpers called by other helpers", () => {
+  it("transitively reaches helpers called by other helpers", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "helpers.ts",
@@ -1298,14 +1298,14 @@ describe("createTypeScriptAdapter — reachable closure", () => {
       frameworks: [tsRestPack],
     });
 
-    const names = adapter.extractAll().map((s) => s.identity.name);
+    const names = (await adapter.extractAll()).map((s) => s.identity.name);
     expect(names).toContain("outer");
     expect(names).toContain("inner");
     // `unused` is never reached from a seed → no summary for it.
     expect(names).not.toContain("unused");
   });
 
-  it("stops at declaration-file boundaries (skips external deps)", () => {
+  it("stops at declaration-file boundaries (skips external deps)", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "handlers.ts",
@@ -1326,14 +1326,14 @@ describe("createTypeScriptAdapter — reachable closure", () => {
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     // Only the handler — db.findById is `declare const`, not a reachable
     // function in our code.
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.name).toBe("get");
   });
 
-  it("opt-out via includeReachable: false yields only pack-discovered units", () => {
+  it("opt-out via includeReachable: false yields only pack-discovered units", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "helpers.ts",
@@ -1358,11 +1358,11 @@ describe("createTypeScriptAdapter — reachable closure", () => {
       includeReachable: false,
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries.map((s) => s.identity.name)).toEqual(["go"]);
   });
 
-  it("deduplicates when the same helper is reached from multiple seeds", () => {
+  it("deduplicates when the same helper is reached from multiple seeds", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "helpers.ts",
@@ -1385,8 +1385,7 @@ describe("createTypeScriptAdapter — reachable closure", () => {
       frameworks: [tsRestPack],
     });
 
-    const names = adapter
-      .extractAll()
+    const names = (await adapter.extractAll())
       .map((s) => s.identity.name)
       .sort();
     // Exactly one `shared` summary despite two reach paths.
@@ -1405,7 +1404,7 @@ describe("createTypeScriptAdapter — reachable closure", () => {
 // `transition.metadata.rethrow.possibleSources`.
 
 describe("createTypeScriptAdapter — rethrow enrichment", () => {
-  it("populates rethrow.possibleSources from direct callees' throws", () => {
+  it("populates rethrow.possibleSources from direct callees' throws", async () => {
     // `wrapper` is reachable via closure and uses a bare rethrow over
     // `loadUser`. The rethrow enrichment pass should walk the try
     // block's call sites, find `loadUser` in the summary set, and
@@ -1447,7 +1446,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
       frameworks: [tsRestPack],
     });
 
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const wrapperSummary = summaries.find((s) => s.identity.name === "wrapper");
     expect(wrapperSummary).toBeDefined();
 
@@ -1470,7 +1469,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     ).toBe(true);
   });
 
-  it("does NOT enrich throws that already carry a static message", () => {
+  it("does NOT enrich throws that already carry a static message", async () => {
     // `throw new Error("literal")` is not a rethrow candidate — its
     // message is already captured from the constructor. Enrichment
     // should leave it alone.
@@ -1501,9 +1500,9 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
       frameworks: [tsRestPack],
     });
 
-    const helper = adapter
-      .extractAll()
-      .find((s) => s.identity.name === "direct");
+    const helper = (await adapter.extractAll()).find(
+      (s) => s.identity.name === "direct",
+    );
     const throwTransition = helper?.transitions.find(
       (t) => t.output.type === "throw",
     );
@@ -1511,7 +1510,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     expect(throwTransition?.metadata?.rethrow).toBeUndefined();
   });
 
-  it("unions throws from every call site in a single try body", () => {
+  it("unions throws from every call site in a single try body", async () => {
     // `try { a(); b(); c(); } catch (e) { throw e; }` — any of a/b/c
     // could have thrown, so the rethrow's possibleSources should be the
     // union of all their throw terminals. `c` doesn't throw; its absence
@@ -1554,7 +1553,9 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
       frameworks: [tsRestPack],
     });
 
-    const fn = adapter.extractAll().find((s) => s.identity.name === "tryAll");
+    const fn = (await adapter.extractAll()).find(
+      (s) => s.identity.name === "tryAll",
+    );
     const rethrow = fn?.transitions.find((t) => t.output.type === "throw");
     const meta = rethrow?.metadata?.rethrow as
       | { possibleSources: Array<{ via: string; message: string | null }> }
@@ -1568,7 +1569,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     expect(sources.map((s) => s.message)).toEqual(["a-err", "b-err"]);
   });
 
-  it("enriches each rethrow independently when a function has multiple try-catches", () => {
+  it("enriches each rethrow independently when a function has multiple try-catches", async () => {
     // Two separate try/catches, each wrapping a different callee —
     // each rethrow should pick up only its own try body's throws, not
     // a merged union across the function.
@@ -1604,9 +1605,9 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
       frameworks: [tsRestPack],
     });
 
-    const fn = adapter
-      .extractAll()
-      .find((s) => s.identity.name === "twoRethrows");
+    const fn = (await adapter.extractAll()).find(
+      (s) => s.identity.name === "twoRethrows",
+    );
     expect(fn).toBeDefined();
 
     const throwTransitions = fn?.transitions.filter(
@@ -1635,7 +1636,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     ]);
   });
 
-  it("does NOT enrich rethrows outside a try-catch", () => {
+  it("does NOT enrich rethrows outside a try-catch", async () => {
     // `throw err` where `err` is just a parameter (no enclosing
     // try-catch) isn't the pattern we're enriching. The enrichment
     // walks the *try body's* call sites; without an enclosing try,
@@ -1667,9 +1668,9 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
       frameworks: [tsRestPack],
     });
 
-    const helper = adapter
-      .extractAll()
-      .find((s) => s.identity.name === "rethrowsInput");
+    const helper = (await adapter.extractAll()).find(
+      (s) => s.identity.name === "rethrowsInput",
+    );
     const throwTransition = helper?.transitions.find(
       (t) => t.output.type === "throw",
     );
@@ -1724,7 +1725,7 @@ describe("consumer extraction", () => {
     },
   };
 
-  it("extracts a consumer summary from a function with fetch()", () => {
+  it("extracts a consumer summary from a function with fetch()", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1743,13 +1744,13 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(summaries[0].kind).toBe("client");
     expect(summaries[0].identity.name).toBe("loadUser");
   });
 
-  it("extracts boundary binding from literal URL argument", () => {
+  it("extracts boundary binding from literal URL argument", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1765,7 +1766,7 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.boundaryBinding).toEqual({
       transport: "http",
@@ -1774,7 +1775,7 @@ describe("consumer extraction", () => {
     });
   });
 
-  it("extracts a template-literal path with substitutions as OpenAPI placeholders", () => {
+  it("extracts a template-literal path with substitutions as OpenAPI placeholders", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1790,12 +1791,12 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(restPathOf(summaries[0])).toBe("/pet/{petId}");
   });
 
-  it("extracts a template literal with no substitutions as the literal text", () => {
+  it("extracts a template literal with no substitutions as the literal text", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1811,11 +1812,11 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(restPathOf(summaries[0])).toBe("/health");
   });
 
-  it("extracts a template-literal path with multiple substitutions", () => {
+  it("extracts a template-literal path with multiple substitutions", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1831,11 +1832,11 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(restPathOf(summaries[0])).toBe("/pet/{petId}/comments/{commentId}");
   });
 
-  it("uses the trailing property name when the substitution is a property access", () => {
+  it("uses the trailing property name when the substitution is a property access", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1852,11 +1853,11 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(restPathOf(summaries[0])).toBe("/users/{id}");
   });
 
-  it("falls back to {param} when the substitution is not a simple identifier", () => {
+  it("falls back to {param} when the substitution is not a simple identifier", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1872,11 +1873,11 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(restPathOf(summaries[0])).toBe("/search/{param}");
   });
 
-  it("extracts method from options argument", () => {
+  it("extracts method from options argument", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1892,13 +1893,13 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(restMethodOf(summaries[0])).toBe("POST");
     expect(restPathOf(summaries[0])).toBe("/users");
   });
 
-  it("defaults method to GET when no options argument", () => {
+  it("defaults method to GET when no options argument", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1914,12 +1915,12 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(restMethodOf(summaries[0])).toBe("GET");
   });
 
-  it("omits path when URL is non-literal", () => {
+  it("omits path when URL is non-literal", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1936,14 +1937,14 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     // Non-literal URL: method extracted, path left empty (signals
     // "unresolved" to the wrapper-expansion post-pass).
     expect(restPathOf(summaries[0])).toBe("");
   });
 
-  it("produces status-code conditions the checker can read", () => {
+  it("produces status-code conditions the checker can read", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -1965,7 +1966,7 @@ describe("consumer extraction", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
     const s = summaries[0];
@@ -2049,7 +2050,7 @@ describe("response property semantics", () => {
     ],
   };
 
-  it("resolves response.ok to a status range comparison", () => {
+  it("resolves response.ok to a status range comparison", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -2068,7 +2069,7 @@ describe("response property semantics", () => {
       project,
       frameworks: [fetchPackWithSemantics],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
     const s = summaries[0];
@@ -2098,7 +2099,7 @@ describe("response property semantics", () => {
     }
   });
 
-  it("resolves negated !response.ok to negation(status range)", () => {
+  it("resolves negated !response.ok to negation(status range)", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -2117,7 +2118,7 @@ describe("response property semantics", () => {
       project,
       frameworks: [fetchPackWithSemantics],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
     const s = summaries[0];
@@ -2137,7 +2138,7 @@ describe("response property semantics", () => {
     }
   });
 
-  it("leaves status comparisons unchanged", () => {
+  it("leaves status comparisons unchanged", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -2156,7 +2157,7 @@ describe("response property semantics", () => {
       project,
       frameworks: [fetchPackWithSemantics],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
     const s = summaries[0];
@@ -2173,7 +2174,7 @@ describe("response property semantics", () => {
     expect(statusBranch).toBeDefined();
   });
 
-  it("does not resolve when pack has no responseSemantics", () => {
+  it("does not resolve when pack has no responseSemantics", async () => {
     const { responseSemantics: _, ...packWithoutSemantics } =
       fetchPackWithSemantics;
     const project = new Project({ useInMemoryFileSystem: true });
@@ -2194,7 +2195,7 @@ describe("response property semantics", () => {
       project,
       frameworks: [packWithoutSemantics],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
     // Without semantics, .ok stays as a truthinessCheck
@@ -2248,7 +2249,7 @@ describe("client-side contract resolution via fromClientMethod", () => {
     inputMapping: { type: "positionalParams", params: [] },
   };
 
-  it("resolves method+path on a client.method() call by walking back to the contract", () => {
+  it("resolves method+path on a client.method() call by walking back to the contract", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -2276,7 +2277,7 @@ describe("client-side contract resolution via fromClientMethod", () => {
       project,
       frameworks: [tsRestClientPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const consumer = summaries.find((s) => s.identity.name === "loadUser");
     expect(consumer).toBeDefined();
     expect(consumer?.kind).toBe("client");
@@ -2287,7 +2288,7 @@ describe("client-side contract resolution via fromClientMethod", () => {
     });
   });
 
-  it("returns no binding when the called method isn't in the contract", () => {
+  it("returns no binding when the called method isn't in the contract", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -2315,7 +2316,7 @@ describe("client-side contract resolution via fromClientMethod", () => {
       project,
       frameworks: [tsRestClientPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const consumer = summaries.find((s) => s.identity.name === "ping");
     // Discovery still finds the function; the binding falls back to a
     // rest-shaped entry with empty method/path because fromClientMethod
@@ -2380,7 +2381,7 @@ describe("wrapper expansion", () => {
     });
   }
 
-  it("synthesises a caller summary for a single-hop path-passthrough wrapper", () => {
+  it("synthesises a caller summary for a single-hop path-passthrough wrapper", async () => {
     const project = makeProject();
     project.createSourceFile(
       "api.ts",
@@ -2409,7 +2410,7 @@ describe("wrapper expansion", () => {
       project,
       frameworks: [axiosLikePack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     // The wrapper itself is one summary (no path), the caller is the second
     // (synthesised with the literal/template-literal path from the call site).
@@ -2434,7 +2435,7 @@ describe("wrapper expansion", () => {
     ).toBe("getJson");
   });
 
-  it("emits a synthetic summary for every distinct caller", () => {
+  it("emits a synthetic summary for every distinct caller", async () => {
     const project = makeProject();
     project.createSourceFile(
       "api.ts",
@@ -2467,7 +2468,7 @@ describe("wrapper expansion", () => {
       project,
       frameworks: [axiosLikePack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     const callerPaths = summaries
       .filter(
@@ -2480,7 +2481,7 @@ describe("wrapper expansion", () => {
     expect(callerPaths).toEqual(["/pet/findByStatus", "/pet/{id}"]);
   });
 
-  it("does not synthesise a caller summary when the call site has no literal path", () => {
+  it("does not synthesise a caller summary when the call site has no literal path", async () => {
     const project = makeProject();
     project.createSourceFile(
       "api.ts",
@@ -2510,7 +2511,7 @@ describe("wrapper expansion", () => {
       project,
       frameworks: [axiosLikePack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     const synthesised = summaries.filter(
       (s) =>
@@ -2520,7 +2521,7 @@ describe("wrapper expansion", () => {
     expect(synthesised).toHaveLength(0);
   });
 
-  it("resolves caller args even when the wrapper is a sibling export", () => {
+  it("resolves caller args even when the wrapper is a sibling export", async () => {
     // Sibling export pattern: the wrapper is the directly-exported function,
     // not bound to a variable. Exercises wrapperNameNode's
     // FunctionDeclaration branch.
@@ -2552,12 +2553,12 @@ describe("wrapper expansion", () => {
       project,
       frameworks: [axiosLikePack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const caller = summaries.find((s) => s.identity.name === "getCount");
     expect(restPathOf(caller)).toBe("/count");
   });
 
-  it("respects export-keyword boundary on enclosing function lookup", () => {
+  it("respects export-keyword boundary on enclosing function lookup", async () => {
     // The caller is a non-exported function — verify wrapper expansion
     // still tracks the call via ts-morph references.
     const project = makeProject();
@@ -2589,13 +2590,13 @@ describe("wrapper expansion", () => {
       project,
       frameworks: [axiosLikePack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(
       summaries.find((s) => s.identity.name === "fetchAndProcess"),
     ).toBeDefined();
   });
 
-  it("populates expectedInput when the caller reads fields off the wrapper return", () => {
+  it("populates expectedInput when the caller reads fields off the wrapper return", async () => {
     const project = makeProject();
     project.createSourceFile(
       "api.ts",
@@ -2625,7 +2626,7 @@ describe("wrapper expansion", () => {
       project,
       frameworks: [axiosLikePack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     const caller = summaries.find((s) => s.identity.name === "describePet");
     expect(caller).toBeDefined();
@@ -2698,7 +2699,7 @@ describe("subUnits plumbing", () => {
     },
   };
 
-  it("calls pack.subUnits and produces a summary per returned unit", () => {
+  it("calls pack.subUnits and produces a summary per returned unit", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/Subject.ts",
@@ -2712,7 +2713,7 @@ describe("subUnits plumbing", () => {
       project,
       frameworks: [testPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     const synthetic = summaries.find((s) =>
       s.identity.name.endsWith(".synthetic"),
@@ -2723,7 +2724,7 @@ describe("subUnits plumbing", () => {
     expect(meta?.note).toBe("from-subUnits");
   });
 
-  it("sub-unit summaries inherit the parent's boundary binding", () => {
+  it("sub-unit summaries inherit the parent's boundary binding", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/Subject.ts",
@@ -2735,7 +2736,7 @@ describe("subUnits plumbing", () => {
       project,
       frameworks: [testPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     const parent = summaries.find((s) => s.identity.name === "subject");
     const sub = summaries.find((s) => s.identity.name === "subject.synthetic");
@@ -2745,7 +2746,7 @@ describe("subUnits plumbing", () => {
     );
   });
 
-  it("packs without subUnits produce no sub-units", () => {
+  it("packs without subUnits produce no sub-units", async () => {
     const { subUnits: _omit, ...rest } = testPack;
     const noSubUnitsPack: PatternPack = rest;
     const project = makeProject();
@@ -2759,11 +2760,11 @@ describe("subUnits plumbing", () => {
       project,
       frameworks: [noSubUnitsPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
   });
 
-  it("sub-unit terminals default to `return` + `throw` when unset", () => {
+  it("sub-unit terminals default to `return` + `throw` when unset", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/Subject.ts",
@@ -2778,7 +2779,7 @@ describe("subUnits plumbing", () => {
       project,
       frameworks: [testPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const sub = summaries.find((s) => s.identity.name === "subject.synthetic");
     const outputTypes = new Set(sub?.transitions.map((t) => t.output.type));
     // Body has one throw + one return — both should surface as
@@ -2788,7 +2789,7 @@ describe("subUnits plumbing", () => {
     expect(outputTypes.has("return")).toBe(true);
   });
 
-  it("sub-unit custom terminals / inputMapping override the adapter defaults", () => {
+  it("sub-unit custom terminals / inputMapping override the adapter defaults", async () => {
     const customPack: PatternPack = {
       ...testPack,
       subUnits: (parent) => [
@@ -2826,7 +2827,7 @@ describe("subUnits plumbing", () => {
       project,
       frameworks: [customPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const sub = summaries.find((s) => s.identity.name === "subject.custom");
     expect(sub).toBeDefined();
     // Only the `return` terminal is configured, so no throw transition.
@@ -2880,7 +2881,7 @@ describe("inline JSX conditional decomposition", () => {
   }
   void rootOf; // silence unused-lint if we don't reach the helper path
 
-  it("expression that isn't a JSX pattern stays as an opaque `expression` node", () => {
+  it("expression that isn't a JSX pattern stays as an opaque `expression` node", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/Map.tsx",
@@ -2890,7 +2891,7 @@ describe("inline JSX conditional decomposition", () => {
         }
       `,
     );
-    const summaries = createTypeScriptAdapter({
+    const summaries = await createTypeScriptAdapter({
       project,
       frameworks: [reactPack],
     }).extractAll();
@@ -2908,7 +2909,7 @@ describe("inline JSX conditional decomposition", () => {
     expect(root.children[0].type).toBe("expression");
   });
 
-  it("`{x || <Fallback/>}` stays opaque — `||` is not decomposed", () => {
+  it("`{x || <Fallback/>}` stays opaque — `||` is not decomposed", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/Or.tsx",
@@ -2918,7 +2919,7 @@ describe("inline JSX conditional decomposition", () => {
         }
       `,
     );
-    const summaries = createTypeScriptAdapter({
+    const summaries = await createTypeScriptAdapter({
       project,
       frameworks: [reactPack],
     }).extractAll();
@@ -2936,7 +2937,7 @@ describe("inline JSX conditional decomposition", () => {
     expect(root.children[0].type).toBe("expression");
   });
 
-  it("`{cond ? nonJsx : <Fallback/>}` negates the condition and promotes the JSX branch", () => {
+  it("`{cond ? nonJsx : <Fallback/>}` negates the condition and promotes the JSX branch", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/Neg.tsx",
@@ -2946,7 +2947,7 @@ describe("inline JSX conditional decomposition", () => {
         }
       `,
     );
-    const summaries = createTypeScriptAdapter({
+    const summaries = await createTypeScriptAdapter({
       project,
       frameworks: [reactPack],
     }).extractAll();
@@ -2973,7 +2974,7 @@ describe("inline JSX conditional decomposition", () => {
     expect(child.whenTrue.tag).toBe("span");
   });
 
-  it("`undefined` identifier in a ternary branch reads as no-render", () => {
+  it("`undefined` identifier in a ternary branch reads as no-render", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/Undef.tsx",
@@ -2983,7 +2984,7 @@ describe("inline JSX conditional decomposition", () => {
         }
       `,
     );
-    const summaries = createTypeScriptAdapter({
+    const summaries = await createTypeScriptAdapter({
       project,
       frameworks: [reactPack],
     }).extractAll();
@@ -3006,7 +3007,7 @@ describe("inline JSX conditional decomposition", () => {
     expect(child.whenFalse).toBeNull();
   });
 
-  it("`cond && <nonJsx>` stays opaque when the right side isn't statically JSX", () => {
+  it("`cond && <nonJsx>` stays opaque when the right side isn't statically JSX", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/AndNonJsx.tsx",
@@ -3016,7 +3017,7 @@ describe("inline JSX conditional decomposition", () => {
         }
       `,
     );
-    const summaries = createTypeScriptAdapter({
+    const summaries = await createTypeScriptAdapter({
       project,
       frameworks: [reactPack],
     }).extractAll();
@@ -3034,7 +3035,7 @@ describe("inline JSX conditional decomposition", () => {
     expect(root.children[0].type).toBe("expression");
   });
 
-  it("ternary with neither branch statically JSX stays opaque", () => {
+  it("ternary with neither branch statically JSX stays opaque", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/DataTernary.tsx",
@@ -3044,7 +3045,7 @@ describe("inline JSX conditional decomposition", () => {
         }
       `,
     );
-    const summaries = createTypeScriptAdapter({
+    const summaries = await createTypeScriptAdapter({
       project,
       frameworks: [reactPack],
     }).extractAll();
@@ -3062,7 +3063,7 @@ describe("inline JSX conditional decomposition", () => {
     expect(root.children[0].type).toBe("expression");
   });
 
-  it("`false` literal in a ternary branch reads as no-render", () => {
+  it("`false` literal in a ternary branch reads as no-render", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/FalseLit.tsx",
@@ -3072,7 +3073,7 @@ describe("inline JSX conditional decomposition", () => {
         }
       `,
     );
-    const summaries = createTypeScriptAdapter({
+    const summaries = await createTypeScriptAdapter({
       project,
       frameworks: [reactPack],
     }).extractAll();
@@ -3095,7 +3096,7 @@ describe("inline JSX conditional decomposition", () => {
     expect(child.whenFalse).toBeNull();
   });
 
-  it("parenthesised JSX inside a conditional unwraps correctly", () => {
+  it("parenthesised JSX inside a conditional unwraps correctly", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/Paren.tsx",
@@ -3105,7 +3106,7 @@ describe("inline JSX conditional decomposition", () => {
         }
       `,
     );
-    const summaries = createTypeScriptAdapter({
+    const summaries = await createTypeScriptAdapter({
       project,
       frameworks: [reactPack],
     }).extractAll();

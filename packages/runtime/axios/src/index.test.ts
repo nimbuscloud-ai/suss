@@ -6,7 +6,7 @@ import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { axiosRuntime } from "./index.js";
 
 describe("axiosRuntime — pack shape", () => {
-  it("exposes a discovery pattern per HTTP verb", () => {
+  it("exposes a discovery pattern per HTTP verb", async () => {
     const pack = axiosRuntime();
     expect(pack.name).toBe("axios");
     expect(pack.languages).toEqual(["typescript", "javascript"]);
@@ -20,7 +20,7 @@ describe("axiosRuntime — pack shape", () => {
     expect(pack.inputMapping.type).toBe("positionalParams");
   });
 
-  it("declares response semantics for axios's AxiosResponse shape", () => {
+  it("declares response semantics for axios's AxiosResponse shape", async () => {
     const pack = axiosRuntime();
     const semantics = pack.responseSemantics ?? [];
     const data = semantics.find((s) => s.name === "data");
@@ -31,7 +31,7 @@ describe("axiosRuntime — pack shape", () => {
 });
 
 describe("axiosRuntime — integration", () => {
-  it("discovers axios.get(url) and extracts GET + path from arg 0", () => {
+  it("discovers axios.get(url) and extracts GET + path from arg 0", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -49,7 +49,7 @@ describe("axiosRuntime — integration", () => {
       project,
       frameworks: [axiosRuntime()],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(summaries[0].kind).toBe("client");
     expect(summaries[0].identity.name).toBe("getUser");
@@ -60,7 +60,7 @@ describe("axiosRuntime — integration", () => {
     });
   });
 
-  it("distinguishes verbs by the called method name", () => {
+  it("distinguishes verbs by the called method name", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -82,7 +82,7 @@ describe("axiosRuntime — integration", () => {
       project,
       frameworks: [axiosRuntime()],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     const post = summaries.find((s) => s.identity.name === "createUser");
     const postSem = post?.identity.boundaryBinding?.semantics;
@@ -101,7 +101,7 @@ describe("axiosRuntime — integration", () => {
     }
   });
 
-  it("produces transitions for branches in the consumer function", () => {
+  it("produces transitions for branches in the consumer function", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -122,12 +122,12 @@ describe("axiosRuntime — integration", () => {
       project,
       frameworks: [axiosRuntime()],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(summaries[0].transitions.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("matches calls on instances created via axios.create()", () => {
+  it("matches calls on instances created via axios.create()", async () => {
     // The dominant production pattern: per-service axios instances created
     // with a baseURL. The pack declares factoryMethods: ["create"] so the
     // adapter treats `api` as a client subject.
@@ -149,7 +149,7 @@ describe("axiosRuntime — integration", () => {
       project,
       frameworks: [axiosRuntime()],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.name).toBe("getUser");
     expect(summaries[0].identity.boundaryBinding).toEqual({
@@ -159,7 +159,7 @@ describe("axiosRuntime — integration", () => {
     });
   });
 
-  it("matches multiple verbs called on the same axios.create() instance", () => {
+  it("matches multiple verbs called on the same axios.create() instance", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       "consumer.ts",
@@ -182,7 +182,7 @@ describe("axiosRuntime — integration", () => {
       project,
       frameworks: [axiosRuntime()],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(2);
     const get = summaries.find((s) => s.identity.name === "getUser");
     const getSem = get?.identity.boundaryBinding?.semantics;

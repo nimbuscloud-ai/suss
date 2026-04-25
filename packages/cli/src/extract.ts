@@ -110,8 +110,10 @@ export async function extract(
   // Extract
   const summaries =
     options.files !== undefined && options.files.length > 0
-      ? adapter.extractFromFiles(options.files.map((f) => path.resolve(f)))
-      : adapter.extractAll();
+      ? await adapter.extractFromFiles(
+          options.files.map((f) => path.resolve(f)),
+        )
+      : await adapter.extractAll();
 
   // Make file paths relative to the project root so summaries are portable.
   // Absolute paths leak filesystem structure and break on other machines.

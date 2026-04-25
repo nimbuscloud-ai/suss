@@ -15,7 +15,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/nestjs-rest");
 
-function runAdapter(): BehavioralSummary[] {
+async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
@@ -62,7 +62,7 @@ function runAdapter(): BehavioralSummary[] {
     includeReachable: false,
   });
 
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -86,8 +86,8 @@ describe("nestjsRestFramework — pack shape", () => {
 
 describe("nestjsRestFramework — integration", () => {
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runAdapter();
+  beforeAll(async () => {
+    summaries = await runAdapter();
   }, 60_000);
 
   it("discovers every HTTP-verb method on the controller", () => {

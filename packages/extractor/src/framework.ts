@@ -325,6 +325,25 @@ export interface DiscoveryPattern {
   kind: string;
   match: DiscoveryMatch;
   bindingExtraction?: BindingExtraction;
+  /**
+   * Files whose import declarations include any of these module
+   * specifiers (or sub-paths of them) get this pattern's discovery
+   * dispatch. Empty array = no gate (pattern is dispatched against
+   * every file). Undefined = treated as no gate, but pack authors
+   * SHOULD declare it explicitly — the `[]` form is the deliberate
+   * "match every file" choice (typically because the pattern keys on
+   * something other than imports — e.g. the fetch runtime matching
+   * global `fetch(...)` calls).
+   *
+   * Match semantics: prefix on the import module specifier. An entry
+   * `"@nestjs/graphql"` matches `from "@nestjs/graphql"` AND
+   * `from "@nestjs/graphql/dist/foo"` AND any other sub-path.
+   *
+   * Pre-filter is purely a perf optimisation: the closure walk and
+   * other post-passes still have access to every loaded file via
+   * symbol resolution.
+   */
+  requiresImport?: string[];
 }
 
 // =============================================================================
@@ -544,6 +563,17 @@ export interface ResponsePropertyMapping {
 
 export interface PatternPack {
   name: string;
+  /**
+   * Pack version stamp — feeds the cache invalidation key. Bump on
+   * any change that affects discovered units / extracted summaries.
+   * Format is opaque to the adapter; semver is the obvious choice
+   * but a content hash, build SHA, or monotonic integer works too.
+   * Optional — packs that omit it use the literal string `"unset"`,
+   * which means cache entries from one process to the next aren't
+   * meaningfully versioned (suitable for development; production
+   * packs should declare a version).
+   */
+  version?: string;
   languages: string[];
   discovery: DiscoveryPattern[];
   terminals: TerminalPattern[];

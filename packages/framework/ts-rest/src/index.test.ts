@@ -32,7 +32,7 @@ function makeProject(): Project {
   });
 }
 
-function runAdapter(): BehavioralSummary[] {
+async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = makeProject();
   project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
 
@@ -41,10 +41,10 @@ function runAdapter(): BehavioralSummary[] {
     frameworks: [tsRestFramework()],
   });
 
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
-function runComposedAdapter(): BehavioralSummary[] {
+async function runComposedAdapter(): Promise<BehavioralSummary[]> {
   const project = makeProject();
   project.addSourceFilesAtPaths(path.join(composedFixturesDir, "**/*.ts"));
 
@@ -53,7 +53,7 @@ function runComposedAdapter(): BehavioralSummary[] {
     frameworks: [tsRestFramework()],
   });
 
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ function runComposedAdapter(): BehavioralSummary[] {
 // ---------------------------------------------------------------------------
 
 describe("tsRestFramework — pack shape", () => {
-  it("exposes handler and consumer discovery, returnShape terminal, and contract reading", () => {
+  it("exposes handler and consumer discovery, returnShape terminal, and contract reading", async () => {
     const pack = tsRestFramework();
     expect(pack.name).toBe("ts-rest");
     expect(pack.discovery).toHaveLength(2);
@@ -81,11 +81,11 @@ describe("tsRestFramework — pack shape", () => {
 describe("tsRestFramework — integration", () => {
   // ts-morph project setup dominates — build the summaries once and reuse.
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runAdapter();
+  beforeAll(async () => {
+    summaries = await runAdapter();
   }, 90_000);
 
-  it("discovers every handler registered inside s.router(contract, {...})", () => {
+  it("discovers every handler registered inside s.router(contract, {...})", async () => {
     expect(summaries).toHaveLength(2);
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual(["createUser", "getUser"]);
@@ -94,7 +94,7 @@ describe("tsRestFramework — integration", () => {
     }
   });
 
-  it("getUser binds method/path from the contract", () => {
+  it("getUser binds method/path from the contract", async () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
     expect(getUser?.identity.boundaryBinding).toEqual({
@@ -104,7 +104,7 @@ describe("tsRestFramework — integration", () => {
     });
   });
 
-  it("createUser binds method/path from the contract", () => {
+  it("createUser binds method/path from the contract", async () => {
     const createUser = summaries.find((s) => s.identity.name === "createUser");
     expect(createUser).toBeDefined();
     expect(createUser?.identity.boundaryBinding).toEqual({
@@ -114,7 +114,7 @@ describe("tsRestFramework — integration", () => {
     });
   });
 
-  it("getUser assembles the four returnShape transitions with correct status codes", () => {
+  it("getUser assembles the four returnShape transitions with correct status codes", async () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
 
@@ -138,7 +138,7 @@ describe("tsRestFramework — integration", () => {
     ]);
   });
 
-  it("createUser assembles two returnShape transitions (400, 201)", () => {
+  it("createUser assembles two returnShape transitions (400, 201)", async () => {
     const createUser = summaries.find((s) => s.identity.name === "createUser");
     expect(createUser).toBeDefined();
     expect(createUser?.transitions).toHaveLength(2);
@@ -154,7 +154,7 @@ describe("tsRestFramework — integration", () => {
     ]);
   });
 
-  it("destructuredObject inputMapping maps params → pathParams and body → requestBody", () => {
+  it("destructuredObject inputMapping maps params → pathParams and body → requestBody", async () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
     const paramsInput = getUser?.inputs.find(
@@ -175,7 +175,7 @@ describe("tsRestFramework — integration", () => {
     }
   });
 
-  it("surfaces contract-side gaps (getUser declares 500 but never produces it)", () => {
+  it("surfaces contract-side gaps (getUser declares 500 but never produces it)", async () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
     const gap500 = getUser?.gaps.find((g) => g.description.includes("500"));
@@ -185,7 +185,7 @@ describe("tsRestFramework — integration", () => {
     expect(gap500?.consequence).toBe("frameworkDefault");
   });
 
-  it("attaches the declaredContract to summary metadata under metadata.http", () => {
+  it("attaches the declaredContract to summary metadata under metadata.http", async () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
     const http = getUser?.metadata?.http as Record<string, unknown> | undefined;
@@ -199,7 +199,7 @@ describe("tsRestFramework — integration", () => {
     expect(declaredStatuses).toEqual([200, 404, 500]);
   });
 
-  it("has high confidence when all conditions resolve to structured predicates", () => {
+  it("has high confidence when all conditions resolve to structured predicates", async () => {
     for (const s of summaries) {
       expect(s.confidence.level).toBe("high");
       for (const t of s.transitions) {
@@ -224,16 +224,16 @@ describe("tsRestFramework — integration", () => {
 
 describe("tsRestFramework — composed contracts", () => {
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runComposedAdapter();
+  beforeAll(async () => {
+    summaries = await runComposedAdapter();
   }, 90_000);
 
-  it("discovers handlers across both sub-namespaces", () => {
+  it("discovers handlers across both sub-namespaces", async () => {
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual(["fetchThing", "recordEvent"]);
   });
 
-  it("binds method/path from the composed contract (events sub-namespace)", () => {
+  it("binds method/path from the composed contract (events sub-namespace)", async () => {
     const recordEvent = summaries.find(
       (s) => s.identity.name === "recordEvent",
     );
@@ -244,7 +244,7 @@ describe("tsRestFramework — composed contracts", () => {
     });
   });
 
-  it("binds method/path from the composed contract (internal sub-namespace)", () => {
+  it("binds method/path from the composed contract (internal sub-namespace)", async () => {
     const fetchThing = summaries.find((s) => s.identity.name === "fetchThing");
     expect(fetchThing?.identity.boundaryBinding).toEqual({
       transport: "http",

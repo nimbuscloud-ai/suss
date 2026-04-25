@@ -18,7 +18,7 @@ const fixturesDir = path.resolve(
   "../../../../fixtures/nestjs-graphql",
 );
 
-function runAdapter(): BehavioralSummary[] {
+async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
@@ -56,7 +56,7 @@ function runAdapter(): BehavioralSummary[] {
     includeReachable: false,
   });
 
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -80,8 +80,8 @@ describe("nestjsGraphqlFramework — pack shape", () => {
 
 describe("nestjsGraphqlFramework — integration", () => {
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runAdapter();
+  beforeAll(async () => {
+    summaries = await runAdapter();
   }, 60_000);
 
   it("discovers Query / Mutation / ResolveField / Subscription methods on the class", () => {
