@@ -65,6 +65,10 @@ export type GraphqlOperationSemantics = Extract<
   Semantics,
   { name: "graphql-operation" }
 >;
+export type RuntimeConfigSemantics = Extract<
+  Semantics,
+  { name: "runtime-config" }
+>;
 export type CodeUnitIdentity = z.infer<typeof CodeUnitIdentitySchema>;
 
 // ---------------------------------------------------------------------------
@@ -205,6 +209,34 @@ export function graphqlOperationBinding(opts: {
     recognition: opts.recognition,
   };
 }
+
+/**
+ * Build a runtime-config binding — the provider side of a runtime
+ * configuration channel (env vars on a Lambda / ECS task / container /
+ * k8s pod). Pairs with code units that read `process.env.X` from
+ * source files within the runtime's CodeUri scope.
+ */
+export function runtimeConfigBinding(opts: {
+  recognition: string;
+  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment";
+  instanceName: string;
+}): BoundaryBinding {
+  return {
+    // Runtime-config has no wire transport — env vars are handed to
+    // the process by the OS at startup (regardless of the deployment
+    // medium that set them). `os` reads cleanly across Lambda /
+    // container / k8s, where each deployment system writes into the
+    // same OS-level handoff.
+    transport: "os",
+    semantics: {
+      name: "runtime-config",
+      deploymentTarget: opts.deploymentTarget,
+      instanceName: opts.instanceName,
+    },
+    recognition: opts.recognition,
+  };
+}
+
 export type ConfidenceInfo = z.infer<typeof ConfidenceInfoSchema>;
 
 export type Literal = z.infer<typeof LiteralSchema>;

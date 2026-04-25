@@ -108,6 +108,36 @@ export const FindingKindSchema = z.enum([
    * set excludes the consumer's selection.
    */
   "graphqlSelectionFieldUnknown",
+  /**
+   * Code reads `process.env.X` from a source file scoped to a
+   * deployable runtime instance, but that runtime's declared
+   * env-var contract doesn't include `X`. Emitted by
+   * checkRuntimeConfig — the dominant cause is a typo or a
+   * declaration omission between the code and the
+   * infrastructure template (CFN/SAM/k8s manifest). Severity is
+   * error: at deploy time this surfaces as a runtime undefined.
+   */
+  "envVarUnprovided",
+  /**
+   * A deployable runtime instance declares an env var that no
+   * code in its codeScope reads. Emitted by checkRuntimeConfig
+   * — usually dead config left over from a removed feature, or
+   * a renamed var the template still references. Severity is
+   * warning: the deployment still works, but the contract has
+   * stale fields the consumer ignored.
+   */
+  "envVarUnused",
+  /**
+   * A runtime-config-bound provider summary declares no
+   * codeScope (or one we couldn't resolve to source files), so
+   * we can't pair its env-var contract against any code.
+   * Emitted by checkRuntimeConfig as info — a heads-up that
+   * verification was skipped, not a defect in the code itself.
+   * Common cause: raw CloudFormation that uses S3-built
+   * artifacts (no `CodeUri`) without a `Metadata.SussCodeScope`
+   * annotation.
+   */
+  "runtimeScopeUnknown",
 ]);
 
 export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);
@@ -226,11 +256,39 @@ export const GraphqlOperationSemanticsSchema = z.object({
   operationType: z.enum(["query", "mutation", "subscription"]),
 });
 
+/**
+ * Provider-side runtime configuration channel — env vars + their
+ * declared values on a deployable unit (Lambda, ECS task, container,
+ * k8s pod). The channel is the boundary; env var names are FIELDS on
+ * its contract (analogous to `body.email` being a field on a REST
+ * endpoint's contract). Pairing key: `(deploymentTarget, instanceName)`.
+ * The list of env vars provided lives in `metadata.runtimeContract.envVars`
+ * on the summary; `metadata.codeScope` declares which source files
+ * run inside the channel so the pairing layer can scope code reads.
+ */
+export const RuntimeConfigSemanticsSchema = z.object({
+  name: z.literal("runtime-config"),
+  deploymentTarget: z.enum([
+    "lambda",
+    "ecs-task",
+    "container",
+    "k8s-deployment",
+  ]),
+  /**
+   * Stable identifier for the runtime instance — CFN logical resource
+   * ID for Lambda / ECS, k8s deployment name, container name. Pairs
+   * across runs; survives template rename only when the underlying
+   * physical name does.
+   */
+  instanceName: z.string(),
+});
+
 export const SemanticsSchema = z.discriminatedUnion("name", [
   RestSemanticsSchema,
   FunctionCallSemanticsSchema,
   GraphqlResolverSemanticsSchema,
   GraphqlOperationSemanticsSchema,
+  RuntimeConfigSemanticsSchema,
 ]);
 
 export const BoundaryBindingSchema = z.object({

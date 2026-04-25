@@ -169,6 +169,33 @@
                         },
                         "required": ["name", "operationType"],
                         "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "const": "runtime-config"
+                          },
+                          "deploymentTarget": {
+                            "type": "string",
+                            "enum": [
+                              "lambda",
+                              "ecs-task",
+                              "container",
+                              "k8s-deployment"
+                            ]
+                          },
+                          "instanceName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "deploymentTarget",
+                          "instanceName"
+                        ],
+                        "additionalProperties": false
                       }
                     ]
                   },
