@@ -41,6 +41,7 @@ import { type CacheLayer, createCacheLayer } from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
 import { collectClientFieldAccesses } from "./field-accesses.js";
+import { computePackApplicability } from "./preFilter.js";
 import { expandReachableClosure } from "./reachable-closure.js";
 import { enrichRethrows } from "./rethrow-enrichment.js";
 import { createTsSubUnitContext } from "./sub-unit-context.js";
@@ -1290,12 +1291,26 @@ export function createTypeScriptAdapter(
         project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
       );
 
+      // Pre-filter: for each file, figure out which packs have any
+      // pattern that could match (based on `requiresImport` gates
+      // against the file's imports). Files where NO pack matches
+      // skip the discovery walk entirely. Big speedup on
+      // monorepo-scale projects where most files don't touch any
+      // framework the active packs care about.
+      const packsByFile = timer.time("preFilter", () =>
+        computePackApplicability(sourceFiles, config.frameworks),
+      );
+
       timer.time("extract per-file", () => {
         for (const sourceFile of sourceFiles) {
+          const applicablePacks = packsByFile.get(sourceFile);
+          if (applicablePacks === undefined) {
+            continue;
+          }
           summaries.push(
             ...extractFromSourceFile(
               sourceFile,
-              config.frameworks,
+              applicablePacks,
               config.extractorOptions,
             ),
           );
