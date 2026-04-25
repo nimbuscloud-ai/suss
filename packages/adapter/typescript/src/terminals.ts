@@ -535,13 +535,53 @@ function tryMatchParameterMethodCall(
   return { node, terminal };
 }
 
+/**
+ * Is the returned expression a call (or new) — possibly wrapped in
+ * `await`, `as`, parens, or `!`? Used by `excludeCallReturns` so a
+ * pack that already matches `reply.send(...)` via `parameterMethodCall`
+ * doesn't double-fire on the enclosing `return reply.send(...)`.
+ */
+function isCallReturn(expr: Node): boolean {
+  let current: Node = expr;
+  while (true) {
+    if (
+      Node.isParenthesizedExpression(current) ||
+      Node.isAsExpression(current) ||
+      Node.isNonNullExpression(current) ||
+      Node.isSatisfiesExpression(current) ||
+      Node.isAwaitExpression(current)
+    ) {
+      current = current.getExpression();
+      continue;
+    }
+    break;
+  }
+  return Node.isCallExpression(current) || Node.isNewExpression(current);
+}
+
 function tryMatchReturnStatement(
   node: Node,
   pattern: TerminalPattern,
 ): FoundTerminal | null {
+  const match = pattern.match.type === "returnStatement" ? pattern.match : null;
   // Explicit `return expr;`
   if (Node.isReturnStatement(node)) {
     const expr = node.getExpression();
+    // `excludeCallReturns` packs are using returnStatement to capture
+    // value-producing returns (e.g. Fastify's bare `return user`). Skip
+    // both `return;` (control-flow exit, no value) and `return <call>`
+    // (covered by the pack's parameterMethodCall matcher) to avoid
+    // double-firing. `isCallReturn` peels await / casts / parens so
+    // `return await reply.send(...)` is treated the same as
+    // `return reply.send(...)`.
+    if (match?.excludeCallReturns === true) {
+      if (expr === undefined) {
+        return null;
+      }
+      if (isCallReturn(expr)) {
+        return null;
+      }
+    }
     // Capture the shape of the returned expression. Without this,
     // every `return x;` surfaces as `-> return (default)` in inspect
     // output regardless of what `x` is — opaque to downstream consumers
@@ -584,9 +624,18 @@ function buildReturnTerminal(
   pattern: TerminalPattern,
   body: RawTerminal["body"],
 ): FoundTerminal {
+  // Honour the pack's `defaultStatusCode` when one is declared. Used by
+  // packs like Fastify whose returnStatement matcher emits `kind:
+  // "response"` — `return user` is a 200 response. Packs that emit
+  // `kind: "return"` (clients) leave defaultStatusCode unset, so this
+  // collapses to null for them.
+  const statusCode: RawTerminal["statusCode"] =
+    pattern.extraction.defaultStatusCode !== undefined
+      ? { type: "literal", value: pattern.extraction.defaultStatusCode }
+      : null;
   const terminal: RawTerminal = {
     kind: pattern.kind,
-    statusCode: null,
+    statusCode,
     body,
     exceptionType: null,
     message: null,

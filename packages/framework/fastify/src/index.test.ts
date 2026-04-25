@@ -82,7 +82,7 @@ describe("fastifyFramework — integration", () => {
   }, 90_000);
 
   it("discovers every app.<method> handler in the fixture", () => {
-    expect(summaries).toHaveLength(3);
+    expect(summaries).toHaveLength(5);
     for (const s of summaries) {
       expect(s.kind).toBe("handler");
       expect(s.identity.name).toBe("get");
@@ -138,10 +138,10 @@ describe("fastifyFramework — integration", () => {
   });
 
   it("redirect(url) → 1-arg form falls back to default 302", () => {
-    const singleTxn = summaries.filter((s) => s.transitions.length === 1);
-    expect(singleTxn).toHaveLength(2);
-
-    const oneArg = singleTxn.find((s) => {
+    const oneArg = summaries.find((s) => {
+      if (s.transitions.length !== 1) {
+        return false;
+      }
       const out = s.transitions[0].output;
       return (
         out.type === "response" &&
@@ -170,5 +170,53 @@ describe("fastifyFramework — integration", () => {
     for (const s of summaries) {
       expect(s.gaps).toEqual([]);
     }
+  });
+
+  it("matches bare returns as 200 responses without double-firing on `return reply.send(...)`", () => {
+    // /me has three transitions: 401 (early return reply.code(401).send(...)),
+    // 404 (early return reply.code(404).send(...)), and a default 200 from
+    // bare `return user`. The two `return reply.code(...).send(...)` paths
+    // must each produce exactly ONE response transition — the inner
+    // parameterMethodCall — not also a second from the wrapping return.
+    const meHandler = summaries.find((s) => s.transitions.length === 3);
+    expect(meHandler).toBeDefined();
+    if (!meHandler) {
+      throw new Error("/me handler not found");
+    }
+    const statuses = meHandler.transitions.map((t) =>
+      t.output.type === "response" && t.output.statusCode?.type === "literal"
+        ? t.output.statusCode.value
+        : null,
+    );
+    expect(statuses.sort()).toEqual([200, 401, 404]);
+    // The 200 default-branch transition should carry a body shape derived
+    // from the returned identifier (`user`).
+    const defaultTxn = meHandler.transitions.find((t) => t.isDefault);
+    expect(defaultTxn?.output.type).toBe("response");
+    if (defaultTxn?.output.type !== "response") {
+      return;
+    }
+    expect(defaultTxn.output.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
+    expect(defaultTxn.output.body).not.toBeNull();
+  });
+
+  it("matches bare object-literal returns and surfaces the literal shape", () => {
+    // /defaults returns an inline `{ theme, locale }`. The returnStatement
+    // match should fire and the body should reflect the object literal.
+    const defaultsHandler = summaries.find((s) => {
+      const t = s.transitions[0];
+      if (s.transitions.length !== 1 || t.output.type !== "response") {
+        return false;
+      }
+      const body = t.output.body;
+      if (body === null || body.type !== "record") {
+        return false;
+      }
+      return "theme" in body.properties && "locale" in body.properties;
+    });
+    expect(defaultsHandler).toBeDefined();
   });
 });

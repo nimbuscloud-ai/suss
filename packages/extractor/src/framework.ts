@@ -258,6 +258,16 @@ export type TerminalMatch =
     }
   | {
       type: "returnStatement";
+      /**
+       * Skip ReturnStatements whose returned expression is a CallExpression
+       * (or NewExpression). For frameworks where `return reply.send(...)`
+       * also lands as a `parameterMethodCall` match on the inner call,
+       * this prevents the same `return reply.send(...)` from producing
+       * two terminals — one from the wrapping returnStatement, one from
+       * the inner method-call chain. Bare returns (`return user`,
+       * `return { id }`, `return await fn()`) still match.
+       */
+      excludeCallReturns?: boolean;
     }
   | {
       type: "parameterMethodCall";

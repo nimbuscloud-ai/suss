@@ -281,9 +281,16 @@ Match calls to a named function (not a method on an object). Used by React Route
 
 #### `returnStatement`
 ```typescript
-{ type: "returnStatement" }
+{
+  type: "returnStatement";
+  excludeCallReturns?: boolean;
+}
 ```
 Match any `ReturnStatement`, regardless of what's being returned. Used by client code units where the consumer function returns arbitrary values (not structured `{ status, body }` objects). The return value is captured as `Output.return`. Every client pack uses this as its primary terminal.
+
+`excludeCallReturns: true` skips both bare `return;` (control-flow exits with no value) and `return <call>` / `return new <Ctor>(...)`. Used by frameworks like Fastify where `return reply.send(...)` is already covered by a `parameterMethodCall` matcher and shouldn't double-fire here. `await` / `as` / parens / non-null wrappers around the call are unwrapped before the check, so `return await reply.send(...)` is also skipped. Bare value-returns (`return user`, `return { id }`, `return await db.find(id)`) still match.
+
+When `extraction.defaultStatusCode` is set on a `kind: "response"` `returnStatement` terminal, the synthesised response uses that status. This is how Fastify maps `return user` to a 200 response.
 
 ### `TerminalExtraction`
 
@@ -519,6 +526,6 @@ inputMapping: {
 
 **Contracts.** Fastify supports JSON Schema validation attached to route options inline with the handler. v0 doesn't declare a `contractReading` and relies on inferred transitions alone.
 
-**Known gap.** Fastify also lets handlers serialise a returned value as the response body (`return user`). The current pack only matches `reply.send(...)` and similar method calls — `return user` paths produce no transition. The fix is pack-level: add a `returnShape` or `returnStatement` terminal (the underlying extraction supports both). Tracked but not yet shipped.
+**Bare `return value` bodies.** Fastify also lets handlers serialise a returned value as the response body (`return user` or `return { id, name }`). The pack covers that path with a `returnStatement` terminal that uses `excludeCallReturns: true`, so `return reply.send(...)` (already a `parameterMethodCall` match) doesn't double-fire. Bare `return;` exits — the kind that follow `reply.code(404).send(...)` early-return guards — are skipped, since they don't produce a value.
 
 The whole pack is ~120 lines of declarative data plus an integration test against an in-memory ts-morph project.

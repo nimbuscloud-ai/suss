@@ -49,4 +49,25 @@ app.get("/moved", (request, reply) => {
   reply.redirect(301, "/new-location");
 });
 
+// GET /me — exercises bare-return path (Fastify serialises return value
+// as the 200 response body). The early `return reply.code(401).send(...)`
+// path stays a parameterMethodCall match; the trailing `return user`
+// becomes a returnStatement match.
+app.get("/me", async (request, reply) => {
+  const id = (request.headers["x-user-id"] as string | undefined) ?? null;
+  if (!id) {
+    return reply.code(401).send({ error: "no auth" });
+  }
+  const user = await db.findById(id);
+  if (!user) {
+    return reply.code(404).send({ error: "not found" });
+  }
+  return user;
+});
+
+// GET /defaults — exercises bare object-literal return.
+app.get("/defaults", () => {
+  return { theme: "dark", locale: "en" };
+});
+
 export default app;
