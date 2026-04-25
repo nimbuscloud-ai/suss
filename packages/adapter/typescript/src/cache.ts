@@ -62,7 +62,15 @@ export interface CacheLayer {
 }
 
 export interface CacheInput {
-  project: Project;
+  /**
+   * Either a list of absolute file paths OR a Project. The first
+   * form lets the cache run BEFORE the project's lazy bootstrap
+   * — pass the file list from the tsconfig parse so a cache hit
+   * doesn't pay for the bootstrap. The Project form keeps back-
+   * compat for callers that already have a populated Project.
+   */
+  files?: ReadonlyArray<string>;
+  project?: Project;
   adapterPacksDigest: string;
   tsconfigPath?: string;
 }
@@ -97,7 +105,7 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
       if (!fileStampEquals(manifest.tsconfigStamp, currentTsconfigStamp)) {
         return null;
       }
-      const currentFiles = await stampProjectFiles(input.project);
+      const currentFiles = await resolveFileStamps(input);
       if (!fileStampsEqual(manifest.files, currentFiles)) {
         return null;
       }
@@ -108,7 +116,7 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
       summaries: BehavioralSummary[],
     ): Promise<void> {
       const tsconfigStamp = await stampTsconfig(input.tsconfigPath);
-      const files = await stampProjectFiles(input.project);
+      const files = await resolveFileStamps(input);
       const manifest: Manifest = {
         schemaVersion: SCHEMA_VERSION,
         adapterPacksDigest: input.adapterPacksDigest,
@@ -148,11 +156,32 @@ async function stampTsconfig(
   }
 }
 
+/**
+ * Resolve the file list from whichever input form the caller used.
+ * `files` (paths) takes precedence — the cache-pre-bootstrap path
+ * passes that. `project` falls back to the Project's loaded
+ * source files.
+ */
+async function resolveFileStamps(input: CacheInput): Promise<FileStamp[]> {
+  if (input.files !== undefined) {
+    return stampPaths(input.files);
+  }
+  if (input.project !== undefined) {
+    return stampProjectFiles(input.project);
+  }
+  return [];
+}
+
 async function stampProjectFiles(project: Project): Promise<FileStamp[]> {
   const files = project
     .getSourceFiles()
     .filter((sf) => !sf.isDeclarationFile())
     .map((sf) => sf.getFilePath());
+  return stampPaths(files);
+}
+
+async function stampPaths(paths: ReadonlyArray<string>): Promise<FileStamp[]> {
+  const files = paths;
   // Concurrent stats — bounded by Node's libuv thread pool. For
   // 5,500-file projects this is the dominant cost of the coarse
   // key (~25ms total).

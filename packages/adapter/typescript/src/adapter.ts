@@ -41,6 +41,7 @@ import { type CacheLayer, createCacheLayer } from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
 import { collectClientFieldAccesses } from "./field-accesses.js";
+import { createLazyProject, readTsconfigFileList } from "./lazyProjectInit.js";
 import { computePackApplicability } from "./preFilter.js";
 import { expandReachableClosure } from "./reachable-closure.js";
 import { enrichRethrows } from "./rethrow-enrichment.js";
@@ -1201,13 +1202,35 @@ export interface TypeScriptAdapter {
 export function createTypeScriptAdapter(
   config: TypeScriptAdapterConfig,
 ): TypeScriptAdapter {
+  // Project bootstrap strategy:
+  //   - Caller passed `config.project`: use it directly (test
+  //     fixtures, programmatic Project, in-memory FS).
+  //   - Caller passed `config.tsConfigFilePath`: defer the file
+  //     loading. Construct an empty Project here and let
+  //     `extractAll` populate it via the lazy-load path
+  //     (preProcessFile-based pre-filter + per-pack gate
+  //     applicability), parsing only what the active packs care
+  //     about.
+  //   - Neither: empty Project, caller is responsible.
   const project =
     config.project ??
     new Project(
       config.tsConfigFilePath !== undefined
-        ? { tsConfigFilePath: config.tsConfigFilePath }
+        ? {
+            tsConfigFilePath: config.tsConfigFilePath,
+            skipAddingFilesFromTsConfig: true,
+          }
         : { skipAddingFilesFromTsConfig: true },
     );
+
+  // Set on first extractAll, used by closure / rethrow passes to
+  // decide which absent files are eligible for lazy add (only
+  // those declared in the tsconfig include set, never node_modules
+  // we didn't ask about). Reserved for the closure-side lazy add
+  // pass; the bootstrap below populates it when the lazy path
+  // runs, even though the closure isn't yet consulting it.
+  let _projectFileSet: ReadonlySet<string> | null = null;
+  let lazyBootstrapped = false;
 
   // Resolve the cache directory:
   //   - explicit `null` opts out
@@ -1241,9 +1264,17 @@ export function createTypeScriptAdapter(
       const summaries: BehavioralSummary[] = [];
 
       for (const fp of filePaths) {
-        const sourceFile = project.getSourceFile(fp);
+        // Project may have skipped initial loading (lazy
+        // bootstrap path). The caller named these files
+        // explicitly — pull them in now if they aren't
+        // already loaded.
+        let sourceFile = project.getSourceFile(fp);
         if (sourceFile === undefined) {
-          continue;
+          try {
+            sourceFile = project.addSourceFileAtPath(fp);
+          } catch {
+            continue;
+          }
         }
         summaries.push(
           ...extractFromSourceFile(
@@ -1260,17 +1291,40 @@ export function createTypeScriptAdapter(
     async extractAll(): Promise<BehavioralSummary[]> {
       const timer = createTimer();
 
-      // Coarse-key cache check first. On a warm run with no
-      // changes this returns the previous extraction's summaries
-      // verbatim after one stat per source file — no AST work,
-      // no extraction, sub-100ms on monorepo-scale projects.
-      const cacheInput = {
-        project,
-        adapterPacksDigest,
-        ...(config.tsConfigFilePath !== undefined
-          ? { tsconfigPath: config.tsConfigFilePath }
-          : {}),
-      };
+      // For lazy-bootstrap-eligible runs (tsconfig path supplied
+      // by caller), get the include file list cheaply via the TS
+      // config parser BEFORE bootstrap. This lets the cache check
+      // run against the canonical file list directly — a cache
+      // hit then short-circuits before paying for any file
+      // reading or AST parsing.
+      const lazyEligible =
+        !lazyBootstrapped &&
+        config.tsConfigFilePath !== undefined &&
+        config.project === undefined;
+      const tsconfigFileList = lazyEligible
+        ? timer.time("readTsconfigFileList", () =>
+            readTsconfigFileList(config.tsConfigFilePath!),
+          )
+        : null;
+
+      // Coarse-key cache check. Uses the tsconfig file list when
+      // available (lazy-eligible path) so a hit doesn't trigger
+      // bootstrap. Falls back to the Project's loaded source
+      // files for caller-supplied Project consumers.
+      const cacheInput =
+        tsconfigFileList !== null
+          ? {
+              files: tsconfigFileList,
+              adapterPacksDigest,
+              tsconfigPath: config.tsConfigFilePath!,
+            }
+          : {
+              project,
+              adapterPacksDigest,
+              ...(config.tsConfigFilePath !== undefined
+                ? { tsconfigPath: config.tsConfigFilePath }
+                : {}),
+            };
       const cached = await timer.timeAsync("cache.tryHit", () =>
         cache.tryHit(cacheInput),
       );
@@ -1279,6 +1333,22 @@ export function createTypeScriptAdapter(
           config.onTiming(timer.report());
         }
         return cached;
+      }
+
+      // Cache miss: run the lazy bootstrap so the rest of the
+      // pipeline has the candidate set loaded.
+      if (lazyEligible) {
+        const lazy = await timer.timeAsync("lazyProjectInit", () =>
+          createLazyProject(config.tsConfigFilePath!, config.frameworks),
+        );
+        for (const sf of lazy.loadedFiles) {
+          // addSourceFileAtPath is a no-op when the file is
+          // already present — keeps the project reference stable
+          // for downstream consumers.
+          project.addSourceFileAtPath(sf.getFilePath());
+        }
+        _projectFileSet = lazy.projectFileSet;
+        lazyBootstrapped = true;
       }
 
       const summaries: BehavioralSummary[] = [];
