@@ -1,9 +1,9 @@
-import { statusAccessorsFor } from "./declaredContract.js";
+import { statusAccessorsFor } from "../contract/declaredContract.js";
 import {
   consumerExpectedStatuses,
   makeBoundary,
   makeSide,
-} from "./responseMatch.js";
+} from "../coverage/responseMatch.js";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 

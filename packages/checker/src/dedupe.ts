@@ -20,7 +20,7 @@
 // every contributing provider-summary identifier, sorted
 // deterministically for stable output.
 
-import { boundaryKey } from "./pairing.js";
+import { boundaryKey } from "./pairing/pairing.js";
 
 import type { Finding, FindingSeverity } from "@suss/behavioral-ir";
 

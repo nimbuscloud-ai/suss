@@ -1,5 +1,5 @@
-import { statusAccessorsFor } from "./declaredContract.js";
-import { predicatesMatch } from "./match.js";
+import { statusAccessorsFor } from "../contract/declaredContract.js";
+import { predicatesMatch } from "../match.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,

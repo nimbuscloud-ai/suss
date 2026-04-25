@@ -7,7 +7,7 @@ import {
   statusEq,
   transition,
   withContractBodies,
-} from "./__fixtures__/pairs.js";
+} from "../__fixtures__/pairs.js";
 import { checkConsumerContract } from "./consumerContract.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";

@@ -1,14 +1,14 @@
-import { checkBodyCompatibility } from "./bodyCompatibility.js";
-import { checkComponentStoryAgreement } from "./componentStoryAgreement.js";
-import { checkConsumerContract } from "./consumerContract.js";
-import { checkConsumerSatisfaction } from "./consumerSatisfaction.js";
-import { checkContractAgreement } from "./contractAgreement.js";
-import { checkContractConsistency } from "./contractConsistency.js";
+import { checkBodyCompatibility } from "./body/bodyCompatibility.js";
+import { checkConsumerContract } from "./consumer/consumerContract.js";
+import { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
+import { checkContractAgreement } from "./contract/contractAgreement.js";
+import { checkContractConsistency } from "./contract/contractConsistency.js";
+import { checkProviderCoverage } from "./coverage/providerCoverage.js";
 import { dedupeFindings } from "./dedupe.js";
-import { pairGraphqlOperations } from "./graphqlPairing.js";
-import { pairSummaries } from "./pairing.js";
-import { checkProviderCoverage } from "./providerCoverage.js";
-import { checkSemanticBridging } from "./semanticBridging.js";
+import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
+import { pairSummaries } from "./pairing/pairing.js";
+import { checkSemanticBridging } from "./pairing/semanticBridging.js";
+import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 
 import type {
   BehavioralSummary,
@@ -39,28 +39,28 @@ function describeBinding(binding: BoundaryBinding): string {
   return `${sem.name}:${binding.recognition}`;
 }
 
-export { checkBodyCompatibility } from "./bodyCompatibility.js";
-export { bodyShapesMatch } from "./bodyMatch.js";
-export { checkComponentStoryAgreement } from "./componentStoryAgreement.js";
-export { checkConsumerContract } from "./consumerContract.js";
-export { checkConsumerSatisfaction } from "./consumerSatisfaction.js";
-export { checkContractAgreement } from "./contractAgreement.js";
-export { checkContractConsistency } from "./contractConsistency.js";
+export { checkBodyCompatibility } from "./body/bodyCompatibility.js";
+export { bodyShapesMatch } from "./body/bodyMatch.js";
+export { checkConsumerContract } from "./consumer/consumerContract.js";
+export { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
+export { checkContractAgreement } from "./contract/contractAgreement.js";
+export { checkContractConsistency } from "./contract/contractConsistency.js";
+export { checkProviderCoverage } from "./coverage/providerCoverage.js";
 export { dedupeFindings } from "./dedupe.js";
+export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
 export {
   type GraphqlPairingResult,
   pairGraphqlOperations,
-} from "./graphqlPairing.js";
-export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
+} from "./pairing/graphqlPairing.js";
 export {
   boundaryKey,
   normalizePath,
   type PairingResult,
   pairSummaries,
   type SummaryPair,
-} from "./pairing.js";
-export { checkProviderCoverage } from "./providerCoverage.js";
-export { checkSemanticBridging } from "./semanticBridging.js";
+} from "./pairing/pairing.js";
+export { checkSemanticBridging } from "./pairing/semanticBridging.js";
+export { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 export {
   applySuppressions,
   countsForThreshold,

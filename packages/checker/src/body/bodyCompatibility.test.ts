@@ -6,7 +6,7 @@ import {
   response,
   statusEq,
   transition,
-} from "./__fixtures__/pairs.js";
+} from "../__fixtures__/pairs.js";
 import { checkBodyCompatibility } from "./bodyCompatibility.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";

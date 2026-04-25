@@ -6,7 +6,7 @@ import {
   response,
   statusEq,
   transition,
-} from "./__fixtures__/pairs.js";
+} from "../__fixtures__/pairs.js";
 import { checkSemanticBridging } from "./semanticBridging.js";
 
 import type { Predicate, TypeShape, ValueRef } from "@suss/behavioral-ir";

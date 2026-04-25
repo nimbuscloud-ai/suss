@@ -5,20 +5,23 @@
 // by status code and compare the provider's output body against the
 // consumer's expected shape.
 
-import { bodyAccessorsFor, statusAccessorsFor } from "./declaredContract.js";
+import {
+  bodyAccessorsFor,
+  statusAccessorsFor,
+} from "../contract/declaredContract.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
   makeBoundary,
   makeSide,
-} from "./responseMatch.js";
+} from "../coverage/responseMatch.js";
 
 import type {
   BehavioralSummary,
   Finding,
   TypeShape,
 } from "@suss/behavioral-ir";
-import type { MatchResult } from "./match.js";
+import type { MatchResult } from "../match.js";
 
 // ---------------------------------------------------------------------------
 // Field-presence comparison

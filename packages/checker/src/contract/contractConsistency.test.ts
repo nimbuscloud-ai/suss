@@ -9,7 +9,7 @@ import {
   unhandledCaseGap,
   withContract,
   withContractBodies,
-} from "./__fixtures__/pairs.js";
+} from "../__fixtures__/pairs.js";
 import { checkContractConsistency } from "./contractConsistency.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
