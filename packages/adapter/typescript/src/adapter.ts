@@ -42,7 +42,11 @@ import {
   readTsconfigFileList,
 } from "./bootstrap/lazyProjectInit.js";
 import { computePackApplicability } from "./bootstrap/preFilter.js";
-import { type CacheLayer, createCacheLayer } from "./cache.js";
+import {
+  type CacheDiagnostic,
+  type CacheLayer,
+  createCacheLayer,
+} from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery/index.js";
 import { expandReachableClosure } from "./resolve/reachableClosure.js";
@@ -1187,6 +1191,14 @@ export interface TypeScriptAdapterConfig {
    */
   onTiming?: (report: TimingReport) => void;
   /**
+   * Called once per extract with the cache hit/miss decision and the
+   * partial-reuse diagnostic — counts of cached summaries that fine-
+   * grained invalidation would have salvaged on a coarse miss.
+   * Phase 4a uses this to validate the dep-tracking model before
+   * activating partial-reuse.
+   */
+  onCacheDiagnostic?: (diagnostic: CacheDiagnostic) => void;
+  /**
    * On-disk cache directory for the coarse-key extraction cache.
    * Pass an absolute path; defaults to `.suss/cache/` next to the
    * tsconfig (or under cwd when no tsconfig path is supplied).
@@ -1335,9 +1347,13 @@ export function createTypeScriptAdapter(
                 ? { tsconfigPath: config.tsConfigFilePath }
                 : {}),
             };
-      const cached = await timer.timeAsync("cache.tryHit", () =>
-        cache.tryHit(cacheInput),
+      const { summaries: cached, diagnostic } = await timer.timeAsync(
+        "cache.tryHit",
+        () => cache.tryHitWithDiagnostic(cacheInput),
       );
+      if (config.onCacheDiagnostic !== undefined) {
+        config.onCacheDiagnostic(diagnostic);
+      }
       if (cached !== null) {
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());

@@ -102,6 +102,9 @@ export async function extract(
   // under the noise floor of a real extraction.
   let timingReport: import("@suss/adapter-typescript").TimingReport | null =
     null;
+  let cacheDiagnostic:
+    | import("@suss/adapter-typescript").CacheDiagnostic
+    | null = null;
 
   // Create adapter
   const adapter = createTypeScriptAdapter({
@@ -111,6 +114,9 @@ export async function extract(
     ...(options.noCache === true ? { cacheDir: null } : {}),
     onTiming: (report) => {
       timingReport = report;
+    },
+    onCacheDiagnostic: (diag) => {
+      cacheDiagnostic = diag;
     },
   });
 
@@ -146,8 +152,36 @@ export async function extract(
   if (options.timing === true && timingReport !== null) {
     process.stderr.write(formatTimingBreakdown(timingReport));
   }
+  if (options.timing === true && cacheDiagnostic !== null) {
+    process.stderr.write(formatCacheDiagnostic(cacheDiagnostic));
+  }
 
   return summaries;
+}
+
+/**
+ * One-line cache diagnostic emitted under `--timing`. Phase 4a only
+ * surfaces the partial-reuse counts; phase 4b will turn the would-have
+ * numbers into actual reuse.
+ */
+export function formatCacheDiagnostic(
+  diag: import("@suss/adapter-typescript").CacheDiagnostic,
+): string {
+  if (diag.kind === "hit") {
+    return "  cache: hit (returned all summaries from manifest)\n";
+  }
+  if (diag.partial !== undefined) {
+    const p = diag.partial;
+    const churn = [
+      p.changedFiles > 0 ? `${p.changedFiles} changed` : null,
+      p.addedFiles > 0 ? `${p.addedFiles} added` : null,
+      p.removedFiles > 0 ? `${p.removedFiles} removed` : null,
+    ]
+      .filter((s): s is string => s !== null)
+      .join(", ");
+    return `  cache: miss (${diag.missReason}; ${churn}) — would reuse ${p.wouldReuse} / invalidate ${p.wouldInvalidate} with fine-grained deps\n`;
+  }
+  return `  cache: miss (${diag.missReason ?? "unknown"})\n`;
 }
 
 function formatTimingTotal(
