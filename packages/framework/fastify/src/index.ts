@@ -90,6 +90,21 @@ export function fastifyFramework(): PatternPack {
         match: { type: "throwExpression" },
         extraction: {},
       },
+      {
+        // `return user`, `return { id, name }`, `return await db.find(id)` —
+        // Fastify serialises the returned value as a 200 response body.
+        // `excludeCallReturns: true` keeps `return reply.send(...)` out
+        // of this branch — that call already lands as a parameterMethodCall
+        // terminal above, and matching it here would double-fire.
+        kind: "response",
+        match: {
+          type: "returnStatement",
+          excludeCallReturns: true,
+        },
+        extraction: {
+          defaultStatusCode: 200,
+        },
+      },
     ],
 
     inputMapping: {
