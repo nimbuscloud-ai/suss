@@ -1223,13 +1223,6 @@ export function createTypeScriptAdapter(
         : { skipAddingFilesFromTsConfig: true },
     );
 
-  // Set on first extractAll, used by closure / rethrow passes to
-  // decide which absent files are eligible for lazy add (only
-  // those declared in the tsconfig include set, never node_modules
-  // we didn't ask about). Reserved for the closure-side lazy add
-  // pass; the bootstrap below populates it when the lazy path
-  // runs, even though the closure isn't yet consulting it.
-  let _projectFileSet: ReadonlySet<string> | null = null;
   let lazyBootstrapped = false;
 
   // Resolve the cache directory:
@@ -1347,7 +1340,6 @@ export function createTypeScriptAdapter(
           // for downstream consumers.
           project.addSourceFileAtPath(sf.getFilePath());
         }
-        _projectFileSet = lazy.projectFileSet;
         lazyBootstrapped = true;
       }
 
