@@ -98,6 +98,7 @@ async function runExtract(args: string[]): Promise<number> {
       output: { type: "string", short: "o" },
       gaps: { type: "string" },
       files: { type: "string", multiple: true },
+      timing: { type: "boolean" },
     },
     allowPositionals: true,
   });
@@ -144,6 +145,7 @@ async function runExtract(args: string[]): Promise<number> {
     ...(files !== undefined ? { files } : {}),
     ...(values.output !== undefined ? { output: values.output } : {}),
     ...(gaps !== undefined ? { gaps } : {}),
+    ...(values.timing === true ? { timing: true } : {}),
   });
   return 0;
 }

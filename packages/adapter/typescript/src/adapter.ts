@@ -41,6 +41,7 @@ import { collectClientFieldAccesses } from "./field-accesses.js";
 import { expandReachableClosure } from "./reachable-closure.js";
 import { enrichRethrows } from "./rethrow-enrichment.js";
 import { createTsSubUnitContext } from "./sub-unit-context.js";
+import { createTimer, type TimingReport } from "./timing.js";
 
 import type {
   BehavioralSummary,
@@ -1158,6 +1159,15 @@ export interface TypeScriptAdapterConfig {
    * units packs explicitly claim).
    */
   includeReachable?: boolean;
+  /**
+   * Called once at the end of each `extractAll` / `extractFromFiles`
+   * with the wall-clock breakdown of the major extraction phases.
+   * Always-on instrumentation cost is negligible (millisecond-scale
+   * `performance.now()` calls); the callback is the opt-in for
+   * surfacing it. CLI uses this to render the per-extract summary
+   * line and the `--timing` breakdown.
+   */
+  onTiming?: (report: TimingReport) => void;
 }
 
 export interface TypeScriptAdapter {
@@ -1201,31 +1211,39 @@ export function createTypeScriptAdapter(
     },
 
     extractAll(): BehavioralSummary[] {
+      const timer = createTimer();
       const summaries: BehavioralSummary[] = [];
 
-      for (const sourceFile of project.getSourceFiles()) {
-        if (sourceFile.isDeclarationFile()) {
-          continue;
-        }
-        summaries.push(
-          ...extractFromSourceFile(
-            sourceFile,
-            config.frameworks,
-            config.extractorOptions,
-          ),
-        );
-      }
-
-      const withWrappers = expandWrapperCallers(
-        summaries,
-        project,
-        config.extractorOptions,
+      // One project enumeration, reused across phases. `getSourceFiles`
+      // walks the directory tree internally — calling it per-phase
+      // (and per-summary in the locate paths) is the dominant cost
+      // on large monorepos.
+      const sourceFiles = timer.time("project.getSourceFiles", () =>
+        project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
       );
-      const withSubUnits = synthesizeSubUnits(
-        withWrappers,
-        project,
-        config.frameworks,
-        config.extractorOptions,
+
+      timer.time("extract per-file", () => {
+        for (const sourceFile of sourceFiles) {
+          summaries.push(
+            ...extractFromSourceFile(
+              sourceFile,
+              config.frameworks,
+              config.extractorOptions,
+            ),
+          );
+        }
+      });
+
+      const withWrappers = timer.time("expandWrapperCallers", () =>
+        expandWrapperCallers(summaries, project, config.extractorOptions),
+      );
+      const withSubUnits = timer.time("synthesizeSubUnits", () =>
+        synthesizeSubUnits(
+          withWrappers,
+          project,
+          config.frameworks,
+          config.extractorOptions,
+        ),
       );
       // Transitive-closure pass: every function reachable through a static
       // call edge from an already-summarized unit becomes a `library`
@@ -1233,10 +1251,12 @@ export function createTypeScriptAdapter(
       // can opt out for pack-only extraction.
       const withClosure =
         config.includeReachable !== false
-          ? expandReachableClosure(
-              withSubUnits,
-              project,
-              config.extractorOptions,
+          ? timer.time("expandReachableClosure", () =>
+              expandReachableClosure(
+                withSubUnits,
+                project,
+                config.extractorOptions,
+              ),
             )
           : withSubUnits;
 
@@ -1246,7 +1266,15 @@ export function createTypeScriptAdapter(
       // read off those callees' summaries. Runs last so every callee's
       // throw terminals (including reachable-closure ones) are available
       // to consult.
-      return enrichRethrows(withClosure, project);
+      const enriched = timer.time("enrichRethrows", () =>
+        enrichRethrows(withClosure, project),
+      );
+
+      if (config.onTiming !== undefined) {
+        config.onTiming(timer.report());
+      }
+
+      return enriched;
     },
   };
 }

@@ -26,3 +26,4 @@ export type {
   TsSubUnitContext,
 } from "./sub-unit-context.js";
 export type { FoundTerminal } from "./terminals.js";
+export type { Timer, TimingReport } from "./timing.js";

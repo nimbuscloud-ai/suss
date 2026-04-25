@@ -26,6 +26,7 @@ import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 
 import { extractCodeStructure } from "./adapter.js";
 import { type DiscoveredUnit, toFunctionRoot } from "./discovery.js";
+import { createSourceFileLookup } from "./source-file-lookup.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
@@ -69,35 +70,30 @@ function nodeKey(func: FunctionRoot): string {
 
 function locateFunctionBySummary(
   summary: BehavioralSummary,
-  project: Project,
+  lookup: ReturnType<typeof createSourceFileLookup>,
 ): FunctionRoot | null {
-  const target = summary.location.file;
-  for (const sf of project.getSourceFiles()) {
-    if (!sf.getFilePath().endsWith(target)) {
-      continue;
-    }
-    let found: FunctionRoot | null = null;
-    sf.forEachDescendant((node, traversal) => {
-      if (found !== null) {
-        traversal.stop();
-        return;
-      }
-      if (
-        (Node.isFunctionDeclaration(node) ||
-          Node.isFunctionExpression(node) ||
-          Node.isArrowFunction(node) ||
-          Node.isMethodDeclaration(node)) &&
-        node.getStartLineNumber() === summary.location.range.start &&
-        node.getEndLineNumber() === summary.location.range.end
-      ) {
-        found = node as FunctionRoot;
-      }
-    });
-    if (found !== null) {
-      return found;
-    }
+  const sf = lookup.bySuffix(summary.location.file);
+  if (sf === null) {
+    return null;
   }
-  return null;
+  let found: FunctionRoot | null = null;
+  sf.forEachDescendant((node, traversal) => {
+    if (found !== null) {
+      traversal.stop();
+      return;
+    }
+    if (
+      (Node.isFunctionDeclaration(node) ||
+        Node.isFunctionExpression(node) ||
+        Node.isArrowFunction(node) ||
+        Node.isMethodDeclaration(node)) &&
+      node.getStartLineNumber() === summary.location.range.start &&
+      node.getEndLineNumber() === summary.location.range.end
+    ) {
+      found = node as FunctionRoot;
+    }
+  });
+  return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -322,10 +318,16 @@ export function expandReachableClosure(
   const covered = new Set<string>();
   const worklist: FunctionRoot[] = [];
 
+  // One source-file enumeration shared across every seed locate.
+  // Without this, each `locateFunctionBySummary` was re-scanning the
+  // project's full file list — N seeds × M source files of redundant
+  // walk work.
+  const lookup = createSourceFileLookup(project);
+
   // Seed the covered set with every already-summarized function so the
   // closure doesn't re-emit pack units as library duplicates.
   for (const seed of seeds) {
-    const func = locateFunctionBySummary(seed, project);
+    const func = locateFunctionBySummary(seed, lookup);
     if (func !== null) {
       covered.add(nodeKey(func));
       worklist.push(func);

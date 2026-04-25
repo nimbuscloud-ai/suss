@@ -28,6 +28,8 @@
 
 import { Node, type Project } from "ts-morph";
 
+import { createSourceFileLookup } from "./source-file-lookup.js";
+
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";
 
@@ -51,8 +53,20 @@ export function enrichRethrows(
   // location against this index to look up the matching summary.
   const index = indexSummariesByFunctionLocation(summaries);
 
+  // Build the source-file lookup once. Without this, every summary's
+  // locate-by-file path scans the project's full file list — turning
+  // the pass into O(summaries × source files) just for the lookup.
+  const lookup = createSourceFileLookup(project);
+
   for (const summary of summaries) {
-    const func = locateFunctionForSummary(summary, project);
+    // Re-throws live inside catch blocks, which bare-throw an
+    // identifier — only summaries with a `throw` transition can
+    // host one. Skipping the rest cuts the per-summary locate cost
+    // for a 10× majority of summaries that have nothing to enrich.
+    if (!summary.transitions.some((t) => t.output.type === "throw")) {
+      continue;
+    }
+    const func = locateFunctionForSummary(summary, lookup);
     if (func === null) {
       continue;
     }
@@ -118,35 +132,30 @@ function indexSummariesByFunctionLocation(
 
 function locateFunctionForSummary(
   summary: BehavioralSummary,
-  project: Project,
+  lookup: ReturnType<typeof createSourceFileLookup>,
 ): FunctionRoot | null {
-  const target = summary.location.file;
-  for (const sf of project.getSourceFiles()) {
-    if (!sf.getFilePath().endsWith(target)) {
-      continue;
-    }
-    let found: FunctionRoot | null = null;
-    sf.forEachDescendant((node, traversal) => {
-      if (found !== null) {
-        traversal.stop();
-        return;
-      }
-      if (
-        (Node.isFunctionDeclaration(node) ||
-          Node.isFunctionExpression(node) ||
-          Node.isArrowFunction(node) ||
-          Node.isMethodDeclaration(node)) &&
-        node.getStartLineNumber() === summary.location.range.start &&
-        node.getEndLineNumber() === summary.location.range.end
-      ) {
-        found = node as FunctionRoot;
-      }
-    });
-    if (found !== null) {
-      return found;
-    }
+  const sf = lookup.bySuffix(summary.location.file);
+  if (sf === null) {
+    return null;
   }
-  return null;
+  let found: FunctionRoot | null = null;
+  sf.forEachDescendant((node, traversal) => {
+    if (found !== null) {
+      traversal.stop();
+      return;
+    }
+    if (
+      (Node.isFunctionDeclaration(node) ||
+        Node.isFunctionExpression(node) ||
+        Node.isArrowFunction(node) ||
+        Node.isMethodDeclaration(node)) &&
+      node.getStartLineNumber() === summary.location.range.start &&
+      node.getEndLineNumber() === summary.location.range.end
+    ) {
+      found = node as FunctionRoot;
+    }
+  });
+  return found;
 }
 
 // ---------------------------------------------------------------------------

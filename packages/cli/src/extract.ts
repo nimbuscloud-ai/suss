@@ -66,6 +66,8 @@ export interface ExtractOptions {
   files?: string[];
   output?: string;
   gaps?: "strict" | "permissive" | "silent";
+  /** Print the per-phase wall-clock breakdown to stderr. */
+  timing?: boolean;
 }
 
 export async function extract(
@@ -88,11 +90,21 @@ export async function extract(
   const extractorOptions =
     options.gaps !== undefined ? { gapHandling: options.gaps } : undefined;
 
+  // Wall-clock breakdown of the extract pipeline. `--timing` swaps the
+  // one-line summary for the per-phase view. The cost of always-on
+  // instrumentation is one `performance.now()` per phase entry — well
+  // under the noise floor of a real extraction.
+  let timingReport: import("@suss/adapter-typescript").TimingReport | null =
+    null;
+
   // Create adapter
   const adapter = createTypeScriptAdapter({
     tsConfigFilePath: tsconfigPath,
     frameworks: packs,
     ...(extractorOptions !== undefined ? { extractorOptions } : {}),
+    onTiming: (report) => {
+      timingReport = report;
+    },
   });
 
   // Extract
@@ -115,10 +127,47 @@ export async function extract(
     const outPath = path.resolve(options.output);
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, `${json}\n`);
-    process.stderr.write(`Wrote ${summaries.length} summaries to ${outPath}\n`);
+    process.stderr.write(
+      `Wrote ${summaries.length} summaries to ${outPath}${formatTimingTotal(timingReport)}\n`,
+    );
   } else {
     process.stdout.write(`${json}\n`);
   }
 
+  if (options.timing === true && timingReport !== null) {
+    process.stderr.write(formatTimingBreakdown(timingReport));
+  }
+
   return summaries;
+}
+
+function formatTimingTotal(
+  report: import("@suss/adapter-typescript").TimingReport | null,
+): string {
+  if (report === null) {
+    return "";
+  }
+  return ` in ${(report.totalMs / 1000).toFixed(2)}s`;
+}
+
+/**
+ * Per-phase breakdown emitted under `--timing`. Sorted by wall time
+ * descending (the timer's natural order). Indented under the
+ * `Timing:` header so it reads as a sub-block of the extract
+ * acknowledgment line.
+ */
+function formatTimingBreakdown(
+  report: import("@suss/adapter-typescript").TimingReport,
+): string {
+  const lines: string[] = ["Timing:"];
+  for (const phase of report.phases) {
+    const ms = phase.durationMs.toFixed(0).padStart(6);
+    const pct = ((phase.durationMs / report.totalMs) * 100)
+      .toFixed(1)
+      .padStart(5);
+    const calls = phase.calls > 1 ? ` (${phase.calls} calls)` : "";
+    lines.push(`  ${ms}ms  ${pct}%  ${phase.label}${calls}`);
+  }
+  lines.push(`  ${report.totalMs.toFixed(0).padStart(6)}ms  100.0%  total`);
+  return `${lines.join("\n")}\n`;
 }
