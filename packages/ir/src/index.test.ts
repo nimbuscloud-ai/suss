@@ -15,6 +15,7 @@ import {
   parseSummaries,
   parseSummary,
   restBinding,
+  runtimeConfigBinding,
   safeParseSummaries,
   safeParseSummary,
   type Transition,
@@ -557,6 +558,23 @@ describe("binding constructors", () => {
       name: "graphql-operation",
       operationType: "query",
       operationName: "GetUser",
+    });
+  });
+
+  it("runtimeConfigBinding records deploymentTarget + instanceName under transport=os", () => {
+    const b = runtimeConfigBinding({
+      recognition: "cloudformation",
+      deploymentTarget: "lambda",
+      instanceName: "MyFunction",
+    });
+    expect(b).toEqual({
+      transport: "os",
+      semantics: {
+        name: "runtime-config",
+        deploymentTarget: "lambda",
+        instanceName: "MyFunction",
+      },
+      recognition: "cloudformation",
     });
   });
 });

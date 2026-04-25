@@ -4,6 +4,19 @@ Plan for the env-var checking capability. PR-time gate; OSS scope only
 (audit / cross-repo features stay product-side per
 [OSS vs product scope](https://github.com/.../oss-product-split)).
 
+## Why this is in scope (not a tangent)
+
+Suss describes "every execution path" of code without running it. Env
+var reads gate execution paths in the same way conditional inputs do:
+`if (process.env.FEATURE_FLAG === "on")` decides which branch runs;
+`fetch(process.env.API_URL)` decides which downstream the call hits;
+a missing var resolves to `undefined`, which silently flips truthy
+checks, changes comparisons, malforms URLs, or throws. The runtime-
+config contract is an **input** to the execution-path graph suss
+already models. Verifying the contract against what the runtime
+actually provides keeps the simulacrum honest — without it, the path
+suss thinks the program takes can diverge from what production sees.
+
 ## Boundary framing
 
 The boundary is the **runtime configuration channel of a deployable

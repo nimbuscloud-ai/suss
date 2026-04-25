@@ -8,6 +8,7 @@ import { dedupeFindings } from "./dedupe.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
+import { checkRuntimeConfig } from "./runtimeConfig/runtimeConfigPairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 
 import type {
@@ -60,6 +61,7 @@ export {
   type SummaryPair,
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
+export { checkRuntimeConfig } from "./runtimeConfig/runtimeConfigPairing.js";
 export { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 export {
   applySuppressions,
@@ -161,6 +163,13 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // declared views of the same boundary" shape, just with a
   // different payload (args vs declaredContract).
   findings.push(...checkComponentStoryAgreement(summaries));
+
+  // Runtime-config pairing: cross-source check between
+  // infrastructure-stub providers (CFN/SAM Lambda env-var
+  // declarations) and code reads of process.env.X. Same shape as the
+  // Storybook check — provider declares a contract surface, the
+  // checker pairs it against in-scope consumers.
+  findings.push(...checkRuntimeConfig(summaries));
 
   return {
     findings: dedupeFindings(findings),
