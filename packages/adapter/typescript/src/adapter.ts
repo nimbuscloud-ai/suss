@@ -2,6 +2,8 @@
 //
 // Wires together: discovery → extractCodeStructure → readContract → assembleSummary
 
+import path from "node:path";
+
 import {
   type CallExpression,
   type Identifier,
@@ -35,6 +37,7 @@ import {
 } from "@suss/extractor";
 
 import { extractRawBranches } from "./assembly.js";
+import { type CacheLayer, createCacheLayer } from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
 import { collectClientFieldAccesses } from "./field-accesses.js";
@@ -42,6 +45,7 @@ import { expandReachableClosure } from "./reachable-closure.js";
 import { enrichRethrows } from "./rethrow-enrichment.js";
 import { createTsSubUnitContext } from "./sub-unit-context.js";
 import { createTimer, type TimingReport } from "./timing.js";
+import { computeAdapterPacksDigest } from "./version.js";
 
 import type {
   BehavioralSummary,
@@ -1168,6 +1172,16 @@ export interface TypeScriptAdapterConfig {
    * line and the `--timing` breakdown.
    */
   onTiming?: (report: TimingReport) => void;
+  /**
+   * On-disk cache directory for the coarse-key extraction cache.
+   * Pass an absolute path; defaults to `.suss/cache/` next to the
+   * tsconfig (or under cwd when no tsconfig path is supplied).
+   * Pass `null` to disable caching entirely. The cache stores one
+   * `manifest.json` keyed against (adapter version, pack versions,
+   * sorted file mtime/size stamps); on a warm run with no changes
+   * the lookup is stat-only and skips extraction.
+   */
+  cacheDir?: string | null;
 }
 
 export interface TypeScriptAdapter {
@@ -1194,6 +1208,31 @@ export function createTypeScriptAdapter(
         : { skipAddingFilesFromTsConfig: true },
     );
 
+  // Resolve the cache directory:
+  //   - explicit `null` opts out
+  //   - explicit string is used verbatim
+  //   - default: `.suss/cache/` next to the tsconfig WHEN a
+  //     `tsConfigFilePath` was supplied. Callers that hand in a
+  //     pre-built `project` (programmatic / in-memory / test
+  //     fixtures) get no disk cache by default — the manifest
+  //     would have nowhere meaningful to live and the stat
+  //     check against in-memory paths would always miss.
+  const cacheDir =
+    config.cacheDir === null
+      ? null
+      : (config.cacheDir ??
+        (config.tsConfigFilePath !== undefined
+          ? path.join(path.dirname(config.tsConfigFilePath), ".suss", "cache")
+          : null));
+  const cache: CacheLayer = createCacheLayer(cacheDir);
+  const adapterPacksDigest = computeAdapterPacksDigest(
+    config.frameworks.map((p) =>
+      p.version !== undefined
+        ? { name: p.name, version: p.version }
+        : { name: p.name },
+    ),
+  );
+
   return {
     project,
 
@@ -1219,6 +1258,28 @@ export function createTypeScriptAdapter(
 
     async extractAll(): Promise<BehavioralSummary[]> {
       const timer = createTimer();
+
+      // Coarse-key cache check first. On a warm run with no
+      // changes this returns the previous extraction's summaries
+      // verbatim after one stat per source file — no AST work,
+      // no extraction, sub-100ms on monorepo-scale projects.
+      const cacheInput = {
+        project,
+        adapterPacksDigest,
+        ...(config.tsConfigFilePath !== undefined
+          ? { tsconfigPath: config.tsConfigFilePath }
+          : {}),
+      };
+      const cached = await timer.timeAsync("cache.tryHit", () =>
+        cache.tryHit(cacheInput),
+      );
+      if (cached !== null) {
+        if (config.onTiming !== undefined) {
+          config.onTiming(timer.report());
+        }
+        return cached;
+      }
+
       const summaries: BehavioralSummary[] = [];
 
       // One project enumeration, reused across phases. `getSourceFiles`
@@ -1276,6 +1337,18 @@ export function createTypeScriptAdapter(
       const enriched = timer.time("enrichRethrows", () =>
         enrichRethrows(withClosure, project),
       );
+
+      // Persist to the coarse-key cache so subsequent runs with
+      // identical Project state can short-circuit. Errors during
+      // write are swallowed — a failed cache write shouldn't
+      // fail the extract.
+      await timer.timeAsync("cache.write", async () => {
+        try {
+          await cache.write(cacheInput, enriched);
+        } catch {
+          // intentionally silent
+        }
+      });
 
       if (config.onTiming !== undefined) {
         config.onTiming(timer.report());

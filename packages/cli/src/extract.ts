@@ -68,6 +68,12 @@ export interface ExtractOptions {
   gaps?: "strict" | "permissive" | "silent";
   /** Print the per-phase wall-clock breakdown to stderr. */
   timing?: boolean;
+  /**
+   * Skip the on-disk extraction cache for this run. Mostly useful
+   * for debugging when cache invalidation isn't keeping up with
+   * intentional changes — normal runs benefit from the cache.
+   */
+  noCache?: boolean;
 }
 
 export async function extract(
@@ -102,6 +108,7 @@ export async function extract(
     tsConfigFilePath: tsconfigPath,
     frameworks: packs,
     ...(extractorOptions !== undefined ? { extractorOptions } : {}),
+    ...(options.noCache === true ? { cacheDir: null } : {}),
     onTiming: (report) => {
       timingReport = report;
     },
