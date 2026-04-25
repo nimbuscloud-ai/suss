@@ -6,17 +6,17 @@
 // depends on an implementation detail the provider can remove without
 // violating its contract.
 
-import { providerCoversConsumerFields } from "./bodyCompatibility.js";
+import { providerCoversConsumerFields } from "../body/bodyCompatibility.js";
 import {
   bodyAccessorsFor,
   readDeclaredContract,
   statusAccessorsFor,
-} from "./declaredContract.js";
+} from "../contract/declaredContract.js";
 import {
   consumerExpectedStatuses,
   makeBoundary,
   makeSide,
-} from "./responseMatch.js";
+} from "../coverage/responseMatch.js";
 
 import type {
   BehavioralSummary,

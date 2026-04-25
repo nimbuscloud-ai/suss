@@ -7,7 +7,7 @@ import {
   response,
   statusEq,
   transition,
-} from "./__fixtures__/pairs.js";
+} from "../__fixtures__/pairs.js";
 import { checkConsumerSatisfaction } from "./consumerSatisfaction.js";
 
 import type { Predicate } from "@suss/behavioral-ir";

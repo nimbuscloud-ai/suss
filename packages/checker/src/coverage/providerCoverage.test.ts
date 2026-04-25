@@ -7,7 +7,7 @@ import {
   response,
   statusEq,
   transition,
-} from "./__fixtures__/pairs.js";
+} from "../__fixtures__/pairs.js";
 import { checkProviderCoverage } from "./providerCoverage.js";
 
 import type { Predicate } from "@suss/behavioral-ir";

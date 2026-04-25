@@ -1,14 +1,14 @@
-import { bodyShapesMatch } from "./bodyMatch.js";
-import {
-  readDeclaredContract,
-  statusAccessorsFor,
-} from "./declaredContract.js";
+import { bodyShapesMatch } from "../body/bodyMatch.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
   makeBoundary,
   makeSide,
-} from "./responseMatch.js";
+} from "../coverage/responseMatch.js";
+import {
+  readDeclaredContract,
+  statusAccessorsFor,
+} from "./declaredContract.js";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 

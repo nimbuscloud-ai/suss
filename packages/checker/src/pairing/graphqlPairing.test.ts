@@ -5,8 +5,8 @@ import {
   graphqlResolverBinding,
 } from "@suss/behavioral-ir";
 
+import { checkAll } from "../index.js";
 import { pairGraphqlOperations } from "./graphqlPairing.js";
-import { checkAll } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 

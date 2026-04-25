@@ -15,7 +15,7 @@
 
 import { z } from "zod";
 
-import { boundaryKey, normalizePath } from "./pairing.js";
+import { boundaryKey, normalizePath } from "./pairing/pairing.js";
 
 import type { Finding, FindingSeverity } from "@suss/behavioral-ir";
 

@@ -1,5 +1,5 @@
 import type { TypeShape } from "@suss/behavioral-ir";
-import type { MatchResult } from "./match.js";
+import type { MatchResult } from "../match.js";
 
 /**
  * Compare an actual body shape against a declared body shape and report

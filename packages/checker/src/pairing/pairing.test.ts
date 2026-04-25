@@ -11,7 +11,7 @@ import {
   provider,
   response,
   transition,
-} from "./__fixtures__/pairs.js";
+} from "../__fixtures__/pairs.js";
 import { boundaryKey, normalizePath, pairSummaries } from "./pairing.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";

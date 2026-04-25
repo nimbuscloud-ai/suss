@@ -8,13 +8,13 @@
 // tests for the distinguishing value, the consumer collapses behaviorally
 // distinct cases.
 
-import { statusAccessorsFor } from "./declaredContract.js";
+import { statusAccessorsFor } from "../contract/declaredContract.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
   makeBoundary,
   makeSide,
-} from "./responseMatch.js";
+} from "../coverage/responseMatch.js";
 
 import type {
   BehavioralSummary,

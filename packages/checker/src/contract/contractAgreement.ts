@@ -15,10 +15,10 @@
 // Emits `contractDisagreement` findings. No IR or checker change is
 // required for Layer 1; this is additive.
 
-import { bodyShapesMatch } from "./bodyMatch.js";
+import { bodyShapesMatch } from "../body/bodyMatch.js";
+import { makeSide } from "../coverage/responseMatch.js";
+import { boundaryKey } from "../pairing/pairing.js";
 import { readDeclaredContract } from "./declaredContract.js";
-import { boundaryKey } from "./pairing.js";
-import { makeSide } from "./responseMatch.js";
 
 import type {
   BehavioralSummary,
