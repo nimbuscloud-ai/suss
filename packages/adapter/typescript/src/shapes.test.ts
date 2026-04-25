@@ -589,6 +589,18 @@ describe("extractShape", () => {
       }
     });
 
+    it("recursive union (JSON-like alias) terminates without stack overflow", () => {
+      // Reproduction of the Twenty extract failure: a recursive type alias
+      // that goes union → array → union without an object boundary in the
+      // cycle. The depth+seen guards in typeToShape must bottom out.
+      const expr = parseExpressionWithPrelude(
+        "type Json = string | number | boolean | null | Json[] | { [k: string]: Json };\ndeclare const j: Json;",
+        "j",
+      );
+      const shape = extractShape(expr);
+      expect(shape).not.toBeNull();
+    });
+
     it("opaque named types (Date, Promise) surface as refs, not records", () => {
       const expr = parseExpressionWithPrelude(
         "declare const createdAt: Date;",

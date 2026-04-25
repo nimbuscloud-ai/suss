@@ -151,14 +151,31 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
     return { type: "ref", name: "bigint" };
   }
 
+  // Past this point every branch may recurse into typeToShape. The original
+  // MAX_DEPTH guard lived only inside objectToShape, so cycles that go through
+  // unions or arrays — e.g. `type Json = string | number | Json[] | { [k: string]: Json }`
+  // — bypassed it and blew the stack. Gate every compound expansion centrally.
+  if (ctx.depth >= MAX_DEPTH) {
+    return refFromType(type, ctx);
+  }
+
+  // Cycle: a compound type already on the current expansion path collapses to
+  // a ref instead of recursing. objectToShape already records itself; doing
+  // the same for unions and intersections lets recursive aliases short-circuit
+  // before depth runs out.
+  const compoundKey = typeKey(type, ctx.enclosing);
+  if ((type.isUnion() || type.isIntersection()) && ctx.seen.has(compoundKey)) {
+    return refFromType(type, ctx);
+  }
+
   if (type.isUnion()) {
-    return unionToShape(type, ctx);
+    return unionToShape(type, withSeen(ctx, compoundKey));
   }
 
   if (type.isIntersection()) {
     // Intersections narrow a type — for records we want the merged property
     // set, so expand each operand and merge resulting records.
-    return intersectionToShape(type, ctx);
+    return intersectionToShape(type, withSeen(ctx, compoundKey));
   }
 
   if (type.isArray() || type.isReadonlyArray()) {
@@ -436,6 +453,15 @@ function collapseVariants(shapes: TypeShape[]): TypeShape {
 
 function descend(ctx: ConvertContext): ConvertContext {
   return { ...ctx, depth: ctx.depth + 1 };
+}
+
+function withSeen(ctx: ConvertContext, key: string): ConvertContext {
+  if (ctx.seen.has(key)) {
+    return ctx;
+  }
+  const seen = new Set(ctx.seen);
+  seen.add(key);
+  return { ...ctx, seen };
 }
 
 function typeKey(type: Type, enclosing: Node): string {
