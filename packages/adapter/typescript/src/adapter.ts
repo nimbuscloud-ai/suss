@@ -44,7 +44,7 @@ import {
 import { computePackApplicability } from "./bootstrap/preFilter.js";
 import { type CacheLayer, createCacheLayer } from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
-import { type DiscoveredUnit, discoverUnits } from "./discovery.js";
+import { type DiscoveredUnit, discoverUnits } from "./discovery/index.js";
 import { expandReachableClosure } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
@@ -60,6 +60,15 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";
+
+// ---------------------------------------------------------------------------
+// Local helpers
+// ---------------------------------------------------------------------------
+
+/** Throws an Error with the given message; typed as `never` so it narrows. */
+const raise = (msg: string): never => {
+  throw new Error(msg);
+};
 
 // ---------------------------------------------------------------------------
 // Parameter extraction
@@ -1299,7 +1308,10 @@ export function createTypeScriptAdapter(
         config.project === undefined;
       const tsconfigFileList = lazyEligible
         ? timer.time("readTsconfigFileList", () =>
-            readTsconfigFileList(config.tsConfigFilePath!),
+            readTsconfigFileList(
+              config.tsConfigFilePath ??
+                raise("lazy bootstrap requires tsConfigFilePath"),
+            ),
           )
         : null;
 
@@ -1312,7 +1324,9 @@ export function createTypeScriptAdapter(
           ? {
               files: tsconfigFileList,
               adapterPacksDigest,
-              tsconfigPath: config.tsConfigFilePath!,
+              tsconfigPath:
+                config.tsConfigFilePath ??
+                raise("lazy bootstrap requires tsConfigFilePath"),
             }
           : {
               project,
@@ -1335,7 +1349,11 @@ export function createTypeScriptAdapter(
       // pipeline has the candidate set loaded.
       if (lazyEligible) {
         const lazy = await timer.timeAsync("lazyProjectInit", () =>
-          createLazyProject(config.tsConfigFilePath!, config.frameworks),
+          createLazyProject(
+            config.tsConfigFilePath ??
+              raise("lazy bootstrap requires tsConfigFilePath"),
+            config.frameworks,
+          ),
         );
         for (const sf of lazy.loadedFiles) {
           // addSourceFileAtPath is a no-op when the file is

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter, extractCodeStructure } from "./adapter.js";
 import { readContract } from "./contract.js";
-import { discoverUnits } from "./discovery.js";
+import { discoverUnits } from "./discovery/index.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";

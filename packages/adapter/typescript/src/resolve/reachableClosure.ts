@@ -26,7 +26,7 @@ import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 
 import { extractCodeStructure } from "../adapter.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
-import { type DiscoveredUnit, toFunctionRoot } from "../discovery.js";
+import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";

@@ -9,7 +9,7 @@ import { Project } from "ts-morph";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "./adapter.js";
-import { clearPackageExportsCache, discoverUnits } from "./discovery.js";
+import { clearPackageExportsCache, discoverUnits } from "./discovery/index.js";
 import { resolvePackageExports } from "./packageExports.js";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
