@@ -324,6 +324,46 @@ past. Short summaries are unaffected.
 | Top-level `!! <description>` | A gap — the declared contract says a status exists but no branch produces it, or a branch produces a status the contract doesn't declare. |
 | Trailing `!! undeclared` on an output | That output's status code isn't in the declared contract for this endpoint. |
 
+### Format stability
+
+`inspect` output is curated for human and AI reading, not for parsing.
+If you need to programmatically consume what suss extracted, read the
+summary JSON directly — `inspect` is a renderer over it, and the JSON
+is the canonical artifact. See [behavioral summary format](/behavioral-summary-format)
+for the JSON's own stability guarantees.
+
+Within v0, `inspect` commits to keeping these shapes intact across
+minor versions:
+
+- **Grouping by source file**, with each summary rendered under its
+  file's path header.
+- **Header line layout**: `<name>  (<recognition> <kind> | line N [| <metadata>])`.
+- **Branch tree keywords**: `if` / `elif` / `else`, with `-> ` prefixing
+  each output.
+- **Output prefixes**: `-> <status>`, `-> return`, `-> throw`, `-> render`,
+  `-> delegate`, `-> emit`, `-> void`.
+- **Effect prefix**: lines under an output begin with `+ ` for calls
+  and `+ + ` for cross-file references.
+- **Follow markers**: `→` after a callee name signals another summary
+  exists for it.
+- **`!!` annotations** for gaps and `undeclared` outputs.
+
+Free to change without warning:
+
+- Exact tree-decoration characters (`├─`, `└─`, `│`) — these are
+  cosmetic and may shift to align with other tools.
+- Whitespace, indentation widths, column alignment.
+- Predicate rendering style (operator precedence, parenthesization,
+  identifier truncation rules).
+- The exact `<metadata>` suffix on the header line, including which
+  fields appear and in what order.
+- Continuation marker text (`↳ <file> (cont.)`).
+- Trailing-whitespace behavior, line-wrap thresholds, color codes.
+
+If your tooling regexes any of the "free to change" items, expect it
+to break. If you find yourself reaching for parsing, reach for the
+summary JSON instead.
+
 ### Exit codes
 
 - `0` — rendered successfully.
