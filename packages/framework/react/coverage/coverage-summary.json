@@ -57,7 +57,7 @@
       "pct": 100
     }
   },
-  "src/sub-units.ts": {
+  "src/subUnits.ts": {
     "lines": {
       "total": 50,
       "covered": 48,

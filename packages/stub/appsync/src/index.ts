@@ -17,7 +17,7 @@ import YAML from "yaml";
 
 import { readAppSyncFromCfn } from "./cfn.js";
 import { parseSchema } from "./schema.js";
-import { buildResolverSummaries } from "./summary-builder.js";
+import { buildResolverSummaries } from "./summaryBuilder.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { CfnTemplate } from "./cfn.js";

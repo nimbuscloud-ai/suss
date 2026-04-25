@@ -1,14 +1,14 @@
-import { checkBodyCompatibility } from "./body-compatibility.js";
-import { checkComponentStoryAgreement } from "./component-story-agreement.js";
-import { checkConsumerContract } from "./consumer-contract.js";
-import { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
-import { checkContractAgreement } from "./contract-agreement.js";
-import { checkContractConsistency } from "./contract-consistency.js";
+import { checkBodyCompatibility } from "./bodyCompatibility.js";
+import { checkComponentStoryAgreement } from "./componentStoryAgreement.js";
+import { checkConsumerContract } from "./consumerContract.js";
+import { checkConsumerSatisfaction } from "./consumerSatisfaction.js";
+import { checkContractAgreement } from "./contractAgreement.js";
+import { checkContractConsistency } from "./contractConsistency.js";
 import { dedupeFindings } from "./dedupe.js";
-import { pairGraphqlOperations } from "./graphql-pairing.js";
+import { pairGraphqlOperations } from "./graphqlPairing.js";
 import { pairSummaries } from "./pairing.js";
-import { checkProviderCoverage } from "./provider-coverage.js";
-import { checkSemanticBridging } from "./semantic-bridging.js";
+import { checkProviderCoverage } from "./providerCoverage.js";
+import { checkSemanticBridging } from "./semanticBridging.js";
 
 import type {
   BehavioralSummary,
@@ -39,18 +39,18 @@ function describeBinding(binding: BoundaryBinding): string {
   return `${sem.name}:${binding.recognition}`;
 }
 
-export { checkBodyCompatibility } from "./body-compatibility.js";
-export { bodyShapesMatch } from "./body-match.js";
-export { checkComponentStoryAgreement } from "./component-story-agreement.js";
-export { checkConsumerContract } from "./consumer-contract.js";
-export { checkConsumerSatisfaction } from "./consumer-satisfaction.js";
-export { checkContractAgreement } from "./contract-agreement.js";
-export { checkContractConsistency } from "./contract-consistency.js";
+export { checkBodyCompatibility } from "./bodyCompatibility.js";
+export { bodyShapesMatch } from "./bodyMatch.js";
+export { checkComponentStoryAgreement } from "./componentStoryAgreement.js";
+export { checkConsumerContract } from "./consumerContract.js";
+export { checkConsumerSatisfaction } from "./consumerSatisfaction.js";
+export { checkContractAgreement } from "./contractAgreement.js";
+export { checkContractConsistency } from "./contractConsistency.js";
 export { dedupeFindings } from "./dedupe.js";
 export {
   type GraphqlPairingResult,
   pairGraphqlOperations,
-} from "./graphql-pairing.js";
+} from "./graphqlPairing.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
 export {
   boundaryKey,
@@ -59,8 +59,8 @@ export {
   pairSummaries,
   type SummaryPair,
 } from "./pairing.js";
-export { checkProviderCoverage } from "./provider-coverage.js";
-export { checkSemanticBridging } from "./semantic-bridging.js";
+export { checkProviderCoverage } from "./providerCoverage.js";
+export { checkSemanticBridging } from "./semanticBridging.js";
 export {
   applySuppressions,
   countsForThreshold,

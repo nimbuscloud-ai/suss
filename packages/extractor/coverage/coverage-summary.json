@@ -57,7 +57,7 @@
       "pct": 83.14
     }
   },
-  "src/pack-helpers.ts": {
+  "src/packHelpers.ts": {
     "lines": {
       "total": 2,
       "covered": 2,

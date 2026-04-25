@@ -1,0 +1,3609 @@
+{
+  "schemaVersion": "1",
+  "adapterPacksDigest": "adapter@0.1.0|package-exports:@suss/stub-aws-apigateway@unset",
+  "tsconfigStamp": {
+    "path": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/tsconfig.json",
+    "mtimeMs": 1776467301034.9731,
+    "size": 144
+  },
+  "files": [
+    {
+      "path": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/config.ts",
+      "mtimeMs": 1776467694558.28,
+      "size": 5845
+    },
+    {
+      "path": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/http.test.ts",
+      "mtimeMs": 1776559253848.0125,
+      "size": 5956
+    },
+    {
+      "path": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/http.ts",
+      "mtimeMs": 1776559253848.2502,
+      "size": 6410
+    },
+    {
+      "path": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/index.ts",
+      "mtimeMs": 1776472889658.638,
+      "size": 814
+    },
+    {
+      "path": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/rest.test.ts",
+      "mtimeMs": 1776559253848.5422,
+      "size": 9640
+    },
+    {
+      "path": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/rest.ts",
+      "mtimeMs": 1776559253848.7952,
+      "size": 7562
+    },
+    {
+      "path": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/shared.ts",
+      "mtimeMs": 1776559253849.0513,
+      "size": 5065
+    },
+    {
+      "path": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/transitions.ts",
+      "mtimeMs": 1776472889662.5579,
+      "size": 3457
+    }
+  ],
+  "summaries": [
+    {
+      "kind": "caller",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/http.ts",
+        "range": { "start": 83, "end": 171 },
+        "exportName": "buildRouteSummary"
+      },
+      "identity": {
+        "name": "buildRouteSummary",
+        "exportPath": ["buildRouteSummary"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": {
+            "name": "function-call",
+            "package": "@suss/behavioral-ir",
+            "exportPath": ["restBinding"]
+          },
+          "recognition": "package-exports:@suss/stub-aws-apigateway"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "route",
+          "position": 0,
+          "role": "arg0",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "parsed",
+          "position": 1,
+          "role": "arg1",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "api",
+          "position": 2,
+          "role": "arg2",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "sourceFile",
+          "position": 3,
+          "role": "arg3",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "buildRouteSummary:return:none:da39a3e",
+          "conditions": [],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "kind": { "type": "literal", "value": "handler" },
+                "location": {
+                  "type": "record",
+                  "properties": {
+                    "file": { "type": "text" },
+                    "range": {
+                      "type": "record",
+                      "properties": {
+                        "start": { "type": "literal", "value": 0, "raw": "0" },
+                        "end": { "type": "literal", "value": 0, "raw": "0" }
+                      }
+                    },
+                    "exportName": { "type": "null" }
+                  }
+                },
+                "identity": {
+                  "type": "record",
+                  "properties": {
+                    "name": { "type": "text" },
+                    "exportPath": { "type": "null" },
+                    "boundaryBinding": {
+                      "type": "record",
+                      "properties": {
+                        "transport": { "type": "text" },
+                        "semantics": {
+                          "type": "union",
+                          "variants": [
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"rest\"; method: string; path: string; declaredResponses?: number[] | undefined; }"
+                            },
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"function-call\"; module?: string | undefined; exportName?: string | undefined; package?: string | undefined; exportPath?: string[] | undefined; }"
+                            },
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"graphql-resolver\"; typeName: string; fieldName: string; }"
+                            },
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"graphql-operation\"; operationType: \"query\" | \"mutation\" | \"subscription\"; operationName?: string | undefined; }"
+                            }
+                          ]
+                        },
+                        "recognition": { "type": "text" }
+                      }
+                    }
+                  }
+                },
+                "inputs": { "type": "array", "items": { "type": "unknown" } },
+                "transitions": {
+                  "type": "array",
+                  "items": { "type": "unknown" }
+                },
+                "gaps": { "type": "array", "items": { "type": "unknown" } },
+                "confidence": {
+                  "type": "record",
+                  "properties": {
+                    "source": { "type": "literal", "value": "stub" },
+                    "level": { "type": "literal", "value": "high" }
+                  }
+                },
+                "metadata": {
+                  "type": "record",
+                  "properties": {
+                    "apiId": { "type": "text" },
+                    "apiVersion": { "type": "literal", "value": "v2" },
+                    "integrationType": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "literal", "value": "lambda" },
+                        { "type": "literal", "value": "lambda-proxy" },
+                        { "type": "literal", "value": "http" },
+                        { "type": "literal", "value": "http-proxy" },
+                        { "type": "literal", "value": "mock" },
+                        { "type": "literal", "value": "aws-service" },
+                        { "type": "literal", "value": "vpc-link" },
+                        { "type": "literal", "value": "unknown" }
+                      ]
+                    },
+                    "http": {
+                      "type": "record",
+                      "properties": {
+                        "declaredContract": {
+                          "type": "record",
+                          "properties": {
+                            "framework": {
+                              "type": "literal",
+                              "value": "apigateway"
+                            },
+                            "provenance": {
+                              "type": "literal",
+                              "value": "independent"
+                            },
+                            "responses": {
+                              "type": "array",
+                              "items": {
+                                "type": "record",
+                                "properties": {
+                                  "statusCode": { "type": "number" }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "effects": [
+            {
+              "type": "invocation",
+              "callee": "transitions.push",
+              "args": [
+                {
+                  "kind": "call",
+                  "callee": "handlerTransition",
+                  "args": [
+                    {
+                      "kind": "object",
+                      "fields": {
+                        "ownerKey": {
+                          "kind": "identifier",
+                          "name": "ownerKey"
+                        },
+                        "statusCode": { "kind": "identifier", "name": "code" },
+                        "source": {
+                          "kind": "template",
+                          "sourceText": "`aws::apigateway::integration.${route.integration.type}`"
+                        },
+                        "configRef": {
+                          "kind": "identifier",
+                          "name": "route.integration.configRef"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "async": false
+            },
+            {
+              "type": "invocation",
+              "callee": "transitions.push",
+              "args": [{ "kind": "identifier", "name": "transition" }],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "dependency",
+                    "name": "platformTransition",
+                    "accessChain": []
+                  },
+                  "negated": true
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "transitions.push",
+              "args": [
+                {
+                  "kind": "object",
+                  "fields": {
+                    "id": {
+                      "kind": "template",
+                      "sourceText": "`${ownerKey}:integration:default`"
+                    },
+                    "conditions": { "kind": "array", "items": [] },
+                    "output": {
+                      "kind": "object",
+                      "fields": {
+                        "type": { "kind": "string", "value": "response" },
+                        "statusCode": null,
+                        "body": null,
+                        "headers": { "kind": "object", "fields": {} }
+                      }
+                    },
+                    "effects": { "kind": "array", "items": [] },
+                    "location": {
+                      "kind": "object",
+                      "fields": {
+                        "start": { "kind": "number", "value": 0 },
+                        "end": { "kind": "number", "value": 0 }
+                      }
+                    },
+                    "isDefault": { "kind": "boolean", "value": true },
+                    "confidence": {
+                      "kind": "object",
+                      "fields": {
+                        "source": { "kind": "string", "value": "stub" },
+                        "level": { "kind": "string", "value": "low" }
+                      }
+                    },
+                    "metadata": {
+                      "kind": "object",
+                      "fields": {
+                        "source": {
+                          "kind": "template",
+                          "sourceText": "`aws::apigateway::integration.${route.integration.type}`"
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "comparison",
+                  "left": {
+                    "type": "derived",
+                    "from": {
+                      "type": "unresolved",
+                      "sourceText": "transitions"
+                    },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "length"
+                    }
+                  },
+                  "op": "eq",
+                  "right": { "type": "literal", "value": 0 }
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "restBinding",
+              "args": [
+                {
+                  "kind": "object",
+                  "fields": {
+                    "transport": { "kind": "identifier", "name": "PROTOCOL" },
+                    "method": { "kind": "identifier", "name": "parsed.method" },
+                    "path": { "kind": "identifier", "name": "parsed.path" },
+                    "recognition": { "kind": "identifier", "name": "FRAMEWORK" }
+                  }
+                }
+              ],
+              "async": false
+            },
+            {
+              "type": "invocation",
+              "callee": "route.integration.statusCodes.map",
+              "args": [null],
+              "async": false
+            }
+          ],
+          "location": { "start": 135, "end": 170 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/index.ts",
+        "range": { "start": 32, "end": 59 },
+        "exportName": "httpApiToSummaries"
+      },
+      "identity": {
+        "name": "httpApiToSummaries",
+        "exportPath": ["httpApiToSummaries"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": {
+            "name": "function-call",
+            "package": "@suss/stub-aws-apigateway",
+            "exportPath": ["httpApiToSummaries"]
+          },
+          "recognition": "package-exports:@suss/stub-aws-apigateway"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "config",
+          "position": 0,
+          "role": "arg0",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "httpApiToSummaries:return:none:da39a3e",
+          "conditions": [],
+          "output": {
+            "type": "return",
+            "value": { "type": "array", "items": { "type": "unknown" } }
+          },
+          "effects": [
+            {
+              "type": "invocation",
+              "callee": "summaries.push",
+              "args": [
+                {
+                  "kind": "call",
+                  "callee": "buildRouteSummary",
+                  "args": [
+                    { "kind": "identifier", "name": "route" },
+                    { "kind": "identifier", "name": "parsed" },
+                    { "kind": "identifier", "name": "config" },
+                    { "kind": "identifier", "name": "sourceFile" }
+                  ]
+                }
+              ],
+              "async": false
+            },
+            {
+              "type": "invocation",
+              "callee": "summaries.push",
+              "args": [
+                {
+                  "kind": "call",
+                  "callee": "buildCorsPreflightSummary",
+                  "args": [
+                    {
+                      "kind": "object",
+                      "fields": {
+                        "apiId": { "kind": "identifier", "name": "config.id" },
+                        "path": { "kind": "identifier", "name": "path" },
+                        "cors": { "kind": "identifier", "name": "config.cors" },
+                        "sourceFile": {
+                          "kind": "identifier",
+                          "name": "sourceFile"
+                        },
+                        "extraMetadata": {
+                          "kind": "object",
+                          "fields": {
+                            "apiVersion": { "kind": "string", "value": "v2" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "derived",
+                    "from": {
+                      "type": "input",
+                      "inputRef": "config",
+                      "path": []
+                    },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "cors"
+                    }
+                  },
+                  "negated": true
+                }
+              ]
+            }
+          ],
+          "location": { "start": 58, "end": 58 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/index.ts",
+        "range": { "start": 33, "end": 60 },
+        "exportName": "restApiToSummaries"
+      },
+      "identity": {
+        "name": "restApiToSummaries",
+        "exportPath": ["restApiToSummaries"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": {
+            "name": "function-call",
+            "package": "@suss/stub-aws-apigateway",
+            "exportPath": ["restApiToSummaries"]
+          },
+          "recognition": "package-exports:@suss/stub-aws-apigateway"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "config",
+          "position": 0,
+          "role": "arg0",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "restApiToSummaries:return:none:da39a3e",
+          "conditions": [],
+          "output": {
+            "type": "return",
+            "value": { "type": "array", "items": { "type": "unknown" } }
+          },
+          "effects": [
+            {
+              "type": "invocation",
+              "callee": "summaries.push",
+              "args": [
+                {
+                  "kind": "call",
+                  "callee": "buildEndpointSummary",
+                  "args": [
+                    { "kind": "identifier", "name": "endpoint" },
+                    { "kind": "identifier", "name": "config" },
+                    { "kind": "identifier", "name": "sourceFile" }
+                  ]
+                }
+              ],
+              "async": false
+            },
+            {
+              "type": "invocation",
+              "callee": "summaries.push",
+              "args": [
+                {
+                  "kind": "call",
+                  "callee": "buildCorsPreflightSummary",
+                  "args": [
+                    {
+                      "kind": "object",
+                      "fields": {
+                        "apiId": { "kind": "identifier", "name": "config.id" },
+                        "path": {
+                          "kind": "identifier",
+                          "name": "endpoint.path"
+                        },
+                        "cors": { "kind": "identifier", "name": "config.cors" },
+                        "sourceFile": {
+                          "kind": "identifier",
+                          "name": "sourceFile"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "derived",
+                    "from": {
+                      "type": "input",
+                      "inputRef": "config",
+                      "path": []
+                    },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "cors"
+                    }
+                  },
+                  "negated": true
+                }
+              ]
+            }
+          ],
+          "location": { "start": 59, "end": 59 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "caller",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/rest.ts",
+        "range": { "start": 62, "end": 160 },
+        "exportName": "buildEndpointSummary"
+      },
+      "identity": {
+        "name": "buildEndpointSummary",
+        "exportPath": ["buildEndpointSummary"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": {
+            "name": "function-call",
+            "package": "@suss/behavioral-ir",
+            "exportPath": ["restBinding"]
+          },
+          "recognition": "package-exports:@suss/stub-aws-apigateway"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "endpoint",
+          "position": 0,
+          "role": "arg0",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "api",
+          "position": 1,
+          "role": "arg1",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "sourceFile",
+          "position": 2,
+          "role": "arg2",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "buildEndpointSummary:return:none:da39a3e",
+          "conditions": [],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "kind": { "type": "literal", "value": "handler" },
+                "location": {
+                  "type": "record",
+                  "properties": {
+                    "file": { "type": "text" },
+                    "range": {
+                      "type": "record",
+                      "properties": {
+                        "start": { "type": "literal", "value": 0, "raw": "0" },
+                        "end": { "type": "literal", "value": 0, "raw": "0" }
+                      }
+                    },
+                    "exportName": { "type": "null" }
+                  }
+                },
+                "identity": {
+                  "type": "record",
+                  "properties": {
+                    "name": { "type": "text" },
+                    "exportPath": { "type": "null" },
+                    "boundaryBinding": {
+                      "type": "record",
+                      "properties": {
+                        "transport": { "type": "text" },
+                        "semantics": {
+                          "type": "union",
+                          "variants": [
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"rest\"; method: string; path: string; declaredResponses?: number[] | undefined; }"
+                            },
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"function-call\"; module?: string | undefined; exportName?: string | undefined; package?: string | undefined; exportPath?: string[] | undefined; }"
+                            },
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"graphql-resolver\"; typeName: string; fieldName: string; }"
+                            },
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"graphql-operation\"; operationType: \"query\" | \"mutation\" | \"subscription\"; operationName?: string | undefined; }"
+                            }
+                          ]
+                        },
+                        "recognition": { "type": "text" }
+                      }
+                    }
+                  }
+                },
+                "inputs": { "type": "array", "items": { "type": "unknown" } },
+                "transitions": {
+                  "type": "array",
+                  "items": { "type": "unknown" }
+                },
+                "gaps": { "type": "array", "items": { "type": "unknown" } },
+                "confidence": {
+                  "type": "record",
+                  "properties": {
+                    "source": { "type": "literal", "value": "stub" },
+                    "level": { "type": "literal", "value": "high" }
+                  }
+                },
+                "metadata": {
+                  "type": "record",
+                  "properties": {
+                    "apiId": { "type": "text" },
+                    "integrationType": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "literal", "value": "lambda" },
+                        { "type": "literal", "value": "lambda-proxy" },
+                        { "type": "literal", "value": "http" },
+                        { "type": "literal", "value": "http-proxy" },
+                        { "type": "literal", "value": "mock" },
+                        { "type": "literal", "value": "aws-service" },
+                        { "type": "literal", "value": "vpc-link" },
+                        { "type": "literal", "value": "unknown" }
+                      ]
+                    },
+                    "http": {
+                      "type": "record",
+                      "properties": {
+                        "declaredContract": {
+                          "type": "record",
+                          "properties": {
+                            "framework": {
+                              "type": "literal",
+                              "value": "apigateway"
+                            },
+                            "provenance": {
+                              "type": "literal",
+                              "value": "independent"
+                            },
+                            "responses": {
+                              "type": "array",
+                              "items": {
+                                "type": "record",
+                                "properties": {
+                                  "statusCode": { "type": "number" }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "effects": [
+            {
+              "type": "invocation",
+              "callee": "transitions.push",
+              "args": [
+                {
+                  "kind": "call",
+                  "callee": "handlerTransition",
+                  "args": [
+                    {
+                      "kind": "object",
+                      "fields": {
+                        "ownerKey": {
+                          "kind": "identifier",
+                          "name": "ownerKey"
+                        },
+                        "statusCode": { "kind": "identifier", "name": "code" },
+                        "source": {
+                          "kind": "template",
+                          "sourceText": "`aws::apigateway::integration.${endpoint.integration.type}`"
+                        },
+                        "configRef": {
+                          "kind": "identifier",
+                          "name": "endpoint.integration.configRef"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "async": false
+            },
+            {
+              "type": "invocation",
+              "callee": "transitions.push",
+              "args": [{ "kind": "identifier", "name": "transition" }],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "dependency",
+                    "name": "platformTransition",
+                    "accessChain": []
+                  },
+                  "negated": true
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "transitions.push",
+              "args": [
+                {
+                  "kind": "object",
+                  "fields": {
+                    "id": {
+                      "kind": "template",
+                      "sourceText": "`${ownerKey}:integration:default`"
+                    },
+                    "conditions": { "kind": "array", "items": [] },
+                    "output": {
+                      "kind": "object",
+                      "fields": {
+                        "type": { "kind": "string", "value": "response" },
+                        "statusCode": null,
+                        "body": null,
+                        "headers": { "kind": "object", "fields": {} }
+                      }
+                    },
+                    "effects": { "kind": "array", "items": [] },
+                    "location": {
+                      "kind": "object",
+                      "fields": {
+                        "start": { "kind": "number", "value": 0 },
+                        "end": { "kind": "number", "value": 0 }
+                      }
+                    },
+                    "isDefault": { "kind": "boolean", "value": true },
+                    "confidence": {
+                      "kind": "object",
+                      "fields": {
+                        "source": { "kind": "string", "value": "stub" },
+                        "level": { "kind": "string", "value": "low" }
+                      }
+                    },
+                    "metadata": {
+                      "kind": "object",
+                      "fields": {
+                        "source": {
+                          "kind": "template",
+                          "sourceText": "`aws::apigateway::integration.${endpoint.integration.type}`"
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "comparison",
+                  "left": {
+                    "type": "derived",
+                    "from": {
+                      "type": "unresolved",
+                      "sourceText": "transitions"
+                    },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "length"
+                    }
+                  },
+                  "op": "eq",
+                  "right": { "type": "literal", "value": 0 }
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "restBinding",
+              "args": [
+                {
+                  "kind": "object",
+                  "fields": {
+                    "transport": { "kind": "identifier", "name": "PROTOCOL" },
+                    "method": { "kind": "identifier", "name": "method" },
+                    "path": { "kind": "identifier", "name": "endpoint.path" },
+                    "recognition": { "kind": "identifier", "name": "FRAMEWORK" }
+                  }
+                }
+              ],
+              "async": false
+            },
+            {
+              "type": "invocation",
+              "callee": "endpoint.integration.statusCodes.map",
+              "args": [null],
+              "async": false
+            }
+          ],
+          "location": { "start": 119, "end": 159 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "caller",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/shared.ts",
+        "range": { "start": 63, "end": 158 },
+        "exportName": "buildCorsPreflightSummary"
+      },
+      "identity": {
+        "name": "buildCorsPreflightSummary",
+        "exportPath": ["buildCorsPreflightSummary"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": {
+            "name": "function-call",
+            "package": "@suss/behavioral-ir",
+            "exportPath": ["restBinding"]
+          },
+          "recognition": "package-exports:@suss/stub-aws-apigateway"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "options",
+          "position": 0,
+          "role": "arg0",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "buildCorsPreflightSummary:return:none:da39a3e",
+          "conditions": [],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "kind": { "type": "literal", "value": "handler" },
+                "location": {
+                  "type": "record",
+                  "properties": {
+                    "file": { "type": "text" },
+                    "range": {
+                      "type": "record",
+                      "properties": {
+                        "start": { "type": "literal", "value": 0, "raw": "0" },
+                        "end": { "type": "literal", "value": 0, "raw": "0" }
+                      }
+                    },
+                    "exportName": { "type": "null" }
+                  }
+                },
+                "identity": {
+                  "type": "record",
+                  "properties": {
+                    "name": { "type": "text" },
+                    "exportPath": { "type": "null" },
+                    "boundaryBinding": {
+                      "type": "record",
+                      "properties": {
+                        "transport": { "type": "text" },
+                        "semantics": {
+                          "type": "union",
+                          "variants": [
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"rest\"; method: string; path: string; declaredResponses?: number[] | undefined; }"
+                            },
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"function-call\"; module?: string | undefined; exportName?: string | undefined; package?: string | undefined; exportPath?: string[] | undefined; }"
+                            },
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"graphql-resolver\"; typeName: string; fieldName: string; }"
+                            },
+                            {
+                              "type": "ref",
+                              "name": "{ name: \"graphql-operation\"; operationType: \"query\" | \"mutation\" | \"subscription\"; operationName?: string | undefined; }"
+                            }
+                          ]
+                        },
+                        "recognition": { "type": "text" }
+                      }
+                    }
+                  }
+                },
+                "inputs": { "type": "array", "items": { "type": "unknown" } },
+                "transitions": {
+                  "type": "array",
+                  "items": {
+                    "type": "record",
+                    "properties": {
+                      "id": { "type": "text" },
+                      "conditions": {
+                        "type": "array",
+                        "items": {
+                          "type": "record",
+                          "properties": {
+                            "type": { "type": "literal", "value": "opaque" },
+                            "sourceText": {
+                              "type": "literal",
+                              "value": "aws:apigateway:cors-preflight"
+                            },
+                            "reason": {
+                              "type": "literal",
+                              "value": "externalFunction"
+                            }
+                          }
+                        }
+                      },
+                      "output": {
+                        "type": "record",
+                        "properties": {
+                          "type": { "type": "literal", "value": "response" },
+                          "statusCode": {
+                            "type": "record",
+                            "properties": {
+                              "type": { "type": "literal", "value": "literal" },
+                              "value": {
+                                "type": "literal",
+                                "value": 204,
+                                "raw": "204"
+                              }
+                            }
+                          },
+                          "body": { "type": "null" },
+                          "headers": {
+                            "type": "record",
+                            "properties": {
+                              "Access-Control-Allow-Origin": {
+                                "type": "record",
+                                "properties": {
+                                  "type": {
+                                    "type": "literal",
+                                    "value": "literal"
+                                  },
+                                  "value": { "type": "text" }
+                                }
+                              },
+                              "Access-Control-Allow-Methods": {
+                                "type": "record",
+                                "properties": {
+                                  "type": {
+                                    "type": "literal",
+                                    "value": "literal"
+                                  },
+                                  "value": { "type": "text" }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "effects": {
+                        "type": "array",
+                        "items": { "type": "unknown" }
+                      },
+                      "location": {
+                        "type": "record",
+                        "properties": {
+                          "start": {
+                            "type": "literal",
+                            "value": 0,
+                            "raw": "0"
+                          },
+                          "end": { "type": "literal", "value": 0, "raw": "0" }
+                        }
+                      },
+                      "isDefault": { "type": "literal", "value": false },
+                      "confidence": {
+                        "type": "record",
+                        "properties": {
+                          "source": { "type": "literal", "value": "stub" },
+                          "level": { "type": "literal", "value": "high" }
+                        }
+                      },
+                      "metadata": {
+                        "type": "record",
+                        "properties": {
+                          "source": {
+                            "type": "literal",
+                            "value": "aws::apigateway::platform"
+                          },
+                          "platform": {
+                            "type": "literal",
+                            "value": "apiGateway"
+                          },
+                          "causes": {
+                            "type": "array",
+                            "items": {
+                              "type": "literal",
+                              "value": "cors-preflight"
+                            }
+                          }
+                        },
+                        "spreads": [
+                          {
+                            "sourceText": "(cors.configRef !== undefined ? { configRefs: [cors.configRef] } : {})"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "gaps": { "type": "array", "items": { "type": "unknown" } },
+                "confidence": {
+                  "type": "record",
+                  "properties": {
+                    "source": { "type": "literal", "value": "stub" },
+                    "level": { "type": "literal", "value": "high" }
+                  }
+                },
+                "metadata": {
+                  "type": "record",
+                  "properties": {
+                    "apiId": { "type": "text" },
+                    "synthetic": {
+                      "type": "literal",
+                      "value": "cors-preflight"
+                    }
+                  },
+                  "spreads": [{ "sourceText": "(extraMetadata ?? {})" }]
+                }
+              }
+            }
+          },
+          "effects": [
+            {
+              "type": "invocation",
+              "callee": "cors.allowOrigins.join",
+              "args": [{ "kind": "string", "value": "," }],
+              "async": false
+            },
+            {
+              "type": "invocation",
+              "callee": "cors.allowMethods.join",
+              "args": [{ "kind": "string", "value": "," }],
+              "async": false
+            },
+            {
+              "type": "invocation",
+              "callee": "cors.allowHeaders.join",
+              "args": [{ "kind": "string", "value": "," }],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "compound",
+                  "op": "and",
+                  "operands": [
+                    {
+                      "type": "nullCheck",
+                      "subject": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "options",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "destructured",
+                            "field": "cors"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "allowHeaders"
+                        }
+                      },
+                      "negated": true
+                    },
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "derived",
+                            "from": {
+                              "type": "input",
+                              "inputRef": "options",
+                              "path": []
+                            },
+                            "derivation": {
+                              "type": "destructured",
+                              "field": "cors"
+                            }
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "allowHeaders"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "length"
+                        }
+                      },
+                      "op": "gt",
+                      "right": { "type": "literal", "value": 0 }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "cors.exposeHeaders.join",
+              "args": [{ "kind": "string", "value": "," }],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "compound",
+                  "op": "and",
+                  "operands": [
+                    {
+                      "type": "nullCheck",
+                      "subject": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "options",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "destructured",
+                            "field": "cors"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "exposeHeaders"
+                        }
+                      },
+                      "negated": true
+                    },
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "derived",
+                            "from": {
+                              "type": "input",
+                              "inputRef": "options",
+                              "path": []
+                            },
+                            "derivation": {
+                              "type": "destructured",
+                              "field": "cors"
+                            }
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "exposeHeaders"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "length"
+                        }
+                      },
+                      "op": "gt",
+                      "right": { "type": "literal", "value": 0 }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "String",
+              "args": [{ "kind": "identifier", "name": "cors.maxAge" }],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "derived",
+                    "from": {
+                      "type": "derived",
+                      "from": {
+                        "type": "input",
+                        "inputRef": "options",
+                        "path": []
+                      },
+                      "derivation": { "type": "destructured", "field": "cors" }
+                    },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "maxAge"
+                    }
+                  },
+                  "negated": true
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "restBinding",
+              "args": [
+                {
+                  "kind": "object",
+                  "fields": {
+                    "transport": { "kind": "string", "value": "http" },
+                    "method": { "kind": "string", "value": "OPTIONS" },
+                    "path": { "kind": "identifier", "name": "path" },
+                    "recognition": { "kind": "string", "value": "apigateway" }
+                  }
+                }
+              ],
+              "async": false
+            }
+          ],
+          "location": { "start": 131, "end": 157 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/transitions.ts",
+        "range": { "start": 42, "end": 66 },
+        "exportName": "handlerTransition"
+      },
+      "identity": {
+        "name": "handlerTransition",
+        "exportPath": ["handlerTransition"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "args",
+          "position": 0,
+          "role": "args",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "handlerTransition:return:none:da39a3e",
+          "conditions": [],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "id": { "type": "text" },
+                "conditions": {
+                  "type": "array",
+                  "items": { "type": "unknown" }
+                },
+                "output": {
+                  "type": "record",
+                  "properties": {
+                    "type": { "type": "literal", "value": "response" },
+                    "statusCode": {
+                      "type": "record",
+                      "properties": {
+                        "type": { "type": "literal", "value": "literal" },
+                        "value": { "type": "number" }
+                      }
+                    },
+                    "body": { "type": "null" },
+                    "headers": { "type": "record", "properties": {} }
+                  }
+                },
+                "effects": { "type": "array", "items": { "type": "unknown" } },
+                "location": {
+                  "type": "record",
+                  "properties": {
+                    "start": { "type": "literal", "value": 0, "raw": "0" },
+                    "end": { "type": "literal", "value": 0, "raw": "0" }
+                  }
+                },
+                "isDefault": { "type": "literal", "value": false },
+                "confidence": {
+                  "type": "record",
+                  "properties": {
+                    "source": { "type": "literal", "value": "stub" },
+                    "level": { "type": "literal", "value": "high" }
+                  }
+                },
+                "metadata": {
+                  "type": "record",
+                  "properties": { "source": { "type": "text" } },
+                  "spreads": [
+                    {
+                      "sourceText": "(args.configRef !== undefined ? { configRef: args.configRef } : {})"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "effects": [],
+          "location": { "start": 48, "end": 65 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/http.ts",
+        "range": { "start": 173, "end": 215 },
+        "exportName": "collectPlatformContributions"
+      },
+      "identity": {
+        "name": "collectPlatformContributions",
+        "exportPath": ["collectPlatformContributions"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "route",
+          "position": 0,
+          "role": "route",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "api",
+          "position": 1,
+          "role": "api",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "collectPlatformContributions:return:none:da39a3e",
+          "conditions": [],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "ref",
+              "name": "Map<number, PlatformContribution[]>"
+            }
+          },
+          "effects": [
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 401 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "authorization" },
+                    { "kind": "identifier", "name": "authorizer.configRef" }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "dependency",
+                    "name": "resolveAuthorizer",
+                    "accessChain": []
+                  },
+                  "negated": true
+                },
+                {
+                  "type": "comparison",
+                  "left": {
+                    "type": "derived",
+                    "from": {
+                      "type": "dependency",
+                      "name": "resolveAuthorizer",
+                      "accessChain": []
+                    },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "identitySourceRequired"
+                    }
+                  },
+                  "op": "neq",
+                  "right": { "type": "literal", "value": false }
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 403 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "authorization" },
+                    { "kind": "identifier", "name": "authorizer.configRef" }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "dependency",
+                    "name": "resolveAuthorizer",
+                    "accessChain": []
+                  },
+                  "negated": true
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 429 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "throttle" },
+                    { "kind": "identifier", "name": "throttle.configRef" }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "compound",
+                  "op": "and",
+                  "operands": [
+                    {
+                      "type": "nullCheck",
+                      "subject": {
+                        "type": "dependency",
+                        "name": "resolveThrottle",
+                        "accessChain": []
+                      },
+                      "negated": true
+                    },
+                    {
+                      "type": "call",
+                      "callee": "throttleEnforces",
+                      "args": [
+                        {
+                          "type": "dependency",
+                          "name": "resolveThrottle",
+                          "accessChain": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 504 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "integration-timeout" },
+                    {
+                      "kind": "identifier",
+                      "name": "route.integration.configRef"
+                    }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "compound",
+                  "op": "and",
+                  "operands": [
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "route",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "integration"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "type"
+                        }
+                      },
+                      "op": "neq",
+                      "right": { "type": "literal", "value": "mock" }
+                    },
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "route",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "integration"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "type"
+                        }
+                      },
+                      "op": "neq",
+                      "right": { "type": "literal", "value": "unknown" }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 502 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "integration-failure" },
+                    {
+                      "kind": "identifier",
+                      "name": "route.integration.configRef"
+                    }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "compound",
+                  "op": "and",
+                  "operands": [
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "route",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "integration"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "type"
+                        }
+                      },
+                      "op": "neq",
+                      "right": { "type": "literal", "value": "mock" }
+                    },
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "route",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "integration"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "type"
+                        }
+                      },
+                      "op": "neq",
+                      "right": { "type": "literal", "value": "unknown" }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "location": { "start": 214, "end": 214 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/transitions.ts",
+        "range": { "start": 73, "end": 110 },
+        "exportName": "platformTransition"
+      },
+      "identity": {
+        "name": "platformTransition",
+        "exportPath": ["platformTransition"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "args",
+          "position": 0,
+          "role": "args",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "platformTransition:return:none:e41d125",
+          "conditions": [
+            {
+              "type": "comparison",
+              "left": {
+                "type": "derived",
+                "from": {
+                  "type": "derived",
+                  "from": { "type": "input", "inputRef": "args", "path": [] },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "contributions"
+                  }
+                },
+                "derivation": { "type": "propertyAccess", "property": "length" }
+              },
+              "op": "eq",
+              "right": { "type": "literal", "value": 0 }
+            }
+          ],
+          "output": { "type": "return", "value": { "type": "null" } },
+          "effects": [],
+          "location": { "start": 79, "end": 79 },
+          "isDefault": false
+        },
+        {
+          "id": "platformTransition:return:none:ba12a2a",
+          "conditions": [
+            {
+              "type": "negation",
+              "operand": {
+                "type": "comparison",
+                "left": {
+                  "type": "derived",
+                  "from": {
+                    "type": "derived",
+                    "from": { "type": "input", "inputRef": "args", "path": [] },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "contributions"
+                    }
+                  },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "length"
+                  }
+                },
+                "op": "eq",
+                "right": { "type": "literal", "value": 0 }
+              }
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "id": { "type": "text" },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "record",
+                    "properties": {
+                      "type": { "type": "literal", "value": "opaque" },
+                      "sourceText": { "type": "text" },
+                      "reason": {
+                        "type": "literal",
+                        "value": "externalFunction"
+                      }
+                    }
+                  }
+                },
+                "output": {
+                  "type": "record",
+                  "properties": {
+                    "type": { "type": "literal", "value": "response" },
+                    "statusCode": {
+                      "type": "record",
+                      "properties": {
+                        "type": { "type": "literal", "value": "literal" },
+                        "value": { "type": "number" }
+                      }
+                    },
+                    "body": { "type": "null" },
+                    "headers": { "type": "record", "properties": {} }
+                  }
+                },
+                "effects": { "type": "array", "items": { "type": "unknown" } },
+                "location": {
+                  "type": "record",
+                  "properties": {
+                    "start": { "type": "literal", "value": 0, "raw": "0" },
+                    "end": { "type": "literal", "value": 0, "raw": "0" }
+                  }
+                },
+                "isDefault": { "type": "literal", "value": false },
+                "confidence": {
+                  "type": "record",
+                  "properties": {
+                    "source": { "type": "literal", "value": "stub" },
+                    "level": { "type": "literal", "value": "high" }
+                  }
+                },
+                "metadata": {
+                  "type": "record",
+                  "properties": {
+                    "source": {
+                      "type": "literal",
+                      "value": "aws::apigateway::platform"
+                    },
+                    "platform": { "type": "literal", "value": "apiGateway" },
+                    "causes": {
+                      "type": "array",
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          { "type": "literal", "value": "authorization" },
+                          { "type": "literal", "value": "api-key" },
+                          { "type": "literal", "value": "request-validation" },
+                          { "type": "literal", "value": "throttle" },
+                          { "type": "literal", "value": "integration-timeout" },
+                          { "type": "literal", "value": "integration-failure" },
+                          { "type": "literal", "value": "cors-preflight" }
+                        ]
+                      }
+                    }
+                  },
+                  "spreads": [
+                    {
+                      "sourceText": "(refs.length > 0 ? { configRefs: refs } : {})"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "effects": [],
+          "location": { "start": 90, "end": 109 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/rest.ts",
+        "range": { "start": 168, "end": 227 },
+        "exportName": "collectPlatformContributions"
+      },
+      "identity": {
+        "name": "collectPlatformContributions",
+        "exportPath": ["collectPlatformContributions"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "endpoint",
+          "position": 0,
+          "role": "endpoint",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "api",
+          "position": 1,
+          "role": "api",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "collectPlatformContributions:return:none:da39a3e",
+          "conditions": [],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "ref",
+              "name": "Map<number, PlatformContribution[]>"
+            }
+          },
+          "effects": [
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 401 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "authorization" },
+                    { "kind": "identifier", "name": "authorizer.configRef" }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "dependency",
+                    "name": "resolveAuthorizer",
+                    "accessChain": []
+                  },
+                  "negated": true
+                },
+                {
+                  "type": "comparison",
+                  "left": {
+                    "type": "derived",
+                    "from": {
+                      "type": "dependency",
+                      "name": "resolveAuthorizer",
+                      "accessChain": []
+                    },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "identitySourceRequired"
+                    }
+                  },
+                  "op": "neq",
+                  "right": { "type": "literal", "value": false }
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 403 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "authorization" },
+                    { "kind": "identifier", "name": "authorizer.configRef" }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "dependency",
+                    "name": "resolveAuthorizer",
+                    "accessChain": []
+                  },
+                  "negated": true
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 403 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "api-key" },
+                    { "kind": "identifier", "name": "endpoint.configRef" }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "comparison",
+                  "left": {
+                    "type": "derived",
+                    "from": {
+                      "type": "input",
+                      "inputRef": "endpoint",
+                      "path": []
+                    },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "apiKeyRequired"
+                    }
+                  },
+                  "op": "eq",
+                  "right": { "type": "literal", "value": true }
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 400 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "request-validation" },
+                    null
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "derived",
+                    "from": {
+                      "type": "input",
+                      "inputRef": "endpoint",
+                      "path": []
+                    },
+                    "derivation": {
+                      "type": "propertyAccess",
+                      "property": "requestValidation"
+                    }
+                  },
+                  "negated": true
+                },
+                {
+                  "type": "compound",
+                  "op": "or",
+                  "operands": [
+                    {
+                      "type": "compound",
+                      "op": "or",
+                      "operands": [
+                        {
+                          "type": "comparison",
+                          "left": {
+                            "type": "derived",
+                            "from": {
+                              "type": "derived",
+                              "from": {
+                                "type": "input",
+                                "inputRef": "endpoint",
+                                "path": []
+                              },
+                              "derivation": {
+                                "type": "propertyAccess",
+                                "property": "requestValidation"
+                              }
+                            },
+                            "derivation": {
+                              "type": "propertyAccess",
+                              "property": "body"
+                            }
+                          },
+                          "op": "eq",
+                          "right": { "type": "literal", "value": true }
+                        },
+                        {
+                          "type": "comparison",
+                          "left": {
+                            "type": "derived",
+                            "from": {
+                              "type": "derived",
+                              "from": {
+                                "type": "input",
+                                "inputRef": "endpoint",
+                                "path": []
+                              },
+                              "derivation": {
+                                "type": "propertyAccess",
+                                "property": "requestValidation"
+                              }
+                            },
+                            "derivation": {
+                              "type": "propertyAccess",
+                              "property": "params"
+                            }
+                          },
+                          "op": "eq",
+                          "right": { "type": "literal", "value": true }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "endpoint",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "requestValidation"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "headers"
+                        }
+                      },
+                      "op": "eq",
+                      "right": { "type": "literal", "value": true }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 429 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "throttle" },
+                    { "kind": "identifier", "name": "throttle.configRef" }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "compound",
+                  "op": "and",
+                  "operands": [
+                    {
+                      "type": "nullCheck",
+                      "subject": {
+                        "type": "dependency",
+                        "name": "resolveThrottle",
+                        "accessChain": []
+                      },
+                      "negated": true
+                    },
+                    {
+                      "type": "call",
+                      "callee": "throttleEnforces",
+                      "args": [
+                        {
+                          "type": "dependency",
+                          "name": "resolveThrottle",
+                          "accessChain": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 504 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "integration-timeout" },
+                    {
+                      "kind": "identifier",
+                      "name": "endpoint.integration.configRef"
+                    }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "compound",
+                  "op": "and",
+                  "operands": [
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "endpoint",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "integration"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "type"
+                        }
+                      },
+                      "op": "neq",
+                      "right": { "type": "literal", "value": "mock" }
+                    },
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "endpoint",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "integration"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "type"
+                        }
+                      },
+                      "op": "neq",
+                      "right": { "type": "literal", "value": "unknown" }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "add",
+              "args": [
+                { "kind": "number", "value": 502 },
+                {
+                  "kind": "call",
+                  "callee": "makeContribution",
+                  "args": [
+                    { "kind": "string", "value": "integration-failure" },
+                    {
+                      "kind": "identifier",
+                      "name": "endpoint.integration.configRef"
+                    }
+                  ]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "compound",
+                  "op": "and",
+                  "operands": [
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "endpoint",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "integration"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "type"
+                        }
+                      },
+                      "op": "neq",
+                      "right": { "type": "literal", "value": "mock" }
+                    },
+                    {
+                      "type": "comparison",
+                      "left": {
+                        "type": "derived",
+                        "from": {
+                          "type": "derived",
+                          "from": {
+                            "type": "input",
+                            "inputRef": "endpoint",
+                            "path": []
+                          },
+                          "derivation": {
+                            "type": "propertyAccess",
+                            "property": "integration"
+                          }
+                        },
+                        "derivation": {
+                          "type": "propertyAccess",
+                          "property": "type"
+                        }
+                      },
+                      "op": "neq",
+                      "right": { "type": "literal", "value": "unknown" }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "location": { "start": 226, "end": 226 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/http.ts",
+        "range": { "start": 217, "end": 228 },
+        "exportName": "resolveAuthorizer"
+      },
+      "identity": {
+        "name": "resolveAuthorizer",
+        "exportPath": ["resolveAuthorizer"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "route",
+          "position": 0,
+          "role": "route",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "api",
+          "position": 1,
+          "role": "api",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "resolveAuthorizer:return:none:733d1bd",
+          "conditions": [
+            {
+              "type": "nullCheck",
+              "subject": {
+                "type": "derived",
+                "from": { "type": "input", "inputRef": "route", "path": [] },
+                "derivation": {
+                  "type": "propertyAccess",
+                  "property": "authorizer"
+                }
+              },
+              "negated": false
+            }
+          ],
+          "output": { "type": "return", "value": { "type": "null" } },
+          "effects": [],
+          "location": { "start": 222, "end": 222 },
+          "isDefault": false
+        },
+        {
+          "id": "resolveAuthorizer:return:none:f103b53",
+          "conditions": [
+            {
+              "type": "negation",
+              "operand": {
+                "type": "nullCheck",
+                "subject": {
+                  "type": "derived",
+                  "from": { "type": "input", "inputRef": "route", "path": [] },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "authorizer"
+                  }
+                },
+                "negated": false
+              }
+            },
+            {
+              "type": "nullCheck",
+              "subject": {
+                "type": "derived",
+                "from": { "type": "input", "inputRef": "route", "path": [] },
+                "derivation": {
+                  "type": "propertyAccess",
+                  "property": "authorizer"
+                }
+              },
+              "negated": true
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "type": {
+                  "type": "union",
+                  "variants": [
+                    { "type": "literal", "value": "jwt" },
+                    { "type": "literal", "value": "lambda-request" },
+                    { "type": "literal", "value": "iam" }
+                  ]
+                },
+                "identitySourceRequired": {
+                  "type": "union",
+                  "variants": [{ "type": "boolean" }, { "type": "undefined" }]
+                },
+                "configRef": {
+                  "type": "union",
+                  "variants": [
+                    {
+                      "type": "record",
+                      "properties": {
+                        "file": { "type": "text" },
+                        "pointer": { "type": "text" }
+                      }
+                    },
+                    { "type": "undefined" }
+                  ]
+                }
+              }
+            }
+          },
+          "effects": [],
+          "location": { "start": 225, "end": 225 },
+          "isDefault": false
+        },
+        {
+          "id": "resolveAuthorizer:return:none:d2bd01f",
+          "conditions": [
+            {
+              "type": "negation",
+              "operand": {
+                "type": "nullCheck",
+                "subject": {
+                  "type": "derived",
+                  "from": { "type": "input", "inputRef": "route", "path": [] },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "authorizer"
+                  }
+                },
+                "negated": false
+              }
+            },
+            {
+              "type": "negation",
+              "operand": {
+                "type": "nullCheck",
+                "subject": {
+                  "type": "derived",
+                  "from": { "type": "input", "inputRef": "route", "path": [] },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "authorizer"
+                  }
+                },
+                "negated": true
+              }
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "union",
+              "variants": [
+                { "type": "null" },
+                {
+                  "type": "record",
+                  "properties": {
+                    "type": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "literal", "value": "jwt" },
+                        { "type": "literal", "value": "lambda-request" },
+                        { "type": "literal", "value": "iam" }
+                      ]
+                    },
+                    "identitySourceRequired": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "boolean" },
+                        { "type": "undefined" }
+                      ]
+                    },
+                    "configRef": {
+                      "type": "union",
+                      "variants": [
+                        {
+                          "type": "record",
+                          "properties": {
+                            "file": { "type": "text" },
+                            "pointer": { "type": "text" }
+                          }
+                        },
+                        { "type": "undefined" }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "effects": [],
+          "location": { "start": 227, "end": 227 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/http.ts",
+        "range": { "start": 178, "end": 185 },
+        "exportName": "add"
+      },
+      "identity": {
+        "name": "add",
+        "exportPath": ["add"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "status",
+          "position": 0,
+          "role": "status",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "contribution",
+          "position": 1,
+          "role": "contribution",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "add:return:none:da39a3e",
+          "conditions": [],
+          "output": { "type": "return", "value": null },
+          "effects": [
+            {
+              "type": "invocation",
+              "callee": "buckets.set",
+              "args": [
+                { "kind": "identifier", "name": "status" },
+                {
+                  "kind": "array",
+                  "items": [{ "kind": "identifier", "name": "contribution" }]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "dependency",
+                    "name": "buckets.get",
+                    "accessChain": []
+                  },
+                  "negated": false
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "existing.push",
+              "args": [{ "kind": "identifier", "name": "contribution" }],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "negation",
+                  "operand": {
+                    "type": "nullCheck",
+                    "subject": {
+                      "type": "dependency",
+                      "name": "buckets.get",
+                      "accessChain": []
+                    },
+                    "negated": false
+                  }
+                }
+              ]
+            }
+          ],
+          "location": { "start": 185, "end": 185 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/transitions.ts",
+        "range": { "start": 32, "end": 40 },
+        "exportName": "makeContribution"
+      },
+      "identity": {
+        "name": "makeContribution",
+        "exportPath": ["makeContribution"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "cause",
+          "position": 0,
+          "role": "cause",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "configRef",
+          "position": 1,
+          "role": "configRef",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "makeContribution:return:none:d752cd6",
+          "conditions": [
+            {
+              "type": "nullCheck",
+              "subject": {
+                "type": "input",
+                "inputRef": "configRef",
+                "path": []
+              },
+              "negated": false
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "cause": {
+                  "type": "union",
+                  "variants": [
+                    { "type": "literal", "value": "authorization" },
+                    { "type": "literal", "value": "api-key" },
+                    { "type": "literal", "value": "request-validation" },
+                    { "type": "literal", "value": "throttle" },
+                    { "type": "literal", "value": "integration-timeout" },
+                    { "type": "literal", "value": "integration-failure" },
+                    { "type": "literal", "value": "cors-preflight" }
+                  ]
+                }
+              }
+            }
+          },
+          "effects": [],
+          "location": { "start": 37, "end": 37 },
+          "isDefault": false
+        },
+        {
+          "id": "makeContribution:return:none:c3212ed",
+          "conditions": [
+            {
+              "type": "negation",
+              "operand": {
+                "type": "nullCheck",
+                "subject": {
+                  "type": "input",
+                  "inputRef": "configRef",
+                  "path": []
+                },
+                "negated": false
+              }
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "cause": {
+                  "type": "union",
+                  "variants": [
+                    { "type": "literal", "value": "authorization" },
+                    { "type": "literal", "value": "api-key" },
+                    { "type": "literal", "value": "request-validation" },
+                    { "type": "literal", "value": "throttle" },
+                    { "type": "literal", "value": "integration-timeout" },
+                    { "type": "literal", "value": "integration-failure" },
+                    { "type": "literal", "value": "cors-preflight" }
+                  ]
+                },
+                "configRef": {
+                  "type": "record",
+                  "properties": {
+                    "file": { "type": "text" },
+                    "pointer": { "type": "text" }
+                  }
+                }
+              }
+            }
+          },
+          "effects": [],
+          "location": { "start": 39, "end": 39 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/http.ts",
+        "range": { "start": 230, "end": 238 },
+        "exportName": "resolveThrottle"
+      },
+      "identity": {
+        "name": "resolveThrottle",
+        "exportPath": ["resolveThrottle"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "route",
+          "position": 0,
+          "role": "route",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "api",
+          "position": 1,
+          "role": "api",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "resolveThrottle:return:none:2b99cfb",
+          "conditions": [
+            {
+              "type": "nullCheck",
+              "subject": {
+                "type": "derived",
+                "from": { "type": "input", "inputRef": "route", "path": [] },
+                "derivation": {
+                  "type": "propertyAccess",
+                  "property": "throttle"
+                }
+              },
+              "negated": true
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "burstLimit": {
+                  "type": "union",
+                  "variants": [{ "type": "number" }, { "type": "undefined" }]
+                },
+                "rateLimit": {
+                  "type": "union",
+                  "variants": [{ "type": "number" }, { "type": "undefined" }]
+                },
+                "configRef": {
+                  "type": "union",
+                  "variants": [
+                    {
+                      "type": "record",
+                      "properties": {
+                        "file": { "type": "text" },
+                        "pointer": { "type": "text" }
+                      }
+                    },
+                    { "type": "undefined" }
+                  ]
+                }
+              }
+            }
+          },
+          "effects": [],
+          "location": { "start": 235, "end": 235 },
+          "isDefault": false
+        },
+        {
+          "id": "resolveThrottle:return:none:8827725",
+          "conditions": [
+            {
+              "type": "negation",
+              "operand": {
+                "type": "nullCheck",
+                "subject": {
+                  "type": "derived",
+                  "from": { "type": "input", "inputRef": "route", "path": [] },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "throttle"
+                  }
+                },
+                "negated": true
+              }
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "union",
+              "variants": [
+                { "type": "null" },
+                {
+                  "type": "record",
+                  "properties": {
+                    "burstLimit": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "number" },
+                        { "type": "undefined" }
+                      ]
+                    },
+                    "rateLimit": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "number" },
+                        { "type": "undefined" }
+                      ]
+                    },
+                    "configRef": {
+                      "type": "union",
+                      "variants": [
+                        {
+                          "type": "record",
+                          "properties": {
+                            "file": { "type": "text" },
+                            "pointer": { "type": "text" }
+                          }
+                        },
+                        { "type": "undefined" }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "effects": [],
+          "location": { "start": 237, "end": 237 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/shared.ts",
+        "range": { "start": 19, "end": 25 },
+        "exportName": "throttleEnforces"
+      },
+      "identity": {
+        "name": "throttleEnforces",
+        "exportPath": ["throttleEnforces"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "throttle",
+          "position": 0,
+          "role": "throttle",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "throttleEnforces:return:none:da39a3e",
+          "conditions": [],
+          "output": { "type": "return", "value": { "type": "boolean" } },
+          "effects": [],
+          "location": { "start": 24, "end": 24 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/shared.ts",
+        "range": { "start": 27, "end": 33 },
+        "exportName": "integrationCanTimeOut"
+      },
+      "identity": {
+        "name": "integrationCanTimeOut",
+        "exportPath": ["integrationCanTimeOut"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "integration",
+          "position": 0,
+          "role": "integration",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "integrationCanTimeOut:return:none:da39a3e",
+          "conditions": [],
+          "output": { "type": "return", "value": { "type": "boolean" } },
+          "effects": [],
+          "location": { "start": 32, "end": 32 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/shared.ts",
+        "range": { "start": 35, "end": 42 },
+        "exportName": "integrationCanFail"
+      },
+      "identity": {
+        "name": "integrationCanFail",
+        "exportPath": ["integrationCanFail"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "integration",
+          "position": 0,
+          "role": "integration",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "integrationCanFail:return:none:da39a3e",
+          "conditions": [],
+          "output": { "type": "return", "value": { "type": "boolean" } },
+          "effects": [],
+          "location": { "start": 41, "end": 41 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/transitions.ts",
+        "range": { "start": 112, "end": 114 },
+        "exportName": "unique"
+      },
+      "identity": {
+        "name": "unique",
+        "exportPath": ["unique"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "values",
+          "position": 0,
+          "role": "values",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "unique:return:none:da39a3e",
+          "conditions": [],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "array",
+              "items": { "type": "ref", "name": "T" }
+            }
+          },
+          "effects": [],
+          "location": { "start": 113, "end": 113 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/rest.ts",
+        "range": { "start": 229, "end": 240 },
+        "exportName": "resolveAuthorizer"
+      },
+      "identity": {
+        "name": "resolveAuthorizer",
+        "exportPath": ["resolveAuthorizer"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "endpoint",
+          "position": 0,
+          "role": "endpoint",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "api",
+          "position": 1,
+          "role": "api",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "resolveAuthorizer:return:none:0340790",
+          "conditions": [
+            {
+              "type": "nullCheck",
+              "subject": {
+                "type": "derived",
+                "from": { "type": "input", "inputRef": "endpoint", "path": [] },
+                "derivation": {
+                  "type": "propertyAccess",
+                  "property": "authorizer"
+                }
+              },
+              "negated": false
+            }
+          ],
+          "output": { "type": "return", "value": { "type": "null" } },
+          "effects": [],
+          "location": { "start": 234, "end": 234 },
+          "isDefault": false
+        },
+        {
+          "id": "resolveAuthorizer:return:none:8c2da21",
+          "conditions": [
+            {
+              "type": "negation",
+              "operand": {
+                "type": "nullCheck",
+                "subject": {
+                  "type": "derived",
+                  "from": {
+                    "type": "input",
+                    "inputRef": "endpoint",
+                    "path": []
+                  },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "authorizer"
+                  }
+                },
+                "negated": false
+              }
+            },
+            {
+              "type": "nullCheck",
+              "subject": {
+                "type": "derived",
+                "from": { "type": "input", "inputRef": "endpoint", "path": [] },
+                "derivation": {
+                  "type": "propertyAccess",
+                  "property": "authorizer"
+                }
+              },
+              "negated": true
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "type": {
+                  "type": "union",
+                  "variants": [
+                    { "type": "literal", "value": "jwt" },
+                    { "type": "literal", "value": "lambda-request" },
+                    { "type": "literal", "value": "iam" },
+                    { "type": "literal", "value": "cognito" },
+                    { "type": "literal", "value": "lambda-token" }
+                  ]
+                },
+                "identitySourceRequired": {
+                  "type": "union",
+                  "variants": [{ "type": "boolean" }, { "type": "undefined" }]
+                },
+                "configRef": {
+                  "type": "union",
+                  "variants": [
+                    {
+                      "type": "record",
+                      "properties": {
+                        "file": { "type": "text" },
+                        "pointer": { "type": "text" }
+                      }
+                    },
+                    { "type": "undefined" }
+                  ]
+                }
+              }
+            }
+          },
+          "effects": [],
+          "location": { "start": 237, "end": 237 },
+          "isDefault": false
+        },
+        {
+          "id": "resolveAuthorizer:return:none:e9b9410",
+          "conditions": [
+            {
+              "type": "negation",
+              "operand": {
+                "type": "nullCheck",
+                "subject": {
+                  "type": "derived",
+                  "from": {
+                    "type": "input",
+                    "inputRef": "endpoint",
+                    "path": []
+                  },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "authorizer"
+                  }
+                },
+                "negated": false
+              }
+            },
+            {
+              "type": "negation",
+              "operand": {
+                "type": "nullCheck",
+                "subject": {
+                  "type": "derived",
+                  "from": {
+                    "type": "input",
+                    "inputRef": "endpoint",
+                    "path": []
+                  },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "authorizer"
+                  }
+                },
+                "negated": true
+              }
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "union",
+              "variants": [
+                { "type": "null" },
+                {
+                  "type": "record",
+                  "properties": {
+                    "type": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "literal", "value": "jwt" },
+                        { "type": "literal", "value": "lambda-request" },
+                        { "type": "literal", "value": "iam" },
+                        { "type": "literal", "value": "cognito" },
+                        { "type": "literal", "value": "lambda-token" }
+                      ]
+                    },
+                    "identitySourceRequired": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "boolean" },
+                        { "type": "undefined" }
+                      ]
+                    },
+                    "configRef": {
+                      "type": "union",
+                      "variants": [
+                        {
+                          "type": "record",
+                          "properties": {
+                            "file": { "type": "text" },
+                            "pointer": { "type": "text" }
+                          }
+                        },
+                        { "type": "undefined" }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "effects": [],
+          "location": { "start": 239, "end": 239 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/rest.ts",
+        "range": { "start": 173, "end": 180 },
+        "exportName": "add"
+      },
+      "identity": {
+        "name": "add",
+        "exportPath": ["add"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "status",
+          "position": 0,
+          "role": "status",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "contribution",
+          "position": 1,
+          "role": "contribution",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "add:return:none:da39a3e",
+          "conditions": [],
+          "output": { "type": "return", "value": null },
+          "effects": [
+            {
+              "type": "invocation",
+              "callee": "buckets.set",
+              "args": [
+                { "kind": "identifier", "name": "status" },
+                {
+                  "kind": "array",
+                  "items": [{ "kind": "identifier", "name": "contribution" }]
+                }
+              ],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "nullCheck",
+                  "subject": {
+                    "type": "dependency",
+                    "name": "buckets.get",
+                    "accessChain": []
+                  },
+                  "negated": false
+                }
+              ]
+            },
+            {
+              "type": "invocation",
+              "callee": "existing.push",
+              "args": [{ "kind": "identifier", "name": "contribution" }],
+              "async": false,
+              "preconditions": [
+                {
+                  "type": "negation",
+                  "operand": {
+                    "type": "nullCheck",
+                    "subject": {
+                      "type": "dependency",
+                      "name": "buckets.get",
+                      "accessChain": []
+                    },
+                    "negated": false
+                  }
+                }
+              ]
+            }
+          ],
+          "location": { "start": 180, "end": 180 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/rest.ts",
+        "range": { "start": 242, "end": 250 },
+        "exportName": "resolveThrottle"
+      },
+      "identity": {
+        "name": "resolveThrottle",
+        "exportPath": ["resolveThrottle"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "endpoint",
+          "position": 0,
+          "role": "endpoint",
+          "shape": null
+        },
+        {
+          "type": "parameter",
+          "name": "api",
+          "position": 1,
+          "role": "api",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "resolveThrottle:return:none:7258208",
+          "conditions": [
+            {
+              "type": "nullCheck",
+              "subject": {
+                "type": "derived",
+                "from": { "type": "input", "inputRef": "endpoint", "path": [] },
+                "derivation": {
+                  "type": "propertyAccess",
+                  "property": "throttle"
+                }
+              },
+              "negated": true
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "record",
+              "properties": {
+                "burstLimit": {
+                  "type": "union",
+                  "variants": [{ "type": "number" }, { "type": "undefined" }]
+                },
+                "rateLimit": {
+                  "type": "union",
+                  "variants": [{ "type": "number" }, { "type": "undefined" }]
+                },
+                "configRef": {
+                  "type": "union",
+                  "variants": [
+                    {
+                      "type": "record",
+                      "properties": {
+                        "file": { "type": "text" },
+                        "pointer": { "type": "text" }
+                      }
+                    },
+                    { "type": "undefined" }
+                  ]
+                }
+              }
+            }
+          },
+          "effects": [],
+          "location": { "start": 247, "end": 247 },
+          "isDefault": false
+        },
+        {
+          "id": "resolveThrottle:return:none:8f19589",
+          "conditions": [
+            {
+              "type": "negation",
+              "operand": {
+                "type": "nullCheck",
+                "subject": {
+                  "type": "derived",
+                  "from": {
+                    "type": "input",
+                    "inputRef": "endpoint",
+                    "path": []
+                  },
+                  "derivation": {
+                    "type": "propertyAccess",
+                    "property": "throttle"
+                  }
+                },
+                "negated": true
+              }
+            }
+          ],
+          "output": {
+            "type": "return",
+            "value": {
+              "type": "union",
+              "variants": [
+                { "type": "null" },
+                {
+                  "type": "record",
+                  "properties": {
+                    "burstLimit": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "number" },
+                        { "type": "undefined" }
+                      ]
+                    },
+                    "rateLimit": {
+                      "type": "union",
+                      "variants": [
+                        { "type": "number" },
+                        { "type": "undefined" }
+                      ]
+                    },
+                    "configRef": {
+                      "type": "union",
+                      "variants": [
+                        {
+                          "type": "record",
+                          "properties": {
+                            "file": { "type": "text" },
+                            "pointer": { "type": "text" }
+                          }
+                        },
+                        { "type": "undefined" }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "effects": [],
+          "location": { "start": 249, "end": 249 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    },
+    {
+      "kind": "library",
+      "location": {
+        "file": "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/stub/aws-apigateway/src/shared.ts",
+        "range": { "start": 23, "end": 23 },
+        "exportName": "enforces"
+      },
+      "identity": {
+        "name": "enforces",
+        "exportPath": ["enforces"],
+        "boundaryBinding": {
+          "transport": "in-process",
+          "semantics": { "name": "function-call" },
+          "recognition": "reachable"
+        }
+      },
+      "inputs": [
+        {
+          "type": "parameter",
+          "name": "v",
+          "position": 0,
+          "role": "v",
+          "shape": null
+        }
+      ],
+      "transitions": [
+        {
+          "id": "enforces:return:none:da39a3e",
+          "conditions": [],
+          "output": { "type": "return", "value": { "type": "boolean" } },
+          "effects": [],
+          "location": { "start": 23, "end": 23 },
+          "isDefault": true
+        }
+      ],
+      "gaps": [],
+      "confidence": { "source": "inferred_static", "level": "high" }
+    }
+  ]
+}

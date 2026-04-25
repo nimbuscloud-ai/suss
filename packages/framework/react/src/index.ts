@@ -18,7 +18,7 @@
 // already pickable via dep-call tracking; promoting them to
 // first-class summaries follows in a later phase).
 
-import { reactSubUnits } from "./sub-units.js";
+import { reactSubUnits } from "./subUnits.js";
 
 import type { PatternPack } from "@suss/extractor";
 

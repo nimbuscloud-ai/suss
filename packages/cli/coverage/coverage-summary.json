@@ -19,10 +19,10 @@
       "pct": 84.02
     },
     "branches": {
-      "total": 531,
-      "covered": 405,
+      "total": 535,
+      "covered": 406,
       "skipped": 0,
-      "pct": 76.27
+      "pct": 75.88
     },
     "branchesTrue": {
       "total": 0,
@@ -77,10 +77,10 @@
       "pct": 69.64
     },
     "branches": {
-      "total": 24,
-      "covered": 18,
+      "total": 26,
+      "covered": 19,
       "skipped": 0,
-      "pct": 75
+      "pct": 73.07
     }
   },
   "src/index.ts": {
@@ -155,10 +155,10 @@
       "pct": 97.72
     },
     "branches": {
-      "total": 83,
+      "total": 85,
       "covered": 63,
       "skipped": 0,
-      "pct": 75.9
+      "pct": 74.11
     }
   },
   "src/stub.ts": {
@@ -187,7 +187,7 @@
       "pct": 68.75
     }
   },
-  "src/suppressions-loader.ts": {
+  "src/suppressionsLoader.ts": {
     "lines": {
       "total": 30,
       "covered": 27,

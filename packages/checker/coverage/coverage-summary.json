@@ -31,7 +31,7 @@
       "pct": 100
     }
   },
-  "src/body-compatibility.ts": {
+  "src/bodyCompatibility.ts": {
     "lines": {
       "total": 99,
       "covered": 74,
@@ -57,7 +57,7 @@
       "pct": 69.04
     }
   },
-  "src/body-match.ts": {
+  "src/bodyMatch.ts": {
     "lines": {
       "total": 91,
       "covered": 87,
@@ -83,7 +83,7 @@
       "pct": 93.75
     }
   },
-  "src/component-story-agreement.ts": {
+  "src/componentStoryAgreement.ts": {
     "lines": {
       "total": 100,
       "covered": 83,
@@ -109,7 +109,7 @@
       "pct": 78
     }
   },
-  "src/consumer-contract.ts": {
+  "src/consumerContract.ts": {
     "lines": {
       "total": 39,
       "covered": 35,
@@ -135,7 +135,7 @@
       "pct": 83.33
     }
   },
-  "src/consumer-satisfaction.ts": {
+  "src/consumerSatisfaction.ts": {
     "lines": {
       "total": 23,
       "covered": 22,
@@ -161,7 +161,7 @@
       "pct": 85.71
     }
   },
-  "src/contract-agreement.ts": {
+  "src/contractAgreement.ts": {
     "lines": {
       "total": 70,
       "covered": 66,
@@ -187,7 +187,7 @@
       "pct": 81.57
     }
   },
-  "src/contract-consistency.ts": {
+  "src/contractConsistency.ts": {
     "lines": {
       "total": 51,
       "covered": 48,
@@ -213,7 +213,7 @@
       "pct": 86.66
     }
   },
-  "src/declared-contract.ts": {
+  "src/declaredContract.ts": {
     "lines": {
       "total": 27,
       "covered": 27,
@@ -265,7 +265,7 @@
       "pct": 91.66
     }
   },
-  "src/graphql-pairing.ts": {
+  "src/graphqlPairing.ts": {
     "lines": {
       "total": 139,
       "covered": 130,
@@ -369,7 +369,7 @@
       "pct": 91.89
     }
   },
-  "src/provider-coverage.ts": {
+  "src/providerCoverage.ts": {
     "lines": {
       "total": 63,
       "covered": 43,
@@ -395,7 +395,7 @@
       "pct": 56.81
     }
   },
-  "src/response-match.ts": {
+  "src/responseMatch.ts": {
     "lines": {
       "total": 47,
       "covered": 45,
@@ -421,7 +421,7 @@
       "pct": 93.18
     }
   },
-  "src/semantic-bridging.ts": {
+  "src/semanticBridging.ts": {
     "lines": {
       "total": 156,
       "covered": 141,

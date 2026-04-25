@@ -9,7 +9,7 @@ import {
   countsForThreshold,
 } from "@suss/checker";
 
-import { loadSuppressionsOrEmpty } from "./suppressions-loader.js";
+import { loadSuppressionsOrEmpty } from "./suppressionsLoader.js";
 
 import type {
   BehavioralSummary,
