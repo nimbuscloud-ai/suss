@@ -30,6 +30,30 @@ accesses.
 Pairing key: `(deploymentTarget, instanceName)` — e.g.
 `("lambda", "MyFunction")` — with field-level access on top.
 
+### What the boundary actually collapses
+
+It's a **two-link chain** modeled as one boundary:
+
+1. **CFN/SAM service ↔ runtime instance** — the template promises
+   "I'll materialize this Lambda with env block X."
+2. **runtime ↔ process** — the runtime hands its env block to the
+   process at startup; the process reads via `process.env`.
+
+The collapse is honest because the chain is transitive: if the
+template promises `{A, B, C}` and the runtime is what the template
+materialized, the process sees `{A, B, C}`. Pairing logic doesn't
+need the intermediate.
+
+The collapse does hide one thing: **platform-injected env vars**.
+The runtime's side of link (2) adds vars the template never
+declared — Lambda auto-sets `AWS_REGION`, `AWS_LAMBDA_FUNCTION_NAME`,
+etc.; ECS sets `AWS_DEFAULT_REGION`; k8s sets `KUBERNETES_*`. The
+provider summary's `provided` set is therefore
+`templateDeclared ∪ platformInjected[deploymentTarget]`. The CFN
+stub (5c.2) owns the platform-injected list; finding messages can
+surface provenance ("declared in template" vs "injected by Lambda
+runtime") when useful.
+
 ## Demo
 
 Three SAM Lambdas in a fixture repo:
@@ -140,6 +164,18 @@ Out (deferred):
   `AWS::Serverless::Function`, `AWS::ECS::TaskDefinition`.
 - Extract `Environment.Variables` (Lambda) /
   `ContainerDefinitions[*].Environment` (ECS).
+- Append the **platform-injected** env-var set per deploymentTarget
+  to whatever the template declared. Lambda's set:
+  `AWS_REGION`, `AWS_LAMBDA_FUNCTION_NAME`,
+  `AWS_LAMBDA_FUNCTION_VERSION`, `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`,
+  `AWS_LAMBDA_LOG_GROUP_NAME`, `AWS_LAMBDA_LOG_STREAM_NAME`,
+  `AWS_LAMBDA_RUNTIME_API`, `AWS_EXECUTION_ENV`, `LAMBDA_TASK_ROOT`,
+  `LAMBDA_RUNTIME_DIR`, `_HANDLER`, `TZ`.
+  ECS adds: `AWS_DEFAULT_REGION`,
+  `ECS_CONTAINER_METADATA_URI_V4`. K8s pods get the
+  `KUBERNETES_*` set. Provenance metadata
+  (`runtimeContract.envVarSources: { [name]: "template" | "platform" }`)
+  lets finding messages distinguish the source when useful.
 - Extract `CodeUri` (SAM only) → `metadata.codeScope.path`.
 - Recognize `Metadata.SussCodeScope` annotation as escape hatch for
   raw CFN with S3-built artifacts.

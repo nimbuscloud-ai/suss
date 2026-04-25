@@ -11,6 +11,15 @@
 // Soundness: pairing is keyed on file-path prefix matching against the
 // runtime's `metadata.codeScope.path`. Multi-attribution is intentional
 // — a shared util file included in two Lambdas pairs against both.
+//
+// The runtime-config boundary collapses two links of a chain — the
+// CFN/SAM service ↔ runtime contract, and the runtime ↔ process
+// contract — because for pairing purposes the chain is transitive
+// (template promises X → runtime gets X → process sees X). The
+// stub layer that builds these provider summaries is responsible for
+// folding in platform-injected vars (AWS_REGION, etc.) so the
+// `provided` set the pairing checks against here is the FULL set the
+// process actually receives, not just the template-declared subset.
 
 import { makeSide } from "../coverage/responseMatch.js";
 
