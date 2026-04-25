@@ -41,6 +41,7 @@ export function apolloFramework(): PatternPack {
           // Apollo v4 convention — the config key is `resolvers`.
           mapProperty: "resolvers",
         },
+        requiresImport: ["@apollo/server"],
       },
       // Pre-v4 path: `import { ApolloServer } from "apollo-server"` /
       // `"apollo-server-express"` / similar. Same shape, different
@@ -53,6 +54,7 @@ export function apolloFramework(): PatternPack {
           importName: "ApolloServer",
           mapProperty: "resolvers",
         },
+        requiresImport: ["apollo-server"],
       },
       {
         kind: "resolver",
@@ -62,6 +64,7 @@ export function apolloFramework(): PatternPack {
           importName: "ApolloServer",
           mapProperty: "resolvers",
         },
+        requiresImport: ["apollo-server-express"],
       },
     ],
 

@@ -51,7 +51,7 @@ describe("resolvePackageExports", () => {
     }
   });
 
-  it("resolves root export via the `exports` field with `types` condition", () => {
+  it("resolves root export via the `exports` field with `types` condition", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -77,7 +77,7 @@ describe("resolvePackageExports", () => {
     expect(result.warnings).toHaveLength(0);
   });
 
-  it("resolves sub-path export and records prefix", () => {
+  it("resolves sub-path export and records prefix", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -100,7 +100,7 @@ describe("resolvePackageExports", () => {
     expect(schemas?.exportPathPrefix).toEqual(["schemas"]);
   });
 
-  it("falls back to `types`/`main` when no `exports` field", () => {
+  it("falls back to `types`/`main` when no `exports` field", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -118,7 +118,7 @@ describe("resolvePackageExports", () => {
     expect(result.entries[0].subPath).toBe(".");
   });
 
-  it("warns on pattern exports and unresolvable sub-paths", () => {
+  it("warns on pattern exports and unresolvable sub-paths", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -140,7 +140,7 @@ describe("resolvePackageExports", () => {
     );
   });
 
-  it("accepts string-valued exports entries", () => {
+  it("accepts string-valued exports entries", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -196,7 +196,7 @@ describe("discoverPackageExports", () => {
     };
   }
 
-  it("emits one unit per exported function with `library` kind", () => {
+  it("emits one unit per exported function with `library` kind", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -220,7 +220,7 @@ describe("discoverPackageExports", () => {
     expect(units.every((u) => u.kind === "library")).toBe(true);
   });
 
-  it("records packageExportInfo with package + exportPath", () => {
+  it("records packageExportInfo with package + exportPath", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -251,7 +251,7 @@ describe("discoverPackageExports", () => {
     });
   });
 
-  it("follows barrel re-exports (`export * from` and `export { A as B } from`)", () => {
+  it("follows barrel re-exports (`export * from` and `export { A as B } from`)", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -282,7 +282,7 @@ describe("discoverPackageExports", () => {
     expect(names).toEqual(["aFn", "renamedHelper"]);
   });
 
-  it("respects excludeNames (skipping `default`)", () => {
+  it("respects excludeNames (skipping `default`)", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -316,7 +316,7 @@ describe("discoverPackageExports", () => {
     expect(units.map((u) => u.name).sort()).toEqual(["other"]);
   });
 
-  it("respects subPaths filter", () => {
+  it("respects subPaths filter", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -369,7 +369,7 @@ describe("packageExports — end-to-end summary", () => {
     clearPackageExportsCache();
   });
 
-  it("produces a library summary with function-call package binding", () => {
+  it("produces a library summary with function-call package binding", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -432,7 +432,7 @@ describe("packageExports — end-to-end summary", () => {
       tsConfigFilePath: path.join(root, "tsconfig.json"),
       frameworks: [pack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     const foo = summaries.find((s) => s.identity.name === "foo");
     expect(foo).toBeDefined();
@@ -447,7 +447,7 @@ describe("packageExports — end-to-end summary", () => {
     expect(binding?.recognition).toBe("package-exports:@ex/lib");
   });
 
-  it("captures return-expression shape on returnStatement terminals", () => {
+  it("captures return-expression shape on returnStatement terminals", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -512,7 +512,7 @@ describe("packageExports — end-to-end summary", () => {
       tsConfigFilePath: path.join(root, "tsconfig.json"),
       frameworks: [pack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     const classify = summaries.find((s) => s.identity.name === "classify");
     const returnValues = classify?.transitions.map((t) =>
@@ -549,7 +549,7 @@ describe("discoverPackageImports", () => {
     }
   });
 
-  it("emits one caller unit per (enclosing function × consumed binding)", () => {
+  it("emits one caller unit per (enclosing function × consumed binding)", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -635,7 +635,7 @@ describe("discoverPackageImports", () => {
     });
   });
 
-  it("produces function-call binding with package + exportPath on summaries", () => {
+  it("produces function-call binding with package + exportPath on summaries", async () => {
     root = writeFixturePackage([
       {
         relPath: "package.json",
@@ -692,7 +692,7 @@ describe("discoverPackageImports", () => {
       tsConfigFilePath: path.join(root, "tsconfig.json"),
       frameworks: [pack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
 
     const loadOne = summaries.find((s) => s.identity.name === "loadOne");
     expect(loadOne).toBeDefined();

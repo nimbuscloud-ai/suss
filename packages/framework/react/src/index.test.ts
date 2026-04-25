@@ -19,7 +19,7 @@ const raise = (msg: string): never => {
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/react");
 
-function runAdapter(): BehavioralSummary[] {
+async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
@@ -40,7 +40,7 @@ function runAdapter(): BehavioralSummary[] {
     frameworks: [reactFramework()],
   });
 
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -81,8 +81,8 @@ describe("reactFramework — pack shape", () => {
 
 describe("reactFramework — integration", () => {
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runAdapter();
+  beforeAll(async () => {
+    summaries = await runAdapter();
   }, 90_000);
 
   it("discovers every default-exported component", () => {

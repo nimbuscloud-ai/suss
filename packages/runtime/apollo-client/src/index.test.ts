@@ -28,17 +28,17 @@ function makeProject() {
   });
 }
 
-function runAdapter(): BehavioralSummary[] {
+async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = makeProject();
   project.addSourceFilesAtPaths(path.join(fixturesDir, "*.tsx"));
   const adapter = createTypeScriptAdapter({
     project,
     frameworks: [apolloClientRuntime()],
   });
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
-function runInMemory(source: string): BehavioralSummary[] {
+async function runInMemory(source: string): Promise<BehavioralSummary[]> {
   const project = new Project({
     useInMemoryFileSystem: true,
     skipAddingFilesFromTsConfig: true,
@@ -55,7 +55,7 @@ function runInMemory(source: string): BehavioralSummary[] {
     project,
     frameworks: [apolloClientRuntime()],
   });
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -65,12 +65,12 @@ function runInMemory(source: string): BehavioralSummary[] {
 describe("apolloClientRuntime — pack shape", () => {
   const pack = apolloClientRuntime();
 
-  it("declares the apollo-client identity on http transport", () => {
+  it("declares the apollo-client identity on http transport", async () => {
     expect(pack.name).toBe("apollo-client");
     expect(pack.protocol).toBe("http");
   });
 
-  it("discovers via both @apollo/client and @apollo/client/react module paths", () => {
+  it("discovers via both @apollo/client and @apollo/client/react module paths", async () => {
     const modules = pack.discovery
       .map((d) =>
         d.match.type === "graphqlHookCall" ? d.match.importModule : null,
@@ -79,7 +79,7 @@ describe("apolloClientRuntime — pack shape", () => {
     expect(modules).toEqual(["@apollo/client", "@apollo/client/react"]);
   });
 
-  it("targets the three canonical hooks", () => {
+  it("targets the three canonical hooks", async () => {
     const hooks = pack.discovery.flatMap((d) =>
       d.match.type === "graphqlHookCall" ? d.match.hookNames : [],
     );
@@ -95,11 +95,11 @@ describe("apolloClientRuntime — pack shape", () => {
 
 describe("apolloClientRuntime — integration", () => {
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runAdapter();
+  beforeAll(async () => {
+    summaries = await runAdapter();
   }, 90_000);
 
-  it("discovers one client summary per hook or imperative call", () => {
+  it("discovers one client summary per hook or imperative call", async () => {
     // Four hook calls (usePet, useCreatePet, useAnonPing, useTicks),
     // two imperative calls (loadPetById, createPetImperative), and
     // one hook using a .graphql file import (useUserFromFile).
@@ -109,7 +109,7 @@ describe("apolloClientRuntime — integration", () => {
     }
   });
 
-  it("binds a named query to graphql-operation(query, GetPet)", () => {
+  it("binds a named query to graphql-operation(query, GetPet)", async () => {
     const getPet = summaries.find((s) => s.identity.name === "usePet.GetPet");
     expect(getPet).toBeDefined();
     expect(getPet?.identity.boundaryBinding).toEqual({
@@ -123,7 +123,7 @@ describe("apolloClientRuntime — integration", () => {
     });
   });
 
-  it("resolves gql through a const binding (GET_PET identifier, not inline)", () => {
+  it("resolves gql through a const binding (GET_PET identifier, not inline)", async () => {
     // The fixture declares `const GET_PET = gql\`query GetPet ...\``
     // and calls `useQuery(GET_PET, ...)`. Discovery has to follow
     // the identifier to the declaration to read the operation name.
@@ -134,7 +134,7 @@ describe("apolloClientRuntime — integration", () => {
     );
   });
 
-  it("handles inline gql`...` arguments (useMutation(gql`...`))", () => {
+  it("handles inline gql`...` arguments (useMutation(gql`...`))", async () => {
     const createPet = summaries.find(
       (s) => s.identity.name === "useCreatePet.CreatePet",
     );
@@ -147,7 +147,7 @@ describe("apolloClientRuntime — integration", () => {
     }
   });
 
-  it("handles anonymous queries — omits operationName, records query type", () => {
+  it("handles anonymous queries — omits operationName, records query type", async () => {
     const anon = summaries.find((s) =>
       s.identity.name.startsWith("useAnonPing."),
     );
@@ -163,7 +163,7 @@ describe("apolloClientRuntime — integration", () => {
     }
   });
 
-  it("discovers subscriptions alongside queries and mutations", () => {
+  it("discovers subscriptions alongside queries and mutations", async () => {
     const tick = summaries.find((s) => s.identity.name === "useTicks.OnTick");
     const sem = tick?.identity.boundaryBinding?.semantics;
     expect(sem?.name === "graphql-operation" ? sem.operationType : null).toBe(
@@ -171,7 +171,7 @@ describe("apolloClientRuntime — integration", () => {
     );
   });
 
-  it("respects import aliases (useMutation as useApolloMutation)", () => {
+  it("respects import aliases (useMutation as useApolloMutation)", async () => {
     // The fixture imports useMutation under an alias. Discovery
     // walks the aliased local name while keeping canonical hook
     // identity for provenance.
@@ -181,7 +181,7 @@ describe("apolloClientRuntime — integration", () => {
     expect(createPet).toBeDefined();
   });
 
-  it("surfaces operation header variables as Input[] with role 'variable'", () => {
+  it("surfaces operation header variables as Input[] with role 'variable'", async () => {
     // `GET_PET` is declared as `query GetPet($id: ID!) { ... }` —
     // the `$id: ID!` variable should show up as a summary input
     // with a non-null ref type. Same machinery powers future
@@ -197,7 +197,7 @@ describe("apolloClientRuntime — integration", () => {
     }
   });
 
-  it("handles multi-variable mutations", () => {
+  it("handles multi-variable mutations", async () => {
     // `CreatePet` takes `$name: String!` — one required variable.
     const create = summaries.find(
       (s) => s.identity.name === "useCreatePet.CreatePet",
@@ -209,14 +209,14 @@ describe("apolloClientRuntime — integration", () => {
     expect(names).toEqual(["name"]);
   });
 
-  it("emits empty inputs for operations with no variables", () => {
+  it("emits empty inputs for operations with no variables", async () => {
     const anon = summaries.find((s) =>
       s.identity.name.startsWith("useAnonPing."),
     );
     expect(anon?.inputs).toEqual([]);
   });
 
-  it("discovers imperative client.query calls", () => {
+  it("discovers imperative client.query calls", async () => {
     const imperativeQuery = summaries.find(
       (s) => s.identity.name === "loadPetById.LoadPet",
     );
@@ -232,7 +232,7 @@ describe("apolloClientRuntime — integration", () => {
     });
   });
 
-  it("discovers imperative client.mutate calls", () => {
+  it("discovers imperative client.mutate calls", async () => {
     const imperativeMutation = summaries.find(
       (s) => s.identity.name === "createPetImperative.CreatePetImperative",
     );
@@ -244,7 +244,7 @@ describe("apolloClientRuntime — integration", () => {
     }
   });
 
-  it("resolves `.graphql` file imports and extracts operation info", () => {
+  it("resolves `.graphql` file imports and extracts operation info", async () => {
     // `useUserFromFile` passes GET_USER_FILE which is imported from
     // `./queries/GetUserFile.graphql`. Discovery reads the file,
     // parses its header, and emits a normal operation summary.
@@ -269,8 +269,8 @@ describe("apolloClientRuntime — integration", () => {
 // ---------------------------------------------------------------------------
 
 describe("apolloClientRuntime — edge cases", () => {
-  it("emits nothing when the Apollo import is absent", () => {
-    const summaries = runInMemory(`
+  it("emits nothing when the Apollo import is absent", async () => {
+    const summaries = await runInMemory(`
       declare function useQuery(doc: unknown, opts?: unknown): any;
       export function Page() {
         useQuery({ query: "raw" });
@@ -279,8 +279,8 @@ describe("apolloClientRuntime — edge cases", () => {
     expect(summaries).toEqual([]);
   });
 
-  it("skips calls whose first argument isn't a gql-tagged template", () => {
-    const summaries = runInMemory(`
+  it("skips calls whose first argument isn't a gql-tagged template", async () => {
+    const summaries = await runInMemory(`
       import { useQuery } from "@apollo/client";
       declare const doc: any;
       export function Page() {
@@ -290,8 +290,8 @@ describe("apolloClientRuntime — edge cases", () => {
     expect(summaries).toEqual([]);
   });
 
-  it("skips tagged templates whose tag isn't gql", () => {
-    const summaries = runInMemory(`
+  it("skips tagged templates whose tag isn't gql", async () => {
+    const summaries = await runInMemory(`
       import { useQuery } from "@apollo/client";
       function css(strings: TemplateStringsArray) { return strings[0]; }
       export function Page() {
@@ -301,8 +301,8 @@ describe("apolloClientRuntime — edge cases", () => {
     expect(summaries).toEqual([]);
   });
 
-  it("handles the shorthand `{ ... }` anonymous query", () => {
-    const summaries = runInMemory(`
+  it("handles the shorthand `{ ... }` anonymous query", async () => {
+    const summaries = await runInMemory(`
       import { gql, useQuery } from "@apollo/client";
       export function Page() {
         useQuery(gql\`{ ping }\`);
@@ -315,8 +315,8 @@ describe("apolloClientRuntime — edge cases", () => {
     );
   });
 
-  it("skips empty-argument hook calls", () => {
-    const summaries = runInMemory(`
+  it("skips empty-argument hook calls", async () => {
+    const summaries = await runInMemory(`
       import { useQuery } from "@apollo/client";
       declare function runHook(): void;
       export function Page() {

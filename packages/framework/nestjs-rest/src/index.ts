@@ -73,6 +73,7 @@ export function nestjsRestFramework(): PatternPack {
             All: "*",
           },
         },
+        requiresImport: ["@nestjs/common"],
       },
     ],
 

@@ -1172,8 +1172,15 @@ export interface TypeScriptAdapterConfig {
 
 export interface TypeScriptAdapter {
   project: Project;
-  extractFromFiles(filePaths: string[]): BehavioralSummary[];
-  extractAll(): BehavioralSummary[];
+  /**
+   * Extract summaries from a specific list of files. Returns a
+   * Promise so the implementation can do concurrent I/O during
+   * the pre-filter / lazy-load phases without bottlenecking on
+   * sync `fs.readFileSync`.
+   */
+  extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]>;
+  /** Extract summaries from every (non-declaration) file the Project knows about. */
+  extractAll(): Promise<BehavioralSummary[]>;
 }
 
 export function createTypeScriptAdapter(
@@ -1190,7 +1197,7 @@ export function createTypeScriptAdapter(
   return {
     project,
 
-    extractFromFiles(filePaths: string[]): BehavioralSummary[] {
+    async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
       const summaries: BehavioralSummary[] = [];
 
       for (const fp of filePaths) {
@@ -1210,7 +1217,7 @@ export function createTypeScriptAdapter(
       return summaries;
     },
 
-    extractAll(): BehavioralSummary[] {
+    async extractAll(): Promise<BehavioralSummary[]> {
       const timer = createTimer();
       const summaries: BehavioralSummary[] = [];
 

@@ -25,8 +25,8 @@ const reactFixtures = path.join(repoRoot, "fixtures/react");
 const storybookFixtures = path.join(repoRoot, "fixtures/storybook");
 
 describe("React + Storybook integration", () => {
-  it("extracts component summaries + story stubs and pairs them", () => {
-    const summaries = runPipeline();
+  it("extracts component summaries + story stubs and pairs them", async () => {
+    const summaries = await runPipeline();
 
     const button = summaries.find(
       (s) => s.identity.name === "Button" && s.kind === "component",
@@ -44,11 +44,11 @@ describe("React + Storybook integration", () => {
     expect(buttonStories.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("flags a story arg that the component doesn't declare as an input", () => {
+  it("flags a story arg that the component doesn't declare as an input", async () => {
     // Button.tsx declares `{ label }` as its only prop. Button.stories.tsx's
     // `Disabled` story passes `disabled: true`, which the component
     // doesn't accept — the cross-shape check should flag it.
-    const summaries = runPipeline();
+    const summaries = await runPipeline();
     const { findings } = checkAll(summaries);
 
     const argFindings = findings.filter((f) => f.kind === "scenarioArgUnknown");
@@ -62,8 +62,8 @@ describe("React + Storybook integration", () => {
     expect(disabledFinding?.severity).toBe("warning");
   });
 
-  it("does not flag recognised args (label)", () => {
-    const summaries = runPipeline();
+  it("does not flag recognised args (label)", async () => {
+    const summaries = await runPipeline();
     const { findings } = checkAll(summaries);
 
     const labelFinding = findings.find(
@@ -74,7 +74,7 @@ describe("React + Storybook integration", () => {
     expect(labelFinding).toBeUndefined();
   });
 
-  it("flags a coverage gap: UserCard has a conditional branch on `user` but only one story supplies it", () => {
+  it("flags a coverage gap: UserCard has a conditional branch on `user` but only one story supplies it", async () => {
     // UserCard's inferred summary has two transitions — an early
     // return when `!user`, and a default render. UserCard.stories.tsx
     // only ships a `Loaded` story that passes a user object, so the
@@ -87,7 +87,7 @@ describe("React + Storybook integration", () => {
     // For v0 this assertion verifies the mechanism: if we remove
     // the only UserCard story's `user` arg, the coverage gap fires.
     // The positive case (user IS supplied) should NOT flag UserCard.
-    const summaries = runPipeline();
+    const summaries = await runPipeline();
     const { findings } = checkAll(summaries);
 
     const userCardGaps = findings.filter(
@@ -102,7 +102,7 @@ describe("React + Storybook integration", () => {
   });
 });
 
-function runPipeline() {
+async function runPipeline() {
   // Extract React component + sub-unit summaries from the fixture set.
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
@@ -120,7 +120,7 @@ function runPipeline() {
     project,
     frameworks: [reactFramework()],
   });
-  const componentSummaries = adapter.extractAll();
+  const componentSummaries = await adapter.extractAll();
 
   // Generate Storybook stub summaries from the stories fixture set.
   const storySummaries = generateSummariesFromStories(

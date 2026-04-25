@@ -36,7 +36,7 @@ function getFirstCallExpression(project: Project, fileName: string) {
 // ---------------------------------------------------------------------------
 
 describe("findResponseVariable", () => {
-  it("finds variable from const res = await fetch(...)", () => {
+  it("finds variable from const res = await fetch(...)", async () => {
     const project = createProject();
     project.createSourceFile(
       "test.ts",
@@ -51,7 +51,7 @@ describe("findResponseVariable", () => {
     expect(findResponseVariable(call)).toBe("res");
   });
 
-  it("finds variable from const result = await client.getUser(...)", () => {
+  it("finds variable from const result = await client.getUser(...)", async () => {
     const project = createProject();
     project.createSourceFile(
       "test.ts",
@@ -66,7 +66,7 @@ describe("findResponseVariable", () => {
     expect(findResponseVariable(call)).toBe("result");
   });
 
-  it("returns null for unassigned calls", () => {
+  it("returns null for unassigned calls", async () => {
     const project = createProject();
     project.createSourceFile(
       "test.ts",
@@ -80,7 +80,7 @@ describe("findResponseVariable", () => {
     expect(findResponseVariable(call)).toBeNull();
   });
 
-  it("returns null for destructured assignments via the simple-identifier API", () => {
+  it("returns null for destructured assignments via the simple-identifier API", async () => {
     // findResponseVariable is the legacy shape; richer destructuring info is
     // available via findResponseAccessor. Pin the legacy contract here.
     const project = createProject();
@@ -133,7 +133,7 @@ const fetchPack: PatternPack = {
 };
 
 describe("expectedInput on client transitions", () => {
-  it("populates expectedInput with body fields read after status check", () => {
+  it("populates expectedInput with body fields read after status check", async () => {
     const project = createProject();
     project.createSourceFile(
       "consumer.ts",
@@ -153,7 +153,7 @@ describe("expectedInput on client transitions", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
     // Find the transition in the status === 200 branch
@@ -174,7 +174,7 @@ describe("expectedInput on client transitions", () => {
     }
   });
 
-  it("sets expectedInput to null when no response fields are accessed", () => {
+  it("sets expectedInput to null when no response fields are accessed", async () => {
     const project = createProject();
     project.createSourceFile(
       "consumer.ts",
@@ -193,7 +193,7 @@ describe("expectedInput on client transitions", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
     // No body field accesses — all transitions should have no expectedInput
@@ -202,7 +202,7 @@ describe("expectedInput on client transitions", () => {
     }
   });
 
-  it("captures nested property accesses like result.body.user.name", () => {
+  it("captures nested property accesses like result.body.user.name", async () => {
     const project = createProject();
     project.createSourceFile(
       "consumer.ts",
@@ -221,7 +221,7 @@ describe("expectedInput on client transitions", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
     const withInput = summaries[0].transitions.find(
@@ -246,7 +246,7 @@ describe("expectedInput on client transitions", () => {
     }
   });
 
-  it("tracks fields read via destructured response (axios-style)", () => {
+  it("tracks fields read via destructured response (axios-style)", async () => {
     // Real axios usage: `const { data, status } = await axios.get(...)`.
     // Status checks become accesses to `status` (resolved to the underlying
     // property), and field reads on `data` become `data.x` chains.
@@ -280,7 +280,7 @@ describe("expectedInput on client transitions", () => {
       project,
       frameworks: [axiosLikePack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
     const withBodyFields = summaries[0].transitions.find(
@@ -302,7 +302,7 @@ describe("expectedInput on client transitions", () => {
     }
   });
 
-  it("respects renamed destructured bindings (`{ status: code }`)", () => {
+  it("respects renamed destructured bindings (`{ status: code }`)", async () => {
     const axiosLikePack: PatternPack = {
       ...fetchPack,
       name: "axios-like",
@@ -331,7 +331,7 @@ describe("expectedInput on client transitions", () => {
       project,
       frameworks: [axiosLikePack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const withInput = summaries[0].transitions.find(
       (t) => t.expectedInput?.type === "record",
     );
@@ -346,7 +346,7 @@ describe("expectedInput on client transitions", () => {
     }
   });
 
-  it("filters out status/ok/headers accesses", () => {
+  it("filters out status/ok/headers accesses", async () => {
     const project = createProject();
     project.createSourceFile(
       "consumer.ts",
@@ -366,7 +366,7 @@ describe("expectedInput on client transitions", () => {
       project,
       frameworks: [fetchPack],
     });
-    const summaries = adapter.extractAll();
+    const summaries = await adapter.extractAll();
     const withInput = summaries[0].transitions.find(
       (t) => t.expectedInput !== undefined,
     );

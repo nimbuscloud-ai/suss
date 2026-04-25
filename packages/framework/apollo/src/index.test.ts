@@ -15,7 +15,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/apollo");
 
-function runAdapter(): BehavioralSummary[] {
+async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
@@ -33,7 +33,7 @@ function runAdapter(): BehavioralSummary[] {
     frameworks: [apolloFramework()],
   });
 
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -43,12 +43,12 @@ function runAdapter(): BehavioralSummary[] {
 describe("apolloFramework — pack shape", () => {
   const pack = apolloFramework();
 
-  it("declares the apollo identity on http transport", () => {
+  it("declares the apollo identity on http transport", async () => {
     expect(pack.name).toBe("apollo");
     expect(pack.protocol).toBe("http");
   });
 
-  it("has one resolverMap discovery pattern per Apollo import path", () => {
+  it("has one resolverMap discovery pattern per Apollo import path", async () => {
     const modules = pack.discovery
       .map((d) =>
         d.match.type === "resolverMap" ? d.match.importModule : null,
@@ -62,7 +62,7 @@ describe("apolloFramework — pack shape", () => {
     ]);
   });
 
-  it("names the canonical (parent, args, context, info) positional roles", () => {
+  it("names the canonical (parent, args, context, info) positional roles", async () => {
     if (pack.inputMapping.type !== "positionalParams") {
       throw new Error("expected positionalParams");
     }
@@ -81,11 +81,11 @@ describe("apolloFramework — pack shape", () => {
 
 describe("apolloFramework — integration", () => {
   let summaries: BehavioralSummary[];
-  beforeAll(() => {
-    summaries = runAdapter();
+  beforeAll(async () => {
+    summaries = await runAdapter();
   }, 90_000);
 
-  it("discovers one resolver summary per (typeName, fieldName) pair", () => {
+  it("discovers one resolver summary per (typeName, fieldName) pair", async () => {
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual([
       "Mutation.createUser",
@@ -98,7 +98,7 @@ describe("apolloFramework — integration", () => {
     }
   });
 
-  it("binds each resolver via graphql-resolver semantics", () => {
+  it("binds each resolver via graphql-resolver semantics", async () => {
     const userQuery = summaries.find((s) => s.identity.name === "Query.user");
     expect(userQuery).toBeDefined();
     expect(userQuery?.identity.boundaryBinding).toEqual({
@@ -112,7 +112,7 @@ describe("apolloFramework — integration", () => {
     });
   });
 
-  it("captures (parent, args, context, info) positional inputs by role", () => {
+  it("captures (parent, args, context, info) positional inputs by role", async () => {
     const userQuery = summaries.find((s) => s.identity.name === "Query.user");
     expect(userQuery).toBeDefined();
     const roles = userQuery?.inputs
@@ -122,7 +122,7 @@ describe("apolloFramework — integration", () => {
     expect(roles).toEqual(["parent", "args", "context"]);
   });
 
-  it("Query.user branches on args.id — one throw transition, one return", () => {
+  it("Query.user branches on args.id — one throw transition, one return", async () => {
     const userQuery = summaries.find((s) => s.identity.name === "Query.user");
     expect(userQuery).toBeDefined();
     const outputs = userQuery?.transitions.map((t) => t.output.type);
@@ -130,7 +130,7 @@ describe("apolloFramework — integration", () => {
     expect(outputs).toContain("return");
   });
 
-  it("discovers Mutation.createUser via method-shorthand property", () => {
+  it("discovers Mutation.createUser via method-shorthand property", async () => {
     const createUser = summaries.find(
       (s) => s.identity.name === "Mutation.createUser",
     );
@@ -142,7 +142,7 @@ describe("apolloFramework — integration", () => {
     expect(outputs).toContain("return");
   });
 
-  it("discovers type-level resolvers (User.fullName), not just Query/Mutation", () => {
+  it("discovers type-level resolvers (User.fullName), not just Query/Mutation", async () => {
     const fullName = summaries.find((s) => s.identity.name === "User.fullName");
     expect(fullName).toBeDefined();
     expect(fullName?.identity.boundaryBinding).toEqual({
@@ -162,7 +162,7 @@ describe("apolloFramework — integration", () => {
 // a full fixture file.
 // ---------------------------------------------------------------------------
 
-function runInMemory(source: string): BehavioralSummary[] {
+async function runInMemory(source: string): Promise<BehavioralSummary[]> {
   const project = new Project({
     useInMemoryFileSystem: true,
     skipAddingFilesFromTsConfig: true,
@@ -179,12 +179,12 @@ function runInMemory(source: string): BehavioralSummary[] {
     project,
     frameworks: [apolloFramework()],
   });
-  return adapter.extractAll();
+  return await adapter.extractAll();
 }
 
 describe("apolloFramework — discovery shapes", () => {
-  it("inline resolvers: `new ApolloServer({ resolvers: { Query: {...} } })`", () => {
-    const summaries = runInMemory(`
+  it("inline resolvers: `new ApolloServer({ resolvers: { Query: {...} } })`", async () => {
+    const summaries = await runInMemory(`
       import { ApolloServer } from "@apollo/server";
       const server = new ApolloServer({
         typeDefs: "",
@@ -198,8 +198,8 @@ describe("apolloFramework — discovery shapes", () => {
     expect(summaries.map((s) => s.identity.name)).toEqual(["Query.ping"]);
   });
 
-  it("satisfies-wrapped resolvers const still resolves", () => {
-    const summaries = runInMemory(`
+  it("satisfies-wrapped resolvers const still resolves", async () => {
+    const summaries = await runInMemory(`
       import { ApolloServer } from "@apollo/server";
       type Resolvers = Record<string, Record<string, (...a: unknown[]) => unknown>>;
       const resolvers = {
@@ -210,7 +210,7 @@ describe("apolloFramework — discovery shapes", () => {
     expect(summaries.map((s) => s.identity.name)).toEqual(["Query.ping"]);
   });
 
-  it("excludeTypes skips the listed types", () => {
+  it("excludeTypes skips the listed types", async () => {
     const project = new Project({
       useInMemoryFileSystem: true,
       skipAddingFilesFromTsConfig: true,
@@ -255,19 +255,19 @@ describe("apolloFramework — discovery shapes", () => {
         },
       ],
     });
-    const names = adapter.extractAll().map((s) => s.identity.name);
+    const names = (await adapter.extractAll()).map((s) => s.identity.name);
     expect(names).toEqual(["Query.ping"]);
   });
 
-  it("emits nothing when the ApolloServer import isn't present", () => {
-    const summaries = runInMemory(`
+  it("emits nothing when the ApolloServer import isn't present", async () => {
+    const summaries = await runInMemory(`
       export const nothing = 1;
     `);
     expect(summaries).toEqual([]);
   });
 
-  it("emits nothing when resolvers isn't an object literal (dynamically merged)", () => {
-    const summaries = runInMemory(`
+  it("emits nothing when resolvers isn't an object literal (dynamically merged)", async () => {
+    const summaries = await runInMemory(`
       import { ApolloServer } from "@apollo/server";
       declare const mergedResolvers: any;
       const server = new ApolloServer({ typeDefs: "", resolvers: mergedResolvers });
@@ -275,8 +275,8 @@ describe("apolloFramework — discovery shapes", () => {
     expect(summaries).toEqual([]);
   });
 
-  it("emits nothing when the constructor arg isn't an object literal", () => {
-    const summaries = runInMemory(`
+  it("emits nothing when the constructor arg isn't an object literal", async () => {
+    const summaries = await runInMemory(`
       import { ApolloServer } from "@apollo/server";
       declare const config: any;
       const server = new ApolloServer(config);
@@ -284,8 +284,8 @@ describe("apolloFramework — discovery shapes", () => {
     expect(summaries).toEqual([]);
   });
 
-  it("skips top-level type-maps whose inner values aren't functions", () => {
-    const summaries = runInMemory(`
+  it("skips top-level type-maps whose inner values aren't functions", async () => {
+    const summaries = await runInMemory(`
       import { ApolloServer } from "@apollo/server";
       const server = new ApolloServer({
         typeDefs: "",

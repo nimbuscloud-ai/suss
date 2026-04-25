@@ -41,6 +41,12 @@ export function reactFramework(): PatternPack {
       {
         kind: "component",
         match: { type: "namedExport", names: ["default"] },
+        // Component files virtually always import `react` (even
+        // under the new JSX runtime, libraries / hooks bring it
+        // in). Misses files that bare-export a component without
+        // any react import — rare, and acceptable given the
+        // dispatch saving on every non-component file.
+        requiresImport: ["react"],
       },
     ],
 

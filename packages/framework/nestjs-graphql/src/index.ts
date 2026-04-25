@@ -70,6 +70,7 @@ export function nestjsGraphqlFramework(): PatternPack {
             "Subscription",
           ],
         },
+        requiresImport: ["@nestjs/graphql"],
       },
     ],
 
