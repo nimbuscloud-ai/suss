@@ -18,11 +18,29 @@
 //   5. Writes a consolidated roll-up to `scripts/dogfood-report.json`.
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 
-import { createTypeScriptAdapter } from "../packages/adapter/typescript/dist/index.js";
 import { pairSummaries } from "../packages/checker/dist/index.js";
+
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workerCount = Math.min(limit, items.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) {
+        return;
+      }
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -88,67 +106,69 @@ sussImportTargets.add("@suss/behavioral-ir/schemas");
 
 const allSummaries = [];
 
-for (const pkg of packages) {
+const workerScript = path.join(__dirname, "dogfood-worker.mjs");
+const sussImportTargetsList = [...sussImportTargets];
+
+function runWorker(pkg) {
+  return new Promise((resolve) => {
+    const worker = new Worker(workerScript, {
+      workerData: {
+        pkg: {
+          packageJson: pkg.packageJson,
+          packageJsonPath: pkg.packageJsonPath,
+          tsconfig: path.join(pkg.dir, "tsconfig.json"),
+        },
+        sussImportTargets: sussImportTargetsList,
+      },
+    });
+    worker.once("message", (msg) => {
+      resolve(msg);
+      worker.terminate();
+    });
+    worker.once("error", (err) => {
+      resolve({ kind: "error", message: err.message });
+    });
+  });
+}
+
+async function extractOne(pkg) {
   const name = pkg.packageJson.name;
   const tsconfig = path.join(pkg.dir, "tsconfig.json");
   if (!fs.existsSync(tsconfig)) {
-    console.log(`\n=== ${name} ===`);
-    console.log("  skipped: no tsconfig.json");
-    report.packages.push({ name, skipped: "no tsconfig.json" });
+    return { kind: "skipped", name, reason: "no tsconfig.json" };
+  }
+
+  const result = await runWorker(pkg);
+  if (result.kind === "error") {
+    return { kind: "error", name, message: result.message };
+  }
+  return { kind: "ok", name, pkg, tsconfig, summaries: result.summaries };
+}
+
+const concurrency = Math.max(2, Math.min(packages.length, os.cpus().length));
+console.log(
+  `Extracting ${packages.length} @suss/* packages with concurrency ${concurrency}…`,
+);
+const extractResults = await mapWithConcurrency(
+  packages,
+  concurrency,
+  extractOne,
+);
+
+for (const result of extractResults) {
+  console.log(`\n=== ${result.name} ===`);
+  if (result.kind === "skipped") {
+    console.log(`  skipped: ${result.reason}`);
+    report.packages.push({ name: result.name, skipped: result.reason });
+    continue;
+  }
+  if (result.kind === "error") {
+    console.log(`  error: ${result.message}`);
+    report.packages.push({ name: result.name, error: result.message });
     continue;
   }
 
-  console.log(`\n=== ${name} ===`);
-
-  const pack = {
-    name: `package-exports:${name}`,
-    languages: ["typescript"],
-    protocol: "in-process",
-    discovery: [
-      {
-        kind: "library",
-        match: {
-          type: "packageExports",
-          packageJsonPath: pkg.packageJsonPath,
-        },
-      },
-      {
-        kind: "caller",
-        match: {
-          type: "packageImport",
-          packages: [...sussImportTargets].filter((p) => p !== name),
-        },
-      },
-    ],
-    terminals: [
-      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
-      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
-    ],
-    inputMapping: {
-      type: "positionalParams",
-      params: [
-        { position: 0, role: "arg0" },
-        { position: 1, role: "arg1" },
-        { position: 2, role: "arg2" },
-        { position: 3, role: "arg3" },
-      ],
-    },
-  };
-
-  const adapter = createTypeScriptAdapter({
-    tsConfigFilePath: tsconfig,
-    frameworks: [pack],
-  });
-
-  let summaries;
-  try {
-    summaries = adapter.extractAll();
-  } catch (err) {
-    console.log(`  error: ${err.message}`);
-    report.packages.push({ name, error: err.message });
-    continue;
-  }
-
+  const { name, pkg, tsconfig, summaries } = result;
   const providers = summaries.filter((s) => s.kind === "library");
   const consumers = summaries.filter((s) => s.kind === "caller");
 
@@ -192,7 +212,6 @@ for (const pkg of packages) {
   totalConsumers += consumers.length;
   allSummaries.push(...summaries);
 
-  // Write per-package summaries file if dist/ exists.
   const distDir = path.join(pkg.dir, "dist");
   const summariesPath = path.join(distDir, "suss-summaries.json");
   if (fs.existsSync(distDir)) {
