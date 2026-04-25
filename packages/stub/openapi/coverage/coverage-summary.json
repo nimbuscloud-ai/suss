@@ -57,7 +57,7 @@
       "pct": 100
     }
   },
-  "src/schema-to-shape.ts": {
+  "src/schemaToShape.ts": {
     "lines": {
       "total": 99,
       "covered": 87,
@@ -109,7 +109,7 @@
       "pct": 100
     }
   },
-  "src/summary-builder.ts": {
+  "src/summaryBuilder.ts": {
     "lines": {
       "total": 85,
       "covered": 80,

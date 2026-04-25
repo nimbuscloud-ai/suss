@@ -18,7 +18,7 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 
-export { httpRouteDiscovery } from "./pack-helpers.js";
+export { httpRouteDiscovery } from "./packHelpers.js";
 
 export type {
   BindingExtraction,

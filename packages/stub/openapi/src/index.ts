@@ -5,7 +5,7 @@ import path from "node:path";
 
 import YAML from "yaml";
 
-import { specToSummaries } from "./summary-builder.js";
+import { specToSummaries } from "./summaryBuilder.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "./spec.js";
