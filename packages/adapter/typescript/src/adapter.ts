@@ -1248,6 +1248,11 @@ export function createTypeScriptAdapter(
     );
 
   let lazyBootstrapped = false;
+  // Captured from createLazyProject — the full tsconfig include set,
+  // regardless of whether the bootstrap pre-loaded each file. Closure
+  // expansion uses it to lazy-add callee files it walks into without
+  // pulling in anything outside the project (node_modules, etc.).
+  let projectFileSet: ReadonlySet<string> | undefined;
 
   // Resolve the cache directory:
   //   - explicit `null` opts out
@@ -1398,6 +1403,7 @@ export function createTypeScriptAdapter(
             }
           }
         }
+        projectFileSet = lazy.projectFileSet;
         lazyBootstrapped = true;
       }
 
@@ -1464,6 +1470,13 @@ export function createTypeScriptAdapter(
       // call edge from an already-summarized unit becomes a `library`
       // summary. Gated by `includeReachable` (default true) so callers
       // can opt out for pack-only extraction.
+      //
+      // We pass `projectFileSet` so closure can lazy-add each callee's
+      // source file the moment it walks into a new one. Without this,
+      // ts-morph's symbol resolution loads callee files into the
+      // underlying program but leaves them off project.getSourceFiles(),
+      // and the rethrow-enrichment lookup (built from that list) silently
+      // skips closure-derived summaries.
       const withClosure =
         config.includeReachable !== false
           ? timer.time("expandReachableClosure", () =>
@@ -1471,27 +1484,10 @@ export function createTypeScriptAdapter(
                 withSubUnits,
                 project,
                 config.extractorOptions,
+                projectFileSet,
               ),
             )
           : withSubUnits;
-
-      // Closure expansion creates summaries for callee functions whose
-      // SourceFile ts-morph loaded via symbol resolution but which
-      // were never added to the project's source-file tracker. Add
-      // them now so the rethrow-enrichment lookup (which scans
-      // project.getSourceFiles()) can locate them. Without this,
-      // rethrow enrichment silently skips closure-derived summaries
-      // — the same gap warm-with-changes used to expose by accident.
-      timer.time("syncClosureSourceFiles", () => {
-        for (const summary of withClosure) {
-          try {
-            project.addSourceFileAtPath(summary.location.file);
-          } catch {
-            // File listed in a summary but unreadable now — skip;
-            // subsequent passes tolerate missing files.
-          }
-        }
-      });
 
       // Rethrow enrichment: bare `throw err` inside a catch block picks
       // up `transition.metadata.rethrow.possibleSources` — the set of
