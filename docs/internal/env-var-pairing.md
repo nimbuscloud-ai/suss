@@ -14,8 +14,9 @@ a missing var resolves to `undefined`, which silently flips truthy
 checks, changes comparisons, malforms URLs, or throws. The runtime-
 config contract is an **input** to the execution-path graph suss
 already models. Verifying the contract against what the runtime
-actually provides keeps the simulacrum honest — without it, the path
-suss thinks the program takes can diverge from what production sees.
+actually provides keeps the simulacrum aligned with execution —
+without it, the path suss thinks the program takes can diverge from
+what production sees.
 
 ## Boundary framing
 
@@ -39,7 +40,7 @@ It's a **two-link chain** modeled as one boundary:
 2. **runtime ↔ process** — the runtime hands its env block to the
    process at startup; the process reads via `process.env`.
 
-The collapse is honest because the chain is transitive: if the
+The collapse is sound because the chain is transitive: if the
 template promises `{A, B, C}` and the runtime is what the template
 materialized, the process sees `{A, B, C}`. Pairing logic doesn't
 need the intermediate.
