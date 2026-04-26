@@ -147,6 +147,33 @@ describe("aws-sqs integration", () => {
     );
     expect(orders).toBeUndefined();
   });
+
+  it("flags boundaryFieldUnknown (aspect: receive) for the producer/consumer body-shape mismatch on OrdersQueue", async () => {
+    // OrderProducer sends `{ id, total }`; OrderConsumer destructures
+    // `{ id, totalAmount }`. The `total` vs `totalAmount` mismatch
+    // means the consumer reads a field the producer doesn't send.
+    const findings = await runPipeline();
+    const bodyMismatches = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "receive",
+    );
+    const totalAmountMismatch = bodyMismatches.find((f) =>
+      f.description.includes("totalAmount"),
+    );
+    expect(totalAmountMismatch).toBeDefined();
+    expect(totalAmountMismatch?.severity).toBe("warning");
+    expect(totalAmountMismatch?.description).toContain("OrdersQueue");
+  });
+
+  it("does NOT flag the producer's `id` field (consumer reads it)", async () => {
+    const findings = await runPipeline();
+    const bodyMismatches = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "receive",
+    );
+    const idMismatch = bodyMismatches.find((f) =>
+      f.description.includes('"id"'),
+    );
+    expect(idMismatch).toBeUndefined();
+  });
 });
 
 async function extractCode(): Promise<BehavioralSummary[]> {
