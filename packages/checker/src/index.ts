@@ -177,7 +177,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
 
   // Relational-storage pairing: pair schema-derived providers
   // (Prisma model declarations, Drizzle pgTable() declarations)
-  // against `storageAccess` effects on code summaries. Same
+  // against `interaction(class: "storage-access")` effects on code summaries. Same
   // provider-declares-contract / consumers-pair-against-it shape;
   // emits the four field-existence findings (read/write unknown,
   // unused, write-only). Constraint findings are reserved in the IR

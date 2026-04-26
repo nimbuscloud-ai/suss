@@ -1579,7 +1579,7 @@ function synthesizeSubUnits(
   }
   // Sub-units run through the same recognizer set as top-level
   // discovered units — a Prisma call inside a React useEffect body
-  // should still emit storageAccess.
+  // should still emit interaction(class: "storage-access").
   const allRecognizers = collectInvocationRecognizers(frameworks);
 
   const synthesized: BehavioralSummary[] = [];

@@ -305,8 +305,8 @@ export const FindingKindSchema = z.enum([
    * fails (Prisma / typed ORMs reject at the type level; raw
    * SQL drivers and Drizzle compile but the query returns
    * non-deterministic single rows). Severity: error. Pairs the
-   * `selector` field on a `storageAccess` effect against the
-   * `indexes` declared on the provider's `storageContract`.
+   * `interaction.selector` field on a storage-access interaction
+   * against the `indexes` declared on the provider's `storageContract`.
    *
    * Reserved in v0 taxonomy; emitter ships when an access pack
    * needs it (likely in the Drizzle / raw-SQL packs where
@@ -996,64 +996,19 @@ export const EffectSchema = z.discriminatedUnion("type", [
     newValue: z.unknown().optional(),
   }),
   /**
-   * Read or write against a storage system (Postgres / MySQL / SQLite
-   * via Prisma, Drizzle, raw drivers, etc.). Captured as a transition
-   * effect so storage accesses get the same execution-path attribution
-   * invocation effects already have — preconditions for branched
-   * calls, location for the call site. One transition can have
-   * MULTIPLE storageAccess effects (a join or nested select touches
-   * more than one table). The pairing layer
-   * (`checkRelationalStorage`) groups these by `(storageSystem,
-   * scope, table)` and compares field sets against schema-derived
-   * provider summaries.
-   */
-  z.object({
-    type: z.literal("storageAccess"),
-    kind: z.enum(["read", "write"]),
-    /** Matches the `storageSystem` on the paired storage-* binding. */
-    storageSystem: z.string(),
-    /** ORM / driver scope (defaults to "default" for single-DB setups). */
-    scope: z.string(),
-    /** Table / model the access targets. */
-    table: z.string(),
-    /**
-     * Columns referenced by the access. `["*"]` is the convention for
-     * default-shape reads (e.g. Prisma `findUnique({ where: { id } })`
-     * with no `select`) — the consumer reads every scalar column the
-     * provider declares. Pairing logic treats `["*"]` specially when
-     * deciding whether a column is unused.
-     */
-    fields: z.array(z.string()),
-    /**
-     * For reads: columns referenced in the where-clause / selector
-     * (Prisma `where`, Drizzle `.where(eq(table.col, x))`, raw
-     * `WHERE col = ?`). Used by future checks that pair selector
-     * columns against indexes; ignored for write-side checks today.
-     */
-    selector: z.array(z.string()).optional(),
-    /**
-     * The driver-specific operation name — `findUnique`, `create`,
-     * `select`, `insertOne`, etc. Informational; the kind field is
-     * what pairing dispatches on.
-     */
-    operation: z.string().optional(),
-    /**
-     * Same shape as invocation.preconditions — the ancestor conditions
-     * that gate reaching this access within its transition. Populated
-     * for accesses nested inside conditional blocks.
-     */
-    preconditions: z.array(PredicateSchema).optional(),
-  }),
-  /**
    * Outbound boundary interaction — code at line N talks to something
    * across a boundary. Discriminated by `interaction.class` so each
    * class carries the typed structural fields appropriate to its
    * operation shape (storage columns, RPC payload + response, message
    * body, env-var name). See `docs/internal/interactions-design.md`.
    *
-   * Coexists with the `storageAccess` variant during the consolidation
-   * pass. After task #169, `storageAccess` folds into
-   * `interaction(class: "storage-access")` and the variant is removed.
+   * Subsumes what was previously a separate `storageAccess` Effect
+   * variant (removed in task #169 — alpha software, no deprecation
+   * cycle). `interaction(class: "storage-access")` now carries all
+   * the same data: `binding.semantics` (StorageRelationalSemantics)
+   * holds the (storageSystem, scope, table) identity, and
+   * `interaction.{kind, fields, selector, operation}` holds the
+   * operation details.
    */
   z.object({
     type: z.literal("interaction"),

@@ -245,8 +245,8 @@ export function runtimeConfigBinding(opts: {
 /**
  * Build a storage-relational binding — the provider side of a
  * relational storage table (Postgres / MySQL / SQLite). Pairs with
- * code units that emit `storageAccess` effects against the same
- * `(storageSystem, scope, table)` triple.
+ * code units that emit `interaction(class: "storage-access")` effects
+ * against the same `(storageSystem, scope, table)` triple.
  *
  * Other storage models (document, tabular-NoSQL, key-value, blob)
  * get their own binding constructors when those phases ship.

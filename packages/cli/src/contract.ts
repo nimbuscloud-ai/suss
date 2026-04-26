@@ -52,7 +52,7 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
   prisma: async (specPath) => {
     // `--from prisma` reads a `schema.prisma` file and emits one
     // `library`-kind summary per model with storage-relational semantics
-    // that the checker pairs against `storageAccess` effects in code.
+    // that the checker pairs against `interaction(class: "storage-access")` effects in code.
     const mod = await import("@suss/contract-prisma");
     return mod.prismaSchemaFileToSummaries(specPath);
   },

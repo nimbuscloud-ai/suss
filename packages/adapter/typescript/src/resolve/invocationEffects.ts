@@ -198,7 +198,7 @@ export function extractInvocationEffects(
  * to avoid double-counting calls that already become terminals
  * (`return foo()`) or whose return value is consumed (`const x =
  * foo()`). Recognizers don't have those concerns: emitting a
- * `storageAccess` for `const user = await db.user.findUnique(...)`
+ * `interaction(class: "storage-access")` for `const user = await db.user.findUnique(...)`
  * is exactly what the demo needs. Coupling recognizer reach to the
  * invocation walker's scope would silently drop the dominant
  * Prisma pattern.

@@ -632,58 +632,6 @@
                     "properties": {
                       "type": {
                         "type": "string",
-                        "const": "storageAccess"
-                      },
-                      "kind": {
-                        "type": "string",
-                        "enum": ["read", "write"]
-                      },
-                      "storageSystem": {
-                        "type": "string"
-                      },
-                      "scope": {
-                        "type": "string"
-                      },
-                      "table": {
-                        "type": "string"
-                      },
-                      "fields": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "selector": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "operation": {
-                        "type": "string"
-                      },
-                      "preconditions": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/$defs/__schema1"
-                        }
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "kind",
-                      "storageSystem",
-                      "scope",
-                      "table",
-                      "fields"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "type": {
-                        "type": "string",
                         "const": "interaction"
                       },
                       "binding": {

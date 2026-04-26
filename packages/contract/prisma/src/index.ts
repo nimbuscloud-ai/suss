@@ -4,7 +4,7 @@
 // Parses `schema.prisma` via `@mrleebo/prisma-ast` (a stable parser
 // that doesn't pull in Prisma's runtime). Emits one provider summary
 // per model that the checker's `checkRelationalStorage` pass pairs
-// against `storageAccess` effects in code summaries.
+// against `interaction(class: "storage-access")` effects in code summaries.
 //
 // Out of scope for v0:
 //   - MongoDB and other non-relational providers (skipped with a

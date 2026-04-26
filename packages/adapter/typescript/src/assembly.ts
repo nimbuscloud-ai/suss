@@ -142,11 +142,11 @@ export function extractRawBranches(
     }
   }
 
-  // Recognized typed effects (e.g. storageAccess) attach to the
-  // same default branch. They bypass the terminal-line dedup
+  // Recognized typed effects (interaction(class: ...)) attach to
+  // the same default branch. They bypass the terminal-line dedup
   // because they're additive to the invocation effect — a Prisma
   // call that's also somehow a terminal would emit BOTH a typed
-  // storageAccess (paired against the schema) AND any terminal-
+  // interaction (paired against the schema) AND any terminal-
   // shaped invocation, and that's the right behavior.
   if (recognized.length > 0) {
     const defaultBranch = rawBranches.find((b) => b.isDefault);
