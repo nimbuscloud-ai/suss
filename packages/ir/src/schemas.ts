@@ -549,8 +549,7 @@ export const RuntimeConfigSemanticsSchema = z.object({
  * `(storageSystem, scope, table)`.
  *
  * Other storage models (document, tabular-NoSQL, key-value, blob)
- * each get their own SemanticsSchema variant when those phases ship
- * — see `docs/internal/storage-pairing.md`.
+ * each get their own SemanticsSchema variant when those phases ship.
  */
 export const StorageRelationalSemanticsSchema = z.object({
   name: z.literal("storage-relational"),
@@ -999,13 +998,18 @@ export const EffectSchema = z.discriminatedUnion("type", [
    * Outbound boundary interaction — code at line N talks to something
    * across a boundary. Discriminated by `interaction.class` so each
    * class carries the typed structural fields appropriate to its
-   * operation shape (storage columns, RPC payload + response, message
-   * body, env-var name). See `docs/internal/interactions-design.md`.
+   * operation shape (storage columns, service-call payload +
+   * response, message body, env-var name).
+   *
+   * Class taxonomy (v0): storage-access, service-call, message-send,
+   * config-read. Each maps 1:1 to a `binding.semantics.name`
+   * (storage-relational, rest, message-bus, runtime-config) — that
+   * convention is not enforced by the IR but every shipped recognizer
+   * follows it.
    *
    * Subsumes what was previously a separate `storageAccess` Effect
-   * variant (removed in task #169 — alpha software, no deprecation
-   * cycle). `interaction(class: "storage-access")` now carries all
-   * the same data: `binding.semantics` (StorageRelationalSemantics)
+   * variant. `interaction(class: "storage-access")` carries all the
+   * same data: `binding.semantics` (StorageRelationalSemantics)
    * holds the (storageSystem, scope, table) identity, and
    * `interaction.{kind, fields, selector, operation}` holds the
    * operation details.
