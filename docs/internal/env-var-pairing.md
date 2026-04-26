@@ -74,7 +74,7 @@ src/
 
 ```
 suss extract -p tsconfig.json -f express -o code-summaries.json
-suss stub --from cloudformation template.yaml -o cfn-summaries.json
+suss contract --from cloudformation template.yaml -o cfn-summaries.json
 suss check --dir .suss-summaries
 ```
 
@@ -160,7 +160,7 @@ Out (deferred):
 
 ### CFN stub (Phase 5c.2)
 
-`packages/stub/cloudformation/src/`:
+`packages/contract/cloudformation/src/`:
 - Recognize `AWS::Lambda::Function`,
   `AWS::Serverless::Function`, `AWS::ECS::TaskDefinition`.
 - Extract `Environment.Variables` (Lambda) /
@@ -209,7 +209,7 @@ awsLambdaFramework({ template: "template.yaml" })
 
 Implementation notes:
 
-- **Shared template parsing.** The pack and `@suss/stub-cloudformation`
+- **Shared template parsing.** The pack and `@suss/contract-cloudformation`
   both parse the same YAML. Extract a `@suss/cfn-template-reader`
   shared helper so each call site reuses one parse.
 - **Fallback to broad discovery** when `template` isn't supplied.

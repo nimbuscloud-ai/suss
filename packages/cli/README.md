@@ -28,8 +28,8 @@ suss check provider.json consumer.json [--json] [-o findings.json]
 suss check --dir summaries/ [--json] [-o findings.json] [--fail-on warning]
 
 # Generate summaries from a declared contract (no source extraction)
-suss stub --from openapi spec.yaml [-o provider.json]
-suss stub --from cloudformation template.yaml [-o provider.json]
+suss contract --from openapi spec.yaml [-o provider.json]
+suss contract --from cloudformation template.yaml [-o provider.json]
 ```
 
 ### Options

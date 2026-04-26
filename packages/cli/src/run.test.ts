@@ -319,10 +319,10 @@ describe("runCli — check", () => {
 });
 
 // ---------------------------------------------------------------------------
-// stub
+// contract
 // ---------------------------------------------------------------------------
 
-describe("runCli — stub", () => {
+describe("runCli — contract", () => {
   const inlineSpec = {
     openapi: "3.0.3",
     info: { title: "users-api", version: "1.0" },
@@ -337,14 +337,14 @@ describe("runCli — stub", () => {
   };
 
   it("rejects missing --from", async () => {
-    const { exit, io } = await capture(() => runCli(["stub", "spec.json"]));
+    const { exit, io } = await capture(() => runCli(["contract", "spec.json"]));
     expect(exit).toBe(1);
     expect(io.stderr).toContain("--from is required");
   });
 
   it("rejects an unknown --from value", async () => {
     const { exit, io } = await capture(() =>
-      runCli(["stub", "--from", "graphql", "spec.json"]),
+      runCli(["contract", "--from", "graphql", "spec.json"]),
     );
     expect(exit).toBe(1);
     expect(io.stderr).toContain("unknown --from value");
@@ -352,7 +352,7 @@ describe("runCli — stub", () => {
 
   it("requires a positional spec path", async () => {
     const { exit, io } = await capture(() =>
-      runCli(["stub", "--from", "openapi"]),
+      runCli(["contract", "--from", "openapi"]),
     );
     expect(exit).toBe(1);
     expect(io.stderr).toContain("requires a spec file path");
@@ -362,7 +362,7 @@ describe("runCli — stub", () => {
     const spec = writeJson("spec.json", inlineSpec);
     const out = path.join(tmpDir, "out.json");
     const { exit } = await capture(() =>
-      runCli(["stub", "--from", "openapi", spec, "-o", out]),
+      runCli(["contract", "--from", "openapi", spec, "-o", out]),
     );
     expect(exit).toBe(0);
     expect(fs.existsSync(out)).toBe(true);
@@ -382,7 +382,7 @@ describe("runCli — stub", () => {
     });
     const out = path.join(tmpDir, "out.json");
     const { exit } = await capture(() =>
-      runCli(["stub", "--from", "cloudformation", tpl, "-o", out]),
+      runCli(["contract", "--from", "cloudformation", tpl, "-o", out]),
     );
     expect(exit).toBe(0);
     expect(fs.existsSync(out)).toBe(true);

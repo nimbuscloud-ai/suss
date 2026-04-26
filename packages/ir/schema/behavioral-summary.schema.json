@@ -612,7 +612,12 @@
               "properties": {
                 "source": {
                   "type": "string",
-                  "enum": ["inferred_static", "inferred_ai", "declared", "stub"]
+                  "enum": [
+                    "inferred_static",
+                    "inferred_ai",
+                    "declared",
+                    "derived"
+                  ]
                 },
                 "level": {
                   "type": "string",
@@ -681,7 +686,7 @@
         "properties": {
           "source": {
             "type": "string",
-            "enum": ["inferred_static", "inferred_ai", "declared", "stub"]
+            "enum": ["inferred_static", "inferred_ai", "declared", "derived"]
           },
           "level": {
             "type": "string",

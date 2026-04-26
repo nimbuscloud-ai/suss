@@ -68,11 +68,11 @@
     "@suss/runtime-web": "*",
     "@suss/runtime-axios": "*",
     "@suss/runtime-apollo-client": "*",
-    "@suss/stub-aws-apigateway": "*",
-    "@suss/stub-openapi": "*",
-    "@suss/stub-cloudformation": "*",
-    "@suss/stub-storybook": "*",
-    "@suss/stub-appsync": "*",
+    "@suss/contract-aws-apigateway": "*",
+    "@suss/contract-openapi": "*",
+    "@suss/contract-cloudformation": "*",
+    "@suss/contract-storybook": "*",
+    "@suss/contract-appsync": "*",
     "yaml": "^2.4.0"
   },
   "devDependencies": {

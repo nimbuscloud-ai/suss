@@ -8,7 +8,7 @@ declares, and flags drift when the spec changes.
 ## The two artifacts
 
 ```
-spec.yaml / spec.json   ─── @suss/stub-openapi ───▶  stub.json
+spec.yaml / spec.json   ─── @suss/contract-openapi ───▶  stub.json
                                                         │
 your client code        ─── @suss/runtime-axios  ───▶  client.json
                                                         │
@@ -23,8 +23,8 @@ came from code vs a spec.
 ## Step 1. Turn the spec into a stub
 
 ```bash
-npm install -D @suss/stub-openapi
-npx suss stub --from openapi stripe-openapi.yaml -o summaries/stripe.json
+npm install -D @suss/contract-openapi
+npx suss contract --from openapi stripe-openapi.yaml -o summaries/stripe.json
 ```
 
 One summary per operation. Each carries:

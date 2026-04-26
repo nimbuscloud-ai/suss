@@ -62,7 +62,7 @@ The handler is one shape of code unit; the same summary shape comes out of React
 suss's product is the `BehavioralSummary[]` — structured JSON describing what each code unit does under what conditions. The CLI bundles four kinds of work over those summaries:
 
 - `suss extract` — derive summaries from TypeScript source.
-- `suss stub` — produce summaries from declared contracts (OpenAPI, CloudFormation, Storybook CSF3, AppSync).
+- `suss contract` — produce summaries from declared contracts (OpenAPI, CloudFormation, Storybook CSF3, AppSync).
 - `suss check` — pair providers with consumers (two files, or a whole directory) and report cross-boundary findings. See [cross-boundary-checking.md](cross-boundary-checking.md).
 - `suss inspect` — render a summary file or directory as human-readable text, or `--diff BEFORE AFTER` to see which behavioral cases a change added, removed, or altered.
 

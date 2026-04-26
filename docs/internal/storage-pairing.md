@@ -146,7 +146,7 @@ src/
 
 ```
 suss extract -p tsconfig.json -f prisma -o code-summaries.json
-suss stub --from prisma prisma/schema.prisma -o schema-summaries.json
+suss contract --from prisma prisma/schema.prisma -o schema-summaries.json
 suss check --dir .suss-summaries
 ```
 

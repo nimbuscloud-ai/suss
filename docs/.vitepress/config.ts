@@ -111,7 +111,7 @@ export default defineConfig({
           { text: "Pipelines", link: "/pipelines" },
           { text: "Extraction algorithm", link: "/extraction-algorithm" },
           { text: "Cross-boundary checking", link: "/cross-boundary-checking" },
-          { text: "Stubs", link: "/stubs" },
+          { text: "Contract sources", link: "/contract-sources" },
           { text: "Suppressions (model)", link: "/suppressions" },
         ],
       },

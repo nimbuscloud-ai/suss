@@ -56,8 +56,8 @@ directory and let `check --dir` auto-pair everything:
 - run: mkdir -p summaries
 - run: npx suss extract -p api/tsconfig.json -f ts-rest -o summaries/api.json
 - run: npx suss extract -p web/tsconfig.json -f axios -f apollo-client -o summaries/web.json
-- run: npx suss stub --from openapi vendor/stripe.json -o summaries/stripe.json
-- run: npx suss stub --from appsync infra/template.yaml -o summaries/appsync.json
+- run: npx suss contract --from openapi vendor/stripe.json -o summaries/stripe.json
+- run: npx suss contract --from appsync infra/template.yaml -o summaries/appsync.json
 - run: npx suss check --dir summaries/ --fail-on error
 ```
 

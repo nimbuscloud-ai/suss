@@ -17,8 +17,8 @@ import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { checkAll } from "@suss/checker";
+import { generateSummariesFromStories } from "@suss/contract-storybook";
 import { reactFramework } from "@suss/framework-react";
-import { generateSummariesFromStories } from "@suss/stub-storybook";
 
 const repoRoot = path.resolve(__dirname, "../../..");
 const reactFixtures = path.join(repoRoot, "fixtures/react");
