@@ -94,6 +94,7 @@ export default defineConfig({
           { text: "Findings catalog", link: "/reference/findings" },
           { text: "Summary format", link: "/behavioral-summary-format" },
           { text: "IR types & schemas", link: "/ir-reference" },
+          { text: "FAQ", link: "/faq" },
         ],
       },
       {

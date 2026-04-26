@@ -1,10 +1,14 @@
 # Motivation
 
+suss catches behavioral drift between what your TypeScript code says it does and what it does. The class of failures it targets is the one other tooling leaves uncovered — code that compiles cleanly, type-checks, passes its tests, and validates against the declared contract, but at runtime sends a consumer a `200` whose shape it doesn't expect (or writes to a database column the schema doesn't declare). The mechanism for catching these is static behavioral analysis: extracting what every function does on every execution path, then pairing those derivations across the boundaries where they meet.
+
 *If you're arriving cold and want the "why this layer exists at all" argument before the gap-with-other-tools story, [Why behavioral summaries](/why-behavioral-summaries) is the companion to this page.*
 
 ## The problem
 
-Every boundary between two units of code — a function call, a component render, an HTTP handler hit, a resolver dispatch — carries behavioral assumptions the caller makes about the callee. Those assumptions are almost never recorded in a form a tool can check. The gap between "the types line up" and "the behavior lines up" is a class of divergence no existing tool catches.
+Every boundary between two units of code carries behavioral assumptions the caller makes about the callee. Those assumptions are almost never recorded in a form a tool can check. The gap between "the types line up" and "the behavior lines up" is a class of divergence no existing tool catches.
+
+(*Boundary* throughout this doc means any place two units meet across a contract — the worked example below shows one. The [FAQ](/faq#what-s-a-boundary) covers the general definition.)
 
 A concrete example. A `getUser` handler changes from returning `404` for soft-deleted accounts to returning `200` with `status: "deleted"`. Tests pass: the response is a valid `User`, the status code is a valid HTTP code. TypeScript type-checks. The declared contract (OpenAPI, ts-rest) still says `200 | 404`, which is still true. Nothing in the implementation's shape changed. Any caller that had read `200` as "the user exists and is usable" now receives a `200` that violates that reading, and no tool in the stack can point at the divergence.
 

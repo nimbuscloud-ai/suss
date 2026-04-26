@@ -213,7 +213,7 @@ Dependency rules (enforced by the layout):
 - `@suss/extractor` — depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript` — depends on IR, extractor, ts-morph. This is the heavyweight package.
 - `@suss/framework-*` and `@suss/runtime-*` packs — depend only on `@suss/extractor` (for the `PatternPack` type). They're data, not logic. Runtime packs (e.g., `@suss/runtime-web` for `fetch`) use the same `PatternPack` interface but target built-in APIs rather than third-party frameworks.
-- `@suss/contract-*` packages — depend only on the IR (and on each other where they compose: the CloudFormation stub delegates to the OpenAPI and AWS API Gateway stubs). Produce `BehavioralSummary[]` from specs, manifests, or vendor docs; carry `confidence.source: "stub"`. See [`stubs.md`](stubs.md).
+- `@suss/contract-*` packages — depend only on the IR (and on each other where they compose: the CloudFormation reader delegates to the OpenAPI and AWS API Gateway readers). Produce `BehavioralSummary[]` from specs, manifests, schemas, or vendor docs; carry `confidence.source: "contract"`. See [`contract-sources.md`](contract-sources.md).
 - `@suss/checker` — depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or framework packs — operates on the serialized IR.
 - `@suss/cli` — depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs.
 

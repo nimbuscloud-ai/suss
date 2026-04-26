@@ -314,5 +314,6 @@ See also:
 - [`docs/framework-packs.md`](framework-packs.md) — how packs describe
   recognition today; extension points when semantics becomes a
   top-level axis.
-- [`docs/stubs.md`](stubs.md) — boundary layering via the API Gateway
-  stub is a precursor to explicit boundary composition.
+- [`docs/contract-sources.md`](contract-sources.md) — boundary layering
+  via the AWS API Gateway contract reader is a precursor to explicit
+  boundary composition.

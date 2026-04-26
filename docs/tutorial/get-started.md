@@ -1,20 +1,11 @@
 # Get started
 
-Fifteen minutes, one concrete project. By the end you'll have
-extracted behavioral summaries from both a provider and a
-consumer, paired them, and seen your first finding.
+A small ts-rest API with a known mismatch between handler and
+client. Walk through extracting summaries from both sides,
+pairing them, and reading the resulting finding.
 
-This is the **tutorial** — hand-holding, end-to-end. For task
-recipes ("add suss to CI", "suppress a finding"), see the
-[how-to guides](/guides/add-to-project). For conceptual
-background ("why does suss exist"), see [Motivation](/motivation).
-
-## What we'll build
-
-A small ts-rest API with a known contract mismatch between the
-handler and the client. Each side lives in its own source file;
-suss notices that the handler can return a status the client
-doesn't handle, and reports it.
+The handler returns one status the client doesn't handle. suss
+catches it from the source alone, without a spec or a runtime trace.
 
 ## Step 1. Set up a workspace
 
@@ -222,22 +213,29 @@ Three facts, surfaced automatically:
    (client gap — this one fires earlier if you check the
    client against the contract; try it with `suss check --dir`).
 
-## What you just did
+## What this run exercises
 
-- **Extracted** behavioral summaries from provider and consumer.
-- **Paired** them by `(method, path)` with `suss check`.
-- **Detected drift** without writing any tests — the mismatch
-  fell out of the summaries' shapes.
+- **Extraction.** Two `suss extract` invocations turned the
+  provider's source and the consumer's source into structured
+  summaries — JSON for downstream tools, `suss inspect` for a
+  human reading.
+- **Pairing.** `suss check` paired the two summaries by
+  `(method, path)` and ran the cross-boundary checks against
+  every transition.
+- **Drift detection.** The mismatch fell out of the summaries'
+  shapes — no test was written to detect it. The handler's `404`
+  branch existed in the source; the client never declared a `404`
+  case. The check compared the two and surfaced the gap.
 
-## Where to go next
+## Further reading
 
-- **More tasks.** [Add suss to a project](/guides/add-to-project)
-  walks the real-world integration; [Set up CI](/guides/ci-integration)
-  makes this run on every PR.
-- **Understand the output.** The [Findings catalog](/reference/findings)
-  enumerates every finding kind with an example.
-- **Understand the shape.** [Behavioral summary format](/behavioral-summary-format)
-  is the serialization spec; [IR reference](/ir-reference) is the
-  type-level reference.
-- **Understand the model.** [Three kinds of truth](/contracts)
-  grounds the framing that makes these findings meaningful.
+- [Add suss to a project](/guides/add-to-project) — integration in an
+  existing repo, including monorepos and per-package tsconfigs.
+- [Set up CI](/guides/ci-integration) — `suss check` as a CI gate.
+- [Findings catalog](/reference/findings) — every finding kind with an
+  example.
+- [Behavioral summary format](/behavioral-summary-format) — the
+  serialization spec; [IR reference](/ir-reference) is the type-level
+  reference.
+- [Three kinds of truth](/contracts) — the specification / observation
+  / derivation taxonomy that grounds the checker's finding semantics.

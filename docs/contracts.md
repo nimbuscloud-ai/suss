@@ -2,7 +2,7 @@
 
 What "contract" means in suss, why there's more than one shape, and how the taxonomy anchors downstream decisions about stubs, checking, and new domain coverage.
 
-Related: [`stubs.md`](stubs.md) (schema-shaped stubs, the one shape shipped today), [`boundary-semantics.md`](boundary-semantics.md) (how boundaries themselves vary), [`roadmap-react.md`](roadmap-react.md) (first multi-shape domain we're tackling).
+Related: [`contract-sources.md`](contract-sources.md) (the readers that produce contract-derived summaries — OpenAPI, CloudFormation, AppSync, Storybook, Prisma), [`boundary-semantics.md`](boundary-semantics.md) (how boundaries themselves vary), [`internal/roadmap-react.md`](internal/roadmap-react.md) (first multi-shape domain we're tackling).
 
 ## The problem with treating "contract" as one thing
 

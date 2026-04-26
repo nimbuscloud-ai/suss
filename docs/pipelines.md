@@ -123,7 +123,7 @@ User
 BehavioralSummary[] → write api.json
 ```
 
-See [`stubs.md`](stubs.md) for the doctrine behind this split and the opaque-predicate naming convention for transcribed external contracts.
+See [`contract-sources.md`](contract-sources.md) for the doctrine behind this split and the opaque-predicate naming convention for transcribed external contracts.
 
 ## Internal: `RawCodeStructure` → `BehavioralSummary`
 
