@@ -915,6 +915,78 @@
                             },
                             "required": ["class", "name", "defaulted"],
                             "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "class": {
+                                "type": "string",
+                                "const": "schedule"
+                              },
+                              "via": {
+                                "type": "string",
+                                "enum": [
+                                  "setImmediate",
+                                  "setTimeout",
+                                  "setInterval",
+                                  "queueMicrotask",
+                                  "process.nextTick"
+                                ]
+                              },
+                              "callbackRef": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "literal"
+                                      }
+                                    },
+                                    "required": ["type"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "identifier"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["type", "name"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "opaque"
+                                      },
+                                      "reason": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["type", "reason"],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              },
+                              "hasDelay": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "class",
+                              "via",
+                              "callbackRef",
+                              "hasDelay"
+                            ],
+                            "additionalProperties": false
                           }
                         ]
                       }

@@ -34,6 +34,8 @@ const BUILTIN_FRAMEWORKS: Record<
   axios: () => import("@suss/client-axios"),
   // GraphQL consumer hooks / imperative client calls.
   "apollo-client": () => import("@suss/client-apollo"),
+  // JS runtime packs.
+  node: () => import("@suss/runtime-node"),
 };
 
 async function resolveFramework(name: string): Promise<PatternPack> {

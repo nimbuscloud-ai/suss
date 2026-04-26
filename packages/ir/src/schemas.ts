@@ -955,6 +955,39 @@ export const EffectSchema = z.discriminatedUnion("type", [
         name: z.string(),
         defaulted: z.boolean(),
       }),
+      /**
+       * Runtime scheduling primitive — `setImmediate(fn)`,
+       * `setTimeout(fn, ms)`, `queueMicrotask(fn)`, etc. The callback
+       * `fn` is recorded separately (as a sub-unit when the analyzer
+       * can resolve it to a literal function expression, or via the
+       * `callbackRef` opaque marker when not).
+       *
+       * `via` names the scheduling API; `hasDelay` records whether a
+       * delay argument was supplied at the call site (without
+       * modeling its value — temporal semantics are out of v0 scope).
+       *
+       * Schedule effects don't pair against contracted boundaries —
+       * scheduling isn't a contract — so the enclosing
+       * Effect.binding carries a `function-call` semantics with the
+       * scheduling pack as `recognition`. The interaction exists for
+       * dataflow / inspect rendering, not for cross-unit pairing.
+       */
+      z.object({
+        class: z.literal("schedule"),
+        via: z.enum([
+          "setImmediate",
+          "setTimeout",
+          "setInterval",
+          "queueMicrotask",
+          "process.nextTick",
+        ]),
+        callbackRef: z.discriminatedUnion("type", [
+          z.object({ type: z.literal("literal") }),
+          z.object({ type: z.literal("identifier"), name: z.string() }),
+          z.object({ type: z.literal("opaque"), reason: z.string() }),
+        ]),
+        hasDelay: z.boolean(),
+      }),
     ]),
   }),
 ]);
