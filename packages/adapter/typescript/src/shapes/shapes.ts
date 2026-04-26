@@ -38,12 +38,36 @@ import { shapeFromNodeType } from "./typeShapes.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 
+// Module-local recursion guard. `extractShape` and `resolveNodeFromAst`
+// can call each other transitively (extractShape → resolveNodeFromAst →
+// extractShape), and each entry to `resolveNodeFromAst` resets its own
+// cycle-detection context. That makes the cross-extractor path unbounded
+// for self-referential call graphs (`function a() { return b(); }
+// function b() { return a(); }`). Cap the call stack here as a safety
+// net — past the limit, fall back to the type-checker path which has
+// its own depth/seen tracking.
+const MAX_EXTRACT_DEPTH = 64;
+let extractShapeDepth = 0;
+
 /**
  * Attempt to decompose `node` into a structured `TypeShape`. Returns `null`
  * only when the expression is syntactically unrecognized AND the type checker
  * cannot infer anything useful — callers then fall back to a source-text ref.
  */
 export function extractShape(node: Node): TypeShape | null {
+  if (extractShapeDepth >= MAX_EXTRACT_DEPTH) {
+    // Defer to the type checker, which has its own seen-set / depth guard.
+    return shapeFromNodeType(node);
+  }
+  extractShapeDepth += 1;
+  try {
+    return extractShapeInner(node);
+  } finally {
+    extractShapeDepth -= 1;
+  }
+}
+
+function extractShapeInner(node: Node): TypeShape | null {
   const unwrapped = unwrap(node);
 
   // Object / array literals: syntactic decomposition preserves literal
