@@ -17,7 +17,6 @@
 // read → storageWriteOnlyField.
 
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
@@ -33,23 +32,21 @@ import type { PatternPack } from "@suss/extractor";
 const repoRoot = path.resolve(__dirname, "../../..");
 const fixtureRoot = path.join(repoRoot, "fixtures/prisma");
 const schemaPath = path.join(fixtureRoot, "schema.prisma");
-const generatedClientDir = path.join(repoRoot, "node_modules/.prisma/client");
 
 // `prisma generate` produces node_modules/.prisma/client from the
 // fixture's schema.prisma. The recognizer's type-resolution check
 // matches the type's declaration file path against `/@prisma/client/`
-// or `/.prisma/client/` — without the generated client, ts-morph
+// or `/.prisma/client/` — without the GENERATED client, ts-morph
 // can't resolve `db.user.findUnique(...)` to anything Prisma-typed
 // and the recognizer silently emits zero interactions.
 //
-// Local dev environments usually have this from a previous run; CI
-// installs from scratch and won't, so the test owns the generation
-// step rather than coupling it to npm install lifecycle. ~1 s on
-// cache hit, ~5 s cold.
+// Subtle: a fresh `npm ci` ships a STUB at node_modules/.prisma/client/
+// whose index.d.ts declares `PrismaClient: any`. So we can't gate on
+// the directory's existence — the stub's `any` type passes the
+// existsSync check but fails the recognizer's type resolution. Always
+// regenerate. Idempotent: ~50ms when the generated client is current,
+// ~5s cold.
 function ensurePrismaClientGenerated(): void {
-  if (existsSync(generatedClientDir)) {
-    return;
-  }
   execSync(`npx prisma generate --schema=${schemaPath} --no-hints`, {
     cwd: repoRoot,
     stdio: "inherit",
