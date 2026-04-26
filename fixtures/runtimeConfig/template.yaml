@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Fixture for the env-var pairing integration test. Three Lambdas
+  with deliberate drift between code reads and template-declared env vars.
+
+Resources:
+  Checkout:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/checkout/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          # Typo: code reads STRIPE_API_KEY, template declares STRIPE_KEY.
+          STRIPE_KEY: "sk_test_xxx"
+          DATABASE_URL: "postgres://localhost/db"
+
+  WebhookHandler:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/webhook-handler/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          # Omission: code also reads KAFKA_BROKER, template forgot it.
+          STRIPE_WEBHOOK_SECRET: "whsec_xxx"
+
+  BatchReconcile:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/batch-reconcile/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          DATABASE_URL: "postgres://localhost/db"
+          OLD_S3_BUCKET: "legacy-bucket"
+          # Dead config: nothing reads LEGACY_FEATURE_FLAG anymore.
+          LEGACY_FEATURE_FLAG: "off"
