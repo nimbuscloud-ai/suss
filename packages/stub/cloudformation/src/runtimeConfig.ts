@@ -194,6 +194,11 @@ function buildSummary(opts: {
     location: {
       file: opts.sourceFile,
       range: { start: 1, end: 1 },
+      // Runtime-config summaries don't have an export name — they're
+      // synthesized from a CFN/SAM resource block, not exported from
+      // any module. The schema's required-but-nullable contract reads
+      // null as "no exportName applies."
+      exportName: null,
     },
     identity: {
       name: opts.logicalId,
