@@ -1,9 +1,9 @@
 // prisma integration test — end-to-end relational-storage pairing.
 //
 // Pipeline: parse a real schema.prisma via @suss/contract-prisma →
-// hand-build code summaries with `storageAccess` effects (the access
-// pack lands in Phase 6.3) → run checkAll → assert the expected
-// drift findings:
+// hand-build code summaries with `interaction(class: "storage-access")`
+// effects (the access pack lands in #171) → run checkAll → assert
+// the expected drift findings:
 //
 //   1. storageReadFieldUnknown  — code reads User.emial (typo)
 //   2. storageWriteFieldUnknown — code writes Post.bdoy (typo)
@@ -15,12 +15,13 @@
 // summaries). The point is to prove the @suss/contract-prisma OUTPUT
 // is shape-compatible with what the checker expects — i.e. that the
 // reader's columns / table / scope / storageSystem actually pair
-// against the same fields on storageAccess effects.
+// against the same fields on storage-access interactions.
 
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { storageRelationalBinding } from "@suss/behavioral-ir";
 import { checkAll } from "@suss/checker";
 import { prismaSchemaFileToSummaries } from "@suss/contract-prisma";
 
@@ -48,13 +49,19 @@ function makeAccessSummary(opts: {
     output: { type: "return", value: null },
     effects: opts.accesses.map(
       (a): Effect => ({
-        type: "storageAccess",
-        kind: a.kind,
-        storageSystem: "postgres",
-        scope: "default",
-        table: a.table,
-        fields: a.fields,
-        ...(a.selector !== undefined ? { selector: a.selector } : {}),
+        type: "interaction",
+        binding: storageRelationalBinding({
+          recognition: "test-prisma",
+          storageSystem: "postgres",
+          scope: "default",
+          table: a.table,
+        }),
+        interaction: {
+          class: "storage-access",
+          kind: a.kind,
+          fields: a.fields,
+          ...(a.selector !== undefined ? { selector: a.selector } : {}),
+        },
       }),
     ),
     location: { start: 5, end: 10 },

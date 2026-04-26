@@ -170,7 +170,8 @@ export interface RawBranch {
    * Pre-typed `Effect`s emitted by `PatternPack.invocationRecognizers`.
    * Bypass the `RawEffect → Effect` conversion that `effects` runs
    * through — recognizers have full structural knowledge of what
-   * they're emitting (e.g. `storageAccess` with table/fields/selector)
+   * they're emitting (e.g. `interaction(class: "storage-access")` with
+   * binding identity + per-class fields/selector)
    * and there's no narrower extractor-side representation worth
    * round-tripping through. Concatenated with converted `effects` at
    * `assembleSummary` time.

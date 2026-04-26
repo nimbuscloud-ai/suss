@@ -6,6 +6,7 @@ import { checkRelationalStorage } from "./relationalPairing.js";
 
 import type {
   BehavioralSummary,
+  BoundaryBinding,
   Effect,
   Transition,
 } from "@suss/behavioral-ir";
@@ -62,14 +63,20 @@ function makeAccessSummary(opts: {
     output: { type: "return", value: null },
     effects: opts.accesses.map(
       (a): Effect => ({
-        type: "storageAccess",
-        kind: a.kind,
-        storageSystem: a.storageSystem ?? "postgres",
-        scope: a.scope ?? "default",
-        table: a.table,
-        fields: a.fields,
-        ...(a.selector !== undefined ? { selector: a.selector } : {}),
-        ...(a.operation !== undefined ? { operation: a.operation } : {}),
+        type: "interaction",
+        binding: storageRelationalBinding({
+          recognition: "test",
+          storageSystem: a.storageSystem ?? "postgres",
+          scope: a.scope ?? "default",
+          table: a.table,
+        }) satisfies BoundaryBinding,
+        interaction: {
+          class: "storage-access",
+          kind: a.kind,
+          fields: a.fields,
+          ...(a.selector !== undefined ? { selector: a.selector } : {}),
+          ...(a.operation !== undefined ? { operation: a.operation } : {}),
+        },
       }),
     ),
     location: { start: 5, end: 10 },

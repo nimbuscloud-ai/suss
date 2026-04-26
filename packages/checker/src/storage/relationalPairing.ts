@@ -1,6 +1,7 @@
 // relationalPairing.ts — pair storage-relational provider summaries
 // (Prisma model declarations, Drizzle pgTable() declarations, raw
-// SQL DDL) against `storageAccess` effects on code summaries.
+// SQL DDL) against `interaction(class: "storage-access")` effects
+// on code summaries.
 //
 // Four field-existence findings ship in v0:
 //   storageReadFieldUnknown   error    code reads X, schema doesn't declare X
@@ -16,10 +17,11 @@
 //   storageLengthConstraintViolation
 //   storageEnumConstraintViolation
 //
-// Pairing key: (storageSystem, scope, table). Multi-attribution is
-// intentional — a shared util file's storage access pairs against
-// every provider whose key matches, just like runtime-config did
-// for env vars.
+// Pairing key: (storageSystem, scope, table) — pulled from the
+// effect's `binding.semantics` (StorageRelationalSemantics), same as
+// the provider's. Multi-attribution is intentional — a shared util
+// file's storage access pairs against every provider whose key
+// matches, just like runtime-config did for env vars.
 
 import { makeSide } from "../coverage/responseMatch.js";
 
@@ -42,12 +44,22 @@ interface StorageContractMetadata {
   indexes?: Array<{ fields: string[]; unique: boolean }>;
 }
 
-type StorageAccessEffect = Extract<Effect, { type: "storageAccess" }>;
+type InteractionEffect = Extract<Effect, { type: "interaction" }>;
+type StorageAccessInteraction = InteractionEffect & {
+  interaction: { class: "storage-access" };
+};
 
 interface AccessRecord {
-  effect: StorageAccessEffect;
+  effect: StorageAccessInteraction;
   summary: BehavioralSummary;
   transitionId: string;
+  /**
+   * Cached storage-relational semantics from the effect's binding —
+   * carries the (storageSystem, scope, table) pairing key. Pulled
+   * out so the inner-loop in-scope filter doesn't repeat the type
+   * narrow.
+   */
+  semantics: StorageRelationalSemantics;
 }
 
 /** Wildcard convention for default-shape reads (no explicit `select`). */
@@ -87,9 +99,9 @@ export function checkRelationalStorage(
     // In-scope accesses: same storageSystem + scope + table.
     const inScope = accesses.filter(
       (a) =>
-        a.effect.storageSystem === semantics.storageSystem &&
-        a.effect.scope === semantics.scope &&
-        a.effect.table === semantics.table,
+        a.semantics.storageSystem === semantics.storageSystem &&
+        a.semantics.scope === semantics.scope &&
+        a.semantics.table === semantics.table,
     );
 
     // Track field usage across all in-scope accesses for the
@@ -100,7 +112,8 @@ export function checkRelationalStorage(
     let anyDefaultShapeRead = false;
 
     for (const access of inScope) {
-      const fields = access.effect.fields;
+      const fields = access.effect.interaction.fields;
+      const kind = access.effect.interaction.kind;
       const wildcards = fields.includes(ALL_FIELDS);
 
       // Field-existence checks per access. Wildcards skip per-field
@@ -118,7 +131,7 @@ export function checkRelationalStorage(
       }
 
       // Aggregate usage for the unused / write-only checks.
-      if (access.effect.kind === "read") {
+      if (kind === "read") {
         if (wildcards) {
           anyDefaultShapeRead = true;
         } else {
@@ -176,11 +189,10 @@ function readStorageContract(
 }
 
 /**
- * Walk every transition's effects looking for storageAccess records.
- * Unlike the runtime-config consumer scan (which inspected
- * invocation effects' identifier args), storageAccess is its own
- * effect type — Prisma / Drizzle / etc. packs emit it directly when
- * they recognise a storage call.
+ * Walk every transition's effects looking for storage-access
+ * interactions. Recognizers (`@suss/framework-prisma`, etc.) emit
+ * `interaction(class: "storage-access")` effects with the table
+ * identity carried on the binding's StorageRelationalSemantics.
  */
 function collectStorageAccesses(
   summaries: BehavioralSummary[],
@@ -189,10 +201,25 @@ function collectStorageAccesses(
   for (const summary of summaries) {
     for (const transition of summary.transitions) {
       for (const effect of transition.effects) {
-        if (effect.type !== "storageAccess") {
+        if (effect.type !== "interaction") {
           continue;
         }
-        out.push({ effect, summary, transitionId: transition.id });
+        if (effect.interaction.class !== "storage-access") {
+          continue;
+        }
+        if (effect.binding.semantics.name !== "storage-relational") {
+          // Defensive: storage-access class without storage-relational
+          // semantics is a malformed effect. Skip rather than crash.
+          continue;
+        }
+        const semantics = effect.binding
+          .semantics as StorageRelationalSemantics;
+        out.push({
+          effect: effect as StorageAccessInteraction,
+          summary,
+          transitionId: transition.id,
+          semantics,
+        });
       }
     }
   }
@@ -219,17 +246,18 @@ function makeFieldUnknownFinding(
   field: string,
 ): Finding {
   const semantics = binding.semantics as StorageRelationalSemantics;
-  const kind =
-    access.effect.kind === "read"
+  const accessKind = access.effect.interaction.kind;
+  const findingKind =
+    accessKind === "read"
       ? "storageReadFieldUnknown"
       : "storageWriteFieldUnknown";
-  const verb = access.effect.kind === "read" ? "selects" : "writes";
+  const verb = accessKind === "read" ? "selects" : "writes";
   return {
-    kind,
+    kind: findingKind,
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} ${verb} "${field}" on ${tableLabel(semantics)} (${semantics.storageSystem}) but the schema declares no ${field} column. At runtime this resolves to undefined on ${access.effect.kind === "read" ? "reads" : "writes silently dropped"}, changing which execution paths the function takes downstream.`,
+    description: `${access.summary.identity.name} ${verb} "${field}" on ${tableLabel(semantics)} (${semantics.storageSystem}) but the schema declares no ${field} column. At runtime this resolves to undefined on ${accessKind === "read" ? "reads" : "writes silently dropped"}, changing which execution paths the function takes downstream.`,
     severity: "error",
   };
 }
