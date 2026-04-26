@@ -631,25 +631,52 @@ export interface PatternPack {
   ) => DiscoveredSubUnit[];
   /**
    * Per-call-site recognizers that emit typed `Effect`s alongside the
-   * generic `invocation` effect the adapter already captures. Each
-   * recognizer fires once per call expression visited by the adapter's
-   * invocation walker, regardless of which pack discovered the
-   * enclosing function — so `@suss/framework-prisma`'s recognizer can
-   * fire on Prisma calls inside an `@suss/framework-express` handler.
+   * generic `invocation` effect the adapter already captures.
    *
-   * Returning effects ADDS them to the same enclosing transition; the
-   * generic `invocation` effect is preserved either way (typed effects
-   * don't suppress raw call capture — they coexist so inspect rendering
-   * keeps the callee text and args, while the checker pairs on the
-   * typed shape). Returning null / [] is the no-match path.
+   * **Scope contract.** The adapter walks every CallExpression in
+   * the function body and dispatches to every registered recognizer
+   * for each call. Walking skips nested function bodies (those are
+   * their own units with their own recognizer dispatch). The walk is
+   * INDEPENDENT of the existing invocation-effect walker — the
+   * existing walker is intentionally narrow (only captures
+   * `invocation` effects from bare expression statements + container
+   * composition, to avoid double-counting calls that already become
+   * terminals). Recognizers don't have that concern; they fire on
+   * every call regardless of position, including
+   * `const x = await fn(...)` initializers and nested call args
+   * (which the invocation walker skips). This independence means
+   * recognizer authors can rely on seeing every call in scope.
+   *
+   * **Cross-pack visibility.** Recognizers fire regardless of which
+   * pack discovered the enclosing function — so
+   * `@suss/framework-prisma`'s recognizer can fire on Prisma calls
+   * inside an `@suss/framework-express` handler. Pack authors don't
+   * need to coordinate.
+   *
+   * **Emission contract.** Returning effects ADDS them to the
+   * enclosing default-branch transition; the generic `invocation`
+   * effect is preserved either way (typed effects coexist with raw
+   * call capture so inspect rendering keeps callee text + args while
+   * the checker pairs on the typed shape). Returning `null` / `[]`
+   * is the no-match path.
+   *
+   * **Dedup is the recognizer's responsibility.** The dispatcher
+   * doesn't dedupe across calls. A recognizer that wants to fire
+   * once per identifier (e.g., to dedupe reads bound to a const
+   * that's used N times) tracks its own state across invocations.
+   *
+   * **Exceptions are caught and logged.** A recognizer that throws
+   * is logged to stderr with file path + line number and skipped
+   * for that call; the extraction continues. Buggy recognizers
+   * don't crash the run.
    *
    * `call` is the language adapter's call-expression handle (opaque
    * here; ts-morph `CallExpression` in `@suss/adapter-typescript`).
-   * `ctx` is the adapter's recognizer context (TypeChecker, source
-   * file imports, an `extractArgs()` helper that reuses the adapter's
-   * own EffectArg builder). Recognizers cast both to the adapter
-   * context they're written against — same "this pack requires the
-   * TypeScript adapter" contract `subUnits` uses.
+   * `ctx` is the adapter's recognizer context (source file, an
+   * `extractArgs()` helper that reuses the adapter's own EffectArg
+   * builder). Recognizers cast both to the adapter context they're
+   * written against — same "this pack requires the TypeScript
+   * adapter" contract `subUnits` uses.
    */
   invocationRecognizers?: InvocationRecognizer[];
   /**
