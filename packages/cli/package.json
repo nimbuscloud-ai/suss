@@ -75,6 +75,7 @@
     "@suss/framework-react": "*",
     "@suss/framework-react-router": "*",
     "@suss/framework-ts-rest": "*",
+    "@suss/runtime-node": "*",
     "@suss/client-apollo": "*",
     "@suss/client-axios": "*",
     "@suss/client-web": "*",

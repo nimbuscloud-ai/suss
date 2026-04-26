@@ -1,0 +1,62 @@
+{
+  "name": "@suss/runtime-node",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Recognize Node.js runtime primitives — scheduling (setImmediate/setTimeout/queueMicrotask/process.nextTick), the process surface (argv/exit/cwd), and module-loading globals (__dirname/__filename/import.meta.url) — and emit interaction effects on the units that use them.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "node",
+    "runtime",
+    "scheduling",
+    "static-analysis"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/runtime/node#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/runtime/node"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "ts-morph": ">=20"
+  },
+  "dependencies": {
+    "@suss/behavioral-ir": "*",
+    "@suss/extractor": "*"
+  },
+  "devDependencies": {
+    "ts-morph": "*",
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}
