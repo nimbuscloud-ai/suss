@@ -138,6 +138,87 @@ export const FindingKindSchema = z.enum([
    * annotation.
    */
   "runtimeScopeUnknown",
+  /**
+   * Code reads a column the schema doesn't declare. Most often a
+   * typo (`deltedAt` instead of `deletedAt`) or stale code that
+   * still references a renamed column. Severity: error — at
+   * runtime this resolves to undefined and silently flips truthy
+   * checks downstream. Emitted by checkRelationalStorage.
+   */
+  "storageReadFieldUnknown",
+  /**
+   * Code writes a column the schema doesn't declare. Same family
+   * as storageReadFieldUnknown but on the write side; the row
+   * gets inserted/updated without the field — silent data loss.
+   * Severity: error.
+   */
+  "storageWriteFieldUnknown",
+  /**
+   * Schema declares a column that no code in the project reads
+   * or writes. Usually dead config left over from a removed
+   * feature, or a renamed column the schema still has. Severity:
+   * warning — the column still exists in the database but
+   * nothing exercises it. Suppressed when ANY caller uses
+   * default-shape (`["*"]`) reads on the table, since we can't
+   * tell whether default-shape consumers actually use the column.
+   */
+  "storageFieldUnused",
+  /**
+   * A column that code writes but no code ever reads. Likely
+   * useless data — the application stores values nothing
+   * downstream consumes. Severity: warning. Could indicate dead
+   * code, an in-progress feature, or a column that should be
+   * dropped.
+   */
+  "storageWriteOnlyField",
+  /**
+   * A `findUnique`-style selector references a column set that
+   * isn't a unique index on the table. At runtime the call
+   * fails (Prisma / typed ORMs reject at the type level; raw
+   * SQL drivers and Drizzle compile but the query returns
+   * non-deterministic single rows). Severity: error. Pairs the
+   * `selector` field on a `storageAccess` effect against the
+   * `indexes` declared on the provider's `storageContract`.
+   *
+   * Reserved in v0 taxonomy; emitter ships when an access pack
+   * needs it (likely in the Drizzle / raw-SQL packs where
+   * TypeScript doesn't catch the case at compile time).
+   */
+  "storageSelectorIndexMismatch",
+  /**
+   * Code writes a value of one type to a column of an
+   * incompatible type (string to Int, number to text, etc.).
+   * Severity: error. Reserved in v0 taxonomy; typed ORMs
+   * (Prisma, Drizzle) generally catch this at the TypeScript
+   * level so the emitter waits for a raw-SQL pack or a value
+   * that escapes the type system via `any`.
+   */
+  "storageTypeMismatch",
+  /**
+   * Code writes `null` to a `NOT NULL` column, or treats the
+   * value of a nullable column as definitely-non-null without
+   * a guard. Severity: error. Reserved in v0 taxonomy; typed
+   * ORMs cover the common case via generated types, so the
+   * emitter waits for a raw-SQL pack or escape-hatch detection.
+   */
+  "storageNullableViolation",
+  /**
+   * Code writes a string literal longer than the column's
+   * declared length (`varchar(50)` written with 200+ chars).
+   * Severity: error. Reserved in v0 taxonomy; requires both the
+   * literal length and the column constraint to be statically
+   * known. Useful even with typed ORMs since TypeScript doesn't
+   * model string lengths.
+   */
+  "storageLengthConstraintViolation",
+  /**
+   * Code writes a value that isn't in the column's declared
+   * enum set. Severity: error. Reserved in v0 taxonomy; typed
+   * ORMs catch this at the TS level when the value is a typed
+   * enum literal, so the emitter waits for cases where the
+   * value escapes the type system or comes from a raw-SQL pack.
+   */
+  "storageEnumConstraintViolation",
 ]);
 
 export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);
@@ -283,12 +364,38 @@ export const RuntimeConfigSemanticsSchema = z.object({
   instanceName: z.string(),
 });
 
+/**
+ * Provider-side relational storage table — Postgres / MySQL / SQLite
+ * declared via Prisma `model`, Drizzle `pgTable(...)`, TypeORM
+ * `@Entity`, or raw SQL DDL. Columns are FIELDS on the table's
+ * contract; field-level access checks compare what code reads/writes
+ * against `metadata.storageContract.columns`. Pairing key:
+ * `(storageSystem, scope, table)`.
+ *
+ * Other storage models (document, tabular-NoSQL, key-value, blob)
+ * each get their own SemanticsSchema variant when those phases ship
+ * — see `docs/internal/storage-pairing.md`.
+ */
+export const StorageRelationalSemanticsSchema = z.object({
+  name: z.literal("storage-relational"),
+  storageSystem: z.enum(["postgres", "mysql", "sqlite"]),
+  /**
+   * ORM / driver scope. Defaults to `"default"` for single-database
+   * setups; monorepos with multiple Prisma schemas or multiple
+   * connection pools use distinct values to keep pairings separate.
+   */
+  scope: z.string(),
+  /** Table / model name as declared in the schema. */
+  table: z.string(),
+});
+
 export const SemanticsSchema = z.discriminatedUnion("name", [
   RestSemanticsSchema,
   FunctionCallSemanticsSchema,
   GraphqlResolverSemanticsSchema,
   GraphqlOperationSemanticsSchema,
   RuntimeConfigSemanticsSchema,
+  StorageRelationalSemanticsSchema,
 ]);
 
 export const BoundaryBindingSchema = z.object({
@@ -683,6 +790,55 @@ export const EffectSchema = z.discriminatedUnion("type", [
     type: z.literal("stateChange"),
     variable: z.string(),
     newValue: z.unknown().optional(),
+  }),
+  /**
+   * Read or write against a storage system (Postgres / MySQL / SQLite
+   * via Prisma, Drizzle, raw drivers, etc.). Captured as a transition
+   * effect so storage accesses get the same execution-path attribution
+   * invocation effects already have — preconditions for branched
+   * calls, location for the call site. One transition can have
+   * MULTIPLE storageAccess effects (a join or nested select touches
+   * more than one table). The pairing layer
+   * (`checkRelationalStorage`) groups these by `(storageSystem,
+   * scope, table)` and compares field sets against schema-derived
+   * provider summaries.
+   */
+  z.object({
+    type: z.literal("storageAccess"),
+    kind: z.enum(["read", "write"]),
+    /** Matches the `storageSystem` on the paired storage-* binding. */
+    storageSystem: z.string(),
+    /** ORM / driver scope (defaults to "default" for single-DB setups). */
+    scope: z.string(),
+    /** Table / model the access targets. */
+    table: z.string(),
+    /**
+     * Columns referenced by the access. `["*"]` is the convention for
+     * default-shape reads (e.g. Prisma `findUnique({ where: { id } })`
+     * with no `select`) — the consumer reads every scalar column the
+     * provider declares. Pairing logic treats `["*"]` specially when
+     * deciding whether a column is unused.
+     */
+    fields: z.array(z.string()),
+    /**
+     * For reads: columns referenced in the where-clause / selector
+     * (Prisma `where`, Drizzle `.where(eq(table.col, x))`, raw
+     * `WHERE col = ?`). Used by future checks that pair selector
+     * columns against indexes; ignored for write-side checks today.
+     */
+    selector: z.array(z.string()).optional(),
+    /**
+     * The driver-specific operation name — `findUnique`, `create`,
+     * `select`, `insertOne`, etc. Informational; the kind field is
+     * what pairing dispatches on.
+     */
+    operation: z.string().optional(),
+    /**
+     * Same shape as invocation.preconditions — the ancestor conditions
+     * that gate reaching this access within its transition. Populated
+     * for accesses nested inside conditional blocks.
+     */
+    preconditions: z.array(PredicateSchema).optional(),
   }),
 ]);
 
