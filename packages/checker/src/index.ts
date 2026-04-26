@@ -5,6 +5,7 @@ import { checkContractAgreement } from "./contract/contractAgreement.js";
 import { checkContractConsistency } from "./contract/contractConsistency.js";
 import { checkProviderCoverage } from "./coverage/providerCoverage.js";
 import { dedupeFindings } from "./dedupe.js";
+import { checkMessageBus } from "./message-bus/messageBusPairing.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
@@ -50,6 +51,7 @@ export { checkContractConsistency } from "./contract/contractConsistency.js";
 export { checkProviderCoverage } from "./coverage/providerCoverage.js";
 export { dedupeFindings } from "./dedupe.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
+export { checkMessageBus } from "./message-bus/messageBusPairing.js";
 export {
   type GraphqlPairingResult,
   pairGraphqlOperations,
@@ -181,6 +183,12 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // unused, write-only). Constraint findings are reserved in the IR
   // taxonomy but not emitted yet.
   findings.push(...checkRelationalStorage(summaries));
+
+  // Message-bus pairing: producer interaction effects (from
+  // recognizers like @suss/framework-aws-sqs) pair against queue
+  // provider summaries (from CFN). Emits orphan-producer/orphan-
+  // consumer/unused-queue findings.
+  findings.push(...checkMessageBus(summaries));
 
   return {
     findings: dedupeFindings(findings),

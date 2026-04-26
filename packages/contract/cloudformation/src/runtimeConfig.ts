@@ -114,16 +114,18 @@ function buildLambdaSummary(
   sourceFile: string,
 ): BehavioralSummary | null {
   const props = resource.Properties ?? {};
-  const templateVars = readEnvVariables(
+  const envVariables =
     (props.Environment as { Variables?: Record<string, unknown> } | undefined)
-      ?.Variables,
-  );
+      ?.Variables ?? {};
+  const templateVars = readEnvVariables(envVariables);
+  const envVarTargets = readEnvVarTargets(envVariables);
   const codeScope = readCodeScope(resource);
   return buildSummary({
     logicalId,
     sourceFile,
     deploymentTarget: "lambda",
     templateVars,
+    envVarTargets,
     codeScope,
   });
 }
@@ -173,6 +175,15 @@ function buildSummary(opts: {
   sourceFile: string;
   deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment";
   templateVars: string[];
+  /**
+   * Resolved CFN-ref targets for env vars. Maps the env var NAME the
+   * code reads to the LOGICAL ID of the resource it Refs. Lets the
+   * message-bus pairing (and any future cross-resource pairing) collapse
+   * the env-var → resource chain at check time. Only populated for env
+   * vars whose values are recognised CFN intrinsics (Ref, GetAtt). Plain
+   * string values produce no entry — they're "data," not "wiring."
+   */
+  envVarTargets?: Record<string, { kind: "ref"; logicalId: string }>;
   codeScope: { kind: "codeUri" | "unknown"; path?: string };
 }): BehavioralSummary | null {
   const platformVars = PLATFORM_INJECTED[opts.deploymentTarget] ?? [];
@@ -217,6 +228,10 @@ function buildSummary(opts: {
       runtimeContract: {
         envVars: [...merged].sort(),
         envVarSources: sources,
+        ...(opts.envVarTargets !== undefined &&
+        Object.keys(opts.envVarTargets).length > 0
+          ? { envVarTargets: opts.envVarTargets }
+          : {}),
       },
       codeScope: opts.codeScope,
     },
@@ -228,6 +243,54 @@ function readEnvVariables(raw: unknown): string[] {
     return [];
   }
   return Object.keys(raw as Record<string, unknown>).sort();
+}
+
+/**
+ * Inspect each Lambda env var value and extract the CFN logical id
+ * it resolves to (when the value is `!Ref X` or `!GetAtt X.Attr`).
+ * Plain string values are skipped — they're data, not wiring.
+ *
+ * Used by message-bus pairing (and future cross-resource pairing
+ * passes) to bridge env-var-named producer channels to CFN-resource-
+ * named provider channels.
+ */
+function readEnvVarTargets(
+  raw: unknown,
+): Record<string, { kind: "ref"; logicalId: string }> {
+  const out: Record<string, { kind: "ref"; logicalId: string }> = {};
+  if (raw === null || typeof raw !== "object") {
+    return out;
+  }
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    const target = readRefTarget(value);
+    if (target !== null) {
+      out[name] = { kind: "ref", logicalId: target };
+    }
+  }
+  return out;
+}
+
+function readRefTarget(value: unknown): string | null {
+  if (value === null || typeof value !== "object") {
+    return null;
+  }
+  const obj = value as Record<string, unknown>;
+  if ("Ref" in obj && typeof obj.Ref === "string") {
+    return obj.Ref;
+  }
+  if ("Fn::GetAtt" in obj) {
+    const att = obj["Fn::GetAtt"];
+    if (Array.isArray(att) && typeof att[0] === "string") {
+      return att[0];
+    }
+    if (typeof att === "string") {
+      const dot = att.indexOf(".");
+      if (dot !== -1) {
+        return att.slice(0, dot);
+      }
+    }
+  }
+  return null;
 }
 
 function readEcsEnvironmentList(raw: unknown): string[] {
