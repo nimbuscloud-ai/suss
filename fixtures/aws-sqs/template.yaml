@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Fixture for the SQS pairing integration test. Three drift cases:
+    1. Producer + consumer paired correctly (OrdersQueue).
+    2. Producer with no consumer (OrphanQueue) — declared queue but no
+       Lambda receives from it.
+    3. Consumer with no producer (NotificationsQueue) — declared queue
+       and consumer Lambda but no code sends to it.
+
+Resources:
+  # Pair 1: producer + consumer both wired up.
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  OrderProducer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/order-producer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          ORDERS_QUEUE_URL: !Ref OrdersQueue
+
+  OrderConsumer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/order-consumer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Events:
+        FromOrders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  # Pair 2: orphan queue — declared, has a producer in code, but no
+  # Lambda is wired as a consumer in the template.
+  OrphanQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  OrphanProducer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/orphan-producer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          ORPHAN_QUEUE_URL: !Ref OrphanQueue
+
+  # Pair 3: queue declared with a consumer Lambda, but nothing in code
+  # sends to it. Should surface as "consumer never receives messages."
+  NotificationsQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  NotificationsConsumer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/notifications-consumer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Events:
+        FromNotifications:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt NotificationsQueue.Arn
