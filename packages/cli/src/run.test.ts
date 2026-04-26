@@ -344,7 +344,7 @@ describe("runCli — contract", () => {
 
   it("rejects an unknown --from value", async () => {
     const { exit, io } = await capture(() =>
-      runCli(["contract", "--from", "graphql", "spec.json"]),
+      runCli(["contract", "--from", "no-such-source", "spec.json"]),
     );
     expect(exit).toBe(1);
     expect(io.stderr).toContain("unknown --from value");
