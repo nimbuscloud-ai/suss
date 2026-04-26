@@ -45,6 +45,7 @@ import {
 } from "@suss/contract-aws-apigateway";
 import { openApiToSummaries } from "@suss/contract-openapi";
 
+import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -126,6 +127,12 @@ export function cloudFormationToSummaries(
   //    summary. The pairing checker scopes code reads to these
   //    runtimes via metadata.codeScope.
   summaries.push(...buildRuntimeConfigSummaries(resources, sourceFile));
+
+  // 5. Message-bus walk: AWS::SQS::Queue resources emit queue provider
+  //    summaries; Lambdas with SAM Events:SQS or AWS::Lambda::EventSourceMapping
+  //    emit consumer summaries with a queue boundaryBinding. Producer-side
+  //    interaction effects from @suss/framework-aws-sqs pair against these.
+  summaries.push(...buildMessageBusSummaries(resources, sourceFile));
 
   return summaries;
 }
