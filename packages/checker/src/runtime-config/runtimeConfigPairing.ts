@@ -157,40 +157,71 @@ function readEnvVarSources(
 }
 
 /**
- * Walk every transition's effects looking for invocation calls whose
- * args reference `process.env.X`. The Gap 5b extractor work emits
- * those references as `EffectArg.identifier { name: "process.env.X" }`.
- * Other transit-time mentions of env vars (in conditions, in
- * non-invocation effects) are skipped — they're rare and the dominant
- * signal is the invocation arg pattern.
+ * Walk every transition's effects looking for `interaction(class:
+ * "config-read")` records — the unified shape emitted by
+ * `@suss/framework-process-env` (and any future config-source
+ * recognizer like dotenv). Each record carries the env-var name
+ * directly; no arg-walking required.
+ *
+ * Falls back to scanning invocation effect args for the
+ * `process.env.X` identifier pattern when no config-read effects are
+ * present. This keeps the pairing pass working on summaries
+ * extracted before the process-env recognizer existed (or when the
+ * pack isn't in the framework list).
  */
 function collectEnvVarReads(summaries: BehavioralSummary[]): EnvVarRead[] {
   const reads: EnvVarRead[] = [];
+  let sawConfigReadEffect = false;
+  for (const summary of summaries) {
+    for (const transition of summary.transitions) {
+      for (const effect of transition.effects) {
+        if (
+          effect.type === "interaction" &&
+          effect.interaction.class === "config-read"
+        ) {
+          sawConfigReadEffect = true;
+          reads.push({
+            name: effect.interaction.name,
+            summary,
+            transitionId: transition.id,
+          });
+        }
+      }
+    }
+  }
+  // Backward-compat fallback: when no config-read effects exist on
+  // any summary in the set, fall back to the legacy invocation-arg
+  // scan. Once the process-env recognizer is wired into the dogfood
+  // and integration paths, this branch becomes dead and can be
+  // removed.
+  if (sawConfigReadEffect) {
+    return reads;
+  }
   for (const summary of summaries) {
     for (const transition of summary.transitions) {
       for (const effect of transition.effects) {
         if (effect.type !== "invocation") {
           continue;
         }
-        collectFromEffect(effect, summary, transition.id, reads);
+        collectFromInvocationLegacy(effect, summary, transition.id, reads);
       }
     }
   }
   return reads;
 }
 
-function collectFromEffect(
+function collectFromInvocationLegacy(
   effect: Extract<Effect, { type: "invocation" }>,
   summary: BehavioralSummary,
   transitionId: string,
   out: EnvVarRead[],
 ): void {
   for (const arg of effect.args) {
-    collectFromArg(arg, summary, transitionId, out);
+    collectFromArgLegacy(arg, summary, transitionId, out);
   }
 }
 
-function collectFromArg(
+function collectFromArgLegacy(
   arg: unknown,
   summary: BehavioralSummary,
   transitionId: string,
@@ -207,12 +238,9 @@ function collectFromArg(
     }
     return;
   }
-  // Recurse through `call` arg variants — `log(formatError(process.env.X))`
-  // hides the read inside a nested call. Bounded by the args' own
-  // recursion depth from the extractor's argument-shape capture.
   if (obj.kind === "call" && Array.isArray(obj.args)) {
     for (const sub of obj.args) {
-      collectFromArg(sub, summary, transitionId, out);
+      collectFromArgLegacy(sub, summary, transitionId, out);
     }
   }
 }
