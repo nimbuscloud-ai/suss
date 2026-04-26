@@ -437,7 +437,13 @@ describe("SAM Events block expansion", () => {
         },
       },
     });
-    expect(summaries).toHaveLength(0);
+    // Runtime-config summaries from the Function resource are
+    // expected; the assertion is specifically that no REST endpoint
+    // summaries got synthesized for the ANY method.
+    const restSummaries = summaries.filter(
+      (s) => s.identity.boundaryBinding?.semantics.name === "rest",
+    );
+    expect(restSummaries).toHaveLength(0);
   });
 });
 
