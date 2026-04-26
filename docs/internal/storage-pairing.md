@@ -188,9 +188,17 @@ In:
   own contract-source pack (schema reader) and access pack
   (call-site / builder-chain analysis). Forces the IR + checker
   abstractions to stay ORM-agnostic.
-- Four finding kinds: `storageReadFieldUnknown`,
-  `storageWriteFieldUnknown`, `storageFieldUnused`,
-  `storageWriteOnlyField`.
+- **Field-existence finding kinds** (emitted in v0):
+  `storageReadFieldUnknown`, `storageWriteFieldUnknown`,
+  `storageFieldUnused`, `storageWriteOnlyField`.
+- **Constraint finding kinds** (taxonomy in IR; emitter shipped
+  when packs catch up): `storageSelectorIndexMismatch`,
+  `storageTypeMismatch`, `storageNullableViolation`,
+  `storageLengthConstraintViolation`,
+  `storageEnumConstraintViolation`. These cover the gaps where
+  TypeScript can't help (raw SQL, `any` escapes, length /
+  unique-index constraints) — staked out now so the IR doesn't
+  need a migration when emitters land.
 - Field-level granularity (`User.deletedAt`).
 - Multi-table access per call site (joins / nested selects emit one
   storage effect per touched table).

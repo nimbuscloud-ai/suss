@@ -9,6 +9,7 @@ import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
 import { checkRuntimeConfig } from "./runtimeConfig/runtimeConfigPairing.js";
+import { checkRelationalStorage } from "./storage/relationalPairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 
 import type {
@@ -62,6 +63,7 @@ export {
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
 export { checkRuntimeConfig } from "./runtimeConfig/runtimeConfigPairing.js";
+export { checkRelationalStorage } from "./storage/relationalPairing.js";
 export { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 export {
   applySuppressions,
@@ -170,6 +172,15 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // Storybook check — provider declares a contract surface, the
   // checker pairs it against in-scope consumers.
   findings.push(...checkRuntimeConfig(summaries));
+
+  // Relational-storage pairing: pair schema-derived providers
+  // (Prisma model declarations, Drizzle pgTable() declarations)
+  // against `storageAccess` effects on code summaries. Same
+  // provider-declares-contract / consumers-pair-against-it shape;
+  // emits the four field-existence findings (read/write unknown,
+  // unused, write-only). Constraint findings are reserved in the IR
+  // taxonomy but not emitted yet.
+  findings.push(...checkRelationalStorage(summaries));
 
   return {
     findings: dedupeFindings(findings),

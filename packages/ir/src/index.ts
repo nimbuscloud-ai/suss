@@ -69,6 +69,10 @@ export type RuntimeConfigSemantics = Extract<
   Semantics,
   { name: "runtime-config" }
 >;
+export type StorageRelationalSemantics = Extract<
+  Semantics,
+  { name: "storage-relational" }
+>;
 export type CodeUnitIdentity = z.infer<typeof CodeUnitIdentitySchema>;
 
 // ---------------------------------------------------------------------------
@@ -232,6 +236,39 @@ export function runtimeConfigBinding(opts: {
       name: "runtime-config",
       deploymentTarget: opts.deploymentTarget,
       instanceName: opts.instanceName,
+    },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * Build a storage-relational binding — the provider side of a
+ * relational storage table (Postgres / MySQL / SQLite). Pairs with
+ * code units that emit `storageAccess` effects against the same
+ * `(storageSystem, scope, table)` triple.
+ *
+ * Other storage models (document, tabular-NoSQL, key-value, blob)
+ * get their own binding constructors when those phases ship.
+ */
+export function storageRelationalBinding(opts: {
+  recognition: string;
+  storageSystem: "postgres" | "mysql" | "sqlite";
+  scope: string;
+  table: string;
+}): BoundaryBinding {
+  return {
+    // Wire protocol varies (postgres-wire, mysql-wire, in-process for
+    // sqlite) but pairing logic doesn't depend on it; `storageSystem`
+    // on the semantics layer carries the discriminator that matters.
+    // Use the storageSystem value as the transport so the layering
+    // stays informative without inventing a separate wire-protocol
+    // taxonomy.
+    transport: opts.storageSystem,
+    semantics: {
+      name: "storage-relational",
+      storageSystem: opts.storageSystem,
+      scope: opts.scope,
+      table: opts.table,
     },
     recognition: opts.recognition,
   };
