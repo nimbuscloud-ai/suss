@@ -73,6 +73,7 @@ interface CloudFormationTemplate {
 interface CloudFormationResource {
   Type?: string;
   Properties?: Record<string, unknown>;
+  Metadata?: Record<string, unknown>;
 }
 
 /**
