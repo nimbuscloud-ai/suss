@@ -345,6 +345,10 @@ export function sqsFramework(): PatternPack {
     discovery: [],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
+    // Skip files that don't import from @aws-sdk/client-sqs — the
+    // recognizer's import-source check would reject them anyway, so
+    // walking is wasted work in monorepos. Prefix-matches sub-paths.
+    requiresImport: ["@aws-sdk/client-sqs"],
     invocationRecognizers: [sqsRecognizer as InvocationRecognizer],
   };
 }
