@@ -16,9 +16,11 @@
 // surfaces as storageFieldUnused. Post.title is written but never
 // read → storageWriteOnlyField.
 
+import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { checkAll } from "@suss/checker";
@@ -31,6 +33,28 @@ import type { PatternPack } from "@suss/extractor";
 const repoRoot = path.resolve(__dirname, "../../..");
 const fixtureRoot = path.join(repoRoot, "fixtures/prisma");
 const schemaPath = path.join(fixtureRoot, "schema.prisma");
+const generatedClientDir = path.join(repoRoot, "node_modules/.prisma/client");
+
+// `prisma generate` produces node_modules/.prisma/client from the
+// fixture's schema.prisma. The recognizer's type-resolution check
+// matches the type's declaration file path against `/@prisma/client/`
+// or `/.prisma/client/` — without the generated client, ts-morph
+// can't resolve `db.user.findUnique(...)` to anything Prisma-typed
+// and the recognizer silently emits zero interactions.
+//
+// Local dev environments usually have this from a previous run; CI
+// installs from scratch and won't, so the test owns the generation
+// step rather than coupling it to npm install lifecycle. ~1 s on
+// cache hit, ~5 s cold.
+function ensurePrismaClientGenerated(): void {
+  if (existsSync(generatedClientDir)) {
+    return;
+  }
+  execSync(`npx prisma generate --schema=${schemaPath} --no-hints`, {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+}
 
 const lambdaHandlerPack: PatternPack = {
   name: "lambda-handler",
@@ -54,6 +78,10 @@ const lambdaHandlerPack: PatternPack = {
 };
 
 describe("prisma integration", () => {
+  beforeAll(() => {
+    ensurePrismaClientGenerated();
+  });
+
   it("emits the expected provider summary count (2 models = 2 summaries)", () => {
     const providers = prismaSchemaFileToSummaries(schemaPath);
     expect(providers).toHaveLength(2);
