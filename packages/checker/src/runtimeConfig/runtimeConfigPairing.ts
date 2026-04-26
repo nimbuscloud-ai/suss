@@ -33,6 +33,15 @@ import type {
 
 interface RuntimeContractMetadata {
   envVars?: string[];
+  /**
+   * Per-var provenance — the stub layer marks each var as either
+   * declared in the template ("template") or injected by the
+   * platform runtime ("platform"). The pairing logic uses this so
+   * platform-injected vars never fire envVarUnused warnings.
+   * Template-only treatment is the right default when this map is
+   * absent (all vars treated as template-declared).
+   */
+  envVarSources?: Record<string, "template" | "platform">;
 }
 
 interface CodeScopeMetadata {
@@ -87,6 +96,7 @@ export function checkRuntimeConfig(summaries: BehavioralSummary[]): Finding[] {
     );
     const readNames = new Set(inScope.map((r) => r.name));
     const providedSet = new Set(provided);
+    const sources = readEnvVarSources(runtime);
 
     // envVarUnprovided — one finding per (read site, var). Multiple
     // reads of the same undeclared var across files emit multiple
@@ -99,10 +109,16 @@ export function checkRuntimeConfig(summaries: BehavioralSummary[]): Finding[] {
     }
 
     // envVarUnused — one finding per (runtime, var) declared but
-    // never read. The "consumer" side here is the runtime itself
-    // (degenerate; no code consumer to point at).
+    // never read. Skip vars the platform injects automatically
+    // (AWS_REGION etc.) — those are part of the runtime contract
+    // regardless of whether code reads them, so flagging them as
+    // unused would be noise. The "consumer" side here is the
+    // runtime itself (degenerate; no code consumer to point at).
     for (const provName of provided) {
       if (readNames.has(provName)) {
+        continue;
+      }
+      if (sources[provName] === "platform") {
         continue;
       }
       findings.push(makeUnusedFinding(runtime, binding, provName));
@@ -129,6 +145,15 @@ function readProvidedEnvVars(summary: BehavioralSummary): string[] {
     | RuntimeContractMetadata
     | undefined;
   return contract?.envVars ?? [];
+}
+
+function readEnvVarSources(
+  summary: BehavioralSummary,
+): Record<string, "template" | "platform"> {
+  const contract = summary.metadata?.runtimeContract as
+    | RuntimeContractMetadata
+    | undefined;
+  return contract?.envVarSources ?? {};
 }
 
 /**

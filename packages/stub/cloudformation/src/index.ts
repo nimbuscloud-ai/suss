@@ -45,6 +45,8 @@ import {
 } from "@suss/stub-aws-apigateway";
 import { openApiToSummaries } from "@suss/stub-openapi";
 
+import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
+
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "@suss/stub-openapi";
 
@@ -116,6 +118,13 @@ export function cloudFormationToSummaries(
   for (const config of httpConfigs) {
     summaries.push(...httpApiToSummaries(config));
   }
+
+  // 4. Runtime-config walk: Lambda / ECS task env-var contracts. Each
+  //    resource that declares (or implicitly inherits, via platform
+  //    injection) an env block emits one runtime-config provider
+  //    summary. The pairing checker scopes code reads to these
+  //    runtimes via metadata.codeScope.
+  summaries.push(...buildRuntimeConfigSummaries(resources, sourceFile));
 
   return summaries;
 }
