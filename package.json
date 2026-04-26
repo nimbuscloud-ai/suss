@@ -15,31 +15,8 @@
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
   },
   "workspaces": [
-    "packages/ir",
-    "packages/extractor",
-    "packages/adapter/typescript",
-    "packages/framework/ts-rest",
-    "packages/framework/react-router",
-    "packages/framework/react",
-    "packages/framework/express",
-    "packages/framework/fastify",
-    "packages/framework/apollo",
-    "packages/framework/nestjs-graphql",
-    "packages/framework/nestjs-rest",
-    "packages/framework/aws-sqs",
-    "packages/framework/prisma",
-    "packages/framework/process-env",
-    "packages/client/web",
-    "packages/client/axios",
-    "packages/client/apollo",
-    "packages/contract/openapi",
-    "packages/contract/aws-apigateway",
-    "packages/contract/cloudformation",
-    "packages/contract/storybook",
-    "packages/contract/appsync",
-    "packages/contract/prisma",
-    "packages/checker",
-    "packages/cli"
+    "packages/*",
+    "packages/*/*"
   ],
   "devDependencies": {
     "@biomejs/biome": "2.0.6",
