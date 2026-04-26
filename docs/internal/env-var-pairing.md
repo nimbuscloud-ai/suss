@@ -188,11 +188,55 @@ Out (deferred):
 - Fixture project (the demo above).
 - Snapshot test asserting the three findings.
 
+### Lambda framework pack (Phase 5c.4 — follow-up)
+
+5c.1–5c.3 used a stand-in `lambda-handler` pack with hardcoded
+`namedExport: ["handler"]`. That works for the fixture (where every
+function is conventionally named `handler`), but real Lambdas can name
+their handler anything; the SAM/CFN template's `Properties.Handler`
+field (e.g. `index.processOrder`) is the source of truth.
+
+A real `@suss/framework-aws-lambda` pack reads the SAM/CFN template
+itself, mirroring how the OpenAPI pack consumes OpenAPI specs and the
+ts-rest pack consumes contract objects. It builds a
+`{ file: from CodeUri + first segment of Handler, exportName: second
+segment of Handler }` list per function, then runs `namedExport`
+discovery on each pair.
+
+```ts
+awsLambdaFramework({ template: "template.yaml" })
+```
+
+Implementation notes:
+
+- **Shared template parsing.** The pack and `@suss/stub-cloudformation`
+  both parse the same YAML. Extract a `@suss/cfn-template-reader`
+  shared helper so each call site reuses one parse.
+- **Fallback to broad discovery** when `template` isn't supplied.
+  Discover every exported function in the project (`packageExports`-
+  style) and let the pairing layer do the work via codeScope. Lossy
+  for entrypoint-identity-dependent checks (e.g. "the handler's input
+  shape matches the API Gateway integration request") but sufficient
+  for env-var pairing — closure expansion picks up callees inside the
+  scoped directory regardless of which export is "the" handler.
+- **Why not stub-driven discovery hints?** A stub→adapter coupling
+  channel was considered (the stub emits `metadata.handlerHints`; the
+  adapter reads them at extract time). It introduces an ordering
+  constraint and a metadata channel meaningful for only this case.
+  The pack-reads-template approach matches the existing pattern (see
+  OpenAPI / ts-rest packs) and keeps stubs and adapters independent.
+
+This is shippable independently of 5c.1–5c.3 — the env-var pairing
+already works once any pack produces handler summaries; the
+aws-lambda pack just makes the discovery accurate for arbitrary
+handler names.
+
 ## Open questions
 
 1. **Multi-attribution** — if `src/shared/db.ts` is included in two
    Lambdas via `CodeUri: ./src/`, do its env reads pair against both?
-   → Yes, multi-attribute.
+   → Yes, multi-attribute. Same code summary contributes to both
+   pairings independently; findings live at the (code × runtime) cell.
 2. **Indirect env access** (`const config = { db: process.env.DB };
    config.db`) — capture only the read at the literal site; downstream
    uses through an aggregating object stay opaque.
@@ -201,8 +245,35 @@ Out (deferred):
    the escape hatch; otherwise emit one informational finding per
    runtime ("scope unknown, can't verify env vars").
 
+## Known limitations the demo exposed
+
+These work today only by virtue of fixture conventions; real
+codebases will hit each one. None is a blocker for the v0 ship; each
+is a tracked follow-up.
+
+- **Let-bound env reads** — `const x = process.env.STRIPE_API_KEY;
+  charge(x, ...)` captures the call-site identifier as `x`, not as
+  `process.env.STRIPE_API_KEY`. The post-hoc EffectArg-identifier
+  scan can't follow the local back to its initializer. Inline reads
+  (`charge(process.env.STRIPE_API_KEY, ...)`) work today; the let-
+  bound case wants a Gap-5b-style dataflow improvement at the
+  extractor that captures the binding's source expression.
+- **Bare-handler convention** — the v0 fixture pack hardcodes
+  `namedExport: ["handler"]`, which works only because every fixture
+  Lambda is named `handler`. Real handlers are named whatever the
+  template's `Properties.Handler` field says. Solved by the
+  `@suss/framework-aws-lambda` pack (Phase 5c.4 above) reading the
+  template directly.
+- **Path-sensitive scoping** — pairing scopes by *file inclusion in
+  the CodeUri*, not by *call-graph reachability from the handler*.
+  If a Lambda's CodeUri pulls in a utility file the Lambda never
+  actually calls, the utility's env reads still pair against that
+  Lambda. False positives in unusual layouts; in practice rare
+  because dead code in a Lambda's bundle is itself a smell.
+
 ## Status
 
 Plan: locked.
-Work: not started.
+Work: 5c.1, 5c.2, 5c.3 shipped. 5c.4 (real Lambda pack) and
+let-bound capture deferred.
 Owner: shipping under #152.
