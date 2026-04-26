@@ -71,6 +71,62 @@ export const FindingKindSchema = z.enum([
    */
   "contractDisagreement",
   /**
+   * A REST consumer call doesn't include a header the provider /
+   * contract declares required (Authorization, Idempotency-Key,
+   * X-API-Version, etc.). Severity: error. TypeScript only
+   * catches this for typed clients that model headers in their
+   * call signature; ad-hoc fetch / axios usage doesn't. Reserved
+   * in v0 taxonomy; emitter ships when request-shape pairing
+   * extends past status / body to headers.
+   */
+  "requiredHeaderMissing",
+  /**
+   * A REST consumer call doesn't include a query parameter the
+   * provider declares required (e.g. `?cursor=X` for paginated
+   * endpoints). Severity: error. Reserved in v0 taxonomy;
+   * emitter ships with the same request-shape pairing extension.
+   */
+  "requiredQueryParamMissing",
+  /**
+   * A REST consumer call sends a request body whose shape
+   * doesn't match the provider's declared body schema — wrong
+   * field names, missing required fields, extra unknown fields.
+   * Distinct from `consumerContractViolation` (which is
+   * response-side); this is request-side. Severity: error.
+   * Reserved in v0 taxonomy; emitter ships with body-shape
+   * pairing on the request side.
+   */
+  "requestBodyShapeMismatch",
+  /**
+   * A REST consumer call targets a (method, path) combination
+   * the provider doesn't expose. Today the pairing layer just
+   * leaves both summaries unmatched, which silently obscures
+   * what's likely a typo or stale endpoint reference.
+   * Severity: error. Reserved in v0 taxonomy; emitter ships
+   * when the pairing layer adds a "consumer with no provider"
+   * surfaced finding distinct from "unmatched / no boundary
+   * binding."
+   */
+  "restMethodOnUnknownPath",
+  /**
+   * Provider returns a content-type the consumer doesn't expect
+   * (provider returns `application/xml`, consumer parses as JSON;
+   * or provider returns `application/octet-stream`, consumer
+   * calls `.json()`). Severity: error. Reserved in v0 taxonomy;
+   * needs both sides to record content-type, which today's
+   * pairing doesn't surface separately.
+   */
+  "contentTypeMismatch",
+  /**
+   * Provider requires authentication (Bearer / API key / OAuth)
+   * and consumer's call doesn't send it, sends a different
+   * scheme, or lacks the required scope. Severity: error.
+   * Reserved in v0 taxonomy; needs auth-policy modeling on
+   * both sides — the OpenAPI security schemes and the
+   * client-side header / interceptor patterns. Future work.
+   */
+  "authPolicyMismatch",
+  /**
    * A declared-scenario source (Storybook story, fixture, example
    * payload) references a prop / arg the target unit doesn't declare
    * as an input. Almost always means the scenario is outdated — the
@@ -87,6 +143,26 @@ export const FindingKindSchema = z.enum([
    * can regress silently.
    */
   "scenarioCoverageGap",
+  /**
+   * A scenario doesn't supply a prop the component declares
+   * required. Severity: error. Distinct from `scenarioArgUnknown`
+   * (story passes a prop the component doesn't accept) — this
+   * is the inverse: the component requires it; the story omits
+   * it. Reserved in v0 taxonomy; emitter waits for the
+   * component-input pack to surface required-vs-optional on
+   * declared inputs (today the React adapter records inputs
+   * but not their required-ness).
+   */
+  "componentRequiredPropMissing",
+  /**
+   * A scenario passes a value of the wrong type for a prop —
+   * e.g. story `args: { count: "5" }` when the component
+   * declares `count: number`. Severity: error. TypeScript
+   * catches this when the story uses `Meta<typeof Component>`;
+   * misses for hand-written stories that escape the typing or
+   * pass `as any`. Reserved in v0 taxonomy.
+   */
+  "componentPropTypeMismatch",
   /**
    * A GraphQL consumer operation selects a root-level field
    * (Query.*, Mutation.*, Subscription.*) that no provider
@@ -108,6 +184,36 @@ export const FindingKindSchema = z.enum([
    * set excludes the consumer's selection.
    */
   "graphqlSelectionFieldUnknown",
+  /**
+   * A GraphQL consumer operation declares a variable type that
+   * doesn't match the resolver's argument type. Example:
+   * operation `query GetUser($id: String!)` but the schema's
+   * `user(id: ID!)` expects `ID!`. Severity: error — at
+   * runtime the resolver receives a type-coerced value or
+   * outright fails. Reserved in v0 taxonomy; emitter ships
+   * with the GraphQL operation→resolver pairing extension
+   * (today the pass only checks field existence).
+   */
+  "graphqlVariableTypeMismatch",
+  /**
+   * A GraphQL consumer operation calls a field with positional
+   * args missing one or more required arguments declared by
+   * the schema. Example: operation `user(id: $id)` but the
+   * schema's `user(id: ID!, version: Int!)` requires `version`.
+   * Severity: error. Reserved in v0 taxonomy; emitter ships
+   * with the same operation→resolver pairing extension.
+   */
+  "graphqlRequiredArgMissing",
+  /**
+   * A GraphQL consumer operation passes an enum value the
+   * schema's enum declaration doesn't include. Example:
+   * `status: PENDING_REVIEW` but the schema's `Status` enum is
+   * `{PENDING, APPROVED, REJECTED}`. Severity: error. Reserved
+   * in v0 taxonomy; typed clients (codegen) catch this at
+   * compile time, so the emitter waits for cases where the
+   * value escapes typing or comes from a literal-string client.
+   */
+  "graphqlEnumValueUnknown",
   /**
    * Code reads `process.env.X` from a source file scoped to a
    * deployable runtime instance, but that runtime's declared
@@ -138,6 +244,28 @@ export const FindingKindSchema = z.enum([
    * annotation.
    */
   "runtimeScopeUnknown",
+  /**
+   * Code treats `process.env.X` as definitely-required (e.g.
+   * `if (!process.env.X) throw …` or unconditional read), but
+   * the runtime contract doesn't mark it as required (no
+   * deployment-side validation, no documented requirement).
+   * Severity: warning. Reserved in v0 taxonomy; emitter waits
+   * for the runtime stub to grow a "required" attribute on
+   * env-var entries (currently the contract is just the name
+   * list).
+   */
+  "envVarRequiredButUnmarked",
+  /**
+   * Code reads an env var as if it were a non-string type
+   * (`process.env.PORT` used as a number without `Number(...)`
+   * / `parseInt`; `process.env.FLAG` used as a boolean without
+   * comparison) without the coercion the runtime contract
+   * implies. Env vars are always strings at the OS interface;
+   * code that forgets that flips truthy checks ("0" is truthy)
+   * and produces silent type errors. Severity: warning.
+   * Reserved in v0 taxonomy.
+   */
+  "envVarTypeCoercionMissing",
   /**
    * Code reads a column the schema doesn't declare. Most often a
    * typo (`deltedAt` instead of `deletedAt`) or stale code that
@@ -219,6 +347,30 @@ export const FindingKindSchema = z.enum([
    * value escapes the type system or comes from a raw-SQL pack.
    */
   "storageEnumConstraintViolation",
+  /**
+   * A pack identifies a boundary it doesn't know how to
+   * summarise — a WebSocket subscription handler, an SSE stream
+   * producer, a gRPC streaming method, etc. Severity: info. The
+   * pack should still emit a stub-shaped summary marking the
+   * boundary's existence; this finding alerts users that the
+   * extracted summary won't pair against consumers because the
+   * semantics aren't modelled. Reserved in v0 taxonomy; emitter
+   * ships when a pack first encounters a boundary it can't
+   * fully describe.
+   */
+  "unsupportedSemantics",
+  /**
+   * A pairing pass refused to emit substantive findings because
+   * too many predicates on the relevant transitions are opaque
+   * (the extractor couldn't decompose them; preconditions /
+   * branches show as raw source text). Severity: info. Distinct
+   * from `lowConfidence`, which is per-summary; this is per-pair
+   * — pairing produced no signal because the inputs were too
+   * murky to reason over. Reserved in v0 taxonomy; emitter
+   * ships when a pairing pass adds an explicit "I bailed"
+   * disclosure.
+   */
+  "opaquePredicateBlocking",
 ]);
 
 export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);
