@@ -14,7 +14,8 @@ export type ContractSource =
   | "openapi"
   | "cloudformation"
   | "storybook"
-  | "appsync";
+  | "appsync"
+  | "prisma";
 
 export interface ContractOptions {
   from: ContractSource;
@@ -47,6 +48,13 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     // graphql-resolver semantics.
     const mod = await import("@suss/contract-appsync");
     return mod.appsyncFileToSummaries(specPath);
+  },
+  prisma: async (specPath) => {
+    // `--from prisma` reads a `schema.prisma` file and emits one
+    // `library`-kind summary per model with storage-relational semantics
+    // that the checker pairs against `storageAccess` effects in code.
+    const mod = await import("@suss/contract-prisma");
+    return mod.prismaSchemaFileToSummaries(specPath);
   },
 };
 
