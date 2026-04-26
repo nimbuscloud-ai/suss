@@ -3,6 +3,8 @@
 // Pattern packs are declarative data that tell the language adapter WHAT to look for.
 // The adapter knows HOW to look for it in the language's AST.
 
+import type { Effect } from "@suss/behavioral-ir";
+
 // =============================================================================
 // Discovery
 // =============================================================================
@@ -627,7 +629,39 @@ export interface PatternPack {
     parent: DiscoveredSubUnitParent,
     ctx: unknown,
   ) => DiscoveredSubUnit[];
+  /**
+   * Per-call-site recognizers that emit typed `Effect`s alongside the
+   * generic `invocation` effect the adapter already captures. Each
+   * recognizer fires once per call expression visited by the adapter's
+   * invocation walker, regardless of which pack discovered the
+   * enclosing function — so `@suss/framework-prisma`'s recognizer can
+   * fire on Prisma calls inside an `@suss/framework-express` handler.
+   *
+   * Returning effects ADDS them to the same enclosing transition; the
+   * generic `invocation` effect is preserved either way (typed effects
+   * don't suppress raw call capture — they coexist so inspect rendering
+   * keeps the callee text and args, while the checker pairs on the
+   * typed shape). Returning null / [] is the no-match path.
+   *
+   * `call` is the language adapter's call-expression handle (opaque
+   * here; ts-morph `CallExpression` in `@suss/adapter-typescript`).
+   * `ctx` is the adapter's recognizer context (TypeChecker, source
+   * file imports, an `extractArgs()` helper that reuses the adapter's
+   * own EffectArg builder). Recognizers cast both to the adapter
+   * context they're written against — same "this pack requires the
+   * TypeScript adapter" contract `subUnits` uses.
+   */
+  invocationRecognizers?: InvocationRecognizer[];
 }
+
+/**
+ * Per-call-site recognizer hook. See `PatternPack.invocationRecognizers`
+ * for the contract and threading model.
+ */
+export type InvocationRecognizer<TCtx = unknown> = (
+  call: unknown,
+  ctx: TCtx,
+) => Effect[] | null;
 
 /**
  * Minimal handle-shaped description of the parent code unit that

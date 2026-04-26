@@ -5,14 +5,19 @@ import {
   collectEarlyReturnConditionInfos,
   conditionInfoToRawCondition,
 } from "./conditions.js";
-import { extractInvocationEffects } from "./resolve/invocationEffects.js";
+import {
+  extractInvocationEffects,
+  runInvocationRecognizers,
+} from "./resolve/invocationEffects.js";
 import {
   findTerminals,
   functionMayFallThrough,
   makeFallthroughTerminal,
 } from "./terminals/index.js";
 
+import type { Effect } from "@suss/behavioral-ir";
 import type {
+  InvocationRecognizer,
   RawBranch,
   RawCondition,
   RawEffect,
@@ -44,9 +49,11 @@ import type { FunctionRoot } from "./conditions.js";
 export function extractRawBranches(
   func: FunctionRoot,
   terminalPatterns: TerminalPattern[],
+  invocationRecognizers: InvocationRecognizer[] = [],
 ): RawBranch[] {
   const terminals = findTerminals(func, terminalPatterns);
   const invocations = extractInvocationEffects(func);
+  const recognized = runInvocationRecognizers(func, invocationRecognizers);
 
   // Synthesise a fall-through terminal when (a) the pack opted in by
   // including `{ type: "functionFallthrough" }` in its terminals,
@@ -82,7 +89,7 @@ export function extractRawBranches(
     }
   }
 
-  const rawBranches = terminals.map(({ node, terminal }) => {
+  const rawBranches: RawBranch[] = terminals.map(({ node, terminal }) => {
     const earlyReturnInfos = collectEarlyReturnConditionInfos(node, func);
     const ancestorInfos = collectAncestorConditionInfos(node, func);
 
@@ -132,6 +139,23 @@ export function extractRawBranches(
       defaultBranch.effects = invocations
         .filter((i) => i.neverTerminal || !terminalLines.has(i.line))
         .map((i) => i.effect);
+    }
+  }
+
+  // Recognized typed effects (e.g. storageAccess) attach to the
+  // same default branch. They bypass the terminal-line dedup
+  // because they're additive to the invocation effect — a Prisma
+  // call that's also somehow a terminal would emit BOTH a typed
+  // storageAccess (paired against the schema) AND any terminal-
+  // shaped invocation, and that's the right behavior.
+  if (recognized.length > 0) {
+    const defaultBranch = rawBranches.find((b) => b.isDefault);
+    if (defaultBranch !== undefined) {
+      const extra: Effect[] = recognized.map((r) => r.effect);
+      defaultBranch.extraEffects = [
+        ...(defaultBranch.extraEffects ?? []),
+        ...extra,
+      ];
     }
   }
 
