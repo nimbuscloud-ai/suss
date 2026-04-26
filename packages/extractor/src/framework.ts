@@ -652,6 +652,24 @@ export interface PatternPack {
    * TypeScript adapter" contract `subUnits` uses.
    */
   invocationRecognizers?: InvocationRecognizer[];
+  /**
+   * Per-property-access recognizers — sister to
+   * `invocationRecognizers` but firing on `PropertyAccessExpression`
+   * nodes rather than `CallExpression` nodes. Use these for patterns
+   * that read a value through property access without invoking it:
+   * `process.env.X` env-var reads, `Date.now()`-style time reads
+   * (which is actually a call, see invocationRecognizers), bare
+   * `module.constant` reads, etc.
+   *
+   * Same scope rules as invocationRecognizers — fires on every
+   * PropertyAccessExpression in the function body, skipping nested
+   * function bodies. Same emission contract: returned effects land
+   * on the enclosing default-branch transition.
+   *
+   * Same reasoning as invocationRecognizers for the opaque-arg /
+   * adapter-narrows pattern.
+   */
+  accessRecognizers?: AccessRecognizer[];
 }
 
 /**
@@ -660,6 +678,15 @@ export interface PatternPack {
  */
 export type InvocationRecognizer<TCtx = unknown> = (
   call: unknown,
+  ctx: TCtx,
+) => Effect[] | null;
+
+/**
+ * Per-property-access recognizer hook. See
+ * `PatternPack.accessRecognizers` for the contract and threading model.
+ */
+export type AccessRecognizer<TCtx = unknown> = (
+  access: unknown,
   ctx: TCtx,
 ) => Effect[] | null;
 

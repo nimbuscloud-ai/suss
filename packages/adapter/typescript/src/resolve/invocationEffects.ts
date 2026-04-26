@@ -29,6 +29,7 @@ import {
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
+  AccessRecognizer,
   EffectArg,
   InvocationRecognizer,
   RawCondition,
@@ -62,6 +63,18 @@ export interface InvocationEffectLocation {
 export interface RecognizedEffectLocation {
   effect: Effect;
   line: number;
+}
+
+/**
+ * Context handed to TypeScript-adapter access recognizers — sister
+ * to TsInvocationRecognizerContext but for property-access nodes.
+ * No `extractArgs` since property accesses don't take arguments.
+ */
+export interface TsAccessRecognizerContext {
+  /** The property-access expression itself. */
+  access: Node;
+  /** Source file the access lives in. */
+  sourceFile: SourceFile;
 }
 
 /**
@@ -247,6 +260,69 @@ export function runInvocationRecognizers(
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(
           `[suss] invocationRecognizer threw at ${filePath}:${line} — ${message}\n`,
+        );
+        emitted = null;
+      }
+      if (emitted === null || emitted.length === 0) {
+        continue;
+      }
+      for (const eff of emitted) {
+        out.push({ effect: eff, line });
+      }
+    }
+  });
+
+  return out;
+}
+
+/**
+ * Walk the function body for property-access recognizer dispatch.
+ * Visits every PropertyAccessExpression in the body (skipping nested
+ * function bodies the same way `runInvocationRecognizers` does).
+ *
+ * Same scope contract: recognizers fire on every PropertyAccess in
+ * the body, regardless of whether it's read as an arg, assigned to
+ * a const, or evaluated for its side effect. Pack authors handle
+ * dedup if they care about position.
+ */
+export function runAccessRecognizers(
+  func: FunctionRoot,
+  recognizers: AccessRecognizer[],
+): RecognizedEffectLocation[] {
+  if (recognizers.length === 0) {
+    return [];
+  }
+  const out: RecognizedEffectLocation[] = [];
+  const sourceFile = func.getSourceFile();
+
+  func.forEachDescendant((node, traversal) => {
+    if (
+      node !== func &&
+      (Node.isFunctionDeclaration(node) ||
+        Node.isFunctionExpression(node) ||
+        Node.isArrowFunction(node) ||
+        Node.isMethodDeclaration(node))
+    ) {
+      traversal.skip();
+      return;
+    }
+    if (!Node.isPropertyAccessExpression(node)) {
+      return;
+    }
+    const ctx: TsAccessRecognizerContext = {
+      access: node,
+      sourceFile,
+    };
+    const line = enclosingStatementLine(node);
+    for (const recognizer of recognizers) {
+      let emitted: Effect[] | null = null;
+      try {
+        emitted = recognizer(node, ctx);
+      } catch (err) {
+        const filePath = sourceFile.getFilePath();
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(
+          `[suss] accessRecognizer threw at ${filePath}:${line} — ${message}\n`,
         );
         emitted = null;
       }

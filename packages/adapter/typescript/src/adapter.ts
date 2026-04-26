@@ -20,6 +20,7 @@ import {
   restBinding,
 } from "@suss/behavioral-ir";
 import {
+  type AccessRecognizer,
   assembleSummary,
   type BindingExtraction,
   type DiscoveredSubUnit,
@@ -453,6 +454,7 @@ export function extractCodeStructure(
   pack: PatternPack,
   filePath: string,
   invocationRecognizers: InvocationRecognizer[] = [],
+  accessRecognizers: AccessRecognizer[] = [],
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   const params = extractParameters(func, pack.inputMapping);
@@ -460,6 +462,7 @@ export function extractCodeStructure(
     func,
     pack.terminals,
     invocationRecognizers,
+    accessRecognizers,
   );
   const depCalls = extractDependencyCalls(func);
 
@@ -696,6 +699,19 @@ function collectInvocationRecognizers(
   return out;
 }
 
+function collectAccessRecognizers(
+  frameworks: PatternPack[],
+): AccessRecognizer[] {
+  const out: AccessRecognizer[] = [];
+  for (const pack of frameworks) {
+    if (pack.accessRecognizers === undefined) {
+      continue;
+    }
+    out.push(...pack.accessRecognizers);
+  }
+  return out;
+}
+
 function extractFromSourceFile(
   sourceFile: SourceFile,
   frameworks: PatternPack[],
@@ -707,7 +723,8 @@ function extractFromSourceFile(
   // on Prisma calls inside an Express handler regardless of which pack
   // discovered the handler. Same threading model as the cross-pack
   // claim dedup below.
-  const allRecognizers = collectInvocationRecognizers(frameworks);
+  const allInvocationRecognizers = collectInvocationRecognizers(frameworks);
+  const allAccessRecognizers = collectAccessRecognizers(frameworks);
 
   // Cross-pack dedup: when two packs both claim the same (function, kind)
   // — e.g. React and React Router both discovering a default-exported
@@ -727,7 +744,13 @@ function extractFromSourceFile(
         continue;
       }
       claimed.add(claimKey);
-      const raw = extractCodeStructure(unit, pack, filePath, allRecognizers);
+      const raw = extractCodeStructure(
+        unit,
+        pack,
+        filePath,
+        allInvocationRecognizers,
+        allAccessRecognizers,
+      );
 
       // The discovery pattern that produced this unit is attached by
       // discoverUnits — fall back to the first kind-match if missing so older
@@ -1580,7 +1603,8 @@ function synthesizeSubUnits(
   // Sub-units run through the same recognizer set as top-level
   // discovered units — a Prisma call inside a React useEffect body
   // should still emit interaction(class: "storage-access").
-  const allRecognizers = collectInvocationRecognizers(frameworks);
+  const allInvocationRecognizers = collectInvocationRecognizers(frameworks);
+  const allAccessRecognizers = collectAccessRecognizers(frameworks);
 
   const synthesized: BehavioralSummary[] = [];
   const subUnitCtx = createTsSubUnitContext();
@@ -1614,7 +1638,8 @@ function synthesizeSubUnits(
         subUnit,
         parent,
         filePath,
-        allRecognizers,
+        allInvocationRecognizers,
+        allAccessRecognizers,
         options,
       );
       if (summary !== null) {
@@ -1654,6 +1679,7 @@ function buildSubUnitSummary(
   parent: BehavioralSummary,
   filePath: string,
   invocationRecognizers: InvocationRecognizer[],
+  accessRecognizers: AccessRecognizer[],
   options?: ExtractorOptions,
 ): BehavioralSummary | null {
   const func = subUnit.func as FunctionRoot;
@@ -1684,6 +1710,7 @@ function buildSubUnitSummary(
     scaffoldPack,
     filePath,
     invocationRecognizers,
+    accessRecognizers,
   );
 
   // Inherit the parent's boundary binding wholesale. Sub-units share
