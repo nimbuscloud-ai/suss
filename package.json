@@ -28,6 +28,7 @@
     "packages/framework/nestjs-rest",
     "packages/framework/aws-sqs",
     "packages/framework/prisma",
+    "packages/framework/process-env",
     "packages/runtime/web",
     "packages/runtime/axios",
     "packages/runtime/apollo-client",
