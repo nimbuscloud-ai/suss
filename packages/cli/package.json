@@ -75,9 +75,9 @@
     "@suss/framework-react": "*",
     "@suss/framework-react-router": "*",
     "@suss/framework-ts-rest": "*",
-    "@suss/runtime-apollo-client": "*",
-    "@suss/runtime-axios": "*",
-    "@suss/runtime-web": "*",
+    "@suss/client-apollo": "*",
+    "@suss/client-axios": "*",
+    "@suss/client-web": "*",
     "yaml": "^2.4.0"
   },
   "devDependencies": {

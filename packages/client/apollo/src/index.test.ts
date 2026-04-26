@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 
-import { apolloClientRuntime } from "./index.js";
+import { apolloClientPack } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -33,7 +33,7 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
   project.addSourceFilesAtPaths(path.join(fixturesDir, "*.tsx"));
   const adapter = createTypeScriptAdapter({
     project,
-    frameworks: [apolloClientRuntime()],
+    frameworks: [apolloClientPack()],
   });
   return await adapter.extractAll();
 }
@@ -53,7 +53,7 @@ async function runInMemory(source: string): Promise<BehavioralSummary[]> {
   project.createSourceFile("consumer.ts", source);
   const adapter = createTypeScriptAdapter({
     project,
-    frameworks: [apolloClientRuntime()],
+    frameworks: [apolloClientPack()],
   });
   return await adapter.extractAll();
 }
@@ -62,8 +62,8 @@ async function runInMemory(source: string): Promise<BehavioralSummary[]> {
 // Pack shape
 // ---------------------------------------------------------------------------
 
-describe("apolloClientRuntime — pack shape", () => {
-  const pack = apolloClientRuntime();
+describe("apolloClientPack — pack shape", () => {
+  const pack = apolloClientPack();
 
   it("declares the apollo-client identity on http transport", async () => {
     expect(pack.name).toBe("apollo-client");
@@ -93,7 +93,7 @@ describe("apolloClientRuntime — pack shape", () => {
 // Fixture integration
 // ---------------------------------------------------------------------------
 
-describe("apolloClientRuntime — integration", () => {
+describe("apolloClientPack — integration", () => {
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
     summaries = await runAdapter();
@@ -268,7 +268,7 @@ describe("apolloClientRuntime — integration", () => {
 // Edge cases via in-memory projects
 // ---------------------------------------------------------------------------
 
-describe("apolloClientRuntime — edge cases", () => {
+describe("apolloClientPack — edge cases", () => {
   it("emits nothing when the Apollo import is absent", async () => {
     const summaries = await runInMemory(`
       declare function useQuery(doc: unknown, opts?: unknown): any;

@@ -57,9 +57,9 @@ suss extract -p TSCONFIG -f FRAMEWORK [-f FRAMEWORK ...] [-o OUTPUT]
 | `fastify` | `@suss/framework-fastify` | `fastify.get(...)` / equivalent Fastify handlers |
 | `react` | `@suss/framework-react` | Function components + locally-authored event handlers + `useEffect` bodies |
 | `apollo` | `@suss/framework-apollo` | Apollo Server code-first resolvers (`new ApolloServer({ typeDefs, resolvers })`) |
-| `fetch` | `@suss/runtime-web` | Global `fetch(...)` call sites |
-| `axios` | `@suss/runtime-axios` | axios call sites + `axios.create` factories |
-| `apollo-client` | `@suss/runtime-apollo-client` | `@apollo/client` hooks + imperative `client.query` / `mutate` |
+| `fetch` | `@suss/client-web` | Global `fetch(...)` call sites |
+| `axios` | `@suss/client-axios` | axios call sites + `axios.create` factories |
+| `apollo-client` | `@suss/client-apollo` | `@apollo/client` hooks + imperative `client.query` / `mutate` |
 
 Custom packs: if you install `@suss/framework-mypack`, `-f mypack`
 resolves it automatically.

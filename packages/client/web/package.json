@@ -1,24 +1,24 @@
 {
-  "name": "@suss/runtime-web",
+  "name": "@suss/client-web",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Runtime pack for extracting suss client behavioral summaries from web fetch() call sites.",
+  "description": "Client pack for extracting suss client behavioral summaries from web fetch() call sites.",
   "keywords": [
     "suss",
     "behavioral-summary",
-    "runtime-pack",
+    "client-pack",
     "fetch",
     "web-api",
     "static-analysis"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/runtime/web#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/client/web#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/runtime/web"
+    "directory": "packages/client/web"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"

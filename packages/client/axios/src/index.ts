@@ -1,4 +1,4 @@
-// @suss/runtime-axios — PatternPack for the axios HTTP client
+// @suss/client-axios — PatternPack for the axios HTTP client
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
@@ -37,7 +37,7 @@ function discoveryForVerb(
   };
 }
 
-export function axiosRuntime(): PatternPack {
+export function axiosPack(): PatternPack {
   return {
     name: "axios",
     protocol: "http",
@@ -72,4 +72,4 @@ export function axiosRuntime(): PatternPack {
   };
 }
 
-export default axiosRuntime;
+export default axiosPack;

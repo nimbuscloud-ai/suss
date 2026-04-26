@@ -194,8 +194,8 @@ tsRestFramework(): PatternPack {
     │     ├─ @suss/framework-react-router
     │     ├─ @suss/framework-express
     │     ├─ @suss/framework-fastify
-    │     ├─ @suss/runtime-web           fetch call-site discovery
-    │     └─ @suss/runtime-axios         axios call-site discovery
+    │     ├─ @suss/client-web           fetch call-site discovery
+    │     └─ @suss/client-axios         axios call-site discovery
     │
     ├─ @suss/contract-openapi            OpenAPI 3.x → BehavioralSummary[]
     ├─ @suss/contract-aws-apigateway     API Gateway resource semantics (config → summaries)
@@ -212,7 +212,7 @@ Dependency rules (enforced by the layout):
 - `@suss/behavioral-ir` — one peer dep on `zod`. Runtime validators (`parseSummaries`, `safeParseSummaries`) and the generated JSON Schema both come from the zod schemas. This is what downstream consumers install.
 - `@suss/extractor` — depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript` — depends on IR, extractor, ts-morph. This is the heavyweight package.
-- `@suss/framework-*` and `@suss/runtime-*` packs — depend only on `@suss/extractor` (for the `PatternPack` type). They're data, not logic. Runtime packs (e.g., `@suss/runtime-web` for `fetch`) use the same `PatternPack` interface but target built-in APIs rather than third-party frameworks.
+- `@suss/framework-*` and `@suss/client-*` packs — depend only on `@suss/extractor` (for the `PatternPack` type). They're data, not logic. Client packs (e.g., `@suss/client-web` for `fetch`) use the same `PatternPack` interface but target consumer-side HTTP/RPC libraries rather than server-side frameworks.
 - `@suss/contract-*` packages — depend only on the IR (and on each other where they compose: the CloudFormation reader delegates to the OpenAPI and AWS API Gateway readers). Produce `BehavioralSummary[]` from specs, manifests, schemas, or vendor docs; carry `confidence.source: "contract"`. See [`contract-sources.md`](contract-sources.md).
 - `@suss/checker` — depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or framework packs — operates on the serialized IR.
 - `@suss/cli` — depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs.

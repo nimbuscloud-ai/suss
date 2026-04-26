@@ -1,6 +1,6 @@
 import type { PatternPack } from "@suss/extractor";
 
-export function webFetchRuntime(): PatternPack {
+export function webFetchPack(): PatternPack {
   return {
     name: "fetch",
     protocol: "http",
@@ -64,4 +64,4 @@ export function webFetchRuntime(): PatternPack {
   };
 }
 
-export default webFetchRuntime;
+export default webFetchPack;

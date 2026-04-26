@@ -79,14 +79,14 @@ suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and co
 npm install --save-dev \
   @suss/cli \
   @suss/framework-ts-rest \
-  @suss/runtime-axios
+  @suss/client-axios
 ```
 
 You don't have to install everything. Common combinations:
 
 - **ts-rest full-stack:** `@suss/framework-ts-rest` (provider + client through the contract).
-- **Express + fetch:** `@suss/framework-express @suss/runtime-web`.
-- **React + GraphQL:** `@suss/framework-react @suss/runtime-apollo-client`.
+- **Express + fetch:** `@suss/framework-express @suss/client-web`.
+- **React + GraphQL:** `@suss/framework-react @suss/client-apollo`.
 - **Lambda + SQS:** `@suss/framework-aws-sqs @suss/contract-cloudformation @suss/framework-process-env`.
 - **App backed by Postgres:** add `@suss/framework-prisma @suss/contract-prisma` to any of the above.
 
@@ -214,9 +214,9 @@ const effective = applySuppressions(findings, mySuppressions);
 | [`@suss/framework-aws-sqs`](packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls — emits message-send interactions. | ![](.github/badges/coverage-aws-sqs.svg) |
 | [`@suss/framework-process-env`](packages/framework/process-env) | `process.env.X` access — emits config-read interactions. | ![](.github/badges/coverage-process-env.svg) |
 | **Runtimes (client packs)** | | |
-| [`@suss/runtime-web`](packages/runtime/web) | Global `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
-| [`@suss/runtime-axios`](packages/runtime/axios) | axios call sites + `axios.create` factories. | ![](.github/badges/coverage-axios.svg) |
-| [`@suss/runtime-apollo-client`](packages/runtime/apollo-client) | `@apollo/client` hooks + imperative `client.query`. | ![](.github/badges/coverage-apollo-client.svg) |
+| [`@suss/client-web`](packages/client/web) | Global `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
+| [`@suss/client-axios`](packages/client/axios) | axios call sites + `axios.create` factories. | ![](.github/badges/coverage-axios.svg) |
+| [`@suss/client-apollo`](packages/client/apollo) | `@apollo/client` hooks + imperative `client.query`. | ![](.github/badges/coverage-apollo-client.svg) |
 | **Contract sources** | | |
 | [`@suss/contract-openapi`](packages/contract/openapi) | OpenAPI 3.x → behavioral summaries. | ![](.github/badges/coverage-contract-openapi.svg) |
 | [`@suss/contract-aws-apigateway`](packages/contract/aws-apigateway) | API Gateway resource semantics — REST/HTTP API configs → summaries with platform-injected transitions. | ![](.github/badges/coverage-contract-aws-apigateway.svg) |

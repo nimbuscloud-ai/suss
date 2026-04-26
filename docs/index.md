@@ -46,7 +46,7 @@ features:
 ## Quick start
 
 ```bash
-npm install --save-dev @suss/cli @suss/framework-ts-rest @suss/runtime-axios
+npm install --save-dev @suss/cli @suss/framework-ts-rest @suss/client-axios
 
 # Extract summaries from source
 suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json

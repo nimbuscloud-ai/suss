@@ -42,9 +42,9 @@ your code uses, plus the CLI. Pick from:
 | `@suss/framework-prisma` | Prisma client calls — emits storage-access interactions | `npm i -D @suss/framework-prisma` |
 | `@suss/framework-aws-sqs` | AWS SDK v3 SQS producer calls — emits message-send interactions | `npm i -D @suss/framework-aws-sqs` |
 | `@suss/framework-process-env` | `process.env.X` access — emits config-read interactions | `npm i -D @suss/framework-process-env` |
-| `@suss/runtime-web` | Global `fetch` call sites | `npm i -D @suss/runtime-web` |
-| `@suss/runtime-axios` | axios call sites + `axios.create` factories | `npm i -D @suss/runtime-axios` |
-| `@suss/runtime-apollo-client` | `@apollo/client` hooks + imperative `client.query` | `npm i -D @suss/runtime-apollo-client` |
+| `@suss/client-web` | Global `fetch` call sites | `npm i -D @suss/client-web` |
+| `@suss/client-axios` | axios call sites + `axios.create` factories | `npm i -D @suss/client-axios` |
+| `@suss/client-apollo` | `@apollo/client` hooks + imperative `client.query` | `npm i -D @suss/client-apollo` |
 | `@suss/contract-openapi` | OpenAPI 3.x spec → provider summaries | `npm i -D @suss/contract-openapi` |
 | `@suss/contract-aws-apigateway` | API Gateway REST/HTTP API resource semantics → summaries | `npm i -D @suss/contract-aws-apigateway` |
 | `@suss/contract-cloudformation` | CFN / SAM templates → summaries (delegates to OpenAPI + API Gateway; also reads SQS event-source mappings + Lambda Environment) | `npm i -D @suss/contract-cloudformation` |
@@ -61,8 +61,8 @@ npm install -D @suss/cli
 You don't have to install everything. Common combinations:
 
 - **ts-rest full-stack:** `@suss/framework-ts-rest` (provider + client through the contract).
-- **Express API + fetch client:** `@suss/framework-express @suss/runtime-web`.
-- **React + GraphQL:** `@suss/framework-react @suss/runtime-apollo-client`.
+- **Express API + fetch client:** `@suss/framework-express @suss/client-web`.
+- **React + GraphQL:** `@suss/framework-react @suss/client-apollo`.
 - **GraphQL server:** `@suss/framework-apollo`. Add `@suss/contract-appsync` if you also deploy via CloudFormation.
 - **Lambda + SQS + Postgres:** `@suss/framework-aws-sqs @suss/framework-prisma @suss/framework-process-env @suss/contract-cloudformation @suss/contract-prisma`. CFN reads the producer-side env var and resolves it to the queue resource; Prisma's schema becomes the storage provider summaries that pair with the source-extracted query call sites.
 
