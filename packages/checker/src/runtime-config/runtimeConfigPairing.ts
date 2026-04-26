@@ -30,6 +30,10 @@ import type {
   Finding,
   RuntimeConfigSemantics,
 } from "@suss/behavioral-ir";
+import type {
+  InteractionIndex,
+  InteractionRecord,
+} from "../interactions/dispatcher.js";
 
 interface RuntimeContractMetadata {
   envVars?: string[];
@@ -63,7 +67,13 @@ interface EnvVarRead {
  * the boundary the runtime exposes and the consumer summary the read
  * lives in.
  */
-export function checkRuntimeConfig(summaries: BehavioralSummary[]): Finding[] {
+export function checkRuntimeConfig(
+  summaries: BehavioralSummary[],
+  // Optional pre-built index; the standalone path builds its own.
+  // Passing the index lets `checkAll` share one walk across all
+  // per-class pairing passes.
+  index?: InteractionIndex,
+): Finding[] {
   const findings: Finding[] = [];
 
   const runtimes = summaries.filter(isRuntimeConfigProvider);
@@ -73,6 +83,7 @@ export function checkRuntimeConfig(summaries: BehavioralSummary[]): Finding[] {
   // vars themselves (they declare the contract).
   const codeReads = collectEnvVarReads(
     summaries.filter((s) => !isRuntimeConfigProvider(s)),
+    index,
   );
 
   for (const runtime of runtimes) {
@@ -169,22 +180,67 @@ function readEnvVarSources(
  * extracted before the process-env recognizer existed (or when the
  * pack isn't in the framework list).
  */
-function collectEnvVarReads(summaries: BehavioralSummary[]): EnvVarRead[] {
+function lookupConfigReads(
+  index: InteractionIndex,
+): InteractionRecord<"config-read">[] {
+  // Inline import-style lookup avoids adding a top-level import; keeps
+  // the dispatcher dependency local to this file's helpers.
+  const byClass = index.interactionsByClass.get("config-read");
+  if (byClass === undefined) {
+    return [];
+  }
+  // config-read interactions can come with any binding semantics in
+  // theory, but in practice it's always runtime-config. Flatten the
+  // semantics buckets so callers don't need to know about that.
+  const out: InteractionRecord<"config-read">[] = [];
+  for (const records of byClass.values()) {
+    for (const record of records) {
+      out.push(record as InteractionRecord<"config-read">);
+    }
+  }
+  return out;
+}
+
+function collectEnvVarReads(
+  summaries: BehavioralSummary[],
+  index?: InteractionIndex,
+): EnvVarRead[] {
   const reads: EnvVarRead[] = [];
   let sawConfigReadEffect = false;
-  for (const summary of summaries) {
-    for (const transition of summary.transitions) {
-      for (const effect of transition.effects) {
-        if (
-          effect.type === "interaction" &&
-          effect.interaction.class === "config-read"
-        ) {
-          sawConfigReadEffect = true;
-          reads.push({
-            name: effect.interaction.name,
-            summary,
-            transitionId: transition.id,
-          });
+  // Fast path: when an index is available, query the config-read
+  // slice directly instead of walking every transition's effects.
+  // Filters by summary identity to keep behavior identical to the
+  // walk path (excludes runtime-config providers, since they're
+  // already filtered out by the caller).
+  if (index !== undefined) {
+    const allReads = lookupConfigReads(index);
+    const summarySet = new Set(summaries);
+    for (const record of allReads) {
+      if (!summarySet.has(record.summary)) {
+        continue;
+      }
+      sawConfigReadEffect = true;
+      reads.push({
+        name: record.effect.interaction.name,
+        summary: record.summary,
+        transitionId: record.transitionId,
+      });
+    }
+  } else {
+    for (const summary of summaries) {
+      for (const transition of summary.transitions) {
+        for (const effect of transition.effects) {
+          if (
+            effect.type === "interaction" &&
+            effect.interaction.class === "config-read"
+          ) {
+            sawConfigReadEffect = true;
+            reads.push({
+              name: effect.interaction.name,
+              summary,
+              transitionId: transition.id,
+            });
+          }
         }
       }
     }
