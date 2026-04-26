@@ -5,6 +5,7 @@ dist/
 .env
 **/coverage/*
 !**/coverage/coverage-summary.json
+!packages/checker/src/coverage/**
 
 # VitePress
 docs/.vitepress/dist/
