@@ -13,16 +13,53 @@
 //
 // See `docs/internal/proposals/runtime-node.md` for the design.
 
+import {
+  fileLocationRecognizer,
+  importMetaRecognizer,
+} from "./moduleSurface.js";
+import { processSurfaceRecognizer } from "./processSurface.js";
 import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
 
 import type { PatternPack } from "@suss/extractor";
 
 export {
+  fileLocationRecognizer,
+  findBareFileLocationGlobals,
+  importMetaRecognizer,
+} from "./moduleSurface.js";
+export {
+  type ProcessSurfaceOptions,
+  processSurfaceRecognizer,
+} from "./processSurface.js";
+export {
   nodeSchedulingSubUnits,
   schedulingRecognizer,
 } from "./scheduling.js";
 
-export function nodeRuntimePack(): PatternPack {
+export interface NodeRuntimePackOptions {
+  /**
+   * Deployment context for runtime-config reads (process.argv).
+   * Defaults to `"lambda"`.
+   */
+  deploymentTarget?: "lambda" | "ecs-task" | "container" | "k8s-deployment";
+  /**
+   * Instance name placeholder for runtime-config bindings the pack
+   * emits. Defaults to `"<unknown>"`.
+   */
+  instanceName?: string;
+}
+
+export function nodeRuntimePack(
+  options: NodeRuntimePackOptions = {},
+): PatternPack {
+  const processRecognizer = processSurfaceRecognizer({
+    ...(options.deploymentTarget !== undefined
+      ? { deploymentTarget: options.deploymentTarget }
+      : {}),
+    ...(options.instanceName !== undefined
+      ? { instanceName: options.instanceName }
+      : {}),
+  });
   return {
     name: "node",
     protocol: "in-process",
@@ -31,6 +68,11 @@ export function nodeRuntimePack(): PatternPack {
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
     invocationRecognizers: [schedulingRecognizer],
+    accessRecognizers: [
+      processRecognizer,
+      importMetaRecognizer,
+      fileLocationRecognizer,
+    ],
     subUnits: nodeSchedulingSubUnits,
   };
 }
