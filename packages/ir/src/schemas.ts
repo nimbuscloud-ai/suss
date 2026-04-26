@@ -348,6 +348,30 @@ export const FindingKindSchema = z.enum([
    */
   "storageEnumConstraintViolation",
   /**
+   * Code sends a message to a queue / topic that no provider in the
+   * analysed scope declares. Severity: WARNING (not error) — common
+   * false-positive sources are multi-repo deployments (queue is
+   * declared in another stack) and work-in-progress before infra is
+   * wired up. The high-value message-bus finding is body-shape
+   * mismatch (producer body vs consumer expected shape); that's
+   * future work. Emitted by checkMessageBus.
+   */
+  "messageBusProducerOrphan",
+  /**
+   * A consumer Lambda is wired to receive from a channel but no code
+   * in the project sends to that channel. Could be dead infra, or
+   * the producer lives in a different repo we don't analyse.
+   * Severity: warning.
+   */
+  "messageBusConsumerOrphan",
+  /**
+   * A queue / topic is declared in infrastructure but neither
+   * produced to nor consumed from anywhere in the project. Likely
+   * orphan resource left over from a removed feature. Severity:
+   * warning.
+   */
+  "messageBusUnused",
+  /**
    * A pack identifies a boundary it doesn't know how to
    * summarise — a WebSocket subscription handler, an SSE stream
    * producer, a gRPC streaming method, etc. Severity: info. The

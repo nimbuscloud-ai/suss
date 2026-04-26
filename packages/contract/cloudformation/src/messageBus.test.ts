@@ -194,6 +194,44 @@ describe("buildMessageBusSummaries", () => {
     expect(pickConsumers(out)).toEqual([]);
   });
 
+  it("captures envVarTargets on Lambda runtime-config metadata for !Ref env vars", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+        OrderProducer: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-producer/",
+            Environment: {
+              Variables: {
+                ORDERS_QUEUE_URL: { Ref: "OrdersQueue" },
+                STATIC_CONFIG: "literal-value",
+                ORDERS_ARN: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
+              },
+            },
+          },
+        },
+      },
+    });
+    const runtime = out.find(
+      (s) =>
+        s.identity.boundaryBinding?.semantics.name === "runtime-config" &&
+        s.identity.name === "OrderProducer",
+    );
+    expect(runtime).toBeDefined();
+    const targets = (
+      runtime?.metadata as
+        | { runtimeContract?: { envVarTargets?: Record<string, unknown> } }
+        | undefined
+    )?.runtimeContract?.envVarTargets;
+    expect(targets).toMatchObject({
+      ORDERS_QUEUE_URL: { kind: "ref", logicalId: "OrdersQueue" },
+      ORDERS_ARN: { kind: "ref", logicalId: "OrdersQueue" },
+    });
+    // STATIC_CONFIG is a string literal, no entry expected.
+    expect(targets).not.toHaveProperty("STATIC_CONFIG");
+  });
+
   it("skips event sources whose Queue ref can't be resolved", () => {
     const out = cloudFormationToSummaries({
       Resources: {
