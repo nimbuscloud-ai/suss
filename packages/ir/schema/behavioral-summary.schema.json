@@ -859,7 +859,7 @@
                             "properties": {
                               "class": {
                                 "type": "string",
-                                "const": "rpc-call"
+                                "const": "service-call"
                               },
                               "method": {
                                 "type": "string"

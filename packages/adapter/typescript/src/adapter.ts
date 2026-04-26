@@ -824,6 +824,39 @@ function extractFromSourceFile(
         const binding = extractConsumerBinding(unit, matchedPattern, pack);
         if (binding !== null) {
           raw.boundaryBinding = binding;
+          // Additive migration of clientCall to the unified interaction
+          // shape (#180): in addition to the synthesized client-kind
+          // summary (which keeps working for existing pairing logic),
+          // stamp an interaction(class: "service-call") effect on the
+          // default-branch transition. The unified pairing dispatcher
+          // (#174) can then enumerate service-call interactions through
+          // the same machinery used by storage / message-bus / config-
+          // read. Today no consumer of those effects exists yet (no
+          // service-call finding generator), so this is purely
+          // structural. When that finding generator lands, fetch /
+          // axios / apollo calls become discoverable through the
+          // unified shape without rewriting clientCall discovery
+          // itself.
+          if (binding.semantics.name === "rest") {
+            const defaultBranch = raw.branches.find((b) => b.isDefault);
+            if (defaultBranch !== undefined) {
+              const calleeText = unit.callSite.callExpression
+                .getExpression()
+                .getText();
+              defaultBranch.extraEffects = [
+                ...(defaultBranch.extraEffects ?? []),
+                {
+                  type: "interaction",
+                  binding,
+                  callee: calleeText,
+                  interaction: {
+                    class: "service-call",
+                    method: binding.semantics.method,
+                  },
+                },
+              ];
+            }
+          }
         }
       } else if (pack.contractReading !== undefined) {
         // Provider: attempt contract reading

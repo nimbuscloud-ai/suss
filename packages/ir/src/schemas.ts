@@ -1041,7 +1041,7 @@ export const EffectSchema = z.discriminatedUnion("type", [
         operation: z.string().optional(),
       }),
       z.object({
-        class: z.literal("rpc-call"),
+        class: z.literal("service-call"),
         method: z.string(),
         payload: z.unknown().optional(),
         responseShape: TypeShapeSchema.optional(),

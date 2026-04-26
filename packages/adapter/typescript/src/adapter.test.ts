@@ -1775,6 +1775,49 @@ describe("consumer extraction", () => {
     });
   });
 
+  it("stamps a service-call interaction effect on the default branch (#180 unified-shape migration)", async () => {
+    // Verifies the additive migration: clientCall summaries continue
+    // to be produced as before AND now also carry a service-call
+    // interaction effect on their default-branch transition. This
+    // makes them discoverable via the unified pairing dispatcher
+    // (#174's interactionsByClass.get("service-call")) once a
+    // service-call finding generator lands.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadUser(id: string) {
+        const res = await fetch("/users/" + id);
+        return res.json();
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const summary =
+      summaries.find((s) => s.identity.name === "loadUser") ??
+      raise("loadUser summary missing");
+    const defaultTransition =
+      summary.transitions.find((t) => t.isDefault) ??
+      raise("no default transition");
+    const serviceCall = defaultTransition.effects.find(
+      (e) => e.type === "interaction" && e.interaction.class === "service-call",
+    );
+    expect(serviceCall).toBeDefined();
+    if (
+      serviceCall === undefined ||
+      serviceCall.type !== "interaction" ||
+      serviceCall.interaction.class !== "service-call"
+    ) {
+      throw new Error("expected service-call interaction");
+    }
+    expect(serviceCall.interaction.method).toBe("GET");
+    expect(serviceCall.binding.semantics.name).toBe("rest");
+  });
+
   it("extracts a template-literal path with substitutions as OpenAPI placeholders", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
