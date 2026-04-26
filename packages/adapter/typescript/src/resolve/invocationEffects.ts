@@ -281,6 +281,20 @@ function extractArgs(call: CallExpression): EffectArg[] {
 }
 
 function extractArg(node: Node, depth: number): EffectArg {
+  // Unwrap type-cast wrappers — `value as Type`, `<Type>value`,
+  // `value satisfies Type`, and the non-null assertion `value!`.
+  // These are TS-only annotations that don't affect runtime shape;
+  // recursing into the inner expression preserves field/argument
+  // capture through `as any` casts in test code and in real-world
+  // patterns (e.g. ts-rest body shapes coerced via `as`).
+  if (
+    Node.isAsExpression(node) ||
+    Node.isTypeAssertion(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node)
+  ) {
+    return extractArg(node.getExpression(), depth);
+  }
   if (
     Node.isStringLiteral(node) ||
     Node.isNoSubstitutionTemplateLiteral(node)
