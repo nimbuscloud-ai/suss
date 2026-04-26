@@ -69,6 +69,7 @@
     "@suss/framework-fastify": "*",
     "@suss/framework-nestjs-graphql": "*",
     "@suss/framework-nestjs-rest": "*",
+    "@suss/framework-prisma": "*",
     "@suss/framework-react": "*",
     "@suss/framework-react-router": "*",
     "@suss/framework-ts-rest": "*",
