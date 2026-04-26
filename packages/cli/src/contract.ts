@@ -15,7 +15,8 @@ export type ContractSource =
   | "cloudformation"
   | "storybook"
   | "appsync"
-  | "prisma";
+  | "prisma"
+  | "graphql";
 
 export interface ContractOptions {
   from: ContractSource;
@@ -55,6 +56,14 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     // that the checker pairs against `interaction(class: "storage-access")` effects in code.
     const mod = await import("@suss/contract-prisma");
     return mod.prismaSchemaFileToSummaries(specPath);
+  },
+  graphql: async (specPath) => {
+    // `--from graphql` reads a plain GraphQL SDL file and emits one
+    // `resolver`-kind summary per Query / Mutation / Subscription
+    // field with graphql-resolver semantics. Pairs against server-side
+    // resolvers extracted by framework-apollo / framework-nestjs-graphql.
+    const mod = await import("@suss/contract-graphql");
+    return mod.graphqlSdlFileToSummaries(specPath);
   },
 };
 

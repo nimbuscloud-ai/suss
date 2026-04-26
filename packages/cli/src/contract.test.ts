@@ -93,9 +93,9 @@ describe("contract CLI command", () => {
   it("rejects an unknown --from value", async () => {
     await expect(
       contract({
-        // Cast to bypass the StubSource literal type guard; this is what an
+        // Cast to bypass the ContractSource literal type guard; this is what an
         // unknown CLI argument would look like at runtime.
-        from: "graphql" as unknown as "openapi",
+        from: "no-such-source" as unknown as "openapi",
         spec: specFile,
       }),
     ).rejects.toThrow(/Unknown contract source/);
