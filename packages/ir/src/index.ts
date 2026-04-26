@@ -73,6 +73,7 @@ export type StorageRelationalSemantics = Extract<
   Semantics,
   { name: "storage-relational" }
 >;
+export type MessageBusSemantics = Extract<Semantics, { name: "message-bus" }>;
 export type CodeUnitIdentity = z.infer<typeof CodeUnitIdentitySchema>;
 
 // ---------------------------------------------------------------------------
@@ -269,6 +270,34 @@ export function storageRelationalBinding(opts: {
       storageSystem: opts.storageSystem,
       scope: opts.scope,
       table: opts.table,
+    },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * Build a message-bus binding — the boundary between a producer that
+ * sends discrete messages and the consumer(s) that receive them.
+ * Producer-side `interaction(class: "message-send")` effects pair
+ * against this; consumer-side handlers gain the same shape via the
+ * deployment-manifest contract source (CFN event-source mappings,
+ * etc.).
+ *
+ * `messageBus` discriminates the implementation (`sqs`, `bullmq`,
+ * `kafka`, `nats`); `channel` is the stable channel identifier
+ * (CFN logical resource ID for SQS, queue/topic name for the others).
+ */
+export function messageBusBinding(opts: {
+  recognition: string;
+  messageBus: "sqs" | "bullmq" | "kafka" | "nats";
+  channel: string;
+}): BoundaryBinding {
+  return {
+    transport: opts.messageBus,
+    semantics: {
+      name: "message-bus",
+      messageBus: opts.messageBus,
+      channel: opts.channel,
     },
     recognition: opts.recognition,
   };

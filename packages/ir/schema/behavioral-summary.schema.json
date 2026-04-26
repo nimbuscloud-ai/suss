@@ -217,6 +217,24 @@
                         },
                         "required": ["name", "storageSystem", "scope", "table"],
                         "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "const": "message-bus"
+                          },
+                          "messageBus": {
+                            "type": "string",
+                            "enum": ["sqs", "bullmq", "kafka", "nats"]
+                          },
+                          "channel": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["name", "messageBus", "channel"],
+                        "additionalProperties": false
                       }
                     ]
                   },
@@ -659,6 +677,289 @@
                       "table",
                       "fields"
                     ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "interaction"
+                      },
+                      "binding": {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string"
+                          },
+                          "semantics": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "const": "rest"
+                                  },
+                                  "method": {
+                                    "type": "string"
+                                  },
+                                  "path": {
+                                    "type": "string"
+                                  },
+                                  "declaredResponses": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "required": ["name", "method", "path"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "const": "function-call"
+                                  },
+                                  "module": {
+                                    "type": "string"
+                                  },
+                                  "exportName": {
+                                    "type": "string"
+                                  },
+                                  "package": {
+                                    "type": "string"
+                                  },
+                                  "exportPath": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": ["name"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "const": "graphql-resolver"
+                                  },
+                                  "typeName": {
+                                    "type": "string"
+                                  },
+                                  "fieldName": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["name", "typeName", "fieldName"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "const": "graphql-operation"
+                                  },
+                                  "operationName": {
+                                    "type": "string"
+                                  },
+                                  "operationType": {
+                                    "type": "string",
+                                    "enum": [
+                                      "query",
+                                      "mutation",
+                                      "subscription"
+                                    ]
+                                  }
+                                },
+                                "required": ["name", "operationType"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "const": "runtime-config"
+                                  },
+                                  "deploymentTarget": {
+                                    "type": "string",
+                                    "enum": [
+                                      "lambda",
+                                      "ecs-task",
+                                      "container",
+                                      "k8s-deployment"
+                                    ]
+                                  },
+                                  "instanceName": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "deploymentTarget",
+                                  "instanceName"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "const": "storage-relational"
+                                  },
+                                  "storageSystem": {
+                                    "type": "string",
+                                    "enum": ["postgres", "mysql", "sqlite"]
+                                  },
+                                  "scope": {
+                                    "type": "string"
+                                  },
+                                  "table": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "storageSystem",
+                                  "scope",
+                                  "table"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "const": "message-bus"
+                                  },
+                                  "messageBus": {
+                                    "type": "string",
+                                    "enum": ["sqs", "bullmq", "kafka", "nats"]
+                                  },
+                                  "channel": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["name", "messageBus", "channel"],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "recognition": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["transport", "semantics", "recognition"],
+                        "additionalProperties": false
+                      },
+                      "callee": {
+                        "type": "string"
+                      },
+                      "groupId": {
+                        "type": "string"
+                      },
+                      "preconditions": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/__schema1"
+                        }
+                      },
+                      "interaction": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "class": {
+                                "type": "string",
+                                "const": "storage-access"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": ["read", "write"]
+                              },
+                              "fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "selector": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "operation": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["class", "kind", "fields"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "class": {
+                                "type": "string",
+                                "const": "rpc-call"
+                              },
+                              "method": {
+                                "type": "string"
+                              },
+                              "payload": {},
+                              "responseShape": {
+                                "$ref": "#/$defs/__schema0"
+                              }
+                            },
+                            "required": ["class", "method"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "class": {
+                                "type": "string",
+                                "const": "message-send"
+                              },
+                              "body": {},
+                              "routingKey": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["class"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "class": {
+                                "type": "string",
+                                "const": "config-read"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "defaulted": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": ["class", "name", "defaulted"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["type", "binding", "interaction"],
                     "additionalProperties": false
                   }
                 ]

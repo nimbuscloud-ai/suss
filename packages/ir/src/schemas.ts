@@ -541,6 +541,33 @@ export const StorageRelationalSemanticsSchema = z.object({
   table: z.string(),
 });
 
+/**
+ * Provider-side message-bus boundary — SQS queue, BullMQ queue,
+ * Kafka topic, NATS subject, or any FIFO/pub-sub channel that
+ * carries discrete messages between producers and consumers.
+ * Producer-side `interaction(class: "message-send")` effects pair
+ * against these via `(messageBus, channel)`. Consumer-side handlers
+ * gain a boundaryBinding of this same shape via the contract-source
+ * pass that walks deployment manifests (CFN event-source mappings,
+ * docker-compose worker configs, k8s controllers, etc.).
+ */
+export const MessageBusSemanticsSchema = z.object({
+  name: z.literal("message-bus"),
+  /**
+   * Bus implementation. Drives the contract-source layer that
+   * resolves channel identity from deployment manifests; checker
+   * dispatches some behaviour (e.g. partition / routing semantics)
+   * by this discriminator.
+   */
+  messageBus: z.enum(["sqs", "bullmq", "kafka", "nats"]),
+  /**
+   * Stable channel identifier — CFN logical resource ID for SQS /
+   * SNS, queue name for BullMQ, topic name for Kafka, subject
+   * pattern for NATS. Pairs across runs.
+   */
+  channel: z.string(),
+});
+
 export const SemanticsSchema = z.discriminatedUnion("name", [
   RestSemanticsSchema,
   FunctionCallSemanticsSchema,
@@ -548,6 +575,7 @@ export const SemanticsSchema = z.discriminatedUnion("name", [
   GraphqlOperationSemanticsSchema,
   RuntimeConfigSemanticsSchema,
   StorageRelationalSemanticsSchema,
+  MessageBusSemanticsSchema,
 ]);
 
 export const BoundaryBindingSchema = z.object({
@@ -991,6 +1019,65 @@ export const EffectSchema = z.discriminatedUnion("type", [
      * for accesses nested inside conditional blocks.
      */
     preconditions: z.array(PredicateSchema).optional(),
+  }),
+  /**
+   * Outbound boundary interaction — code at line N talks to something
+   * across a boundary. Discriminated by `interaction.class` so each
+   * class carries the typed structural fields appropriate to its
+   * operation shape (storage columns, RPC payload + response, message
+   * body, env-var name). See `docs/internal/interactions-design.md`.
+   *
+   * Coexists with the `storageAccess` variant during the consolidation
+   * pass. After task #169, `storageAccess` folds into
+   * `interaction(class: "storage-access")` and the variant is removed.
+   */
+  z.object({
+    type: z.literal("interaction"),
+    /** Boundary identity — drives pairing against provider summaries. */
+    binding: BoundaryBindingSchema,
+    /** Source-text of the call expression for inspect rendering. */
+    callee: z.string().optional(),
+    /**
+     * Correlation id when one call site emits multiple effects (e.g.
+     * a Prisma nested select that touches User AND Order — two
+     * effects sharing a groupId reflect "these came from one query").
+     */
+    groupId: z.string().optional(),
+    /**
+     * Same shape as invocation.preconditions — ancestor conditions
+     * that gate reaching this interaction within its transition.
+     */
+    preconditions: z.array(PredicateSchema).optional(),
+    /**
+     * Per-class operation shape. The discriminator is `class`; each
+     * variant carries the typed fields appropriate to its operation.
+     * Adding a class is a strictly additive IR change.
+     */
+    interaction: z.discriminatedUnion("class", [
+      z.object({
+        class: z.literal("storage-access"),
+        kind: z.enum(["read", "write"]),
+        fields: z.array(z.string()),
+        selector: z.array(z.string()).optional(),
+        operation: z.string().optional(),
+      }),
+      z.object({
+        class: z.literal("rpc-call"),
+        method: z.string(),
+        payload: z.unknown().optional(),
+        responseShape: TypeShapeSchema.optional(),
+      }),
+      z.object({
+        class: z.literal("message-send"),
+        body: z.unknown().optional(),
+        routingKey: z.string().optional(),
+      }),
+      z.object({
+        class: z.literal("config-read"),
+        name: z.string(),
+        defaulted: z.boolean(),
+      }),
+    ]),
   }),
 ]);
 
