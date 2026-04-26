@@ -739,7 +739,16 @@ function extractFromSourceFile(
     const units = discoverUnits(sourceFile, pack.discovery);
 
     for (const unit of units) {
-      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}`;
+      // Mirror the bindingSuffix logic in `discoverUnits` so consumer
+      // summaries that share an enclosing function but consume different
+      // exports survive (`extract` calling both
+      // `createTypeScriptAdapter()` and `.extractAll()` produces two
+      // distinct units that should both be summarized).
+      const bindingSuffix =
+        unit.packageExportInfo !== undefined
+          ? `-${unit.packageExportInfo.packageName}::${unit.packageExportInfo.exportPath.join(".")}`
+          : "";
+      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}`;
       if (claimed.has(claimKey)) {
         continue;
       }

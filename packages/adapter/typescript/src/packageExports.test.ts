@@ -316,6 +316,138 @@ describe("discoverPackageExports", () => {
     expect(units.map((u) => u.name).sort()).toEqual(["other"]);
   });
 
+  it("surfaces methods on a factory's object-literal return", async () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/lib",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      {
+        relPath: "src/index.ts",
+        content: `
+          export function createClient() {
+            const project = {};
+            return {
+              project,
+              fetchAll() { return 1; },
+              create: (input: unknown) => 2,
+              create2: function (input: unknown) { return 3; },
+            };
+          }
+        `,
+      },
+    ]);
+
+    const { units } = runDiscovery(path.join(root, "package.json"));
+    const paths = units
+      .map((u) => u.packageExportInfo?.exportPath.join("."))
+      .sort();
+    // createClient itself plus three method-shorthand / arrow / fn-expr
+    // properties. `project` is a non-callable shorthand value — skipped.
+    expect(paths).toEqual([
+      "createClient",
+      "createClient.create",
+      "createClient.create2",
+      "createClient.fetchAll",
+    ]);
+  });
+
+  it("ignores nested function returns when surfacing", async () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/lib",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      {
+        relPath: "src/index.ts",
+        content: `
+          export function outer() {
+            function helper() {
+              return { unused() {} };
+            }
+            return { real() { return helper(); } };
+          }
+        `,
+      },
+    ]);
+
+    const { units } = runDiscovery(path.join(root, "package.json"));
+    const paths = units
+      .map((u) => u.packageExportInfo?.exportPath.join("."))
+      .sort();
+    // helper's return-shape doesn't belong to outer — `unused` is not surfaced.
+    expect(paths).toEqual(["outer", "outer.real"]);
+  });
+
+  it("surfaces public methods on a class declaration", async () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/lib",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      {
+        relPath: "src/index.ts",
+        content: `
+          export class ApiClient {
+            get(path: string) { return path; }
+            post(path: string, body: unknown) { return path; }
+            private internal() { return 1; }
+            #hidden() { return 2; }
+            static create() { return new ApiClient(); }
+          }
+        `,
+      },
+    ]);
+
+    const { units } = runDiscovery(path.join(root, "package.json"));
+    const paths = units
+      .map((u) => u.packageExportInfo?.exportPath.join("."))
+      .sort();
+    // get + post + static create. private + #hidden are skipped.
+    // The class itself isn't a FunctionRoot, so no top-level
+    // [ApiClient] unit yet — known gap (constructor synthesis).
+    expect(paths).toEqual([
+      "ApiClient.create",
+      "ApiClient.get",
+      "ApiClient.post",
+    ]);
+  });
+
+  it("surfaces methods on a concise-arrow factory: () => ({ ... })", async () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/lib",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      {
+        relPath: "src/index.ts",
+        content: `
+          export const make = () => ({
+            doIt() { return 1; },
+          });
+        `,
+      },
+    ]);
+
+    const { units } = runDiscovery(path.join(root, "package.json"));
+    const paths = units
+      .map((u) => u.packageExportInfo?.exportPath.join("."))
+      .sort();
+    expect(paths).toEqual(["make", "make.doIt"]);
+  });
+
   it("respects subPaths filter", async () => {
     root = writeFixturePackage([
       {
@@ -615,10 +747,9 @@ describe("discoverPackageImports", () => {
       info: u.packageExportInfo,
     }));
     // loadOne calls parseSummary; loadSafely calls safeParseSummary;
-    // validate references BehavioralSummarySchema as a member, not a
-    // bare call — v0 only tracks bare Identifier call expressions,
-    // so .parse on a member is out of scope. The first two unit
-    // shapes are locked in here.
+    // validate calls BehavioralSummarySchema.parse — a method on the
+    // imported binding, attributed to exportPath
+    // [BehavioralSummarySchema, parse].
     expect(summary).toContainEqual({
       name: "loadOne",
       info: {
@@ -631,6 +762,13 @@ describe("discoverPackageImports", () => {
       info: {
         packageName: "@suss/behavioral-ir",
         exportPath: ["safeParseSummary"],
+      },
+    });
+    expect(summary).toContainEqual({
+      name: "validate",
+      info: {
+        packageName: "@suss/behavioral-ir",
+        exportPath: ["schemas", "BehavioralSummarySchema", "parse"],
       },
     });
   });
@@ -702,5 +840,312 @@ describe("discoverPackageImports", () => {
       package: "@suss/behavioral-ir",
       exportPath: ["parseSummary"],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// packageImport — factory / class / await binding tracking
+// ---------------------------------------------------------------------------
+//
+// These tests lock in the consumer-side method-call attribution: when
+// a local binding's value traces (one syntactic hop) back to a tracked
+// import, method calls on that binding pair against
+// `[..exportPath, methodName]`.
+
+describe("discoverPackageImports — factory / class binding tracking", () => {
+  let root: string | null = null;
+
+  afterEach(() => {
+    if (root !== null) {
+      cleanup(root);
+      root = null;
+    }
+  });
+
+  function discover(source: string) {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({ name: "@ex/consumer" }),
+      },
+      {
+        relPath: "tsconfig.json",
+        content: JSON.stringify({
+          compilerOptions: {
+            target: "es2022",
+            module: "esnext",
+            moduleResolution: "bundler",
+            strict: true,
+          },
+          include: ["src/**/*"],
+        }),
+      },
+      { relPath: "src/consumer.ts", content: source },
+    ]);
+
+    const project = new Project({
+      tsConfigFilePath: path.join(root, "tsconfig.json"),
+    });
+    const sf = project.getSourceFileOrThrow(path.join(root, "src/consumer.ts"));
+
+    return discoverUnits(sf, [
+      {
+        kind: "caller",
+        match: { type: "packageImport", packages: ["@ex/lib"] },
+      },
+    ]).map((u) => ({ name: u.name, info: u.packageExportInfo }));
+  }
+
+  it("tracks `const c = factory(); c.method(...)`", () => {
+    const summary = discover(`
+      import { createClient } from "@ex/lib";
+      export function load() {
+        const c = createClient();
+        return c.fetchAll();
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "load",
+      info: {
+        packageName: "@ex/lib",
+        exportPath: ["createClient", "fetchAll"],
+      },
+    });
+  });
+
+  it("tracks `const c = new Class(); c.method(...)`", () => {
+    const summary = discover(`
+      import { ApiClient } from "@ex/lib";
+      export function load() {
+        const c = new ApiClient();
+        return c.get("/users");
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "load",
+      info: { packageName: "@ex/lib", exportPath: ["ApiClient", "get"] },
+    });
+  });
+
+  it("tracks `const c = await getClient(); c.method(...)`", () => {
+    const summary = discover(`
+      import { getClient } from "@ex/lib";
+      export async function load() {
+        const c = await getClient();
+        return c.fetchAll();
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "load",
+      info: { packageName: "@ex/lib", exportPath: ["getClient", "fetchAll"] },
+    });
+  });
+
+  it("tracks one-shot `factory().method(...)`", () => {
+    const summary = discover(`
+      import { createClient } from "@ex/lib";
+      export function load() {
+        return createClient().fetchAll();
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "load",
+      info: {
+        packageName: "@ex/lib",
+        exportPath: ["createClient", "fetchAll"],
+      },
+    });
+  });
+
+  it("tracks one-shot `new Class().method(...)`", () => {
+    const summary = discover(`
+      import { ApiClient } from "@ex/lib";
+      export function load() {
+        return new ApiClient().get("/users");
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "load",
+      info: { packageName: "@ex/lib", exportPath: ["ApiClient", "get"] },
+    });
+  });
+
+  it("tracks `(await getClient()).method(...)`", () => {
+    const summary = discover(`
+      import { getClient } from "@ex/lib";
+      export async function load() {
+        return (await getClient()).fetchAll();
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "load",
+      info: { packageName: "@ex/lib", exportPath: ["getClient", "fetchAll"] },
+    });
+  });
+
+  it("tracks plain destructured factory result: `const { method } = factory()`", () => {
+    const summary = discover(`
+      import { createClient } from "@ex/lib";
+      export function load() {
+        const { fetchAll } = createClient();
+        return fetchAll();
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "load",
+      info: {
+        packageName: "@ex/lib",
+        exportPath: ["createClient", "fetchAll"],
+      },
+    });
+  });
+
+  it("tracks aliased destructured factory result", () => {
+    const summary = discover(`
+      import { createClient } from "@ex/lib";
+      export function load() {
+        const { fetchAll: doIt } = createClient();
+        return doIt();
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "load",
+      info: {
+        packageName: "@ex/lib",
+        exportPath: ["createClient", "fetchAll"],
+      },
+    });
+  });
+
+  it("emits one unit per (function × method) when multiple methods are called on the same binding", () => {
+    const summary = discover(`
+      import { createClient } from "@ex/lib";
+      export function load() {
+        const c = createClient();
+        c.fetchAll();
+        c.create({});
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "load",
+      info: {
+        packageName: "@ex/lib",
+        exportPath: ["createClient", "fetchAll"],
+      },
+    });
+    expect(summary).toContainEqual({
+      name: "load",
+      info: {
+        packageName: "@ex/lib",
+        exportPath: ["createClient", "create"],
+      },
+    });
+  });
+
+  it("collapses repeated calls of the same method on the same binding", () => {
+    const summary = discover(`
+      import { createClient } from "@ex/lib";
+      export function load() {
+        const c = createClient();
+        c.fetchAll();
+        c.fetchAll();
+        c.fetchAll();
+      }
+    `);
+    const matching = summary.filter(
+      (s) =>
+        s.name === "load" &&
+        s.info?.exportPath.join(".") === "createClient.fetchAll",
+    );
+    expect(matching).toHaveLength(1);
+  });
+
+  it("does NOT track method calls on bindings whose initializer isn't a tracked import", () => {
+    const summary = discover(`
+      import { createClient } from "@ex/lib";
+      function unrelated() { return { fetchAll: () => 1 }; }
+      export function load() {
+        const c = unrelated();
+        return c.fetchAll();
+      }
+    `);
+    // unrelated() doesn't trace to @ex/lib — c.fetchAll() is invisible.
+    expect(summary).toHaveLength(0);
+  });
+
+  it("scopes bindings to enclosing function — sibling functions don't clobber", () => {
+    const summary = discover(`
+      import { createA, createB } from "@ex/lib";
+      export function loadA() {
+        const c = createA();
+        return c.method();
+      }
+      export function loadB() {
+        const c = createB();
+        return c.method();
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "loadA",
+      info: { packageName: "@ex/lib", exportPath: ["createA", "method"] },
+    });
+    expect(summary).toContainEqual({
+      name: "loadB",
+      info: { packageName: "@ex/lib", exportPath: ["createB", "method"] },
+    });
+    // Cross-pollination would show up as loadA having a createB.method
+    // unit (or vice versa).
+    const cross = summary.filter(
+      (s) =>
+        (s.name === "loadA" &&
+          s.info?.exportPath.join(".") === "createB.method") ||
+        (s.name === "loadB" &&
+          s.info?.exportPath.join(".") === "createA.method"),
+    );
+    expect(cross).toHaveLength(0);
+  });
+
+  it("resolves through closure capture — outer binding visible in inner function", () => {
+    const summary = discover(`
+      import { createClient } from "@ex/lib";
+      export function outer() {
+        const c = createClient();
+        function inner() {
+          return c.fetchAll();
+        }
+        return inner();
+      }
+    `);
+    expect(summary).toContainEqual({
+      name: "inner",
+      info: {
+        packageName: "@ex/lib",
+        exportPath: ["createClient", "fetchAll"],
+      },
+    });
+  });
+
+  it("inner shadowing — nested binding overrides outer binding of same name", () => {
+    const summary = discover(`
+      import { createA, createB } from "@ex/lib";
+      export function outer() {
+        const c = createA();
+        function inner() {
+          const c = createB();
+          return c.method();
+        }
+        return inner();
+      }
+    `);
+    // inner's c shadows outer's c; the .method() call resolves to createB.
+    expect(summary).toContainEqual({
+      name: "inner",
+      info: { packageName: "@ex/lib", exportPath: ["createB", "method"] },
+    });
+    const wrong = summary.filter(
+      (s) =>
+        s.name === "inner" && s.info?.exportPath.join(".") === "createA.method",
+    );
+    expect(wrong).toHaveLength(0);
   });
 });

@@ -1,9 +1,28 @@
 // packageImport.ts (discovery handler) — emit one consumer-side unit
 // per (enclosing function × consumed binding) for any call into a
 // targeted package. Pairs with packageExports-discovered providers.
+//
+// Recognized call shapes:
+//   foo(...)                                 // direct call to named import
+//   const x = foo(...); x.method(...)        // method on factory result
+//   const x = new Foo(...); x.method(...)    // method on class instance
+//   const x = await getX(); x.method(...)    // method on awaited factory result
+//   foo().method(...)                        // one-shot method on call result
+//   new Foo().method(...)                    // method on inline new
+//   (await getX()).method(...)               // method on awaited inline call
+//   Foo.staticMethod(...)                    // method on the import itself
+//   const { method } = foo(); method(...)    // direct call to destructured method
+//
+// Out of scope: receiver-chain walking (factory().a().b()), reassignment,
+// parameter passthrough, namespace imports, re-exports. See
+// project_packageimport_gaps.md.
 
 import { Node, type SourceFile } from "ts-morph";
 
+import {
+  type FactoryProvenance,
+  trackFactoryBindings,
+} from "./factoryTracking.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -63,12 +82,9 @@ export function discoverPackageImports(
 ): DiscoveredUnit[] {
   const targetPackages = new Set(match.packages);
 
-  // Map local-binding-name → { packageName, exportPath } for every
+  // Map local-binding-name → {packageName, exportPath} for every
   // import from a targeted package.
-  const localToExport = new Map<
-    string,
-    { packageName: string; exportPath: string[] }
-  >();
+  const localToExport = new Map<string, FactoryProvenance>();
 
   for (const importDecl of sourceFile.getImportDeclarations()) {
     const moduleSpec = importDecl.getModuleSpecifierValue();
@@ -97,7 +113,94 @@ export function discoverPackageImports(
     return [];
   }
 
+  // Walk variable declarations for bindings whose initializer is a
+  // call/new (optionally awaited) of a tracked import. The returned
+  // table is scope-aware — `resolve(name, fromNode)` walks outward
+  // through enclosing function / file scopes, so two sibling
+  // functions binding the same name to different factories do not
+  // clobber each other.
+  const trackedBindings = trackFactoryBindings(sourceFile, (callee) => {
+    if (!Node.isIdentifier(callee)) {
+      return null;
+    }
+    return localToExport.get(callee.getText()) ?? null;
+  });
+
+  // Resolve the provenance of an arbitrary expression that appears
+  // as the receiver in `<expr>.method(...)`. `fromNode` is the call
+  // site — used as the lookup origin for scope resolution. Returns
+  // null when the receiver doesn't trace to a tracked import or
+  // binding.
+  function resolveReceiverProvenance(
+    node: Node,
+    fromNode: Node,
+  ): FactoryProvenance | null {
+    let n = node;
+    // Peel parentheses: `(await x()).method()` parses as
+    // PropertyAccess { expression: ParenthesizedExpression { ... } }.
+    while (Node.isParenthesizedExpression(n)) {
+      n = n.getExpression();
+    }
+    if (Node.isAwaitExpression(n)) {
+      const inner = n.getExpression();
+      if (inner === undefined) {
+        return null;
+      }
+      n = inner;
+    }
+    if (Node.isIdentifier(n)) {
+      const text = n.getText();
+      return (
+        trackedBindings.resolve(text, fromNode) ??
+        localToExport.get(text) ??
+        null
+      );
+    }
+    if (Node.isCallExpression(n)) {
+      const callee = n.getExpression();
+      if (Node.isIdentifier(callee)) {
+        return localToExport.get(callee.getText()) ?? null;
+      }
+      return null;
+    }
+    if (Node.isNewExpression(n)) {
+      const expr = n.getExpression();
+      if (expr !== undefined && Node.isIdentifier(expr)) {
+        return localToExport.get(expr.getText()) ?? null;
+      }
+      return null;
+    }
+    return null;
+  }
+
+  // Attribute a CallExpression's callee to a (packageName, exportPath)
+  // pair, or return null when the call isn't into a tracked import.
+  function attributeCall(callee: Node): FactoryProvenance | null {
+    if (Node.isIdentifier(callee)) {
+      const text = callee.getText();
+      return (
+        trackedBindings.resolve(text, callee) ?? localToExport.get(text) ?? null
+      );
+    }
+    if (Node.isPropertyAccessExpression(callee)) {
+      const subject = callee.getExpression();
+      const subjectProvenance = resolveReceiverProvenance(subject, callee);
+      if (subjectProvenance === null) {
+        return null;
+      }
+      return {
+        packageName: subjectProvenance.packageName,
+        exportPath: [...subjectProvenance.exportPath, callee.getName()],
+      };
+    }
+    return null;
+  }
+
   const results: DiscoveredUnit[] = [];
+  // Dedup: one unit per (enclosing function × consumed exportPath).
+  // Multiple call sites inside the same function targeting the same
+  // export collapse to a single unit — the consumer summary describes
+  // the function's behaviour around the boundary, not each call.
   const seen = new Set<string>();
 
   sourceFile.forEachDescendant((node) => {
@@ -105,12 +208,8 @@ export function discoverPackageImports(
       return;
     }
     const callee = node.getExpression();
-    if (!Node.isIdentifier(callee)) {
-      return;
-    }
-    const localName = callee.getText();
-    const info = localToExport.get(localName);
-    if (info === undefined) {
+    const provenance = attributeCall(callee);
+    if (provenance === null) {
       return;
     }
 
@@ -119,11 +218,7 @@ export function discoverPackageImports(
       return;
     }
 
-    // One unit per (enclosing function × consumed binding). Multiple
-    // call sites inside the same function to the same imported binding
-    // collapse to one unit — the consumer summary describes the
-    // function's behaviour around that boundary, not individual calls.
-    const key = `${enclosing.getStart()}-${enclosing.getEnd()}-${info.packageName}::${info.exportPath.join(".")}`;
+    const key = `${enclosing.getStart()}-${enclosing.getEnd()}-${provenance.packageName}::${provenance.exportPath.join(".")}`;
     if (seen.has(key)) {
       return;
     }
@@ -133,7 +228,10 @@ export function discoverPackageImports(
       func: enclosing,
       kind,
       name: enclosingFunctionName(enclosing),
-      packageExportInfo: info,
+      packageExportInfo: {
+        packageName: provenance.packageName,
+        exportPath: provenance.exportPath,
+      },
     });
   });
 

@@ -8,6 +8,7 @@ import {
   type ResolvedPackageExport,
   resolvePackageExports,
 } from "../packageExports.js";
+import { surfaceMethods } from "./factorySurface.js";
 import { type DiscoveredUnit, toFunctionRoot } from "./shared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -95,14 +96,32 @@ export function discoverPackageExports(
             (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
           ) {
             results.push(buildUnit(init, kind, exportName, entry));
+            for (const m of surfaceMethods(init)) {
+              results.push(buildSurfacedUnit(m, kind, exportName, entry));
+            }
             seenNames.add(key);
             break;
           }
           continue;
         }
+        // Class declarations: surface public methods only. The class
+        // itself isn't a FunctionRoot, so the existing buildUnit path
+        // doesn't apply — consumers calling `new Class()` without
+        // method calls won't pair against a provider for now (tracked
+        // gap; would need a constructor-as-unit synthesis step).
+        if (Node.isClassDeclaration(decl)) {
+          for (const m of surfaceMethods(decl)) {
+            results.push(buildSurfacedUnit(m, kind, exportName, entry));
+          }
+          seenNames.add(key);
+          break;
+        }
         const fn = toFunctionRoot(decl);
         if (fn !== null) {
           results.push(buildUnit(fn, kind, exportName, entry));
+          for (const m of surfaceMethods(fn)) {
+            results.push(buildSurfacedUnit(m, kind, exportName, entry));
+          }
           seenNames.add(key);
           break;
         }
@@ -126,6 +145,23 @@ function buildUnit(
     packageExportInfo: {
       packageName: entry.packageName,
       exportPath: [...entry.exportPathPrefix, exportName],
+    },
+  };
+}
+
+function buildSurfacedUnit(
+  m: { func: FunctionRoot; name: string },
+  kind: string,
+  parentExportName: string,
+  entry: ResolvedPackageExport,
+): DiscoveredUnit {
+  return {
+    func: m.func,
+    kind,
+    name: `${parentExportName}.${m.name}`,
+    packageExportInfo: {
+      packageName: entry.packageName,
+      exportPath: [...entry.exportPathPrefix, parentExportName, m.name],
     },
   };
 }
