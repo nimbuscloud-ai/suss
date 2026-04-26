@@ -237,10 +237,17 @@ export function runInvocationRecognizers(
       let emitted: Effect[] | null = null;
       try {
         emitted = recognizer(node, ctx);
-      } catch {
-        // A recognizer that throws shouldn't take down the whole
-        // extraction; skip it and continue. The pack version stamp
-        // surfaces the bug to authors when they next bump and re-run.
+      } catch (err) {
+        // A recognizer throwing shouldn't take down the whole
+        // extraction, but it also shouldn't disappear silently —
+        // the user has no way to know their pack is buggy. Log to
+        // stderr with file + line so authors can find the call site
+        // that broke the recognizer, and continue.
+        const filePath = sourceFile.getFilePath();
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(
+          `[suss] invocationRecognizer threw at ${filePath}:${line} — ${message}\n`,
+        );
         emitted = null;
       }
       if (emitted === null || emitted.length === 0) {

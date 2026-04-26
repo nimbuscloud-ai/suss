@@ -203,6 +203,26 @@ describe("sqs recognizer — happy path", () => {
     });
   });
 
+  it("recognizes namespace import (`import * as sqs from ...`)", () => {
+    const file = makeProject(`
+      import * as sqs from "@aws-sdk/client-sqs";
+      const client = new sqs.SQSClient({});
+      async function enqueue() {
+        await client.send(new sqs.SendMessageCommand({
+          QueueUrl: process.env.ORDERS_QUEUE_URL,
+          MessageBody: "hello",
+        }));
+      }
+    `);
+    const sends = messageSendEffectsOf(recognizeAll(file));
+    expect(sends).toHaveLength(1);
+    expect(sends[0]?.binding.semantics).toMatchObject({
+      name: "message-bus",
+      messageBus: "sqs",
+      channel: "ORDERS_QUEUE_URL",
+    });
+  });
+
   it("recognizes SendMessageBatchCommand", () => {
     const file = makeProject(`
       import { SQSClient, SendMessageBatchCommand } from "@aws-sdk/client-sqs";
