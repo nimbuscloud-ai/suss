@@ -46,7 +46,8 @@
   "scripts": {
     "build": "tsup && node scripts/generate-schema.mjs && npx biome format --write schema/behavioral-summary.schema.json",
     "schema:generate": "node scripts/generate-schema.mjs && npx biome format --write schema/behavioral-summary.schema.json",
-    "test": "vitest run --coverage",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
