@@ -430,6 +430,17 @@ function extractArg(node: Node, depth: number): EffectArg {
       args: node.getArguments().map((a) => extractArg(a, depth - 1)),
     };
   }
+  // `new Foo(...)` — same shape as a call. Lets recognizers that
+  // walk over command-pattern argument objects (AWS SDK v3
+  // `client.send(new SendMessageCommand({...}))`) reach the inner
+  // object-literal fields without re-implementing the unwrap.
+  if (Node.isNewExpression(node)) {
+    return {
+      kind: "call",
+      callee: node.getExpression().getText(),
+      args: node.getArguments().map((a) => extractArg(a, depth - 1)),
+    };
+  }
   if (Node.isObjectLiteralExpression(node)) {
     const fields: Record<string, EffectArg> = {};
     for (const prop of node.getProperties()) {

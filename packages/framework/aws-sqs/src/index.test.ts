@@ -49,6 +49,21 @@ export class SendMessageBatchCommand {
 `,
   );
 
+  // Minimal fake aws-lambda types — for the consumer-side
+  // messageReceiveRecognizer's import gate.
+  project.createSourceFile(
+    "node_modules/aws-lambda/index.d.ts",
+    `
+export interface SQSRecord {
+  messageId: string;
+  body: string;
+}
+export interface SQSEvent {
+  Records: SQSRecord[];
+}
+`,
+  );
+
   return project.createSourceFile("user.ts", userSource);
 }
 
@@ -62,9 +77,9 @@ export class SendMessageBatchCommand {
  */
 function recognizeAll(sourceFile: SourceFile): Effect[] {
   const pack = sqsFramework();
-  const recognizer = pack.invocationRecognizers?.[0];
-  if (recognizer === undefined) {
-    return raise("expected pack to declare an invocationRecognizer");
+  const recognizers = pack.invocationRecognizers ?? [];
+  if (recognizers.length === 0) {
+    return raise("expected pack to declare invocationRecognizers");
   }
   const effects: Effect[] = [];
   sourceFile.forEachDescendant((node) => {
@@ -76,9 +91,11 @@ function recognizeAll(sourceFile: SourceFile): Effect[] {
       sourceFile,
       extractArgs: (): EffectArg[] => extractArgsForTest(node),
     };
-    const emitted = recognizer(node, ctx);
-    if (emitted !== null) {
-      effects.push(...emitted);
+    for (const recognizer of recognizers) {
+      const emitted = recognizer(node, ctx);
+      if (emitted !== null) {
+        effects.push(...emitted);
+      }
     }
   });
   return effects;
@@ -328,6 +345,165 @@ describe("sqs recognizer — rejection cases", () => {
   });
 });
 
+function messageReceiveEffectsOf(
+  effects: Effect[],
+): Array<Extract<Effect, { type: "interaction" }>> {
+  return effects.filter(
+    (e): e is Extract<Effect, { type: "interaction" }> =>
+      e.type === "interaction" && e.interaction.class === "message-receive",
+  );
+}
+
+describe("sqs message-receive recognizer", () => {
+  it("emits a message-receive interaction for JSON.parse(record.body) inside for-of(event.Records)", () => {
+    const file = makeProject(`
+      import type { SQSEvent } from "aws-lambda";
+      export async function handler(event: SQSEvent): Promise<void> {
+        for (const record of event.Records) {
+          const { id, totalAmount } = JSON.parse(record.body);
+          void id; void totalAmount;
+        }
+      }
+    `);
+    const receives = messageReceiveEffectsOf(recognizeAll(file));
+    expect(receives).toHaveLength(1);
+    const receive = receives[0] ?? raise("no receive effect");
+    expect(receive.binding.semantics).toMatchObject({
+      name: "message-bus",
+      messageBus: "sqs",
+      // Channel intentionally empty: pairing layer fills from CFN
+      // consumer summary's binding via codeScope.
+      channel: "",
+    });
+  });
+
+  it("captures destructured field names as the interaction body shape", () => {
+    const file = makeProject(`
+      import type { SQSEvent } from "aws-lambda";
+      export async function handler(event: SQSEvent): Promise<void> {
+        for (const record of event.Records) {
+          const { id, totalAmount } = JSON.parse(record.body);
+          void id; void totalAmount;
+        }
+      }
+    `);
+    const receive =
+      messageReceiveEffectsOf(recognizeAll(file))[0] ?? raise("no receive");
+    if (receive.interaction.class !== "message-receive") {
+      throw new Error("wrong interaction class");
+    }
+    const body = receive.interaction.body as
+      | { kind?: string; fields?: Record<string, unknown> }
+      | undefined;
+    expect(body?.kind).toBe("object");
+    expect(Object.keys(body?.fields ?? {}).sort()).toEqual([
+      "id",
+      "totalAmount",
+    ]);
+  });
+
+  it("emits no body when the parse result isn't destructured", () => {
+    const file = makeProject(`
+      import type { SQSEvent } from "aws-lambda";
+      export async function handler(event: SQSEvent): Promise<void> {
+        for (const record of event.Records) {
+          const order = JSON.parse(record.body);
+          void order;
+        }
+      }
+    `);
+    const receives = messageReceiveEffectsOf(recognizeAll(file));
+    expect(receives).toHaveLength(1);
+    const receive = receives[0] ?? raise("no receive");
+    if (receive.interaction.class !== "message-receive") {
+      throw new Error("wrong interaction class");
+    }
+    expect(receive.interaction.body).toBeUndefined();
+  });
+
+  it("uses the destructured PROPERTY name not the local alias", () => {
+    // const { total: localAlias } — `total` is the property the
+    // recognizer should record (matching what producers write), not
+    // `localAlias`.
+    const file = makeProject(`
+      import type { SQSEvent } from "aws-lambda";
+      export async function handler(event: SQSEvent): Promise<void> {
+        for (const record of event.Records) {
+          const { total: localAlias } = JSON.parse(record.body);
+          void localAlias;
+        }
+      }
+    `);
+    const receive =
+      messageReceiveEffectsOf(recognizeAll(file))[0] ?? raise("no receive");
+    if (receive.interaction.class !== "message-receive") {
+      throw new Error("wrong interaction class");
+    }
+    const body = receive.interaction.body as {
+      fields: Record<string, unknown>;
+    };
+    expect(Object.keys(body.fields)).toEqual(["total"]);
+  });
+
+  it("ignores JSON.parse calls outside event.Records loops", () => {
+    const file = makeProject(`
+      export async function handler(input: string): Promise<unknown> {
+        return JSON.parse(input);
+      }
+    `);
+    expect(messageReceiveEffectsOf(recognizeAll(file))).toEqual([]);
+  });
+
+  it("ignores JSON.parse on non-.body access", () => {
+    const file = makeProject(`
+      import type { SQSEvent } from "aws-lambda";
+      export async function handler(event: SQSEvent): Promise<void> {
+        for (const record of event.Records) {
+          const x = JSON.parse(record.messageId);
+          void x;
+        }
+      }
+    `);
+    expect(messageReceiveEffectsOf(recognizeAll(file))).toEqual([]);
+  });
+
+  it("ignores parse calls that aren't JSON.parse", () => {
+    const file = makeProject(`
+      import type { SQSEvent } from "aws-lambda";
+      const myParser = { parse: (_: string): unknown => null };
+      export async function handler(event: SQSEvent): Promise<void> {
+        for (const record of event.Records) {
+          const x = myParser.parse(record.body);
+          void x;
+        }
+      }
+    `);
+    expect(messageReceiveEffectsOf(recognizeAll(file))).toEqual([]);
+  });
+
+  it("handles `as` cast on the parse result without breaking destructuring extraction", () => {
+    const file = makeProject(`
+      import type { SQSEvent } from "aws-lambda";
+      interface Order { id: string; total: number }
+      export async function handler(event: SQSEvent): Promise<void> {
+        for (const record of event.Records) {
+          const { id, total } = JSON.parse(record.body) as Order;
+          void id; void total;
+        }
+      }
+    `);
+    const receive =
+      messageReceiveEffectsOf(recognizeAll(file))[0] ?? raise("no receive");
+    if (receive.interaction.class !== "message-receive") {
+      throw new Error("wrong interaction class");
+    }
+    const body = receive.interaction.body as {
+      fields: Record<string, unknown>;
+    };
+    expect(Object.keys(body.fields).sort()).toEqual(["id", "total"]);
+  });
+});
+
 describe("sqs pack metadata", () => {
   it("declares correct pack identity (no discovery, no terminals, recognizer present)", () => {
     const pack = sqsFramework();
@@ -335,6 +511,8 @@ describe("sqs pack metadata", () => {
     expect(pack.protocol).toBe("sqs");
     expect(pack.discovery).toEqual([]);
     expect(pack.terminals).toEqual([]);
-    expect(pack.invocationRecognizers).toHaveLength(1);
+    // Two recognizers: producer-side (sqsRecognizer) and consumer-side
+    // (messageReceiveRecognizer).
+    expect(pack.invocationRecognizers).toHaveLength(2);
   });
 });

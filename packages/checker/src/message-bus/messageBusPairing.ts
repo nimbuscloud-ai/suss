@@ -9,22 +9,24 @@
 // migrate. Lives in its own directory for now to keep the message-bus
 // finding generators self-contained.
 //
-// Findings emitted (all v0 are wiring-shape findings, not value-add
-// findings — see TODO below):
+// Findings emitted:
 //   messageBusProducerOrphan       warning  code sends to channel X but no provider declares X
 //   messageBusConsumerOrphan       warning  consumer Lambda exists for channel X but no producer sends to X
 //   messageBusUnused               warning  channel X declared but no producer or consumer
+//   boundaryFieldUnknown (aspect: receive)
+//                                  warning  consumer destructures field X from JSON.parse(record.body)
+//                                           but no producer to this channel sends X
 //
-// TODO (the actually valuable check): messageBusBodyShapeMismatch.
-// The producer's interaction.body is an EffectArg shape; the
-// consumer's expected shape can be derived from the handler's
-// parameter type. Compare with `bodyShapesMatch` (already exists in
-// `../body/bodyMatch.ts`). That comparison is what catches the
-// expensive-to-debug runtime failures: producer field renamed and
-// consumer doesn't read the new name; producer adds a required field
-// and consumer crashes on the missing fallback. The wiring findings
-// above are scaffolding to make sure pairing dispatch fires; the
-// body-shape finding is the one that earns its keep.
+// Body-shape pairing (the field-shape finding) joins producer
+// `message-send` effects against consumer `message-receive` effects
+// by channel. Producer-side bodies come from object-literal
+// MessageBody calls (extracted as EffectArg by the SQS recognizer);
+// consumer-side bodies come from destructuring patterns on
+// `JSON.parse(record.body)` (extracted by the same pack's
+// messageReceiveRecognizer). When either side's body is opaque
+// (identifier args, dynamic builders, plain variable assignment),
+// the comparison is skipped — absence of the finding doesn't imply
+// agreement.
 
 import {
   buildInteractionIndex,
@@ -165,6 +167,12 @@ export function checkMessageBus(
     }
     findings.push(makeUnusedQueueFinding(p, semantics));
   }
+
+  // Body-shape pairing: for each channel that has both producer
+  // (sends) and consumer (receives), compare field sets and emit
+  // findings for fields the consumer reads but the producer
+  // doesn't send.
+  findings.push(...checkBodyShapes(consumers, producers, summaries));
 
   return findings;
 }
@@ -347,5 +355,182 @@ function makeSide(
     summary: `${summary.location.file}::${summary.identity.name}`,
     location: summary.location,
     ...(transitionId !== undefined ? { transitionId } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Body-shape pairing
+// ---------------------------------------------------------------------------
+
+interface ReceiveRecord {
+  summary: BehavioralSummary;
+  transitionId: string;
+  fields: string[];
+  effectCallee?: string;
+}
+
+/**
+ * For each CFN consumer summary with a known channel + codeScope,
+ * find every code summary scoped under that path that emits
+ * `interaction(class: "message-receive")` effects with object-shaped
+ * bodies. Compare each receive-side field set against the producer's
+ * send-side field sets for the same channel. Emit
+ * `boundaryFieldUnknown` (aspect: receive) for fields the consumer
+ * reads but no producer sends.
+ *
+ * Skipped silently when either side's body is opaque (call-shaped,
+ * identifier-shaped, or absent) — we'd be guessing, and a false
+ * positive on body shape is worse than a missed finding.
+ */
+function checkBodyShapes(
+  cfnConsumers: BehavioralSummary[],
+  producers: ProducerRecord[],
+  allSummaries: BehavioralSummary[],
+): Finding[] {
+  const findings: Finding[] = [];
+  for (const cfnConsumer of cfnConsumers) {
+    const semantics = cfnConsumer.identity.boundaryBinding?.semantics;
+    if (semantics?.name !== "message-bus") {
+      continue;
+    }
+    const channel = semantics.channel;
+    const codeScope = readCodeScope(cfnConsumer);
+    if (codeScope === null) {
+      continue;
+    }
+
+    const receives = collectReceives(allSummaries, codeScope);
+    if (receives.length === 0) {
+      continue;
+    }
+
+    const producerFields = collectProducerFields(producers, channel);
+    if (producerFields === null) {
+      continue;
+    }
+
+    for (const receive of receives) {
+      for (const field of receive.fields) {
+        if (producerFields.has(field)) {
+          continue;
+        }
+        findings.push(
+          makeBodyShapeFinding(cfnConsumer, semantics, receive, field),
+        );
+      }
+    }
+  }
+  return findings;
+}
+
+function readCodeScope(summary: BehavioralSummary): string | null {
+  const meta = summary.metadata as
+    | { codeScope?: { kind?: string; path?: string } }
+    | undefined;
+  const scope = meta?.codeScope;
+  if (scope?.kind !== "codeUri" || scope.path === undefined) {
+    return null;
+  }
+  return scope.path;
+}
+
+function collectReceives(
+  summaries: BehavioralSummary[],
+  codeScopePath: string,
+): ReceiveRecord[] {
+  const out: ReceiveRecord[] = [];
+  for (const summary of summaries) {
+    if (!summary.location.file.includes(codeScopePath)) {
+      continue;
+    }
+    for (const transition of summary.transitions) {
+      for (const effect of transition.effects) {
+        if (
+          effect.type !== "interaction" ||
+          effect.interaction.class !== "message-receive"
+        ) {
+          continue;
+        }
+        const fields = readObjectBodyFields(effect.interaction.body);
+        if (fields === null) {
+          continue;
+        }
+        out.push({
+          summary,
+          transitionId: transition.id,
+          fields,
+          ...(effect.callee !== undefined
+            ? { effectCallee: effect.callee }
+            : {}),
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Collect the union of field names emitted by all producers targeting
+ * the given channel. Returns null when no producer has an extractable
+ * (object-shaped) body — at that point we can't usefully compare.
+ */
+function collectProducerFields(
+  producers: ProducerRecord[],
+  channel: string,
+): Set<string> | null {
+  const out = new Set<string>();
+  let anyExtractable = false;
+  for (const producer of producers) {
+    if (effectiveChannel(producer) !== channel) {
+      continue;
+    }
+    const body = producer.effect.interaction;
+    if (body.class !== "message-send") {
+      continue;
+    }
+    const fields = readObjectBodyFields(body.body);
+    if (fields === null) {
+      continue;
+    }
+    anyExtractable = true;
+    for (const f of fields) {
+      out.add(f);
+    }
+  }
+  return anyExtractable ? out : null;
+}
+
+/**
+ * Read the field-name set out of an EffectArg shape, but only when
+ * the body is object-shaped (`{ kind: "object", fields: { ... } }`).
+ * Returns null for any other shape (string literal, identifier, call,
+ * absent) — those are opaque to v0 body-shape comparison.
+ */
+function readObjectBodyFields(body: unknown): string[] | null {
+  if (body === null || body === undefined || typeof body !== "object") {
+    return null;
+  }
+  const candidate = body as { kind?: string; fields?: Record<string, unknown> };
+  if (candidate.kind !== "object" || candidate.fields === undefined) {
+    return null;
+  }
+  return Object.keys(candidate.fields);
+}
+
+function makeBodyShapeFinding(
+  cfnConsumer: BehavioralSummary,
+  semantics: MessageBusSemantics,
+  receive: ReceiveRecord,
+  missingField: string,
+): Finding {
+  const binding = cfnConsumer.identity.boundaryBinding as BoundaryBinding;
+  return {
+    kind: "boundaryFieldUnknown",
+    aspect: "receive",
+    boundary: binding,
+    provider: makeSide(cfnConsumer),
+    consumer: makeSide(receive.summary, receive.transitionId),
+    description: `${receive.summary.identity.name} reads field "${missingField}" from a message on ${semantics.messageBus} channel "${semantics.channel}" but no producer in the analysed scope sends "${missingField}". Likely a producer/consumer drift — the producer renamed or removed the field, or the consumer expects a field that was never sent.`,
+    severity: "warning",
   };
 }
