@@ -31,7 +31,7 @@ function providerWithContract(
     inputs: [],
     transitions: [],
     gaps: [],
-    confidence: { source: "stub", level: "high" },
+    confidence: { source: "derived", level: "high" },
     metadata: {
       http: {
         declaredContract: {

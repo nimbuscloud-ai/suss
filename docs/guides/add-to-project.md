@@ -41,10 +41,10 @@ your code uses, plus the CLI. Pick from:
 | `@suss/runtime-web` | Global `fetch` call sites | `npm i -D @suss/runtime-web` |
 | `@suss/runtime-axios` | axios call sites + `axios.create` factories | `npm i -D @suss/runtime-axios` |
 | `@suss/runtime-apollo-client` | `@apollo/client` hooks + imperative `client.query` | `npm i -D @suss/runtime-apollo-client` |
-| `@suss/stub-openapi` | Generate summaries from an OpenAPI 3.x spec | `npm i -D @suss/stub-openapi` |
-| `@suss/stub-cloudformation` | Generate summaries from a CFN / SAM template | `npm i -D @suss/stub-cloudformation` |
-| `@suss/stub-appsync` | Generate summaries from an AppSync CFN template | `npm i -D @suss/stub-appsync` |
-| `@suss/stub-storybook` | Generate summaries from CSF3 stories | `npm i -D @suss/stub-storybook` |
+| `@suss/contract-openapi` | Generate summaries from an OpenAPI 3.x spec | `npm i -D @suss/contract-openapi` |
+| `@suss/contract-cloudformation` | Generate summaries from a CFN / SAM template | `npm i -D @suss/contract-cloudformation` |
+| `@suss/contract-appsync` | Generate summaries from an AppSync CFN template | `npm i -D @suss/contract-appsync` |
+| `@suss/contract-storybook` | Generate summaries from CSF3 stories | `npm i -D @suss/contract-storybook` |
 
 Plus the CLI once:
 
@@ -57,7 +57,7 @@ You don't have to install everything. Common combinations:
 - **ts-rest full-stack:** `@suss/framework-ts-rest` (provider + client via the contract).
 - **Express API + fetch client:** `@suss/framework-express @suss/runtime-web`.
 - **React + GraphQL:** `@suss/framework-react @suss/runtime-apollo-client`.
-- **GraphQL server:** `@suss/framework-apollo`. Add `@suss/stub-appsync` if you also deploy via CloudFormation.
+- **GraphQL server:** `@suss/framework-apollo`. Add `@suss/contract-appsync` if you also deploy via CloudFormation.
 
 ## Point suss at your tsconfig
 
@@ -120,20 +120,20 @@ happens." Once a stub exists, `check` pairs it with your client
 the same way it would pair two extracted summaries.
 
 ```bash
-npx suss stub --from openapi stripe-openapi.json -o summaries/stripe.json
+npx suss contract --from openapi stripe-openapi.json -o summaries/stripe.json
 npx suss check summaries/stripe.json summaries/your-client.json
 ```
 
 AWS API Gateway? CloudFormation stub reads the template:
 
 ```bash
-npx suss stub --from cloudformation template.yaml -o summaries/api.json
+npx suss contract --from cloudformation template.yaml -o summaries/api.json
 ```
 
 GraphQL via AppSync? Same idea:
 
 ```bash
-npx suss stub --from appsync template.yaml -o summaries/appsync.json
+npx suss contract --from appsync template.yaml -o summaries/appsync.json
 ```
 
 ## Commit or not?

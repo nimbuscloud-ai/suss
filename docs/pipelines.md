@@ -75,11 +75,11 @@ Each check is pure over `(provider, consumer)`, emits `Finding[]`, and knows not
 
 Pairing is HTTP-shaped today — see [`boundary-semantics.md`](boundary-semantics.md) for the planned refactor when a second boundary semantics lands.
 
-## `suss stub --from openapi`
+## `suss contract --from openapi`
 
 Turns an OpenAPI 3.x spec into `BehavioralSummary[]` carrying `confidence.source: "stub"`. Output is the same shape as `suss extract`, pairable with extracted consumers.
 
-`@suss/stub-openapi` walks every `(path, operation)` in the spec. For each operation it emits one handler summary with:
+`@suss/contract-openapi` walks every `(path, operation)` in the spec. For each operation it emits one handler summary with:
 
 - one transition per declared response (status code → body schema, converted to `TypeShape`),
 - `metadata.http.declaredContract` populated so `checkContractConsistency` can cross-check a hypothetical provider (if you later extract one) against the spec,
@@ -87,22 +87,22 @@ Turns an OpenAPI 3.x spec into `BehavioralSummary[]` carrying `confidence.source
 
 The CLI writes the result to disk after round-tripping through `safeParseSummaries` to catch any shape drift.
 
-## `suss stub --from cloudformation`
+## `suss contract --from cloudformation`
 
 The most layered stub: the same physical API can be expressed several ways in CFN, and we want them all to produce the same summaries.
 
 Two phases, deliberately separated. The **manifest-reader** phase walks the raw CFN/SAM tree and builds normalized `RestApiConfig` / `HttpApiConfig` values — what is this API? what endpoints? what authorizer / CORS / throttle / integration config? That's pure parsing and grouping: it handles `AWS::ApiGateway::RestApi` + `AWS::ApiGateway::Method`, `AWS::ApiGatewayV2::Api` + `AWS::ApiGatewayV2::Route` + `AWS::ApiGatewayV2::Integration`, the SAM `AWS::Serverless::Api` / `AWS::Serverless::HttpApi` shorthand, and SAM `Events.Api` / `Events.HttpApi` blocks. It also handles inline OpenAPI bodies on RestApis.
 
-The **resource-semantics** phase turns each normalized config into `BehavioralSummary[]` with platform-injected transitions — authorizer 401/403, API key 403, request-validator 400, throttle 429, integration 502/504, CORS preflight OPTIONS. That logic lives in `@suss/stub-aws-apigateway`, which is independently consumable: a future hand-authored API Gateway stub path (no CFN involved) would go straight into the semantics layer. When the manifest has an inline OpenAPI body, CFN delegates that part to `@suss/stub-openapi` instead.
+The **resource-semantics** phase turns each normalized config into `BehavioralSummary[]` with platform-injected transitions — authorizer 401/403, API key 403, request-validator 400, throttle 429, integration 502/504, CORS preflight OPTIONS. That logic lives in `@suss/contract-aws-apigateway`, which is independently consumable: a future hand-authored API Gateway stub path (no CFN involved) would go straight into the semantics layer. When the manifest has an inline OpenAPI body, CFN delegates that part to `@suss/contract-openapi` instead.
 
 ```
 User
- │  suss stub --from cloudformation -i template.yaml -o api.json
+ │  suss contract --from cloudformation -i template.yaml -o api.json
  ▼
 @suss/cli
  │  read template.yaml
  ▼
-@suss/stub-cloudformation
+@suss/contract-cloudformation
  │
  │  ── manifest-reader phase ─────────────────────────────
  │    buildRestApiConfigs:   group AWS::ApiGateway::Method by RestApiId
@@ -112,9 +112,9 @@ User
  │    (→ normalized RestApiConfig / HttpApiConfig)
  │
  │  ── resource-semantics phase ──────────────────────────
- │    inline OpenAPI body?  →  @suss/stub-openapi
- │    restApiToSummaries(config)  →  @suss/stub-aws-apigateway
- │    httpApiToSummaries(config)  →  @suss/stub-aws-apigateway
+ │    inline OpenAPI body?  →  @suss/contract-openapi
+ │    restApiToSummaries(config)  →  @suss/contract-aws-apigateway
+ │    httpApiToSummaries(config)  →  @suss/contract-aws-apigateway
  │                (emits handler transitions per declared status
  │                 + authorizer 401/403, apiKey 403, validator 400,
  │                 throttle 429, integration 502/504, CORS OPTIONS)

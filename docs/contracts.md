@@ -125,16 +125,16 @@ Two parallel pieces of infrastructure:
 
 Each new shape needs a package that reads artifacts in that shape and produces `BehavioralSummary[]` in the same unified IR. Pattern:
 
-- `@suss/stub-openapi` reads OpenAPI (schema shape)
-- `@suss/stub-cloudformation` reads CFN (schema shape, via the aws-apigateway resource-semantics layer)
-- *`@suss/stub-storybook`* — reads `.stories.ts[x]` (spec shape, component domain)
-- *`@suss/stub-jest-snapshots`* — reads `__snapshots__` (observation shape, component domain)
-- *`@suss/stub-playwright`* — reads spec files (observation/test shape, cross-domain)
-- *`@suss/stub-prisma`* — reads `.prisma` files (schema shape, database domain)
+- `@suss/contract-openapi` reads OpenAPI (schema shape)
+- `@suss/contract-cloudformation` reads CFN (schema shape, via the aws-apigateway resource-semantics layer)
+- *`@suss/contract-storybook`* — reads `.stories.ts[x]` (spec shape, component domain)
+- *`@suss/contract-jest-snapshots`* — reads `__snapshots__` (observation shape, component domain)
+- *`@suss/contract-playwright`* — reads spec files (observation/test shape, cross-domain)
+- *`@suss/contract-prisma`* — reads `.prisma` files (schema shape, database domain)
 
 (Italics = planned, not shipped.)
 
-**Figma (design shape) is deliberately punted for v0.** Design files are rarely committed to the repo, wireframes routinely diverge from ship, and the Figma REST API integration is expensive relative to the signal it feeds. A future opt-in `@suss/stub-figma-url` that reads a URL reference and emits a `lowConfidence` visual-intent signal is the likely re-entry point, never a source of hard findings. Design-as-contract is still in the taxonomy above because the *epistemic character* matters (intent is a distinct kind of truth); it's the *artifact pipeline* we're not building now.
+**Figma (design shape) is deliberately punted for v0.** Design files are rarely committed to the repo, wireframes routinely diverge from ship, and the Figma REST API integration is expensive relative to the signal it feeds. A future opt-in `@suss/contract-figma-url` that reads a URL reference and emits a `lowConfidence` visual-intent signal is the likely re-entry point, never a source of hard findings. Design-as-contract is still in the taxonomy above because the *epistemic character* matters (intent is a distinct kind of truth); it's the *artifact pipeline* we're not building now.
 
 Each reader emits summaries tagged with a `provenance` (derived / independent / observed / intent — to be refined as implementation demands) so the checker can apply appropriate comparison logic.
 
@@ -187,7 +187,7 @@ Shipping all three in one go isn't required. React's plan ([`roadmap-react.md`](
 ## What this doc commits us to
 
 - No new checker logic will be added under the assumption that contracts are schema-shaped. Every check will cite which shape(s) it operates on.
-- Shape-specific stub packages are expected to multiply. The `@suss/stub-*` naming pattern is explicit about this.
+- Shape-specific stub packages are expected to multiply. The `@suss/contract-*` naming pattern is explicit about this.
 - Metadata namespacing under `metadata.<domain>.<shape>.*` becomes the rule, not the exception.
 - The five-shape taxonomy is the working vocabulary. When a concrete artifact doesn't fit, we update the taxonomy rather than force it.
 - Future contract-related design docs cite epistemic character explicitly when discussing checker behavior.

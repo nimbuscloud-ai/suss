@@ -75,7 +75,7 @@ function makeStory(
       },
     ],
     gaps: [],
-    confidence: { source: "stub", level: "medium" },
+    confidence: { source: "derived", level: "medium" },
     metadata: {
       component: {
         storybook: {

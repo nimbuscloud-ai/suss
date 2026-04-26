@@ -146,7 +146,7 @@ export const ConfidenceSourceSchema = z.enum([
   "inferred_static",
   "inferred_ai",
   "declared",
-  "stub",
+  "derived",
 ]);
 
 export const ConfidenceLevelSchema = z.enum(["high", "medium", "low"]);

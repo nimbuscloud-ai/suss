@@ -16,6 +16,11 @@ scripts/dogfood-report.json
 # Per-package extraction cache (local to each working tree)
 **/.suss/
 
+# External dogfood targets (cloned to repo root for ad-hoc end-to-end runs)
+/saleor-dashboard/
+/saleor-storefront/
+/twenty/
+
 # Claude Code
 PLAN.md
 CLAUDE.md

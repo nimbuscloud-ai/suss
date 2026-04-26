@@ -395,7 +395,7 @@ describe("BehavioralSummaryArraySchema", () => {
       effects: [],
       location: { start: 0, end: 0 },
       isDefault: false,
-      confidence: { source: "stub", level: "high" },
+      confidence: { source: "derived", level: "high" },
       metadata: {
         source: "aws::apigateway::method.authorization",
         configRef: "template.yaml#/Resources/Auth",

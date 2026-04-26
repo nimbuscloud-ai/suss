@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { checkAll } from "@suss/checker";
-import { cloudFormationFileToSummaries } from "@suss/stub-cloudformation";
+import { cloudFormationFileToSummaries } from "@suss/contract-cloudformation";
 
 import type { PatternPack } from "@suss/extractor";
 

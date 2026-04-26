@@ -104,7 +104,7 @@ The earlier plan listed Figma as a primary stub source. It's deferred. Three rea
 2. **Not definitive.** Wireframes often diverge from ship; Figma files routinely live-edit after the code lands. "The design" as a file is rarely the contract.
 3. **Extraction is expensive for signal we can't yet act on.** The Figma REST API + naming-convention mapping is a lot of integration work before we know what cross-shape check it feeds.
 
-When / if it comes back, it'll be via an explicit, opt-in `@suss/stub-figma-url` that reads a URL reference and reports a `lowConfidence` visual-intent signal — never a source of hard findings. Not on the critical path.
+When / if it comes back, it'll be via an explicit, opt-in `@suss/contract-figma-url` that reads a URL reference and reports a `lowConfidence` visual-intent signal — never a source of hard findings. Not on the critical path.
 
 ## Why Storybook first
 
@@ -165,7 +165,7 @@ Storybook-as-stub stays shipped for the component-level coverage it does give; f
 
 ### Phase 2 — Storybook as stub source (v0 shipped)
 
-`@suss/stub-storybook` reads `.stories.ts[x]` files statically (no execution) and emits `BehavioralSummary[]` with `kind: "component"`. Each named-export story becomes one summary:
+`@suss/contract-storybook` reads `.stories.ts[x]` files statically (no execution) and emits `BehavioralSummary[]` with `kind: "component"`. Each named-export story becomes one summary:
 
 - `identity.name` = `{component}.{story}` (e.g. `Button.Primary`)
 - `identity.boundaryBinding` = `{ protocol: "in-process", framework: "react" }`
@@ -218,7 +218,7 @@ The highest-signal cross-shape findings for React aren't in Storybook args — t
 - **Asserted text the render can't produce:** `expect(page.getByText("Welcome back"))` but the inferred render tree under the test's implied args never emits that text.
 - **State assertion no handler reaches:** `await waitFor(() => expect(valueIsX))` but no handler's inferred effects produce that state.
 
-Stubs to build when ready: `@suss/stub-playwright` (parses `.spec.ts` files), `@suss/stub-cypress` (similar for Cypress), Storybook `play` function parsing (folded into `@suss/stub-storybook`). Each emits observation-kind summaries that the cross-shape checker pairs against handler sub-units and render-tree elements. Prioritise over further Storybook investment — play functions + E2E specs are where the behavioural surface actually lives for non-trivial UIs.
+Stubs to build when ready: `@suss/contract-playwright` (parses `.spec.ts` files), `@suss/contract-cypress` (similar for Cypress), Storybook `play` function parsing (folded into `@suss/contract-storybook`). Each emits observation-kind summaries that the cross-shape checker pairs against handler sub-units and render-tree elements. Prioritise over further Storybook investment — play functions + E2E specs are where the behavioural surface actually lives for non-trivial UIs.
 
 ### Phase 4 — Additional observation stubs (opportunistic)
 

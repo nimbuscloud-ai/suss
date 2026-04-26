@@ -69,7 +69,7 @@ resolves it automatically.
 - `0` — extraction succeeded (regardless of how many summaries emerged).
 - Non-zero — extraction threw (invalid tsconfig, unknown framework, missing files).
 
-## `suss stub`
+## `suss contract`
 
 Generate summaries from a declared contract instead of from code.
 
@@ -92,7 +92,7 @@ Use cases:
   the stories cover.
 
 ```
-suss stub --from SOURCE SPEC_PATH [-o OUTPUT]
+suss contract --from SOURCE SPEC_PATH [-o OUTPUT]
 ```
 
 | Flag | Description |
@@ -104,10 +104,10 @@ suss stub --from SOURCE SPEC_PATH [-o OUTPUT]
 
 | Source | Package | Input |
 |---|---|---|
-| `openapi` | `@suss/stub-openapi` | OpenAPI 3.x JSON or YAML |
-| `cloudformation` | `@suss/stub-cloudformation` | CFN / SAM template (JSON or YAML) with API Gateway REST / HTTP API resources |
-| `storybook` | `@suss/stub-storybook` | CSF3 `.stories.ts` / `.stories.tsx` file or directory of stories |
-| `appsync` | `@suss/stub-appsync` | CFN template with `AWS::AppSync::*` resources |
+| `openapi` | `@suss/contract-openapi` | OpenAPI 3.x JSON or YAML |
+| `cloudformation` | `@suss/contract-cloudformation` | CFN / SAM template (JSON or YAML) with API Gateway REST / HTTP API resources |
+| `storybook` | `@suss/contract-storybook` | CSF3 `.stories.ts` / `.stories.tsx` file or directory of stories |
+| `appsync` | `@suss/contract-appsync` | CFN template with `AWS::AppSync::*` resources |
 
 ### Exit codes
 

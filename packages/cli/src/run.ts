@@ -10,11 +10,11 @@
 import { parseArgs } from "node:util";
 
 import { check, checkDir } from "./check.js";
+import { contract } from "./contract.js";
 import { extract } from "./extract.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
-import { stub } from "./stub.js";
 
-import type { StubSource } from "./stub.js";
+import type { ContractSource } from "./contract.js";
 
 export const USAGE = `
 Usage:
@@ -24,13 +24,13 @@ Usage:
   suss inspect --diff <before.json> <after.json>
   suss check <provider.json> <consumer.json> [--json] [-o <output>]
   suss check --dir <directory> [--json] [-o <output>]
-  suss stub --from <source> <spec> [-o <output.json>]
+  suss contract --from <source> <spec> [-o <output.json>]
 
 Commands:
   extract   Extract behavioral summaries from TypeScript source files
   inspect   Display human-readable output from a summaries JSON file
   check     Compare summary files and report cross-boundary findings
-  stub      Generate behavioral summaries from a declared contract
+  contract  Generate behavioral summaries from a declared contract source
 
 Options (extract):
   -p, --project    Path to tsconfig.json (required)
@@ -47,8 +47,8 @@ Options (check):
   -o, --output     Write findings to file instead of stdout
   --fail-on        Exit non-zero threshold: error (default), warning, info, none
 
-Options (stub):
-  --from           Stub source kind: openapi, cloudformation, storybook, appsync
+Options (contract):
+  --from           Contract source kind: openapi, cloudformation, storybook, appsync
   -o, --output     Write JSON to file instead of stdout
 
 Exit codes:
@@ -80,8 +80,8 @@ export async function runCli(args: string[]): Promise<number> {
   if (command === "check") {
     return runCheck(args.slice(1));
   }
-  if (command === "stub") {
-    return await runStub(args.slice(1));
+  if (command === "contract") {
+    return await runContract(args.slice(1));
   }
 
   process.stderr.write(`Unknown command: ${command}\n`);
@@ -244,7 +244,7 @@ function runCheck(args: string[]): number {
   return result.hasErrors ? 1 : 0;
 }
 
-async function runStub(args: string[]): Promise<number> {
+async function runContract(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     options: {
@@ -254,9 +254,9 @@ async function runStub(args: string[]): Promise<number> {
     allowPositionals: true,
   });
 
-  const from = values.from as StubSource | undefined;
+  const from = values.from as ContractSource | undefined;
   if (from === undefined) {
-    process.stderr.write("Error: --from is required for stub\n");
+    process.stderr.write("Error: --from is required for contract\n");
     process.stderr.write(`${USAGE}\n`);
     return 1;
   }
@@ -268,12 +268,12 @@ async function runStub(args: string[]): Promise<number> {
   }
 
   if (positionals.length === 0) {
-    process.stderr.write("Error: stub requires a spec file path\n");
+    process.stderr.write("Error: contract requires a spec file path\n");
     process.stderr.write(`${USAGE}\n`);
     return 1;
   }
 
-  await stub({
+  await contract({
     from,
     spec: positionals[0],
     ...(values.output !== undefined ? { output: values.output } : {}),
