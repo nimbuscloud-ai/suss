@@ -22,20 +22,90 @@ execution.
 ## Boundary framing
 
 The boundary is the **storage system + its addressable unit**
-(table, collection, document). Field names (columns, properties) are
-**fields on that unit's contract** — same granularity as `body.email`
-on a REST endpoint or `STRIPE_API_KEY` on a runtime-config channel.
+(table, collection, document, key, bucket — depends on model).
+Field names (columns, properties, attributes, key segments) are
+**fields on that unit's contract** — same granularity as
+`body.email` on a REST endpoint or `STRIPE_API_KEY` on a
+runtime-config channel.
 
-Pairing key: `(storageSystem, scope, table)` — e.g.
+### Storage models — split the semantics
+
+SQL is a query language, not a wire protocol. The wire protocol
+(PostgreSQL's, MySQL's, MongoDB's, HTTPS-to-AWS for DynamoDB) is
+informational; pairing logic doesn't depend on it. What matters is
+the **storage model**, because pairing is fundamentally different
+per model:
+
+| Model | What's declared | Pairing logic | Examples |
+|---|---|---|---|
+| **Relational** | columns per table | reads/writes vs column list | Postgres, MySQL, SQLite |
+| **Document with schema** | property set per collection | reads/writes vs schema | Mongo + Mongoose, FaunaDB |
+| **Document schemaless** | nothing declared | readers vs writers (no provider side) | Mongo raw, CouchDB |
+| **Tabular NoSQL** | PK / SK / GSIs declared, attributes app-defined | PK shape conformance + app-side attribute use | DynamoDB, Cassandra |
+| **Key-value** | nothing declared; key namespace conventions | reader keys vs writer keys | Redis, Memcached |
+| **Blob** | buckets / paths | bucket reads vs writes; key pattern overlap | S3, GCS, Azure Blob |
+
+Each model needs **different pairing logic** and **different finding
+kinds**:
+- Relational `storageReadFieldUnknown` ("column doesn't exist") doesn't apply to schemaless Mongo.
+- DynamoDB's PK type mismatch doesn't apply to Postgres.
+- Redis's "key namespace nobody reads" doesn't apply to relational.
+
+So the IR splits the semantics by storage model rather than lumping
+everything under one `storage` semantics with a flat enum:
+
+```ts
+// Phase 6 (this doc): relational only
+{ name: "storage-relational",
+  storageSystem: "postgres" | "mysql" | "sqlite",
+  scope: string,
+  table: string }
+
+// Future phases:
+{ name: "storage-document",
+  storageSystem: "mongodb" | "couchdb" | …,
+  scope: string,
+  collection: string,
+  schemaDeclared: boolean }   // true → field-level pairing; false → reader/writer pairing only
+
+{ name: "storage-tabular-nosql",
+  storageSystem: "dynamodb" | "cassandra" | …,
+  scope: string,
+  table: string }
+  // metadata.storageContract carries primaryKey, sortKey, gsis,
+  // declared-attributes (when an app-side schema like dynamodb-toolbox
+  // declares them)
+
+{ name: "storage-keyvalue",
+  storageSystem: "redis" | "memcached" | …,
+  scope: string,
+  keyspace: string }   // namespace pattern, e.g. "session:*"
+
+{ name: "storage-blob",
+  storageSystem: "s3" | "gcs" | …,
+  scope: string,
+  bucket: string,
+  keyPattern?: string }
+```
+
+Each variant gets its own pairing pass in the checker
+(`checkRelationalStorage`, `checkDocumentStorage`,
+`checkTabularNoSqlStorage`, `checkKeyValueStorage`,
+`checkBlobStorage`). Multi-model storage in one project (a service
+using both Postgres and Redis) just emits summaries against
+multiple semantics; the checks run independently.
+
+Pairing key for relational: `(storageSystem, scope, table)` — e.g.
 `("postgres", "default", "User")` — with field-level access tracking
 on top.
 
-Producers: schema declarations (Prisma `model User { ... }`, SQL
-DDL `CREATE TABLE users (...)`, TypeORM `@Entity` classes, …). One
-provider summary per declared table.
+Producers (relational): schema declarations (Prisma `model User
+{ ... }`, Drizzle `pgTable("users", { ... })`, TypeORM `@Entity`
+classes, SQL DDL `CREATE TABLE users (...)`). One provider summary
+per declared table.
 
-Consumers: code that reads or writes the table. One per call site
-(or aggregated per code unit, TBD during impl).
+Consumers: code that reads or writes the table, captured as
+`storageAccess` effects on transitions (see IR section below).
 
 ### What the boundary collapses
 
@@ -162,18 +232,21 @@ Out (deferred, each its own follow-up):
 ### IR (Phase 6.1)
 
 `packages/ir/src/schemas.ts`:
-- Add `storage` variant to `BoundarySemantics`:
+- Add `storage-relational` variant to `BoundarySemantics`:
   ```ts
   z.object({
-    name: z.literal("storage"),
-    storageSystem: z.enum(["postgres", "mysql", "sqlite", "mongodb",
-                            "dynamodb", "redis", "other"]),
+    name: z.literal("storage-relational"),
+    storageSystem: z.enum(["postgres", "mysql", "sqlite"]),
     /** ORM / driver scope (defaults to "default" for single-DB setups). */
     scope: z.string(),
-    /** Table / collection / model name. */
+    /** Table / model name. */
     table: z.string(),
   })
   ```
+  (Other storage models — document, tabular-nosql, key-value, blob —
+  add their own variants in later phases. v0 ships relational alone
+  but the per-model split is in the IR from day one so nothing
+  breaks when we add the others.)
 - New `metadata.storageContract` shape on the provider summary:
   ```ts
   {
@@ -209,13 +282,18 @@ Out (deferred, each its own follow-up):
   `storageWriteOnlyField`.
 
 `packages/ir/src/index.ts`:
-- New helper `storageBinding({ recognition, storageSystem, scope, table })`.
+- New helper `storageRelationalBinding({ recognition, storageSystem,
+  scope, table })`. Future phases add `storageDocumentBinding`,
+  `storageTabularNoSqlBinding`, etc.
 
 ### Checker (Phase 6.1)
 
-`packages/checker/src/storage/storagePairing.ts`:
-- Per-table pairing: collect provider (schema) and consumers (code
-  with `metadata.storageAccess` matching the table).
+`packages/checker/src/storage/relationalPairing.ts`:
+- `checkRelationalStorage` — per-table pairing for
+  `storage-relational` summaries.
+- Collect provider (schema-derived) and consumer (code with
+  `storageAccess` effects) summaries; group by `(storageSystem,
+  scope, table)`.
 - For each consumer's read fields not in provider's column set →
   `storageReadFieldUnknown`.
 - For each consumer's write fields not in provider's column set →
@@ -225,12 +303,17 @@ Out (deferred, each its own follow-up):
   `storageWriteOnlyField` (warning — likely dead data).
 - Wire into `checkAll`.
 
+(Future storage-model-specific checks — `checkDocumentStorage`,
+`checkTabularNoSqlStorage`, etc. — get their own files alongside
+this one.)
+
 ### Schema readers (Phase 6.2)
 
 Two parallel packs reading their respective schema declarations.
+Package paths assume the in-flight stub→contract rename has landed
+(see `rename-stub-to-contract.md` design doc).
 
-**`packages/stub/prisma/`** (or `packages/contract/prisma/` if we
-rename per the in-flight stub→contract discussion):
+**`packages/contract/prisma/`**:
 - Parse `schema.prisma` via `@prisma/internals` (their own parser,
   exposed as a library) — avoids hand-rolling a Prisma DSL parser.
 - Emit one provider summary per `model`. Storage system inferred
@@ -238,7 +321,7 @@ rename per the in-flight stub→contract discussion):
 - Carry `metadata.storageContract.columns` from the model's field
   list (name, type, nullable, primary, unique).
 
-**`packages/stub/drizzle/`**:
+**`packages/contract/drizzle/`**:
 - Drizzle's schema lives in TS source — `pgTable("users",
   { id: serial(...), email: varchar(...).notNull(), … })`. There's
   no separate schema file.
@@ -310,6 +393,84 @@ checker doesn't know or care which produced an effect.
 - Wire stub-to-checker integration.
 - Fixture project (the demo above).
 - Snapshot test asserting the three findings.
+
+## Future storage-model phases (planning sketch, not v0)
+
+Each is its own follow-up phase with its own design pass; this is
+just enough framing to make sure the v0 IR + checker decisions
+don't paint us into a corner.
+
+### Phase 7 — `storage-tabular-nosql` (DynamoDB)
+
+DynamoDB has a fixed PK/SK structure declared in CFN
+(`AWS::DynamoDB::Table`'s `KeySchema` + `AttributeDefinitions` +
+`GlobalSecondaryIndexes`), but item attributes are application-
+defined — the schema only declares attributes used in keys. The
+contract has two layers:
+
+- **Key/index contract** (from CFN): partition key, sort key, GSI
+  PK/SK names + types. Findings: code uses an attribute in a query
+  position that isn't a key.
+- **App-side attribute contract** (from `dynamodb-toolbox` /
+  `dynamodb-onetable` / hand-rolled marshalling): which non-key
+  attributes the application stores per item type. Findings: code
+  reads an attribute no writer produces; writer produces an
+  attribute no reader consumes.
+
+Packs:
+- `@suss/contract-dynamodb-cfn` — reads CFN/SAM
+  `AWS::DynamoDB::Table`, emits the key/index half of the contract.
+- `@suss/contract-dynamodb-toolbox` — reads
+  `dynamodb-toolbox`'s `Table` / `Entity` declarations, emits the
+  attribute half.
+- `@suss/framework-aws-sdk-dynamodb` — discovers
+  `client.send(new GetItemCommand(...))` / `PutItemCommand` /
+  `QueryCommand` / `ScanCommand` etc.; emits `storageAccess` effects.
+- `@suss/framework-dynamodb-toolbox` — discovers the higher-level
+  `entity.get(...)`, `entity.put(...)`, `table.query(...)` patterns.
+
+Checker:
+- `checkTabularNoSqlStorage` — joins the key/index contract and the
+  attribute contract; runs key-shape conformance + attribute-set
+  pairing.
+- New finding kinds: `storageNonKeyQueryAttribute`,
+  `storageKeyTypeMismatch` plus the same family as relational
+  (`storageReadFieldUnknown` etc., but applied at attribute level).
+
+### Phase 8 — `storage-document` (MongoDB)
+
+Two sub-modes depending on whether the project uses Mongoose:
+- **With Mongoose**: schemas are TS declarations; pair the
+  `mongoose.Schema` declarations against `Model.find()`,
+  `Model.create()`, etc. — same shape as relational, different
+  syntax.
+- **Without (raw mongo driver)**: schemaless. Pair readers vs
+  writers without a declared side: `collection.findOne({ ... })`'s
+  field accesses vs `collection.insertOne({ ... })`'s field set.
+  Findings flip: `storageReadKeyNeverWritten`,
+  `storageWriteKeyNeverRead`.
+
+### Phase 9 — `storage-keyvalue` (Redis)
+
+No schema. The contract is the **key namespace** — Redis keys are
+strings, often templated (`session:${userId}`, `rate-limit:${ip}`).
+Pair on key-pattern overlap between readers and writers.
+- Pack: `@suss/framework-ioredis` (and friends).
+- Findings: `keyPatternUnreadable` (writes a pattern nobody reads),
+  `keyPatternUnwritten` (reads a pattern nobody writes).
+
+### Phase 10 — `storage-blob` (S3, GCS)
+
+Bucket + key. Often structured (`users/{id}/avatar.png`); often
+opaque. Pair on bucket-and-key-pattern level.
+- Packs: `@suss/contract-s3-cfn` for bucket declarations from CFN;
+  `@suss/framework-aws-sdk-s3` for `GetObjectCommand` etc.
+- Findings: `bucketUnknown`, `keyPatternConflict`.
+
+These phases don't need design here — flag them as separate
+follow-ups with their own design docs when we get there. The point
+of sketching them now is to ensure the per-model semantics split
+in v0 makes them easy to add without IR churn.
 
 ## Open questions
 
