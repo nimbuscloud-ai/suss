@@ -61,13 +61,14 @@
   "scripts": {
     "build": "turbo build",
     "test": "turbo test --concurrency=3",
+    "test:coverage": "turbo test:coverage --concurrency=3",
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
     "format": "biome format --write .",
     "typecheck": "turbo typecheck",
     "prepare": "husky",
     "badges": "node scripts/generate-coverage-badges.mjs",
-    "test:badges": "npm test && npm run badges",
+    "test:badges": "npm run test:coverage && npm run badges",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"

@@ -58,7 +58,7 @@ jobs:
         run: npm run build
 
       - name: Test
-        run: npm test
+        run: npm run test:coverage
 
       - name: Regenerate coverage badges
         run: node scripts/generate-coverage-badges.mjs

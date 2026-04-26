@@ -1,9 +1,9 @@
 #!/bin/sh
 # Typecheck first (fail fast on type errors before running tests)
 npm run typecheck
-# Run full test suite with coverage
-# Bump heap for ts-morph-heavy adapter + CLI tests running in parallel
+# Run the full test suite without coverage. Coverage summaries and
+# badges are refreshed by CI (`npm run test:coverage`) and auto-committed
+# back to the branch with [skip ci], so regenerating them locally just
+# leaves a pile of dirty coverage-summary.json files behind.
+# Bump heap for ts-morph-heavy adapter + CLI tests running in parallel.
 NODE_OPTIONS="--max-old-space-size=8192" npm test
-# Coverage summaries and badges are refreshed by CI and auto-committed
-# back to the branch (main or same-repo PR) with [skip ci]. No local
-# regen needed before push.

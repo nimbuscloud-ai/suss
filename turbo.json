@@ -8,6 +8,11 @@
     },
     "test": {
       "dependsOn": ["build"],
+      "outputs": [],
+      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
+    },
+    "test:coverage": {
+      "dependsOn": ["build"],
       "outputs": ["coverage/**"],
       "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
     },
