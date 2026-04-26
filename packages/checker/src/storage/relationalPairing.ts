@@ -10,7 +10,7 @@
 //   storageWriteOnlyField     warning  schema declares X, code writes but never reads
 //
 // Five additional finding kinds are reserved in the IR but not
-// emitted yet (see docs/internal/storage-pairing.md):
+// emitted yet:
 //   storageSelectorIndexMismatch
 //   storageTypeMismatch
 //   storageNullableViolation
