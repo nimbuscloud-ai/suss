@@ -7,6 +7,7 @@ import {
 } from "./conditions.js";
 import {
   extractInvocationEffects,
+  runAccessRecognizers,
   runInvocationRecognizers,
 } from "./resolve/invocationEffects.js";
 import {
@@ -17,6 +18,7 @@ import {
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
+  AccessRecognizer,
   InvocationRecognizer,
   RawBranch,
   RawCondition,
@@ -50,10 +52,14 @@ export function extractRawBranches(
   func: FunctionRoot,
   terminalPatterns: TerminalPattern[],
   invocationRecognizers: InvocationRecognizer[] = [],
+  accessRecognizers: AccessRecognizer[] = [],
 ): RawBranch[] {
   const terminals = findTerminals(func, terminalPatterns);
   const invocations = extractInvocationEffects(func);
-  const recognized = runInvocationRecognizers(func, invocationRecognizers);
+  const recognized = [
+    ...runInvocationRecognizers(func, invocationRecognizers),
+    ...runAccessRecognizers(func, accessRecognizers),
+  ];
 
   // Synthesise a fall-through terminal when (a) the pack opted in by
   // including `{ type: "functionFallthrough" }` in its terminals,

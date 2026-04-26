@@ -21,6 +21,7 @@ import type {
 export { httpRouteDiscovery } from "./packHelpers.js";
 
 export type {
+  AccessRecognizer,
   BindingExtraction,
   ContractPattern,
   DiscoveredSubUnit,

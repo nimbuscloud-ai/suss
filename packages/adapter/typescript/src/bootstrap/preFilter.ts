@@ -64,8 +64,8 @@ export function computePackApplicability(
 }
 
 function packIsUngated(pack: PatternPack): boolean {
-  // Recognizer-only packs (no discovery patterns, only
-  // invocationRecognizers) need to walk every file — recognizers fire
+  // Recognizer-only packs (no discovery patterns, only invocation /
+  // access recognizers) need to walk every file — recognizers fire
   // inside any function body regardless of which pack discovered the
   // function. Without this, a pack like @suss/framework-aws-sqs
   // (recognizer-only, no top-level discovery) would never run.
@@ -74,10 +74,14 @@ function packIsUngated(pack: PatternPack): boolean {
   // only packs can declare a gate (e.g. SQS pack only walks files
   // importing @aws-sdk/client-sqs). Today they walk every file —
   // correct but wastes work on large monorepos.
+  const hasInvocationRecognizers =
+    pack.invocationRecognizers !== undefined &&
+    pack.invocationRecognizers.length > 0;
+  const hasAccessRecognizers =
+    pack.accessRecognizers !== undefined && pack.accessRecognizers.length > 0;
   if (
     pack.discovery.length === 0 &&
-    pack.invocationRecognizers !== undefined &&
-    pack.invocationRecognizers.length > 0
+    (hasInvocationRecognizers || hasAccessRecognizers)
   ) {
     return true;
   }
