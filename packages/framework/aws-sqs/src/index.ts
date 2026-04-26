@@ -88,16 +88,33 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
     return null;
   }
   const ctorExpr = firstArg.getExpression();
-  const ctorName = ctorExpr.getText();
-  const operation = SEND_COMMANDS[ctorName];
+
+  // The constructor leaf name is what we look up in SEND_COMMANDS.
+  // For named imports it's just the identifier (`SendMessageCommand`);
+  // for namespace imports it's the property name on the namespace
+  // (`sqs.SendMessageCommand` → `SendMessageCommand`).
+  const ctorLeafName = N.isPropertyAccessExpression(ctorExpr)
+    ? ctorExpr.getName()
+    : ctorExpr.getText();
+  const operation = SEND_COMMANDS[ctorLeafName];
   if (operation === undefined) {
     return null;
   }
 
   // Verify the command class came from @aws-sdk/client-sqs (not a
-  // user-defined class that happens to share the name).
+  // user-defined class that happens to share the name). For namespace
+  // imports we check the namespace's source; for named imports we
+  // check the named symbol's source.
+  const importCheckTarget = N.isPropertyAccessExpression(ctorExpr)
+    ? rootIdentifier(ctorExpr)
+    : ctorExpr;
   if (
-    !isImportedFrom(ctorExpr, "@aws-sdk/client-sqs", recognizerCtx.sourceFile)
+    importCheckTarget === null ||
+    !isImportedFrom(
+      importCheckTarget,
+      "@aws-sdk/client-sqs",
+      recognizerCtx.sourceFile,
+    )
   ) {
     return null;
   }
@@ -145,13 +162,32 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
 }
 
 /**
+ * Walk a property-access chain back to its root Identifier. For
+ * `sqs.commands.SendMessageCommand`, returns the `sqs` identifier.
+ * Returns null if the root isn't an Identifier (e.g. a function
+ * call or `this`-expression).
+ */
+function rootIdentifier(node: Node): Node | null {
+  let current: Node = node;
+  while (N.isPropertyAccessExpression(current)) {
+    current = current.getExpression();
+  }
+  return N.isIdentifier(current) ? current : null;
+}
+
+/**
  * Walk back from an identifier reference to the import declaration
  * that introduced it. Returns true when the import's module specifier
  * matches `expectedModule`.
  *
- * Handles the typical shape `import { Foo } from "mod"` and named
- * re-exports. Doesn't follow type-only imports (we want runtime
- * presence, not just type information).
+ * Handles three import shapes:
+ *   - Named: `import { Foo } from "mod"` → ImportSpecifier
+ *   - Default: `import Foo from "mod"` → ImportClause
+ *   - Namespace: `import * as foo from "mod"` → NamespaceImport
+ *
+ * Type-only imports work too (the symbol's declarations still include
+ * the appropriate specifier shape), though in practice recognizers
+ * care about runtime references not type-only ones.
  */
 function isImportedFrom(
   identifierExpr: Node,
@@ -165,9 +201,6 @@ function isImportedFrom(
   if (symbol === undefined) {
     return false;
   }
-  // The symbol's declarations include the import specifier when the
-  // identifier was imported. Walk to find any specifier whose import
-  // declaration's module matches.
   for (const decl of symbol.getDeclarations()) {
     if (N.isImportSpecifier(decl)) {
       const importDecl = decl.getImportDeclaration();
@@ -184,12 +217,21 @@ function isImportedFrom(
         return true;
       }
     }
+    if (N.isNamespaceImport(decl)) {
+      // NamespaceImport's parent is ImportClause, whose parent is
+      // ImportDeclaration. Walk up two levels.
+      const importClause = decl.getParent();
+      if (N.isImportClause(importClause)) {
+        const importDecl = importClause.getParent();
+        if (
+          N.isImportDeclaration(importDecl) &&
+          importDecl.getModuleSpecifierValue() === expectedModule
+        ) {
+          return true;
+        }
+      }
+    }
   }
-  // Sanity check: if the symbol is from the project rather than node_modules,
-  // it isn't from the expected module either. Use sourceFile to confirm we
-  // didn't follow into a different file. (This branch isn't strictly needed
-  // — the import-decl checks above already cover it — but keeps the function
-  // robust if symbol resolution returns surprising decls.)
   void sourceFile;
   return false;
 }
