@@ -27,6 +27,7 @@ import {
   type DiscoveryPattern,
   type ExtractorOptions,
   type InputMappingPattern,
+  type InvocationRecognizer,
   type PatternPack,
   type RawBranch,
   type RawCodeStructure,
@@ -451,10 +452,15 @@ export function extractCodeStructure(
   unit: DiscoveredUnit,
   pack: PatternPack,
   filePath: string,
+  invocationRecognizers: InvocationRecognizer[] = [],
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   const params = extractParameters(func, pack.inputMapping);
-  let branches = extractRawBranches(func, pack.terminals);
+  let branches = extractRawBranches(
+    func,
+    pack.terminals,
+    invocationRecognizers,
+  );
   const depCalls = extractDependencyCalls(func);
 
   // For client units: resolve response properties and populate expectedInput
@@ -671,6 +677,25 @@ function resolveContractField(
 // Per-file extraction
 // ---------------------------------------------------------------------------
 
+/**
+ * Aggregate `invocationRecognizers` across every pack in the
+ * framework list. Extraction passes the same flat list to every
+ * top-level and sub-unit extraction so a recognizer fires regardless
+ * of which pack discovered the enclosing function.
+ */
+function collectInvocationRecognizers(
+  frameworks: PatternPack[],
+): InvocationRecognizer[] {
+  const out: InvocationRecognizer[] = [];
+  for (const pack of frameworks) {
+    if (pack.invocationRecognizers === undefined) {
+      continue;
+    }
+    out.push(...pack.invocationRecognizers);
+  }
+  return out;
+}
+
 function extractFromSourceFile(
   sourceFile: SourceFile,
   frameworks: PatternPack[],
@@ -678,6 +703,11 @@ function extractFromSourceFile(
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   const filePath = sourceFile.getFilePath();
+  // Aggregate recognizers from EVERY pack — a Prisma recognizer fires
+  // on Prisma calls inside an Express handler regardless of which pack
+  // discovered the handler. Same threading model as the cross-pack
+  // claim dedup below.
+  const allRecognizers = collectInvocationRecognizers(frameworks);
 
   // Cross-pack dedup: when two packs both claim the same (function, kind)
   // — e.g. React and React Router both discovering a default-exported
@@ -697,7 +727,7 @@ function extractFromSourceFile(
         continue;
       }
       claimed.add(claimKey);
-      const raw = extractCodeStructure(unit, pack, filePath);
+      const raw = extractCodeStructure(unit, pack, filePath, allRecognizers);
 
       // The discovery pattern that produced this unit is attached by
       // discoverUnits — fall back to the first kind-match if missing so older
@@ -1547,6 +1577,10 @@ function synthesizeSubUnits(
   for (const pack of frameworks) {
     packByRecognition.set(pack.name, pack);
   }
+  // Sub-units run through the same recognizer set as top-level
+  // discovered units — a Prisma call inside a React useEffect body
+  // should still emit storageAccess.
+  const allRecognizers = collectInvocationRecognizers(frameworks);
 
   const synthesized: BehavioralSummary[] = [];
   const subUnitCtx = createTsSubUnitContext();
@@ -1576,7 +1610,13 @@ function synthesizeSubUnits(
     const filePath = parentFunc.getSourceFile().getFilePath();
 
     for (const subUnit of subUnits) {
-      const summary = buildSubUnitSummary(subUnit, parent, filePath, options);
+      const summary = buildSubUnitSummary(
+        subUnit,
+        parent,
+        filePath,
+        allRecognizers,
+        options,
+      );
       if (summary !== null) {
         synthesized.push(summary);
       }
@@ -1613,6 +1653,7 @@ function buildSubUnitSummary(
   subUnit: DiscoveredSubUnit,
   parent: BehavioralSummary,
   filePath: string,
+  invocationRecognizers: InvocationRecognizer[],
   options?: ExtractorOptions,
 ): BehavioralSummary | null {
   const func = subUnit.func as FunctionRoot;
@@ -1638,7 +1679,12 @@ function buildSubUnitSummary(
     name: subUnit.name,
   };
 
-  const raw = extractCodeStructure(unit, scaffoldPack, filePath);
+  const raw = extractCodeStructure(
+    unit,
+    scaffoldPack,
+    filePath,
+    invocationRecognizers,
+  );
 
   // Inherit the parent's boundary binding wholesale. Sub-units share
   // the parent's runtime — a React component's handler is bound to

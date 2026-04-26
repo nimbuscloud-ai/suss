@@ -28,6 +28,7 @@ export type {
   DiscoveryMatch,
   DiscoveryPattern,
   InputMappingPattern,
+  InvocationRecognizer,
   PatternPack,
   ResponsePropertyMapping,
   ResponsePropertyMeaning,
@@ -165,6 +166,16 @@ export interface RawBranch {
   conditions: RawCondition[];
   terminal: RawTerminal;
   effects: RawEffect[];
+  /**
+   * Pre-typed `Effect`s emitted by `PatternPack.invocationRecognizers`.
+   * Bypass the `RawEffect → Effect` conversion that `effects` runs
+   * through — recognizers have full structural knowledge of what
+   * they're emitting (e.g. `storageAccess` with table/fields/selector)
+   * and there's no narrower extractor-side representation worth
+   * round-tripping through. Concatenated with converted `effects` at
+   * `assembleSummary` time.
+   */
+  extraEffects?: Effect[];
   location: { start: number; end: number };
   isDefault: boolean;
   /**
@@ -356,7 +367,10 @@ export function assembleSummary(
       id: makeTransitionId(raw.identity.name, branch),
       conditions,
       output: terminalToOutput(branch.terminal),
-      effects: branch.effects.map(effectToIR),
+      effects: [
+        ...branch.effects.map(effectToIR),
+        ...(branch.extraEffects ?? []),
+      ],
       location: branch.location,
       isDefault: branch.isDefault,
     };

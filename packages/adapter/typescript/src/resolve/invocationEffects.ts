@@ -19,7 +19,7 @@
 //     `invocation` effects with the callee's source text.
 //   * Async detection via `Node.isAwaitExpression` on the call.
 
-import { type CallExpression, Node } from "ts-morph";
+import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import {
   collectAncestorConditionInfos,
@@ -27,7 +27,13 @@ import {
   type FunctionRoot,
 } from "../conditions.js";
 
-import type { EffectArg, RawCondition, RawEffect } from "@suss/extractor";
+import type { Effect } from "@suss/behavioral-ir";
+import type {
+  EffectArg,
+  InvocationRecognizer,
+  RawCondition,
+  RawEffect,
+} from "@suss/extractor";
 
 export interface InvocationEffectLocation {
   effect: RawEffect;
@@ -45,6 +51,40 @@ export interface InvocationEffectLocation {
    * them — otherwise single-line orchestrators lose their effects.
    */
   neverTerminal: boolean;
+}
+
+/**
+ * Pre-typed `Effect` emitted by an `InvocationRecognizer`. The
+ * `line` field mirrors `InvocationEffectLocation.line` so the
+ * assembly pass can attribute it to the same branch as the
+ * generic invocation effect that came from the same call site.
+ */
+export interface RecognizedEffectLocation {
+  effect: Effect;
+  line: number;
+}
+
+/**
+ * Context handed to TypeScript-adapter recognizers. Recognizers in
+ * `@suss/framework-prisma` (and other packs) receive this and use
+ * the type-checker / source-file primitives to decide whether the
+ * call site matches their semantics. `extractArgs` reuses the same
+ * `EffectArg` builder the adapter uses for `invocation` effects, so
+ * recognizers don't have to re-implement literal/object/identifier
+ * shape extraction.
+ */
+export interface TsInvocationRecognizerContext {
+  /** The call expression itself (also passed as the first arg). */
+  call: CallExpression;
+  /** Source file the call lives in. Useful for import resolution. */
+  sourceFile: SourceFile;
+  /**
+   * Convert the call's arguments to `EffectArg[]` using the same
+   * literal / object / identifier extraction the adapter applies to
+   * `invocation` effects. Recognizers call this when they want
+   * field-level shape (e.g. Prisma's `select: { id: true }`).
+   */
+  extractArgs(): EffectArg[];
 }
 
 export function extractInvocationEffects(
@@ -145,6 +185,74 @@ export function extractInvocationEffects(
   });
 
   return results;
+}
+
+/**
+ * Walk the function body for `InvocationRecognizer` dispatch only.
+ * Visits EVERY `CallExpression` in the body (skipping nested
+ * function bodies the same way the invocation walker does).
+ *
+ * Distinct from `extractInvocationEffects` because the existing
+ * walker is intentionally narrow — it captures a specific subset
+ * of call positions (bare expression statement, container building)
+ * to avoid double-counting calls that already become terminals
+ * (`return foo()`) or whose return value is consumed (`const x =
+ * foo()`). Recognizers don't have those concerns: emitting a
+ * `storageAccess` for `const user = await db.user.findUnique(...)`
+ * is exactly what the demo needs. Coupling recognizer reach to the
+ * invocation walker's scope would silently drop the dominant
+ * Prisma pattern.
+ */
+export function runInvocationRecognizers(
+  func: FunctionRoot,
+  recognizers: InvocationRecognizer[],
+): RecognizedEffectLocation[] {
+  if (recognizers.length === 0) {
+    return [];
+  }
+  const out: RecognizedEffectLocation[] = [];
+  const sourceFile = func.getSourceFile();
+
+  func.forEachDescendant((node, traversal) => {
+    if (
+      node !== func &&
+      (Node.isFunctionDeclaration(node) ||
+        Node.isFunctionExpression(node) ||
+        Node.isArrowFunction(node) ||
+        Node.isMethodDeclaration(node))
+    ) {
+      traversal.skip();
+      return;
+    }
+    if (!Node.isCallExpression(node)) {
+      return;
+    }
+    const ctx: TsInvocationRecognizerContext = {
+      call: node,
+      sourceFile,
+      extractArgs: () => extractArgs(node),
+    };
+    const line = enclosingStatementLine(node);
+    for (const recognizer of recognizers) {
+      let emitted: Effect[] | null = null;
+      try {
+        emitted = recognizer(node, ctx);
+      } catch {
+        // A recognizer that throws shouldn't take down the whole
+        // extraction; skip it and continue. The pack version stamp
+        // surfaces the bug to authors when they next bump and re-run.
+        emitted = null;
+      }
+      if (emitted === null || emitted.length === 0) {
+        continue;
+      }
+      for (const eff of emitted) {
+        out.push({ effect: eff, line });
+      }
+    }
+  });
+
+  return out;
 }
 
 /**
