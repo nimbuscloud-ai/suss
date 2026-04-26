@@ -10,7 +10,7 @@ declares, and flags drift when the spec changes.
 ```
 spec.yaml / spec.json   ─── @suss/contract-openapi ───▶  stub.json
                                                         │
-your client code        ─── @suss/runtime-axios  ───▶  client.json
+your client code        ─── @suss/client-axios  ───▶  client.json
                                                         │
                                                         ▼
                                        suss check stub.json client.json
@@ -43,7 +43,7 @@ npx suss inspect summaries/stripe.json | head -30
 ## Step 2. Extract your client code
 
 ```bash
-npm install -D @suss/runtime-axios   # or fetch, or apollo-client
+npm install -D @suss/client-axios   # or fetch, or apollo-client
 npx suss extract -p tsconfig.json -f axios -o summaries/client.json
 ```
 

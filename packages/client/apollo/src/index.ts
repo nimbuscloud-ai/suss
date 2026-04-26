@@ -1,4 +1,4 @@
-// @suss/runtime-apollo-client — PatternPack for @apollo/client hooks.
+// @suss/client-apollo — PatternPack for @apollo/client hooks.
 //
 // Each call to `useQuery` / `useMutation` / `useSubscription` becomes
 // a `client`-kind BehavioralSummary bound to a
@@ -23,7 +23,7 @@
 
 import type { PatternPack } from "@suss/extractor";
 
-export function apolloClientRuntime(): PatternPack {
+export function apolloClientPack(): PatternPack {
   return {
     name: "apollo-client",
     languages: ["typescript", "javascript"],
@@ -118,4 +118,4 @@ export function apolloClientRuntime(): PatternPack {
   };
 }
 
-export default apolloClientRuntime;
+export default apolloClientPack;

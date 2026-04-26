@@ -1,17 +1,17 @@
-# @suss/runtime-axios
+# @suss/client-axios
 
-Runtime pack for the [axios](https://axios-http.com/) HTTP client. Discovers `axios.<method>(url, ...)` call sites and produces client behavioral summaries.
+Client pack for the [axios](https://axios-http.com/) HTTP client. Discovers `axios.<method>(url, ...)` call sites and produces client behavioral summaries.
 
 ## What this package is
 
-`@suss/runtime-axios` returns a `PatternPack` object describing:
+`@suss/client-axios` returns a `PatternPack` object describing:
 
 - **Discovery** via `axios.get/post/put/delete/patch/head/options(url, ...)` call sites where `axios` is imported as the default export from `"axios"`
 - **Binding extraction**: HTTP method from the called method name; URL path from the first argument (literal strings only)
 - **Terminals**: `returnStatement` and `throwExpression`
 - **Response semantics**: `response.data` → body, `response.status` → status code, `response.headers` → headers
 
-This is a "runtime pack" — axios is a third-party HTTP client used at consumer call sites, the same role as `@suss/runtime-web` for native `fetch`.
+This is a "client pack" — axios is a third-party HTTP client used at consumer call sites, the same role as `@suss/client-web` for native `fetch`.
 
 ### Limitations (v0)
 

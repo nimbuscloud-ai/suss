@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 
-import { axiosRuntime } from "./index.js";
+import { axiosPack } from "./index.js";
 
-describe("axiosRuntime — pack shape", () => {
+describe("axiosPack — pack shape", () => {
   it("exposes a discovery pattern per HTTP verb", async () => {
-    const pack = axiosRuntime();
+    const pack = axiosPack();
     expect(pack.name).toBe("axios");
     expect(pack.languages).toEqual(["typescript", "javascript"]);
     // One discovery pattern per HTTP verb: get, post, put, delete, patch, head, options
@@ -21,7 +21,7 @@ describe("axiosRuntime — pack shape", () => {
   });
 
   it("declares response semantics for axios's AxiosResponse shape", async () => {
-    const pack = axiosRuntime();
+    const pack = axiosPack();
     const semantics = pack.responseSemantics ?? [];
     const data = semantics.find((s) => s.name === "data");
     expect(data?.semantics.type).toBe("body");
@@ -30,7 +30,7 @@ describe("axiosRuntime — pack shape", () => {
   });
 });
 
-describe("axiosRuntime — integration", () => {
+describe("axiosPack — integration", () => {
   it("discovers axios.get(url) and extracts GET + path from arg 0", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
@@ -47,7 +47,7 @@ describe("axiosRuntime — integration", () => {
 
     const adapter = createTypeScriptAdapter({
       project,
-      frameworks: [axiosRuntime()],
+      frameworks: [axiosPack()],
     });
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
@@ -80,7 +80,7 @@ describe("axiosRuntime — integration", () => {
 
     const adapter = createTypeScriptAdapter({
       project,
-      frameworks: [axiosRuntime()],
+      frameworks: [axiosPack()],
     });
     const summaries = await adapter.extractAll();
 
@@ -120,7 +120,7 @@ describe("axiosRuntime — integration", () => {
 
     const adapter = createTypeScriptAdapter({
       project,
-      frameworks: [axiosRuntime()],
+      frameworks: [axiosPack()],
     });
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
@@ -147,7 +147,7 @@ describe("axiosRuntime — integration", () => {
 
     const adapter = createTypeScriptAdapter({
       project,
-      frameworks: [axiosRuntime()],
+      frameworks: [axiosPack()],
     });
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
@@ -180,7 +180,7 @@ describe("axiosRuntime — integration", () => {
 
     const adapter = createTypeScriptAdapter({
       project,
-      frameworks: [axiosRuntime()],
+      frameworks: [axiosPack()],
     });
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(2);

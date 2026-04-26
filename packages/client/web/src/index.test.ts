@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 
-import { webFetchRuntime } from "./index.js";
+import { webFetchPack } from "./index.js";
 
-describe("webFetchRuntime — pack shape", () => {
+describe("webFetchPack — pack shape", () => {
   it("exposes a consumer discovery pattern for global fetch", async () => {
-    const pack = webFetchRuntime();
+    const pack = webFetchPack();
     expect(pack.name).toBe("fetch");
     expect(pack.discovery).toHaveLength(1);
     expect(pack.discovery[0].kind).toBe("client");
@@ -17,7 +17,7 @@ describe("webFetchRuntime — pack shape", () => {
   });
 });
 
-describe("webFetchRuntime — integration", () => {
+describe("webFetchPack — integration", () => {
   it("discovers a function that calls fetch() with literal URL", async () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
@@ -35,7 +35,7 @@ describe("webFetchRuntime — integration", () => {
 
     const adapter = createTypeScriptAdapter({
       project,
-      frameworks: [webFetchRuntime()],
+      frameworks: [webFetchPack()],
     });
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
@@ -62,7 +62,7 @@ describe("webFetchRuntime — integration", () => {
 
     const adapter = createTypeScriptAdapter({
       project,
-      frameworks: [webFetchRuntime()],
+      frameworks: [webFetchPack()],
     });
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
@@ -91,7 +91,7 @@ describe("webFetchRuntime — integration", () => {
 
     const adapter = createTypeScriptAdapter({
       project,
-      frameworks: [webFetchRuntime()],
+      frameworks: [webFetchPack()],
     });
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);

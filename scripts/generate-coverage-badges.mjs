@@ -39,9 +39,9 @@ const packageDirs = [
   ["packages/framework/aws-sqs", "aws-sqs"],
   ["packages/framework/process-env", "process-env"],
   // Runtimes
-  ["packages/runtime/web", "web"],
-  ["packages/runtime/axios", "axios"],
-  ["packages/runtime/apollo-client", "apollo-client"],
+  ["packages/client/web", "web"],
+  ["packages/client/axios", "axios"],
+  ["packages/client/apollo", "apollo-client"],
   // Contract sources (renamed from stub-*; old badge files left
   // behind by the rename should be removed by hand when this
   // generator first writes the new ones).

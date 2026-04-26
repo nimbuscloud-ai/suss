@@ -29,11 +29,11 @@ const BUILTIN_FRAMEWORKS: Record<
   "nestjs-graphql": () => import("@suss/framework-nestjs-graphql"),
   // REST controller discovery via NestJS decorators.
   "nestjs-rest": () => import("@suss/framework-nestjs-rest"),
-  // HTTP client runtimes (consumers).
-  fetch: () => import("@suss/runtime-web"),
-  axios: () => import("@suss/runtime-axios"),
+  // HTTP client packs (consumers).
+  fetch: () => import("@suss/client-web"),
+  axios: () => import("@suss/client-axios"),
   // GraphQL consumer hooks / imperative client calls.
-  "apollo-client": () => import("@suss/runtime-apollo-client"),
+  "apollo-client": () => import("@suss/client-apollo"),
 };
 
 async function resolveFramework(name: string): Promise<PatternPack> {

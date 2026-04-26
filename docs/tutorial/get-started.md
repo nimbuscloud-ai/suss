@@ -16,7 +16,7 @@ npm install --save-dev \
   typescript \
   @suss/cli \
   @suss/framework-ts-rest \
-  @suss/runtime-axios \
+  @suss/client-axios \
   @ts-rest/core @ts-rest/express express axios zod
 ```
 

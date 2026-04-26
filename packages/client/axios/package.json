@@ -1,23 +1,23 @@
 {
-  "name": "@suss/runtime-axios",
+  "name": "@suss/client-axios",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Runtime pack for extracting suss client behavioral summaries from axios call sites.",
+  "description": "Client pack for extracting suss client behavioral summaries from axios call sites.",
   "keywords": [
     "suss",
     "behavioral-summary",
-    "runtime-pack",
+    "client-pack",
     "axios",
     "static-analysis"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/runtime/axios#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/client/axios#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/runtime/axios"
+    "directory": "packages/client/axios"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"

@@ -59,7 +59,7 @@ Scopes: `ir`, `extractor`, `adapter`, `cli`, `checker`, `express`, `react-router
 
 ## Adding a new framework pack
 
-Framework packs are declarative pattern configurations. See [`docs/framework-packs.md`](docs/framework-packs.md) for the full guide. The existing packs under `packages/framework/` and `packages/runtime/` are the best reference.
+Framework packs are declarative pattern configurations. See [`docs/framework-packs.md`](docs/framework-packs.md) for the full guide. The existing packs under `packages/framework/` and `packages/client/` are the best reference.
 
 ## Reporting bugs and proposing features
 

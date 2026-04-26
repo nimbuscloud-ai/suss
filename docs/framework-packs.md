@@ -188,7 +188,7 @@ Find code units by file path + expected export names. Used by Next.js App Router
 ```
 Find client call sites — the consumer side of a boundary. The adapter finds imports of `importName` from `importModule`, resolves variables initialized from that import, and walks their method calls. For globals like `fetch`, all bare calls to `importName` match. If `methodFilter` is set, only calls to those methods are discovered. The enclosing function becomes the code unit (kind `"client"`).
 
-Used by ts-rest (`initClient` from `@ts-rest/core`) and `@suss/runtime-web` (`fetch` as global).
+Used by ts-rest (`initClient` from `@ts-rest/core`) and `@suss/client-web` (`fetch` as global).
 
 #### `packageExports`
 ```typescript
@@ -244,8 +244,8 @@ How to derive the HTTP method and path from a discovered code unit:
 - **`fromExportName`** — the export name *is* the HTTP method. Next.js App Router convention.
 - **`fromContract`** — both method and path live in a separate contract definition.
 - **`fromClientMethod`** — the method or path is derived from the client call site's method name via the contract. Used by ts-rest client discovery: `client.getUser(...)` resolves `getUser` back through the contract to find `method: "GET"`, `path: "/users/:id"`.
-- **`fromArgumentLiteral`** — the path is a string literal at a given argument position. Used by `@suss/runtime-web`: `fetch("/users")` extracts `"/users"` from argument 0.
-- **`fromArgumentProperty`** — the method is a property on an options argument. Used by `@suss/runtime-web`: `fetch(url, { method: "POST" })` extracts `"POST"` from argument 1, property `method`. Supports a `default` value (e.g., `"GET"` when no options are passed).
+- **`fromArgumentLiteral`** — the path is a string literal at a given argument position. Used by `@suss/client-web`: `fetch("/users")` extracts `"/users"` from argument 0.
+- **`fromArgumentProperty`** — the method is a property on an options argument. Used by `@suss/client-web`: `fetch(url, { method: "POST" })` extracts `"POST"` from argument 1, property `method`. Supports a `default` value (e.g., `"GET"` when no options are passed).
 - **`fromFilename`** — file-based routing (React Router, Next.js, SvelteKit). The adapter derives the path from the file path.
 - **`literal`** — hard-code the value. React Router loaders are always `GET`.
 
