@@ -97,10 +97,10 @@ suss contract --from SOURCE SPEC_PATH [-o OUTPUT]
 
 | Flag | Description |
 |---|---|
-| `--from SOURCE` | Stub source kind. See [stub sources](#stub-sources) below. |
+| `--from SOURCE` | Contract source kind. See [contract sources](#contract-sources) below. |
 | `-o`, `--output PATH` | Write JSON to file. Default: stdout. |
 
-### Stub sources
+### Contract sources
 
 | Source | Package | Input |
 |---|---|---|
@@ -108,10 +108,11 @@ suss contract --from SOURCE SPEC_PATH [-o OUTPUT]
 | `cloudformation` | `@suss/contract-cloudformation` | CFN / SAM template (JSON or YAML) with API Gateway REST / HTTP API resources |
 | `storybook` | `@suss/contract-storybook` | CSF3 `.stories.ts` / `.stories.tsx` file or directory of stories |
 | `appsync` | `@suss/contract-appsync` | CFN template with `AWS::AppSync::*` resources |
+| `prisma` | `@suss/contract-prisma` | `schema.prisma` file (Postgres / MySQL / SQLite datasources) |
 
 ### Exit codes
 
-- `0` — stub succeeded.
+- `0` — contract source loaded.
 - Non-zero — unknown source, file not found, parse error.
 
 ## `suss check`

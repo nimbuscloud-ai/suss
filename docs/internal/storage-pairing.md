@@ -321,13 +321,22 @@ Two parallel packs reading their respective schema declarations.
 Package paths assume the in-flight stub→contract rename has landed
 (see `rename-stub-to-contract.md` design doc).
 
-**`packages/contract/prisma/`**:
-- Parse `schema.prisma` via `@prisma/internals` (their own parser,
-  exposed as a library) — avoids hand-rolling a Prisma DSL parser.
-- Emit one provider summary per `model`. Storage system inferred
-  from the `datasource db { provider = "postgresql" }` block.
-- Carry `metadata.storageContract.columns` from the model's field
-  list (name, type, nullable, primary, unique).
+**`packages/contract/prisma/`** (shipped):
+- Parses `schema.prisma` via `@mrleebo/prisma-ast` — a stable
+  third-party parser that doesn't pull in Prisma's runtime.
+  (`@prisma/internals` is documented as not for external use.)
+- Emits one `library`-kind summary per `model` / `view`. Storage
+  system inferred from the `datasource db { provider = "..." }`
+  block (`postgresql` / `postgres` / `mysql` / `sqlite`). MongoDB
+  and other non-relational providers emit nothing — those need
+  storage-document semantics in a later phase.
+- Carries `metadata.storageContract.columns` from the model's
+  field list (name, type, nullable, primary, unique). Relation
+  fields and relation-array fields are skipped; FK columns ARE
+  captured as scalars.
+- Block attributes `@@index`, `@@unique`, `@@id` become entries
+  in `metadata.storageContract.indexes`.
+- CLI: `suss contract --from prisma <schema.prisma>`.
 
 **`packages/contract/drizzle/`**:
 - Drizzle's schema lives in TS source — `pgTable("users",

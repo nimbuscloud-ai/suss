@@ -48,7 +48,7 @@ Options (check):
   --fail-on        Exit non-zero threshold: error (default), warning, info, none
 
 Options (contract):
-  --from           Contract source kind: openapi, cloudformation, storybook, appsync
+  --from           Contract source kind: openapi, cloudformation, storybook, appsync, prisma
   -o, --output     Write JSON to file instead of stdout
 
 Exit codes:
@@ -260,9 +260,16 @@ async function runContract(args: string[]): Promise<number> {
     process.stderr.write(`${USAGE}\n`);
     return 1;
   }
-  if (from !== "openapi" && from !== "cloudformation" && from !== "storybook") {
+  const SUPPORTED_FROM: ContractSource[] = [
+    "openapi",
+    "cloudformation",
+    "storybook",
+    "appsync",
+    "prisma",
+  ];
+  if (!SUPPORTED_FROM.includes(from)) {
     process.stderr.write(
-      `Error: unknown --from value "${from}". Supported: openapi, cloudformation, storybook\n`,
+      `Error: unknown --from value "${from}". Supported: ${SUPPORTED_FROM.join(", ")}\n`,
     );
     return 1;
   }

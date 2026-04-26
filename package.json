@@ -34,6 +34,7 @@
     "packages/contract/cloudformation",
     "packages/contract/storybook",
     "packages/contract/appsync",
+    "packages/contract/prisma",
     "packages/checker",
     "packages/cli"
   ],

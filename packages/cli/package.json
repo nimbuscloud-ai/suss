@@ -73,6 +73,7 @@
     "@suss/contract-cloudformation": "*",
     "@suss/contract-storybook": "*",
     "@suss/contract-appsync": "*",
+    "@suss/contract-prisma": "*",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
