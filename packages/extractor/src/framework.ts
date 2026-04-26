@@ -680,6 +680,30 @@ export interface PatternPack {
    */
   invocationRecognizers?: InvocationRecognizer[];
   /**
+   * Optional pack-level import gate. When set, the adapter's
+   * pre-filter only considers this pack applicable to source files
+   * whose imports include at least one of the listed modules
+   * (prefix match — `"@aws-sdk/client-sqs"` matches that module
+   * AND any `"@aws-sdk/client-sqs/sub-path"`).
+   *
+   * Useful for recognizer-only packs that target a specific library:
+   * `@suss/framework-aws-sqs` declares `["@aws-sdk/client-sqs"]`,
+   * `@suss/framework-prisma` declares `["@prisma/client"]`. Without
+   * a gate, recognizer-only packs walk every file in the project —
+   * correct but wasted work on large monorepos where most files
+   * don't import the library.
+   *
+   * Discovery-pattern packs already have per-pattern `requiresImport`
+   * on `DiscoveryPattern`; this is the pack-level equivalent for
+   * packs whose ONLY mechanism is recognizers (no discovery).
+   *
+   * Empty / undefined means "no gate" — pack walks every file (the
+   * default for truly universal recognizers like
+   * `@suss/framework-process-env`, since `process.env` is available
+   * without an import).
+   */
+  requiresImport?: string[];
+  /**
    * Per-property-access recognizers — sister to
    * `invocationRecognizers` but firing on `PropertyAccessExpression`
    * nodes rather than `CallExpression` nodes. Use these for patterns

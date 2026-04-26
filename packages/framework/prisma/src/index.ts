@@ -308,6 +308,9 @@ export function prismaFramework(
     discovery: [],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
+    // Skip files that don't import from @prisma/client — the
+    // recognizer's type-resolution check would reject them anyway.
+    requiresImport: ["@prisma/client"],
     invocationRecognizers: [makeRecognizer(options)],
   };
 }

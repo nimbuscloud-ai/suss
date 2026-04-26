@@ -64,16 +64,18 @@ export function computePackApplicability(
 }
 
 function packIsUngated(pack: PatternPack): boolean {
+  // A pack-level `requiresImport` is ALWAYS a gate, even on
+  // recognizer-only packs. Lets `@suss/framework-aws-sqs` declare
+  // `["@aws-sdk/client-sqs"]` and skip files that don't import it.
+  if (pack.requiresImport !== undefined && pack.requiresImport.length > 0) {
+    return false;
+  }
   // Recognizer-only packs (no discovery patterns, only invocation /
-  // access recognizers) need to walk every file — recognizers fire
-  // inside any function body regardless of which pack discovered the
-  // function. Without this, a pack like @suss/framework-aws-sqs
-  // (recognizer-only, no top-level discovery) would never run.
-  //
-  // TODO: add an optional pack-level `requiresImport` so recognizer-
-  // only packs can declare a gate (e.g. SQS pack only walks files
-  // importing @aws-sdk/client-sqs). Today they walk every file —
-  // correct but wastes work on large monorepos.
+  // access recognizers) without a pack-level gate fall through to
+  // "ungated" — they walk every file because they have no other way
+  // to declare relevance. Truly universal recognizers like
+  // `@suss/framework-process-env` (process.env is always available)
+  // are the intended consumers of this fallback.
   const hasInvocationRecognizers =
     pack.invocationRecognizers !== undefined &&
     pack.invocationRecognizers.length > 0;
@@ -96,6 +98,13 @@ function packIsUngated(pack: PatternPack): boolean {
 
 function collectPackGates(pack: PatternPack): string[] {
   const gates = new Set<string>();
+  // Pack-level gate (recognizer-only packs use this).
+  if (pack.requiresImport !== undefined) {
+    for (const g of pack.requiresImport) {
+      gates.add(g);
+    }
+  }
+  // Per-discovery-pattern gates (existing mechanism).
   for (const pattern of pack.discovery) {
     const requires = pattern.requiresImport;
     if (requires === undefined) {
