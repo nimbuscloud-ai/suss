@@ -16,23 +16,41 @@ const badgesDir = resolve(root, ".github/badges");
 
 mkdirSync(badgesDir, { recursive: true });
 
-// Package dirs to check: single-level and double-level
+// Package dirs to check. Badge file slug is the second field;
+// tracked at .github/badges/coverage-<slug>.svg. Keep in sync as
+// new packs ship — there's no auto-discovery so a missing entry
+// silently drops the package from the coverage average.
 const packageDirs = [
   ["packages/ir", "ir"],
   ["packages/extractor", "extractor"],
   ["packages/adapter/typescript", "typescript"],
+  ["packages/checker", "checker"],
+  ["packages/cli", "cli"],
+  // Frameworks
   ["packages/framework/ts-rest", "ts-rest"],
   ["packages/framework/react-router", "react-router"],
   ["packages/framework/react", "react"],
   ["packages/framework/express", "express"],
   ["packages/framework/fastify", "fastify"],
+  ["packages/framework/apollo", "apollo"],
+  ["packages/framework/nestjs-rest", "nestjs-rest"],
+  ["packages/framework/nestjs-graphql", "nestjs-graphql"],
+  ["packages/framework/prisma", "prisma"],
+  ["packages/framework/aws-sqs", "aws-sqs"],
+  ["packages/framework/process-env", "process-env"],
+  // Runtimes
   ["packages/runtime/web", "web"],
   ["packages/runtime/axios", "axios"],
-  ["packages/stub/openapi", "stub-openapi"],
-  ["packages/stub/aws-apigateway", "stub-aws-apigateway"],
-  ["packages/stub/cloudformation", "stub-cloudformation"],
-  ["packages/checker", "checker"],
-  ["packages/cli", "cli"],
+  ["packages/runtime/apollo-client", "apollo-client"],
+  // Contract sources (renamed from stub-*; old badge files left
+  // behind by the rename should be removed by hand when this
+  // generator first writes the new ones).
+  ["packages/contract/openapi", "contract-openapi"],
+  ["packages/contract/aws-apigateway", "contract-aws-apigateway"],
+  ["packages/contract/cloudformation", "contract-cloudformation"],
+  ["packages/contract/appsync", "contract-appsync"],
+  ["packages/contract/storybook", "contract-storybook"],
+  ["packages/contract/prisma", "contract-prisma"],
 ];
 
 function badgeColor(pct) {

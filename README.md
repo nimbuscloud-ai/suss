@@ -192,36 +192,38 @@ const effective = applySuppressions(findings, mySuppressions);
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| [`@suss/behavioral-ir`](packages/ir) | zod schemas, types, parsers, and generated [JSON Schema](packages/ir/schema/behavioral-summary.schema.json). Install this to consume summaries. |
-| [`@suss/extractor`](packages/extractor) | Assembly engine. Converts raw extracted structure into `BehavioralSummary`. |
-| [`@suss/adapter-typescript`](packages/adapter/typescript) | TypeScript language adapter via ts-morph. |
-| [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker. |
-| [`@suss/cli`](packages/cli) | CLI wrapper. |
-| **Frameworks** | |
-| [`@suss/framework-ts-rest`](packages/framework/ts-rest) | ts-rest providers + clients (contract-backed). |
-| [`@suss/framework-express`](packages/framework/express) | Express handlers. |
-| [`@suss/framework-fastify`](packages/framework/fastify) | Fastify handlers. |
-| [`@suss/framework-react`](packages/framework/react) | React function components, event handlers, `useEffect` bodies. |
-| [`@suss/framework-react-router`](packages/framework/react-router) | React Router loaders / actions / routes. |
-| [`@suss/framework-apollo`](packages/framework/apollo) | Apollo Server resolvers (code-first). |
-| [`@suss/framework-nestjs-rest`](packages/framework/nestjs-rest) | NestJS REST controllers. |
-| [`@suss/framework-nestjs-graphql`](packages/framework/nestjs-graphql) | NestJS GraphQL resolvers. |
-| [`@suss/framework-prisma`](packages/framework/prisma) | Prisma client calls — emits storage-access interactions per read / write. |
-| [`@suss/framework-aws-sqs`](packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls — emits message-send interactions. |
-| [`@suss/framework-process-env`](packages/framework/process-env) | `process.env.X` access — emits config-read interactions. |
-| **Runtimes (client packs)** | |
-| [`@suss/runtime-web`](packages/runtime/web) | Global `fetch` call sites. |
-| [`@suss/runtime-axios`](packages/runtime/axios) | axios call sites + `axios.create` factories. |
-| [`@suss/runtime-apollo-client`](packages/runtime/apollo-client) | `@apollo/client` hooks + imperative `client.query`. |
-| **Contract sources** | |
-| [`@suss/contract-openapi`](packages/contract/openapi) | OpenAPI 3.x → behavioral summaries. |
-| [`@suss/contract-aws-apigateway`](packages/contract/aws-apigateway) | API Gateway resource semantics — REST/HTTP API configs → summaries with platform-injected transitions. |
-| [`@suss/contract-cloudformation`](packages/contract/cloudformation) | CloudFormation / SAM templates → summaries (delegates to contract-openapi + contract-aws-apigateway; also handles SQS event-source mappings + Lambda Environment). |
-| [`@suss/contract-appsync`](packages/contract/appsync) | AppSync GraphQL schema + resolver mapping templates. |
-| [`@suss/contract-storybook`](packages/contract/storybook) | Storybook CSF3 stories → component contract summaries. |
-| [`@suss/contract-prisma`](packages/contract/prisma) | Prisma schema → storage provider summaries. |
+![combined](.github/badges/coverage.svg)
+
+| Package | Description | Coverage |
+|---------|-------------|----------|
+| [`@suss/behavioral-ir`](packages/ir) | zod schemas, types, parsers, and generated [JSON Schema](packages/ir/schema/behavioral-summary.schema.json). Install this to consume summaries. | ![](.github/badges/coverage-ir.svg) |
+| [`@suss/extractor`](packages/extractor) | Assembly engine. Converts raw extracted structure into `BehavioralSummary`. | ![](.github/badges/coverage-extractor.svg) |
+| [`@suss/adapter-typescript`](packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](.github/badges/coverage-typescript.svg) |
+| [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker. | ![](.github/badges/coverage-checker.svg) |
+| [`@suss/cli`](packages/cli) | CLI wrapper. | ![](.github/badges/coverage-cli.svg) |
+| **Frameworks** | | |
+| [`@suss/framework-ts-rest`](packages/framework/ts-rest) | ts-rest providers + clients (contract-backed). | ![](.github/badges/coverage-ts-rest.svg) |
+| [`@suss/framework-express`](packages/framework/express) | Express handlers. | ![](.github/badges/coverage-express.svg) |
+| [`@suss/framework-fastify`](packages/framework/fastify) | Fastify handlers. | ![](.github/badges/coverage-fastify.svg) |
+| [`@suss/framework-react`](packages/framework/react) | React function components, event handlers, `useEffect` bodies. | ![](.github/badges/coverage-react.svg) |
+| [`@suss/framework-react-router`](packages/framework/react-router) | React Router loaders / actions / routes. | ![](.github/badges/coverage-react-router.svg) |
+| [`@suss/framework-apollo`](packages/framework/apollo) | Apollo Server resolvers (code-first). | ![](.github/badges/coverage-apollo.svg) |
+| [`@suss/framework-nestjs-rest`](packages/framework/nestjs-rest) | NestJS REST controllers. | ![](.github/badges/coverage-nestjs-rest.svg) |
+| [`@suss/framework-nestjs-graphql`](packages/framework/nestjs-graphql) | NestJS GraphQL resolvers. | ![](.github/badges/coverage-nestjs-graphql.svg) |
+| [`@suss/framework-prisma`](packages/framework/prisma) | Prisma client calls — emits storage-access interactions per read / write. | ![](.github/badges/coverage-prisma.svg) |
+| [`@suss/framework-aws-sqs`](packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls — emits message-send interactions. | ![](.github/badges/coverage-aws-sqs.svg) |
+| [`@suss/framework-process-env`](packages/framework/process-env) | `process.env.X` access — emits config-read interactions. | ![](.github/badges/coverage-process-env.svg) |
+| **Runtimes (client packs)** | | |
+| [`@suss/runtime-web`](packages/runtime/web) | Global `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
+| [`@suss/runtime-axios`](packages/runtime/axios) | axios call sites + `axios.create` factories. | ![](.github/badges/coverage-axios.svg) |
+| [`@suss/runtime-apollo-client`](packages/runtime/apollo-client) | `@apollo/client` hooks + imperative `client.query`. | ![](.github/badges/coverage-apollo-client.svg) |
+| **Contract sources** | | |
+| [`@suss/contract-openapi`](packages/contract/openapi) | OpenAPI 3.x → behavioral summaries. | ![](.github/badges/coverage-contract-openapi.svg) |
+| [`@suss/contract-aws-apigateway`](packages/contract/aws-apigateway) | API Gateway resource semantics — REST/HTTP API configs → summaries with platform-injected transitions. | ![](.github/badges/coverage-contract-aws-apigateway.svg) |
+| [`@suss/contract-cloudformation`](packages/contract/cloudformation) | CloudFormation / SAM templates → summaries (delegates to contract-openapi + contract-aws-apigateway; also handles SQS event-source mappings + Lambda Environment). | ![](.github/badges/coverage-contract-cloudformation.svg) |
+| [`@suss/contract-appsync`](packages/contract/appsync) | AppSync GraphQL schema + resolver mapping templates. | ![](.github/badges/coverage-contract-appsync.svg) |
+| [`@suss/contract-storybook`](packages/contract/storybook) | Storybook CSF3 stories → component contract summaries. | ![](.github/badges/coverage-contract-storybook.svg) |
+| [`@suss/contract-prisma`](packages/contract/prisma) | Prisma schema → storage provider summaries. | ![](.github/badges/coverage-contract-prisma.svg) |
 
 ## A complete example
 
