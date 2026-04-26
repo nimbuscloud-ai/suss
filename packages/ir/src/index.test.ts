@@ -9,6 +9,7 @@ import {
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
+  messageBusBinding,
   type Output,
   type Predicate,
   packageExportBinding,
@@ -18,6 +19,7 @@ import {
   runtimeConfigBinding,
   safeParseSummaries,
   safeParseSummary,
+  storageRelationalBinding,
   type Transition,
 } from "./index.js";
 
@@ -575,6 +577,42 @@ describe("binding constructors", () => {
         instanceName: "MyFunction",
       },
       recognition: "cloudformation",
+    });
+  });
+
+  it("storageRelationalBinding uses storageSystem as transport", () => {
+    const b = storageRelationalBinding({
+      recognition: "prisma",
+      storageSystem: "postgres",
+      scope: "default",
+      table: "User",
+    });
+    expect(b).toEqual({
+      transport: "postgres",
+      semantics: {
+        name: "storage-relational",
+        storageSystem: "postgres",
+        scope: "default",
+        table: "User",
+      },
+      recognition: "prisma",
+    });
+  });
+
+  it("messageBusBinding uses messageBus as transport and channel as identity", () => {
+    const b = messageBusBinding({
+      recognition: "sqs-recognizer",
+      messageBus: "sqs",
+      channel: "OrdersQueue",
+    });
+    expect(b).toEqual({
+      transport: "sqs",
+      semantics: {
+        name: "message-bus",
+        messageBus: "sqs",
+        channel: "OrdersQueue",
+      },
+      recognition: "sqs-recognizer",
     });
   });
 });

@@ -16,6 +16,7 @@ function makeRuntimeProvider(opts: {
     location: {
       file: "template.yaml",
       range: { start: 1, end: 10 },
+      exportName: null,
     },
     identity: {
       name: opts.instanceName,
@@ -45,7 +46,7 @@ function makeCodeSummary(opts: {
   const transition: Transition = {
     id: "t0",
     conditions: [],
-    output: { type: "return" },
+    output: { type: "return", value: null },
     effects: opts.envReads.map((varName) => ({
       type: "invocation" as const,
       callee: "fetch",
@@ -63,6 +64,7 @@ function makeCodeSummary(opts: {
     location: {
       file: opts.file,
       range: { start: 1, end: 20 },
+      exportName: null,
     },
     identity: {
       name: opts.name,
@@ -190,14 +192,18 @@ describe("checkRuntimeConfig", () => {
     // log(formatError(process.env.NESTED_VAR))
     const summary: BehavioralSummary = {
       kind: "handler",
-      location: { file: "src/index.ts", range: { start: 1, end: 5 } },
+      location: {
+        file: "src/index.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+      },
       identity: { name: "h", exportPath: ["h"], boundaryBinding: null },
       inputs: [],
       transitions: [
         {
           id: "t0",
           conditions: [],
-          output: { type: "return" },
+          output: { type: "return", value: null },
           effects: [
             {
               type: "invocation",
@@ -235,14 +241,18 @@ describe("checkRuntimeConfig", () => {
     });
     const summary: BehavioralSummary = {
       kind: "handler",
-      location: { file: "src/index.ts", range: { start: 1, end: 5 } },
+      location: {
+        file: "src/index.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+      },
       identity: { name: "h", exportPath: ["h"], boundaryBinding: null },
       inputs: [],
       transitions: [
         {
           id: "t0",
           conditions: [],
-          output: { type: "return" },
+          output: { type: "return", value: null },
           effects: [
             {
               type: "invocation",

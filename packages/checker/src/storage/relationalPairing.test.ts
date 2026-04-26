@@ -59,7 +59,7 @@ function makeAccessSummary(opts: {
   const transition: Transition = {
     id: "t0",
     conditions: [],
-    output: { type: "return" },
+    output: { type: "return", value: null },
     effects: opts.accesses.map(
       (a): Effect => ({
         type: "storageAccess",
