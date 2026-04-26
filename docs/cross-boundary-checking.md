@@ -134,19 +134,18 @@ Boundary: **can we statically resolve the function body to a single expression w
 
 ```typescript
 interface Finding {
-  kind:
-    | "unhandledProviderCase"      // provider coverage, sub-case, or body mismatch
-    | "deadConsumerBranch"         // consumer satisfaction
-    | "providerContractViolation"  // contract consistency, provider side
-    | "consumerContractViolation"  // contract consistency, consumer side
-    | "lowConfidence";             // opaque predicates prevented a decision
+  kind: FindingKind;  // see /reference/findings for the full catalog
   boundary: BoundaryBinding;
   provider: { summary: string; transitionId?: string; location: SourceLocation };
   consumer: { summary: string; transitionId?: string; location: SourceLocation };
   description: string;
   severity: "error" | "warning" | "info";
+  sources?: string[];               // present when dedupe collapsed multiple
+  suppressed?: FindingSuppression;  // present when a .sussignore rule matched
 }
 ```
+
+`FindingKind` spans REST coverage / consumer satisfaction / contract consistency, GraphQL operation pairing, React-component / Storybook agreement, storage-relational field pairing, message-bus producer / consumer / queue pairing, runtime-config env-var pairing, and meta-findings (`lowConfidence`, `unsupportedSemantics`, `opaquePredicateBlocking`). The authoritative enumeration is `FindingKindSchema` in `packages/ir/src/schemas.ts`; the [findings catalog](/reference/findings) groups every kind by domain with severity, emitter, and example.
 
 Findings are JSON-serializable. The CLI exits non-zero when any `error`-severity finding exists (tunable via `--fail-on`).
 
