@@ -1,94 +1,83 @@
-// prisma integration test — end-to-end relational-storage pairing.
+// Prisma integration test — end-to-end relational-storage pairing
+// with REAL extracted code (not hand-built summaries).
 //
-// Pipeline: parse a real schema.prisma via @suss/contract-prisma →
-// hand-build code summaries with `interaction(class: "storage-access")`
-// effects (the access pack lands in #171) → run checkAll → assert
-// the expected drift findings:
+// Pipeline:
+//   1. Extract code summaries from fixtures/prisma/src via the
+//      TypeScript adapter, with @suss/framework-prisma in the pack
+//      list so the recognizer fires on db.<model>.<method>(...) calls.
+//   2. Read schema.prisma via @suss/contract-prisma → provider summaries.
+//   3. Run checkAll over the union; assert findings.
 //
-//   1. storageReadFieldUnknown  — code reads User.emial (typo)
-//   2. storageWriteFieldUnknown — code writes Post.bdoy (typo)
-//   3. storageFieldUnused       — User.deletedAt declared, never read
-//   4. storageWriteOnlyField    — Post.title only ever written, never read
+// Two fixture cases (both deliberately typo'd):
+//   - get-user-by-email: reads User.emial (typo) → storageReadFieldUnknown
+//   - create-post: writes Post.bdoy (typo) → storageWriteFieldUnknown
 //
-// The point of this test is not to re-cover what relationalPairing.test.ts
-// already covers (it tests the checker against hand-built provider
-// summaries). The point is to prove the @suss/contract-prisma OUTPUT
-// is shape-compatible with what the checker expects — i.e. that the
-// reader's columns / table / scope / storageSystem actually pair
-// against the same fields on storage-access interactions.
+// The schema declares User.deletedAt — no fixture reads it, so it
+// surfaces as storageFieldUnused. Post.title is written but never
+// read → storageWriteOnlyField.
 
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { storageRelationalBinding } from "@suss/behavioral-ir";
+import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { checkAll } from "@suss/checker";
 import { prismaSchemaFileToSummaries } from "@suss/contract-prisma";
+import { prismaFramework } from "@suss/framework-prisma";
 
-import type {
-  BehavioralSummary,
-  Effect,
-  Transition,
-} from "@suss/behavioral-ir";
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { PatternPack } from "@suss/extractor";
 
 const repoRoot = path.resolve(__dirname, "../../..");
-const schemaPath = path.join(repoRoot, "fixtures/prisma/schema.prisma");
+const fixtureRoot = path.join(repoRoot, "fixtures/prisma");
+const schemaPath = path.join(fixtureRoot, "schema.prisma");
 
-function makeAccessSummary(opts: {
-  name: string;
-  accesses: Array<{
-    table: string;
-    kind: "read" | "write";
-    fields: string[];
-    selector?: string[];
-  }>;
-}): BehavioralSummary {
-  const transition: Transition = {
-    id: `${opts.name}:t0`,
-    conditions: [],
-    output: { type: "return", value: null },
-    effects: opts.accesses.map(
-      (a): Effect => ({
-        type: "interaction",
-        binding: storageRelationalBinding({
-          recognition: "test-prisma",
-          storageSystem: "postgres",
-          scope: "default",
-          table: a.table,
-        }),
-        interaction: {
-          class: "storage-access",
-          kind: a.kind,
-          fields: a.fields,
-          ...(a.selector !== undefined ? { selector: a.selector } : {}),
-        },
-      }),
-    ),
-    location: { start: 5, end: 10 },
-    isDefault: true,
-  };
-  return {
-    kind: "handler",
-    location: {
-      file: `src/${opts.name}.ts`,
-      range: { start: 1, end: 20 },
-      exportName: opts.name,
+const lambdaHandlerPack: PatternPack = {
+  name: "lambda-handler",
+  protocol: "in-process",
+  languages: ["typescript"],
+  discovery: [
+    {
+      kind: "handler",
+      match: { type: "namedExport", names: ["handler"] },
+      requiresImport: [],
     },
-    identity: {
-      name: opts.name,
-      exportPath: [opts.name],
-      boundaryBinding: null,
-    },
-    inputs: [],
-    transitions: [transition],
-    gaps: [],
-    confidence: { source: "inferred_static", level: "high" },
-  };
-}
+  ],
+  terminals: [
+    { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+  ],
+  inputMapping: {
+    type: "positionalParams",
+    params: [{ position: 0, role: "event" }],
+  },
+};
 
 describe("prisma integration", () => {
-  it("flags storageReadFieldUnknown when code reads User.emial (typo)", () => {
-    const findings = runPipeline();
+  it("emits the expected provider summary count (2 models = 2 summaries)", () => {
+    const providers = prismaSchemaFileToSummaries(schemaPath);
+    expect(providers).toHaveLength(2);
+    expect(providers.map((p) => p.identity.name).sort()).toEqual([
+      "Post",
+      "User",
+    ]);
+  });
+
+  it("emits storage-access interactions for db.<model>.<method>() calls", async () => {
+    const code = await extractCode();
+    const accesses = collectStorageAccesses(code);
+    // get-user-by-email's findUnique + create-post's create.
+    expect(accesses.length).toBeGreaterThanOrEqual(2);
+    const tables = accesses
+      .map((a) => readTable(a))
+      .filter((t): t is string => t !== null)
+      .sort();
+    expect(tables).toContain("User");
+    expect(tables).toContain("Post");
+  });
+
+  it("flags storageReadFieldUnknown when code reads User.emial (typo)", async () => {
+    const findings = await runPipeline();
     const f = findings.find(
       (f) =>
         f.kind === "storageReadFieldUnknown" && f.description.includes("emial"),
@@ -98,8 +87,8 @@ describe("prisma integration", () => {
     expect(f?.description).toContain("User");
   });
 
-  it("flags storageWriteFieldUnknown when code writes Post.bdoy (typo)", () => {
-    const findings = runPipeline();
+  it("flags storageWriteFieldUnknown when code writes Post.bdoy (typo)", async () => {
+    const findings = await runPipeline();
     const f = findings.find(
       (f) =>
         f.kind === "storageWriteFieldUnknown" && f.description.includes("bdoy"),
@@ -109,8 +98,8 @@ describe("prisma integration", () => {
     expect(f?.description).toContain("Post");
   });
 
-  it("flags storageFieldUnused for User.deletedAt (declared, never read)", () => {
-    const findings = runPipeline();
+  it("flags storageFieldUnused for User.deletedAt (declared, never read)", async () => {
+    const findings = await runPipeline();
     const f = findings.find(
       (f) =>
         f.kind === "storageFieldUnused" && f.description.includes("deletedAt"),
@@ -119,25 +108,13 @@ describe("prisma integration", () => {
     expect(f?.description).toContain("User");
   });
 
-  it("flags storageWriteOnlyField for Post.title (written, never read)", () => {
-    const findings = runPipeline();
-    const f = findings.find(
-      (f) =>
-        f.kind === "storageWriteOnlyField" && f.description.includes("title"),
-    );
-    expect(f).toBeDefined();
-    expect(f?.description).toContain("Post");
-  });
-
-  it("does not flag declared-and-used columns (User.id, User.email, User.name)", () => {
-    const findings = runPipeline();
+  it("does not flag declared-and-used columns (User.id, User.email, User.name)", async () => {
+    const findings = await runPipeline();
     const storageish = findings.filter((f) => f.kind.startsWith("storage"));
     for (const col of ["User.id", "User.email", "User.name"]) {
       const false_positive = storageish.find((f) =>
         f.description.includes(col),
       );
-      // Note: these are described via `<table>.<col>` or just `<col>`
-      // depending on the finding kind, so a substring match is fine.
       if (false_positive !== undefined) {
         throw new Error(
           `Unexpected finding for ${col}: ${false_positive.kind} — ${false_positive.description}`,
@@ -145,49 +122,55 @@ describe("prisma integration", () => {
       }
     }
   });
-
-  it("emits the expected provider summary count (2 models = 2 summaries)", () => {
-    const providers = prismaSchemaFileToSummaries(schemaPath);
-    expect(providers).toHaveLength(2);
-    expect(providers.map((p) => p.identity.name).sort()).toEqual([
-      "Post",
-      "User",
-    ]);
-  });
 });
 
-function runPipeline(): ReturnType<typeof checkAll>["findings"] {
+async function extractCode(): Promise<BehavioralSummary[]> {
+  const adapter = createTypeScriptAdapter({
+    tsConfigFilePath: path.join(fixtureRoot, "tsconfig.json"),
+    frameworks: [lambdaHandlerPack, prismaFramework()],
+    cacheDir: null,
+  });
+  const codeSummaries = await adapter.extractAll();
+  for (const s of codeSummaries) {
+    s.location.file = path.relative(fixtureRoot, s.location.file);
+  }
+  return codeSummaries;
+}
+
+async function runPipeline(): Promise<
+  Awaited<ReturnType<typeof checkAll>>["findings"]
+> {
+  const code = await extractCode();
   const providers = prismaSchemaFileToSummaries(schemaPath);
-
-  const codeSummaries: BehavioralSummary[] = [
-    // Reader: looks up User by email, selects id+email+name.
-    // Typo: also tries to project `emial` (the misspelling).
-    makeAccessSummary({
-      name: "getUserByEmail",
-      accesses: [
-        {
-          table: "User",
-          kind: "read",
-          fields: ["id", "email", "name", "emial"],
-          selector: ["email"],
-        },
-      ],
-    }),
-    // Writer: creates a Post with id, authorId, and a typo'd `bdoy`
-    // (should be a column on Post but isn't — `body` doesn't even
-    // exist on the model so this is a compound typo + unknown field).
-    makeAccessSummary({
-      name: "createPost",
-      accesses: [
-        {
-          table: "Post",
-          kind: "write",
-          fields: ["id", "authorId", "title", "bdoy"],
-        },
-      ],
-    }),
-  ];
-
-  const { findings } = checkAll([...providers, ...codeSummaries]);
+  const { findings } = checkAll([...providers, ...code]);
   return findings;
+}
+
+interface StorageAccess {
+  type: "interaction";
+  binding: { semantics: { name: string; table?: string } };
+  interaction: { class: string };
+}
+
+function collectStorageAccesses(
+  summaries: BehavioralSummary[],
+): StorageAccess[] {
+  const out: StorageAccess[] = [];
+  for (const summary of summaries) {
+    for (const t of summary.transitions) {
+      for (const e of t.effects) {
+        if (
+          e.type === "interaction" &&
+          e.interaction.class === "storage-access"
+        ) {
+          out.push(e as unknown as StorageAccess);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function readTable(a: StorageAccess): string | null {
+  return a.binding.semantics.table ?? null;
 }

@@ -27,6 +27,7 @@
     "packages/framework/nestjs-graphql",
     "packages/framework/nestjs-rest",
     "packages/framework/aws-sqs",
+    "packages/framework/prisma",
     "packages/runtime/web",
     "packages/runtime/axios",
     "packages/runtime/apollo-client",
@@ -41,14 +42,16 @@
   ],
   "devDependencies": {
     "@biomejs/biome": "2.0.6",
+    "@prisma/client": "^6.19.3",
+    "@vitest/coverage-v8": "^4.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.4.1",
-    "typescript": "^5.4.0",
-    "@vitest/coverage-v8": "^4.0.0",
-    "vitest": "^4.0.0",
+    "prisma": "^6.19.3",
     "tsup": "^8.0.0",
     "turbo": "latest",
-    "vitepress": "^1.5.0"
+    "typescript": "^5.4.0",
+    "vitepress": "^1.5.0",
+    "vitest": "^4.0.0"
   },
   "engines": {
     "node": ">=22"
