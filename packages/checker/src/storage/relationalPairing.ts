@@ -24,11 +24,17 @@
 // matches, just like runtime-config did for env vars.
 
 import { makeSide } from "../coverage/responseMatch.js";
+import {
+  buildInteractionIndex,
+  type InteractionIndex,
+  type InteractionRecord,
+  interactionsOf,
+  providersOf,
+} from "../interactions/dispatcher.js";
 
 import type {
   BehavioralSummary,
   BoundaryBinding,
-  Effect,
   Finding,
   StorageRelationalSemantics,
 } from "@suss/behavioral-ir";
@@ -44,15 +50,7 @@ interface StorageContractMetadata {
   indexes?: Array<{ fields: string[]; unique: boolean }>;
 }
 
-type InteractionEffect = Extract<Effect, { type: "interaction" }>;
-type StorageAccessInteraction = InteractionEffect & {
-  interaction: { class: "storage-access" };
-};
-
-interface AccessRecord {
-  effect: StorageAccessInteraction;
-  summary: BehavioralSummary;
-  transitionId: string;
+type StorageAccessRecord = InteractionRecord<"storage-access"> & {
   /**
    * Cached storage-relational semantics from the effect's binding —
    * carries the (storageSystem, scope, table) pairing key. Pulled
@@ -60,7 +58,7 @@ interface AccessRecord {
    * narrow.
    */
   semantics: StorageRelationalSemantics;
-}
+};
 
 /** Wildcard convention for default-shape reads (no explicit `select`). */
 const ALL_FIELDS = "*";
@@ -73,16 +71,20 @@ const ALL_FIELDS = "*";
  */
 export function checkRelationalStorage(
   summaries: BehavioralSummary[],
+  index?: InteractionIndex,
 ): Finding[] {
   const findings: Finding[] = [];
+  const idx = index ?? buildInteractionIndex(summaries);
 
-  const providers = summaries.filter(isStorageRelationalProvider);
-  // Index access effects once. Code summaries are everything that
-  // ISN'T a storage-relational provider; providers don't perform
-  // accesses themselves (they declare the contract).
-  const accesses = collectStorageAccesses(
-    summaries.filter((s) => !isStorageRelationalProvider(s)),
-  );
+  const providers = providersOf(idx, "storage-relational");
+  const accesses: StorageAccessRecord[] = interactionsOf(
+    idx,
+    "storage-access",
+    "storage-relational",
+  ).map((record) => ({
+    ...record,
+    semantics: record.effect.binding.semantics as StorageRelationalSemantics,
+  }));
 
   for (const provider of providers) {
     const binding = provider.identity.boundaryBinding;
@@ -176,54 +178,10 @@ export function checkRelationalStorage(
   return findings;
 }
 
-function isStorageRelationalProvider(summary: BehavioralSummary): boolean {
-  return (
-    summary.identity.boundaryBinding?.semantics.name === "storage-relational"
-  );
-}
-
 function readStorageContract(
   summary: BehavioralSummary,
 ): StorageContractMetadata {
   return (summary.metadata?.storageContract ?? {}) as StorageContractMetadata;
-}
-
-/**
- * Walk every transition's effects looking for storage-access
- * interactions. Recognizers (`@suss/framework-prisma`, etc.) emit
- * `interaction(class: "storage-access")` effects with the table
- * identity carried on the binding's StorageRelationalSemantics.
- */
-function collectStorageAccesses(
-  summaries: BehavioralSummary[],
-): AccessRecord[] {
-  const out: AccessRecord[] = [];
-  for (const summary of summaries) {
-    for (const transition of summary.transitions) {
-      for (const effect of transition.effects) {
-        if (effect.type !== "interaction") {
-          continue;
-        }
-        if (effect.interaction.class !== "storage-access") {
-          continue;
-        }
-        if (effect.binding.semantics.name !== "storage-relational") {
-          // Defensive: storage-access class without storage-relational
-          // semantics is a malformed effect. Skip rather than crash.
-          continue;
-        }
-        const semantics = effect.binding
-          .semantics as StorageRelationalSemantics;
-        out.push({
-          effect: effect as StorageAccessInteraction,
-          summary,
-          transitionId: transition.id,
-          semantics,
-        });
-      }
-    }
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +200,7 @@ function tableLabel(semantics: StorageRelationalSemantics): string {
 function makeFieldUnknownFinding(
   provider: BehavioralSummary,
   binding: BoundaryBinding,
-  access: AccessRecord,
+  access: StorageAccessRecord,
   field: string,
 ): Finding {
   const semantics = binding.semantics as StorageRelationalSemantics;

@@ -5,6 +5,7 @@ import { checkContractAgreement } from "./contract/contractAgreement.js";
 import { checkContractConsistency } from "./contract/contractConsistency.js";
 import { checkProviderCoverage } from "./coverage/providerCoverage.js";
 import { dedupeFindings } from "./dedupe.js";
+import { buildInteractionIndex } from "./interactions/dispatcher.js";
 import { checkMessageBus } from "./message-bus/messageBusPairing.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
@@ -168,27 +169,33 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // different payload (args vs declaredContract).
   findings.push(...checkComponentStoryAgreement(summaries));
 
-  // Runtime-config pairing: cross-source check between
-  // infrastructure-stub providers (CFN/SAM Lambda env-var
-  // declarations) and code reads of process.env.X. Same shape as the
-  // Storybook check — provider declares a contract surface, the
-  // checker pairs it against in-scope consumers.
-  findings.push(...checkRuntimeConfig(summaries));
+  // Build the interaction index ONCE and share it across all
+  // per-class pairing passes (storage, message-bus, runtime-config).
+  // Each pass would otherwise walk every transition.effects on its
+  // own — fine on small projects, but the per-pass walks scale
+  // linearly with the number of pairing passes. Shared indexing
+  // walks once, indexes by (class, binding semantics), and hands
+  // each pass its slice via O(1) Map lookup.
+  const interactionIndex = buildInteractionIndex(summaries);
+
+  // Runtime-config pairing: pair runtime providers (CFN/SAM Lambda
+  // env-var declarations) against config-read interaction effects (or
+  // legacy invocation-arg `process.env.X` patterns when the
+  // process-env recognizer wasn't in the framework list).
+  findings.push(...checkRuntimeConfig(summaries, interactionIndex));
 
   // Relational-storage pairing: pair schema-derived providers
   // (Prisma model declarations, Drizzle pgTable() declarations)
-  // against `interaction(class: "storage-access")` effects on code summaries. Same
-  // provider-declares-contract / consumers-pair-against-it shape;
-  // emits the four field-existence findings (read/write unknown,
-  // unused, write-only). Constraint findings are reserved in the IR
-  // taxonomy but not emitted yet.
-  findings.push(...checkRelationalStorage(summaries));
+  // against `interaction(class: "storage-access")` effects on code
+  // summaries. Emits the four field-existence findings (read/write
+  // unknown, unused, write-only).
+  findings.push(...checkRelationalStorage(summaries, interactionIndex));
 
   // Message-bus pairing: producer interaction effects (from
   // recognizers like @suss/framework-aws-sqs) pair against queue
   // provider summaries (from CFN). Emits orphan-producer/orphan-
   // consumer/unused-queue findings.
-  findings.push(...checkMessageBus(summaries));
+  findings.push(...checkMessageBus(summaries, interactionIndex));
 
   return {
     findings: dedupeFindings(findings),

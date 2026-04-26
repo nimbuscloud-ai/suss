@@ -26,28 +26,28 @@
 // above are scaffolding to make sure pairing dispatch fires; the
 // body-shape finding is the one that earns its keep.
 
+import {
+  buildInteractionIndex,
+  type InteractionIndex,
+  type InteractionRecord,
+  interactionsOf,
+  providersOf,
+} from "../interactions/dispatcher.js";
+
 import type {
   BehavioralSummary,
   BoundaryBinding,
-  Effect,
   Finding,
   MessageBusSemantics,
 } from "@suss/behavioral-ir";
 
-type MessageSendInteraction = Extract<Effect, { type: "interaction" }> & {
-  interaction: { class: "message-send" };
-};
-
-interface ProducerRecord {
-  effect: MessageSendInteraction;
-  summary: BehavioralSummary;
-  transitionId: string;
+type ProducerRecord = InteractionRecord<"message-send"> & {
   /**
    * Resolved CFN-channel after env-var → resource collapse, or null
    * when no chain-collapse mapping was found.
    */
   resolvedChannel: string | null;
-}
+};
 
 /**
  * Pair message-bus consumers (CFN queue providers + Lambda consumer
@@ -69,12 +69,26 @@ interface ProducerRecord {
  * "ORDERS_QUEUE_URL" → "OrdersQueue" via the producer Lambda's
  * Environment block.
  */
-export function checkMessageBus(summaries: BehavioralSummary[]): Finding[] {
+export function checkMessageBus(
+  summaries: BehavioralSummary[],
+  index?: InteractionIndex,
+): Finding[] {
   const findings: Finding[] = [];
+  const idx = index ?? buildInteractionIndex(summaries);
 
-  const queueProviders = summaries.filter(isQueueProvider);
-  const consumers = summaries.filter(isQueueConsumer);
-  const producers = collectProducers(summaries);
+  // Both queue providers (kind=library) and Lambda consumer summaries
+  // (kind=consumer) live under message-bus semantics. Filter by kind
+  // to split them.
+  const messageBusSummaries = providersOf(idx, "message-bus");
+  const queueProviders = messageBusSummaries.filter(
+    (s) => s.kind === "library",
+  );
+  const consumers = messageBusSummaries.filter((s) => s.kind === "consumer");
+  const producers: ProducerRecord[] = interactionsOf(
+    idx,
+    "message-send",
+    "message-bus",
+  ).map((record) => ({ ...record, resolvedChannel: null }));
 
   // Build the env-var → CFN-channel mapping by walking runtime-config
   // providers' codeScope vs the producer effect's source file. For
@@ -159,20 +173,6 @@ export function checkMessageBus(summaries: BehavioralSummary[]): Finding[] {
 // Walkers
 // ---------------------------------------------------------------------------
 
-function isQueueProvider(s: BehavioralSummary): boolean {
-  return (
-    s.kind === "library" &&
-    s.identity.boundaryBinding?.semantics.name === "message-bus"
-  );
-}
-
-function isQueueConsumer(s: BehavioralSummary): boolean {
-  return (
-    s.kind === "consumer" &&
-    s.identity.boundaryBinding?.semantics.name === "message-bus"
-  );
-}
-
 function channelOf(s: BehavioralSummary): string | null {
   const sem = s.identity.boundaryBinding?.semantics;
   return sem?.name === "message-bus" ? sem.channel : null;
@@ -193,35 +193,6 @@ function effectiveChannel(p: ProducerRecord): string | null {
   }
   const sem = p.effect.binding.semantics;
   return sem.name === "message-bus" ? sem.channel : null;
-}
-
-function collectProducers(summaries: BehavioralSummary[]): ProducerRecord[] {
-  const out: ProducerRecord[] = [];
-  for (const summary of summaries) {
-    if (isQueueProvider(summary) || isQueueConsumer(summary)) {
-      continue;
-    }
-    for (const transition of summary.transitions) {
-      for (const effect of transition.effects) {
-        if (effect.type !== "interaction") {
-          continue;
-        }
-        if (effect.interaction.class !== "message-send") {
-          continue;
-        }
-        if (effect.binding.semantics.name !== "message-bus") {
-          continue;
-        }
-        out.push({
-          effect: effect as MessageSendInteraction,
-          summary,
-          transitionId: transition.id,
-          resolvedChannel: null,
-        });
-      }
-    }
-  }
-  return out;
 }
 
 /**
