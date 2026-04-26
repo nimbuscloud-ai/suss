@@ -23,7 +23,7 @@ Two interpretations that aren't the same thing:
 - **Mechanism unification**: one extension point on `PatternPack` (`invocationRecognizers`, just landed); one pairing dispatcher in the checker (match by `boundaryBinding`); per-class finding generators downstream. The plumbing converges. Pack authors learn ONE primitive.
 - **Type unification**: one Effect variant covering every boundary kind, discriminated at runtime via a class field. The IR has one shape; type checking via discriminated union narrows it.
 
-This design proposes BOTH. One Effect variant (`interaction`), discriminated by `interaction.class` (`storage-access`, `rpc-call`, `message-send`, `config-read`, ...), emitted via the `invocationRecognizers` primitive, paired by one generic dispatcher with per-class finding generators.
+This design proposes BOTH. One Effect variant (`interaction`), discriminated by `interaction.class` (`storage-access`, `service-call`, `message-send`, `config-read`, ...), emitted via the `invocationRecognizers` primitive, paired by one generic dispatcher with per-class finding generators.
 
 ## Three concrete patterns to design against
 
@@ -145,7 +145,7 @@ type InteractionEffect = {
                                       // multiple effects (Prisma joins, SQL multi-table)
   interaction:                        // discriminated by .class
     | { class: "storage-access";  kind: "read" | "write"; fields: string[]; selector?: string[]; operation?: string; }
-    | { class: "rpc-call";        method: string; payload?: EffectArg; responseShape?: TypeShape; }
+    | { class: "service-call";        method: string; payload?: EffectArg; responseShape?: TypeShape; }
     | { class: "message-send";    body?: EffectArg; routingKey?: string; }
     | { class: "config-read";     name: string; defaulted: boolean; };
 };
@@ -153,7 +153,7 @@ type InteractionEffect = {
 
 **Why discriminated and not a flat optional-fields type.** A flat shape with optional `payload?`/`selector?`/`fields?`/`headers?` covering every protocol either loses precision (everything is a generic `payload`) or accumulates protocol-specific fields on a generic type. Discriminated keeps each class's fields precise and lets the type checker carry its weight.
 
-**Why one Effect variant and not N (storage-access + rpc-call + ...).** Because the unification is real: the pairing dispatcher walks one effect type, matches by binding, then dispatches to per-class finding generators by `interaction.class`. Pack authors learn one extension point. Adding a class is a strictly additive IR change.
+**Why one Effect variant and not N (storage-access + service-call + ...).** Because the unification is real: the pairing dispatcher walks one effect type, matches by binding, then dispatches to per-class finding generators by `interaction.class`. Pack authors learn one extension point. Adding a class is a strictly additive IR change.
 
 **Why discriminated by `interaction.class` and not by `binding.semantics.name`.** Both encode protocol semantics, but they answer different questions:
 - `binding.semantics.name` answers "which boundary identity scheme does this use?" — used for pairing (matching consumers against providers).
@@ -166,7 +166,7 @@ These line up most of the time but aren't always 1:1 (a single semantics could h
 | Class | Examples | Structural fields |
 |---|---|---|
 | `storage-access` | Prisma, Drizzle, raw SQL | `kind` (R/W), `fields`, `selector`, `operation` |
-| `rpc-call` | fetch, axios, Apollo Client, gRPC unary | `method`, `payload`, `responseShape` |
+| `service-call` | fetch, axios, Apollo Client, gRPC unary | `method`, `payload`, `responseShape` |
 | `message-send` | SQS producer, BullMQ.add, Kafka producer | `body`, `routingKey` |
 | `config-read` | `process.env.X`, dotenv lookups | `name`, `defaulted` |
 
@@ -174,7 +174,7 @@ Future classes that are strictly additive: `time-read` (clock), `random-read` (e
 
 ### Sub-summary synthesis on rich-response classes
 
-When an `interaction` effect's class has rich response semantics (`rpc-call` today; future GraphQL streams, gRPC streams), the adapter synthesises a `caller`-kind sub-summary at the call site. Transitions on the sub-summary capture the response-shape branching (`if (res.ok) { ... }`). The sub-summary's `boundaryBinding` matches the effect's. Both pair against the same provider.
+When an `interaction` effect's class has rich response semantics (`service-call` today; future GraphQL streams, gRPC streams), the adapter synthesises a `caller`-kind sub-summary at the call site. Transitions on the sub-summary capture the response-shape branching (`if (res.ok) { ... }`). The sub-summary's `boundaryBinding` matches the effect's. Both pair against the same provider.
 
 For other classes (`storage-access`, `message-send`, `config-read`), no sub-summary spawns. The structural fact alone is the artifact.
 
@@ -197,7 +197,7 @@ The current per-pass pairing functions (`checkConsumerSatisfaction`, `checkRelat
 ### How each pattern lowers to the unified shape
 
 #### A (fetch)
-- Recognizer emits `interaction { binding: restClientBinding(...), interaction: { class: "rpc-call", method, payload, responseShape } }`.
+- Recognizer emits `interaction { binding: restClientBinding(...), interaction: { class: "service-call", method, payload, responseShape } }`.
 - Adapter synthesises a `caller` sub-summary; transitions capture `if (res.ok) { ... }` branching.
 - Existing OpenAPI / CFN-API-Gateway providers pair against the sub-summary the same way they pair against today's `client` summaries.
 
@@ -219,7 +219,7 @@ The current per-pass pairing functions (`checkConsumerSatisfaction`, `checkRelat
 
 **Changes:**
 
-- `clientCall` discovery → recognizer that emits `interaction(class: "rpc-call")` + spawns a `caller` sub-summary. The user-facing pack API stays similar (still `clientCall` match shape), but internally it produces effects.
+- `clientCall` discovery → recognizer that emits `interaction(class: "service-call")` + spawns a `caller` sub-summary. The user-facing pack API stays similar (still `clientCall` match shape), but internally it produces effects.
 - `storageAccess` effect → folds into `interaction(class: "storage-access")`. Removed from the IR in the same change that adds `interaction`.
 - `runtimeConfig` recognition → moves from checker arg scanning to a recognizer that emits `interaction(class: "config-read")`. Same provider summaries on the other side.
 - Per-pass pairing functions consolidate into one generic dispatcher with per-class finding generators.
@@ -255,9 +255,9 @@ To confirm during SQS work: does any SQS pattern produce fan-out? (Probably not 
 
 ### P2 — Sub-summary spawning rule
 
-v0 rule: `rpc-call` class spawns a `caller` sub-summary; other classes don't. Per-class invariant, not per-call AST.
+v0 rule: `service-call` class spawns a `caller` sub-summary; other classes don't. Per-class invariant, not per-call AST.
 
-To confirm during SQS work: does any SQS pattern want a sub-summary? Probably not — `sqs.send` is fire-and-forget; the producer doesn't branch on the response. So the rule "rpc-call spawns; nothing else does" stays adequate. But this is exactly the kind of thing that breaks once we hit something like a callback-shaped queue API where the consumer registers a handler and the producer awaits a response — at that point, "rich response semantics" becomes a per-call decision, not a per-class one. The recognizer probably needs a `spawnSubSummary?: boolean` field per emission to handle that future case. Defer until we hit it.
+To confirm during SQS work: does any SQS pattern want a sub-summary? Probably not — `sqs.send` is fire-and-forget; the producer doesn't branch on the response. So the rule "service-call spawns; nothing else does" stays adequate. But this is exactly the kind of thing that breaks once we hit something like a callback-shaped queue API where the consumer registers a handler and the producer awaits a response — at that point, "rich response semantics" becomes a per-call decision, not a per-class one. The recognizer probably needs a `spawnSubSummary?: boolean` field per emission to handle that future case. Defer until we hit it.
 
 ### P3 — Inbound interactions: binding-only
 
