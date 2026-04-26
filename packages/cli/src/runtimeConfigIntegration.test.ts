@@ -23,7 +23,7 @@ import { cloudFormationFileToSummaries } from "@suss/contract-cloudformation";
 import type { PatternPack } from "@suss/extractor";
 
 const repoRoot = path.resolve(__dirname, "../../..");
-const fixtureRoot = path.join(repoRoot, "fixtures/runtimeConfig");
+const fixtureRoot = path.join(repoRoot, "fixtures/runtime-config");
 
 /**
  * Tiny pack that discovers `export async function handler` (and

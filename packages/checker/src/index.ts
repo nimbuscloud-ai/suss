@@ -8,7 +8,7 @@ import { dedupeFindings } from "./dedupe.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
-import { checkRuntimeConfig } from "./runtimeConfig/runtimeConfigPairing.js";
+import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 import { checkRelationalStorage } from "./storage/relationalPairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 
@@ -62,7 +62,7 @@ export {
   type SummaryPair,
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
-export { checkRuntimeConfig } from "./runtimeConfig/runtimeConfigPairing.js";
+export { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 export { checkRelationalStorage } from "./storage/relationalPairing.js";
 export { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 export {
