@@ -127,14 +127,6 @@ export const FindingKindSchema = z.enum([
    */
   "authPolicyMismatch",
   /**
-   * A declared-scenario source (Storybook story, fixture, example
-   * payload) references a prop / arg the target unit doesn't declare
-   * as an input. Almost always means the scenario is outdated — the
-   * component removed or renamed a prop but the scenario wasn't
-   * updated. Emitted by the component/story agreement check.
-   */
-  "scenarioArgUnknown",
-  /**
    * A component has a conditional branch that depends on a prop,
    * and no declared scenario (Storybook story, fixture, etc.)
    * exercises that branch. Emitted by the component/story
@@ -145,10 +137,10 @@ export const FindingKindSchema = z.enum([
   "scenarioCoverageGap",
   /**
    * A scenario doesn't supply a prop the component declares
-   * required. Severity: error. Distinct from `scenarioArgUnknown`
-   * (story passes a prop the component doesn't accept) — this
-   * is the inverse: the component requires it; the story omits
-   * it. Reserved in v0 taxonomy; emitter waits for the
+   * required. Severity: error. The inverse of the construct-side
+   * `boundaryFieldUnknown` (story passes a prop the component
+   * doesn't accept) — here the component requires it; the story
+   * omits it. Reserved in v0 taxonomy; emitter waits for the
    * component-input pack to surface required-vs-optional on
    * declared inputs (today the React adapter records inputs
    * but not their required-ness).
@@ -163,27 +155,6 @@ export const FindingKindSchema = z.enum([
    * pass `as any`. Reserved in v0 taxonomy.
    */
   "componentPropTypeMismatch",
-  /**
-   * A GraphQL consumer operation selects a root-level field
-   * (Query.*, Mutation.*, Subscription.*) that no provider
-   * resolver implements. Emitted by the operation→resolver
-   * pairing pass when an operation touches a field for which
-   * no `graphql-resolver(typeName, fieldName)` summary exists
-   * in the visible set. A strong signal the consumer is out
-   * of sync with the deployed schema — either the operation
-   * got stale or the resolver was removed.
-   */
-  "graphqlFieldNotImplemented",
-  /**
-   * A GraphQL consumer operation selects a nested field on an
-   * object type that the provider's schema doesn't declare.
-   * Example: operation selects `pet { deletedAt }` but the
-   * schema's `Pet` type has no `deletedAt` field. Emitted by
-   * the nested-selection pass when the provider's
-   * `metadata.graphql.schemaSdl` surfaces a type whose field
-   * set excludes the consumer's selection.
-   */
-  "graphqlSelectionFieldUnknown",
   /**
    * A GraphQL consumer operation declares a variable type that
    * doesn't match the resolver's argument type. Example:
@@ -214,25 +185,6 @@ export const FindingKindSchema = z.enum([
    * value escapes typing or comes from a literal-string client.
    */
   "graphqlEnumValueUnknown",
-  /**
-   * Code reads `process.env.X` from a source file scoped to a
-   * deployable runtime instance, but that runtime's declared
-   * env-var contract doesn't include `X`. Emitted by
-   * checkRuntimeConfig — the dominant cause is a typo or a
-   * declaration omission between the code and the
-   * infrastructure template (CFN/SAM/k8s manifest). Severity is
-   * error: at deploy time this surfaces as a runtime undefined.
-   */
-  "envVarUnprovided",
-  /**
-   * A deployable runtime instance declares an env var that no
-   * code in its codeScope reads. Emitted by checkRuntimeConfig
-   * — usually dead config left over from a removed feature, or
-   * a renamed var the template still references. Severity is
-   * warning: the deployment still works, but the contract has
-   * stale fields the consumer ignored.
-   */
-  "envVarUnused",
   /**
    * A runtime-config-bound provider summary declares no
    * codeScope (or one we couldn't resolve to source files), so
@@ -267,38 +219,41 @@ export const FindingKindSchema = z.enum([
    */
   "envVarTypeCoercionMissing",
   /**
-   * Code reads a column the schema doesn't declare. Most often a
-   * typo (`deltedAt` instead of `deletedAt`) or stale code that
-   * still references a renamed column. Severity: error — at
-   * runtime this resolves to undefined and silently flips truthy
-   * checks downstream. Emitted by checkRelationalStorage.
+   * Generic — consumer references a field that the provider's
+   * contract doesn't declare. Subsumes the per-domain kinds that
+   * shipped earlier (storageReadFieldUnknown, storageWriteFieldUnknown,
+   * envVarUnprovided, graphqlFieldNotImplemented,
+   * graphqlSelectionFieldUnknown, scenarioArgUnknown).
+   *
+   * The boundary's `binding.semantics.name` carries the domain
+   * context (storage-relational, runtime-config, graphql-resolver,
+   * function-call, …); the optional `Finding.aspect` distinguishes
+   * read vs write vs construct, which matters for severity and
+   * remediation. Emitted by every per-domain checker that pairs
+   * consumer field references against provider field declarations.
    */
-  "storageReadFieldUnknown",
+  "boundaryFieldUnknown",
   /**
-   * Code writes a column the schema doesn't declare. Same family
-   * as storageReadFieldUnknown but on the write side; the row
-   * gets inserted/updated without the field — silent data loss.
-   * Severity: error.
+   * Generic — provider declares a field that no consumer in the
+   * analysed scope references. Subsumes storageFieldUnused,
+   * storageWriteOnlyField, envVarUnused.
+   *
+   * `Finding.aspect` distinguishes "no consumer reads or writes" (no
+   * aspect) from "no consumer reads, but writers exist" (aspect:
+   * "read") — the latter is the write-only case. Default severity is
+   * warning (dead config, not user-visible failure).
    */
-  "storageWriteFieldUnknown",
+  "boundaryFieldUnused",
   /**
-   * Schema declares a column that no code in the project reads
-   * or writes. Usually dead config left over from a removed
-   * feature, or a renamed column the schema still has. Severity:
-   * warning — the column still exists in the database but
-   * nothing exercises it. Suppressed when ANY caller uses
-   * default-shape (`["*"]`) reads on the table, since we can't
-   * tell whether default-shape consumers actually use the column.
+   * Generic — both sides declare a field but disagree on its shape
+   * (type, nullability, enum membership, etc.). The `aspect` field
+   * names which side discovered the disagreement (read / write /
+   * send / receive / construct). Severity is per-emitter; some
+   * cases are runtime errors (write-side type mismatch on a typed
+   * column) while others are silent coercions (read-side
+   * env-var-as-number).
    */
-  "storageFieldUnused",
-  /**
-   * A column that code writes but no code ever reads. Likely
-   * useless data — the application stores values nothing
-   * downstream consumes. Severity: warning. Could indicate dead
-   * code, an in-progress feature, or a column that should be
-   * dropped.
-   */
-  "storageWriteOnlyField",
+  "boundaryShapeMismatch",
   /**
    * A `findUnique`-style selector references a column set that
    * isn't a unique index on the table. At runtime the call
@@ -372,6 +327,19 @@ export const FindingKindSchema = z.enum([
    */
   "messageBusUnused",
   /**
+   * A producer's `message-send` body shape disagrees with the
+   * consumer's `message-receive` body shape on the same channel.
+   * v0 detects field-name mismatches when both sides expose object-
+   * literal shapes (producer `JSON.stringify({ orderId })`, consumer
+   * destructures `{ id }` after `JSON.parse(record.body)`). Severity:
+   * warning — opaque sides (identifier args, dynamic builders) are
+   * skipped rather than guessed at, so the absence of this finding
+   * doesn't imply agreement. Type-shape comparison (string vs number
+   * on the same field) is reserved future work — depends on full
+   * EffectArg → TypeShape inference.
+   */
+  "messageBusBodyShapeMismatch",
+  /**
    * A pack identifies a boundary it doesn't know how to
    * summarise — a WebSocket subscription handler, an SSE stream
    * producer, a gRPC streaming method, etc. Severity: info. The
@@ -398,6 +366,38 @@ export const FindingKindSchema = z.enum([
 ]);
 
 export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);
+
+/**
+ * Names which "side" of a field a generic boundary finding concerns.
+ * Lets `boundaryFieldUnknown` / `boundaryFieldUnused` /
+ * `boundaryShapeMismatch` carry the read-vs-write-vs-construct
+ * distinction without requiring a separate kind per direction.
+ *
+ * - `read`: consumer reads the field (e.g. `process.env.X`, Prisma
+ *   `select: { X: true }`, GraphQL selection set)
+ * - `write`: consumer writes the field (e.g. Prisma `data: { X: 1 }`)
+ * - `send`: consumer sends a field on an outbound payload (request
+ *   body, message body, GraphQL variable)
+ * - `receive`: consumer reads a field from an inbound payload
+ *   (response body field, message body field after parse)
+ * - `construct`: scenario / fixture sets a field as input to its
+ *   target (Storybook story passing a prop)
+ * - `selector`: field appears in a query selector (Prisma `where`,
+ *   index lookup) — distinct from data-side aspects since selector
+ *   constraints differ
+ *
+ * Optional on findings; absent means the aspect is irrelevant or
+ * the finding spans multiple aspects (e.g. `boundaryFieldUnused` with
+ * no aspect = "no consumer reads OR writes this field at all").
+ */
+export const BoundaryAspectSchema = z.enum([
+  "read",
+  "write",
+  "send",
+  "receive",
+  "construct",
+  "selector",
+]);
 
 export const ConfidenceSourceSchema = z.enum([
   "inferred_static",
@@ -1055,6 +1055,27 @@ export const EffectSchema = z.discriminatedUnion("type", [
         body: z.unknown().optional(),
         routingKey: z.string().optional(),
       }),
+      /**
+       * Consumer-side body extraction from a message. Sister to
+       * `message-send`: producer-side records what shape goes IN to
+       * the queue / topic, consumer-side records what shape comes OUT.
+       * Pairs against `message-send` by channel — the channel is
+       * usually carried on the enclosing handler's CFN-declared
+       * event-source mapping (consumer-side recognizers leave the
+       * channel implicit because the SQS / Kafka handler signature
+       * doesn't name it; the checker joins via the consumer summary's
+       * `binding.semantics.channel`).
+       *
+       * `body` is the EffectArg-shaped extraction of the parsed
+       * message — typically the destructured field set after
+       * `JSON.parse(record.body)`, an `as Type` cast, or both.
+       * Compared against the producer's `body` to detect field-name
+       * or shape mismatches.
+       */
+      z.object({
+        class: z.literal("message-receive"),
+        body: z.unknown().optional(),
+      }),
       z.object({
         class: z.literal("config-read"),
         name: z.string(),
@@ -1144,6 +1165,16 @@ export const FindingSchema = z.object({
   consumer: FindingSideSchema,
   description: z.string(),
   severity: FindingSeveritySchema,
+  /**
+   * For generic boundary findings (`boundaryFieldUnknown`,
+   * `boundaryFieldUnused`, `boundaryShapeMismatch`), names which
+   * side of the field the finding concerns — read / write / send /
+   * receive / construct / selector. See `BoundaryAspectSchema` for
+   * the per-value semantics. Absent on findings where the aspect
+   * is irrelevant (most non-generic kinds) or where the finding
+   * spans multiple aspects.
+   */
+  aspect: BoundaryAspectSchema.optional(),
   /**
    * Present only when two or more identical findings (same kind,
    * boundary, description, consumer) from different providers were

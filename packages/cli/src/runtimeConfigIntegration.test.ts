@@ -56,7 +56,9 @@ const lambdaHandlerPack: PatternPack = {
 describe("runtime-config integration", () => {
   it("flags STRIPE_API_KEY (typo'd as STRIPE_KEY in template) as unprovided", async () => {
     const findings = await runPipeline();
-    const unprovided = findings.filter((f) => f.kind === "envVarUnprovided");
+    const unprovided = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
     const stripe = unprovided.find((f) =>
       f.description.includes("STRIPE_API_KEY"),
     );
@@ -67,7 +69,9 @@ describe("runtime-config integration", () => {
 
   it("flags KAFKA_BROKER (omitted from template) as unprovided", async () => {
     const findings = await runPipeline();
-    const unprovided = findings.filter((f) => f.kind === "envVarUnprovided");
+    const unprovided = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
     const kafka = unprovided.find((f) =>
       f.description.includes("KAFKA_BROKER"),
     );
@@ -78,7 +82,7 @@ describe("runtime-config integration", () => {
 
   it("flags LEGACY_FEATURE_FLAG (declared but never read) as unused", async () => {
     const findings = await runPipeline();
-    const unused = findings.filter((f) => f.kind === "envVarUnused");
+    const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
     const legacy = unused.find((f) =>
       f.description.includes("LEGACY_FEATURE_FLAG"),
     );
@@ -89,7 +93,7 @@ describe("runtime-config integration", () => {
 
   it("does not flag platform-injected vars as unused", async () => {
     const findings = await runPipeline();
-    const unused = findings.filter((f) => f.kind === "envVarUnused");
+    const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
     // AWS_REGION etc. are platform-injected — no code in the fixture
     // reads them, but they should NOT surface as envVarUnused
     // because the stub marks them as source=platform.
@@ -102,8 +106,8 @@ describe("runtime-config integration", () => {
   it("does not flag declared-and-read vars (DATABASE_URL, STRIPE_WEBHOOK_SECRET)", async () => {
     const findings = await runPipeline();
     const everything = [
-      ...findings.filter((f) => f.kind === "envVarUnprovided"),
-      ...findings.filter((f) => f.kind === "envVarUnused"),
+      ...findings.filter((f) => f.kind === "boundaryFieldUnknown"),
+      ...findings.filter((f) => f.kind === "boundaryFieldUnused"),
     ];
     expect(
       everything.find((f) => f.description.includes("DATABASE_URL")),

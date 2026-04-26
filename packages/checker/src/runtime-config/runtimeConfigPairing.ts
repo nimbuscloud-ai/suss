@@ -316,7 +316,8 @@ function makeUnprovidedFinding(
 ): Finding {
   const semantics = binding.semantics as RuntimeConfigSemantics;
   return {
-    kind: "envVarUnprovided",
+    kind: "boundaryFieldUnknown",
+    aspect: "read",
     boundary: binding,
     provider: makeSide(runtime),
     consumer: makeSide(read.summary, read.transitionId),
@@ -332,7 +333,7 @@ function makeUnusedFinding(
 ): Finding {
   const semantics = binding.semantics as RuntimeConfigSemantics;
   return {
-    kind: "envVarUnused",
+    kind: "boundaryFieldUnused",
     boundary: binding,
     provider: makeSide(runtime),
     // No code consumer to point at; reuse the runtime side so the

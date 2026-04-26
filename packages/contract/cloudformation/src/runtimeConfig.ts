@@ -13,7 +13,7 @@
 // set the process sees, including platform-injected vars) and
 // `metadata.runtimeContract.envVarSources` (provenance per name —
 // "template" vs "platform"). The pairing checker uses the source
-// distinction so platform-injected vars never fire envVarUnused.
+// distinction so platform-injected vars never fire boundaryFieldUnused.
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
@@ -79,7 +79,8 @@ const PLATFORM_INJECTED: Record<
  * summary per Lambda / ECS task / etc. that declares an environment
  * block. Resources without an Environment property still emit a
  * summary so the checker can flag any env-var read scoped to them
- * as `envVarUnprovided` — declaring no vars is itself a contract.
+ * as `boundaryFieldUnknown` (aspect: read) — declaring no vars is
+ * itself a contract.
  */
 export function buildRuntimeConfigSummaries(
   resources: Record<string, CloudFormationResource>,
