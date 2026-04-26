@@ -194,7 +194,8 @@ type Output =
   | { type: "response"; statusCode: ValueRef | null; body: TypeShape | null;
       headers: Record<string, ValueRef> }
   | { type: "throw"; exceptionType: string | null; message: string | null }
-  | { type: "render"; component: string; props?: Record<string, unknown> }
+  | { type: "render"; component: string; props?: Record<string, unknown>;
+      root?: RenderNode }
   | { type: "return"; value: TypeShape | null }
   | { type: "delegate"; to: string }
   | { type: "emit"; event: string; payload?: TypeShape }
@@ -207,7 +208,7 @@ What terminals produce — the universal set of output shapes. The framework pac
 
 **`throw`** — an exception. `exceptionType` is the constructor expression text (e.g., `"HttpError.NotFound"`, `"new Error(...)"`). Not the actual JavaScript class — we can't resolve that statically in general.
 
-**`render`** — a component render result. Used for React components, Vue render functions, etc.
+**`render`** — a component render result. Used for React components, Vue render functions, etc. The optional `root` field carries the full structured `RenderNode` tree (JSX subtree, conditional sub-renders, child component invocations); packs that understand their source language's render form populate it so cross-boundary checking can compare structural output against contract sources (snapshots, Storybook stories, Figma variants). Consumers that only care about the root element read `component`; those that want the full tree read `root`.
 
 **`return`** — a plain return value. `value` is a `TypeShape` because for functions like hooks and utilities, the shape is the contract.
 
@@ -267,14 +268,41 @@ The IR captures *what* data flows — not the codec that produced it. Two produc
 ```typescript
 type Effect =
   | { type: "mutation"; target: string; operation: "create" | "update" | "delete" }
-  | { type: "invocation"; callee: string; args: unknown[]; async: boolean }
+  | { type: "invocation"; callee: string; args: EffectArg[]; async: boolean;
+      preconditions?: Predicate[] }
   | { type: "emission"; event: string; payload?: unknown }
-  | { type: "stateChange"; variable: string; newValue?: unknown };
+  | { type: "stateChange"; variable: string; newValue?: unknown }
+  | { type: "interaction";
+      binding: BoundaryBinding;
+      callee?: string;
+      groupId?: string;
+      preconditions?: Predicate[];
+      interaction:
+        | { class: "storage-access"; kind: "read" | "write";
+            fields: string[]; selector?: string[]; operation?: string }
+        | { class: "service-call"; method: string; payload?: unknown;
+            responseShape?: TypeShape }
+        | { class: "message-send"; body?: unknown; routingKey?: string }
+        | { class: "config-read"; name: string; defaulted?: boolean };
+    };
 ```
 
-Side effects observed within a transition. For v0, effects are recorded but not deeply analyzed — the presence of a database mutation is noted, but we don't model what it mutates. Downstream tools can use the effect list for impact analysis ("this PR changes a handler that writes to `users`; here are consumers of `users`").
+Side effects observed within a transition. Two layers of detail today:
 
-Effect tracking is deliberately shallow in v0. Full effect analysis (who reads what, transaction boundaries, eventual consistency) is a future concern.
+**Coarse effects** (`mutation`, `invocation`, `emission`, `stateChange`) record that *something* happened — a call fired, a state variable was set, an event was emitted. The downstream value is impact analysis: "this PR changes a handler that writes to `users`; here are consumers of `users`."
+
+**`interaction` effects** are the typed boundary-crossing effects. Each one carries the `BoundaryBinding` of the thing it talks to, plus a discriminated `interaction.class` payload describing the operation. The four classes today are:
+
+- **`storage-access`** — Prisma client calls, Drizzle queries, raw SQL. Pairs against storage-relational provider summaries (Prisma schema, etc.) by `(storageSystem, scope, table)`.
+- **`service-call`** — fetch / axios / ts-rest client / Apollo client. Pairs against REST or GraphQL providers.
+- **`message-send`** — SQS / Kafka / BullMQ producers. Pairs against message-bus consumer summaries by `(messageBus, channel)`.
+- **`config-read`** — `process.env.X` accesses. Pairs against runtime-config provider summaries by env-var name + codeScope.
+
+Adding a class is a strictly additive IR change. Each class maps 1:1 to a `binding.semantics.name` (`storage-relational`, `rest`, `message-bus`, `runtime-config`) by convention; not enforced by the IR but every shipped recognizer follows it. See [`framework-packs.md`](framework-packs.md) for the recognizer primitive that emits these (`invocationRecognizers` and `accessRecognizers`).
+
+`preconditions` on `invocation` and `interaction` carry ancestor conditions that gate reaching the effect within its enclosing transition — populated for calls nested inside conditional blocks or loop bodies.
+
+`EffectArg` (the recursive value-tree referenced under `invocation.args`) is defined in `@suss/extractor`, not in the IR — see `packages/extractor/src/index.ts`. It's the structured representation of source-text arguments (objects preserve fields, identifiers and call-chains preserve composition) and is what powers the typed `interaction` payloads above.
 
 ## `Input`
 
@@ -340,19 +368,20 @@ Consumers use confidence to decide how strictly to enforce findings. High-confid
 ## `Finding`
 
 ```typescript
-type FindingKind =
-  | "unhandledProviderCase"
-  | "deadConsumerBranch"
-  | "providerContractViolation"
-  | "consumerContractViolation"
-  | "lowConfidence";
+type FindingKind = string;  // see FindingKindSchema in packages/ir/src/schemas.ts
 
 type FindingSeverity = "error" | "warning" | "info";
 
 interface FindingSide {
   summary: string;         // stable identifier, e.g., "src/handlers/users.ts::getUser"
-  transitionId?: string;   // omitted when the finding isn't tied to a single transition
+  transitionId?: string;   // set when the finding is tied to a specific branch
   location: SourceLocation;
+}
+
+interface FindingSuppression {
+  reason: string;
+  effect: "mark" | "downgrade" | "hide";
+  originalSeverity?: FindingSeverity;  // present when effect === "downgrade"
 }
 
 interface Finding {
@@ -362,16 +391,25 @@ interface Finding {
   consumer: FindingSide;
   description: string;
   severity: FindingSeverity;
+  sources?: string[];               // present only when dedupe collapsed multiple
+                                    // identical findings from different providers
+  suppressed?: FindingSuppression;  // present only when a .sussignore rule matched
 }
 ```
 
-What the pairwise checker emits. Each finding names the boundary, both sides of it, and a human-readable description. The full algorithm and each finding kind live in [`cross-boundary-checking.md`](cross-boundary-checking.md); this section covers the type surface.
+What the pairwise checker emits. Each finding names the boundary, both sides of it, and a human-readable description.
 
-**Why both sides are always named.** Even when only one side is at fault (e.g., `providerContractViolation` is structurally about provider-vs-contract), the finding still points at the consumer summary it was checked against — so tooling can attribute the finding to a specific pairing rather than a free-floating provider. `transitionId` is the optional field; the two `summary` references are required.
+The `kind` enum is open-ended in this doc on purpose — the canonical list spans REST, GraphQL, React, storage, message-bus, runtime-config, and meta domains and changes as new packs ship. The authoritative enumeration is `FindingKindSchema` in `packages/ir/src/schemas.ts`; the [findings catalog](/reference/findings) groups every kind by domain with severity, emitter, and a concrete example.
+
+**Why both sides are always named.** Even when only one side is at fault (e.g., `providerContractViolation` is structurally about provider-vs-its-own-contract), the finding still points at a consumer summary — typically the same summary, used as the pairing anchor — so tooling can attribute the finding to a specific pairing rather than a free-floating provider. `transitionId` is the optional field; both `summary` references are required.
+
+**`sources`** is set when the dedupe pass collapses identical findings from multiple providers. Each entry is a `${file}::${name}` matching `FindingSide.summary` — useful for tooling that wants to surface every contributor without re-running the checker.
+
+**`suppressed`** is set when a `.sussignore` rule matched. The `effect` field tells downstream tools how the finding was handled (`mark` keeps it visible but excludes from exit-code; `downgrade` drops one severity level; `hide` removes it entirely). See [Suppressions](/suppressions) for the rule format.
 
 **Why findings live in `@suss/behavioral-ir`, not in the checker package.** Other tools (diff viewers, aggregation layers, the product) consume findings the same way they consume summaries. Keeping the shape in the IR package means no downstream consumer depends on `@suss/checker` only to read a finding.
 
-**Severity drives CLI exit codes.** `suss check` exits non-zero when any `error`-severity finding is present; `warning` and `info` are reported but don't fail the process. Contract violations and unhandled provider cases are errors; dead consumer branches are warnings; `lowConfidence` is informational.
+**Severity drives CLI exit codes.** `suss check` exits non-zero when any `error`-severity finding is present; `warning` and `info` are reported but don't fail the process. The default severity per kind is in the [findings catalog](/reference/findings); `--fail-on warning` (or `info`) raises the gate, `.sussignore` `effect: downgrade` lowers individual ones.
 
 ## `RawCodeStructure`
 

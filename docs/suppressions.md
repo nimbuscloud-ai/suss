@@ -29,7 +29,7 @@ rules:
 
 | Field | Required | Notes |
 |---|---|---|
-| `kind` | at least one of kind/boundary/consumer.transitionId unless `scope: broad` | One of: `unhandledProviderCase`, `deadConsumerBranch`, `providerContractViolation`, `consumerContractViolation`, `lowConfidence`. |
+| `kind` | at least one of kind/boundary/consumer.transitionId unless `scope: broad` | Any value from `FindingKindSchema` — see the [findings catalog](/reference/findings) for the full list (REST coverage / contract / consumer kinds, GraphQL pairing, React-Storybook, storage-relational, message-bus, runtime-config, plus meta kinds like `lowConfidence`). |
 | `boundary` | see above | Human-readable key: `"METHOD /path"`. Both `:id` and `{id}` syntaxes accepted. |
 | `consumer.summary` | optional | `${file}::${name}` key matching the consumer side of the finding. |
 | `consumer.transitionId` | optional | Matches `Finding.consumer.transitionId`. |
