@@ -114,12 +114,16 @@ Not a beachhead use case; a coverage broadener.
 ## Scope
 
 In:
-- **Prisma** (one ORM, well). Schema parser, access pattern pack,
-  pairing.
+- **Prisma AND Drizzle.** The two dominant TS ORMs. Each gets its
+  own contract-source pack (schema reader) and access pack
+  (call-site / builder-chain analysis). Forces the IR + checker
+  abstractions to stay ORM-agnostic.
 - Four finding kinds: `storageReadFieldUnknown`,
   `storageWriteFieldUnknown`, `storageFieldUnused`,
   `storageWriteOnlyField`.
 - Field-level granularity (`User.deletedAt`).
+- Multi-table access per call site (joins / nested selects emit one
+  storage effect per touched table).
 - Stable summary artifact (substrate for product cross-repo
   audit features later).
 
@@ -177,16 +181,29 @@ Out (deferred, each its own follow-up):
     indexes: Array<{ fields: string[]; unique: boolean }>;  // optional, for future drift checks
   }
   ```
-- New `metadata.storageAccess` shape on consumer summaries — one
-  entry per call site:
+- New `storageAccess` variant added to `EffectSchema` — every
+  storage read/write captured as an effect on the transition that
+  performs it (NOT as `metadata.storageAccess` on the summary).
+  This gives storage accesses the same execution-path attribution
+  invocation effects already have (preconditions, location). One
+  call site can emit MULTIPLE storageAccess effects when the query
+  joins or nests across tables.
   ```ts
   {
-    table: string;
-    operation: "read" | "write";
-    fields: string[];                 // columns referenced (read or written)
-    selector?: string[];               // columns used in `where` (reads)
+    type: "storageAccess",
+    kind: "read" | "write",
+    storageSystem: string,            // matches the boundary semantics
+    table: string,
+    fields: string[],                 // ["*"] for default-shape reads
+    selector?: string[],              // where-clause fields (reads)
+    operation?: string,               // findUnique / create / select — informational
+    preconditions?: Predicate[]       // gating conditions, like invocation
   }
   ```
+  The pre-existing `mutation` effect (`{ type: "mutation", target,
+  operation }`) stays for non-DB state mutations (Redux dispatch,
+  in-memory state changes) — it's coarser by design and predates
+  storage support.
 - Add finding kinds: `storageReadFieldUnknown`,
   `storageWriteFieldUnknown`, `storageFieldUnused`,
   `storageWriteOnlyField`.
@@ -208,9 +225,12 @@ Out (deferred, each its own follow-up):
   `storageWriteOnlyField` (warning — likely dead data).
 - Wire into `checkAll`.
 
-### Prisma stub (Phase 6.2)
+### Schema readers (Phase 6.2)
 
-`packages/stub/prisma/`:
+Two parallel packs reading their respective schema declarations.
+
+**`packages/stub/prisma/`** (or `packages/contract/prisma/` if we
+rename per the in-flight stub→contract discussion):
 - Parse `schema.prisma` via `@prisma/internals` (their own parser,
   exposed as a library) — avoids hand-rolling a Prisma DSL parser.
 - Emit one provider summary per `model`. Storage system inferred
@@ -218,26 +238,72 @@ Out (deferred, each its own follow-up):
 - Carry `metadata.storageContract.columns` from the model's field
   list (name, type, nullable, primary, unique).
 
-### Prisma access pack (Phase 6.3)
+**`packages/stub/drizzle/`**:
+- Drizzle's schema lives in TS source — `pgTable("users",
+  { id: serial(...), email: varchar(...).notNull(), … })`. There's
+  no separate schema file.
+- Discovery walks for `pgTable("name", { ... })` /
+  `mysqlTable(...)` / `sqliteTable(...)` calls in the project's
+  `src/` (configurable). The first arg is the table name; the
+  second is an object literal whose keys are columns and whose
+  values are column-type call expressions (`serial`, `varchar`,
+  etc.) carrying nullability / uniqueness via chained methods.
+- Emit one provider summary per detected table call. Storage
+  system inferred from which builder (`pgTable` → postgres,
+  `mysqlTable` → mysql, etc.).
 
-`packages/framework/prisma/`:
+### Access packs (Phase 6.3)
+
+Both packs feed into the SAME `storage` boundary semantics; the
+checker doesn't know or care which produced an effect.
+
+**`packages/framework/prisma/`**:
 - Discovery: any function calling `<client>.<model>.<method>(args)`
   where `<client>` is an imported `PrismaClient` instance. Methods:
   `findUnique`, `findFirst`, `findMany`, `create`, `update`,
   `delete`, `upsert`, `createMany`, `updateMany`, `deleteMany`,
   `count`, `aggregate`.
-- Per call: emit `metadata.storageAccess` with:
+- Per call: emit one `storageAccess` effect on the enclosing
+  transition with:
   - `table`: the `<model>` segment
-  - `operation`: read for find/count/aggregate, write for everything else
+  - `kind`: read for find/count/aggregate, write for everything else
   - `fields`: extracted from `select`, `include`, `data`, `update`
     object literals at the call site (literal-shape extraction
     similar to ts-rest contract reading)
   - `selector`: extracted from `where`
+- Nested `select` / `include` walking emits ADDITIONAL
+  `storageAccess` effects for each related table touched. One
+  `db.user.findUnique({ select: { email: true, orders: { select:
+  { total: true } } } })` produces two effects: User reads `email`,
+  Order reads `total`.
 - Default-shape handling: a `findUnique({ where: { id } })` with no
   `select` reads ALL scalar fields by default. Record this as
-  `fields: ["*"]` so the pairing layer knows "everything was read"
-  without enumerating; the unused-column check then has to
-  conservatively assume any column might have been read.
+  `fields: ["*"]`. The unused-column check has to conservatively
+  treat any column as potentially read when ANY caller uses
+  default-shape on that table — which means in practice the
+  unused-column finding only fires when EVERY caller uses explicit
+  `select` and none mention the column.
+
+**`packages/framework/drizzle/`**:
+- Discovery: any function calling `<db>.select(...)`,
+  `<db>.insert(...)`, `<db>.update(...)`, `<db>.delete(...)` where
+  `<db>` resolves to a `drizzle(...)` factory output.
+- Builder-chain analysis: walk the chain to extract structure.
+  - `.from(usersTable)` → table name (resolved via the `pgTable`
+    declaration).
+  - `.select({ email: users.email, total: orders.total })` → field
+    set, with table attribution per field.
+  - `.innerJoin(ordersTable, ...)` / `.leftJoin(...)` → additional
+    tables in scope; their selected fields belong to them.
+  - `.where(eq(users.id, x))` → selector fields.
+  - `.values({ email, name })` after `.insert(table)` → write
+    fields.
+  - `.set({ status: "active" })` after `.update(table)` → write
+    fields.
+- Emit one `storageAccess` effect per touched table per call
+  (joins → multiple effects, just like Prisma's nested selects).
+- Default-shape (`db.select().from(usersTable)` with no explicit
+  field list) reads `fields: ["*"]`, same convention as Prisma.
 
 ### End-to-end (Phase 6.4)
 
