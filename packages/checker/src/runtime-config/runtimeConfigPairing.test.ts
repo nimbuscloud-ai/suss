@@ -91,7 +91,9 @@ describe("checkRuntimeConfig", () => {
       envReads: ["STRIPE_API_KEY"],
     });
     const findings = checkRuntimeConfig([runtime, code]);
-    const unprovided = findings.filter((f) => f.kind === "envVarUnprovided");
+    const unprovided = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
     expect(unprovided).toHaveLength(1);
     expect(unprovided[0].severity).toBe("error");
     expect(unprovided[0].description).toContain("STRIPE_API_KEY");
@@ -110,7 +112,7 @@ describe("checkRuntimeConfig", () => {
       envReads: ["DATABASE_URL"],
     });
     const findings = checkRuntimeConfig([runtime, code]);
-    const unused = findings.filter((f) => f.kind === "envVarUnused");
+    const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
     expect(unused).toHaveLength(1);
     expect(unused[0].severity).toBe("warning");
     expect(unused[0].description).toContain("LEGACY_FLAG");
@@ -179,7 +181,9 @@ describe("checkRuntimeConfig", () => {
       envReads: ["SHARED_VAR"],
     });
     const findings = checkRuntimeConfig([runtimeA, runtimeB, shared]);
-    const unprovided = findings.filter((f) => f.kind === "envVarUnprovided");
+    const unprovided = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
     expect(unprovided).toHaveLength(2); // one per runtime
   });
 
@@ -228,7 +232,9 @@ describe("checkRuntimeConfig", () => {
       confidence: { source: "inferred_static", level: "high" },
     };
     const findings = checkRuntimeConfig([runtime, summary]);
-    const unprovided = findings.filter((f) => f.kind === "envVarUnprovided");
+    const unprovided = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
     expect(unprovided).toHaveLength(1);
     expect(unprovided[0].description).toContain("NESTED_VAR");
   });
@@ -273,8 +279,8 @@ describe("checkRuntimeConfig", () => {
       confidence: { source: "inferred_static", level: "high" },
     };
     const findings = checkRuntimeConfig([runtime, summary]);
-    expect(findings.filter((f) => f.kind === "envVarUnprovided")).toHaveLength(
-      1,
-    );
+    expect(
+      findings.filter((f) => f.kind === "boundaryFieldUnknown"),
+    ).toHaveLength(1);
   });
 });

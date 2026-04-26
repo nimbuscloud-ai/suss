@@ -409,7 +409,8 @@ function fieldNotImplementedFinding(
   }
   const sideSummary = `${operation.location.file}::${operation.identity.name}`;
   return {
-    kind: "graphqlFieldNotImplemented",
+    kind: "boundaryFieldUnknown",
+    aspect: "read",
     boundary: binding,
     // Symmetric sides: the operation is both "provider" and
     // "consumer" here — the finding is about the operation as a
@@ -440,7 +441,8 @@ function nestedFieldUnknownFinding(
   }
   const sideSummary = `${operation.location.file}::${operation.identity.name}`;
   return {
-    kind: "graphqlSelectionFieldUnknown",
+    kind: "boundaryFieldUnknown",
+    aspect: "read",
     boundary: binding,
     provider: {
       summary: `${parentTypeName}.${fieldName} (undeclared)`,

@@ -3,19 +3,17 @@
 // SQL DDL) against `interaction(class: "storage-access")` effects
 // on code summaries.
 //
-// Four field-existence findings ship in v0:
-//   storageReadFieldUnknown   error    code reads X, schema doesn't declare X
-//   storageWriteFieldUnknown  error    code writes X, schema doesn't declare X
-//   storageFieldUnused        warning  schema declares X, no code reads or writes
-//   storageWriteOnlyField     warning  schema declares X, code writes but never reads
+// Four field-existence findings ship in v0, all on the generic
+// boundaryField* enum so cross-domain tooling sees one vocabulary:
+//   boundaryFieldUnknown  aspect=read   error    code reads X, schema doesn't declare X
+//   boundaryFieldUnknown  aspect=write  error    code writes X, schema doesn't declare X
+//   boundaryFieldUnused   (no aspect)   warning  schema declares X, no code reads or writes
+//   boundaryFieldUnused   aspect=read   warning  schema declares X, code writes but never reads
 //
-// Five additional finding kinds are reserved in the IR but not
-// emitted yet:
-//   storageSelectorIndexMismatch
-//   storageTypeMismatch
-//   storageNullableViolation
-//   storageLengthConstraintViolation
-//   storageEnumConstraintViolation
+// Future-reserved value-constraint findings (storage type / nullable
+// / length / enum / selector-index) will use boundaryShapeMismatch
+// and boundarySelectorMismatch with appropriate aspects when emitters
+// land.
 //
 // Pairing key: (storageSystem, scope, table) — pulled from the
 // effect's `binding.semantics` (StorageRelationalSemantics), same as
@@ -205,13 +203,10 @@ function makeFieldUnknownFinding(
 ): Finding {
   const semantics = binding.semantics as StorageRelationalSemantics;
   const accessKind = access.effect.interaction.kind;
-  const findingKind =
-    accessKind === "read"
-      ? "storageReadFieldUnknown"
-      : "storageWriteFieldUnknown";
   const verb = accessKind === "read" ? "selects" : "writes";
   return {
-    kind: findingKind,
+    kind: "boundaryFieldUnknown",
+    aspect: accessKind,
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
@@ -227,7 +222,7 @@ function makeFieldUnusedFinding(
 ): Finding {
   const semantics = binding.semantics as StorageRelationalSemantics;
   return {
-    kind: "storageFieldUnused",
+    kind: "boundaryFieldUnused",
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
@@ -243,7 +238,8 @@ function makeWriteOnlyFinding(
 ): Finding {
   const semantics = binding.semantics as StorageRelationalSemantics;
   return {
-    kind: "storageWriteOnlyField",
+    kind: "boundaryFieldUnused",
+    aspect: "read",
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),

@@ -277,7 +277,8 @@ function makeUnknownArgFinding(
   meta: StorybookMeta,
 ): Finding {
   return {
-    kind: "scenarioArgUnknown",
+    kind: "boundaryFieldUnknown",
+    aspect: "construct",
     boundary: component.identity.boundaryBinding ?? fallbackReactBinding(),
     provider: {
       summary: `${component.location.file}::${component.identity.name}`,

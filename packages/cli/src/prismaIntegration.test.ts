@@ -80,7 +80,9 @@ describe("prisma integration", () => {
     const findings = await runPipeline();
     const f = findings.find(
       (f) =>
-        f.kind === "storageReadFieldUnknown" && f.description.includes("emial"),
+        f.kind === "boundaryFieldUnknown" &&
+        f.aspect === "read" &&
+        f.description.includes("emial"),
     );
     expect(f).toBeDefined();
     expect(f?.severity).toBe("error");
@@ -91,7 +93,9 @@ describe("prisma integration", () => {
     const findings = await runPipeline();
     const f = findings.find(
       (f) =>
-        f.kind === "storageWriteFieldUnknown" && f.description.includes("bdoy"),
+        f.kind === "boundaryFieldUnknown" &&
+        f.aspect === "write" &&
+        f.description.includes("bdoy"),
     );
     expect(f).toBeDefined();
     expect(f?.severity).toBe("error");
@@ -102,7 +106,9 @@ describe("prisma integration", () => {
     const findings = await runPipeline();
     const f = findings.find(
       (f) =>
-        f.kind === "storageFieldUnused" && f.description.includes("deletedAt"),
+        f.kind === "boundaryFieldUnused" &&
+        f.aspect === undefined &&
+        f.description.includes("deletedAt"),
     );
     expect(f).toBeDefined();
     expect(f?.description).toContain("User");

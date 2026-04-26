@@ -117,7 +117,7 @@ describe("checkRelationalStorage", () => {
       }),
     ]);
     const unknown = findings.filter(
-      (f) => f.kind === "storageReadFieldUnknown",
+      (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "read",
     );
     expect(unknown).toHaveLength(1);
     expect(unknown[0].severity).toBe("error");
@@ -138,7 +138,7 @@ describe("checkRelationalStorage", () => {
       }),
     ]);
     const unknown = findings.filter(
-      (f) => f.kind === "storageWriteFieldUnknown",
+      (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "write",
     );
     expect(unknown).toHaveLength(1);
     expect(unknown[0].description).toContain("role");
@@ -156,7 +156,9 @@ describe("checkRelationalStorage", () => {
         accesses: [{ table: "User", kind: "read", fields: ["id", "email"] }],
       }),
     ]);
-    const unused = findings.filter((f) => f.kind === "storageFieldUnused");
+    const unused = findings.filter(
+      (f) => f.kind === "boundaryFieldUnused" && f.aspect === undefined,
+    );
     expect(unused).toHaveLength(1);
     expect(unused[0].description).toContain("deletedAt");
     expect(unused[0].severity).toBe("warning");
@@ -180,7 +182,7 @@ describe("checkRelationalStorage", () => {
       }),
     ]);
     const writeOnly = findings.filter(
-      (f) => f.kind === "storageWriteOnlyField",
+      (f) => f.kind === "boundaryFieldUnused" && f.aspect === "read",
     );
     expect(writeOnly).toHaveLength(1);
     expect(writeOnly[0].description).toContain("lastLoginAt");
@@ -199,7 +201,11 @@ describe("checkRelationalStorage", () => {
         accesses: [{ table: "User", kind: "read", fields: ["*"] }],
       }),
     ]);
-    expect(findings.filter((f) => f.kind === "storageFieldUnused")).toEqual([]);
+    expect(
+      findings.filter(
+        (f) => f.kind === "boundaryFieldUnused" && f.aspect === undefined,
+      ),
+    ).toEqual([]);
   });
 
   it("default-shape reads do NOT fire field-unknown findings", () => {
@@ -212,7 +218,9 @@ describe("checkRelationalStorage", () => {
       }),
     ]);
     expect(
-      findings.filter((f) => f.kind === "storageReadFieldUnknown"),
+      findings.filter(
+        (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "read",
+      ),
     ).toEqual([]);
   });
 
@@ -240,7 +248,9 @@ describe("checkRelationalStorage", () => {
     // behaviour. Just assert the cross-scope read didn't produce a
     // field-unknown finding.
     expect(
-      findings.filter((f) => f.kind === "storageReadFieldUnknown"),
+      findings.filter(
+        (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "read",
+      ),
     ).toEqual([]);
   });
 
@@ -258,7 +268,7 @@ describe("checkRelationalStorage", () => {
       }),
     ]);
     const unknown = findings.filter(
-      (f) => f.kind === "storageReadFieldUnknown",
+      (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "read",
     );
     expect(unknown).toHaveLength(2);
     const descriptions = unknown.map((f) => f.description).join("\n");

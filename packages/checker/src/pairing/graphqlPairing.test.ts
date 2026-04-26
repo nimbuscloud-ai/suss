@@ -196,7 +196,7 @@ describe("pairGraphqlOperations", () => {
     const result = pairGraphqlOperations([op]);
     expect(result.pairs).toEqual([]);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0].kind).toBe("graphqlFieldNotImplemented");
+    expect(result.findings[0].kind).toBe("boundaryFieldUnknown");
     expect(result.findings[0].description).toContain("Query.deletedAt");
   });
 
@@ -271,7 +271,7 @@ describe("pairGraphqlOperations — nested selections", () => {
     const result = pairGraphqlOperations([petResolver, op]);
     expect(result.pairs).toHaveLength(1);
     expect(
-      result.findings.filter((f) => f.kind === "graphqlSelectionFieldUnknown"),
+      result.findings.filter((f) => f.kind === "boundaryFieldUnknown"),
     ).toEqual([]);
   });
 
@@ -287,7 +287,7 @@ describe("pairGraphqlOperations — nested selections", () => {
     );
     const result = pairGraphqlOperations([petResolver, op]);
     const unknowns = result.findings.filter(
-      (f) => f.kind === "graphqlSelectionFieldUnknown",
+      (f) => f.kind === "boundaryFieldUnknown",
     );
     expect(unknowns).toHaveLength(1);
     expect(unknowns[0].description).toContain("Pet.deletedAt");
@@ -309,7 +309,7 @@ describe("pairGraphqlOperations — nested selections", () => {
     );
     const result = pairGraphqlOperations([petResolver, op]);
     const unknowns = result.findings.filter(
-      (f) => f.kind === "graphqlSelectionFieldUnknown",
+      (f) => f.kind === "boundaryFieldUnknown",
     );
     expect(unknowns).toHaveLength(1);
     expect(unknowns[0].description).toContain("Owner.bogus");
@@ -354,7 +354,7 @@ describe("pairGraphqlOperations — nested selections", () => {
     );
     const result = pairGraphqlOperations([petsResolver, op]);
     const unknowns = result.findings.filter(
-      (f) => f.kind === "graphqlSelectionFieldUnknown",
+      (f) => f.kind === "boundaryFieldUnknown",
     );
     expect(unknowns).toHaveLength(1);
     expect(unknowns[0].description).toContain("Pet.bogus");
@@ -378,7 +378,7 @@ describe("pairGraphqlOperations — nested selections", () => {
     ];
     const result = pairGraphqlOperations([petResolver, ...ops]);
     const unknowns = result.findings.filter(
-      (f) => f.kind === "graphqlSelectionFieldUnknown",
+      (f) => f.kind === "boundaryFieldUnknown",
     );
     expect(unknowns).toHaveLength(2);
   });
@@ -396,7 +396,7 @@ describe("pairGraphqlOperations — nested selections", () => {
     const result = pairGraphqlOperations([petResolver, op]);
     expect(result.pairs).toHaveLength(1);
     expect(
-      result.findings.filter((f) => f.kind === "graphqlSelectionFieldUnknown"),
+      result.findings.filter((f) => f.kind === "boundaryFieldUnknown"),
     ).toEqual([]);
   });
 });
@@ -439,7 +439,7 @@ describe("checkAll — graphql pairing integration", () => {
     const op = operation("useGone", "Gone", "query", "query Gone { gone }");
     const result = checkAll([op]);
     const kinds = result.findings.map((f) => f.kind);
-    expect(kinds).toContain("graphqlFieldNotImplemented");
+    expect(kinds).toContain("boundaryFieldUnknown");
   });
 
   it("does not run the REST per-pair checks against graphql pairs", () => {

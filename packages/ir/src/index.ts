@@ -11,6 +11,7 @@
 import {
   BehavioralSummaryArraySchema,
   BehavioralSummarySchema,
+  type BoundaryAspectSchema,
   type BoundaryBindingSchema,
   type CodeUnitIdentitySchema,
   type CodeUnitKindSchema,
@@ -48,6 +49,7 @@ export type ComparisonOp = z.infer<typeof ComparisonOpSchema>;
 export type OpaqueReason = z.infer<typeof OpaqueReasonSchema>;
 export type FindingKind = z.infer<typeof FindingKindSchema>;
 export type FindingSeverity = z.infer<typeof FindingSeveritySchema>;
+export type BoundaryAspect = z.infer<typeof BoundaryAspectSchema>;
 
 export type SourceLocation = z.infer<typeof SourceLocationSchema>;
 export type BoundaryBinding = z.infer<typeof BoundaryBindingSchema>;

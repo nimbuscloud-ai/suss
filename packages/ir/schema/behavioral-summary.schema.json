@@ -892,6 +892,18 @@
                             "properties": {
                               "class": {
                                 "type": "string",
+                                "const": "message-receive"
+                              },
+                              "body": {}
+                            },
+                            "required": ["class"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "class": {
+                                "type": "string",
                                 "const": "config-read"
                               },
                               "name": {

@@ -51,7 +51,9 @@ describe("React + Storybook integration", () => {
     const summaries = await runPipeline();
     const { findings } = checkAll(summaries);
 
-    const argFindings = findings.filter((f) => f.kind === "scenarioArgUnknown");
+    const argFindings = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
     expect(argFindings.length).toBeGreaterThan(0);
 
     const disabledFinding = argFindings.find((f) =>
@@ -68,7 +70,7 @@ describe("React + Storybook integration", () => {
 
     const labelFinding = findings.find(
       (f) =>
-        f.kind === "scenarioArgUnknown" &&
+        f.kind === "boundaryFieldUnknown" &&
         f.description.includes('arg "label"'),
     );
     expect(labelFinding).toBeUndefined();

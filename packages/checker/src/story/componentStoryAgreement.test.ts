@@ -132,7 +132,7 @@ describe("checkComponentStoryAgreement — unknown arg", () => {
     });
     const findings = checkComponentStoryAgreement([component, story]);
     expect(findings).toHaveLength(1);
-    expect(findings[0].kind).toBe("scenarioArgUnknown");
+    expect(findings[0].kind).toBe("boundaryFieldUnknown");
     expect(findings[0].description).toContain("disabled");
     expect(findings[0].description).toContain("Broken");
   });
