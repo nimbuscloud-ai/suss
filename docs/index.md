@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: suss
-  text: Extract every execution path your TypeScript code takes
-  tagline: "Structured summaries you can compare against specs, tests, or other implementations."
+  text: Behavioral correctness for TypeScript
+  tagline: "Catch the drift between what your code says it does and what it does. suss derives every execution path, pairs the derivations across boundaries, and surfaces bugs that compile, type-check, and pass the tests."
   actions:
     - theme: brand
       text: Get started
@@ -17,20 +17,20 @@ hero:
       link: https://github.com/nimbuscloud-ai/suss
 
 features:
-  - title: Derivation, not specification
-    details: "Specs declare what should happen. Tests record what happened, once. suss derives the third thing: what the code actually does, on every path."
-    link: /contracts
-    linkText: Three kinds of truth
+  - title: Drift other tools miss
+    details: "Code compiles, tests pass, types line up — and the consumer still reads a 200 the provider stopped producing. suss compares behavioural derivations directly, not just the shapes around them."
+    link: /motivation
+    linkText: Why behavioral summaries
   - title: One model across every boundary
-    details: "HTTP handlers, GraphQL resolvers, React components, and client call sites all produce the same structured summary. Comparing across boundaries reduces to diffing two summaries."
+    details: "HTTP handlers, GraphQL resolvers, React components, queue producers, storage calls, and client call sites all produce the same summary shape. Cross-boundary checking is diffing two summaries."
     link: /boundary-semantics
     linkText: Boundary semantics
   - title: Add a framework in one file
-    details: "ts-rest, Express, Fastify, React, Apollo, and React Router ship in the box. New frameworks are a small declarative pack — no fork of the analyser."
+    details: "ts-rest, Express, Fastify, NestJS, React, React Router, Apollo Server, Prisma, AWS SQS, and process.env ship in the box. New frameworks are a small declarative pack — no fork of the analyser."
     link: /framework-packs
     linkText: Write a pack
-  - title: Find where artifacts disagree
-    details: "Point suss at two artifacts and it reports where they diverge. OpenAPI against handlers, CloudFormation against API Gateway, Storybook against components, provider against consumer."
+  - title: Compare against declared contracts
+    details: "OpenAPI against handlers, CloudFormation against API Gateway, Storybook against components, Prisma schema against query call sites, provider against consumer. The contract reader and the source extractor produce the same shape."
     link: /cross-boundary-checking
     linkText: How checking works
   - title: Runs on the code you already have
@@ -38,7 +38,7 @@ features:
     link: /guides/add-to-project
     linkText: Add to a project
   - title: Explicit about what it can't analyse
-    details: "When a condition is too dynamic for static analysis, the branch is labelled unresolved rather than silently dropped. You see exactly where coverage stops."
+    details: "When a condition is too dynamic for static analysis, the branch is labelled unresolved rather than silently dropped. Coverage stops are visible in the output."
     link: /motivation#what-suss-is-not
     linkText: What suss is not
 ---
@@ -81,24 +81,17 @@ src/handlers.ts
 1 summaries inspected.
 ```
 
-That's `suss inspect` on a ts-rest handler. The header line names
-the endpoint, recognition pack, kind, and source line. The decision
-tree shows every execution path as a branch with its own output
-shape. The `+` lines under an output are the side-effects on that
-path; the `→` marker points to other summaries nearby. The flat
-`!!` annotation is a gap — the contract declared a 500 the handler
-can't produce.
+`suss inspect` rendering one summary. The header line names the endpoint, recognition pack, kind, and source line. The decision tree shows every execution path as a branch with its own output shape. The `+` lines under an output are the side-effects on that path; the `→` marker points to other summaries nearby. The `!!` annotation is a gap — the contract declared a 500 the handler can't produce.
 
-Everything else in the system (checking, agreement, dedup,
-downstream tooling) consumes the JSON form of the same summary.
-`inspect` is a renderer over it.
+The same data as JSON is what `@suss/checker` and downstream tools consume. `inspect` is a renderer over it.
 
-## Where to next
+## Reading order
 
-- **I want to try it in 15 minutes.** → [Tutorial: Get started](/tutorial/get-started).
-- **I want to add it to my project.** → [Add suss to a project](/guides/add-to-project) → [Set up CI](/guides/ci-integration).
-- **I want to look up a flag or finding.** → [CLI reference](/reference/cli) · [Findings catalog](/reference/findings).
-- **I want to understand the premise.** → [Why behavioral summaries](/why-behavioral-summaries) → [Motivation](/motivation) → [Three kinds of truth](/contracts).
-- **I want to extract from a new framework.** → [Framework packs](/framework-packs).
-- **I want the summary format.** → [Behavioral summary format](/behavioral-summary-format) → [IR reference](/ir-reference).
-- **I want to know what's shipped.** → [Status & decisions](/internal/status).
+The site's navigation is grouped Diátaxis-style — tutorial, how-to guides, reference, conceptual. A few common entry points:
+
+- **First time on the site:** [Get started](/tutorial/get-started) walks the smallest end-to-end example, then [Motivation](/motivation) explains why this layer exists.
+- **Adding suss to an existing project:** [Add suss to a project](/guides/add-to-project) → [Set up CI](/guides/ci-integration).
+- **Looking up a flag or finding:** [CLI reference](/reference/cli) · [Findings catalog](/reference/findings) · [FAQ](/faq).
+- **Writing or modifying a pack:** [Framework packs](/framework-packs).
+- **Consuming the summary format:** [Behavioral summary format](/behavioral-summary-format) → [IR reference](/ir-reference).
+- **Tracking what's shipped:** [Status & decisions](/internal/status).

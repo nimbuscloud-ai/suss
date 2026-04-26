@@ -1,29 +1,28 @@
 # Add suss to an existing project
 
-For full integrations, not the tutorial. Assumes you already have a
-TypeScript project with an HTTP boundary, a GraphQL boundary, or a
-React component tree.
+Assumes a TypeScript project with at least one boundary suss recognises
+— an HTTP handler, a GraphQL resolver, a React component tree, a queue
+producer, a Prisma call, or a `process.env` access.
 
 ## What you're setting up
 
-Three things, in order:
+Three pieces, in order:
 
-1. **Framework packs** — declarative descriptions of how a given
-   framework expresses its boundaries (where handlers register,
-   how status codes get attached to responses, etc.). One pack per
-   framework you use. Without a pack, suss has nothing to
-   discover.
-2. **Extraction** — running `suss extract` against your source to
-   produce the structured summaries. You commit nothing to do
-   this; analysis is static.
-3. **Pairing** — running `suss check` to compare the summaries
-   across boundaries. This is where suss earns its keep: comparing
-   provider against consumer, contract against handler, story
-   against component.
+1. **Framework / runtime / contract packs.** Declarative descriptions
+   of how a given framework expresses its boundaries (where handlers
+   register, how status codes attach to responses, what counts as a
+   storage call, how an env var resolves to a CFN resource). One pack
+   per framework + runtime + contract source you want covered. Without
+   a pack, suss has nothing to discover.
+2. **Extraction.** `suss extract` walks your source and emits the
+   structured summaries. Static analysis only — nothing runs.
+3. **Pairing.** `suss check` compares summaries across boundaries:
+   provider against consumer, contract against handler, story against
+   component, producer against consumer, schema against query call.
 
-The output of (2) is a JSON file. The input to (3) is a JSON file
-or two. You can stop at (2) if all you want is "what do my
-handlers do" — the summaries are useful in their own right.
+The output of (2) is a JSON file. The input to (3) is one or more JSON
+files. (2) is useful on its own if all you want is a structured
+description of what your handlers do.
 
 ## Install the pieces you need
 
@@ -35,16 +34,23 @@ your code uses, plus the CLI. Pick from:
 | `@suss/framework-ts-rest` | ts-rest providers + clients (contract-backed) | `npm i -D @suss/framework-ts-rest` |
 | `@suss/framework-express` | Express `app.get(...)` / `router.get(...)` handlers | `npm i -D @suss/framework-express` |
 | `@suss/framework-fastify` | Fastify `fastify.get(...)` handlers | `npm i -D @suss/framework-fastify` |
+| `@suss/framework-nestjs-rest` | NestJS REST controllers (`@Controller` / `@Get`) | `npm i -D @suss/framework-nestjs-rest` |
+| `@suss/framework-nestjs-graphql` | NestJS GraphQL resolvers (`@Resolver` / `@Query` / `@Mutation`) | `npm i -D @suss/framework-nestjs-graphql` |
 | `@suss/framework-react-router` | React Router v6+ loaders / actions | `npm i -D @suss/framework-react-router` |
 | `@suss/framework-react` | React components + event handlers + `useEffect` | `npm i -D @suss/framework-react` |
 | `@suss/framework-apollo` | Apollo Server resolvers (code-first) | `npm i -D @suss/framework-apollo` |
+| `@suss/framework-prisma` | Prisma client calls — emits storage-access interactions | `npm i -D @suss/framework-prisma` |
+| `@suss/framework-aws-sqs` | AWS SDK v3 SQS producer calls — emits message-send interactions | `npm i -D @suss/framework-aws-sqs` |
+| `@suss/framework-process-env` | `process.env.X` access — emits config-read interactions | `npm i -D @suss/framework-process-env` |
 | `@suss/runtime-web` | Global `fetch` call sites | `npm i -D @suss/runtime-web` |
 | `@suss/runtime-axios` | axios call sites + `axios.create` factories | `npm i -D @suss/runtime-axios` |
 | `@suss/runtime-apollo-client` | `@apollo/client` hooks + imperative `client.query` | `npm i -D @suss/runtime-apollo-client` |
-| `@suss/contract-openapi` | Generate summaries from an OpenAPI 3.x spec | `npm i -D @suss/contract-openapi` |
-| `@suss/contract-cloudformation` | Generate summaries from a CFN / SAM template | `npm i -D @suss/contract-cloudformation` |
-| `@suss/contract-appsync` | Generate summaries from an AppSync CFN template | `npm i -D @suss/contract-appsync` |
-| `@suss/contract-storybook` | Generate summaries from CSF3 stories | `npm i -D @suss/contract-storybook` |
+| `@suss/contract-openapi` | OpenAPI 3.x spec → provider summaries | `npm i -D @suss/contract-openapi` |
+| `@suss/contract-aws-apigateway` | API Gateway REST/HTTP API resource semantics → summaries | `npm i -D @suss/contract-aws-apigateway` |
+| `@suss/contract-cloudformation` | CFN / SAM templates → summaries (delegates to OpenAPI + API Gateway; also reads SQS event-source mappings + Lambda Environment) | `npm i -D @suss/contract-cloudformation` |
+| `@suss/contract-appsync` | AppSync schema + resolver mapping templates → summaries | `npm i -D @suss/contract-appsync` |
+| `@suss/contract-storybook` | Storybook CSF3 stories → component contract summaries | `npm i -D @suss/contract-storybook` |
+| `@suss/contract-prisma` | Prisma schema → storage provider summaries | `npm i -D @suss/contract-prisma` |
 
 Plus the CLI once:
 
@@ -54,10 +60,11 @@ npm install -D @suss/cli
 
 You don't have to install everything. Common combinations:
 
-- **ts-rest full-stack:** `@suss/framework-ts-rest` (provider + client via the contract).
+- **ts-rest full-stack:** `@suss/framework-ts-rest` (provider + client through the contract).
 - **Express API + fetch client:** `@suss/framework-express @suss/runtime-web`.
 - **React + GraphQL:** `@suss/framework-react @suss/runtime-apollo-client`.
 - **GraphQL server:** `@suss/framework-apollo`. Add `@suss/contract-appsync` if you also deploy via CloudFormation.
+- **Lambda + SQS + Postgres:** `@suss/framework-aws-sqs @suss/framework-prisma @suss/framework-process-env @suss/contract-cloudformation @suss/contract-prisma`. CFN reads the producer-side env var and resolves it to the queue resource; Prisma's schema becomes the storage provider summaries that pair with the source-extracted query call sites.
 
 ## Point suss at your tsconfig
 
