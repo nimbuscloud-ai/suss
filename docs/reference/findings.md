@@ -119,9 +119,25 @@ The provider declares a field that no consumer references. Per-domain instances:
 
 **Severity:** per-emitter (typically warning for read-side coercions, error for write-side type mismatches)
 
-Both sides declare the field but disagree on its shape (type, nullability, enum membership, etc.). The `aspect` names which side discovered the disagreement.
+Both sides declare the field but disagree on its shape (type, nullability, content-type, etc.). The `aspect` names which side discovered the disagreement (read / write / send / receive / construct / selector).
 
-No emitter ships today — reserved for the imminent message-bus body-shape pairing and the type-aware extensions of storage / runtime-config / graphql checkers (subsumes the reserved per-domain kinds `storageTypeMismatch`, `envVarTypeCoercionMissing`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch`).
+No emitter ships today — reserved for the imminent message-bus body-shape pairing and the type-aware extensions of the storage / runtime-config / graphql checkers. Subsumes the per-domain shape-mismatch kinds earlier versions reserved (`storageTypeMismatch`, `storageNullableViolation`, `storageSelectorIndexMismatch`, `envVarTypeCoercionMissing`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch`, `componentPropTypeMismatch`, `contentTypeMismatch`).
+
+### `boundaryFieldRequired`
+
+**Severity:** error
+
+Provider declares a field as required and the consumer doesn't supply it. The `aspect` typically names the payload (`send` / `construct`). At runtime the provider rejects the request, returns a 4xx, or the component fails to render.
+
+No emitter ships today. Subsumes earlier per-domain reserved kinds: `requiredHeaderMissing`, `requiredQueryParamMissing`, `componentRequiredPropMissing`, `graphqlRequiredArgMissing`.
+
+### `boundaryConstraintViolation`
+
+**Severity:** per-emitter
+
+Value supplied for a field violates a value-level constraint declared by the provider — enum membership, declared length, etc. Distinct from `boundaryShapeMismatch` because the value's *type* is correct; only the value itself violates the constraint.
+
+No emitter ships today. Subsumes earlier per-domain reserved kinds: `storageLengthConstraintViolation`, `storageEnumConstraintViolation`, `graphqlEnumValueUnknown`.
 
 ---
 
@@ -232,40 +248,11 @@ A runtime-config-bound provider summary declares no `codeScope` (or one we could
 
 ## Reserved kinds *(in IR enum, no emitter yet)*
 
-The reserved kinds below mostly subsume into the generic `boundaryShapeMismatch` (with appropriate aspect) once their emitters land. They remain as separate enum values for finer-grained semantic distinctions a future implementation may want.
+These kinds exist in the enum but no checker emits them today. They cover failure modes distinct enough not to fold into the generic `boundaryField*` / `boundaryShapeMismatch` family.
 
-### REST
-
-- `requiredHeaderMissing` — error. Consumer call doesn't include a header the provider declares required. Will likely fold into `boundaryFieldUnknown` aspect: `send` once request-shape pairing extends past status / body to headers.
-- `requiredQueryParamMissing` — error. Same shape, query-param dimension.
-- `requestBodyShapeMismatch` — error. Body shape disagreement on the request side. Will fold into `boundaryShapeMismatch` aspect: `send`.
-- `restMethodOnUnknownPath` — error. Consumer call targets a `(method, path)` the provider doesn't expose.
-- `contentTypeMismatch` — error. Provider returns a content-type the consumer doesn't expect.
-- `authPolicyMismatch` — error. Provider requires authentication and the consumer's call doesn't supply it correctly.
-
-### React / Storybook
-
-- `componentRequiredPropMissing` — error. Component requires a prop the story / scenario omits. Will fold into `boundaryFieldRequired` if added, or stay distinct.
-- `componentPropTypeMismatch` — error. Story passes a value of the wrong type for a prop. Will fold into `boundaryShapeMismatch` aspect: `construct`.
-
-### GraphQL
-
-- `graphqlVariableTypeMismatch` — error. Operation's variable type doesn't match the resolver's argument type. Will fold into `boundaryShapeMismatch`.
-- `graphqlRequiredArgMissing` — error. Operation calls a field with positional args missing one or more required arguments.
-- `graphqlEnumValueUnknown` — error. Operation passes an enum value the schema's enum doesn't include.
-
-### Storage
-
-- `storageSelectorIndexMismatch` — error. `findUnique`-style selector references a column set that isn't a unique index. Pairs the `interaction.selector` field on a storage-access interaction against the `indexes` declared on the provider's `storageContract`.
-- `storageTypeMismatch` — error. Will fold into `boundaryShapeMismatch` aspect: `write`.
-- `storageNullableViolation` — error. Will fold into `boundaryShapeMismatch` aspect: `write`.
-- `storageLengthConstraintViolation` — error. String literal exceeds column's declared length.
-- `storageEnumConstraintViolation` — error. Will fold into `boundaryShapeMismatch` aspect: `write`.
-
-### Runtime config
-
-- `envVarRequiredButUnmarked` — warning. Code treats `process.env.X` as definitely-required but the runtime contract doesn't mark it required.
-- `envVarTypeCoercionMissing` — warning. Code reads an env var as a non-string type without coercion.
+- `restMethodOnUnknownPath` — error. Consumer call targets a `(method, path)` the provider doesn't expose. Distinct from `boundaryFieldUnknown` because the mismatch is at the boundary identity level (the endpoint itself), not at field level. Today's pairing layer leaves both summaries unmatched, which silently obscures what's likely a typo. Emitter ships when the pairing layer adds a "consumer with no provider" finding distinct from "unmatched / no boundary binding."
+- `authPolicyMismatch` — error. Provider requires authentication and the consumer's call doesn't supply it correctly. Boundary-level (auth policy), not field-level — kept distinct from the generic kinds. Needs auth-policy modeling on both sides (OpenAPI security schemes plus the client-side header / interceptor patterns).
+- `envVarRequiredButUnmarked` — warning. Code treats `process.env.X` as definitely-required (`if (!process.env.X) throw …`) but the runtime contract doesn't mark it required. About contract-side metadata, not a field/shape disagreement. Emitter waits for the runtime contract to grow a "required" attribute on env-var entries.
 
 ---
 

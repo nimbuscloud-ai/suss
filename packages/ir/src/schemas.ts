@@ -71,33 +71,6 @@ export const FindingKindSchema = z.enum([
    */
   "contractDisagreement",
   /**
-   * A REST consumer call doesn't include a header the provider /
-   * contract declares required (Authorization, Idempotency-Key,
-   * X-API-Version, etc.). Severity: error. TypeScript only
-   * catches this for typed clients that model headers in their
-   * call signature; ad-hoc fetch / axios usage doesn't. Reserved
-   * in v0 taxonomy; emitter ships when request-shape pairing
-   * extends past status / body to headers.
-   */
-  "requiredHeaderMissing",
-  /**
-   * A REST consumer call doesn't include a query parameter the
-   * provider declares required (e.g. `?cursor=X` for paginated
-   * endpoints). Severity: error. Reserved in v0 taxonomy;
-   * emitter ships with the same request-shape pairing extension.
-   */
-  "requiredQueryParamMissing",
-  /**
-   * A REST consumer call sends a request body whose shape
-   * doesn't match the provider's declared body schema — wrong
-   * field names, missing required fields, extra unknown fields.
-   * Distinct from `consumerContractViolation` (which is
-   * response-side); this is request-side. Severity: error.
-   * Reserved in v0 taxonomy; emitter ships with body-shape
-   * pairing on the request side.
-   */
-  "requestBodyShapeMismatch",
-  /**
    * A REST consumer call targets a (method, path) combination
    * the provider doesn't expose. Today the pairing layer just
    * leaves both summaries unmatched, which silently obscures
@@ -105,18 +78,10 @@ export const FindingKindSchema = z.enum([
    * Severity: error. Reserved in v0 taxonomy; emitter ships
    * when the pairing layer adds a "consumer with no provider"
    * surfaced finding distinct from "unmatched / no boundary
-   * binding."
+   * binding." Distinct from `boundaryFieldUnknown` because the
+   * mismatch is at the boundary identity level, not at field level.
    */
   "restMethodOnUnknownPath",
-  /**
-   * Provider returns a content-type the consumer doesn't expect
-   * (provider returns `application/xml`, consumer parses as JSON;
-   * or provider returns `application/octet-stream`, consumer
-   * calls `.json()`). Severity: error. Reserved in v0 taxonomy;
-   * needs both sides to record content-type, which today's
-   * pairing doesn't surface separately.
-   */
-  "contentTypeMismatch",
   /**
    * Provider requires authentication (Bearer / API key / OAuth)
    * and consumer's call doesn't send it, sends a different
@@ -124,6 +89,8 @@ export const FindingKindSchema = z.enum([
    * Reserved in v0 taxonomy; needs auth-policy modeling on
    * both sides — the OpenAPI security schemes and the
    * client-side header / interceptor patterns. Future work.
+   * Distinct from the generic boundary kinds — auth policies are
+   * boundary-level not field-level.
    */
   "authPolicyMismatch",
   /**
@@ -135,56 +102,6 @@ export const FindingKindSchema = z.enum([
    * can regress silently.
    */
   "scenarioCoverageGap",
-  /**
-   * A scenario doesn't supply a prop the component declares
-   * required. Severity: error. The inverse of the construct-side
-   * `boundaryFieldUnknown` (story passes a prop the component
-   * doesn't accept) — here the component requires it; the story
-   * omits it. Reserved in v0 taxonomy; emitter waits for the
-   * component-input pack to surface required-vs-optional on
-   * declared inputs (today the React adapter records inputs
-   * but not their required-ness).
-   */
-  "componentRequiredPropMissing",
-  /**
-   * A scenario passes a value of the wrong type for a prop —
-   * e.g. story `args: { count: "5" }` when the component
-   * declares `count: number`. Severity: error. TypeScript
-   * catches this when the story uses `Meta<typeof Component>`;
-   * misses for hand-written stories that escape the typing or
-   * pass `as any`. Reserved in v0 taxonomy.
-   */
-  "componentPropTypeMismatch",
-  /**
-   * A GraphQL consumer operation declares a variable type that
-   * doesn't match the resolver's argument type. Example:
-   * operation `query GetUser($id: String!)` but the schema's
-   * `user(id: ID!)` expects `ID!`. Severity: error — at
-   * runtime the resolver receives a type-coerced value or
-   * outright fails. Reserved in v0 taxonomy; emitter ships
-   * with the GraphQL operation→resolver pairing extension
-   * (today the pass only checks field existence).
-   */
-  "graphqlVariableTypeMismatch",
-  /**
-   * A GraphQL consumer operation calls a field with positional
-   * args missing one or more required arguments declared by
-   * the schema. Example: operation `user(id: $id)` but the
-   * schema's `user(id: ID!, version: Int!)` requires `version`.
-   * Severity: error. Reserved in v0 taxonomy; emitter ships
-   * with the same operation→resolver pairing extension.
-   */
-  "graphqlRequiredArgMissing",
-  /**
-   * A GraphQL consumer operation passes an enum value the
-   * schema's enum declaration doesn't include. Example:
-   * `status: PENDING_REVIEW` but the schema's `Status` enum is
-   * `{PENDING, APPROVED, REJECTED}`. Severity: error. Reserved
-   * in v0 taxonomy; typed clients (codegen) catch this at
-   * compile time, so the emitter waits for cases where the
-   * value escapes typing or comes from a literal-string client.
-   */
-  "graphqlEnumValueUnknown",
   /**
    * A runtime-config-bound provider summary declares no
    * codeScope (or one we couldn't resolve to source files), so
@@ -202,22 +119,13 @@ export const FindingKindSchema = z.enum([
    * the runtime contract doesn't mark it as required (no
    * deployment-side validation, no documented requirement).
    * Severity: warning. Reserved in v0 taxonomy; emitter waits
-   * for the runtime stub to grow a "required" attribute on
+   * for the runtime contract to grow a "required" attribute on
    * env-var entries (currently the contract is just the name
-   * list).
+   * list). Distinct from the generic kinds — this is about
+   * contract-side metadata (the var IS declared, just not marked
+   * required), not about a field/shape disagreement.
    */
   "envVarRequiredButUnmarked",
-  /**
-   * Code reads an env var as if it were a non-string type
-   * (`process.env.PORT` used as a number without `Number(...)`
-   * / `parseInt`; `process.env.FLAG` used as a boolean without
-   * comparison) without the coercion the runtime contract
-   * implies. Env vars are always strings at the OS interface;
-   * code that forgets that flips truthy checks ("0" is truthy)
-   * and produces silent type errors. Severity: warning.
-   * Reserved in v0 taxonomy.
-   */
-  "envVarTypeCoercionMissing",
   /**
    * Generic — consumer references a field that the provider's
    * contract doesn't declare. Subsumes the per-domain kinds that
@@ -246,62 +154,41 @@ export const FindingKindSchema = z.enum([
   "boundaryFieldUnused",
   /**
    * Generic — both sides declare a field but disagree on its shape
-   * (type, nullability, enum membership, etc.). The `aspect` field
+   * (type, nullability, content-type, etc.). The `aspect` field
    * names which side discovered the disagreement (read / write /
-   * send / receive / construct). Severity is per-emitter; some
-   * cases are runtime errors (write-side type mismatch on a typed
-   * column) while others are silent coercions (read-side
+   * send / receive / construct / selector). Severity is per-emitter;
+   * some cases are runtime errors (write-side type mismatch on a
+   * typed column) while others are silent coercions (read-side
    * env-var-as-number).
+   *
+   * Subsumes the per-domain shape-mismatch kinds earlier versions
+   * reserved: storageTypeMismatch, storageNullableViolation,
+   * storageSelectorIndexMismatch, envVarTypeCoercionMissing,
+   * graphqlVariableTypeMismatch, requestBodyShapeMismatch,
+   * componentPropTypeMismatch, contentTypeMismatch.
    */
   "boundaryShapeMismatch",
   /**
-   * A `findUnique`-style selector references a column set that
-   * isn't a unique index on the table. At runtime the call
-   * fails (Prisma / typed ORMs reject at the type level; raw
-   * SQL drivers and Drizzle compile but the query returns
-   * non-deterministic single rows). Severity: error. Pairs the
-   * `interaction.selector` field on a storage-access interaction
-   * against the `indexes` declared on the provider's `storageContract`.
+   * Generic — provider declares a field as required and the consumer
+   * doesn't supply it. The `aspect` field names which payload (send /
+   * construct, typically). Subsumes earlier per-domain reserved kinds:
+   * requiredHeaderMissing, requiredQueryParamMissing,
+   * componentRequiredPropMissing, graphqlRequiredArgMissing.
    *
-   * Reserved in v0 taxonomy; emitter ships when an access pack
-   * needs it (likely in the Drizzle / raw-SQL packs where
-   * TypeScript doesn't catch the case at compile time).
+   * Severity defaults to error — at runtime the provider rejects the
+   * request, returns a 4xx, or the component fails to render.
    */
-  "storageSelectorIndexMismatch",
+  "boundaryFieldRequired",
   /**
-   * Code writes a value of one type to a column of an
-   * incompatible type (string to Int, number to text, etc.).
-   * Severity: error. Reserved in v0 taxonomy; typed ORMs
-   * (Prisma, Drizzle) generally catch this at the TypeScript
-   * level so the emitter waits for a raw-SQL pack or a value
-   * that escapes the type system via `any`.
+   * Generic — value supplied for a field violates a value-level
+   * constraint declared by the provider (enum membership, declared
+   * length, etc.). Distinct from `boundaryShapeMismatch` because the
+   * value's TYPE is correct; only the value itself violates the
+   * constraint. Subsumes earlier per-domain reserved kinds:
+   * storageLengthConstraintViolation, storageEnumConstraintViolation,
+   * graphqlEnumValueUnknown. Severity per-emitter.
    */
-  "storageTypeMismatch",
-  /**
-   * Code writes `null` to a `NOT NULL` column, or treats the
-   * value of a nullable column as definitely-non-null without
-   * a guard. Severity: error. Reserved in v0 taxonomy; typed
-   * ORMs cover the common case via generated types, so the
-   * emitter waits for a raw-SQL pack or escape-hatch detection.
-   */
-  "storageNullableViolation",
-  /**
-   * Code writes a string literal longer than the column's
-   * declared length (`varchar(50)` written with 200+ chars).
-   * Severity: error. Reserved in v0 taxonomy; requires both the
-   * literal length and the column constraint to be statically
-   * known. Useful even with typed ORMs since TypeScript doesn't
-   * model string lengths.
-   */
-  "storageLengthConstraintViolation",
-  /**
-   * Code writes a value that isn't in the column's declared
-   * enum set. Severity: error. Reserved in v0 taxonomy; typed
-   * ORMs catch this at the TS level when the value is a typed
-   * enum literal, so the emitter waits for cases where the
-   * value escapes the type system or comes from a raw-SQL pack.
-   */
-  "storageEnumConstraintViolation",
+  "boundaryConstraintViolation",
   /**
    * Code sends a message to a queue / topic that no provider in the
    * analysed scope declares. Severity: WARNING (not error) — common
@@ -326,19 +213,6 @@ export const FindingKindSchema = z.enum([
    * warning.
    */
   "messageBusUnused",
-  /**
-   * A producer's `message-send` body shape disagrees with the
-   * consumer's `message-receive` body shape on the same channel.
-   * v0 detects field-name mismatches when both sides expose object-
-   * literal shapes (producer `JSON.stringify({ orderId })`, consumer
-   * destructures `{ id }` after `JSON.parse(record.body)`). Severity:
-   * warning — opaque sides (identifier args, dynamic builders) are
-   * skipped rather than guessed at, so the absence of this finding
-   * doesn't imply agreement. Type-shape comparison (string vs number
-   * on the same field) is reserved future work — depends on full
-   * EffectArg → TypeShape inference.
-   */
-  "messageBusBodyShapeMismatch",
   /**
    * A pack identifies a boundary it doesn't know how to
    * summarise — a WebSocket subscription handler, an SSE stream
