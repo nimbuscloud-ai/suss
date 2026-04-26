@@ -11,6 +11,8 @@ import { discoverNamedExports } from "./namedExport.js";
 import { discoverPackageExports } from "./packageExports.js";
 import { discoverPackageImports } from "./packageImport.js";
 import { discoverRegistrationCalls } from "./registrationCall.js";
+import { discoverRegistrationLoops } from "./registrationLoop.js";
+import { discoverRegistrationTemplates } from "./registrationTemplate.js";
 import { discoverResolverMaps } from "./resolverMap.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -32,6 +34,16 @@ function runPattern(
   }
   if (pattern.match.type === "registrationCall") {
     return discoverRegistrationCalls(sourceFile, pattern.match, pattern.kind);
+  }
+  if (pattern.match.type === "registrationTemplate") {
+    return discoverRegistrationTemplates(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+    );
+  }
+  if (pattern.match.type === "registrationLoop") {
+    return discoverRegistrationLoops(sourceFile, pattern.match, pattern.kind);
   }
   if (pattern.match.type === "clientCall") {
     return discoverClientCalls(sourceFile, pattern.match, pattern.kind);
@@ -96,7 +108,14 @@ export function discoverUnits(
       unit.packageExportInfo !== undefined
         ? `-${unit.packageExportInfo.packageName}::${unit.packageExportInfo.exportPath.join(".")}`
         : "";
-    const key = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}`;
+    // routeInfo distinguishes registrationTemplate-derived units that
+    // share a handler function but expand to different (method, path)
+    // pairs (one handler reused for GET and POST, etc.).
+    const routeSuffix =
+      unit.routeInfo !== undefined
+        ? `-${unit.routeInfo.method} ${unit.routeInfo.path}`
+        : "";
+    const key = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}`;
     if (!seen.has(key)) {
       seen.add(key);
       deduped.push(unit);

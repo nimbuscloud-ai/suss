@@ -279,6 +279,68 @@ export type DiscoveryMatch =
     }
   | {
       /**
+       * Loop expansion: a `for-of` loop over a literal array of
+       * route specs is treated as if each element were an inline
+       * registration. Used for patterns like:
+       *
+       *   const routes = [
+       *     { method: "get", path: "/users", handler: getUsers },
+       *     ...
+       *   ];
+       *   for (const r of routes) app[r.method](r.path, r.handler);
+       *
+       * `elementShape` declares which keys on each element carry the
+       * method, path, and handler. The loop body is required to
+       * contain at least one call expression that references the
+       * loop variable (filters out unrelated loops); the call's
+       * shape itself is not checked beyond that.
+       *
+       * Iterables that resolve to an `ArrayLiteralExpression` (inline
+       * or single-hop `const`-bound) are expanded; cross-file or
+       * computed iterables are out of v0 scope.
+       *
+       * Pack-author docs: `docs/internal/proposals/dynamic-registration.md`.
+       */
+      type: "registrationLoop";
+      elementShape: {
+        methodKey: string;
+        pathKey: string;
+        handlerKey: string;
+      };
+    }
+  | {
+      /**
+       * Helper-call expansion: a single function call at the user
+       * site is treated as if it were N inline registrations, with
+       * arguments substituted into per-registration templates. Used
+       * for patterns like `registerCrud(app, 'users', userHandlers)`
+       * that today's `registrationCall` discovery can't see.
+       *
+       * Each entry in `registrations` describes one virtual route
+       * the helper produces. `pathTemplate` and `handlerArg` use
+       * `{N}` placeholders that resolve to the call's positional
+       * arguments. `{N}` substitutes the argument's literal value
+       * (for string-literal args) or its source text (for
+       * non-literal args, with the slot marked opaque). `{N}.prop`
+       * reads `prop` from the argument's resolved object.
+       *
+       * `importModule` optionally narrows matches to helpers
+       * imported from a specific module — useful when two packages
+       * happen to export a function with the same name.
+       *
+       * Pack-author docs: `docs/internal/proposals/dynamic-registration.md`.
+       */
+      type: "registrationTemplate";
+      helperName: string;
+      importModule?: string;
+      registrations: Array<{
+        method: string;
+        pathTemplate: string;
+        handlerArg: string;
+      }>;
+    }
+  | {
+      /**
        * Consumer side of the package-export boundary. Scans source
        * files for imports of the named packages and records every
        * call site, emitting one `caller`-kind unit per enclosing
