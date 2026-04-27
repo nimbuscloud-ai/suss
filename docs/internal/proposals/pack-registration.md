@@ -89,6 +89,20 @@ Three checkpoints:
 
 3. **At check time (checker).** Build the predicted `FindingKind` set from the loaded packs' boundary capabilities (each `boundary` produces a known finding-kind set — e.g. any `boundary: storage-relational` pack wires up `boundaryFieldUnknown` / `boundaryFieldUnused`). Surface this as the "predicted findings" preview for `suss inspect`.
 
+### Decentralizing checker dispatch
+
+Today `checkAll` is a hardcoded chain — `findings.push(...checkProviderCoverage(...))`, `findings.push(...checkContractAgreement(summaries))`, repeated per checker pass. Same centralization problem the discovery layer had before `discoverUnits` callbacks. Each new finding source requires editing `checkAll`, and the checker has to know about every per-domain pass up front.
+
+The capability mechanism is the natural lever to decentralize this. A pack that produces `boundary: storage-relational` already implies `boundaryFieldUnknown(read)` / `boundaryFieldUnused` checking exists; today the checker hardcodes which function runs that check. A cleaner model:
+
+- Each per-domain checker registers itself against the boundary semantics it consumes — `checkRelationalStorage` declares "I run on summary sets containing `storage-relational` providers."
+- The dispatch in `checkAll` becomes a loop over the loaded packs' `produces` / `consumes` capability index, calling registered checkers when the relevant semantics exist.
+- New checkers ship with their pack rather than being added to the central `checkAll` body. Pack authors who add a new `boundary` semantics also ship the checker that pairs against it.
+
+Trade-off: today's `checkAll` is greppable — every pass appears in one file. Decentralizing splits dispatch across packs, less locality. Mitigated by the capability index doubling as the discovery surface — `suss inspect --packs` already lists what's loaded; extending it to list registered checker passes is a small addition.
+
+This is a v1 deliverable on top of v0 capabilities. The v0 version uses the capability index for prediction + validation only; the registry-based dispatch lands once the capability shape proves stable.
+
 ### Back-compat for missing `capabilities`
 
 Packs without a declared `capabilities` field fall back to **observation-based registration**. After the first extraction pass, the adapter records every actual `(codeUnitKind, semanticsName, interactionClass)` the pack emitted and synthesizes a derived capability declaration. The synthesized declaration is cached alongside the pack version stamp and reused on subsequent runs.
