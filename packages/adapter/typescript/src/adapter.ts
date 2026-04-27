@@ -52,6 +52,7 @@ import {
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery/index.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
+import { deriveGraphqlContract } from "./graphqlContract.js";
 import { expandReachableClosure } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
@@ -812,8 +813,26 @@ function extractFromSourceFile(
         // checker can walk nested selections against the return
         // type's fields — the parallel of what stub-appsync
         // already does for schema-first AppSync resolvers.
+        //
+        // Derive the per-resolver declared contract from the SDL
+        // here too. The contract pairs against any other source
+        // declaring the same boundary (e.g. an SDL-based
+        // @suss/contract-graphql run); checkGraphqlContractAgreement
+        // surfaces the disagreement.
         if (unit.resolverInfo.schemaSdl !== undefined) {
           raw.graphqlSchemaSdl = unit.resolverInfo.schemaSdl;
+          const contract = deriveGraphqlContract(
+            unit.resolverInfo.schemaSdl,
+            unit.resolverInfo.typeName,
+            unit.resolverInfo.fieldName,
+            pack.name,
+          );
+          if (contract !== null) {
+            raw.graphqlDeclaredContract = contract as unknown as Record<
+              string,
+              unknown
+            >;
+          }
         }
       } else if (unit.routeInfo !== undefined) {
         // NestJS-style REST controller: bind directly from the

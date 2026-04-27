@@ -293,6 +293,19 @@ export interface RawCodeStructure {
    * nested consumer selections.
    */
   graphqlSchemaSdl?: string;
+  /**
+   * Declared contract derived from the SDL field for this resolver:
+   * `{ returnType, args, provenance, framework }`. Surfaced as
+   * `summary.metadata.graphql.declaredContract` so
+   * `checkGraphqlContractAgreement` can pair it against other
+   * sources declaring a contract for the same boundary.
+   *
+   * The extractor doesn't derive this — adapters that have the SDL
+   * AND know the (typeName, fieldName) of the resolver populate it.
+   * Today: the TS adapter does this for Apollo-style resolverMap
+   * discovery. NestJS GraphQL (decorator-based) is a follow-up.
+   */
+  graphqlDeclaredContract?: Record<string, unknown>;
 }
 
 // =============================================================================
@@ -453,6 +466,9 @@ function buildGraphqlMetadata(
   }
   if (raw.graphqlSchemaSdl !== undefined) {
     graphql.schemaSdl = raw.graphqlSchemaSdl;
+  }
+  if (raw.graphqlDeclaredContract !== undefined) {
+    graphql.declaredContract = raw.graphqlDeclaredContract;
   }
   return Object.keys(graphql).length > 0 ? graphql : null;
 }
