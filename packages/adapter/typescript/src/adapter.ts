@@ -51,6 +51,7 @@ import {
 } from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery/index.js";
+import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { expandReachableClosure } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
@@ -737,6 +738,35 @@ function extractFromSourceFile(
 
   for (const pack of frameworks) {
     const units = discoverUnits(sourceFile, pack.discovery);
+
+    // Pack-supplied discovery callback (sibling of subUnits at the
+    // discovery layer). Packs whose conventions don't fit a
+    // data-driven DiscoveryMatch ship their own walker here. The
+    // adapter widens the returned DiscoveredCustomUnit to its
+    // internal DiscoveredUnit type and feeds the result into the
+    // same downstream pipeline.
+    if (pack.discoverUnits !== undefined) {
+      const tsCtx = createTsDiscoveryContext();
+      try {
+        const customUnits = pack.discoverUnits(sourceFile, tsCtx);
+        for (const cu of customUnits) {
+          units.push({
+            func: cu.func as FunctionRoot,
+            kind: cu.kind,
+            name: cu.name,
+            ...(cu.terminals !== undefined ? { terminals: cu.terminals } : {}),
+            ...(cu.inputMapping !== undefined
+              ? { inputMapping: cu.inputMapping }
+              : {}),
+            ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
+          } as (typeof units)[number]);
+        }
+      } catch (err) {
+        process.stderr.write(
+          `[suss] discoverUnits callback in pack "${pack.name}" threw: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    }
 
     for (const unit of units) {
       // Mirror the bindingSuffix logic in `discoverUnits` so consumer

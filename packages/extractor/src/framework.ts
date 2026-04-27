@@ -692,6 +692,42 @@ export interface PatternPack {
     ctx: unknown,
   ) => DiscoveredSubUnit[];
   /**
+   * Pack-supplied top-level discovery callback. Sibling of `subUnits`
+   * for the discovery layer: when a framework's discovery convention
+   * doesn't fit one of the data-driven `DiscoveryMatch` variants (REST
+   * registration, decorator-based controllers, named-export shapes,
+   * etc.), the pack ships its own walker here. The adapter calls it
+   * once per source file alongside the data-driven dispatch.
+   *
+   * Use this for framework-specific shapes that don't generalize:
+   * React's component-export heuristic (PascalCase + JSX-return),
+   * Vue's `.vue` SFC slots, Solid's component conventions, Storybook's
+   * `.stories.tsx` file convention. These are real conventions but
+   * baking each into the central `DiscoveryMatch` union forces every
+   * unrelated pack to know about them. Callbacks keep the central
+   * union for the generic primitives and let packs own their own
+   * conventions.
+   *
+   * `ctx` is typed `unknown` for the same reason as `subUnits` — each
+   * adapter ships its own context primitive (`TsDiscoveryContext` in
+   * `@suss/adapter-typescript`) and packs cast to whichever they're
+   * written against. The cast is the "I require the TS adapter"
+   * contract.
+   *
+   * Returned units flow through the adapter's normal pipeline — they
+   * get terminals + effects extracted, sub-units synthesized, and
+   * summaries assembled exactly as units from data-driven discovery
+   * do. Per-unit `terminals` / `inputMapping` overrides on
+   * `DiscoveredUnit` work the same way.
+   *
+   * **Cross-pack dedup.** When this callback discovers a unit at the
+   * same `(func, kind)` as a unit from another pack's data-driven
+   * discovery, the cross-pack claim dedup in the adapter keeps the
+   * first claimant. Pack ordering in the framework list is the
+   * precedence signal.
+   */
+  discoverUnits?: (sourceFile: unknown, ctx: unknown) => DiscoveredCustomUnit[];
+  /**
    * Per-call-site recognizers that emit typed `Effect`s alongside the
    * generic `invocation` effect the adapter already captures.
    *
@@ -818,6 +854,42 @@ export interface DiscoveredSubUnitParent {
   name: string;
   /** Kind of the parent (usually "component", "handler", etc.). */
   kind: string;
+}
+
+/**
+ * What a pack's `discoverUnits` hook returns per discovered top-level
+ * unit. Mirrors `DiscoveredSubUnit` for the discovery layer — the
+ * adapter widens these into its own internal `DiscoveredUnit` type
+ * (which carries adapter-specific fields like `routeInfo`,
+ * `packageExportInfo`, etc.) and pipes them through the normal
+ * extraction pipeline.
+ *
+ * Pack authors stay in opaque-handle land — `func` is whatever the
+ * adapter's primitive returns. Adapter-narrows this to its concrete
+ * function-root type (e.g. `FunctionRoot` in
+ * `@suss/adapter-typescript`).
+ */
+export interface DiscoveredCustomUnit {
+  /** Function body handle, opaque here. */
+  func: unknown;
+  /** IR code-unit kind (e.g. "component", "handler"). */
+  kind: string;
+  /** Discovered name (e.g. "UserCard"). */
+  name: string;
+  /**
+   * Terminal patterns to extract from this unit's body. Defaults to
+   * the pack-level `terminals` when unset.
+   */
+  terminals?: TerminalPattern[];
+  /**
+   * Input mapping for this unit. Defaults to the pack-level
+   * `inputMapping` when unset.
+   */
+  inputMapping?: InputMappingPattern;
+  /**
+   * Metadata merged onto the resulting summary's `metadata` field.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /**
