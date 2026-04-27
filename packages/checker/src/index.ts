@@ -3,6 +3,7 @@ import { checkConsumerContract } from "./consumer/consumerContract.js";
 import { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 import { checkContractAgreement } from "./contract/contractAgreement.js";
 import { checkContractConsistency } from "./contract/contractConsistency.js";
+import { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 import { checkProviderCoverage } from "./coverage/providerCoverage.js";
 import { dedupeFindings } from "./dedupe.js";
 import { buildInteractionIndex } from "./interactions/dispatcher.js";
@@ -49,6 +50,12 @@ export { checkConsumerContract } from "./consumer/consumerContract.js";
 export { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 export { checkContractAgreement } from "./contract/contractAgreement.js";
 export { checkContractConsistency } from "./contract/contractConsistency.js";
+export {
+  type GraphqlContractProvenance,
+  type GraphqlDeclaredContract,
+  readGraphqlDeclaredContract,
+} from "./contract/graphqlContract.js";
+export { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 export { checkProviderCoverage } from "./coverage/providerCoverage.js";
 export { dedupeFindings } from "./dedupe.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
@@ -160,6 +167,11 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // represent disagreement BETWEEN sources, not inconsistency within
   // a single source (which is Layer 1's job).
   findings.push(...checkContractAgreement(summaries));
+
+  // Same shape for GraphQL: when 2+ sources declare a contract for
+  // the same gql:Type.field boundary, compare return types + argument
+  // shapes. Reuses `contractDisagreement` finding kind.
+  findings.push(...checkGraphqlContractAgreement(summaries));
 
   // Cross-shape agreement for React: pair Storybook stub summaries
   // with inferred component summaries by component name and emit

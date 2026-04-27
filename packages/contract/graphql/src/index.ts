@@ -190,8 +190,30 @@ function buildResolverSummary(
       graphql: {
         rootType,
         fieldName,
+        // Declared contract — checker pairs against any other source
+        // declaring a contract for the same gql:Type.field key.
+        // Provenance is "derived" because both this metadata and the
+        // summary's transitions come from the same SDL field
+        // declaration; self-comparison would be tautological.
+        declaredContract: buildDeclaredContract(field, recognition),
       },
     },
+  };
+}
+
+function buildDeclaredContract(
+  field: FieldDefinitionNode,
+  recognition: string,
+) {
+  return {
+    returnType: typeNodeToShape(field.type),
+    args: (field.arguments ?? []).map((arg) => ({
+      name: arg.name.value,
+      type: typeNodeToShape(arg.type),
+      required: arg.type.kind === Kind.NON_NULL_TYPE,
+    })),
+    provenance: "derived" as const,
+    framework: recognition,
   };
 }
 
