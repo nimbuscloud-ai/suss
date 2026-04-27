@@ -1,23 +1,26 @@
 // @suss/framework-react — PatternPack for React function components.
 //
-// Discovers default-exported function components, classifies
-// JSX-returning terminals as `render` outputs, and synthesizes
-// sibling sub-units (event handlers + useEffect bodies) via
-// `subUnits`. React's runtime schedules those callbacks distinctly
+// Discovers React function components (default-exported and named),
+// classifies JSX-returning terminals as `render` outputs, and
+// synthesizes sibling sub-units (event handlers + useEffect bodies)
+// via `subUnits`. React's runtime schedules those callbacks distinctly
 // from the render body — different inputs, different outputs,
 // different firing triggers — so each becomes its own
 // BehavioralSummary sharing the component's identity prefix.
 //
-// Discovery uses `namedExport: ["default"]` as the initial signal — a
-// file whose default export is a component. Named-export components
-// (e.g. `export function UserCard(...)` without being the default)
-// are deferred until a second signal motivates broader discovery.
+// Discovery layers:
+//   1. `namedExport(["default"])` — cheap data-driven path for the
+//      default-export case (anonymous defaults, `export default Cmp`).
+//   2. `discoverUnits` callback in componentExports.ts — named-export
+//      heuristic (PascalCase + JSX-return + .stories/.test exclusion).
+//      The conventions live in the React pack, not in the extractor.
 //
 // Deferred: class components, HOC-wrapped defaults, React Server
 // Component specifics, custom-hook-as-code-unit discovery (hooks are
 // already pickable via dep-call tracking; promoting them to
 // first-class summaries follows in a later phase).
 
+import { reactComponentExports } from "./componentExports.js";
 import { reactSubUnits } from "./subUnits.js";
 
 import type { PatternPack } from "@suss/extractor";
@@ -89,6 +92,7 @@ export function reactFramework(): PatternPack {
     },
 
     subUnits: reactSubUnits,
+    discoverUnits: reactComponentExports,
   };
 }
 
