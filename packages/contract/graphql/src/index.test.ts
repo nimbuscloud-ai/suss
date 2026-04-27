@@ -51,9 +51,13 @@ describe("graphqlSdlToSummaries", () => {
     `;
     const summaries = graphqlSdlToSummaries(sdl);
     const post = summaries.find((s) => s.identity.name === "Query.post");
-    expect(post?.inputs.map((i) => i.name)).toEqual(["id", "includeDeleted"]);
-    expect(post?.inputs[0]?.shape).toEqual({ type: "text" }); // ID!
-    expect(post?.inputs[1]?.shape).toEqual({ type: "boolean" });
+    const params = post?.inputs.filter(
+      (i): i is Extract<typeof i, { type: "parameter" }> =>
+        i.type === "parameter",
+    );
+    expect(params?.map((i) => i.name)).toEqual(["id", "includeDeleted"]);
+    expect(params?.[0]?.shape).toEqual({ type: "text" }); // ID!
+    expect(params?.[1]?.shape).toEqual({ type: "boolean" });
   });
 
   it("derives the return shape from the field type", () => {

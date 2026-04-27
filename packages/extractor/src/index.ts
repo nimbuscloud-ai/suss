@@ -24,6 +24,7 @@ export type {
   AccessRecognizer,
   BindingExtraction,
   ContractPattern,
+  DiscoveredCustomUnit,
   DiscoveredSubUnit,
   DiscoveredSubUnitParent,
   DiscoveryMatch,
