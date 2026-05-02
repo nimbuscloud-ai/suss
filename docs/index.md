@@ -27,7 +27,7 @@ features:
     linkText: Boundary semantics
   - title: Add a framework in one file
     details: "ts-rest, Express, Fastify, NestJS, React, React Router, Apollo Server, Prisma, AWS SQS, and process.env ship in the box. New frameworks are a small declarative pack — no fork of the analyser."
-    link: /framework-packs
+    link: /guides/writing-a-pack
     linkText: Write a pack
   - title: Compare against declared contracts
     details: "OpenAPI against handlers, CloudFormation against API Gateway, Storybook against components, Prisma schema against query call sites, provider against consumer. The contract reader and the source extractor produce the same shape."
@@ -92,6 +92,6 @@ The site's navigation is grouped Diátaxis-style — tutorial, how-to guides, re
 - **First time on the site:** [Get started](/tutorial/get-started) walks the smallest end-to-end example, then [Motivation](/motivation) explains why this layer exists.
 - **Adding suss to an existing project:** [Add suss to a project](/guides/add-to-project) → [Set up CI](/guides/ci-integration).
 - **Looking up a flag or finding:** [CLI reference](/reference/cli) · [Findings catalog](/reference/findings) · [FAQ](/faq).
-- **Writing or modifying a pack:** [Framework packs](/framework-packs).
+- **Writing or modifying a pack:** [Write a pack](/guides/writing-a-pack).
 - **Consuming the summary format:** [Behavioral summary format](/behavioral-summary-format) → [IR reference](/ir-reference).
 - **Tracking what's shipped:** [Status & decisions](/internal/status).

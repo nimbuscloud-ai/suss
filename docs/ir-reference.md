@@ -45,7 +45,7 @@ The kind determines the behavioral model — specifically, how inputs arrive and
 
 **`consumer` vs `client`.** Both sit on the receiving side of a boundary, but the behavioral model differs. A `consumer` receives a message and produces effects (mutation, emission, delegation). A `client` makes a request, branches on the response status, and reads fields from the response body — the interesting behavior is *what does the client expect the response to look like*, which feeds into cross-boundary body-shape comparison. The distinction matters because the checker applies different rules: client transitions carry `expectedInput` (the body shape the client reads), while consumer transitions carry effects.
 
-**`library`.** Provider side of an in-process `function-call` boundary — a function reached through a package's public export surface. Produced by the `packageExports` discovery variant (see `framework-packs.md`); the resulting binding carries `package` + `exportPath` identity. Distinct from `handler` (no HTTP shape), `component` (no JSX), and `hook` (not a React convention).
+**`library`.** Provider side of an in-process `function-call` boundary — a function reached through a package's public export surface. Produced by the `packageExports` discovery variant (see `reference/pack-patterns.md`); the resulting binding carries `package` + `exportPath` identity. Distinct from `handler` (no HTTP shape), `component` (no JSX), and `hook` (not a React convention).
 
 **`caller`.** Consumer side of the same in-process `function-call` boundary — a function that calls into another package's public export surface. Produced by the `packageImport` discovery variant. One `caller` unit per (enclosing function × consumed binding). Pairs with `library` providers by `fn:<package>::<exportPath>`.
 
@@ -298,7 +298,7 @@ Side effects observed within a transition. Two layers of detail today:
 - **`message-send`** — SQS / Kafka / BullMQ producers. Pairs against message-bus consumer summaries by `(messageBus, channel)`.
 - **`config-read`** — `process.env.X` accesses. Pairs against runtime-config provider summaries by env-var name + codeScope.
 
-Adding a class is a strictly additive IR change. Each class maps 1:1 to a `binding.semantics.name` (`storage-relational`, `rest`, `message-bus`, `runtime-config`) by convention; not enforced by the IR but every shipped recognizer follows it. See [`framework-packs.md`](framework-packs.md) for the recognizer primitive that emits these (`invocationRecognizers` and `accessRecognizers`).
+Adding a class is a strictly additive IR change. Each class maps 1:1 to a `binding.semantics.name` (`storage-relational`, `rest`, `message-bus`, `runtime-config`) by convention; not enforced by the IR but every shipped recognizer follows it. See [`reference/pack-patterns.md`](reference/pack-patterns.md#recognizers) for the recognizer primitive that emits these (`invocationRecognizers` and `accessRecognizers`).
 
 `preconditions` on `invocation` and `interaction` carry ancestor conditions that gate reaching the effect within its enclosing transition — populated for calls nested inside conditional blocks or loop bodies.
 

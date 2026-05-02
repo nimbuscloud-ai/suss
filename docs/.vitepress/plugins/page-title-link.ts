@@ -3,7 +3,7 @@
 //
 // Behaviour 1 — link-text rewrite:
 //   - [boundary-semantics.md](boundary-semantics.md) → [Boundary semantics](…)
-//   - [./framework-packs](./framework-packs) → [Framework Packs](…)
+//   - [./packs](./packs) → [Packs](…)
 //   - [cross-boundary-checking](/cross-boundary-checking.md) → […](…)
 // Leaves intentional link text alone — `[see the semantics doc](…)`
 // doesn't match the filename pattern, so it's a no-op.
