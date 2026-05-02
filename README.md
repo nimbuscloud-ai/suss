@@ -237,7 +237,7 @@ const effective = applySuppressions(findings, mySuppressions);
 - [`docs/pipelines.md`](docs/pipelines.md) — sequence diagrams for each CLI action plus the internal assembly and pairing flows
 - [`docs/extraction-algorithm.md`](docs/extraction-algorithm.md) — the four extraction functions, pseudocode, edge cases
 - [`docs/ir-reference.md`](docs/ir-reference.md) — type-by-type walkthrough of `@suss/behavioral-ir`
-- [`docs/framework-packs.md`](docs/framework-packs.md) — how to write or modify a pattern pack
+- [`docs/packs.md`](docs/packs.md) — what packs are; [`docs/guides/writing-a-pack.md`](docs/guides/writing-a-pack.md) — how to write one; [`docs/reference/pack-patterns.md`](docs/reference/pack-patterns.md) — pattern catalogue
 - [`docs/cross-boundary-checking.md`](docs/cross-boundary-checking.md) — the pairwise checker: provider coverage, consumer satisfaction, contract consistency
 - [`docs/suppressions.md`](docs/suppressions.md) — `.sussignore` file format
 - [`docs/contract-sources.md`](docs/contract-sources.md) — non-source-code contracts (specs, manifests, vendor docs); reader/semantics layering

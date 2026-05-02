@@ -48,7 +48,7 @@ Any place two units of code meet across a contract — an HTTP request flowing f
 
 ## What boundaries are modelled?
 
-HTTP (ts-rest, Express, Fastify, NestJS REST), GraphQL (Apollo Server, NestJS GraphQL, AppSync), React (components, event handlers, `useEffect`), React Router (loaders / actions), storage (Prisma reads / writes / selectors), message bus (AWS SQS producers, CloudFormation event-source mappings on the consumer side), runtime config (`process.env` plus CloudFormation `Environment` blocks for resolution), and contract sources (OpenAPI 3.x, AWS API Gateway, CloudFormation / SAM, AppSync, Storybook CSF3, Prisma schema). New boundaries are additive packs — see [framework packs](/framework-packs).
+HTTP (ts-rest, Express, Fastify, NestJS REST), GraphQL (Apollo Server, NestJS GraphQL, AppSync), React (components, event handlers, `useEffect`), React Router (loaders / actions), storage (Prisma reads / writes / selectors), message bus (AWS SQS producers, CloudFormation event-source mappings on the consumer side), runtime config (`process.env` plus CloudFormation `Environment` blocks for resolution), and contract sources (OpenAPI 3.x, AWS API Gateway, CloudFormation / SAM, AppSync, Storybook CSF3, Prisma schema). New boundaries are additive packs — see [packs](/packs).
 
 ## Does it work in monorepos?
 
@@ -89,4 +89,4 @@ No — it consumes them. Each of those is a *specification* (or *observation*); 
 
 ## How do I add a new framework?
 
-Write a `PatternPack` — declarative configuration that tells suss how the framework registers handlers, where status codes attach to responses, what counts as an effect. Most packs are 100–300 lines of data, no fork of the analyser. See [framework packs](/framework-packs).
+Write a `PatternPack` — declarative configuration that tells suss how the framework registers handlers, where status codes attach to responses, what counts as an effect. Most packs are 100–300 lines of data, no fork of the analyser. See [Write a pack](/guides/writing-a-pack).

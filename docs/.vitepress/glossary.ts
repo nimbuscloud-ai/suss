@@ -31,11 +31,11 @@ export const glossary: Record<string, string> = {
   // Boundary-semantics concepts — /boundary-semantics
   BoundarySemantics: "/boundary-semantics",
 
-  // Framework-pack types — /framework-packs
-  PatternPack: "/framework-packs#what-a-pack-describes",
-  DiscoveryMatch: "/framework-packs#discoverymatch-variants",
-  BindingExtraction: "/framework-packs#bindingextraction",
-  TerminalMatch: "/framework-packs#terminalmatch-variants",
-  TerminalExtraction: "/framework-packs#terminalextraction",
-  InputMappingPattern: "/framework-packs#inputmappingpattern-variants",
+  // Pack pattern types — /reference/pack-patterns
+  PatternPack: "/reference/pack-patterns#the-patternpack-interface",
+  DiscoveryMatch: "/reference/pack-patterns#discoverymatch-variants",
+  BindingExtraction: "/reference/pack-patterns#bindingextraction",
+  TerminalMatch: "/reference/pack-patterns#terminalmatch-variants",
+  TerminalExtraction: "/reference/pack-patterns#terminalextraction",
+  InputMappingPattern: "/reference/pack-patterns#inputmappingpattern-variants",
 };
