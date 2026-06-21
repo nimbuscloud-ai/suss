@@ -2,27 +2,37 @@
 // into BehavioralSummary[] for the same checker that handles OpenAPI /
 // GraphQL / Prisma / ... declarations.
 //
-// The intent spec format is documented in
-// docs/internal/proposals/intent-specs.md. v0 covers REST boundaries
-// with single-status transitions and object-shaped bodies; richer
-// types and additional boundary semantics land in v1.
+// Two file shapes ship in v0.1, discriminated by the top-level `kind`:
+//
+//   kind: boundary  — engineer-authored system intent for a REST
+//                     boundary (status codes, body shapes, outcome ids).
+//   kind: prd       — PM-authored outcome intent (purpose, audience,
+//                     scenarios that reference system-intent outcomes
+//                     by qualified id).
+//
+// The full design lives in docs/internal/proposals/intent-specs.md.
 
 import fs from "node:fs";
 import path from "node:path";
 
 import YAML from "yaml";
 
-import { IntentSpecSchema } from "./schema.js";
-import { intentSpecToSummary } from "./summaryBuilder.js";
+import { IntentDocSchema } from "./schema.js";
+import { intentDocToSummary } from "./summaryBuilder.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { IntentSpec } from "./schema.js";
+import type { IntentDoc } from "./schema.js";
 
-export { IntentSpecSchema } from "./schema.js";
+export { IntentDocSchema, IntentSpecSchema } from "./schema.js";
 
 export type {
   BodyShape,
+  BoundaryIntent,
+  BoundaryTransition,
+  IntentDoc,
   IntentSpec,
+  Prd,
+  PrdScenario,
   RestBoundary,
   RestTransition,
 } from "./schema.js";
@@ -33,23 +43,29 @@ export interface IntentToSummariesOptions {
 }
 
 /**
- * Validate an in-memory intent spec (already parsed from YAML / JSON)
- * and turn it into a single `BehavioralSummary`. Throws when the spec
- * fails validation — malformed specs are a load-time error, never a
+ * Validate an in-memory intent doc (already parsed from YAML / JSON)
+ * and turn it into a single `BehavioralSummary`. Throws when the doc
+ * fails validation — malformed docs are a load-time error, never a
  * comparison finding.
+ *
+ * Accepts both `kind: boundary` and `kind: prd` docs; the summary
+ * builder dispatches on the discriminator.
  */
 export function intentSpecToSummaries(
   raw: unknown,
   options: IntentToSummariesOptions = {},
 ): BehavioralSummary[] {
-  const spec: IntentSpec = IntentSpecSchema.parse(raw);
-  return [intentSpecToSummary(spec, options)];
+  const doc: IntentDoc = IntentDocSchema.parse(raw);
+  return [intentDocToSummary(doc, options)];
 }
 
 /**
- * Read a single intent-spec file (YAML or JSON, chosen by extension)
+ * Read a single intent-doc file (YAML or JSON, chosen by extension)
  * and return its summary. JSON is parsed strictly; everything else
  * goes through the YAML parser, which also accepts JSON syntax.
+ *
+ * Accepts both `*.intent.{yaml,yml,json}` and `*.prd.{yaml,yml,json}`
+ * — the discriminator inside the document picks the shape.
  */
 export function intentSpecFileToSummaries(
   filepath: string,
@@ -77,11 +93,10 @@ export function intentSpecFileToSummaries(
 }
 
 /**
- * Walk `dir` for `*.intent.yaml`, `*.intent.yml`, and `*.intent.json`
+ * Walk `dir` for `*.intent.{yaml,yml,json}` and `*.prd.{yaml,yml,json}`
  * files and return the flattened summary set. Subdirectories are
- * walked recursively — keeps the same shape as the storybook
- * directory walker so authors can organise intent specs however they
- * want under a single root.
+ * walked recursively; intent and PRD docs can live anywhere under the
+ * root, organised however the team prefers.
  */
 export function intentSpecDirectoryToSummaries(
   dir: string,
@@ -107,7 +122,7 @@ function walkIntentFiles(dir: string): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isFile()) {
-      if (/\.intent\.(yaml|yml|json)$/.test(entry.name)) {
+      if (/\.(intent|prd)\.(yaml|yml|json)$/.test(entry.name)) {
         out.push(full);
       }
     } else if (entry.isDirectory()) {

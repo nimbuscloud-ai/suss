@@ -159,6 +159,8 @@ describe("contract CLI command", () => {
 
   describe("--from intent", () => {
     const minimalIntent = {
+      kind: "boundary",
+      name: "users-lookup",
       boundary: {
         transport: "http",
         semantics: "rest",
@@ -169,6 +171,7 @@ describe("contract CLI command", () => {
       audience: "web-client",
       transitions: [
         {
+          id: "found",
           when: "user exists",
           output: {
             status: 200,
@@ -197,6 +200,7 @@ describe("contract CLI command", () => {
       expect(summaries).toHaveLength(1);
       expect(summaries[0].confidence.source).toBe("declared");
       expect(summaries[0].metadata?.intent).toEqual({
+        name: "users-lookup",
         purpose: "Look up a user by id.",
         audience: "web-client",
       });
@@ -211,6 +215,7 @@ describe("contract CLI command", () => {
         path.join(tmpDir, "billing.intent.json"),
         JSON.stringify({
           ...minimalIntent,
+          name: "invoices-lookup",
           boundary: { ...minimalIntent.boundary, path: "/invoices/:id" },
         }),
       );
