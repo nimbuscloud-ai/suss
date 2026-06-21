@@ -119,6 +119,100 @@ const twoPathRaw: RawCodeStructure = {
   declaredContract: null,
 };
 
+describe("assembleSummary — optional metadata plumbing", () => {
+  it("threads expectedInput, accessors, graphql, and invocation preconditions through", () => {
+    const raw: RawCodeStructure = {
+      identity: {
+        name: "search",
+        kind: "handler",
+        file: "src/handlers/search.ts",
+        range: { start: 1, end: 30 },
+        exportName: "search",
+        exportPath: ["search"],
+      },
+      boundaryBinding: {
+        transport: "http",
+        semantics: { name: "rest", method: "POST", path: "/search" },
+        recognition: "express",
+      },
+      parameters: [],
+      branches: [
+        {
+          conditions: [],
+          terminal: {
+            kind: "response",
+            statusCode: { type: "literal", value: 200 },
+            body: { typeText: "Result", shape: null },
+            exceptionType: null,
+            message: null,
+            component: null,
+            delegateTarget: null,
+            emitEvent: null,
+            renderTree: null,
+            location: { start: 20, end: 20 },
+          },
+          expectedInput: {
+            type: "record",
+            properties: { q: { type: "text" } },
+          },
+          effects: [
+            {
+              type: "invocation",
+              callee: "audit.log",
+              args: [],
+              async: false,
+              preconditions: [
+                {
+                  sourceText: "user.isAdmin",
+                  structured: {
+                    type: "truthinessCheck",
+                    subject: {
+                      type: "dependency",
+                      name: "user.isAdmin",
+                      accessChain: [],
+                    },
+                    negated: false,
+                  },
+                  polarity: "positive",
+                  source: "explicit",
+                },
+              ],
+            },
+          ],
+          location: { start: 10, end: 25 },
+          isDefault: true,
+        },
+      ],
+      dependencyCalls: [],
+      declaredContract: null,
+      bodyAccessors: ["body"],
+      statusAccessors: ["statusCode"],
+      graphqlDocument: "query Q { me { id } }",
+      graphqlSchemaSdl: "type Query { me: User }",
+    };
+
+    const summary = assembleSummary(raw);
+
+    expect(summary.transitions[0].expectedInput).toEqual({
+      type: "record",
+      properties: { q: { type: "text" } },
+    });
+    expect(summary.metadata?.http).toMatchObject({
+      bodyAccessors: ["body"],
+      statusAccessors: ["statusCode"],
+    });
+    expect(summary.metadata?.graphql).toMatchObject({
+      document: "query Q { me { id } }",
+      schemaSdl: "type Query { me: User }",
+    });
+    const effect = summary.transitions[0].effects[0];
+    expect(effect.type).toBe("invocation");
+    if (effect.type === "invocation") {
+      expect(effect.preconditions).toHaveLength(1);
+    }
+  });
+});
+
 describe("assembleSummary", () => {
   it("produces a valid summary from a two-branch handler", () => {
     const summary = assembleSummary(twoPathRaw);
