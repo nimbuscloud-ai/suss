@@ -150,7 +150,7 @@ A single endpoint can have several configuration knobs that all produce the same
 1. Multiple transitions for the same status, each with a different opaque predicate.
 2. One transition for the status, with the contributing causes aggregated in `metadata.causes`.
 
-**Use option 2.** The checker's sub-case analysis (see `checker/src/provider-coverage.ts`) treats multiple transitions for the same status as cases the consumer is expected to disambiguate. A consumer can't actually know whether a 403 came from the authorizer or the API key, and shouldn't have to disambiguate. Aggregation preserves the attribution for inspect/diff without forcing artificial branching on the consumer side.
+**Use option 2.** The checker's sub-case analysis (see `packages/checker/src/coverage/providerCoverage.ts`) treats multiple transitions for the same status as cases the consumer is expected to disambiguate. A consumer can't know whether a 403 came from the authorizer or the API key, and shouldn't have to disambiguate. Aggregation preserves the attribution for inspect/diff without forcing artificial branching on the consumer side.
 
 ## Synthetic resources
 

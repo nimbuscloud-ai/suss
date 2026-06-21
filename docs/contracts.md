@@ -6,7 +6,7 @@ Related: [`contract-sources.md`](contract-sources.md) (the readers that produce 
 
 ## The problem with treating "contract" as one thing
 
-Suss started with HTTP, where the dominant contract shape is a schema — OpenAPI, ts-rest `responses`, CFN `MethodResponses`. All three describe the interface: what types flow across the boundary, with status codes and body schemas as the enumeration. Cross-boundary checking in suss today compares inferred behavior against a declared schema, end of story.
+Suss started with HTTP, where the dominant contract shape is a schema — OpenAPI, ts-rest `responses`, CFN `MethodResponses`. All three describe the interface: what types flow across the boundary, with status codes and body schemas as the enumeration. Suss's earliest checkers compared inferred behaviour against a declared schema, end of story.
 
 That framing quietly assumes the schema is the whole contract. It isn't, even for HTTP — a Pact recording and an OpenAPI spec say different things, and teams use both for different purposes. When we look at other domains, the assumption breaks outright:
 
@@ -111,62 +111,64 @@ Daniel Jackson's concept-design framework (MIT) describes software as concepts (
 
 The epistemic split above maps closely. A specification names a concept's *purpose and declared actions*; an observation records a single *synchronization firing*; a derivation enumerates the full *action space reachable from code*. Suss's `contractDisagreement` findings, fired when sources disagree about what actions exist at a boundary, are the closest proxy we have for "purpose violated" without requiring users to author intent declarations. See [`roadmap-react.md`](roadmap-react.md#react-components-are-n-code-units-not-one) for how this framing informs the React multi-code-unit decision, and [`internal/concept-design.md`](internal/concept-design.md) for the long-form mapping (audience indexing, failure modes of bottom-up derivation, and how PRDs / intent specs fit the concept-declaration shape).
 
-## How suss absorbs contracts today, and the gap
+## How suss absorbs contracts today
 
-The only shape suss reads today is **schema**, and only three variants: OpenAPI, ts-rest `responses`, and CFN `MethodResponses`. Each is emitted as `metadata.http.declaredContract` on a summary. The checker's `checkContractConsistency` and `checkContractAgreement` both operate on this single shape.
+Two of the five shapes — **schema** and **spec** — ship today across HTTP, GraphQL, AppSync, message-bus, storage-relational, and component domains. The contract reader pipeline (`suss contract --from <source>`) covers seven sources:
 
-The machinery isn't secretly HTTP-specific — it operates on `{ statusCode, body }` tuples, not HTTP — but it *is* schema-specific. It doesn't know how to read a snapshot, a story, or a Figma file. Expanding the set of contract shapes is a structural change, not a configuration one.
+- `@suss/contract-openapi` — OpenAPI 3.x (schema, HTTP)
+- `@suss/contract-cloudformation` — CFN / SAM templates with API Gateway resources (schema, HTTP), built on the internal `@suss/contract-aws-apigateway` shared library
+- `@suss/contract-appsync` — CFN templates with `AWS::AppSync::*` resources (schema, GraphQL)
+- `@suss/contract-graphql` — plain GraphQL SDL files (schema, GraphQL)
+- `@suss/contract-prisma` — `schema.prisma` files (schema, storage-relational)
+- `@suss/contract-storybook` — CSF3 `.stories.tsx` files (spec, component domain)
+- (aws-apigateway is internal to the cloudformation / appsync readers)
 
-## What expanding the set requires
+Framework packs also derive contract declarations directly from source: ts-rest's `responses`, Apollo / NestJS GraphQL `typeDefs`, and ts-rest-zod schemas all populate per-protocol contract metadata at extraction time.
 
-Two parallel pieces of infrastructure:
+Comparison checkers in `@suss/checker` operate per-protocol:
 
-### Stub readers per shape
+- `checkContractAgreement` / `checkContractConsistency` — HTTP schema declarations vs derived handler / consumer transitions
+- `checkGraphqlContractAgreement` — GraphQL `metadata.graphql.declaredContract` cross-pair check
+- `checkMessageBusAgreement` — producer-side body shape vs consumer-side expectations on a named queue
+- `checkStorageRelationalAgreement` — Prisma schema entity vs handler `interaction(class: "storage-access")` effects
+- `checkRuntimeConfigAgreement` — env-var declarations vs handler reads
 
-Each new shape needs a package that reads artifacts in that shape and produces `BehavioralSummary[]` in the same unified IR. Pattern:
+What's still missing from the taxonomy:
 
-- `@suss/contract-openapi` reads OpenAPI (schema shape)
-- `@suss/contract-cloudformation` reads CFN (schema shape, via the aws-apigateway resource-semantics layer)
-- *`@suss/contract-storybook`* — reads `.stories.ts[x]` (spec shape, component domain)
-- *`@suss/contract-jest-snapshots`* — reads `__snapshots__` (observation shape, component domain)
-- *`@suss/contract-playwright`* — reads spec files (observation/test shape, cross-domain)
-- *`@suss/contract-prisma`* — reads `.prisma` files (schema shape, database domain)
+- **Observation shapes.** No reader ingests Jest snapshots, Playwright traces, or production observability data yet. The IR shape that would carry these (`confidence.source: "observation"`) exists; the reader pipeline doesn't.
+- **Test shapes.** Same gap — RSpec / supertest / RTL test assertions aren't yet a source.
+- **Intent shapes.** Team-authored intent specs are scoped in [`proposals/intent-specs.md`](internal/proposals/intent-specs.md) as the next major direction. Third-party schemas (OpenAPI, GraphQL SDL) cover some intent today, but they were authored as specs, not as team intent.
+- **Design shapes.** Figma / design-token integration is deliberately deferred — design files rarely live in the repo, and the Figma REST API integration is expensive relative to the signal. The taxonomy keeps design-as-contract listed because the *epistemic character* (intent) is distinct; the *artifact pipeline* isn't planned.
 
-(Italics = planned, not shipped.)
+## Metadata namespacing as shipped
 
-**Figma (design shape) is deliberately punted for v0.** Design files are rarely committed to the repo, wireframes routinely diverge from ship, and the Figma REST API integration is expensive relative to the signal it feeds. A future opt-in `@suss/contract-figma-url` that reads a URL reference and emits a `lowConfidence` visual-intent signal is the likely re-entry point, never a source of hard findings. Design-as-contract is still in the taxonomy above because the *epistemic character* matters (intent is a distinct kind of truth); it's the *artifact pipeline* we're not building now.
+The metadata layout follows a protocol-first convention rather than the original shape-first sketch: declarations live under the protocol they describe, regardless of which artifact pipeline produced them. This means a GraphQL contract derived from an SDL file and a GraphQL contract derived from Apollo's `typeDefs` populate the same `metadata.graphql.declaredContract` field, so the checker doesn't care about the source.
 
-Each reader emits summaries tagged with a `provenance` (derived / independent / observed / intent — to be refined as implementation demands) so the checker can apply appropriate comparison logic.
+Namespaces in use:
 
-### Shape-aware metadata
+- `metadata.http.*` — declaredContract, statusAccessors, bodyAccessors, statusRange (HTTP protocol)
+- `metadata.graphql.*` — declaredContract, document, schemaSdl (GraphQL protocol)
+- `metadata.appsync.*` — kind (AppSync resolver type: UNIT vs PIPELINE)
+- `metadata.storybook.*` — story-level metadata (component spec)
+- `metadata.component.*` — Storybook-bound component context
 
-HTTP-scoped metadata lives under `metadata.http.*` today (see `docs/behavioral-summary-format.md`). Each new contract shape-domain combination gets its own namespace:
+New domains add their own protocol namespace (`metadata.<protocol>.*`) rather than nesting by source. The checker reads the namespace it understands; downstream tooling ignores what it doesn't.
 
-- `metadata.http.declaredContract` — HTTP schema (existing)
-- `metadata.component.storybook.*` — Storybook spec for a component
-- `metadata.component.snapshot.*` — snapshot observation for a component
-- `metadata.component.figma.*` — Figma design intent for a component
-- `metadata.database.schema.*` — Prisma / SQL schema
-- `metadata.test.playwright.*` — Playwright behavioral observation
-- ... and so on
+## What the checker shape will look as new sources land
 
-The checker reads the namespaces it cares about; downstream tools ignore what they don't understand.
+Two extension axes that are now visible after a year of shipping:
 
-### Checker extensions
+- **New source for an existing protocol.** A jest-snapshots reader emits the same component-shaped summaries the storybook reader emits, but with `confidence.source: "observation"` instead of `specification`. Existing component-level checkers stay the same; severity differs by character (per [Epistemic character matters more than shape](#epistemic-character-matters-more-than-shape) above).
+- **New protocol entirely.** Message-bus / storage-relational / runtime-config were added by introducing a new `BoundarySemantics` variant, the corresponding `metadata.<protocol>.*` namespace, and a per-protocol checker. The path is documented in [boundary-semantics.md](boundary-semantics.md).
 
-`checkContractConsistency` (Layer 1) and `checkContractAgreement` (Layer 2) generalize from "schema vs transitions" and "schema vs schema" respectively to cross-character comparisons. Specifically:
-
-- **Consistency checks** — inferred derivation against any specification or observation shape at the same boundary.
-- **Agreement checks** — any two specifications of the same boundary, or a specification and a canonical observation, compared for mutual consistency.
-
-Epistemic character determines severity:
+Severity follows epistemic character, not source:
 
 - Derivation violates a Specification → `error` (code has drifted from what it promised)
 - Observation violates a Specification → `warning` (something happened that the spec said couldn't)
 - Observation absent for a Specification case → `info` (gap in coverage, not a bug)
 - Two Specifications disagree → `warning` (reconcile needed; existing `contractDisagreement`)
 
-These heuristics refine as we ship more shapes. Not all combinations are meaningful; not all need the same severity.
+These heuristics refine as more shapes ship. Not all combinations are meaningful; not all need the same severity.
 
 ## How new domains get added
 
@@ -186,14 +188,14 @@ Shipping all three in one go isn't required. React's plan ([`roadmap-react.md`](
 
 ## What this doc commits us to
 
-- No new checker logic will be added under the assumption that contracts are schema-shaped. Every check will cite which shape(s) it operates on.
-- Shape-specific stub packages are expected to multiply. The `@suss/contract-*` naming pattern is explicit about this.
-- Metadata namespacing under `metadata.<domain>.<shape>.*` becomes the rule, not the exception.
-- The five-shape taxonomy is the working vocabulary. When a concrete artifact doesn't fit, we update the taxonomy rather than force it.
-- Future contract-related design docs cite epistemic character explicitly when discussing checker behavior.
+- No new checker logic is added under the assumption that contracts are schema-shaped. Every check cites which shape(s) it operates on.
+- The `@suss/contract-*` naming pattern stays as the surface for new readers; one package per source.
+- Metadata namespacing follows the protocol-first convention shipped to date (`metadata.<protocol>.*`). New protocols add their own namespace.
+- The five-shape taxonomy is the working vocabulary. When a concrete artifact doesn't fit, the taxonomy is updated rather than the artifact forced into a slot.
+- Future contract-related design docs cite epistemic character explicitly when discussing checker behaviour.
 
 ## What this doc does *not* commit us to
 
 - Reading every shape in every domain. Pragmatic coverage first; comprehensive later.
-- A universal cross-shape comparison framework. The interesting comparisons are domain-specific (an HTTP OpenAPI ⊕ Pact combination doesn't look the same as a React Storybook ⊕ Figma combination). We generalize bottom-up.
-- A fixed finding taxonomy. `contractDisagreement` was added when cross-source HTTP contracts landed; additional kinds will follow as domains demand them.
+- A universal cross-shape comparison framework. The interesting comparisons are protocol-specific (HTTP OpenAPI vs Pact doesn't share machinery with React Storybook vs Figma). Generalisation is bottom-up.
+- A fixed finding taxonomy. `contractDisagreement` was added when cross-source HTTP contracts landed; protocol-specific kinds (`unhandledProviderCase`, `consumerFieldMismatch`, `providerContractViolation`, GraphQL agreement findings) followed. Additional kinds land as domains demand them.
