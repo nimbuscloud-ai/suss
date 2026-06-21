@@ -4,6 +4,7 @@ import { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 import { checkContractAgreement } from "./contract/contractAgreement.js";
 import { checkContractConsistency } from "./contract/contractConsistency.js";
 import { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
+import { checkIntentAgreement } from "./contract/intentAgreement.js";
 import { checkProviderCoverage } from "./coverage/providerCoverage.js";
 import { dedupeFindings } from "./dedupe.js";
 import { buildInteractionIndex } from "./interactions/dispatcher.js";
@@ -56,6 +57,7 @@ export {
   readGraphqlDeclaredContract,
 } from "./contract/graphqlContract.js";
 export { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
+export { checkIntentAgreement } from "./contract/intentAgreement.js";
 export { checkProviderCoverage } from "./coverage/providerCoverage.js";
 export { dedupeFindings } from "./dedupe.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
@@ -172,6 +174,12 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // the same gql:Type.field boundary, compare return types + argument
   // shapes. Reuses `contractDisagreement` finding kind.
   findings.push(...checkGraphqlContractAgreement(summaries));
+
+  // Intent specs (recognition: "intent") paired against any non-intent
+  // implementation that shares their boundary. Emits intentUnimplemented,
+  // intentExceeded, and intentFieldMismatch as error-severity findings
+  // when team-authored intent and code diverge.
+  findings.push(...checkIntentAgreement(summaries));
 
   // Cross-shape agreement for React: pair Storybook stub summaries
   // with inferred component summaries by component name and emit
