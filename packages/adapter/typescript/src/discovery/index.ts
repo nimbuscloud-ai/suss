@@ -33,7 +33,12 @@ function runPattern(
     return discoverNamedExports(sourceFile, pattern.match, pattern.kind);
   }
   if (pattern.match.type === "registrationCall") {
-    return discoverRegistrationCalls(sourceFile, pattern.match, pattern.kind);
+    return discoverRegistrationCalls(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      pattern.bindingExtraction,
+    );
   }
   if (pattern.match.type === "registrationTemplate") {
     return discoverRegistrationTemplates(

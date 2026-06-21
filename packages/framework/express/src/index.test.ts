@@ -64,19 +64,26 @@ describe("expressFramework — integration", () => {
 
   it("discovers every router.<method> handler in the fixture", () => {
     // Three handlers — all registered via router.get(...) so identity.name
-    // comes from the registration method verb. Method/path extraction for
-    // non-contract registrationCall packs isn't wired up yet, so these fall
-    // back to function-call semantics on the "http" transport.
+    // comes from the registration method verb. The pack's
+    // `bindingExtraction` lifts the method (registration verb) and path
+    // (arg 0 literal) off the registration call, so each handler gets a
+    // REST boundary binding rather than the function-call fallback.
     expect(summaries).toHaveLength(3);
     for (const s of summaries) {
       expect(s.kind).toBe("handler");
       expect(s.identity.name).toBe("get");
-      expect(s.identity.boundaryBinding).toEqual({
-        transport: "http",
-        semantics: { name: "function-call" },
-        recognition: "express",
-      });
+      expect(s.identity.boundaryBinding?.transport).toBe("http");
+      expect(s.identity.boundaryBinding?.recognition).toBe("express");
+      expect(s.identity.boundaryBinding?.semantics.name).toBe("rest");
     }
+    const paths = summaries
+      .map((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? sem.path : null;
+      })
+      .filter((p): p is string => p !== null)
+      .sort();
+    expect(paths).toEqual(["/moved", "/old-profile", "/users/:id"]);
   });
 
   it("maps positional params (req, res, next) to framework roles", () => {
