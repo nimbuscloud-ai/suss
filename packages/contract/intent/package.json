@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Read team-authored intent specs (*.intent.yaml / *.intent.json) and turn them into suss behavioral summaries for comparison against derived code summaries.",
+  "description": "Read team-authored intent specs (*.intent / *.prd, YAML or JSON) into IntentSummary[] for the intent checker to pair against derived code summaries.",
   "keywords": [
     "suss",
     "behavioral-summary",
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "*",
+    "@suss/intent-ir": "*",
     "yaml": "^2.4.0",
     "zod": "^4.0.0"
   },

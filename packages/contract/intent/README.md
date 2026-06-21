@@ -1,62 +1,62 @@
 # @suss/contract-intent
 
-Read team-authored intent specs and turn them into suss
-behavioural summaries for comparison against derived code summaries.
+Read team-authored intent specs (`*.intent` / `*.prd`, YAML or JSON) into
+`IntentSummary[]` for the intent checker to pair against derived code.
 
 ## What this is
 
-An intent spec is a structured declaration of what a boundary *should*
-do — the team's intent, written in the same shape suss derives from
-code. The pair-against-code comparison answers "did we ship what we
-meant?" before the PR lands.
+The file-reading layer for intent. An intent spec declares what a
+boundary *should* do (system intent) or the human scenarios a feature
+*should* satisfy (PRD outcome intent). This package handles file and
+directory discovery plus YAML / JSON parsing; the schema and the
+normalisation to `IntentSummary` live in [`@suss/intent-ir`](../../intent-ir).
 
-The format is documented in
+Unlike the other contract readers, intent does **not** produce
+`BehavioralSummary` — it's a separate citizen with its own type and its
+own checker. The full design is in
 [`docs/internal/proposals/intent-specs.md`](../../../docs/internal/proposals/intent-specs.md).
-This package implements the v0 reader: REST boundaries, single-status
-transitions, object-shaped bodies.
 
 ## Usage
 
-```bash
-npx suss contract --from intent intents/users.intent.yaml -o intent.json
-# or walk a directory of *.intent.{yaml,yml,json}
-npx suss contract --from intent intents/ -o intent.json
-```
-
-Or programmatically:
-
 ```ts
 import {
-  intentSpecToSummaries,
-  intentSpecFileToSummaries,
-  intentSpecDirectoryToSummaries,
+  loadIntentDoc,
+  loadIntentFile,
+  loadIntentDirectory,
 } from "@suss/contract-intent";
 
-const summaries = intentSpecFileToSummaries("intents/users.intent.yaml");
+const one = loadIntentFile("intents/users.intent.yaml"); // IntentSummary
+const all = loadIntentDirectory("intents/"); // IntentSummary[]
 ```
 
-## Spec shape (v0)
+The CLI loads intent through `suss check --intent <dir>` (intent is
+checked against code, not emitted as a contract).
+
+## Spec shape
+
+Two kinds, discriminated by the top-level `kind`. System intent:
 
 ```yaml
+kind: boundary
+name: users-lookup
+purpose: Look up a single user by id.
+audience: web-client
 boundary:
   transport: http
-  semantics: rest
+  semantics: rest        # or function-call
   method: GET
   path: /users/:id
-
-purpose: "Look up a single user by id."
-audience: web-client
-
 transitions:
-  - when: "user not found"
-    output:
+  - id: not-found
+    when: user not found
+    response:
       status: 404
       body:
         properties:
           error: { type: string }
-
-  - when: "user exists"
-    output:
+  - id: found
+    when: user exists
+    response:
       status: 200
       body:
         properties:
@@ -64,11 +64,18 @@ transitions:
           fullName: { type: string }
 ```
 
-Both `purpose` and `audience` are required. The last transition in
-the list is treated as the default (no opaque predicate); earlier
-ones carry their `when` text as an opaque predicate the checker
-pairs by terminal kind + status code.
+Each transition declares exactly one outcome — `response` (REST status +
+body), `returns` (a function/handler return value), or `throws` (an
+error). PRD docs (`kind: prd`) carry `when` / `expect` scenarios that
+optionally `link` to a system-intent outcome by `<name>.<id>`.
 
 Body properties accept the primitive type names `string`, `integer`,
-`number`, `boolean`, `null`, and `unknown`. Nested objects, arrays,
-and unions are deferred to v1.
+`number`, `boolean`, `null`, and `unknown`.
+
+## Coverage
+
+![coverage](../../../.github/badges/coverage-contract-intent.svg)
+
+## License
+
+Apache-2.0
