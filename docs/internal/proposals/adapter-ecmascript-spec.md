@@ -21,7 +21,7 @@ Two costs:
 
 Both fall on the adapter, not on packs, because both are language-level. ECMAScript defines what a nested function expression is and what `Promise.then` resolves to. Runtime packs should only own runtime-specific behavior — timer semantics, the `process` surface, module loading.
 
-Flagged in [[project_recognizer_scope_gap]] when dogfooding `runtime-node` against Twenty, and again when drafting `docs/tutorial/pair-frontend-backend.md` — the `.then(res => res.json()).then(data => setName(data.name))` chain produced no findings against the OpenAPI contract.
+Flagged when dogfooding `runtime-node` against Twenty (the recognizer scope-isolation gap surfaced there), and again when drafting `docs/tutorial/pair-frontend-backend.md` — the `.then(res => res.json()).then(data => setName(data.name))` chain produced no findings against the OpenAPI contract.
 
 ## Scope — v0
 
@@ -145,7 +145,7 @@ Total: ~4 days, single pass.
 
 ## Sequencing
 
-- Lands before re-testing the pair-frontend-backend tutorial. The tutorial depends on the `.then` chain producing field-level findings.
-- Independent of #45 (`framework-process-env` merge) and #47 (`excludeCallReturns` fix); land in any order.
+- Ships before re-testing the pair-frontend-backend tutorial. The tutorial depends on the `.then` chain producing field-level findings.
+- Independent of #45 (`framework-process-env` merge) and #47 (`excludeCallReturns` fix); ships in any order.
 - Independent of #48 (URL inputs for contract reader).
-- Connects to the broader direction ([[project_direction]]) — the PRD / intent generative-doc arc depends on field-level findings being trustworthy on consumer code, which this change enables.
+- Connects to the broader project direction — the PRD / intent generative-doc arc depends on field-level findings being trustworthy on consumer code, which this change enables.

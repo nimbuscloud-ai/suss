@@ -155,7 +155,7 @@ Namespaces in use:
 
 New domains add their own protocol namespace (`metadata.<protocol>.*`) rather than nesting by source. The checker reads the namespace it understands; downstream tooling ignores what it doesn't.
 
-## What the checker shape will look as new sources land
+## What the checker shape will look as new sources ship
 
 Two extension axes that are now visible after a year of shipping:
 
@@ -199,4 +199,4 @@ Shipping all three in one go isn't required. React's plan ([`roadmap-react.md`](
 
 - Reading every shape in every domain. Pragmatic coverage first; comprehensive later.
 - A universal cross-shape comparison framework. The interesting comparisons are protocol-specific (HTTP OpenAPI vs Pact doesn't share machinery with React Storybook vs Figma). Generalisation is bottom-up.
-- A fixed finding taxonomy. `contractDisagreement` was added when cross-source HTTP contracts landed; protocol-specific kinds (`unhandledProviderCase`, `consumerFieldMismatch`, `providerContractViolation`, GraphQL agreement findings) followed. Additional kinds land as domains demand them.
+- A fixed finding taxonomy. `contractDisagreement` was added when cross-source HTTP contracts shipped; protocol-specific kinds (`unhandledProviderCase`, `consumerFieldMismatch`, `providerContractViolation`, GraphQL agreement findings) followed. Additional kinds ship as domains demand them.
