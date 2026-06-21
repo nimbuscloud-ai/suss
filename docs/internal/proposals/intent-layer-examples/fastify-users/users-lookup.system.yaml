@@ -1,0 +1,57 @@
+# Worked example for the intent-layer-design proposal.
+#
+# System intent shape (kind: boundary). The engineer's declaration of
+# what the system actually does — every outcome the boundary can
+# produce, named by id so PRD scenarios can reference them. Specificity
+# is at the contract level (status codes, body shapes); this is what
+# the checker compares against derived code.
+
+kind: boundary
+
+name: users-lookup
+purpose: GET /users/:id retrieves a single user record.
+audience: web-client
+
+boundary:
+  transport: http
+  semantics: rest
+  method: GET
+  path: /users/:id
+
+transitions:
+  - id: missing-id
+    when: id parameter is empty
+    output:
+      status: 400
+      body:
+        properties:
+          error: { type: string }
+
+  - id: not-found
+    when: user with the requested id does not exist
+    output:
+      status: 404
+      body:
+        properties:
+          error: { type: string }
+
+  - id: found-admin
+    when: user is an admin
+    output:
+      status: 200
+      body:
+        properties:
+          id:    { type: string }
+          name:  { type: string }
+          role:  { type: string }
+          admin: { type: boolean }
+
+  - id: found
+    when: user exists and is not an admin
+    output:
+      status: 200
+      body:
+        properties:
+          id:   { type: string }
+          name: { type: string }
+          role: { type: string }

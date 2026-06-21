@@ -1,337 +1,440 @@
-# Intent specifications as a comparable artifact — design proposal
+# The intent layer — design proposal
 
-A plan for making intent specs (PRDs, product descriptions, engineering
-intent docs) into a structured artifact the same checker compares
-against derived summaries. The framing already exists in
-[concept-design](../concept-design.md#prds-and-intent-specifications)
-and as a [backlog item](../backlog.md#intent-specs); this proposal
-turns it into a sequenced delivery plan with a demo scenario, schema,
-and integration path.
+A plan for closing the loop between *what the team meant to ship* and
+*what the code does*. The first half (derived behavioural summaries
+from code) ships today. This proposal designs the second half — a
+structured intent layer that pairs against the derived side — and
+sequences its delivery as `v0.1` … `v0.4`.
+
+Worked examples for every shape below live under
+`docs/internal/proposals/intent-layer-examples/`. The Fastify
+`users-lookup` example exercises v0.1; the aws-sqs `order-intake`
+example exercises v0.2. Both target fixtures that today's checkers
+already analyse.
 
 ## Why this exists
 
-Suss derives behavioural summaries from code. The summary answers
-"what does the code do?" — but only one half of the loop. The other
-half is "what was the code supposed to do?" Until that intent is in a
-structured shape the checker can read, suss can pair providers with
-consumers and consumers with each other, but it can't tell you the
-deeper drift: the code agrees with itself and disagrees with what you
-meant.
+Charity Majors and the operability lineage argue that as code becomes
+cheaper to generate, the bottleneck moves from coding to verifying.
+Verification only works if there's a structured statement of what was
+meant, in the same shape as what shipped and (eventually) what
+production does.
 
-Today the only intent artifacts suss reads are *third-party* specs
-(OpenAPI, CloudFormation, GraphQL SDL) — schemas that happen to
-declare structural truth about an API. They were never written as
-intent. The team's own intent — what the PR was supposed to ship,
-what the PM meant by "deleted users 404," what the engineering doc
-said about the failure mode — lives in Notion and markdown and
-nobody's loop closes back on it.
-
-Charity Majors and the operability lineage argue that the future of
-software comprehension is closing the intent → outcome loop with
-production observation. Suss is positioned for the *static* half of
-that loop: a structured intent spec compared against the derived
-summary tells you, at PR-author time, whether the code shipped what
-the team declared. The dynamic half (observation) can land later in
-the same shape — see [observation adapters](../backlog.md#observation-adapters).
+Suss today has derived summaries from code (one side of that loop)
+plus third-party schemas (OpenAPI, GraphQL SDL, Prisma) that
+happen to declare structural truth about an API. None of these were
+authored as *team intent* — they were authored as wire contracts,
+data-model definitions, or vendor-supplied descriptions. The team's
+own intent — what the PR was supposed to ship, what the PM meant by
+"order is acknowledged and queued," what the engineering doc said
+about the failure mode — lives in Notion and markdown and nobody's
+loop closes back on it.
 
 Two costs of staying where we are:
 
 1. Every project ships derived summaries that have no top-down ground
-   truth to anchor them. Drift detection across implementations is
-   strong; drift between *intent and implementation* is invisible.
-2. Outside review of the project named this as the single sharpest
-   unrealized idea — the PRD-as-typed-concept framing is novel and
-   immediately useful even before the tool catches up to it.
+   truth to anchor them. Drift between implementations is caught;
+   drift between *intent and implementation* isn't.
+2. Outside review of the project named the PRD-as-typed-concept
+   framing as the single sharpest unrealised idea — useful immediately
+   as a vocabulary, more useful once the tool catches up to it.
 
-## Scope — v0
+## Two citizens, one layer
 
-A minimum shipped surface that closes the forward loop (intent →
-implementation) for HTTP boundaries. Lateral and backward comparison
-follow once the v0 schema is in production use.
+Intent splits into two distinct artifacts. The two have different
+authors and different specificity, and the static check is different
+for each:
 
-### 1. Intent spec format
+| | Outcome intent | System intent |
+|---|---|---|
+| **Author** | PM / designer / founder | Engineer / architect |
+| **Shape** | Scenarios — "what should happen for the user" | Structure — boundaries, transitions, effects, state |
+| **Specificity** | User-observable ("rate-limited request gets a friendly rejection") | Contract-level ("POST /auth/login returns 429 with `{error, retryAfter}`") |
+| **File suffix** | `*.prd.yaml` | `*.system.yaml` (or `*.intent.yaml` — v0.1's existing suffix) |
+| **Static check** | Coverage: is there a system intent that claims to implement each scenario? | Pairing: does the code match the declared structural behaviour? |
+| **Runtime check (future)** | Observation: did users actually experience the declared outcomes? | Observation: does the system actually behave as declared? |
 
-A YAML / JSON document the team commits alongside the code. One spec
-per declared boundary, parallel in shape to a `BehavioralSummary` so
-the checker can pair them directly:
+Same word ("intent"), two grains, two authors, different checking. A
+team can adopt either side independently — outcome intent first to
+make planning gaps visible, system intent first to formalise contracts
+the OpenAPI / Prisma readers don't already cover.
+
+## Author-facing surface vs structural model
+
+A PM writes one shape — purpose, audience, scenarios. The structural
+taxonomy (boundary / workflow / concept) is what the reader walks
+internally, not what the PM types.
 
 ```yaml
-# intent/users-get.intent.yaml
-boundary:
-  transport: http
-  semantics: rest
-  method: GET
-  path: /users/:id
-purpose: "Look up a single user by id."
+# author-facing PRD — what a PM writes
+kind: prd
+title: User profile lookup
+purpose: Fetch a user's profile information by id.
 audience: web-client
-transitions:
-  - when: "user exists"
-    output:
-      status: 200
-      body:
-        properties:
-          id: { type: string }
-          fullName: { type: string }
-  - when: "user not found"
-    output:
-      status: 404
-      body:
-        properties:
-          error: { type: string }
-  - when: "user is soft-deleted"
-    output:
-      status: 410
-      body:
-        properties:
-          error: { type: string }
+scenarios:
+  - title: Successful lookup
+    when: A request comes in with a known user id
+    expect: users-lookup.found
+  - title: Missing id
+    when: The request omits the id parameter
+    expect: users-lookup.missing-id
 ```
 
-Fields parallel the IR: `boundary` → `BoundaryBinding`, `transitions`
-→ summary transitions, `body.properties` → `TypeShape`. The natural-
-language `when` field is captured as an opaque predicate (the same
-shape as derived opaque predicates) and pairs by terminal kind +
-status code, not by predicate equality.
+The structural vocabulary appears in two places, both optional:
 
-`purpose` and `audience` come from the
-[concept-design](../concept-design.md#prds-and-intent-specifications)
-framing — they're how the checker validates spec well-formedness
-(missing purpose / missing audience → spec is malformed, flag
-separately from comparison findings).
+- **Findings** reference the concrete endpoint or function, not
+  abstractions: `intentUnimplemented at GET /users/:id`.
+- **Engineers** who want sync-chain precision (Arazzo-style output
+  forwarding, success criteria) can author at the workflow level
+  directly. Otherwise, the structural model is the reader's job.
 
-### 2. Contract reader
+## System intent has three grains
 
-`@suss/contract-intent` reads `*.intent.yaml` (or `.json`) and
-produces `BehavioralSummary[]` with `confidence: { source: "specification", level: "high" }`.
+System intent itself is layered. Each grain is comparable to the layer
+above and below; drift between adjacent layers is a finding.
 
-CLI: `suss contract --from intent path/to/intents/` — accepts a
-single file, a directory, or (per the URL support from #48) a hosted
-URL.
+1. **Boundary intent.** Contract for a single endpoint or function
+   call. Self-contained, no composition. This is what v0.1 ships.
+2. **Workflow intent.** Sync chain across boundaries: ordered effects
+   (message-send, storage-write, function-call), input sources (queue
+   reads, scheduled triggers), success criteria. v0.2.
+3. **Concept declaration.** Purpose, state, actions, and OP
+   (operational principle in Jackson's sense) for a unit of
+   user-visible value. v0.3.
 
-### 3. Forward comparison
+Outcome intent (PRDs) sits above all three — a PRD's scenarios link to
+outcomes declared at any system-intent grain.
 
-A new checker, `checkIntentAgreement`, pairs intent summaries with
-derived summaries on `(method, normalizedPath)` (same pairing key as
-the existing OpenAPI / handler agreement) and reports:
+A fourth axis, **outcome / SLO**, is cross-cutting rather than a
+layer. SLOs can attach to a concept, a workflow, a boundary, or even a
+specific transition. Out of scope until observation adapters arrive
+(v0.4).
 
-- `intentUnimplemented` — intent declares a transition the
-  derivation doesn't produce. Status the spec promised but the
-  handler never emits.
-- `intentExceeded` — derivation produces a transition the intent
-  doesn't declare. Status the handler emits that the spec doesn't
-  mention. (Distinct from `providerContractViolation`: the contract
-  is intent, not OpenAPI.)
-- `intentFieldMismatch` — body shape declared by intent disagrees
-  with body shape produced by code. Reuses the existing field-level
-  comparison the OpenAPI checker uses.
+## Where Arazzo fits, and what it doesn't cover
 
-### 4. The demo
+[Arazzo](https://spec.openapis.org/arazzo/latest.html) (Linux
+Foundation, late 2024) is a YAML wire format for multi-step API
+workflows — ordered operations against OpenAPI endpoints with success
+criteria, output forwarding between steps, and failure handling.
+Adopting it for the workflow layer means we don't invent a sync-chain
+format for the HTTP slice; the OpenAPI ecosystem already has one.
 
-**Setting**: a small team adds a "soft-delete users" feature to a
-TypeScript backend.
+What Arazzo doesn't cover:
 
-**Beneficiary**: the PM (writes intent), the implementing engineer
-(reads findings), the reviewer (sees what changed at intent vs code
-levels).
+- **Non-HTTP boundaries.** Queue sends, database mutations,
+  function-call boundaries, scheduled callbacks.
+- **Purpose / audience / state.** Arazzo describes *how* a workflow
+  runs; the concept it serves comes from one level up.
+- **Failure-mode intent.** "This case should never fire concurrently
+  with that case" — Jackson's smeared / fused / phantom vocabulary.
+- **Observation linkage.** Mapping workflow firing to expected
+  production trace shapes.
 
-**Walkthrough**:
+So Arazzo is the wire format for HTTP workflows; the intent layer
+extends it with the IR's boundary semantics for non-HTTP steps
+(`function-call`, `message-bus`, `storage-relational`), a `workflow`
+wrapper that adds purpose / audience / effects / inputs, and a
+`concept` wrapper that names what the workflow serves.
 
-1. PM writes `intent/users-get.intent.yaml` declaring three
-   transitions — 200, 404, and (new) 410 for soft-deleted users.
-2. Engineer implements the soft-delete path; suss extracts the
-   handler and runs `suss check --dir intents/ summaries/`.
-3. If the engineer forgot the 410 branch:
-   `[ERROR] intentUnimplemented — intent declares 410 for soft-deleted users; no handler transition produces it.`
-4. If the engineer returns `{ id, name }` instead of `{ id, fullName }`:
-   `[ERROR] intentFieldMismatch — intent body declares { id, fullName }; handler returns { id, name }.`
-5. CI gate fails on the missing case until intent and code agree.
+## Linking: outcome ids
 
-This is the same shape as the existing pair-frontend-backend
-tutorial, but with the spec authored by the team rather than supplied
-by a third party. The checker mechanics and the finding catalog are
-unchanged; only the source of ground truth changes.
+Every transition and effect in a system intent carries an `id`. PRDs
+reference outcomes by qualified id: `<system-intent-name>.<outcome-id>`.
 
-## Out of scope, deferred
+```yaml
+# in a PRD
+expect: users-lookup.found-admin
 
-- **Backward comparison (concept-shape audit).** "Is there a coherent
-  concept here, or did we ship fused / smeared / phantom code?" Needs
-  the [failure-mode detection](../backlog.md#failure-modes) work
-  shipped first. The opportunity is concrete but it builds on the
-  forward comparison being trusted.
-- **Lateral comparison (spec vs spec).** Two intent specs from
-  different audiences disagree. Requires the audience-tagging work
-  ([backlog](../backlog.md#audience-annotation)) before the
-  disagreement has a structured form to surface in.
-- **Quality specifications (latency, error budget, observability
-  obligations).** Per [quality.md](../quality.md), full intent
-  carries quality alongside capability. Defer until capability-only
-  intent is in production use — quality spec needs its own taxonomy.
-- **Arazzo workflows as multi-step intent.** An
-  [Arazzo workflow](../backlog.md#arazzo-workflows) is a multi-
-  endpoint intent. The single-boundary intent shape ships first; the
-  multi-step shape lands once sync-chain pairing exists.
-- **Generated intent stubs from existing code.** Reverse mode — emit
-  a starter intent spec from a derived summary so teams can adopt
-  intent specs on an existing codebase. Mechanically follows from v0
-  shipping the same shape in both directions, but it's not the demo.
-- **Production-observation half of the loop.** Charity's framing
-  closes the loop with runtime observation. Static intent vs derived
-  summary is the half suss owns; observation adapters
-  ([backlog](../backlog.md#observation-adapters)) are the bridge.
+# resolves to:
+#   system intent with name: users-lookup
+#   transition with id: found-admin
+```
 
-## Mechanics
+The dotted form keeps PRDs decoupled from the underlying API surface.
+An endpoint rename (`GET /users/:id` → `GET /accounts/:id`) doesn't
+touch the PRD as long as the system intent's name and outcome ids stay
+stable. If outcome ids haven't been declared yet, the PRD can fall
+back to raw `(operationId, status)` or `(method, path, status)` refs;
+the migration path is to add outcome ids to the system intent and
+update PRD references.
 
-### Schema
+When the reference is ambiguous (two system intents named
+`users-lookup` exist), the checker emits `intentScenarioAmbiguous`.
+When it's dangling (no matching name, or matching name but unknown
+outcome id), the checker emits `intentScenarioUnmatched`. The id
+syntax is structured enough to make renames a tracked operation rather
+than a grep-and-replace.
 
-The intent-spec shape is a structural subset of `BehavioralSummary`
-plus a small set of intent-only fields (`purpose`, `audience`,
-`when`). Defined in `@suss/contract-intent/src/schema.ts` as a Zod
-schema, parallel to the OpenAPI schema. Validation errors surface as
-load-time errors, not as comparison findings — a malformed intent
-spec doesn't pair with anything.
+## Worked example #1 — Fastify `/users/:id` (v0.1 territory)
 
-### Reader
+See `intent-layer-examples/fastify-users/` for the full files.
 
-`@suss/contract-intent` exports:
+The Fastify fixture's `/users/:id` handler has four transitions:
+`!id` → 400, `!user` → 404, `user.role === "admin"` → 200 enriched,
+default → 200 plain. The system intent declares all four with
+matching outcome ids; the PRD references each as a scenario.
 
-- `intentSpecToSummaries(spec, options)` — pure parse + transform.
-- `intentSpecFileToSummaries(path, options)` — convenience wrapper.
-- `intentSpecDirectoryToSummaries(dir, options)` — walks `*.intent.yaml`
-  / `*.intent.json` under `dir`, returns flattened summaries.
+Static checks that fire:
 
-CLI integration: `suss contract --from intent` plugs into the
-existing `CONTRACT_LOADERS` registry. URL support is automatic via
-the resolver shipped in #48.
+- **PRD → system intent (coverage).** Each PRD scenario's `expect`
+  resolves to an outcome id in the system intent. No findings when
+  intent matches.
+- **System intent → derived code (pairing).** Each system intent
+  transition pairs against a derived handler transition. No findings
+  when shapes match.
 
-### Comparison
+Drift demos:
 
-`checkIntentAgreement` lives next to the existing
-`checkContractAgreement` (OpenAPI) and `checkGraphqlContractAgreement`
-(GraphQL) checkers. Same pairing mechanism, same finding-emission
-machinery. The finding kinds (`intentUnimplemented`,
-`intentExceeded`, `intentFieldMismatch`) are new entries in
-`@suss/findings`.
+- PRD adds a scenario `users-lookup.deleted` and no system intent
+  declares it → `intentScenarioUnmatched`.
+- System intent declares `found-admin` but the handler drops the
+  admin branch → `intentUnimplemented`.
+- Handler adds a 410 branch (soft-delete) that no system intent
+  declares → `intentExceeded`.
+- System intent declares body `{ id, fullName }` but the handler
+  returns `{ id, name }` → `intentFieldMismatch`.
 
-### Well-formedness checks
+The first three of those drift findings are already wired
+end-to-end in the shipped checker (`@suss/checker`); the fourth
+field-level case relies on the existing body-shape comparison.
+The PRD-coverage finding is the v0.1 addition.
 
-Independent of pairing, the checker validates that each loaded intent
-spec has:
+## Worked example #2 — aws-sqs Orders (v0.2 territory)
 
-- A `purpose` (non-empty).
-- An `audience` (must match one of the declared audience names — to
-  be defined; v0 accepts any non-empty string and warns when an
-  unknown audience appears).
-- At least one transition.
+See `intent-layer-examples/aws-sqs-orders/` for the full files.
 
-Malformed intent specs surface `intentMalformed` findings before
-pairing runs.
+The aws-sqs fixture's `OrderProducer` accepts an order, publishes
+`{ id, total }` to `OrdersQueue`, and returns `{ ok: true }`.
+`OrderConsumer` reads from the queue and destructures `{ id,
+totalAmount }` — an intentional field-name mismatch.
 
-## Confidence
+The intent layer expresses this with two `kind: workflow` files plus
+one PRD:
 
-Intent summaries carry `confidence: { source: "specification", level: "high" }`
-— the same shape as OpenAPI-derived summaries. The opaque predicates
-on intent transitions (the natural-language `when` field) match
-opaque-confidence treatment derived predicates already have; the
-checker pairs by terminal shape, not by predicate equivalence.
+- `order-intake.system.yaml` declares one transition
+  (`acknowledged`) and one effect (`queued-for-processing` →
+  message-send to `OrdersQueue` with `{ id, total }`).
+- `order-processing.system.yaml` declares one input (queue source
+  `OrdersQueue` with `{ id, total }`) and one transition
+  (`processed`).
+- `order-intake.prd.yaml` declares two scenarios, one referencing
+  both `order-intake.acknowledged` and `order-intake.queued-for-processing`,
+  the other referencing `order-processing.processed`.
 
-Comparison findings inherit confidence from the *derived* side: a
-high-confidence handler that disagrees with intent produces a
-high-confidence finding; a low-confidence handler produces a
-warning-not-error finding (same pattern as `lowConfidence` today).
+Drift demos:
 
-## Interactions with other packs and checkers
+- The producer changes its emitted body from `{ id, total }` to
+  `{ id, totalAmount }` without updating `order-intake.system.yaml`
+  → `intentFieldMismatch` at the system-intent ↔ code layer.
+- A team removes the `total` field from the system intent's effect
+  body but the PRD still expects `queued-for-processing` to carry the
+  order amount → caught by the PRD coverage check (the scenario
+  resolves to an outcome whose body no longer matches the PRD's
+  stated intent — flagged as `intentScenarioBodyDrift`).
 
-- **OpenAPI**: an intent spec and an OpenAPI spec for the same
-  boundary are both ground-truth declarations. Today they'd both run
-  through `checkContractAgreement` against the handler and could
-  disagree with each other. v0 doesn't introduce intent-vs-OpenAPI
-  comparison; that's lateral and follows once the intent shape is
-  trusted.
-- **GraphQL contract**: same structure works for GraphQL boundaries
-  once the intent schema gains a `graphql-resolver` semantics
-  variant. Defer.
-- **Existing handler packs**: no changes. Intent specs pair via
-  boundary key; handler-side extraction is unchanged.
+These are the integration-bug failure modes the
+[anatomy-of-an-integration-bug](https://nimbusai.dev/blog/the-anatomy-of-an-integration-bug-its-not-just-your-apis)
+demo exists to illustrate: a single-service refactor that silently
+breaks a cross-service consumer. The intent layer catches them before
+the PR ships rather than after the production incident.
 
-## Open questions
+## Checking pipeline
 
-- **Audience taxonomy.** The concept-design framing requires
-  audience indexing to be sharp, but the v0 schema accepts any
-  string. The right model is probably a project-local
-  `intent.config.yaml` that declares audience names; the checker
-  warns on unknown audiences and errors on missing-audience specs.
-  Decide during implementation.
-- **Inline intent in code comments?** Some teams prefer
-  `@suss-intent` JSDoc / TSDoc blocks on the handler itself, not a
-  separate file. v0 ships file-based; comment-based intent could
-  follow as a second reader. Question: does it become noisy on
-  large handlers, or does co-location win?
-- **Intent versioning.** When intent and code drift intentionally
-  (intent changed for the new release, code hasn't caught up), there
-  needs to be a way to express "this finding is expected for the
-  next sprint." Suppression mechanism already exists
-  ([suppressions](../../suppressions.md)) — verify it composes with
-  intent findings without new work.
-- **Multi-audience purpose**. One boundary, two intent specs (one
-  per audience). Same handler, two truth comparisons. Schema needs
-  to support either N files per boundary or one file with N
-  `audience` blocks. Defer to the audience-annotation work.
-- **PR-diff mode.** Charity's framing emphasizes the loop. One
-  natural follow-on: `suss check --intent intents/ --diff main`
-  reports only findings introduced by the current PR. Out of scope
-  for v0 but worth keeping the interface open to it.
+```
+PRD (scenarios, audience, purpose)
+   │
+   │  Coverage check (per scenario):
+   │  - resolve `expect` outcome ref against loaded system intents
+   │  - emit intentScenarioUnmatched / intentScenarioAmbiguous /
+   │    intentScenarioBodyDrift as appropriate
+   ▼
+System intent (boundary / workflow / concept)
+   │
+   │  Pairing check (existing machinery, slightly extended):
+   │  - pair by boundary key against derived code summaries
+   │  - emit intentUnimplemented / intentExceeded / intentFieldMismatch
+   ▼
+Derived code summary
+```
 
-## Validation
-
-1. Unit tests for `@suss/contract-intent`: schema validation,
-   single-file load, directory walk, malformed-spec error surfacing.
-2. Integration test in `@suss/cli` against a small fixture: a
-   handler that's missing one declared transition, and one whose
-   body shape disagrees with intent. Verify the two finding kinds
-   fire.
-3. The pair-frontend-backend tutorial (`docs/tutorial/pair-frontend-backend.md`)
-   gets a second variant: same scenario, but with an intent spec
-   instead of an OpenAPI document as the ground truth. Demonstrates
-   the same checker working on team-authored intent.
-4. Dogfood: write intent specs for two or three boundaries in suss
-   itself (e.g. the `suss extract` command surface, the `suss check`
-   output shape). Run intent checking against the actual code and
-   confirm the findings are sensible.
-
-## Doc impact
-
-- New: `docs/guides/author-intent-specs.md` — how-to for the v0
-  authoring workflow.
-- New: `docs/reference/intent-schema.md` — schema reference.
-- Updated: `docs/contracts.md` — adds "intent" as a fourth source
-  alongside specification / observation / derivation, framed as
-  *team-authored* specification distinct from third-party schemas.
-- Updated: `docs/internal/concept-design.md` — the PRD section gets
-  a "see proposals/intent-specs.md" link and a brief shipped-state
-  note once v0 lands.
-- Updated: `docs/internal/backlog.md` — `#intent-specs` entry moves
-  to the "in flight" section.
-
-## Cost estimate
-
-- Schema + Zod definition: half a day.
-- `@suss/contract-intent` reader (single-file + directory + CLI
-  loader): 1 day.
-- `checkIntentAgreement` + finding kinds: 1 day.
-- Well-formedness validator + load-time error surfacing: half a day.
-- Tests + integration test + tutorial variant: 1 day.
-- Doc updates: 1 day.
-
-Total: ~5 days for v0 with the demo scenario passing end-to-end.
+Two hops, each independently useful. A team can author either side
+first; coverage and pairing fire on whatever's loaded.
 
 ## Sequencing
 
-- **Lands after** the adapter ECMAScript ownership work ([proposal](adapter-ecmascript-spec.md))
-  so the demo's frontend / consumer side actually produces
-  field-level findings. Without that, the intent-vs-code comparison
-  is shallower than the demo suggests.
-- **Independent of** runtime-node implementation, the
-  `framework-process-env` merge, and the React root-walk work.
-- **Precedes** sync-chain identification, audience annotation,
-  quality specs, and observation adapters — those are the next
-  layer of the same arc and all benefit from the intent shape
-  being in production use first.
+| Stage | Adds | Demo fixture | Status |
+|---|---|---|---|
+| **v0.1** | Boundary system intent + PRD shape + coverage checker + outcome ids on transitions | Fastify `/users/:id` | Reader shipped; PRD shape + coverage checker is the v0.1 completion work |
+| **v0.2** | Workflow shape (effects, inputs, queue references); non-HTTP boundary semantics | aws-sqs Orders | Pending; ~5 days |
+| **v0.3** | Concept declarations with state + actions + failure-mode predicates | TBD | Gated on workflow grain shipping |
+| **v0.4** | Observation linkage + SLO declarations | Gated on observation adapters | Gated |
+
+v0.1 is what the current session targets. The shipped
+`@suss/contract-intent` reader (commit `a7fced4`) handles half of
+v0.1 — the system intent boundary form. The remaining v0.1 work:
+
+1. Add `id` field to each transition in the boundary-intent schema
+2. Add `kind: prd` to the contract-intent schema with `scenarios[]`
+3. Build a coverage checker that walks PRDs, resolves outcome refs
+   against system intents, emits the four new finding kinds:
+   - `intentScenarioUnmatched` (no matching outcome id)
+   - `intentScenarioAmbiguous` (multiple matching outcome ids)
+   - `intentScenarioBodyDrift` (PRD's expect carries body
+     expectations that disagree with the resolved outcome)
+   - `intentSpecMalformed` (load-time validation failure)
+4. Integration test: run the Fastify worked-example through the
+   pipeline, assert each drift case fires as expected
+5. CLI: `suss contract --from intent` already handles the directory
+   walk; verify it picks up `.prd.yaml` files alongside
+   `.intent.yaml` files
+
+## Out of scope, deferred
+
+- **Backward comparison (concept-shape audit).** "Did we ship a
+  fused / smeared / phantom concept?" Needs failure-mode detection
+  from the existing backlog; lands with v0.3.
+- **Lateral comparison (intent vs intent for different audiences).**
+  Same concept's PRD for end-users vs admins disagrees. Requires
+  audience tagging; defer.
+- **Quality specifications (latency, error budget, observability
+  obligations).** Per `internal/quality.md`, full intent carries
+  quality alongside capability. Defer until capability-only intent is
+  in production use.
+- **Diff mode** (`suss check --intent intents/ --diff main` →
+  findings introduced by the current PR). Worth holding the CLI
+  interface open to.
+- **Generated intent stubs from existing code.** Reverse mode that
+  emits a starter intent spec from a derived summary so teams can
+  adopt intent on an existing codebase. Mechanically falls out of v0.2
+  once the shape is in production use.
+- **LLM-mediated authoring help.** An LLM can suggest outcome ids or
+  boundary refs from a PRD's prose at write time; the suggestion is
+  committed and reviewed. The LLM stays out of the verification path.
+  Out of scope for the v0.1 schema; relevant once teams are authoring
+  PRDs at volume.
+
+## Mechanics
+
+### Schema (v0.1 completion)
+
+The contract-intent schema gains a top-level `kind` discriminator:
+
+```ts
+const IntentDocSchema = z.discriminatedUnion("kind", [
+  BoundaryIntentSchema,   // existing — `kind: boundary`
+  PrdIntentSchema,        // new       — `kind: prd`
+]);
+```
+
+`BoundaryIntentSchema` gains an `id` field on each transition (the
+outcome id PRDs reference). The existing reader keeps producing
+`BehavioralSummary[]` for boundary intent; the new PRD path produces a
+new metadata-carrying summary or a separate PRD-summary type the
+coverage checker consumes.
+
+The PRD-summary shape:
+
+```ts
+interface PrdSummary {
+  title: string;
+  purpose: string;
+  audience: string;
+  scenarios: Array<{
+    title: string;
+    when: string;
+    expect: string | string[]; // qualified outcome ref(s)
+  }>;
+  source: SourceLocation;
+}
+```
+
+### Reader
+
+`@suss/contract-intent` exports stay the same name; the entry points
+accept either kind. Directory walks pick up `*.intent.yaml`,
+`*.prd.yaml`, `*.intent.json`, and `*.prd.json` files. The reader
+dispatches on the top-level `kind` field.
+
+### Coverage checker
+
+New: `@suss/checker/intent/prdCoverage.ts`. Given all summaries
+(derived code + boundary intent + PRD), for each PRD scenario:
+
+1. Parse `expect` as `<name>.<outcome-id>` (string) or list of same.
+2. Look up the system intent with that `name` in the summary set
+   (intent summaries carry the name on `metadata.intent.name`).
+3. If no match → `intentScenarioUnmatched`. If multiple →
+   `intentScenarioAmbiguous`. If matched, check the outcome id
+   exists on a transition or effect → same finding shapes.
+
+Wired into `checkAll` alongside `checkIntentAgreement`.
+
+### Finding kinds
+
+Five new entries in `FindingKindSchema`:
+
+- `intentScenarioUnmatched` (severity: warning — planning gap, not
+  implementation defect)
+- `intentScenarioAmbiguous` (severity: warning — author needs to
+  qualify the reference)
+- `intentScenarioBodyDrift` (severity: warning — body shape declared
+  on a PRD scenario doesn't match the resolved outcome's body)
+- `intentSpecMalformed` (severity: error — load-time validation
+  failure)
+- (Already shipped: `intentUnimplemented`, `intentExceeded`,
+  `intentFieldMismatch` — these stay as the system-intent ↔ code
+  layer; PRD-level findings are distinct.)
+
+## Validation
+
+The Fastify worked-example doubles as the v0.1 integration test:
+
+1. Place the PRD + system intent files in
+   `fixtures/fastify/intent/` (move from
+   `docs/internal/proposals/intent-layer-examples/fastify-users/`).
+2. Add `fastifyIntentIntegration.test.ts` to the CLI package that:
+   - Extracts handler summaries from `fixtures/fastify/handlers.ts`
+   - Reads the intent files via `@suss/contract-intent`
+   - Runs `checkAll` over the union
+   - Asserts the happy path produces zero intent findings
+3. Add fixture variants for each drift case (PRD scenario without a
+   system intent target, system intent transition the handler doesn't
+   produce, handler transition no system intent declares) and assert
+   the corresponding findings fire.
+
+## Doc impact
+
+- New: `docs/guides/author-intent-specs.md` — how-to for the v0.1
+  authoring workflow (PRD + system intent file shapes).
+- New: `docs/reference/intent-schema.md` — schema reference.
+- Updated: `docs/contracts.md` — "intent" is now a fourth source
+  alongside specification / observation / derivation, with the split
+  between PM-authored and engineer-authored intent made visible.
+- Updated: `docs/internal/concept-design.md` — the PRD section links
+  to this proposal and notes the shipped state once v0.1 lands.
+- Updated: `docs/internal/backlog.md` — `#intent-specs` moves to
+  "in flight" with the v0.x sequencing.
+
+## Cost estimate (v0.1 completion only)
+
+- Schema discriminator + PRD shape + outcome-id field: half a day
+- PRD reader path: half a day
+- Coverage checker + finding kinds: 1 day
+- Integration test against the Fastify fixture (happy + 3 drift
+  cases): 1 day
+- Doc updates: half a day
+
+Total: ~3 days for v0.1 to be end-to-end shippable.
+
+v0.2 (workflow grain, non-HTTP boundaries, aws-sqs worked example) is
+a separate ~5 days. v0.3 / v0.4 are gated.
+
+## Sequencing notes
+
+- v0.1 is independent of `#46` (adapter ECMAScript ownership). The
+  Fastify fixture's `/users/:id` handler extracts fully today.
+- v0.2 partially depends on `#46` for any consumer-side workflow
+  steps that need `.then` chain binding. The aws-sqs producer /
+  consumer demo doesn't (Lambda handlers, no Promise chaining).
+- v0.3 depends on the failure-mode detection backlog item.
+- v0.4 depends on observation adapters from the backlog.

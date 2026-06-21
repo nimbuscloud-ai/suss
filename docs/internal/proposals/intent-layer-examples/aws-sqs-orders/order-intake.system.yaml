@@ -1,0 +1,40 @@
+# Worked example, v0.2 territory.
+#
+# System intent for the order-intake Lambda. The intent kind here is
+# "workflow" — a single boundary plus the side effects it produces.
+# The "queued-for-processing" outcome is an effect (message-send), not
+# a transition output. PRDs reference effects by id just like they
+# reference transitions.
+
+kind: workflow
+
+name: order-intake
+purpose: |
+  Accept an order, persist it (implicit in this fixture), and queue it
+  for downstream processing. Acknowledges the caller.
+
+boundary:
+  transport: function-call
+  semantics: function-call
+  module: order-producer/index
+  exportName: handler
+
+transitions:
+  - id: acknowledged
+    when: order was queued without error
+    output:
+      status: null
+      body:
+        properties:
+          ok: { type: boolean }
+
+effects:
+  - id: queued-for-processing
+    kind: message-send
+    target:
+      transport: aws-sqs
+      queue: OrdersQueue
+    body:
+      properties:
+        id:    { type: string }
+        total: { type: number }
