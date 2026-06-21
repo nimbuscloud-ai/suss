@@ -651,3 +651,76 @@ describe("BOUNDARY_ROLE", () => {
     expect(BOUNDARY_ROLE.caller).toBe("consumer");
   });
 });
+
+describe("render-tree summaries", () => {
+  // Parses a component summary whose render output carries a full `root`
+  // tree, exercising RenderNodeSchema across all four node variants
+  // (element with attrs + children, text, expression, and a conditional
+  // with a null else-branch).
+  const renderSummary = {
+    kind: "component",
+    location: {
+      file: "Card.tsx",
+      range: { start: 1, end: 12 },
+      exportName: "Card",
+    },
+    identity: {
+      name: "Card",
+      exportPath: null,
+      boundaryBinding: functionCallBinding({
+        transport: "in-process",
+        recognition: "react",
+        exportName: "Card",
+      }),
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "t0",
+        conditions: [],
+        output: {
+          type: "render",
+          component: "Card",
+          props: { title: "x" },
+          root: {
+            type: "element",
+            tag: "div",
+            attrs: { className: '"card"' },
+            children: [
+              { type: "text", value: "Hello" },
+              { type: "expression", sourceText: "count" },
+              {
+                type: "conditional",
+                condition: "open",
+                whenTrue: { type: "element", tag: "span", children: [] },
+                whenFalse: null,
+              },
+            ],
+          },
+        },
+        effects: [],
+        location: { start: 1, end: 12 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+
+  it("parses a render output with a nested render tree", () => {
+    const parsed = parseSummary(renderSummary);
+    const out = parsed.transitions[0].output;
+    expect(out.type).toBe("render");
+    if (out.type !== "render") {
+      return;
+    }
+    expect(out.root?.type).toBe("element");
+  });
+
+  it("rejects a render tree with an unknown node type", () => {
+    const bad = structuredClone(renderSummary);
+    // @ts-expect-error — deliberately invalid node variant
+    bad.transitions[0].output.root.children[0] = { type: "marquee" };
+    expect(() => parseSummary(bad)).toThrow();
+  });
+});
