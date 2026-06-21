@@ -29,6 +29,7 @@ suss check --dir summaries/ [--json] [-o findings.json] [--fail-on warning]
 
 # Generate summaries from a declared contract (no source extraction)
 suss contract --from openapi spec.yaml [-o provider.json]
+suss contract --from openapi https://example.com/openapi.yaml [-o provider.json]
 suss contract --from cloudformation template.yaml [-o provider.json]
 ```
 

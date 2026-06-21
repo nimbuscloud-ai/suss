@@ -5,7 +5,9 @@
 // how to turn a file path into summaries; future contract sources (GraphQL SDL,
 // gRPC proto, etc.) plug in the same way.
 
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -108,6 +110,46 @@ function walkForStoryFiles(dir: string): string[] {
   return out;
 }
 
+/**
+ * If `spec` looks like an http(s) URL, fetch it and write the body to a
+ * temp file so the existing file-based loaders can read it unchanged.
+ * Returns the local path plus a cleanup callback the caller must run
+ * after the loader is done. Non-URL specs are returned unchanged.
+ *
+ * The temp file's extension is preserved from the URL path when present
+ * (so loaders that branch on `.json` vs `.yaml` still pick the right
+ * parser); falls back to `.yaml` because OpenAPI / CloudFormation / SAM
+ * documents on the public web are most often served as YAML.
+ */
+async function resolveSpec(
+  spec: string,
+): Promise<{ path: string; cleanup?: () => void }> {
+  if (!/^https?:\/\//i.test(spec)) {
+    return { path: spec };
+  }
+  const response = await fetch(spec);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch contract from ${spec}: ${response.status} ${response.statusText}`,
+    );
+  }
+  const content = await response.text();
+  const urlPath = new URL(spec).pathname;
+  const ext = path.extname(urlPath) || ".yaml";
+  const tmpPath = path.join(os.tmpdir(), `suss-contract-${randomUUID()}${ext}`);
+  fs.writeFileSync(tmpPath, content);
+  return {
+    path: tmpPath,
+    cleanup: () => {
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // Best-effort cleanup; ignore.
+      }
+    },
+  };
+}
+
 export async function contract(
   options: ContractOptions,
 ): Promise<BehavioralSummary[]> {
@@ -118,7 +160,13 @@ export async function contract(
     );
   }
 
-  const summaries = await loader(options.spec);
+  const resolved = await resolveSpec(options.spec);
+  let summaries: BehavioralSummary[];
+  try {
+    summaries = await loader(resolved.path);
+  } finally {
+    resolved.cleanup?.();
+  }
 
   const json = JSON.stringify(summaries, null, 2);
 
