@@ -117,6 +117,8 @@ else including no extension → YAML).
 | `storybook` | `@suss/contract-storybook` | CSF3 `.stories.ts` / `.stories.tsx` file or directory of stories |
 | `appsync` | `@suss/contract-appsync` | CFN template with `AWS::AppSync::*` resources |
 | `prisma` | `@suss/contract-prisma` | `schema.prisma` file (Postgres / MySQL / SQLite datasources) |
+| `graphql` | `@suss/contract-graphql` | Plain GraphQL SDL file (Query / Mutation / Subscription fields) |
+| `intent` | `@suss/contract-intent` | Team-authored `*.intent.yaml` / `*.intent.json` files declaring purpose, audience, and per-status transitions for a REST boundary. Accepts a file or a directory. |
 
 ### Exit codes
 
