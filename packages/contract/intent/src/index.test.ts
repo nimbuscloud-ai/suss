@@ -67,10 +67,10 @@ describe("intentSpecToSummaries — in-memory parse + transform", () => {
     });
   });
 
-  it("marks confidence as a high-quality specification", () => {
+  it("marks confidence as declared at high level", () => {
     const [summary] = intentSpecToSummaries(minimalSpec);
     expect(summary.confidence).toEqual({
-      source: "specification",
+      source: "declared",
       level: "high",
     });
   });
@@ -229,11 +229,13 @@ describe("intentSpecDirectoryToSummaries — directory walk", () => {
     const summaries = intentSpecDirectoryToSummaries(tmpDir);
     expect(summaries).toHaveLength(2);
     const paths = summaries
-      .map((s) =>
-        s.identity.boundaryBinding.semantics.name === "rest"
-          ? s.identity.boundaryBinding.semantics.path
-          : null,
-      )
+      .map((s) => {
+        const binding = s.identity.boundaryBinding;
+        if (binding === null || binding.semantics.name !== "rest") {
+          return null;
+        }
+        return binding.semantics.path;
+      })
       .sort();
     expect(paths).toEqual(["/invoices/:id", "/users/:id"]);
   });

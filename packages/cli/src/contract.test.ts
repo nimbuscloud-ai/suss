@@ -195,7 +195,7 @@ describe("contract CLI command", () => {
         process.stdout.write = writeFn;
       }
       expect(summaries).toHaveLength(1);
-      expect(summaries[0].confidence.source).toBe("specification");
+      expect(summaries[0].confidence.source).toBe("declared");
       expect(summaries[0].metadata?.intent).toEqual({
         purpose: "Look up a user by id.",
         audience: "web-client",

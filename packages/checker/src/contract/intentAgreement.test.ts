@@ -75,7 +75,7 @@ function intentSummary(
       isDefault: idx === args.statuses.length - 1,
     })),
     gaps: [],
-    confidence: { source: "specification", level: "high" },
+    confidence: { source: "declared", level: "high" },
     metadata: {
       intent: { purpose: "Look up a user.", audience: "web-client" },
     },
