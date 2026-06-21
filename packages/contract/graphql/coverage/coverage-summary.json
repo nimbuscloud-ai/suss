@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/home/runner/work/suss/suss/packages/contract/graphql/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 55,
       "covered": 52,
