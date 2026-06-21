@@ -21,11 +21,14 @@ others), and the AI-codegen commentary (Willison, Larson) that's
 sharpened the question over the last two years. The shared claim: as
 code becomes cheaper to generate, the bottleneck moves from coding to
 verifying. Verification needs a structured statement of *what was
-meant*, in the same shape as *what shipped* and (eventually) *what
-production does*. AI codegen makes this acute — when humans aren't
-the bottleneck on producing code, the question shifts to "is what we
-got what we meant," and ad-hoc PRDs in disparate tools don't answer
-it at PR-review time.
+meant* that can be **mapped to** *what shipped* and (eventually) *what
+production does*. Mapped, not identical: intent and behaviour share
+primitives (the notion of a boundary, a status code, a body shape)
+and are compared at defined join points, but they sit at different
+granularities and are different kinds of artifact. AI codegen makes
+this acute — when humans aren't the bottleneck on producing code, the
+question shifts to "is what we got what we meant," and ad-hoc PRDs in
+disparate tools don't answer it at review time.
 
 Suss today has derived summaries from code (one side of that loop)
 plus third-party schemas (OpenAPI, GraphQL SDL, Prisma) that
@@ -64,7 +67,7 @@ by what they're for:
 | **Purpose** | Describe what should happen for the user / consumer in terms they care about. | Specify how the system should behave — the contract a downstream tool can compare to running code. |
 | **Register** | Descriptive, human-readable, scenario-shaped. | Structural, machine-comparable, contract-shaped. |
 | **Where it lives today (without suss)** | Notion / Confluence pages, Linear / Jira tickets, markdown PRDs in the repo. | OpenAPI files, Prisma schemas, code comments, sometimes nowhere. |
-| **What changes with suss** | Same authoring shape, but committed to the repo alongside code and machine-checkable for coverage. | A first-class team-authored artifact that pairs against derived code summaries. |
+| **What changes with suss** | Same authoring shape, but committed to the repo alongside code and machine-checkable for coverage. | A team-authored artifact that pairs against derived code summaries. |
 | **Typical authors** | Whoever writes PRDs today (PM, designer, founder, eng lead). | Whoever owns the contract surface (engineer, architect). |
 | **Specificity** | User-observable ("rate-limited request gets a friendly rejection"). | Contract-level ("POST /auth/login returns 429 with `{error, retryAfter}`"). |
 | **File suffix** | `*.prd.yaml` | `*.system.yaml` (or `*.intent.yaml` — v0.1's existing suffix) |
@@ -77,7 +80,7 @@ team grows, but resolving them against running code requires the link
 to system intent. Structural system intent is precise enough to compare
 field-by-field but loses the user-framing that makes a PRD
 intelligible to anyone outside the team that authored it. The intent
-layer keeps both as first-class citizens so neither pays the other's
+layer keeps both as supported, distinct artifacts so neither pays the other's
 cost.
 
 A team can adopt either side independently — outcome intent first to
@@ -92,20 +95,25 @@ internal vocabulary (boundary, workflow, concept) is what the reader
 walks and what findings reference, not what the author has to learn.
 
 ```yaml
-# author-facing PRD — what a PM writes
+# author-facing PRD — what a product description looks like
 kind: prd
 title: User profile lookup
 purpose: Fetch a user's profile information by id.
 audience: web-client
 scenarios:
   - title: Successful lookup
-    when: A request comes in with a known user id
-    expect: users-lookup.found
+    when: a request arrives with a known user id
+    then: the caller receives the user's profile
+    expect: users-lookup.found        # optional structured link
   - title: Missing id
-    when: The request omits the id parameter
-    expect: users-lookup.missing-id
+    when: the request omits the id parameter
+    then: the caller is told the id is required
+    # no `expect` yet — a valid scenario, not linked yet
 ```
 
+`when` / `then` is the whole scenario in human terms. `expect` is an
+optional structured link; a scenario without it is a valid
+unlinked state (see [Scenarios](#scenarios-and-how-they-link-to-system-intent)).
 The structural vocabulary appears in two places, both optional:
 
 - **Findings** reference the concrete endpoint or function, not
@@ -152,34 +160,55 @@ the v0.2 schema extends the shape to non-HTTP boundaries (function
 calls, queue sends, storage writes) and adds the purpose / audience
 wrapper that places a workflow inside a concept.
 
-## Linking: outcome ids
+## Scenarios, and how they link to system intent
 
-Every transition and effect in a system intent carries an `id`. PRDs
-reference outcomes by qualified id: `<system-intent-name>.<outcome-id>`.
+A PRD scenario is human-readable on its own and carries an optional
+structured link. The full shape:
 
 ```yaml
-# in a PRD
-expect: users-lookup.found-admin
-
-# resolves to:
-#   system intent with name: users-lookup
-#   transition with id: found-admin
+scenarios:
+  - title: Successful lookup          # optional label
+    when: a request arrives with a known user id   # condition, human terms
+    then: the caller receives the user's profile   # expected outcome, human terms
+    expect: users-lookup.found        # optional structured link
 ```
 
-The dotted form keeps PRDs decoupled from the underlying API surface.
-An endpoint rename (`GET /users/:id` → `GET /accounts/:id`) doesn't
-touch the PRD as long as the system intent's name and outcome ids stay
-stable. If outcome ids haven't been declared yet, the PRD can fall
-back to raw `(operationId, status)` or `(method, path, status)` refs;
-the migration path is to add outcome ids to the system intent and
-update PRD references.
+`when` and `then` are what the author writes, always, in their own
+terms — together they're a complete scenario that reads without any
+knowledge of the system's internals. `expect` is the optional
+structured link: a qualified outcome reference
+`<system-intent-name>.<outcome-id>` pointing at a specific transition
+or effect in a system intent.
 
-When the reference is ambiguous (two system intents named
-`users-lookup` exist), the checker emits `intentScenarioAmbiguous`.
-When it's dangling (no matching name, or matching name but unknown
-outcome id), the checker emits `intentScenarioUnmatched`. The id
-syntax is structured enough to make renames a tracked operation rather
-than a grep-and-replace.
+**A scenario without `expect` is a valid, deliberate state.** The
+author describes the behaviour they want in `when` / `then` and leaves
+the link unset. The checker reports an unlinked scenario as **info**
+("scenario not yet linked to a system intent"), not a coverage error —
+a team can drop in scenarios and nothing fails. Teams that want the
+link mandatory can opt into stricter checking later (a flag, not the
+default).
+
+The author doesn't have to know the system intent's outcome ids.
+Establishing the link is a **facilitated** step, done by whatever fits
+the team: an LLM reading the `when` / `then` text and proposing a
+link, a platform showing candidate outcomes, or an engineer wiring
+it by hand. For a new feature there may be no system intent to link to
+yet — in that case the facilitator *generates* the system intent from
+the scenarios (a third authoring direction; see below) and the link is
+established as part of that generation. So `expect` being an
+an engineer's id isn't a vocabulary the author has to learn; it's a
+slot something else fills.
+
+When `expect` is present, the checker resolves it. The dotted form
+keeps the link decoupled from the underlying API surface — an endpoint
+rename (`GET /users/:id` → `GET /accounts/:id`) doesn't touch the PRD
+as long as the system intent's name and outcome ids stay stable. An
+ambiguous reference (two system intents share a `name`) is an
+authoring error the checker reports; a dangling reference (no matching
+name, or a matching name with an unknown outcome id) is reported
+distinctly so the author knows whether to rename or to add the
+outcome. (Exact finding kinds and severities are settled with the
+finding-shape decision below.)
 
 ## Worked example #1 — Fastify `/users/:id` (v0.1 territory)
 
@@ -276,26 +305,38 @@ Derived code summary
 Two hops, each independently useful. A team can author either side
 first; coverage and pairing fire on whatever's loaded.
 
-## Authoring paths: writing intent and generating it from code
+## Authoring paths
 
-Intent docs reach the repo two ways, both treated equally:
+Intent docs reach the repo three ways, all treated equally — the
+reader doesn't distinguish them, they're the same YAML on disk. What
+differs is provenance, tracked by the `source` field below.
 
-**Writing intent (greenfield).** The team writes intent declaratively,
-alongside code or in front of it. PRD first, then implementation; or
-both together as the feature is scoped. This is the natural path on
-new features and on small projects where writing intent against every
-boundary is tractable.
+**Writing intent directly (greenfield).** The team writes intent
+declaratively, alongside code or in front of it. PRD first, then
+implementation; or both together as the feature is scoped. The
+natural path on new features and on small projects where writing
+intent against every boundary is tractable.
 
-**Generating intent from code (brownfield).** Treat the current code
+**Inferring intent from code (brownfield).** Treat the current code
 as a stand-in for intent — extract derived summaries, transform them
 into starter system intent docs, then have the team curate the result
 into team intent. Lower barrier on a project with thousands of
 existing endpoints. Different tradeoff: the starter describes what
-the code does today, not necessarily what was meant.
+the code does today, not necessarily what was meant. Shipped by
+`suss infer` (below).
 
-Both paths produce the same shape. The reader doesn't distinguish a
-doc the team wrote directly from one the generator produced and the
-team then curated — they're the same YAML on disk.
+**Generating system intent from a PRD (greenfield, facilitated).**
+The author writes outcome-intent scenarios in human terms (`when` /
+`then`, no `expect`). A facilitator — an LLM, a platform, or an
+engineer — reads those scenarios and produces the structural system
+intent plus the links back to the scenarios. This is the inverse of
+`suss infer`: that direction goes code → system intent; this one goes
+described intent → system intent. It's how a new feature gets its
+structural layer without the author hand-writing it, and it's what
+resolves the "the author shouldn't have to know outcome ids" tension
+— the ids are generated, not authored. The facilitation mechanism is
+out of scope for v0.1 (the schema supports unlinked scenarios so the
+facilitator has something to consume); the generator itself follows.
 
 What does differ is **provenance**, and the design has to carry it
 through to make brownfield adoption work:
@@ -406,7 +447,7 @@ v0.1 — the system intent boundary form. The remaining v0.1 work:
 
 - **Backward comparison (concept-shape audit).** "Did we ship a
   fused / smeared / phantom concept?" Needs failure-mode detection
-  from the existing backlog; lands with v0.3.
+  from the existing backlog; ships with v0.3.
 - **Lateral comparison (intent vs intent for different audiences).**
   Same concept's PRD for end-users vs admins disagrees. Requires
   audience tagging; defer.
@@ -427,77 +468,142 @@ v0.1 — the system intent boundary form. The remaining v0.1 work:
   Out of scope for the v0.1 schema; relevant once teams are authoring
   PRDs at volume.
 
+## Settled architecture decisions
+
+These four were debated during design and are now locked. The
+implementation sections below assume them. Recorded here so they don't
+live only in conversation.
+
+**1. Intent gets its own IR package, `@suss/intent-ir`.** Intent is
+not a `BehavioralSummary` — a PRD isn't a code unit, and forcing one
+into `kind: "library"` with empty transitions and a metadata blob was
+the tell that the type was wrong. `@suss/intent-ir` holds the intent
+types (PRD / outcome intent, boundary / workflow / concept system
+intent). Behaviour stays in `@suss/behavioral-ir`. The two share
+primitives — `TypeShape`, boundary identity, status codes,
+`SourceLocation`, `Confidence`. Sub-decision (recommended, flag if you
+disagree): extract those primitives into a small `@suss/ir-core` that
+both import, so neither IR depends on the other. The alternative —
+`@suss/intent-ir` importing primitives from `@suss/behavioral-ir` — is
+less mechanical work now but makes intent conceptually depend on
+behaviour, which it doesn't. Extraction is the bigger one-time change
+but the cleaner end state.
+
+**2. Intent findings use a thin shared base, not the peer-pairing
+`Finding` shape.** The existing `Finding` is built for provider ↔
+consumer pairing — symmetric, with `provider` / `consumer` sides and
+kinds like `unhandledProviderCase`. Intent findings are asymmetric
+(top-down: "we declared X, the code does Y" or "this scenario has no
+system intent") and those field names misrepresent the data. The
+shared base carries `kind`, `severity`, `description`, `sources`, and
+a boundary reference; intent-specific fields (the scenario, the
+declared-vs-found pair) live in an intent finding extension. The
+pipeline (dedup, suppressions, severity thresholds) operates on the
+base. If a case shows the base can't carry what an intent finding
+needs, promote to a fully separate type — but start shared.
+
+**3. Intent serializes to its own file, separate from behavioural
+summaries.** Behaviour and intent are different artifacts that get
+compared, not co-mingled in one stream. A `suss extract` run writes
+behavioural summaries; intent docs are their own files; the checker
+loads both and compares. No tagged-union-in-one-file.
+
+**4. Checkers split into behavioural and intent, with `@suss/checker`
+as the orchestrator.** The intent-vs-code and PRD-coverage checkers
+move to their own module (`@suss/checker-intent` or a sub-path);
+`@suss/checker` stays the entry point that loads both artifact streams
+and dispatches. Keeps the orchestration seam single while letting the
+intent checkers evolve without churning the behavioural ones.
+
+**Sequencing consequence:** the package split (decision 1) happens
+*before* the PRD coverage checker is written, so the checker is
+authored once against `@suss/intent-ir` and the thin-base finding
+shape rather than retrofitted. The boundary-intent reader and
+`checkIntentAgreement` shipped earlier against `@suss/behavioral-ir`;
+those migrate into the new packages as part of the split.
+
 ## Mechanics
 
-### Schema (v0.1 completion)
+The shapes below are authored in `@suss/intent-ir` per decision 1; the
+reader (`@suss/contract-intent`) parses YAML into them. They're shown
+as plain interfaces here; the Zod schemas mirror them.
 
-The contract-intent schema gains a top-level `kind` discriminator:
+### Schema
+
+A top-level `kind` discriminator over the intent docs:
 
 ```ts
-const IntentDocSchema = z.discriminatedUnion("kind", [
-  BoundaryIntentSchema,   // existing — `kind: boundary`
-  PrdIntentSchema,        // new       — `kind: prd`
-]);
+type IntentDoc =
+  | BoundaryIntent   // kind: "boundary" — system intent, one boundary
+  | Prd;             // kind: "prd"      — outcome intent
+  // workflow / concept system-intent kinds ship in v0.2 / v0.3
 ```
 
-`BoundaryIntentSchema` gains an `id` field on each transition (the
-outcome id PRDs reference). The existing reader keeps producing
-`BehavioralSummary[]` for boundary intent; the new PRD path produces a
-new metadata-carrying summary or a separate PRD-summary type the
-coverage checker consumes.
+`BoundaryIntent` carries an `id` on each transition (the outcome id
+PRD scenarios reference) and a `source` provenance field (`"author"`
+default, `"inferred"`, `"inferred, curated"`).
 
-The PRD-summary shape:
+The PRD shape, with `expect` optional:
 
 ```ts
-interface PrdSummary {
+interface Prd {
+  kind: "prd";
   title: string;
   purpose: string;
   audience: string;
+  source: IntentSource;             // "author" | "inferred" | ...
   scenarios: Array<{
-    title: string;
-    when: string;
-    expect: string | string[]; // qualified outcome ref(s)
+    title?: string;
+    when: string;                   // condition, human terms — required
+    then: string;                   // expected outcome, human terms — required
+    expect?: string | string[];     // qualified outcome ref(s) — optional
   }>;
-  source: SourceLocation;
 }
 ```
 
+`when` and `then` are required so every scenario reads on its own;
+`expect` is optional so a scenario can be authored before it's linked
+(or generated alongside its link). `source` distinguishes
+hand-authored from inferred / facilitated docs.
+
 ### Reader
 
-`@suss/contract-intent` exports stay the same name; the entry points
-accept either kind. Directory walks pick up `*.intent.yaml`,
-`*.prd.yaml`, `*.intent.json`, and `*.prd.json` files. The reader
-dispatches on the top-level `kind` field.
+`@suss/contract-intent` parses files into `IntentDoc` and hands them
+to the appropriate checker stream. Directory walks pick up
+`*.intent.{yaml,yml,json}` and `*.prd.{yaml,yml,json}`; the reader
+dispatches on the top-level `kind`.
 
-### Coverage checker
+### PRD coverage checker
 
-New: `@suss/checker/intent/prdCoverage.ts`. Given all summaries
-(derived code + boundary intent + PRD), for each PRD scenario:
+In the intent checker module (decision 4). Given the loaded system
+intents and PRDs, for each PRD scenario:
 
-1. Parse `expect` as `<name>.<outcome-id>` (string) or list of same.
-2. Look up the system intent with that `name` in the summary set
-   (intent summaries carry the name on `metadata.intent.name`).
-3. If no match → `intentScenarioUnmatched`. If multiple →
-   `intentScenarioAmbiguous`. If matched, check the outcome id
-   exists on a transition or effect → same finding shapes.
-
-Wired into `checkAll` alongside `checkIntentAgreement`.
+1. If `expect` is unset → emit an **info** that the scenario isn't yet
+   linked. Not a coverage error (info-by-default; strict mode is an
+   opt-in flag).
+2. If `expect` is set, parse each ref as `<name>.<outcome-id>` and
+   resolve against the loaded system intents:
+   - no system intent with that `name` → dangling reference finding
+   - multiple system intents with that `name` → ambiguous reference
+     finding
+   - matched name, unknown outcome id → dangling reference finding
+     (names the known outcomes so the author can correct)
 
 ### Finding kinds
 
-Five new entries in `FindingKindSchema`:
+The intent finding kinds live on the thin shared base (decision 2).
+Concrete names and severities are settled when the finding shape is
+implemented; the set is:
 
-- `intentScenarioUnmatched` (severity: warning — planning gap, not
-  implementation defect)
-- `intentScenarioAmbiguous` (severity: warning — author needs to
-  qualify the reference)
-- `intentScenarioBodyDrift` (severity: warning — body shape declared
-  on a PRD scenario doesn't match the resolved outcome's body)
-- `intentSpecMalformed` (severity: error — load-time validation
-  failure)
-- (Already shipped: `intentUnimplemented`, `intentExceeded`,
-  `intentFieldMismatch` — these stay as the system-intent ↔ code
-  layer; PRD-level findings are distinct.)
+- scenario not linked (info — pending link, the deliberate partial
+  state)
+- scenario reference dangling (warning — planning gap: named an
+  outcome no system intent declares)
+- scenario reference ambiguous (warning — author must disambiguate)
+- (intent-vs-code kinds `intentUnimplemented`, `intentExceeded`,
+  `intentFieldMismatch` shipped earlier against the shared schema;
+  they migrate to the intent finding extension as part of the package
+  split.)
 
 ## Validation
 
@@ -525,7 +631,7 @@ The Fastify worked-example doubles as the v0.1 integration test:
   alongside specification / observation / derivation, with the split
   between PM-authored and engineer-authored intent made visible.
 - Updated: `docs/internal/concept-design.md` — the PRD section links
-  to this proposal and notes the shipped state once v0.1 lands.
+  to this proposal and notes the shipped state once v0.1 ships.
 - Updated: `docs/internal/backlog.md` — `#intent-specs` moves to
   "in flight" with the v0.x sequencing.
 

@@ -2,9 +2,10 @@
 #
 # Author-facing PRD shape (kind: prd). The team's product description
 # of how user profile lookup should behave from the user's point of
-# view. References system intent outcomes by qualified id rather than
-# hard-coding status codes; the system intent layer is where 400 / 404
-# / 200 live.
+# view. Each scenario reads on its own through `when` / `then`; the
+# optional `expect` is the structured link to a system-intent outcome
+# (here pre-filled, but a facilitator could supply it later — a PRD
+# with `when` / `then` and no `expect` is a valid pending-link state).
 
 kind: prd
 
@@ -17,17 +18,21 @@ audience: web-client
 
 scenarios:
   - title: Successful lookup
-    when: A request comes in with a known user id
+    when: a request arrives with a known user id
+    then: the caller receives the user's profile
     expect: users-lookup.found
 
   - title: Admin gets enriched data
-    when: The looked-up user has the admin role
+    when: the looked-up user has the admin role
+    then: the caller receives the profile with admin details
     expect: users-lookup.found-admin
 
   - title: Missing id
-    when: The request omits the id parameter
+    when: the request omits the id parameter
+    then: the caller is told the id is required
     expect: users-lookup.missing-id
 
   - title: Unknown user
-    when: The id doesn't match any record
+    when: the id doesn't match any record
+    then: the caller is told the user wasn't found
     expect: users-lookup.not-found
