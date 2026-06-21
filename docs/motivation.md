@@ -1,6 +1,6 @@
 # Motivation
 
-suss catches behavioral drift between what your TypeScript code says it does and what it does. The class of failures it targets is the one other tooling leaves uncovered — code that compiles cleanly, type-checks, passes its tests, and validates against the declared contract, but at runtime sends a consumer a `200` whose shape it doesn't expect (or writes to a database column the schema doesn't declare). The mechanism for catching these is static behavioral analysis: extracting what every function does on every execution path, then pairing those derivations across the boundaries where they meet.
+suss catches behavioral drift between what your TypeScript code says it does and what it does. The class of failures it targets is the one other tooling leaves uncovered — code that compiles, type-checks, passes its tests, and validates against the declared contract, but at runtime sends a consumer a `200` whose shape it doesn't expect (or writes to a database column the schema doesn't declare). The mechanism for catching these is static behavioral analysis: extracting what every function does on every execution path, then pairing those derivations across the boundaries where they meet.
 
 *If you're arriving cold and want the "why this layer exists at all" argument before the gap-with-other-tools story, [Why behavioral summaries](/why-behavioral-summaries) is the companion to this page.*
 
@@ -66,7 +66,7 @@ The handler is one shape of code unit; the same summary shape comes out of React
 suss's product is the `BehavioralSummary[]` — structured JSON describing what each code unit does under what conditions. The CLI bundles four kinds of work over those summaries:
 
 - `suss extract` — derive summaries from TypeScript source.
-- `suss contract` — produce summaries from declared contracts (OpenAPI, CloudFormation, Storybook CSF3, AppSync).
+- `suss contract` — produce summaries from declared contracts (OpenAPI, CloudFormation, AppSync, GraphQL SDL, Prisma schema, Storybook CSF3).
 - `suss check` — pair providers with consumers (two files, or a whole directory) and report cross-boundary findings. See [cross-boundary-checking.md](cross-boundary-checking.md).
 - `suss inspect` — render a summary file or directory as human-readable text, or `--diff BEFORE AFTER` to see which behavioral cases a change added, removed, or altered.
 
@@ -110,4 +110,5 @@ It aligns with **Daniel Jackson's concept design** at the coarse level: a suss c
 - **It's not a type checker.** It consumes type information (via the compiler API) but doesn't produce type errors.
 - **It's not a verifier.** It doesn't prove that the code is correct. It describes what the code does and lets you compare descriptions.
 - **It's not a linter.** It doesn't flag style issues. The output is structured data, not warnings.
+- **It's not a within-unit correctness tool.** suss finds divergence *between* units, not wrongness *within* one. A handler whose logic is internally consistent but semantically wrong (returns `200` when it should `404`, but does so on every path) will produce a summary the consumer agrees with — there's nothing to diff. That's the intended scope. The intent-spec direction ([proposal](/internal/proposals/intent-specs)) is how authored intent becomes a comparable artifact alongside derivation.
 - **It's not complete.** Some code is too dynamic to statically analyze. suss is explicit about that — opaque predicates and low confidence are normal, not failures.
