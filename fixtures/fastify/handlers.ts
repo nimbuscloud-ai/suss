@@ -70,4 +70,18 @@ app.get("/defaults", () => {
   return { theme: "dark", locale: "en" };
 });
 
+// GET /lookup/:id — `return await db.findById(id)` should become a 200
+// response (Fastify serialises the awaited value as the body). The
+// early-return guard goes through reply.code.send so it stays a
+// parameterMethodCall match; the trailing awaited-call return must NOT
+// be excluded by `excludeCallReturns`, because the call isn't a
+// `reply.X` method chain.
+app.get("/lookup/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  if (!id) {
+    return reply.code(400).send({ error: "missing id" });
+  }
+  return await db.findById(id);
+});
+
 export default app;
