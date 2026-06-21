@@ -729,6 +729,77 @@ describe("checkDir", () => {
     expect(output).toContain("No findings");
   });
 
+  it("checks intent specs against code summaries via --intent", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-intentdir-"));
+    fs.writeFileSync(
+      path.join(intentDir, "users.intent.json"),
+      JSON.stringify({
+        kind: "boundary",
+        name: "users-lookup",
+        purpose: "Look up a user by id.",
+        audience: "web-client",
+        boundary: {
+          transport: "http",
+          semantics: "rest",
+          method: "GET",
+          path: "/users/:id",
+        },
+        transitions: [
+          { id: "found", when: "user exists", response: { status: 200 } },
+          {
+            id: "not-found",
+            when: "missing",
+            response: {
+              status: 404,
+              body: { properties: { error: { type: "string" } } },
+            },
+          },
+        ],
+      }),
+    );
+    try {
+      const output = captureStdout(() => {
+        const result = checkDir({ dir: tmpDir, intent: intentDir });
+        const kinds = (result.intentFindings ?? []).map((f) => f.kind);
+        // Code produces 200 but not the declared 404.
+        expect(kinds).toContain("uncoveredOutcome");
+        expect(result.hasErrors).toBe(true);
+
+        // --fail-on none keeps the same intent findings but never fails.
+        const lenient = checkDir({
+          dir: tmpDir,
+          intent: intentDir,
+          failOn: "none",
+        });
+        expect(lenient.intentFindings).toHaveLength(
+          result.intentFindings?.length ?? 0,
+        );
+        expect(lenient.hasErrors).toBe(false);
+
+        // JSON output carries intent findings alongside behavioural ones.
+        const asJson = checkDir({ dir: tmpDir, intent: intentDir, json: true });
+        expect((asJson.intentFindings ?? []).length).toBeGreaterThan(0);
+
+        // Writing to a file works with --intent.
+        const outFile = path.join(tmpDir, "out.txt");
+        checkDir({ dir: tmpDir, intent: intentDir, output: outFile });
+        expect(fs.readFileSync(outFile, "utf8")).toContain("Intent coverage:");
+      });
+      expect(output).toContain("Intent coverage:");
+      expect(output).toContain('"intentFindings"');
+    } finally {
+      fs.rmSync(intentDir, { recursive: true, force: true });
+    }
+  });
+
   it("pairs across param syntax styles (:id vs {id})", () => {
     fs.writeFileSync(
       path.join(tmpDir, "provider.json"),

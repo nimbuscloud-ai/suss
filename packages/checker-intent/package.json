@@ -1,23 +1,22 @@
 {
-  "name": "@suss/checker",
+  "name": "@suss/checker-intent",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Cross-boundary compatibility checker for suss behavioral summaries \u2014 pairs providers with consumers and reports findings.",
+  "description": "Pair team-authored intent (IntentSummary) against derived code (BehavioralSummary) and report where they diverge.",
   "keywords": [
     "suss",
-    "behavioral-summary",
-    "contract-testing",
-    "static-analysis",
-    "typescript"
+    "intent",
+    "checker",
+    "coverage"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/checker#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/checker-intent#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/checker"
+    "directory": "packages/checker-intent"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -50,8 +49,7 @@
   },
   "dependencies": {
     "@suss/behavioral-ir": "*",
-    "@suss/ir-core": "*",
-    "graphql": "^16.8.0"
+    "@suss/intent-ir": "*"
   },
   "devDependencies": {
     "tsup": "*",

@@ -19,6 +19,7 @@ export const coveragePackages = [
   ["packages/extractor", "extractor"],
   ["packages/adapter/typescript", "typescript"],
   ["packages/checker", "checker"],
+  ["packages/checker-intent", "checker-intent"],
   ["packages/cli", "cli"],
   // Frameworks
   ["packages/framework/ts-rest", "ts-rest"],

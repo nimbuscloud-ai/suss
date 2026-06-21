@@ -1,6 +1,11 @@
 import type { Predicate, ValueRef } from "@suss/behavioral-ir";
+import type { MatchResult } from "@suss/ir-core";
 
-export type MatchResult = "match" | "nomatch" | "unknown";
+// MatchResult is a shared comparison primitive owned by @suss/ir-core;
+// re-exported here so the checker's many consumers of it are unaffected.
+// The subject / predicate comparators below stay because they're
+// specific to the behavioural checker's predicate model.
+export type { MatchResult } from "@suss/ir-core";
 
 export function subjectsMatch(a: ValueRef, b: ValueRef): MatchResult {
   if (valueRefContainsUnresolved(a) || valueRefContainsUnresolved(b)) {

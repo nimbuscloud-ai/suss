@@ -8,6 +8,8 @@ import {
   checkPair,
   countsForThreshold,
 } from "@suss/checker";
+import { checkIntentAgreement } from "@suss/checker-intent";
+import { loadIntentDirectory } from "@suss/contract-intent";
 
 import { loadSuppressionsOrEmpty } from "./suppressionsLoader.js";
 
@@ -17,6 +19,7 @@ import type {
   Finding,
 } from "@suss/behavioral-ir";
 import type { CheckAllResult, SuppressionRule } from "@suss/checker";
+import type { IntentFinding } from "@suss/checker-intent";
 
 /**
  * Look up the summary-level confidence for a `Finding` side. The
@@ -60,10 +63,18 @@ export interface CheckDirOptions {
   failOn?: FailOn;
   sussignore?: string;
   noSuppressions?: boolean;
+  /**
+   * Directory of team-authored intent specs (`*.intent` / `*.prd`).
+   * When set, each boundary intent is paired against the code summaries
+   * from `dir`, adding intent-coverage findings to the result.
+   */
+  intent?: string;
 }
 
 export interface CheckResult {
   findings: Finding[];
+  /** Intent-coverage findings, present only when --intent was supplied. */
+  intentFindings?: IntentFinding[];
   hasErrors: boolean;
 }
 
@@ -127,9 +138,18 @@ export function checkDir(
   };
   const confidence = buildConfidenceLookup(allSummaries);
 
+  // Intent is a separate citizen with its own finding shape. When
+  // --intent is supplied, pair it against the same code summaries and
+  // render / score it alongside the behavioural findings rather than
+  // folding it into that stream.
+  const intentFindings: IntentFinding[] =
+    options.intent !== undefined
+      ? checkIntentAgreement(loadIntentDirectory(options.intent), allSummaries)
+      : [];
+
   const rendered = options.json
-    ? `${JSON.stringify({ findings: result.findings, pairs: result.pairs, unmatched: result.unmatched }, null, 2)}\n`
-    : renderDirHuman(result, confidence);
+    ? `${JSON.stringify({ findings: result.findings, intentFindings, pairs: result.pairs, unmatched: result.unmatched }, null, 2)}\n`
+    : renderDirHuman(result, confidence) + renderIntentFindings(intentFindings);
 
   if (options.output !== undefined) {
     fs.writeFileSync(options.output, rendered);
@@ -137,11 +157,37 @@ export function checkDir(
     process.stdout.write(rendered);
   }
 
+  const failOn = options.failOn ?? "error";
   return {
     findings: result.findings,
-    hasErrors: meetsThreshold(result.findings, options.failOn ?? "error"),
+    intentFindings,
+    hasErrors:
+      meetsThreshold(result.findings, failOn) ||
+      intentMeetsThreshold(intentFindings, failOn),
     result,
   };
+}
+
+function intentMeetsThreshold(
+  findings: IntentFinding[],
+  failOn: FailOn,
+): boolean {
+  if (failOn === "none") {
+    return false;
+  }
+  const threshold = SEVERITY_ORDER[failOn];
+  return findings.some((f) => SEVERITY_ORDER[f.severity] <= threshold);
+}
+
+function renderIntentFindings(findings: IntentFinding[]): string {
+  if (findings.length === 0) {
+    return "";
+  }
+  const lines = ["", "Intent coverage:"];
+  for (const f of findings) {
+    lines.push(`  [${f.severity}] ${f.boundary} — ${f.message}`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function emitFindings(

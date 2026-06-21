@@ -72,6 +72,17 @@ export type MessageBusSemantics = Extract<Semantics, { name: "message-bus" }>;
 export type { TypeShape } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
+// Shared comparison primitives
+// ---------------------------------------------------------------------------
+//
+// Pure operations over the primitives above that more than one checker
+// needs and must agree on. They live here so neither the behavioural
+// checker nor the intent checker owns them (and so the two can't drift).
+
+export { boundaryKey, normalizePath } from "./boundaryKey.js";
+export { bodyShapesMatch, type MatchResult } from "./typeShapeMatch.js";
+
+// ---------------------------------------------------------------------------
 // Boundary binding constructors
 // ---------------------------------------------------------------------------
 //

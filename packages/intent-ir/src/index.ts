@@ -13,6 +13,12 @@
 // `intentDocToSummary`.
 
 export {
+  IntentFindingKindSchema,
+  IntentFindingSchema,
+  IntentFindingSeveritySchema,
+  IntentRefSchema,
+} from "./findings.js";
+export {
   BodyShapeSchema,
   BoundarySchema,
   IntentDocSchema,
@@ -20,6 +26,12 @@ export {
 } from "./schema.js";
 export { intentDocToSummary } from "./summary.js";
 
+export type {
+  IntentFinding,
+  IntentFindingKind,
+  IntentFindingSeverity,
+  IntentRef,
+} from "./findings.js";
 export type {
   BodyShape,
   Boundary,
