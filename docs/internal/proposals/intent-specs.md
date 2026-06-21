@@ -1,12 +1,12 @@
 # The intent layer — design proposal
 
-A plan for closing the loop between *what the team meant to ship* and
-*what the code does*. The first half (derived behavioural summaries
+A plan for closing the loop between *what the code does* and *what the
+team meant to ship*. The first half (derived behavioural summaries
 from code) ships today. This proposal designs the second half — a
 structured intent layer that pairs against the derived side — and
 sequences its delivery as `v0.1` … `v0.4`.
 
-Worked examples for every shape below live under
+Worked examples live under
 `docs/internal/proposals/intent-layer-examples/`. The Fastify
 `users-lookup` example exercises v0.1; the aws-sqs `order-intake`
 example exercises v0.2. Both target fixtures that today's checkers
@@ -14,56 +14,82 @@ already analyse.
 
 ## Why this exists
 
-Charity Majors and the operability lineage argue that as code becomes
-cheaper to generate, the bottleneck moves from coding to verifying.
-Verification only works if there's a structured statement of what was
-meant, in the same shape as what shipped and (eventually) what
-production does.
+The argument cuts across several voices in different traditions — the
+observability lineage (Charity Majors et al.), concept design (Jackson),
+the formal-methods / lightweight-spec writers (Hillel Wayne and
+others), and the AI-codegen commentary (Willison, Larson) that's
+sharpened the question over the last two years. The shared claim: as
+code becomes cheaper to generate, the bottleneck moves from coding to
+verifying. Verification needs a structured statement of *what was
+meant*, in the same shape as *what shipped* and (eventually) *what
+production does*. AI codegen makes this acute — when humans aren't
+the bottleneck on producing code, the question shifts to "is what we
+got what we meant," and ad-hoc PRDs in disparate tools don't answer
+it at PR-review time.
 
 Suss today has derived summaries from code (one side of that loop)
 plus third-party schemas (OpenAPI, GraphQL SDL, Prisma) that
 happen to declare structural truth about an API. None of these were
 authored as *team intent* — they were authored as wire contracts,
 data-model definitions, or vendor-supplied descriptions. The team's
-own intent — what the PR was supposed to ship, what the PM meant by
-"order is acknowledged and queued," what the engineering doc said
-about the failure mode — lives in Notion and markdown and nobody's
-loop closes back on it.
+own intent — what the PR was supposed to ship, what the product
+description meant by "order is acknowledged and queued," what the
+engineering doc said about the failure mode — lives in markdown PRDs,
+Notion pages, Confluence spaces, Linear / Jira ticket descriptions,
+chat threads. Each tool is structured for its own purpose and none
+of those structures are comparable against running code.
 
 Two costs of staying where we are:
 
 1. Every project ships derived summaries that have no top-down ground
    truth to anchor them. Drift between implementations is caught;
    drift between *intent and implementation* isn't.
-2. Outside review of the project named the PRD-as-typed-concept
+2. AI codegen amplifies that drift specifically. A natural-language
+   PRD in Notion can't gate generation; the code that comes back
+   matches the prompt's phrasing without anyone able to check it
+   against a structured statement of what was wanted.
+3. Outside review of the project named the PRD-as-typed-concept
    framing as the single sharpest unrealised idea — useful immediately
    as a vocabulary, more useful once the tool catches up to it.
 
 ## Two citizens, one layer
 
-Intent splits into two distinct artifacts. The two have different
-authors and different specificity, and the static check is different
-for each:
+Intent splits into two distinct artifacts that serve different
+purposes. The two are framed not by who writes them (any team
+member can author either, depending on the team's working style) but
+by what they're for:
 
 | | Outcome intent | System intent |
 |---|---|---|
-| **Author** | PM / designer / founder | Engineer / architect |
-| **Shape** | Scenarios — "what should happen for the user" | Structure — boundaries, transitions, effects, state |
-| **Specificity** | User-observable ("rate-limited request gets a friendly rejection") | Contract-level ("POST /auth/login returns 429 with `{error, retryAfter}`") |
+| **Purpose** | Describe what should happen for the user / consumer in terms they care about. | Specify how the system should behave — the contract a downstream tool can compare to running code. |
+| **Register** | Descriptive, human-readable, scenario-shaped. | Structural, machine-comparable, contract-shaped. |
+| **Where it lives today (without suss)** | Notion / Confluence pages, Linear / Jira tickets, markdown PRDs in the repo. | OpenAPI files, Prisma schemas, code comments, sometimes nowhere. |
+| **What changes with suss** | Same authoring shape, but committed to the repo alongside code and machine-checkable for coverage. | A first-class team-authored artifact that pairs against derived code summaries. |
+| **Typical authors** | Whoever writes PRDs today (PM, designer, founder, eng lead). | Whoever owns the contract surface (engineer, architect). |
+| **Specificity** | User-observable ("rate-limited request gets a friendly rejection"). | Contract-level ("POST /auth/login returns 429 with `{error, retryAfter}`"). |
 | **File suffix** | `*.prd.yaml` | `*.system.yaml` (or `*.intent.yaml` — v0.1's existing suffix) |
 | **Static check** | Coverage: is there a system intent that claims to implement each scenario? | Pairing: does the code match the declared structural behaviour? |
-| **Runtime check (future)** | Observation: did users actually experience the declared outcomes? | Observation: does the system actually behave as declared? |
+| **Runtime check (future)** | Runtime observability: did users actually experience the declared outcomes? | Runtime observability: does the system actually behave as declared? |
 
-Same word ("intent"), two grains, two authors, different checking. A
-team can adopt either side independently — outcome intent first to
+The descriptive and structural shapes carry their own benefits and
+limits. Descriptive PRDs are cheap to write and stay readable as the
+team grows, but resolving them against running code requires the link
+to system intent. Structural system intent is precise enough to compare
+field-by-field but loses the user-framing that makes a PRD
+intelligible to anyone outside the team that authored it. The intent
+layer keeps both as first-class citizens so neither pays the other's
+cost.
+
+A team can adopt either side independently — outcome intent first to
 make planning gaps visible, system intent first to formalise contracts
 the OpenAPI / Prisma readers don't already cover.
 
 ## Author-facing surface vs structural model
 
-A PM writes one shape — purpose, audience, scenarios. The structural
-taxonomy (boundary / workflow / concept) is what the reader walks
-internally, not what the PM types.
+The PRD shape is one of the two author-facing surfaces. Anyone
+writing a PRD types purpose, audience, and scenarios; the structural
+internal vocabulary (boundary, workflow, concept) is what the reader
+walks and what findings reference, not what the author has to learn.
 
 ```yaml
 # author-facing PRD — what a PM writes
@@ -84,57 +110,47 @@ The structural vocabulary appears in two places, both optional:
 
 - **Findings** reference the concrete endpoint or function, not
   abstractions: `intentUnimplemented at GET /users/:id`.
-- **Engineers** who want sync-chain precision (Arazzo-style output
-  forwarding, success criteria) can author at the workflow level
-  directly. Otherwise, the structural model is the reader's job.
+- **Engineers** who want fine-grained precision over sync chains can
+  author at the workflow level directly. Otherwise, the structural
+  model is the reader's job.
 
-## System intent has three grains
+## System intent has three kinds
 
-System intent itself is layered. Each grain is comparable to the layer
-above and below; drift between adjacent layers is a finding.
+System intent comes in three kinds, each comparable to the level above
+and below it. Drift between adjacent levels is a finding.
 
-1. **Boundary intent.** Contract for a single endpoint or function
-   call. Self-contained, no composition. This is what v0.1 ships.
-2. **Workflow intent.** Sync chain across boundaries: ordered effects
-   (message-send, storage-write, function-call), input sources (queue
-   reads, scheduled triggers), success criteria. v0.2.
-3. **Concept declaration.** Purpose, state, actions, and OP
-   (operational principle in Jackson's sense) for a unit of
-   user-visible value. v0.3.
+1. **Boundary intent** — a contract for one endpoint or function
+   call. Self-contained, no composition. v0.1 ships this.
+2. **Workflow intent** — a sequence across boundaries: ordered
+   effects (message sends, storage writes, function calls), input
+   sources (queue reads, scheduled triggers), and the success
+   criteria that tie them together. v0.2 ships this.
+3. **Concept declaration** — what a unit of user-visible value does:
+   the purpose it serves, the state it owns, the actions it exposes,
+   and the canonical scenario that demonstrates the purpose. The
+   long-form mapping to Daniel Jackson's concept-design vocabulary
+   lives in [`concept-design.md`](../concept-design.md); this
+   proposal points there rather than re-litigating it. v0.3 ships this.
 
 Outcome intent (PRDs) sits above all three — a PRD's scenarios link to
-outcomes declared at any system-intent grain.
+outcomes declared at any system-intent kind.
 
 A fourth axis, **outcome / SLO**, is cross-cutting rather than a
 layer. SLOs can attach to a concept, a workflow, a boundary, or even a
-specific transition. Out of scope until observation adapters arrive
-(v0.4).
+specific transition. Out of scope until runtime observability adapters
+ship in v0.4.
 
-## Where Arazzo fits, and what it doesn't cover
+## Arazzo as inspiration for the workflow layer
 
 [Arazzo](https://spec.openapis.org/arazzo/latest.html) (Linux
-Foundation, late 2024) is a YAML wire format for multi-step API
-workflows — ordered operations against OpenAPI endpoints with success
-criteria, output forwarding between steps, and failure handling.
-Adopting it for the workflow layer means we don't invent a sync-chain
-format for the HTTP slice; the OpenAPI ecosystem already has one.
-
-What Arazzo doesn't cover:
-
-- **Non-HTTP boundaries.** Queue sends, database mutations,
-  function-call boundaries, scheduled callbacks.
-- **Purpose / audience / state.** Arazzo describes *how* a workflow
-  runs; the concept it serves comes from one level up.
-- **Failure-mode intent.** "This case should never fire concurrently
-  with that case" — Jackson's smeared / fused / phantom vocabulary.
-- **Observation linkage.** Mapping workflow firing to expected
-  production trace shapes.
-
-So Arazzo is the wire format for HTTP workflows; the intent layer
-extends it with the IR's boundary semantics for non-HTTP steps
-(`function-call`, `message-bus`, `storage-relational`), a `workflow`
-wrapper that adds purpose / audience / effects / inputs, and a
-`concept` wrapper that names what the workflow serves.
+Foundation, late 2024) describes multi-step API workflows in YAML —
+ordered operations with success criteria and output forwarding
+between steps. It's the closest existing standard to what v0.2
+workflow intent needs for the HTTP slice and worth borrowing
+mechanics from. Arazzo only covers HTTP-to-HTTP workflows though, so
+the v0.2 schema extends the shape to non-HTTP boundaries (function
+calls, queue sends, storage writes) and adds the purpose / audience
+wrapper that places a workflow inside a concept.
 
 ## Linking: outcome ids
 
