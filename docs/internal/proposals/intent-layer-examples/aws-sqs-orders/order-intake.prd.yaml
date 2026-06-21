@@ -17,12 +17,14 @@ audience: end-user
 
 scenarios:
   - title: Order is accepted and queued
-    when: A customer places a valid order
+    when: a customer places a valid order
+    then: the order is acknowledged and queued for processing
     expect:
       - order-intake.acknowledged
       - order-intake.queued-for-processing
 
   - title: Processing acts on the queued order
-    when: An accepted order reaches the processor
+    when: an accepted order reaches the processor
+    then: the processor handles the order
     expect:
       - order-processing.processed
