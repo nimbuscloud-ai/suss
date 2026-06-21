@@ -13,6 +13,8 @@ import {
 } from "./index.js";
 
 const minimalSpec = {
+  kind: "boundary",
+  name: "users-lookup",
   boundary: {
     transport: "http",
     semantics: "rest",
@@ -23,6 +25,7 @@ const minimalSpec = {
   audience: "web-client",
   transitions: [
     {
+      id: "not-found",
       when: "user not found",
       output: {
         status: 404,
@@ -30,6 +33,7 @@ const minimalSpec = {
       },
     },
     {
+      id: "found",
       when: "user exists",
       output: {
         status: 200,
@@ -40,6 +44,25 @@ const minimalSpec = {
           },
         },
       },
+    },
+  ],
+};
+
+const minimalPrd = {
+  kind: "prd",
+  title: "User profile lookup",
+  purpose: "Fetch a user's profile information by id.",
+  audience: "web-client",
+  scenarios: [
+    {
+      title: "Successful lookup",
+      when: "A request comes in with a known user id",
+      expect: "users-lookup.found",
+    },
+    {
+      title: "Missing user",
+      when: "The id doesn't match any record",
+      expect: "users-lookup.not-found",
     },
   ],
 };
@@ -59,9 +82,10 @@ describe("intentSpecToSummaries — in-memory parse + transform", () => {
     });
   });
 
-  it("carries purpose and audience under metadata.intent", () => {
+  it("carries name, purpose, and audience under metadata.intent", () => {
     const [summary] = intentSpecToSummaries(minimalSpec);
     expect(summary.metadata?.intent).toEqual({
+      name: "users-lookup",
       purpose: "Look up a user by id.",
       audience: "web-client",
     });
@@ -111,6 +135,14 @@ describe("intentSpecToSummaries — in-memory parse + transform", () => {
     expect(summary.transitions[1].conditions).toEqual([]);
   });
 
+  it("preserves the author-declared outcome id on each transition", () => {
+    const [summary] = intentSpecToSummaries(minimalSpec);
+    expect(summary.transitions.map((t) => t.id)).toEqual([
+      "not-found",
+      "found",
+    ]);
+  });
+
   it("throws on a spec missing purpose", () => {
     const bad = { ...minimalSpec, purpose: "" };
     expect(() => intentSpecToSummaries(bad)).toThrow();
@@ -121,14 +153,96 @@ describe("intentSpecToSummaries — in-memory parse + transform", () => {
     expect(() => intentSpecToSummaries(bad)).toThrow();
   });
 
+  it("throws on a spec missing name", () => {
+    const bad = { ...minimalSpec, name: "" };
+    expect(() => intentSpecToSummaries(bad)).toThrow();
+  });
+
+  it("throws on a transition missing its id", () => {
+    const bad = {
+      ...minimalSpec,
+      transitions: [{ when: "x", output: { status: 200 } }],
+    };
+    expect(() => intentSpecToSummaries(bad)).toThrow();
+  });
+
   it("throws on an out-of-range status code", () => {
     const bad = {
       ...minimalSpec,
       transitions: [
-        { when: "x", output: { status: 999 } },
-        { when: "y", output: { status: 200 } },
+        { id: "x", when: "x", output: { status: 999 } },
+        { id: "y", when: "y", output: { status: 200 } },
       ],
     };
+    expect(() => intentSpecToSummaries(bad)).toThrow();
+  });
+});
+
+describe("intentSpecToSummaries — PRD shape (kind: prd)", () => {
+  it("produces a library-kind summary with metadata.prd", () => {
+    const summaries = intentSpecToSummaries(minimalPrd);
+    expect(summaries).toHaveLength(1);
+    const [summary] = summaries;
+    expect(summary.kind).toBe("library");
+    expect(summary.identity.boundaryBinding).toBeNull();
+    expect(summary.identity.name).toBe("User profile lookup");
+    expect(summary.metadata?.prd).toEqual({
+      title: "User profile lookup",
+      purpose: "Fetch a user's profile information by id.",
+      audience: "web-client",
+      scenarios: [
+        {
+          title: "Successful lookup",
+          when: "A request comes in with a known user id",
+          expect: ["users-lookup.found"],
+        },
+        {
+          title: "Missing user",
+          when: "The id doesn't match any record",
+          expect: ["users-lookup.not-found"],
+        },
+      ],
+    });
+  });
+
+  it("normalises a scalar `expect` into a single-element array", () => {
+    const summaries = intentSpecToSummaries(minimalPrd);
+    const scenarios = (
+      summaries[0].metadata?.prd as { scenarios: Array<{ expect: string[] }> }
+    ).scenarios;
+    for (const s of scenarios) {
+      expect(Array.isArray(s.expect)).toBe(true);
+    }
+  });
+
+  it("accepts a multi-outcome `expect` array", () => {
+    const prd = {
+      ...minimalPrd,
+      scenarios: [
+        {
+          title: "Composite outcome",
+          when: "Order is placed",
+          expect: ["order-intake.acknowledged", "order-intake.queued"],
+        },
+      ],
+    };
+    const summaries = intentSpecToSummaries(prd);
+    const scenarios = (
+      summaries[0].metadata?.prd as { scenarios: Array<{ expect: string[] }> }
+    ).scenarios;
+    expect(scenarios[0].expect).toEqual([
+      "order-intake.acknowledged",
+      "order-intake.queued",
+    ]);
+  });
+
+  it("throws on a PRD with no scenarios", () => {
+    const bad = { ...minimalPrd, scenarios: [] };
+    expect(() => intentSpecToSummaries(bad)).toThrow();
+  });
+
+  it("throws on an unknown top-level kind", () => {
+    const bad = { ...minimalSpec, kind: "concept" };
     expect(() => intentSpecToSummaries(bad)).toThrow();
   });
 });
@@ -144,11 +258,13 @@ describe("intentSpecFileToSummaries — file loading", () => {
     fs.rmSync(tmpDir, { recursive: true });
   });
 
-  it("loads a YAML spec by extension", () => {
+  it("loads a YAML boundary intent by extension", () => {
     const file = path.join(tmpDir, "users.intent.yaml");
     fs.writeFileSync(
       file,
       [
+        "kind: boundary",
+        "name: users-lookup",
         "boundary:",
         "  transport: http",
         "  semantics: rest",
@@ -157,7 +273,8 @@ describe("intentSpecFileToSummaries — file loading", () => {
         "purpose: Look up a user by id.",
         "audience: web-client",
         "transitions:",
-        "  - when: user exists",
+        "  - id: found",
+        "    when: user exists",
         "    output:",
         "      status: 200",
         "      body:",
@@ -172,11 +289,23 @@ describe("intentSpecFileToSummaries — file loading", () => {
     expect(summaries[0].identity.name).toBe("GET /users/:id");
   });
 
-  it("loads a JSON spec via the .json extension", () => {
+  it("loads a JSON boundary intent via the .json extension", () => {
     const file = path.join(tmpDir, "users.intent.json");
     fs.writeFileSync(file, JSON.stringify(minimalSpec));
     const summaries = intentSpecFileToSummaries(file);
     expect(summaries).toHaveLength(1);
+  });
+
+  it("loads a PRD file via the .prd.yaml extension", () => {
+    // The YAML parser accepts JSON syntax, so writing the JSON form
+    // exercises the same .yaml dispatch path without a YAML dependency
+    // here.
+    const file = path.join(tmpDir, "users.prd.yaml");
+    fs.writeFileSync(file, JSON.stringify(minimalPrd));
+    const summaries = intentSpecFileToSummaries(file);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].kind).toBe("library");
+    expect(summaries[0].metadata?.prd).toBeDefined();
   });
 
   it("throws a useful error when the file is missing", () => {
@@ -209,10 +338,14 @@ describe("intentSpecDirectoryToSummaries — directory walk", () => {
     fs.rmSync(tmpDir, { recursive: true });
   });
 
-  it("walks recursively and returns one summary per *.intent.* file", () => {
+  it("walks recursively and returns one summary per *.intent.* or *.prd.* file", () => {
     fs.writeFileSync(
       path.join(tmpDir, "users.intent.json"),
       JSON.stringify(minimalSpec),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "users.prd.json"),
+      JSON.stringify(minimalPrd),
     );
     const subdir = path.join(tmpDir, "billing");
     fs.mkdirSync(subdir);
@@ -220,6 +353,7 @@ describe("intentSpecDirectoryToSummaries — directory walk", () => {
       path.join(subdir, "invoices.intent.json"),
       JSON.stringify({
         ...minimalSpec,
+        name: "invoices-lookup",
         boundary: { ...minimalSpec.boundary, path: "/invoices/:id" },
       }),
     );
@@ -227,8 +361,9 @@ describe("intentSpecDirectoryToSummaries — directory walk", () => {
     fs.writeFileSync(path.join(tmpDir, "README.md"), "# notes");
 
     const summaries = intentSpecDirectoryToSummaries(tmpDir);
-    expect(summaries).toHaveLength(2);
-    const paths = summaries
+    expect(summaries).toHaveLength(3);
+    // The two boundary intents (users + invoices) plus the PRD.
+    const restPaths = summaries
       .map((s) => {
         const binding = s.identity.boundaryBinding;
         if (binding === null || binding.semantics.name !== "rest") {
@@ -236,8 +371,11 @@ describe("intentSpecDirectoryToSummaries — directory walk", () => {
         }
         return binding.semantics.path;
       })
+      .filter((p): p is string => p !== null)
       .sort();
-    expect(paths).toEqual(["/invoices/:id", "/users/:id"]);
+    expect(restPaths).toEqual(["/invoices/:id", "/users/:id"]);
+    const prdSummaries = summaries.filter((s) => s.metadata?.prd !== undefined);
+    expect(prdSummaries).toHaveLength(1);
   });
 
   it("throws when the directory doesn't exist", () => {
