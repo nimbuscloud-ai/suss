@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type BoundaryBinding,
   functionCallBinding,
+  graphqlOperationBinding,
   graphqlResolverBinding,
   messageBusBinding,
   packageExportBinding,
@@ -44,6 +45,47 @@ describe("binding constructors", () => {
       recognition: "react",
     });
     expect(b.semantics).toEqual({ name: "function-call" });
+  });
+
+  it("functionCallBinding carries every optional identity field when set", () => {
+    const b = functionCallBinding({
+      transport: "in-process",
+      recognition: "ts",
+      module: "./components/Button",
+      exportName: "Button",
+      package: "@acme/ui",
+      exportPath: ["components", "Button"],
+    });
+    expect(b.semantics).toEqual({
+      name: "function-call",
+      module: "./components/Button",
+      exportName: "Button",
+      package: "@acme/ui",
+      exportPath: ["components", "Button"],
+    });
+  });
+
+  it("graphqlOperationBinding carries the operation name when set, omits it when not", () => {
+    const named = graphqlOperationBinding({
+      transport: "http",
+      recognition: "apollo-client",
+      operationType: "query",
+      operationName: "GetUser",
+    });
+    expect(named.semantics).toEqual({
+      name: "graphql-operation",
+      operationType: "query",
+      operationName: "GetUser",
+    });
+    const anon = graphqlOperationBinding({
+      transport: "http",
+      recognition: "apollo-client",
+      operationType: "mutation",
+    });
+    expect(anon.semantics).toEqual({
+      name: "graphql-operation",
+      operationType: "mutation",
+    });
   });
 
   it("packageExportBinding defaults transport to in-process and carries the export path", () => {

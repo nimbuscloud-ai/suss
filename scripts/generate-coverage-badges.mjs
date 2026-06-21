@@ -8,6 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { coveragePackages } from "./coverage-packages.mjs";
 import { normalizeSummaryFile } from "./normalize-coverage-summary.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -16,42 +17,10 @@ const badgesDir = resolve(root, ".github/badges");
 
 mkdirSync(badgesDir, { recursive: true });
 
-// Package dirs to check. Badge file slug is the second field;
-// tracked at .github/badges/coverage-<slug>.svg. Keep in sync as
-// new packs ship — there's no auto-discovery so a missing entry
-// silently drops the package from the coverage average.
-const packageDirs = [
-  ["packages/ir", "ir"],
-  ["packages/extractor", "extractor"],
-  ["packages/adapter/typescript", "typescript"],
-  ["packages/checker", "checker"],
-  ["packages/cli", "cli"],
-  // Frameworks
-  ["packages/framework/ts-rest", "ts-rest"],
-  ["packages/framework/react-router", "react-router"],
-  ["packages/framework/react", "react"],
-  ["packages/framework/express", "express"],
-  ["packages/framework/fastify", "fastify"],
-  ["packages/framework/apollo", "apollo"],
-  ["packages/framework/nestjs-rest", "nestjs-rest"],
-  ["packages/framework/nestjs-graphql", "nestjs-graphql"],
-  ["packages/framework/prisma", "prisma"],
-  ["packages/framework/aws-sqs", "aws-sqs"],
-  ["packages/framework/process-env", "process-env"],
-  // Runtimes
-  ["packages/client/web", "web"],
-  ["packages/client/axios", "axios"],
-  ["packages/client/apollo", "apollo-client"],
-  // Contract sources (renamed from stub-*; old badge files left
-  // behind by the rename should be removed by hand when this
-  // generator first writes the new ones).
-  ["packages/contract/openapi", "contract-openapi"],
-  ["packages/contract/aws-apigateway", "contract-aws-apigateway"],
-  ["packages/contract/cloudformation", "contract-cloudformation"],
-  ["packages/contract/appsync", "contract-appsync"],
-  ["packages/contract/storybook", "contract-storybook"],
-  ["packages/contract/prisma", "contract-prisma"],
-];
+// Shared with check-coverage-threshold.mjs (scripts/coverage-packages.mjs)
+// so the two can't drift. Each entry is [packageDir, badgeSlug]; the
+// badge is tracked at .github/badges/coverage-<slug>.svg.
+const packageDirs = coveragePackages;
 
 function badgeColor(pct) {
   if (pct >= 80) {
