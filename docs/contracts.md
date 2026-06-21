@@ -129,9 +129,10 @@ Comparison checkers in `@suss/checker` operate per-protocol:
 
 - `checkContractAgreement` / `checkContractConsistency` — HTTP schema declarations vs derived handler / consumer transitions
 - `checkGraphqlContractAgreement` — GraphQL `metadata.graphql.declaredContract` cross-pair check
-- `checkMessageBusAgreement` — producer-side body shape vs consumer-side expectations on a named queue
-- `checkStorageRelationalAgreement` — Prisma schema entity vs handler `interaction(class: "storage-access")` effects
-- `checkRuntimeConfigAgreement` — env-var declarations vs handler reads
+- `checkMessageBus` — producer / consumer pairing on named queues; orphan / unused channel reporting
+- `checkRelationalStorage` — Prisma schema entity vs handler `interaction(class: "storage-access")` effects
+- `checkRuntimeConfig` — env-var declarations vs handler reads
+- `checkComponentStoryAgreement` — Storybook stories vs the React component they target
 
 What's still missing from the taxonomy:
 
