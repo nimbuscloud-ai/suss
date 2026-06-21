@@ -4,7 +4,7 @@ layout: home
 hero:
   name: suss
   text: Behavioral correctness for TypeScript
-  tagline: "Catch the drift between what your code says it does and what it does. suss derives every execution path, pairs the derivations across boundaries, and surfaces bugs that compile, type-check, and pass the tests."
+  tagline: "Catch the drift between what your code says it does and what it does. suss derives every execution path, pairs the derivations across boundaries, and reports bugs that compile, type-check, and pass the tests."
   actions:
     - theme: brand
       text: Get started
