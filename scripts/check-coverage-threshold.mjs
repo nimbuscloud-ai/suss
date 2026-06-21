@@ -13,26 +13,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { coveragePackages } from "./coverage-packages.mjs";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 
-const packageDirs = [
-  "packages/ir",
-  "packages/extractor",
-  "packages/adapter/typescript",
-  "packages/framework/ts-rest",
-  "packages/framework/react-router",
-  "packages/framework/react",
-  "packages/framework/express",
-  "packages/framework/fastify",
-  "packages/client/web",
-  "packages/client/axios",
-  "packages/stub/openapi",
-  "packages/stub/aws-apigateway",
-  "packages/stub/cloudformation",
-  "packages/checker",
-  "packages/cli",
-];
+const packageDirs = coveragePackages.map(([dir]) => dir);
 
 function readPct(path) {
   try {

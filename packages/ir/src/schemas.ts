@@ -7,6 +7,17 @@
 
 import { z } from "zod";
 
+// Primitives shared across suss IRs live in @suss/ir-core; the
+// behavioural schemas below build on them (BoundaryBinding on identity,
+// TypeShape on outputs, etc.). Imported for internal use only — the
+// public type surface is re-exported from this package's index.
+import {
+  BoundaryBindingSchema,
+  ConfidenceInfoSchema,
+  SourceLocationSchema,
+  TypeShapeSchema,
+} from "@suss/ir-core/schemas";
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -296,223 +307,10 @@ export const BoundaryAspectSchema = z.enum([
   "selector",
 ]);
 
-export const ConfidenceSourceSchema = z.enum([
-  "inferred_static",
-  "inferred_ai",
-  "declared",
-  "derived",
-]);
-
-export const ConfidenceLevelSchema = z.enum(["high", "medium", "low"]);
-
-// ---------------------------------------------------------------------------
-// Leaf object schemas
-// ---------------------------------------------------------------------------
-
-export const SourceLocationSchema = z.object({
-  file: z.string(),
-  range: z.object({ start: z.number(), end: z.number() }),
-  exportName: z.string().nullable(),
-});
-
-// ---------------------------------------------------------------------------
-// Boundary binding — three-layer model (see docs/boundary-semantics.md)
-// ---------------------------------------------------------------------------
-//
-// `transport` is the wire/carrier (http, in-process, aws-https, etc).
-// `semantics` is the discriminated union the checker dispatches on — what
-//  the participants think they're doing (REST resource, in-process function
-//  call, GraphQL operation when that lands).
-// `recognition` is the pack identity that produced this binding ("ts-rest",
-//  "react", "openapi-stub", …) — used for provenance and pack-level dedupe,
-//  not for pairing or discriminator dispatch.
-
-export const RestSemanticsSchema = z.object({
-  name: z.literal("rest"),
-  /** Uppercase HTTP method ("GET", "POST", …). */
-  method: z.string(),
-  /** Normalized route path ("/users/{id}"). */
-  path: z.string(),
-  /**
-   * Status codes the producing source explicitly declared (OpenAPI
-   * responses, CFN MethodResponses, ts-rest router statuses). Kept here
-   * so the pairing layer can still see them without unwrapping metadata.
-   * Empty / absent for inferred sources.
-   */
-  declaredResponses: z.array(z.number()).optional(),
-});
-
-export const FunctionCallSemanticsSchema = z.object({
-  name: z.literal("function-call"),
-  /**
-   * Optional module identifier for cross-unit references
-   * (e.g. `"./components/Button"` for a React component, or the TS
-   * module path for a bare function export). Packs that don't do
-   * cross-module pairing can leave it unset.
-   */
-  module: z.string().optional(),
-  /** Named export within the module, when applicable. */
-  exportName: z.string().optional(),
-  /**
-   * Package name (as written in `package.json`) when this identity
-   * refers to a public package export — e.g. `"@suss/behavioral-ir"`.
-   * Set alongside `exportPath` by packs that resolve a package's
-   * public surface (the `packageExports` discovery variant). Distinct
-   * from `module`, which is a repo-relative module path for
-   * intra-repo pairing.
-   */
-  package: z.string().optional(),
-  /**
-   * Path to the exported binding within the package, starting with
-   * the sub-path key when one is used. Examples:
-   *   `["parseSummary"]`              — root export
-   *   `["schemas", "BoundaryBindingSchema"]` — sub-path `./schemas`
-   *
-   * The first segment is the sub-path without the leading `./`
-   * (`"."` → omitted). The last segment is the exported name.
-   * Intermediate segments correspond to nested re-export structure
-   * when a pack records it; most v0 packs use one-or-two-segment
-   * paths.
-   */
-  exportPath: z.array(z.string()).optional(),
-});
-
-/**
- * Provider-side GraphQL resolver. One resolver binds one
- * (typeName, fieldName) pair. Discrimination at the resolver level
- * rather than field level — each resolver function is the smallest
- * independently-schedulable unit, and partial-null / per-field error
- * behavior is a property of the resolver, not the surrounding type.
- *
- * Pairing key: `${typeName}.${fieldName}`. Transport-agnostic —
- * resolvers run under Apollo Server (HTTP), AppSync (aws-https /
- * AppSync integration), yoga, or stitched gateways alike.
- */
-export const GraphqlResolverSemanticsSchema = z.object({
-  name: z.literal("graphql-resolver"),
-  /** GraphQL type the resolver attaches to: "Query", "Mutation", "Subscription", or an object-type name like "User". */
-  typeName: z.string(),
-  /** Field name on that type. */
-  fieldName: z.string(),
-});
-
-/**
- * Consumer-side GraphQL operation — a document sent from client to
- * server. Binds to an operation by name + operation type. Pairs with
- * the matching resolver(s) at runtime; checking is more involved
- * than REST pairing (one operation can touch many resolvers via
- * selection set), and is deferred until the consumer-side pack lands.
- */
-export const GraphqlOperationSemanticsSchema = z.object({
-  name: z.literal("graphql-operation"),
-  /** Optional operation name — anonymous queries / mutations leave this unset. */
-  operationName: z.string().optional(),
-  operationType: z.enum(["query", "mutation", "subscription"]),
-});
-
-/**
- * Provider-side runtime configuration channel — env vars + their
- * declared values on a deployable unit (Lambda, ECS task, container,
- * k8s pod). The channel is the boundary; env var names are FIELDS on
- * its contract (analogous to `body.email` being a field on a REST
- * endpoint's contract). Pairing key: `(deploymentTarget, instanceName)`.
- * The list of env vars provided lives in `metadata.runtimeContract.envVars`
- * on the summary; `metadata.codeScope` declares which source files
- * run inside the channel so the pairing layer can scope code reads.
- */
-export const RuntimeConfigSemanticsSchema = z.object({
-  name: z.literal("runtime-config"),
-  deploymentTarget: z.enum([
-    "lambda",
-    "ecs-task",
-    "container",
-    "k8s-deployment",
-  ]),
-  /**
-   * Stable identifier for the runtime instance — CFN logical resource
-   * ID for Lambda / ECS, k8s deployment name, container name. Pairs
-   * across runs; survives template rename only when the underlying
-   * physical name does.
-   */
-  instanceName: z.string(),
-});
-
-/**
- * Provider-side relational storage table — Postgres / MySQL / SQLite
- * declared via Prisma `model`, Drizzle `pgTable(...)`, TypeORM
- * `@Entity`, or raw SQL DDL. Columns are FIELDS on the table's
- * contract; field-level access checks compare what code reads/writes
- * against `metadata.storageContract.columns`. Pairing key:
- * `(storageSystem, scope, table)`.
- *
- * Other storage models (document, tabular-NoSQL, key-value, blob)
- * each get their own SemanticsSchema variant when those phases ship.
- */
-export const StorageRelationalSemanticsSchema = z.object({
-  name: z.literal("storage-relational"),
-  storageSystem: z.enum(["postgres", "mysql", "sqlite"]),
-  /**
-   * ORM / driver scope. Defaults to `"default"` for single-database
-   * setups; monorepos with multiple Prisma schemas or multiple
-   * connection pools use distinct values to keep pairings separate.
-   */
-  scope: z.string(),
-  /** Table / model name as declared in the schema. */
-  table: z.string(),
-});
-
-/**
- * Provider-side message-bus boundary — SQS queue, BullMQ queue,
- * Kafka topic, NATS subject, or any FIFO/pub-sub channel that
- * carries discrete messages between producers and consumers.
- * Producer-side `interaction(class: "message-send")` effects pair
- * against these via `(messageBus, channel)`. Consumer-side handlers
- * gain a boundaryBinding of this same shape via the contract-source
- * pass that walks deployment manifests (CFN event-source mappings,
- * docker-compose worker configs, k8s controllers, etc.).
- */
-export const MessageBusSemanticsSchema = z.object({
-  name: z.literal("message-bus"),
-  /**
-   * Bus implementation. Drives the contract-source layer that
-   * resolves channel identity from deployment manifests; checker
-   * dispatches some behaviour (e.g. partition / routing semantics)
-   * by this discriminator.
-   */
-  messageBus: z.enum(["sqs", "bullmq", "kafka", "nats"]),
-  /**
-   * Stable channel identifier — CFN logical resource ID for SQS /
-   * SNS, queue name for BullMQ, topic name for Kafka, subject
-   * pattern for NATS. Pairs across runs.
-   */
-  channel: z.string(),
-});
-
-export const SemanticsSchema = z.discriminatedUnion("name", [
-  RestSemanticsSchema,
-  FunctionCallSemanticsSchema,
-  GraphqlResolverSemanticsSchema,
-  GraphqlOperationSemanticsSchema,
-  RuntimeConfigSemanticsSchema,
-  StorageRelationalSemanticsSchema,
-  MessageBusSemanticsSchema,
-]);
-
-export const BoundaryBindingSchema = z.object({
-  transport: z.string(),
-  semantics: SemanticsSchema,
-  recognition: z.string(),
-});
-
 export const CodeUnitIdentitySchema = z.object({
   name: z.string(),
   exportPath: z.array(z.string()).nullable(),
   boundaryBinding: BoundaryBindingSchema.nullable(),
-});
-
-export const ConfidenceInfoSchema = z.object({
-  source: ConfidenceSourceSchema,
-  level: ConfidenceLevelSchema,
 });
 
 export const LiteralSchema = z.object({
@@ -664,58 +462,6 @@ export const PredicateSchema: z.ZodType<PredicateT> = z.lazy(() =>
       sourceText: z.string(),
       reason: OpaqueReasonSchema,
     }),
-  ]),
-);
-
-type TypeShapeT =
-  | {
-      type: "record";
-      properties: Record<string, TypeShapeT>;
-      spreads?: Array<{ sourceText: string }> | undefined;
-    }
-  | { type: "dictionary"; values: TypeShapeT }
-  | { type: "array"; items: TypeShapeT }
-  | {
-      type: "literal";
-      value: string | number | boolean;
-      raw?: string | undefined;
-    }
-  | { type: "text" }
-  | { type: "integer" }
-  | { type: "number" }
-  | { type: "boolean" }
-  | { type: "null" }
-  | { type: "undefined" }
-  | { type: "union"; variants: TypeShapeT[] }
-  | { type: "ref"; name: string }
-  | { type: "unknown" };
-
-export const TypeShapeSchema: z.ZodType<TypeShapeT> = z.lazy(() =>
-  z.discriminatedUnion("type", [
-    z.object({
-      type: z.literal("record"),
-      properties: z.record(z.string(), TypeShapeSchema),
-      spreads: z.array(z.object({ sourceText: z.string() })).optional(),
-    }),
-    z.object({ type: z.literal("dictionary"), values: TypeShapeSchema }),
-    z.object({ type: z.literal("array"), items: TypeShapeSchema }),
-    z.object({
-      type: z.literal("literal"),
-      value: z.union([z.string(), z.number(), z.boolean()]),
-      raw: z.string().optional(),
-    }),
-    z.object({ type: z.literal("text") }),
-    z.object({ type: z.literal("integer") }),
-    z.object({ type: z.literal("number") }),
-    z.object({ type: z.literal("boolean") }),
-    z.object({ type: z.literal("null") }),
-    z.object({ type: z.literal("undefined") }),
-    z.object({
-      type: z.literal("union"),
-      variants: z.array(TypeShapeSchema),
-    }),
-    z.object({ type: z.literal("ref"), name: z.string() }),
-    z.object({ type: z.literal("unknown") }),
   ]),
 );
 

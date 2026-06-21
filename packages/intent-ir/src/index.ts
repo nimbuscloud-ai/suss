@@ -1,0 +1,41 @@
+// @suss/intent-ir — the team-authored side of the loop.
+//
+// Two citizens, both built on @suss/ir-core primitives so intent and
+// behaviour describe boundaries the same way and can be compared:
+//
+//   - System intent (kind: boundary) — what a boundary should do.
+//   - Outcome intent (kind: prd)      — human scenarios that link to
+//                                       system-intent outcomes.
+//
+// `schema.ts` is the authoring surface; `summary.ts` is the normalised
+// shape the checker consumes plus the transform between them. Readers
+// (e.g. @suss/contract-intent) parse files into IntentDoc and call
+// `intentDocToSummary`.
+
+export {
+  BodyShapeSchema,
+  BoundarySchema,
+  IntentDocSchema,
+  IntentSourceSchema,
+} from "./schema.js";
+export { intentDocToSummary } from "./summary.js";
+
+export type {
+  BodyShape,
+  Boundary,
+  BoundaryIntent,
+  BoundaryTransition,
+  IntentDoc,
+  IntentSource,
+  Prd,
+  PrdScenario,
+  PrimitiveTypeName,
+} from "./schema.js";
+export type {
+  BoundaryIntentSummary,
+  IntentOutcome,
+  IntentOutcomeKind,
+  IntentSummary,
+  PrdScenarioSummary,
+  PrdSummary,
+} from "./summary.js";

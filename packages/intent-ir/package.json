@@ -1,23 +1,22 @@
 {
-  "name": "@suss/behavioral-ir",
+  "name": "@suss/intent-ir",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Type definitions and intermediate representation for suss behavioral summaries.",
+  "description": "Intent IR for suss — the team-authored side of the loop. PRD (outcome) intent and system intent, in shapes that pair against derived behavioral summaries.",
   "keywords": [
     "suss",
-    "behavioral-summary",
-    "static-analysis",
-    "typescript",
+    "intent",
+    "prd",
     "ir"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/ir#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/intent-ir#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/ir"
+    "directory": "packages/intent-ir"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -30,22 +29,15 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-    },
-    "./schemas": {
-      "types": "./dist/schemas.d.ts",
-      "import": "./dist/schemas.js",
-      "require": "./dist/schemas.cjs"
     }
   },
   "files": [
     "dist",
-    "schema",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup && node scripts/generate-schema.mjs && npx biome format --write schema/behavioral-summary.schema.json",
-    "schema:generate": "node scripts/generate-schema.mjs && npx biome format --write schema/behavioral-summary.schema.json",
+    "build": "tsup",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "biome check .",

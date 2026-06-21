@@ -196,7 +196,9 @@ const effective = applySuppressions(findings, mySuppressions);
 
 | Package | Description | Coverage |
 |---------|-------------|----------|
+| [`@suss/ir-core`](packages/ir-core) | Shared IR primitives — type shapes, boundary bindings + constructors, source locations, confidence. Base for `behavioral-ir` and `intent-ir`. | ![](.github/badges/coverage-ir-core.svg) |
 | [`@suss/behavioral-ir`](packages/ir) | zod schemas, types, parsers, and generated [JSON Schema](packages/ir/schema/behavioral-summary.schema.json). Install this to consume summaries. | ![](.github/badges/coverage-ir.svg) |
+| [`@suss/intent-ir`](packages/intent-ir) | Team-authored intent: system intent (what a boundary should do) + PRD outcome intent, paired against derived summaries. | ![](.github/badges/coverage-intent-ir.svg) |
 | [`@suss/extractor`](packages/extractor) | Assembly engine. Converts raw extracted structure into `BehavioralSummary`. | ![](.github/badges/coverage-extractor.svg) |
 | [`@suss/adapter-typescript`](packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](.github/badges/coverage-typescript.svg) |
 | [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker. | ![](.github/badges/coverage-checker.svg) |
@@ -217,13 +219,16 @@ const effective = applySuppressions(findings, mySuppressions);
 | [`@suss/client-web`](packages/client/web) | Global `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
 | [`@suss/client-axios`](packages/client/axios) | axios call sites + `axios.create` factories. | ![](.github/badges/coverage-axios.svg) |
 | [`@suss/client-apollo`](packages/client/apollo) | `@apollo/client` hooks + imperative `client.query`. | ![](.github/badges/coverage-apollo-client.svg) |
+| [`@suss/runtime-node`](packages/runtime/node) | Node.js runtime primitives — scheduling, the `process` surface, module-loading globals — emitted as interaction effects. | ![](.github/badges/coverage-runtime-node.svg) |
 | **Contract sources** | | |
 | [`@suss/contract-openapi`](packages/contract/openapi) | OpenAPI 3.x → behavioral summaries. | ![](.github/badges/coverage-contract-openapi.svg) |
+| [`@suss/contract-graphql`](packages/contract/graphql) | Plain GraphQL SDL → resolver-kind summaries (Query/Mutation/Subscription fields). | ![](.github/badges/coverage-contract-graphql.svg) |
 | [`@suss/contract-aws-apigateway`](packages/contract/aws-apigateway) | API Gateway resource semantics — REST/HTTP API configs → summaries with platform-injected transitions. | ![](.github/badges/coverage-contract-aws-apigateway.svg) |
 | [`@suss/contract-cloudformation`](packages/contract/cloudformation) | CloudFormation / SAM templates → summaries (delegates to contract-openapi + contract-aws-apigateway; also handles SQS event-source mappings + Lambda Environment). | ![](.github/badges/coverage-contract-cloudformation.svg) |
 | [`@suss/contract-appsync`](packages/contract/appsync) | AppSync GraphQL schema + resolver mapping templates. | ![](.github/badges/coverage-contract-appsync.svg) |
 | [`@suss/contract-storybook`](packages/contract/storybook) | Storybook CSF3 stories → component contract summaries. | ![](.github/badges/coverage-contract-storybook.svg) |
 | [`@suss/contract-prisma`](packages/contract/prisma) | Prisma schema → storage provider summaries. | ![](.github/badges/coverage-contract-prisma.svg) |
+| [`@suss/contract-intent`](packages/contract/intent) | Team-authored intent specs (`*.intent` / `*.prd`) → intent summaries. | ![](.github/badges/coverage-contract-intent.svg) |
 
 ## A complete example
 
