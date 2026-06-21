@@ -1,0 +1,58 @@
+{
+  "name": "@suss/contract-intent",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Read team-authored intent specs (*.intent.yaml / *.intent.json) and turn them into suss behavioral summaries for comparison against derived code summaries.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "intent",
+    "prd",
+    "contract"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/contract/intent#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/contract/intent"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/behavioral-ir": "*",
+    "yaml": "^2.4.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}

@@ -61,6 +61,7 @@
     "@suss/contract-aws-apigateway": "*",
     "@suss/contract-cloudformation": "*",
     "@suss/contract-graphql": "*",
+    "@suss/contract-intent": "*",
     "@suss/contract-openapi": "*",
     "@suss/contract-prisma": "*",
     "@suss/contract-storybook": "*",

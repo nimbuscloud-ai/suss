@@ -18,7 +18,8 @@ export type ContractSource =
   | "storybook"
   | "appsync"
   | "prisma"
-  | "graphql";
+  | "graphql"
+  | "intent";
 
 export interface ContractOptions {
   from: ContractSource;
@@ -66,6 +67,19 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     // resolvers extracted by framework-apollo / framework-nestjs-graphql.
     const mod = await import("@suss/contract-graphql");
     return mod.graphqlSdlFileToSummaries(specPath);
+  },
+  intent: async (specPath) => {
+    // `--from intent` reads a team-authored intent spec — a YAML / JSON
+    // file declaring a boundary's purpose, audience, and the
+    // transitions it should produce. v0 covers REST boundaries. Pairs
+    // against handler-side extractions for forward (intent → code)
+    // comparison. The CLI accepts either a single file or a directory
+    // containing *.intent.{yaml,yml,json} files.
+    const mod = await import("@suss/contract-intent");
+    const stat = fs.statSync(path.resolve(specPath));
+    return stat.isDirectory()
+      ? mod.intentSpecDirectoryToSummaries(specPath)
+      : mod.intentSpecFileToSummaries(specPath);
   },
 };
 
