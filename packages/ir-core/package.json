@@ -1,23 +1,22 @@
 {
-  "name": "@suss/behavioral-ir",
+  "name": "@suss/ir-core",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Type definitions and intermediate representation for suss behavioral summaries.",
+  "description": "Shared IR primitives for suss — type shapes, boundary bindings, source locations, and confidence. Imported by both @suss/behavioral-ir and @suss/intent-ir so neither depends on the other.",
   "keywords": [
     "suss",
+    "ir",
     "behavioral-summary",
-    "static-analysis",
-    "typescript",
-    "ir"
+    "intent"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/ir#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/ir-core#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/ir"
+    "directory": "packages/ir-core"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -39,13 +38,11 @@
   },
   "files": [
     "dist",
-    "schema",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup && node scripts/generate-schema.mjs && npx biome format --write schema/behavioral-summary.schema.json",
-    "schema:generate": "node scripts/generate-schema.mjs && npx biome format --write schema/behavioral-summary.schema.json",
+    "build": "tsup",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "biome check .",
@@ -54,9 +51,6 @@
   },
   "peerDependencies": {
     "zod": "^4.0.0"
-  },
-  "dependencies": {
-    "@suss/ir-core": "*"
   },
   "devDependencies": {
     "tsup": "*",
