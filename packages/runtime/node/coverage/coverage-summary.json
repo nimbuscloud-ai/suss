@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/home/runner/work/suss/suss/packages/runtime/node/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 2,
       "covered": 2,
@@ -57,7 +57,7 @@
       "pct": 60
     }
   },
-  "/home/runner/work/suss/suss/packages/runtime/node/src/moduleSurface.ts": {
+  "src/moduleSurface.ts": {
     "lines": {
       "total": 39,
       "covered": 33,
@@ -83,7 +83,7 @@
       "pct": 73.33
     }
   },
-  "/home/runner/work/suss/suss/packages/runtime/node/src/processSurface.ts": {
+  "src/processSurface.ts": {
     "lines": {
       "total": 44,
       "covered": 39,
@@ -109,7 +109,7 @@
       "pct": 84.61
     }
   },
-  "/home/runner/work/suss/suss/packages/runtime/node/src/scheduling.ts": {
+  "src/scheduling.ts": {
     "lines": {
       "total": 58,
       "covered": 55,
