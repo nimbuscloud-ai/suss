@@ -151,6 +151,24 @@ describe("contract CLI command", () => {
     }
   });
 
+  it("recurses into subdirectories when --from storybook targets a dir tree", async () => {
+    const fixtureStory = fs.readFileSync(
+      path.resolve(__dirname, "../../../fixtures/storybook/Button.stories.tsx"),
+      "utf8",
+    );
+    const nested = path.join(tmpDir, "components", "ui");
+    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(path.join(nested, "Button.stories.tsx"), fixtureStory);
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    try {
+      const summaries = await contract({ from: "storybook", spec: tmpDir });
+      expect(summaries.length).toBeGreaterThan(0);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  });
+
   it("rejects a storybook spec path that doesn't exist", async () => {
     await expect(
       contract({ from: "storybook", spec: "/nonexistent/Stories.tsx" }),
