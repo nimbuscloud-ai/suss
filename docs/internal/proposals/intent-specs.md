@@ -468,6 +468,28 @@ v0.1 — the system intent boundary form. The remaining v0.1 work:
   Out of scope for the v0.1 schema; relevant once teams are authoring
   PRDs at volume.
 
+## Parked refinements (revisit, don't build yet)
+
+Surfaced during design review, deliberately not acted on in v0.1 — the
+shape isn't settled and rushing it would calcify a guess.
+
+- **Input contract on boundary system intent.** A PRD condition like
+  "a *valid* order" has no place to be defined at the system level
+  today: the boundary intent declares only `transitions` (outputs),
+  not what a well-formed request looks like. Grounding conditions
+  (vs just outcomes) would mean the boundary intent grows an input /
+  request-shape declaration, the way OpenAPI has parameters +
+  requestBody. The symmetry: `then` is grounded by linking to an
+  outcome; `when` would be grounded by the input contract plus the
+  branch guards. Parked — revisit when condition-grounding becomes a
+  real requirement rather than a v0.1 nicety.
+- **Condition-grounding / predicate comparison.** Even with an input
+  contract, verifying "the code accepts *exactly* the valid requests"
+  means comparing the PRD's condition against the code's branch
+  guards. suss has predicate-comparison machinery but it's hard;
+  v0.1 leaves `when` as opaque human text and checks outcomes only.
+  Tied to the input-contract refinement above.
+
 ## Settled architecture decisions
 
 These four were debated during design and are now locked. The
