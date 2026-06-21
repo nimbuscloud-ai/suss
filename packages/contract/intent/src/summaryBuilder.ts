@@ -47,7 +47,11 @@ export function intentSpecToSummary(
       buildTransition(t, idx, spec.transitions.length),
     ),
     gaps: [],
-    confidence: { source: "specification", level: "high" },
+    // `declared` is the closest fit in the current ConfidenceSource enum
+    // (inferred_static / inferred_ai / declared / derived). The intent layer's
+    // epistemic character is `specification` per the contracts.md taxonomy;
+    // bridging the two is tracked separately from this v0.1 reader.
+    confidence: { source: "declared", level: "high" },
     metadata: {
       intent: {
         purpose: spec.purpose,
