@@ -276,14 +276,112 @@ Derived code summary
 Two hops, each independently useful. A team can author either side
 first; coverage and pairing fire on whatever's loaded.
 
+## Authoring paths: writing intent and generating it from code
+
+Intent docs reach the repo two ways, both treated equally:
+
+**Writing intent (greenfield).** The team writes intent declaratively,
+alongside code or in front of it. PRD first, then implementation; or
+both together as the feature is scoped. This is the natural path on
+new features and on small projects where writing intent against every
+boundary is tractable.
+
+**Generating intent from code (brownfield).** Treat the current code
+as a stand-in for intent — extract derived summaries, transform them
+into starter system intent docs, then have the team curate the result
+into team intent. Lower barrier on a project with thousands of
+existing endpoints. Different tradeoff: the starter describes what
+the code does today, not necessarily what was meant.
+
+Both paths produce the same shape. The reader doesn't distinguish a
+doc the team wrote directly from one the generator produced and the
+team then curated — they're the same YAML on disk.
+
+What does differ is **provenance**, and the design has to carry it
+through to make brownfield adoption work:
+
+- Each system intent and PRD carries an optional `source` field with
+  values like `"author"` (default; the team wrote this), `"inferred"`
+  (straight output of `suss infer`, not yet curated), or
+  `"inferred, curated"` (inferred then edited by a person).
+- Findings against `inferred` intent that hasn't been curated yet
+  are downgraded — the intent describes what the code did when the
+  inference ran, so any "intent says X, code does Y" finding is most
+  likely a code change since the inference, not an authoring error.
+  The team's curation step is what moves intent from `inferred` to
+  `inferred, curated`, signalling that drift findings should now fire
+  at full severity.
+- Inferred intent that's been curated drifts from re-inferred intent
+  the same way any spec drifts from code. The refresh workflow
+  (re-infer, then merge against curation) is its own scope, sketched
+  below.
+
+### `suss infer` (v0.1.1)
+
+`suss infer` walks derived summaries from `suss extract`, picks the
+boundaries the team scopes (filter by file glob, by framework, by
+boundary kind), and emits one boundary system intent per boundary
+with `source: "inferred"`. Outcome ids derive from status codes
+(e.g. `200-ok`, `404-not-found`) with a rename step expected during
+curation.
+
+```bash
+# Greenfield workflow
+$ # Team writes intent/users-lookup.intent.yaml by hand.
+
+# Brownfield workflow
+$ suss extract -p tsconfig.json -f express -o summaries/code.json
+$ suss infer --from summaries/code.json --out intent/
+# Produces one intent/<endpoint>.intent.yaml per boundary,
+# with source: "inferred" and placeholder outcome ids.
+$ # Team reviews, renames outcome ids, adds purpose/audience,
+$ # changes source to "inferred, curated" in each file.
+```
+
+The implementation mostly reshapes fields — derived summary on one
+side, boundary intent on the other. The harder design question is the
+**refresh** flow when code changes after inference:
+
+1. Naive: re-infer over the existing intent files. Loses curation
+   edits.
+2. Merge against a baseline: track an `inferred-baseline.yaml`
+   snapshot next to each curated intent file. Re-inference produces a
+   new baseline; the diff against the previous baseline shows code
+   changes; the diff against the curated file shows team edits; the
+   tool merges where it can and reports conflicts where it can't. The
+   right shape, but not v0.1.1 work — its own ~3-day arc.
+
+For v0.1.1, ship naive re-inference with a clear warning:
+"re-inferring over curated intent will overwrite your edits; use
+`--into <new-dir>` to write the re-inferred output to a separate
+directory for manual reconciliation." Merging against a baseline is
+a v0.1.2 / v0.2 follow-on.
+
+### Subset selection
+
+Teams adopting the layer rarely want to generate over the whole
+repo. Selection comes from existing filtering at extract time
+(`--files`, `-f <framework>`, etc.) — `suss infer` reads
+the summaries file the team filtered into, so boundary selection
+happens before generation.
+
+### Implications for the v0.1 schema
+
+The `source` field needs to be in the schema from v0.1 — `suss infer`
+is v0.1.1, but if the schema doesn't carry `source` from the start,
+curated intent files written in v0.1 can't be told apart from inferred
+ones once `suss infer` ships. Adding a default `source: "author"` to
+the boundary intent schema in v0.1 keeps the migration path clear.
+
 ## Sequencing
 
 | Stage | Adds | Demo fixture | Status |
 |---|---|---|---|
-| **v0.1** | Boundary system intent + PRD shape + coverage checker + outcome ids on transitions | Fastify `/users/:id` | Reader shipped; PRD shape + coverage checker is the v0.1 completion work |
-| **v0.2** | Workflow shape (effects, inputs, queue references); non-HTTP boundary semantics | aws-sqs Orders | Pending; ~5 days |
-| **v0.3** | Concept declarations with state + actions + failure-mode predicates | TBD | Gated on workflow grain shipping |
-| **v0.4** | Observation linkage + SLO declarations | Gated on observation adapters | Gated |
+| **v0.1** | Boundary system intent + PRD shape + coverage checker + outcome ids on transitions + `source` provenance field | Express `/users/:id` | Schema shipped (commit `fa19f1d`); PRD coverage checker + provenance field is the remaining v0.1 work |
+| **v0.1.1** | `suss infer` (infers intent from code for brownfield adoption) | Same Express fixture, inferred then curated | ~2 days |
+| **v0.2** | Workflow shape (effects, inputs, queue references); non-HTTP boundary semantics; three-way merge for generator refresh | aws-sqs Orders | Pending; ~5 days |
+| **v0.3** | Concept declarations with state + actions + failure-mode predicates | TBD | Gated on workflow shape shipping |
+| **v0.4** | Runtime observability adapters; SLO declarations | Gated on runtime observability adapters | Gated |
 
 v0.1 is what the current session targets. The shipped
 `@suss/contract-intent` reader (commit `a7fced4`) handles half of
