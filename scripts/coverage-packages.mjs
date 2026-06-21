@@ -36,8 +36,11 @@ export const coveragePackages = [
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],
   ["packages/client/apollo", "apollo-client"],
+  // Runtimes
+  ["packages/runtime/node", "runtime-node"],
   // Contract sources
   ["packages/contract/openapi", "contract-openapi"],
+  ["packages/contract/graphql", "contract-graphql"],
   ["packages/contract/aws-apigateway", "contract-aws-apigateway"],
   ["packages/contract/cloudformation", "contract-cloudformation"],
   ["packages/contract/appsync", "contract-appsync"],
