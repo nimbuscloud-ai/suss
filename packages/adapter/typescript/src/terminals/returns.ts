@@ -259,12 +259,24 @@ export function tryMatchParameterMethodCall(
 }
 
 /**
- * Is the returned expression a call (or new) — possibly wrapped in
- * `await`, `as`, parens, or `!`? Used by `excludeCallReturns` so a
- * pack that already matches `reply.send(...)` via `parameterMethodCall`
- * doesn't double-fire on the enclosing `return reply.send(...)`.
+ * Would the returned expression already match one of the pack's
+ * `parameterMethodCall` patterns? Used by `excludeCallReturns` so a
+ * pack that captures `reply.send(...)` via `parameterMethodCall` doesn't
+ * also fire on the enclosing `return reply.send(...)`. The check peels
+ * `await` / casts / parens so `return await reply.send(...)` is treated
+ * the same as `return reply.send(...)`.
+ *
+ * Returns false for free-function calls (`return findUser(id)`),
+ * method calls on non-parameter receivers (`return await db.findById(id)`),
+ * and constructor calls (`return new Error(...)`) — none of which the
+ * parameterMethodCall matcher would have caught, so excluding them here
+ * would drop a legitimate value-bearing return.
  */
-function isCallReturn(expr: Node): boolean {
+function returnCoveredByParameterMethodCall(
+  expr: Node,
+  func: FunctionRoot,
+  patterns: TerminalPattern[],
+): boolean {
   let current: Node = expr;
   while (true) {
     if (
@@ -279,12 +291,31 @@ function isCallReturn(expr: Node): boolean {
     }
     break;
   }
-  return Node.isCallExpression(current) || Node.isNewExpression(current);
+  if (!Node.isCallExpression(current)) {
+    return false;
+  }
+  for (const pattern of patterns) {
+    if (pattern.match.type !== "parameterMethodCall") {
+      continue;
+    }
+    const result = unwrapMethodChain(
+      current,
+      pattern.match.methodChain,
+      func,
+      pattern.match.parameterPosition,
+    );
+    if (result !== null) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function tryMatchReturnStatement(
   node: Node,
   pattern: TerminalPattern,
+  func: FunctionRoot,
+  allPatterns: TerminalPattern[],
 ): FoundTerminal | null {
   const match = pattern.match.type === "returnStatement" ? pattern.match : null;
   // Explicit `return expr;`
@@ -292,16 +323,14 @@ export function tryMatchReturnStatement(
     const expr = node.getExpression();
     // `excludeCallReturns` packs are using returnStatement to capture
     // value-producing returns (e.g. Fastify's bare `return user`). Skip
-    // both `return;` (control-flow exit, no value) and `return <call>`
-    // (covered by the pack's parameterMethodCall matcher) to avoid
-    // double-firing. `isCallReturn` peels await / casts / parens so
-    // `return await reply.send(...)` is treated the same as
-    // `return reply.send(...)`.
+    // both `return;` (no value) and any return whose expression would
+    // already match one of the pack's parameterMethodCall patterns —
+    // matching it here as well would double-fire.
     if (match?.excludeCallReturns === true) {
       if (expr === undefined) {
         return null;
       }
-      if (isCallReturn(expr)) {
+      if (returnCoveredByParameterMethodCall(expr, func, allPatterns)) {
         return null;
       }
     }

@@ -51,7 +51,7 @@ export function findTerminals(
       if (pattern.match.type === "returnShape") {
         found = tryMatchReturnShape(node, pattern, pattern.match);
       } else if (pattern.match.type === "returnStatement") {
-        found = tryMatchReturnStatement(node, pattern);
+        found = tryMatchReturnStatement(node, pattern, func, patterns);
       } else if (pattern.match.type === "jsxReturn") {
         found = tryMatchJsxReturn(node, pattern);
       } else if (pattern.match.type === "parameterMethodCall") {
@@ -86,7 +86,7 @@ export function findTerminals(
       for (const pattern of patterns) {
         let found: FoundTerminal | null = null;
         if (pattern.match.type === "returnStatement") {
-          found = tryMatchReturnStatement(func, pattern);
+          found = tryMatchReturnStatement(func, pattern, func, patterns);
         } else if (pattern.match.type === "jsxReturn") {
           found = tryMatchJsxReturn(func, pattern);
         }

@@ -82,7 +82,7 @@ describe("fastifyFramework — integration", () => {
   }, 90_000);
 
   it("discovers every app.<method> handler in the fixture", () => {
-    expect(summaries).toHaveLength(5);
+    expect(summaries).toHaveLength(6);
     for (const s of summaries) {
       expect(s.kind).toBe("handler");
       expect(s.identity.name).toBe("get");
@@ -201,6 +201,42 @@ describe("fastifyFramework — integration", () => {
       value: 200,
     });
     expect(defaultTxn.output.body).not.toBeNull();
+  });
+
+  it("matches `return await db.find(id)` as a 200 response (not excluded by the call-return guard)", () => {
+    // /lookup/:id has two transitions:
+    //   1. !id                      → reply.code(400).send(...)        → 400
+    //   2. default                  → return await db.findById(id)     → 200
+    // The trailing `return await db.findById(id)` must NOT be skipped
+    // by `excludeCallReturns`. That guard exists to suppress the
+    // `return reply.X(...)` double-fire — calls on parameters that the
+    // parameterMethodCall matcher already captures. A free call on a
+    // non-parameter (`db.findById`) should fall through to the
+    // returnStatement matcher and produce a 200 response.
+    const lookup = summaries.find((s) => {
+      if (s.transitions.length !== 2) {
+        return false;
+      }
+      const statuses = s.transitions
+        .map((t) =>
+          t.output.type === "response" &&
+          t.output.statusCode?.type === "literal"
+            ? t.output.statusCode.value
+            : null,
+        )
+        .sort();
+      return statuses[0] === 200 && statuses[1] === 400;
+    });
+    expect(lookup).toBeDefined();
+    const defaultTxn = lookup?.transitions.find((t) => t.isDefault);
+    expect(defaultTxn?.output.type).toBe("response");
+    if (defaultTxn?.output.type !== "response") {
+      return;
+    }
+    expect(defaultTxn.output.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
   });
 
   it("matches bare object-literal returns and surfaces the literal shape", () => {
