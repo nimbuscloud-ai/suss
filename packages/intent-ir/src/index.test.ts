@@ -158,6 +158,83 @@ describe("intentDocToSummary — function-call boundary", () => {
   });
 });
 
+describe("intentDocToSummary — body shapes and outcome edges", () => {
+  it("maps every primitive type onto its TypeShape", () => {
+    const doc = {
+      kind: "boundary",
+      name: "types",
+      purpose: "exercise every primitive",
+      audience: "test",
+      boundary: { semantics: "function-call", exportName: "f" },
+      transitions: [
+        {
+          id: "all",
+          when: "always",
+          returns: {
+            body: {
+              properties: {
+                s: { type: "string" },
+                i: { type: "integer" },
+                n: { type: "number" },
+                b: { type: "boolean" },
+                z: { type: "null" },
+                u: { type: "unknown" },
+              },
+            },
+          },
+        },
+      ],
+    };
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(doc),
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0].body).toEqual({
+      type: "record",
+      properties: {
+        s: { type: "text" },
+        i: { type: "integer" },
+        n: { type: "number" },
+        b: { type: "boolean" },
+        z: { type: "null" },
+        u: { type: "unknown" },
+      },
+    });
+  });
+
+  it("yields a null body for a return outcome with no body", () => {
+    const doc = {
+      kind: "boundary",
+      name: "void-return",
+      purpose: "returns nothing",
+      audience: "test",
+      boundary: { semantics: "function-call", exportName: "f" },
+      transitions: [{ id: "ok", when: "always", returns: {} }],
+    };
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(doc),
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0].kind).toBe("return");
+    expect(summary.outcomes[0].body).toBeNull();
+  });
+
+  it("yields a null body for a response body with no declared properties", () => {
+    const doc = {
+      kind: "boundary",
+      name: "empty-body",
+      purpose: "200 with an unspecified body",
+      audience: "test",
+      boundary: { semantics: "rest", method: "GET", path: "/x" },
+      transitions: [
+        { id: "ok", when: "always", response: { status: 200, body: {} } },
+      ],
+    };
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(doc),
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0].body).toBeNull();
+  });
+});
+
 describe("intentDocToSummary — PRD", () => {
   it("normalises scenarios, with expect as an array (empty when unlinked)", () => {
     const summary = intentDocToSummary(

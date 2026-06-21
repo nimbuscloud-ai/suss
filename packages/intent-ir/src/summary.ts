@@ -175,24 +175,19 @@ function bodyToTypeShape(body: BodyShape): TypeShape | null {
   }
   const properties: Record<string, TypeShape> = {};
   for (const [name, prop] of Object.entries(body.properties)) {
-    properties[name] = primitiveToTypeShape(prop.type);
+    properties[name] = PRIMITIVE_TYPE_SHAPES[prop.type];
   }
   return { type: "record", properties };
 }
 
-function primitiveToTypeShape(name: PrimitiveTypeName): TypeShape {
-  switch (name) {
-    case "string":
-      return { type: "text" };
-    case "integer":
-      return { type: "integer" };
-    case "number":
-      return { type: "number" };
-    case "boolean":
-      return { type: "boolean" };
-    case "null":
-      return { type: "null" };
-    case "unknown":
-      return { type: "unknown" };
-  }
-}
+// The friendly primitive vocabulary mapped onto IR TypeShapes. A Record
+// (rather than a switch) makes the mapping exhaustive by construction —
+// adding a PrimitiveTypeName without a shape here is a compile error.
+const PRIMITIVE_TYPE_SHAPES: Record<PrimitiveTypeName, TypeShape> = {
+  string: { type: "text" },
+  integer: { type: "integer" },
+  number: { type: "number" },
+  boolean: { type: "boolean" },
+  null: { type: "null" },
+  unknown: { type: "unknown" },
+};
