@@ -1,0 +1,35 @@
+# Worked example, v0.2 territory.
+#
+# System intent for the order-consumer Lambda. The boundary is a
+# function-call entry point with a queue-source input — the inverse
+# of order-intake's `effects` entry. The PRD's "processed" outcome
+# resolves to the single transition id below.
+
+kind: workflow
+
+name: order-processing
+purpose: Process orders received from the queue.
+
+boundary:
+  transport: function-call
+  semantics: function-call
+  module: order-consumer/index
+  exportName: handler
+
+inputs:
+  - source:
+      transport: aws-sqs
+      queue: OrdersQueue
+    body:
+      properties:
+        id:    { type: string }
+        total: { type: number }
+
+transitions:
+  - id: processed
+    when: every record in the batch
+    output:
+      status: null
+      body:
+        properties:
+          ok: { type: boolean }

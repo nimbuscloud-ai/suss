@@ -1,0 +1,28 @@
+# Worked example for the intent-layer-design proposal, v0.2 territory
+# (workflow shape + non-HTTP boundaries).
+#
+# A PRD spanning two services connected by a queue. The "order
+# intake" service accepts an order; the "order processing" service
+# picks it up. Both are owned by the same team; the PRD describes the
+# end-to-end behaviour from the customer's point of view.
+
+kind: prd
+
+title: Order intake and processing
+purpose: |
+  When a customer places an order, the system records the order, queues
+  it for downstream processing, and acknowledges the request. The
+  processing job picks up queued orders and acts on them.
+audience: end-user
+
+scenarios:
+  - title: Order is accepted and queued
+    when: A customer places a valid order
+    expect:
+      - order-intake.acknowledged
+      - order-intake.queued-for-processing
+
+  - title: Processing acts on the queued order
+    when: An accepted order reaches the processor
+    expect:
+      - order-processing.processed

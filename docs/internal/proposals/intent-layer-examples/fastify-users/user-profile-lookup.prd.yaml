@@ -1,0 +1,33 @@
+# Worked example for the intent-layer-design proposal.
+#
+# Author-facing PRD shape (kind: prd). The team's product description
+# of how user profile lookup should behave from the user's point of
+# view. References system intent outcomes by qualified id rather than
+# hard-coding status codes; the system intent layer is where 400 / 404
+# / 200 live.
+
+kind: prd
+
+title: User profile lookup
+purpose: |
+  The client app can fetch a user's profile information by id. The
+  endpoint should distinguish between missing input, unknown users,
+  and admin users (who get an enriched profile).
+audience: web-client
+
+scenarios:
+  - title: Successful lookup
+    when: A request comes in with a known user id
+    expect: users-lookup.found
+
+  - title: Admin gets enriched data
+    when: The looked-up user has the admin role
+    expect: users-lookup.found-admin
+
+  - title: Missing id
+    when: The request omits the id parameter
+    expect: users-lookup.missing-id
+
+  - title: Unknown user
+    when: The id doesn't match any record
+    expect: users-lookup.not-found
