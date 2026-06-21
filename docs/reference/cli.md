@@ -92,8 +92,16 @@ Use cases:
   the stories cover.
 
 ```
-suss contract --from SOURCE SPEC_PATH [-o OUTPUT]
+suss contract --from SOURCE SPEC [-o OUTPUT]
 ```
+
+`SPEC` is either a local file path or an `http(s)` URL. When a URL is
+given, the document is fetched, written to a temp file, and parsed
+the same way as a local spec — useful for vendor specs hosted on
+GitHub or a docs site, e.g.
+`https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml`.
+The fetched extension drives parser selection (`.json` → JSON, anything
+else including no extension → YAML).
 
 | Flag | Description |
 |---|---|

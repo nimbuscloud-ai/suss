@@ -27,6 +27,15 @@ npm install -D @suss/contract-openapi
 npx suss contract --from openapi stripe-openapi.yaml -o summaries/stripe.json
 ```
 
+A URL works in place of the file path — useful when the vendor
+publishes their spec on GitHub or a docs site:
+
+```bash
+npx suss contract --from openapi \
+  https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml \
+  -o summaries/stripe.json
+```
+
 One summary per operation. Each carries:
 - Method + path
 - Inputs for every declared parameter (path, query, header, cookie)

@@ -1,6 +1,7 @@
 // contract.test.ts — `suss contract` CLI command tests
 
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
@@ -8,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { contract } from "./contract.js";
 
+import type { AddressInfo } from "node:net";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const minimalSpec = {
@@ -153,5 +155,114 @@ describe("contract CLI command", () => {
     await expect(
       contract({ from: "storybook", spec: "/nonexistent/Stories.tsx" }),
     ).rejects.toThrow(/No stories found/);
+  });
+
+  describe("URL inputs", () => {
+    let server: http.Server;
+    let baseUrl: string;
+    // The server serves the same minimalSpec under several path shapes so
+    // each test can exercise content-type / extension routing.
+    const routes = new Map<string, { body: string; contentType: string }>([
+      [
+        "/spec.json",
+        { body: JSON.stringify(minimalSpec), contentType: "application/json" },
+      ],
+      [
+        "/spec.yaml",
+        {
+          body: [
+            "openapi: 3.0.3",
+            "info:",
+            "  title: contract-cli-test",
+            "  version: 1.0.0",
+            "paths:",
+            "  /users/{id}:",
+            "    get:",
+            "      operationId: getUser",
+            "      parameters:",
+            "        - name: id",
+            "          in: path",
+            "          required: true",
+            "          schema:",
+            "            type: string",
+            "      responses:",
+            "        '200':",
+            "          description: ok",
+            "          content:",
+            "            application/json:",
+            "              schema:",
+            "                type: object",
+            "                properties:",
+            "                  id:",
+            "                    type: string",
+            "",
+          ].join("\n"),
+          contentType: "application/yaml",
+        },
+      ],
+    ]);
+
+    beforeEach(async () => {
+      server = http.createServer((req, res) => {
+        const url = req.url ?? "/";
+        const route = routes.get(url);
+        if (route === undefined) {
+          res.statusCode = 404;
+          res.end("not found");
+          return;
+        }
+        res.setHeader("content-type", route.contentType);
+        res.end(route.body);
+      });
+      await new Promise<void>((resolve) => {
+        server.listen(0, "127.0.0.1", () => resolve());
+      });
+      const addr = server.address() as AddressInfo;
+      baseUrl = `http://127.0.0.1:${addr.port}`;
+    });
+
+    afterEach(async () => {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    });
+
+    it("fetches a JSON spec from a URL via --from openapi", async () => {
+      const writeFn = process.stdout.write;
+      process.stdout.write = (() => true) as typeof process.stdout.write;
+      let summaries: BehavioralSummary[];
+      try {
+        summaries = await contract({
+          from: "openapi",
+          spec: `${baseUrl}/spec.json`,
+        });
+      } finally {
+        process.stdout.write = writeFn;
+      }
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0].identity.name).toBe("getUser");
+    });
+
+    it("fetches a YAML spec from a URL and routes it through the YAML parser by extension", async () => {
+      const writeFn = process.stdout.write;
+      process.stdout.write = (() => true) as typeof process.stdout.write;
+      let summaries: BehavioralSummary[];
+      try {
+        summaries = await contract({
+          from: "openapi",
+          spec: `${baseUrl}/spec.yaml`,
+        });
+      } finally {
+        process.stdout.write = writeFn;
+      }
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0].identity.name).toBe("getUser");
+    });
+
+    it("surfaces a useful error when the URL returns a non-2xx status", async () => {
+      await expect(
+        contract({ from: "openapi", spec: `${baseUrl}/missing.yaml` }),
+      ).rejects.toThrow(/Failed to fetch contract.*404/);
+    });
   });
 });
