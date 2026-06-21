@@ -86,12 +86,30 @@ describe("fastifyFramework — integration", () => {
     for (const s of summaries) {
       expect(s.kind).toBe("handler");
       expect(s.identity.name).toBe("get");
-      expect(s.identity.boundaryBinding).toEqual({
-        transport: "http",
-        semantics: { name: "function-call" },
-        recognition: "fastify",
-      });
+      expect(s.identity.boundaryBinding?.transport).toBe("http");
+      expect(s.identity.boundaryBinding?.recognition).toBe("fastify");
+      expect(s.identity.boundaryBinding?.semantics.name).toBe("rest");
     }
+    // The (method, path) on each binding should reflect the literal
+    // registration call — `bindingExtraction` on the Fastify pack
+    // routes the registration method name into `method` and arg 0
+    // into `path`, so every handler ends up with the route it was
+    // declared at.
+    const paths = summaries
+      .map((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? sem.path : null;
+      })
+      .filter((p): p is string => p !== null)
+      .sort();
+    expect(paths).toEqual([
+      "/defaults",
+      "/lookup/:id",
+      "/me",
+      "/moved",
+      "/old-profile",
+      "/users/:id",
+    ]);
   });
 
   it("maps positional params (request, reply) to framework roles", () => {

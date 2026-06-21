@@ -286,13 +286,19 @@ describe("extract — express", () => {
     for (const s of summaries) {
       expect(s.kind).toBe("handler");
       expect(s.identity.name).toBe("get");
-      expect(s.identity.boundaryBinding).toEqual({
-        transport: "http",
-        semantics: { name: "function-call" },
-        recognition: "express",
-      });
+      expect(s.identity.boundaryBinding?.transport).toBe("http");
+      expect(s.identity.boundaryBinding?.recognition).toBe("express");
+      expect(s.identity.boundaryBinding?.semantics.name).toBe("rest");
       expect(s.gaps).toEqual([]);
     }
+    const paths = summaries
+      .map((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? sem.path : null;
+      })
+      .filter((p): p is string => p !== null)
+      .sort();
+    expect(paths).toEqual(["/moved", "/old-profile", "/users/:id"]);
   });
 
   it("main /users/:id handler has full expected shape (4 transitions, positional inputs)", () => {
