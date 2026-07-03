@@ -520,28 +520,26 @@ primitives), `@suss/intent-ir` holds the intent types and the thin
 implemented with one deviation and one gap, both flagged below rather
 than silently absorbed.
 
-**Deviation flag (decision 4, needs sign-off):** the orchestration
-seam shipped in the CLI, not in `@suss/checker`. The decision's text
-names `@suss/checker` as "the entry point that loads both artifact
-streams and dispatches" — but `architecture.md`'s dependency rules
-pin `@suss/checker` as an IR-only consumer ("depends only on the
-IR"), and making it orchestrate would give it a dependency on
-`@suss/checker-intent` + `@suss/intent-ir`. The two documents
-conflicted; the implementation followed the architecture doc: both
-checkers are peer IR-only consumers, and the CLI (already "depends on
-everything" by rule) is the single seam that loads both streams. The
-decision's *motivation* — one orchestration seam, independent
-evolution — is preserved. If a programmatic consumer later wants a
-one-call check-everything entry, that's a new thin package above both
-checkers, not a role added to `@suss/checker`.
+**Decision 4, resolved:** the orchestration seam is the CLI, not
+`@suss/checker`. The decision's text was written while "separate
+package **or a sub-path** of `@suss/checker`" was still open — in the
+sub-path world, `@suss/checker` naturally stayed the entry point.
+The same decision's package split was taken (the point of the split:
+independent evolution), and with two peer packages,
+checker-as-orchestrator would force `@suss/checker` to depend on
+`@suss/checker-intent`, contradicting `architecture.md`'s IR-only
+rule. The decision's stated purpose — one orchestration seam,
+independent evolution — is satisfied with the CLI as that seam. If a
+programmatic consumer later wants a one-call check-everything entry,
+that's a new thin package above both checkers, not a role added to
+`@suss/checker`.
 
-**Gap flag (decision 2, tracked):** the decision says the pipeline
-(dedup, suppressions, severity thresholds) operates on the shared
-base. Severity thresholds do; suppressions don't yet —
-`applySuppressions` is typed to the behavioural `Finding`, so
-`.sussignore` can't suppress intent findings. Generalising the
-suppression matcher over the thin base is follow-on work, not a
-design change.
+**Decision 2, closed:** the pipeline operates on the shared base as
+written. The suppression pipeline (rule schema, matching semantics,
+effect application, threshold counting) lives in `@suss/ir-core` over
+the thin finding base; `@suss/checker` and `@suss/checker-intent`
+each supply only their field matcher, and `.sussignore` rules apply
+to both finding streams with identical gating semantics.
 
 **1. Intent gets its own IR package, `@suss/intent-ir`.** Intent is
 not a `BehavioralSummary` — a PRD isn't a code unit, and forcing one
