@@ -103,21 +103,24 @@ audience: web-client
 scenarios:
   - title: Successful lookup
     when: a request arrives with a known user id
-    then: the caller receives the user's profile
-    expect: users-lookup.found        # optional structured link
+    expect: the caller receives the user's profile
+    link: users-lookup.found          # optional structured link
   - title: Missing id
     when: the request omits the id parameter
-    then: the caller is told the id is required
-    # no `expect` yet — a valid scenario, not linked yet
+    expect: the caller is told the id is required
+    # no `link` yet — a valid scenario, not linked yet
 ```
 
-`when` / `then` is the whole scenario in human terms. `expect` is an
-optional structured link; a scenario without it is a valid
+`when` / `expect` is the whole scenario in human terms. `link` is an
+optional structured reference; a scenario without it is a valid
 unlinked state (see [Scenarios](#scenarios-and-how-they-link-to-system-intent)).
+(Earlier drafts named these `then` / `expect`; the shipped schema uses
+`expect` / `link` because a data object with a `then` property is
+treated as a thenable by Promise resolution — a latent footgun.)
 The structural vocabulary appears in two places, both optional:
 
 - **Findings** reference the concrete endpoint or function, not
-  abstractions: `intentUnimplemented at GET /users/:id`.
+  abstractions: `unimplementedBoundary at GET /users/:id`.
 - **Engineers** who want fine-grained precision over sync chains can
   author at the workflow level directly. Otherwise, the structural
   model is the reader's job.
@@ -163,25 +166,25 @@ wrapper that places a workflow inside a concept.
 ## Scenarios, and how they link to system intent
 
 A PRD scenario is human-readable on its own and carries an optional
-structured link. The full shape:
+structured link. The full shape (as shipped in `@suss/intent-ir`):
 
 ```yaml
 scenarios:
   - title: Successful lookup          # optional label
-    when: a request arrives with a known user id   # condition, human terms
-    then: the caller receives the user's profile   # expected outcome, human terms
-    expect: users-lookup.found        # optional structured link
+    when: a request arrives with a known user id     # condition, human terms
+    expect: the caller receives the user's profile   # expected outcome, human terms
+    link: users-lookup.found          # optional structured link
 ```
 
-`when` and `then` are what the author writes, always, in their own
+`when` and `expect` are what the author writes, always, in their own
 terms — together they're a complete scenario that reads without any
-knowledge of the system's internals. `expect` is the optional
-structured link: a qualified outcome reference
+knowledge of the system's internals. `link` is the optional
+structured reference: a qualified outcome reference
 `<system-intent-name>.<outcome-id>` pointing at a specific transition
 or effect in a system intent.
 
-**A scenario without `expect` is a valid, deliberate state.** The
-author describes the behaviour they want in `when` / `then` and leaves
+**A scenario without `link` is a valid, deliberate state.** The
+author describes the behaviour they want in `when` / `expect` and leaves
 the link unset. The checker reports an unlinked scenario as **info**
 ("scenario not yet linked to a system intent"), not a coverage error —
 a team can drop in scenarios and nothing fails. Teams that want the
@@ -190,16 +193,16 @@ default).
 
 The author doesn't have to know the system intent's outcome ids.
 Establishing the link is a **facilitated** step, done by whatever fits
-the team: an LLM reading the `when` / `then` text and proposing a
+the team: an LLM reading the `when` / `expect` text and proposing a
 link, a platform showing candidate outcomes, or an engineer wiring
 it by hand. For a new feature there may be no system intent to link to
 yet — in that case the facilitator *generates* the system intent from
 the scenarios (a third authoring direction; see below) and the link is
-established as part of that generation. So `expect` being an
+established as part of that generation. So `link` carrying
 an engineer's id isn't a vocabulary the author has to learn; it's a
 slot something else fills.
 
-When `expect` is present, the checker resolves it. The dotted form
+When `link` is present, the checker resolves it. The dotted form
 keeps the link decoupled from the underlying API surface — an endpoint
 rename (`GET /users/:id` → `GET /accounts/:id`) doesn't touch the PRD
 as long as the system intent's name and outcome ids stay stable. An
@@ -228,21 +231,25 @@ Static checks that fire:
   transition pairs against a derived handler transition. No findings
   when shapes match.
 
-Drift demos:
+Drift demos (kind names as shipped on `IntentFinding`; PRD kinds are
+the remaining v0.1 work):
 
-- PRD adds a scenario `users-lookup.deleted` and no system intent
-  declares it → `intentScenarioUnmatched`.
+- PRD links a scenario to `users-lookup.deleted` and no system intent
+  declares it → `danglingScenarioLink` (proposed name; ships with the
+  PRD coverage checker).
 - System intent declares `found-admin` but the handler drops the
-  admin branch → `intentUnimplemented`.
+  admin branch → `uncoveredOutcome`.
 - Handler adds a 410 branch (soft-delete) that no system intent
-  declares → `intentExceeded`.
+  declares → `undeclaredOutcome`.
 - System intent declares body `{ id, fullName }` but the handler
-  returns `{ id, name }` → `intentFieldMismatch`.
+  returns `{ id, name }` → `outcomeShapeMismatch`.
 
-The first three of those drift findings are already wired
-end-to-end in the shipped checker (`@suss/checker`); the fourth
-field-level case relies on the existing body-shape comparison.
-The PRD-coverage finding is the v0.1 addition.
+The intent-vs-code drift findings are wired end-to-end in
+`@suss/checker-intent` (`uncoveredOutcome`, `undeclaredOutcome`,
+`outcomeShapeMismatch`, plus `unimplementedBoundary` for a boundary
+with no implementation at all and `unkeyableBoundary` for an intent
+whose boundary can't be paired). The PRD-coverage finding is the
+remaining v0.1 addition.
 
 ## Worked example #2 — aws-sqs Orders (v0.2 territory)
 
@@ -270,12 +277,12 @@ Drift demos:
 
 - The producer changes its emitted body from `{ id, total }` to
   `{ id, totalAmount }` without updating `order-intake.system.yaml`
-  → `intentFieldMismatch` at the system-intent ↔ code layer.
+  → `outcomeShapeMismatch` at the system-intent ↔ code layer.
 - A team removes the `total` field from the system intent's effect
   body but the PRD still expects `queued-for-processing` to carry the
   order amount → caught by the PRD coverage check (the scenario
   resolves to an outcome whose body no longer matches the PRD's
-  stated intent — flagged as `intentScenarioBodyDrift`).
+  stated intent — flagged as `scenarioBodyDrift`, proposed name).
 
 These are the integration-bug failure modes the
 [anatomy-of-an-integration-bug](https://nimbusai.dev/blog/the-anatomy-of-an-integration-bug-its-not-just-your-apis)
@@ -288,16 +295,17 @@ the PR ships rather than after the production incident.
 ```
 PRD (scenarios, audience, purpose)
    │
-   │  Coverage check (per scenario):
-   │  - resolve `expect` outcome ref against loaded system intents
-   │  - emit intentScenarioUnmatched / intentScenarioAmbiguous /
-   │    intentScenarioBodyDrift as appropriate
+   │  Coverage check (per scenario) — remaining v0.1 work:
+   │  - resolve `link` outcome ref against loaded system intents
+   │  - emit unlinkedScenario / danglingScenarioLink /
+   │    ambiguousScenarioLink / scenarioBodyDrift as appropriate
    ▼
 System intent (boundary / workflow / concept)
    │
-   │  Pairing check (existing machinery, slightly extended):
+   │  Pairing check (shipped — @suss/checker-intent):
    │  - pair by boundary key against derived code summaries
-   │  - emit intentUnimplemented / intentExceeded / intentFieldMismatch
+   │  - emit unimplementedBoundary / uncoveredOutcome /
+   │    undeclaredOutcome / outcomeShapeMismatch / unkeyableBoundary
    ▼
 Derived code summary
 ```
@@ -327,7 +335,7 @@ the code does today, not necessarily what was meant. Shipped by
 
 **Generating system intent from a PRD (greenfield, facilitated).**
 The author writes outcome-intent scenarios in human terms (`when` /
-`then`, no `expect`). A facilitator — an LLM, a platform, or an
+`expect`, no `link`). A facilitator — an LLM, a platform, or an
 engineer — reads those scenarios and produces the structural system
 intent plus the links back to the scenarios. This is the inverse of
 `suss infer`: that direction goes code → system intent; this one goes
@@ -418,30 +426,38 @@ the boundary intent schema in v0.1 keeps the migration path clear.
 
 | Stage | Adds | Demo fixture | Status |
 |---|---|---|---|
-| **v0.1** | Boundary system intent + PRD shape + coverage checker + outcome ids on transitions + `source` provenance field | Express `/users/:id` | Schema shipped (commit `fa19f1d`); PRD coverage checker + provenance field is the remaining v0.1 work |
+| **v0.1** | Boundary system intent + PRD shape + coverage checker + outcome ids on transitions + `source` provenance field | Express `/users/:id` | Shipped: `@suss/ir-core` primitives, `@suss/intent-ir` (schema + summary + `IntentFinding`), `@suss/contract-intent` reader (boundary + prd), `@suss/checker-intent` (`checkIntentAgreement` → findings + checked / unchecked accounting), CLI `suss check --dir --intent`. Remaining: PRD coverage checker, provenance-aware severity downgrade |
 | **v0.1.1** | `suss infer` (infers intent from code for brownfield adoption) | Same Express fixture, inferred then curated | ~2 days |
 | **v0.2** | Workflow shape (effects, inputs, queue references); non-HTTP boundary semantics; three-way merge for generator refresh | aws-sqs Orders | Pending; ~5 days |
 | **v0.3** | Concept declarations with state + actions + failure-mode predicates | TBD | Gated on workflow shape shipping |
 | **v0.4** | Runtime observability adapters; SLO declarations | Gated on runtime observability adapters | Gated |
 
-v0.1 is what the current session targets. The shipped
-`@suss/contract-intent` reader (commit `a7fced4`) handles half of
-v0.1 — the system intent boundary form. The remaining v0.1 work:
+The intent-vs-code half of v0.1 is shipped (schema with transition
+ids + `source`, PRD shape, reader, `@suss/checker-intent`, CLI
+wiring). The remaining v0.1 work:
 
-1. Add `id` field to each transition in the boundary-intent schema
-2. Add `kind: prd` to the contract-intent schema with `scenarios[]`
-3. Build a coverage checker that walks PRDs, resolves outcome refs
-   against system intents, emits the four new finding kinds:
-   - `intentScenarioUnmatched` (no matching outcome id)
-   - `intentScenarioAmbiguous` (multiple matching outcome ids)
-   - `intentScenarioBodyDrift` (PRD's expect carries body
-     expectations that disagree with the resolved outcome)
-   - `intentSpecMalformed` (load-time validation failure)
-4. Integration test: run the Fastify worked-example through the
-   pipeline, assert each drift case fires as expected
-5. CLI: `suss contract --from intent` already handles the directory
-   walk; verify it picks up `.prd.yaml` files alongside
-   `.intent.yaml` files
+1. Build the PRD coverage checker (in `@suss/checker-intent`) that
+   walks PRDs, resolves outcome refs against system intents, and
+   emits the new finding kinds:
+   - `unlinkedScenario` (info — scenario authored, link pending)
+   - `danglingScenarioLink` (link names an outcome no system intent
+     declares)
+   - `ambiguousScenarioLink` (multiple system intents match)
+   - `scenarioBodyDrift` (linked outcome's body disagrees with the
+     PRD's stated expectation)
+2. Provenance-aware severity: downgrade findings against
+   `source: "inferred"` intent that hasn't been curated.
+3. Integration test: run the Fastify worked-example through the
+   pipeline, assert each drift case fires as expected.
+
+**Settled while shipping: malformed specs are load-time errors, not
+findings.** The earlier draft listed `intentSpecMalformed` as a
+finding kind; the shipped reader throws instead. The distinction the
+layer runs on is *pending* vs *broken*: an unlinked scenario or an
+unkeyable boundary is a valid pending state (surfaced as info /
+warning, run continues), but a doc that fails schema validation is
+broken — there's no sound way to partially check it, so the author
+must fix it before the run means anything.
 
 ## Out of scope, deferred
 
@@ -479,7 +495,7 @@ shape isn't settled and rushing it would calcify a guess.
   not what a well-formed request looks like. Grounding conditions
   (vs just outcomes) would mean the boundary intent grows an input /
   request-shape declaration, the way OpenAPI has parameters +
-  requestBody. The symmetry: `then` is grounded by linking to an
+  requestBody. The symmetry: `expect` is grounded by linking to an
   outcome; `when` would be grounded by the input contract plus the
   branch guards. Parked — revisit when condition-grounding becomes a
   real requirement rather than a v0.1 nicety.
@@ -495,6 +511,37 @@ shape isn't settled and rushing it would calcify a guess.
 These four were debated during design and are now locked. The
 implementation sections below assume them. Recorded here so they don't
 live only in conversation.
+
+**Implementation status (feat/intent-checker):** decisions 1–3 are
+implemented as written — `@suss/ir-core` extracted (with `boundaryKey`
+and `bodyShapesMatch` moved there so both checkers share pairing
+primitives), `@suss/intent-ir` holds the intent types and the thin
+`IntentFinding`, intent serializes to its own files. Decision 4 is
+implemented with one deviation and one gap, both flagged below rather
+than silently absorbed.
+
+**Deviation flag (decision 4, needs sign-off):** the orchestration
+seam shipped in the CLI, not in `@suss/checker`. The decision's text
+names `@suss/checker` as "the entry point that loads both artifact
+streams and dispatches" — but `architecture.md`'s dependency rules
+pin `@suss/checker` as an IR-only consumer ("depends only on the
+IR"), and making it orchestrate would give it a dependency on
+`@suss/checker-intent` + `@suss/intent-ir`. The two documents
+conflicted; the implementation followed the architecture doc: both
+checkers are peer IR-only consumers, and the CLI (already "depends on
+everything" by rule) is the single seam that loads both streams. The
+decision's *motivation* — one orchestration seam, independent
+evolution — is preserved. If a programmatic consumer later wants a
+one-call check-everything entry, that's a new thin package above both
+checkers, not a role added to `@suss/checker`.
+
+**Gap flag (decision 2, tracked):** the decision says the pipeline
+(dedup, suppressions, severity thresholds) operates on the shared
+base. Severity thresholds do; suppressions don't yet —
+`applySuppressions` is typed to the behavioural `Finding`, so
+`.sussignore` can't suppress intent findings. Generalising the
+suppression matcher over the thin base is follow-on work, not a
+design change.
 
 **1. Intent gets its own IR package, `@suss/intent-ir`.** Intent is
 not a `BehavioralSummary` — a PRD isn't a code unit, and forcing one
@@ -565,7 +612,7 @@ type IntentDoc =
 PRD scenarios reference) and a `source` provenance field (`"author"`
 default, `"inferred"`, `"inferred, curated"`).
 
-The PRD shape, with `expect` optional:
+The PRD shape, with `link` optional (as shipped):
 
 ```ts
 interface Prd {
@@ -577,14 +624,14 @@ interface Prd {
   scenarios: Array<{
     title?: string;
     when: string;                   // condition, human terms — required
-    then: string;                   // expected outcome, human terms — required
-    expect?: string | string[];     // qualified outcome ref(s) — optional
+    expect: string;                 // expected outcome, human terms — required
+    link?: string | string[];       // qualified outcome ref(s) — optional
   }>;
 }
 ```
 
-`when` and `then` are required so every scenario reads on its own;
-`expect` is optional so a scenario can be authored before it's linked
+`when` and `expect` are required so every scenario reads on its own;
+`link` is optional so a scenario can be authored before it's linked
 (or generated alongside its link). `source` distinguishes
 hand-authored from inferred / facilitated docs.
 
@@ -600,10 +647,10 @@ dispatches on the top-level `kind`.
 In the intent checker module (decision 4). Given the loaded system
 intents and PRDs, for each PRD scenario:
 
-1. If `expect` is unset → emit an **info** that the scenario isn't yet
+1. If `link` is unset → emit an **info** that the scenario isn't yet
    linked. Not a coverage error (info-by-default; strict mode is an
    opt-in flag).
-2. If `expect` is set, parse each ref as `<name>.<outcome-id>` and
+2. If `link` is set, parse each ref as `<name>.<outcome-id>` and
    resolve against the loaded system intents:
    - no system intent with that `name` → dangling reference finding
    - multiple system intents with that `name` → ambiguous reference
@@ -613,19 +660,38 @@ intents and PRDs, for each PRD scenario:
 
 ### Finding kinds
 
-The intent finding kinds live on the thin shared base (decision 2).
-Concrete names and severities are settled when the finding shape is
-implemented; the set is:
+The intent finding kinds live on `IntentFinding` (decision 2) in
+`@suss/intent-ir`. Naming convention: no `intent` prefix — the kinds
+already live on the intent finding type. Shipped kinds and severities
+(rationale in the `@suss/checker-intent` header):
 
-- scenario not linked (info — pending link, the deliberate partial
+- `unimplementedBoundary` (error) — intent boundary has no
+  implementing code
+- `uncoveredOutcome` (error) — declared outcome the code never
+  produces
+- `outcomeShapeMismatch` (error) — matched outcome whose body shapes
+  disagree
+- `undeclaredOutcome` (info) — code produces a REST status the intent
+  doesn't declare
+- `unkeyableBoundary` (warning) — intent boundary can't be keyed for
+  pairing; declared coverage isn't happening
+
+Severities follow `contracts.md`'s "severity follows epistemic
+character" rule — a derivation violating a specification is an error.
+`undeclaredOutcome` is info rather than error because intent docs are
+*open* specifications: they declare the floor (what must exist), not
+a closed enumeration like an OpenAPI schema. Code exceeding intent is
+possibly-missing intent, not a violation.
+
+PRD coverage kinds (proposed, ship with the coverage checker):
+
+- `unlinkedScenario` (info — pending link, the deliberate partial
   state)
-- scenario reference dangling (warning — planning gap: named an
-  outcome no system intent declares)
-- scenario reference ambiguous (warning — author must disambiguate)
-- (intent-vs-code kinds `intentUnimplemented`, `intentExceeded`,
-  `intentFieldMismatch` shipped earlier against the shared schema;
-  they migrate to the intent finding extension as part of the package
-  split.)
+- `danglingScenarioLink` (warning — planning gap: named an outcome no
+  system intent declares)
+- `ambiguousScenarioLink` (warning — author must disambiguate)
+- `scenarioBodyDrift` (warning — linked outcome drifted from the
+  PRD's expectation)
 
 ## Validation
 
