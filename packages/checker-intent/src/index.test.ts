@@ -104,7 +104,7 @@ const restCodeBinding = restBinding({
 
 describe("checkIntentAgreement — REST", () => {
   it("emits nothing when code produces every declared outcome with matching bodies", () => {
-    const findings = checkIntentAgreement(
+    const result = checkIntentAgreement(
       [
         boundaryIntent(restIntentBinding, [
           response(200, userShape),
@@ -118,11 +118,19 @@ describe("checkIntentAgreement — REST", () => {
         ]),
       ],
     );
-    expect(findings).toHaveLength(0);
+    expect(result.findings).toHaveLength(0);
+    expect(result.checked).toEqual([
+      {
+        intent: "users-lookup",
+        boundary: "GET /users/{id}",
+        implementations: ["src/handler.ts::getUser"],
+      },
+    ]);
+    expect(result.unchecked).toHaveLength(0);
   });
 
   it("flags a declared status the code never produces", () => {
-    const findings = checkIntentAgreement(
+    const result = checkIntentAgreement(
       [
         boundaryIntent(restIntentBinding, [
           response(200, userShape),
@@ -131,8 +139,8 @@ describe("checkIntentAgreement — REST", () => {
       ],
       [codeSummary(restCodeBinding, [restResponse(200, userShape)])],
     );
-    expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
       kind: "uncoveredOutcome",
       severity: "error",
       boundary: "GET /users/{id}",
@@ -142,16 +150,49 @@ describe("checkIntentAgreement — REST", () => {
   });
 
   it("flags a body shape that disagrees with intent", () => {
-    const findings = checkIntentAgreement(
+    const result = checkIntentAgreement(
       [boundaryIntent(restIntentBinding, [response(200, userShape)])],
       [codeSummary(restCodeBinding, [restResponse(200, driftedShape)])],
     );
-    expect(findings.map((f) => f.kind)).toEqual(["outcomeShapeMismatch"]);
-    expect(findings[0].severity).toBe("error");
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "outcomeShapeMismatch",
+    ]);
+    expect(result.findings[0].severity).toBe("error");
+  });
+
+  it("accepts a declared body when any same-status transition conforms", () => {
+    // Two 200 branches — one drifted, one conforming. Outcome↔transition
+    // pairing is many-to-many: the declared body is satisfied by the
+    // conforming branch regardless of transition order.
+    const result = checkIntentAgreement(
+      [boundaryIntent(restIntentBinding, [response(200, userShape)])],
+      [
+        codeSummary(restCodeBinding, [
+          restResponse(200, driftedShape),
+          restResponse(200, userShape),
+        ]),
+      ],
+    );
+    expect(result.findings).toHaveLength(0);
+  });
+
+  it("flags a declared body when every same-status transition disagrees", () => {
+    const result = checkIntentAgreement(
+      [boundaryIntent(restIntentBinding, [response(200, userShape)])],
+      [
+        codeSummary(restCodeBinding, [
+          restResponse(200, driftedShape),
+          restResponse(200, errorShape),
+        ]),
+      ],
+    );
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "outcomeShapeMismatch",
+    ]);
   });
 
   it("flags a code status the intent never declares as info", () => {
-    const findings = checkIntentAgreement(
+    const result = checkIntentAgreement(
       [boundaryIntent(restIntentBinding, [response(200, userShape)])],
       [
         codeSummary(restCodeBinding, [
@@ -160,35 +201,74 @@ describe("checkIntentAgreement — REST", () => {
         ]),
       ],
     );
-    expect(findings.map((f) => f.kind)).toEqual(["undeclaredOutcome"]);
-    expect(findings[0].severity).toBe("info");
+    expect(result.findings.map((f) => f.kind)).toEqual(["undeclaredOutcome"]);
+    expect(result.findings[0].severity).toBe("info");
   });
 
   it("flags an intent boundary with no implementing code", () => {
-    const findings = checkIntentAgreement(
+    const result = checkIntentAgreement(
       [boundaryIntent(restIntentBinding, [response(200, userShape)])],
       [],
     );
-    expect(findings).toHaveLength(1);
-    expect(findings[0].kind).toBe("unimplementedBoundary");
-    expect(findings[0].code).toBeUndefined();
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].kind).toBe("unimplementedBoundary");
+    expect(result.findings[0].code).toBeUndefined();
+    // The comparison ran — the intent is checked, with no implementations.
+    expect(result.checked).toEqual([
+      {
+        intent: "users-lookup",
+        boundary: "GET /users/{id}",
+        implementations: [],
+      },
+    ]);
   });
 
-  it("skips PRD docs and unkeyable boundaries", () => {
+  it("reports PRD docs as unchecked, never silently dropped", () => {
     const prd: IntentSummary = {
       kind: "prd",
-      title: "t",
+      title: "orders",
       purpose: "p",
       audience: "a",
       source: "author",
       scenarios: [],
     };
+    const result = checkIntentAgreement([prd], []);
+    expect(result.findings).toHaveLength(0);
+    expect(result.unchecked).toEqual([
+      {
+        intent: "orders",
+        reason: "prd",
+        detail: "PRD scenario coverage is not checked yet",
+      },
+    ]);
+  });
+
+  it("reports an unkeyable boundary as a warning finding plus unchecked", () => {
     const unkeyable = boundaryIntent(
-      functionCallBinding({ transport: "in-process", recognition: "intent" }),
+      functionCallBinding({
+        transport: "in-process",
+        recognition: "intent",
+        module: "src/lookup.ts",
+        exportName: "getUser",
+      }),
       [response(200, null)],
       "no-key",
     );
-    expect(checkIntentAgreement([prd, unkeyable], [])).toHaveLength(0);
+    const result = checkIntentAgreement([unkeyable], []);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      kind: "unkeyableBoundary",
+      severity: "warning",
+      boundary: "fn:src/lookup.ts::getUser",
+      intent: { name: "no-key" },
+    });
+    expect(result.unchecked).toEqual([
+      {
+        intent: "no-key",
+        reason: "unkeyable",
+        detail: "boundary can't be keyed for pairing against code",
+      },
+    ]);
   });
 });
 
@@ -229,7 +309,7 @@ describe("checkIntentAgreement — function-call", () => {
       { type: "throw", exceptionType: "NotFoundError", message: null },
       { type: "return", value: userShape },
     ]);
-    expect(checkIntentAgreement([intent], [code])).toHaveLength(0);
+    expect(checkIntentAgreement([intent], [code]).findings).toHaveLength(0);
   });
 
   it("flags a declared throw the code never produces", () => {
@@ -246,9 +326,9 @@ describe("checkIntentAgreement — function-call", () => {
     const code = codeSummary(fnCodeBinding, [
       { type: "return", value: userShape },
     ]);
-    const findings = checkIntentAgreement([intent], [code]);
-    expect(findings.map((f) => f.kind)).toEqual(["uncoveredOutcome"]);
-    expect(findings[0].intent.outcomeId).toBe("missing");
+    const result = checkIntentAgreement([intent], [code]);
+    expect(result.findings.map((f) => f.kind)).toEqual(["uncoveredOutcome"]);
+    expect(result.findings[0].intent.outcomeId).toBe("missing");
   });
 
   it("does not treat undeclared returns as exceeded (only REST statuses)", () => {
@@ -265,6 +345,6 @@ describe("checkIntentAgreement — function-call", () => {
     const code = codeSummary(fnCodeBinding, [
       { type: "return", value: userShape },
     ]);
-    expect(checkIntentAgreement([intent], [code])).toHaveLength(0);
+    expect(checkIntentAgreement([intent], [code]).findings).toHaveLength(0);
   });
 });

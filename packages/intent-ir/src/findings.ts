@@ -16,6 +16,7 @@ export const IntentFindingKindSchema = z.enum([
   "unimplementedBoundary", // intent boundary has no implementing code at all
   "outcomeShapeMismatch", // a matched outcome whose body shapes disagree
   "undeclaredOutcome", // code produces a REST status the intent doesn't declare
+  "unkeyableBoundary", // intent boundary can't be keyed, so it can't be checked
 ]);
 export type IntentFindingKind = z.infer<typeof IntentFindingKindSchema>;
 

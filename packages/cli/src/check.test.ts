@@ -768,10 +768,13 @@ describe("checkDir", () => {
     try {
       const output = captureStdout(() => {
         const result = checkDir({ dir: tmpDir, intent: intentDir });
-        const kinds = (result.intentFindings ?? []).map((f) => f.kind);
+        const kinds = (result.intent?.findings ?? []).map((f) => f.kind);
         // Code produces 200 but not the declared 404.
         expect(kinds).toContain("uncoveredOutcome");
         expect(result.hasErrors).toBe(true);
+        // The intent was paired and compared — coverage accounting.
+        expect(result.intent?.checked).toHaveLength(1);
+        expect(result.intent?.unchecked).toHaveLength(0);
 
         // --fail-on none keeps the same intent findings but never fails.
         const lenient = checkDir({
@@ -779,22 +782,82 @@ describe("checkDir", () => {
           intent: intentDir,
           failOn: "none",
         });
-        expect(lenient.intentFindings).toHaveLength(
-          result.intentFindings?.length ?? 0,
+        expect(lenient.intent?.findings).toHaveLength(
+          result.intent?.findings.length ?? 0,
         );
         expect(lenient.hasErrors).toBe(false);
 
-        // JSON output carries intent findings alongside behavioural ones.
+        // JSON output carries the intent pass alongside behavioural findings.
         const asJson = checkDir({ dir: tmpDir, intent: intentDir, json: true });
-        expect((asJson.intentFindings ?? []).length).toBeGreaterThan(0);
+        expect((asJson.intent?.findings ?? []).length).toBeGreaterThan(0);
 
         // Writing to a file works with --intent.
         const outFile = path.join(tmpDir, "out.txt");
         checkDir({ dir: tmpDir, intent: intentDir, output: outFile });
-        expect(fs.readFileSync(outFile, "utf8")).toContain("Intent coverage:");
+        expect(fs.readFileSync(outFile, "utf8")).toContain("Intent:");
       });
-      expect(output).toContain("Intent coverage:");
-      expect(output).toContain('"intentFindings"');
+      expect(output).toContain("Intent:");
+      expect(output).toContain("1 boundary intent checked against code");
+      expect(output).toContain('"intent"');
+    } finally {
+      fs.rmSync(intentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces PRD docs as not-yet-checked instead of silently passing", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prdonly-"));
+    fs.writeFileSync(
+      path.join(intentDir, "orders.prd.json"),
+      JSON.stringify({
+        kind: "prd",
+        title: "orders",
+        purpose: "Track orders end to end.",
+        audience: "ops",
+        scenarios: [{ when: "an order arrives", expect: "it is queued" }],
+      }),
+    );
+    try {
+      const output = captureStdout(() => {
+        const result = checkDir({ dir: tmpDir, intent: intentDir });
+        expect(result.intent?.findings).toHaveLength(0);
+        expect(result.intent?.unchecked).toEqual([
+          {
+            intent: "orders",
+            reason: "prd",
+            detail: "PRD scenario coverage is not checked yet",
+          },
+        ]);
+      });
+      expect(output).toContain(
+        "not checked: orders — PRD scenario coverage is not checked yet",
+      );
+    } finally {
+      fs.rmSync(intentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an intent directory containing no intent docs", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-noint-"));
+    try {
+      expect(() => checkDir({ dir: tmpDir, intent: intentDir })).toThrow(
+        /No intent docs/,
+      );
     } finally {
       fs.rmSync(intentDir, { recursive: true, force: true });
     }

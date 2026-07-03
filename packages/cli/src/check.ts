@@ -19,7 +19,7 @@ import type {
   Finding,
 } from "@suss/behavioral-ir";
 import type { CheckAllResult, SuppressionRule } from "@suss/checker";
-import type { IntentFinding } from "@suss/checker-intent";
+import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 
 /**
  * Look up the summary-level confidence for a `Finding` side. The
@@ -73,8 +73,11 @@ export interface CheckDirOptions {
 
 export interface CheckResult {
   findings: Finding[];
-  /** Intent-coverage findings, present only when --intent was supplied. */
-  intentFindings?: IntentFinding[];
+  /**
+   * Intent pass result (findings + checked / unchecked accounting),
+   * present only when --intent was supplied.
+   */
+  intent?: CheckIntentResult;
   hasErrors: boolean;
 }
 
@@ -141,15 +144,13 @@ export function checkDir(
   // Intent is a separate citizen with its own finding shape. When
   // --intent is supplied, pair it against the same code summaries and
   // render / score it alongside the behavioural findings rather than
-  // folding it into that stream.
-  const intentFindings: IntentFinding[] =
-    options.intent !== undefined
-      ? checkIntentAgreement(loadIntentDirectory(options.intent), allSummaries)
-      : [];
+  // folding it into that stream. The checker reports what it did and
+  // didn't compare (checked / unchecked); this layer only renders.
+  const intent = runIntentPass(options.intent, allSummaries);
 
   const rendered = options.json
-    ? `${JSON.stringify({ findings: result.findings, intentFindings, pairs: result.pairs, unmatched: result.unmatched }, null, 2)}\n`
-    : renderDirHuman(result, confidence) + renderIntentFindings(intentFindings);
+    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched }, null, 2)}\n`
+    : renderDirHuman(result, confidence) + renderIntentSection(intent);
 
   if (options.output !== undefined) {
     fs.writeFileSync(options.output, rendered);
@@ -160,12 +161,30 @@ export function checkDir(
   const failOn = options.failOn ?? "error";
   return {
     findings: result.findings,
-    intentFindings,
+    ...(intent !== undefined ? { intent } : {}),
     hasErrors:
       meetsThreshold(result.findings, failOn) ||
-      intentMeetsThreshold(intentFindings, failOn),
+      intentMeetsThreshold(intent?.findings ?? [], failOn),
     result,
   };
+}
+
+function runIntentPass(
+  intentDir: string | undefined,
+  code: BehavioralSummary[],
+): CheckIntentResult | undefined {
+  if (intentDir === undefined) {
+    return undefined;
+  }
+  const intents = loadIntentDirectory(intentDir);
+  if (intents.length === 0) {
+    // Same convention as an empty --dir: pointing at a directory with
+    // nothing to load is a usage error, not a clean pass.
+    throw new Error(
+      `No intent docs (*.intent.{yaml,yml,json} / *.prd.{yaml,yml,json}) found in ${intentDir}`,
+    );
+  }
+  return checkIntentAgreement(intents, code);
 }
 
 function intentMeetsThreshold(
@@ -179,13 +198,20 @@ function intentMeetsThreshold(
   return findings.some((f) => SEVERITY_ORDER[f.severity] <= threshold);
 }
 
-function renderIntentFindings(findings: IntentFinding[]): string {
-  if (findings.length === 0) {
+function renderIntentSection(intent: CheckIntentResult | undefined): string {
+  if (intent === undefined) {
     return "";
   }
-  const lines = ["", "Intent coverage:"];
-  for (const f of findings) {
+  const lines = ["", "Intent:"];
+  const n = intent.checked.length;
+  lines.push(
+    `  ${n} boundary intent${n === 1 ? "" : "s"} checked against code`,
+  );
+  for (const f of intent.findings) {
     lines.push(`  [${f.severity}] ${f.boundary} — ${f.message}`);
+  }
+  for (const u of intent.unchecked) {
+    lines.push(`  not checked: ${u.intent} — ${u.detail}`);
   }
   return `${lines.join("\n")}\n`;
 }
