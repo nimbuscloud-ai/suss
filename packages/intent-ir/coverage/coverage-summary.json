@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 42,
-      "covered": 42,
+      "total": 43,
+      "covered": 43,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 43,
-      "covered": 43,
+      "total": 44,
+      "covered": 44,
       "skipped": 0,
       "pct": 100
     },
@@ -33,8 +33,8 @@
   },
   "src/findings.ts": {
     "lines": {
-      "total": 4,
-      "covered": 4,
+      "total": 5,
+      "covered": 5,
       "skipped": 0,
       "pct": 100
     },
@@ -45,8 +45,8 @@
       "pct": 100
     },
     "statements": {
-      "total": 4,
-      "covered": 4,
+      "total": 5,
+      "covered": 5,
       "skipped": 0,
       "pct": 100
     },
