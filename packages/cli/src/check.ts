@@ -8,10 +8,16 @@ import {
   checkPair,
   countsForThreshold,
 } from "@suss/checker";
-import { checkIntentAgreement } from "@suss/checker-intent";
+import {
+  applyIntentSuppressions,
+  checkIntentAgreement,
+} from "@suss/checker-intent";
 import { loadIntentDirectory } from "@suss/contract-intent";
 
-import { loadSuppressionsOrEmpty } from "./suppressionsLoader.js";
+import {
+  DEFAULT_SUPPRESSIONS_FILENAMES,
+  loadSuppressionsOrEmpty,
+} from "./suppressionsLoader.js";
 
 import type {
   BehavioralSummary,
@@ -123,7 +129,13 @@ export function checkDir(
     throw new Error(`Directory not found: ${resolved}`);
   }
 
-  const files = fs.readdirSync(resolved).filter((f) => f.endsWith(".json"));
+  // .sussignore.json is auto-discovered from this same directory — it's
+  // suppression config, not a summaries file, so exclude it from the walk.
+  const files = fs
+    .readdirSync(resolved)
+    .filter(
+      (f) => f.endsWith(".json") && !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
+    );
   if (files.length === 0) {
     throw new Error(`No JSON files found in ${resolved}`);
   }
@@ -146,7 +158,8 @@ export function checkDir(
   // render / score it alongside the behavioural findings rather than
   // folding it into that stream. The checker reports what it did and
   // didn't compare (checked / unchecked); this layer only renders.
-  const intent = runIntentPass(options.intent, allSummaries);
+  // The same .sussignore rules apply to both finding streams.
+  const intent = runIntentPass(options.intent, allSummaries, suppressions);
 
   const rendered = options.json
     ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched }, null, 2)}\n`
@@ -172,6 +185,7 @@ export function checkDir(
 function runIntentPass(
   intentDir: string | undefined,
   code: BehavioralSummary[],
+  suppressions: SuppressionRule[],
 ): CheckIntentResult | undefined {
   if (intentDir === undefined) {
     return undefined;
@@ -184,7 +198,11 @@ function runIntentPass(
       `No intent docs (*.intent.{yaml,yml,json} / *.prd.{yaml,yml,json}) found in ${intentDir}`,
     );
   }
-  return checkIntentAgreement(intents, code);
+  const result = checkIntentAgreement(intents, code);
+  return {
+    ...result,
+    findings: applyIntentSuppressions(result.findings, suppressions),
+  };
 }
 
 function intentMeetsThreshold(
@@ -195,7 +213,11 @@ function intentMeetsThreshold(
     return false;
   }
   const threshold = SEVERITY_ORDER[failOn];
-  return findings.some((f) => SEVERITY_ORDER[f.severity] <= threshold);
+  // Same suppression semantics as behavioural findings: mark/hide are
+  // excluded from gating, downgrade counts at the new severity.
+  return findings.some(
+    (f) => countsForThreshold(f) && SEVERITY_ORDER[f.severity] <= threshold,
+  );
 }
 
 function renderIntentSection(intent: CheckIntentResult | undefined): string {
@@ -209,6 +231,11 @@ function renderIntentSection(intent: CheckIntentResult | undefined): string {
   );
   for (const f of intent.findings) {
     lines.push(`  [${f.severity}] ${f.boundary} — ${f.message}`);
+    if (f.suppressed !== undefined) {
+      lines.push(
+        `    suppressed (${f.suppressed.effect}): ${f.suppressed.reason}`,
+      );
+    }
   }
   for (const u of intent.unchecked) {
     lines.push(`  not checked: ${u.intent} — ${u.detail}`);

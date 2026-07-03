@@ -32,6 +32,22 @@ export const IntentRefSchema = z.object({
 });
 export type IntentRef = z.infer<typeof IntentRefSchema>;
 
+/**
+ * Suppression annotation stamped by the .sussignore pipeline. Kept
+ * structurally identical to the behavioural `Finding.suppressed` shape
+ * so @suss/ir-core's shared suppression pipeline operates on both.
+ */
+export const IntentFindingSuppressionSchema = z.object({
+  /** The rule's human-written justification. */
+  reason: z.string(),
+  effect: z.enum(["mark", "downgrade", "hide"]),
+  /** Original severity, present only when effect is "downgrade". */
+  originalSeverity: IntentFindingSeveritySchema.optional(),
+});
+export type IntentFindingSuppression = z.infer<
+  typeof IntentFindingSuppressionSchema
+>;
+
 export const IntentFindingSchema = z.object({
   kind: IntentFindingKindSchema,
   severity: IntentFindingSeveritySchema,
@@ -48,5 +64,7 @@ export const IntentFindingSchema = z.object({
    */
   code: z.string().optional(),
   message: z.string(),
+  /** Present when a .sussignore rule matched this finding. */
+  suppressed: IntentFindingSuppressionSchema.optional(),
 });
 export type IntentFinding = z.infer<typeof IntentFindingSchema>;

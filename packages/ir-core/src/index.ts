@@ -80,6 +80,20 @@ export type { TypeShape } from "./schemas.js";
 // checker nor the intent checker owns them (and so the two can't drift).
 
 export { boundaryKey, normalizePath } from "./boundaryKey.js";
+export {
+  applySuppressionsToFindings,
+  countsForThreshold,
+  type FindingSuppression,
+  normalizeRuleBoundary,
+  ruleBoundaryMatchesKey,
+  type SuppressableSeverity,
+  type SuppressibleFinding,
+  type SuppressionFile,
+  SuppressionFileSchema,
+  type SuppressionRule,
+  SuppressionRuleSchema,
+  validateRule,
+} from "./suppressions.js";
 export { bodyShapesMatch, type MatchResult } from "./typeShapeMatch.js";
 
 // ---------------------------------------------------------------------------

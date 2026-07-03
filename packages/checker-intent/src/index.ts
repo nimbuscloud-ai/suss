@@ -24,7 +24,12 @@
 // Findings against `source: "inferred"` (not-yet-curated) intent should
 // downgrade; that lands with the provenance-aware pass.
 
-import { bodyShapesMatch, boundaryKey } from "@suss/ir-core";
+import {
+  applySuppressionsToFindings,
+  bodyShapesMatch,
+  boundaryKey,
+  ruleBoundaryMatchesKey,
+} from "@suss/ir-core";
 
 import type {
   BehavioralSummary,
@@ -37,7 +42,7 @@ import type {
   IntentOutcome,
   IntentSummary,
 } from "@suss/intent-ir";
-import type { BoundaryBinding } from "@suss/ir-core";
+import type { BoundaryBinding, SuppressionRule } from "@suss/ir-core";
 
 export type { IntentFinding } from "@suss/intent-ir";
 
@@ -156,6 +161,36 @@ export function checkIntentAgreement(
 
 function codeRef(impl: BehavioralSummary): string {
   return `${impl.location.file}::${impl.identity.name}`;
+}
+
+/**
+ * Apply .sussignore rules to intent findings, using the shared
+ * pipeline from @suss/ir-core (same rule shape and semantics as the
+ * behavioural checker's `applySuppressions`). Rule discriminators map
+ * as: `kind` → the intent finding kind; `boundary` → the finding's
+ * boundary key (exact for `fn:` / `gql:` keys, path-normalized for
+ * REST). A rule that specifies `consumer` never matches an intent
+ * finding — there is no consumer side.
+ */
+export function applyIntentSuppressions(
+  findings: IntentFinding[],
+  rules: SuppressionRule[],
+  opts: { keepHidden?: boolean } = {},
+): IntentFinding[] {
+  return applySuppressionsToFindings(
+    findings,
+    rules,
+    (rule, finding) => {
+      if (rule.consumer !== undefined) {
+        return false;
+      }
+      return (
+        rule.boundary === undefined ||
+        ruleBoundaryMatchesKey(rule.boundary, finding.boundary)
+      );
+    },
+    opts,
+  );
 }
 
 function indexCodeByBoundary(

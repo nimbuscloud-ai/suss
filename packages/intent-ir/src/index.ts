@@ -16,6 +16,7 @@ export {
   IntentFindingKindSchema,
   IntentFindingSchema,
   IntentFindingSeveritySchema,
+  IntentFindingSuppressionSchema,
   IntentRefSchema,
 } from "./findings.js";
 export {
@@ -30,6 +31,7 @@ export type {
   IntentFinding,
   IntentFindingKind,
   IntentFindingSeverity,
+  IntentFindingSuppression,
   IntentRef,
 } from "./findings.js";
 export type {

@@ -58,6 +58,7 @@
     "@suss/behavioral-ir": "*",
     "@suss/checker": "*",
     "@suss/checker-intent": "*",
+    "@suss/intent-ir": "*",
     "@suss/contract-appsync": "*",
     "@suss/contract-aws-apigateway": "*",
     "@suss/contract-cloudformation": "*",

@@ -9,7 +9,7 @@ import {
   type TypeShape,
 } from "@suss/behavioral-ir";
 
-import { checkIntentAgreement } from "./index.js";
+import { applyIntentSuppressions, checkIntentAgreement } from "./index.js";
 
 import type { IntentOutcome, IntentSummary } from "@suss/intent-ir";
 
@@ -346,5 +346,95 @@ describe("checkIntentAgreement — function-call", () => {
       { type: "return", value: userShape },
     ]);
     expect(checkIntentAgreement([intent], [code]).findings).toHaveLength(0);
+  });
+});
+
+describe("applyIntentSuppressions", () => {
+  const uncovered = () =>
+    checkIntentAgreement(
+      [boundaryIntent(restIntentBinding, [response(404, null)])],
+      [codeSummary(restCodeBinding, [restResponse(200, null)])],
+    ).findings;
+
+  it("marks a finding matched by kind + boundary (either param syntax)", () => {
+    // The fixture yields uncoveredOutcome (404 missing) plus an
+    // undeclaredOutcome info (200 not declared); the rule targets only
+    // the former.
+    const out = applyIntentSuppressions(uncovered(), [
+      {
+        kind: "uncoveredOutcome",
+        boundary: "GET /users/:id",
+        scope: "narrow",
+        reason: "known gap",
+        effect: "mark",
+      },
+    ]);
+    expect(out).toHaveLength(2);
+    const marked = out.find((f) => f.kind === "uncoveredOutcome");
+    const untouched = out.find((f) => f.kind === "undeclaredOutcome");
+    expect(marked?.suppressed).toEqual({ reason: "known gap", effect: "mark" });
+    expect(untouched?.suppressed).toBeUndefined();
+  });
+
+  it("hides a matched finding and matches fn: boundaries verbatim", () => {
+    const fnFindings = checkIntentAgreement(
+      [
+        boundaryIntent(
+          fnIntentBinding,
+          [
+            {
+              id: "boom",
+              when: "",
+              kind: "throw",
+              status: null,
+              body: null,
+              errorType: "Boom",
+            },
+          ],
+          "fn-intent",
+        ),
+      ],
+      [codeSummary(fnCodeBinding, [{ type: "return", value: null }])],
+    ).findings;
+    const out = applyIntentSuppressions(fnFindings, [
+      {
+        kind: "uncoveredOutcome",
+        boundary: "fn:@acme/api::getUser",
+        scope: "narrow",
+        reason: "throw path lands with retries",
+        effect: "hide",
+      },
+    ]);
+    expect(out).toHaveLength(0);
+  });
+
+  it("never matches rules that specify a consumer side", () => {
+    const out = applyIntentSuppressions(uncovered(), [
+      {
+        kind: "uncoveredOutcome",
+        boundary: "GET /users/{id}",
+        consumer: { transitionId: "t1" },
+        scope: "narrow",
+        reason: "behavioural-only rule",
+        effect: "hide",
+      },
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.every((f) => f.suppressed === undefined)).toBe(true);
+  });
+
+  it("downgrades severity and preserves the original", () => {
+    const out = applyIntentSuppressions(uncovered(), [
+      {
+        kind: "uncoveredOutcome",
+        boundary: "GET /users/{id}",
+        scope: "narrow",
+        reason: "migration window",
+        effect: "downgrade",
+      },
+    ]);
+    const downgraded = out.find((f) => f.kind === "uncoveredOutcome");
+    expect(downgraded?.severity).toBe("warning");
+    expect(downgraded?.suppressed?.originalSeverity).toBe("error");
   });
 });

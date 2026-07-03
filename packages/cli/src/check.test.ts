@@ -804,6 +804,98 @@ describe("checkDir", () => {
     }
   });
 
+  it("suppresses intent findings via .sussignore with the same rule shape", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-intsupp-"));
+    fs.writeFileSync(
+      path.join(intentDir, "users.intent.json"),
+      JSON.stringify({
+        kind: "boundary",
+        name: "users-lookup",
+        purpose: "Look up a user by id.",
+        audience: "web-client",
+        boundary: {
+          transport: "http",
+          semantics: "rest",
+          method: "GET",
+          path: "/users/:id",
+        },
+        transitions: [
+          { id: "not-found", when: "missing", response: { status: 404 } },
+        ],
+      }),
+    );
+    const sussignore = path.join(intentDir, ".sussignore.json");
+    fs.writeFileSync(
+      sussignore,
+      JSON.stringify({
+        version: 1,
+        rules: [
+          {
+            kind: "uncoveredOutcome",
+            boundary: "GET /users/:id",
+            reason: "404 path ships next sprint",
+            effect: "mark",
+          },
+        ],
+      }),
+    );
+    try {
+      const output = captureStdout(() => {
+        const result = checkDir({
+          dir: tmpDir,
+          intent: intentDir,
+          sussignore,
+        });
+        // The finding is still reported, annotated — but mark excludes
+        // it from gating, so the run passes.
+        expect(result.intent?.findings[0].suppressed).toEqual({
+          reason: "404 path ships next sprint",
+          effect: "mark",
+        });
+        expect(result.hasErrors).toBe(false);
+      });
+      expect(output).toContain("suppressed (mark): 404 path ships next sprint");
+    } finally {
+      fs.rmSync(intentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects .sussignore rules that target an unknown finding kind", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const sussignore = path.join(tmpDir, ".sussignore.json");
+    fs.writeFileSync(
+      sussignore,
+      JSON.stringify({
+        version: 1,
+        rules: [
+          {
+            kind: "unconvexedOutcome",
+            boundary: "GET /users/:id",
+            reason: "typo'd kind",
+          },
+        ],
+      }),
+    );
+    expect(() => checkDir({ dir: tmpDir, sussignore })).toThrow(
+      /unknown finding kind "unconvexedOutcome"/,
+    );
+  });
+
   it("surfaces PRD docs as not-yet-checked instead of silently passing", () => {
     fs.writeFileSync(
       path.join(tmpDir, "provider.json"),
