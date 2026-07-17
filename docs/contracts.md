@@ -117,7 +117,7 @@ Two of the five shapes — **schema** and **spec** — ship today across HTTP, G
 
 - `@suss/contract-openapi` — OpenAPI 3.x (schema, HTTP)
 - `@suss/contract-cloudformation` — CFN / SAM templates with API Gateway resources (schema, HTTP), built on the internal `@suss/contract-aws-apigateway` shared library
-- `@suss/contract-appsync` — CFN templates with `AWS::AppSync::*` resources (schema, GraphQL)
+- `@suss/contract-appsync` — CFN templates with `AWS::AppSync::*` resources and the SAM `AWS::Serverless::GraphQLApi` shorthand, resolving inline or external `.graphql` schemas (schema, GraphQL)
 - `@suss/contract-graphql` — plain GraphQL SDL files (schema, GraphQL)
 - `@suss/contract-prisma` — `schema.prisma` files (schema, storage-relational)
 - `@suss/contract-storybook` — CSF3 `.stories.tsx` files (spec, component domain)
