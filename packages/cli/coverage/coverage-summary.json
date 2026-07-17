@@ -1,16 +1,16 @@
 {
   "total": {
     "lines": {
-      "total": 891,
-      "covered": 783,
-      "skipped": 0,
-      "pct": 87.87
-    },
-    "statements": {
-      "total": 900,
+      "total": 899,
       "covered": 791,
       "skipped": 0,
-      "pct": 87.88
+      "pct": 87.98
+    },
+    "statements": {
+      "total": 906,
+      "covered": 797,
+      "skipped": 0,
+      "pct": 87.96
     },
     "functions": {
       "total": 156,
@@ -19,10 +19,10 @@
       "pct": 83.33
     },
     "branches": {
-      "total": 576,
-      "covered": 444,
+      "total": 586,
+      "covered": 455,
       "skipped": 0,
-      "pct": 77.08
+      "pct": 77.64
     },
     "branchesTrue": {
       "total": 0,
@@ -33,10 +33,10 @@
   },
   "src/check.ts": {
     "lines": {
-      "total": 137,
-      "covered": 131,
+      "total": 142,
+      "covered": 136,
       "skipped": 0,
-      "pct": 95.62
+      "pct": 95.77
     },
     "functions": {
       "total": 21,
@@ -45,16 +45,16 @@
       "pct": 95.23
     },
     "statements": {
-      "total": 140,
-      "covered": 133,
+      "total": 143,
+      "covered": 136,
       "skipped": 0,
-      "pct": 95
+      "pct": 95.1
     },
     "branches": {
-      "total": 90,
-      "covered": 83,
+      "total": 96,
+      "covered": 89,
       "skipped": 0,
-      "pct": 92.22
+      "pct": 92.7
     }
   },
   "src/contract.ts": {
@@ -189,10 +189,10 @@
   },
   "src/suppressionsLoader.ts": {
     "lines": {
-      "total": 30,
-      "covered": 27,
+      "total": 33,
+      "covered": 30,
       "skipped": 0,
-      "pct": 90
+      "pct": 90.9
     },
     "functions": {
       "total": 5,
@@ -201,16 +201,16 @@
       "pct": 80
     },
     "statements": {
-      "total": 30,
-      "covered": 27,
+      "total": 33,
+      "covered": 30,
       "skipped": 0,
-      "pct": 90
+      "pct": 90.9
     },
     "branches": {
-      "total": 20,
-      "covered": 16,
+      "total": 24,
+      "covered": 21,
       "skipped": 0,
-      "pct": 80
+      "pct": 87.5
     }
   }
 }
