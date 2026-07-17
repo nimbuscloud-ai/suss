@@ -24,6 +24,7 @@
 // Findings against `source: "inferred"` (not-yet-curated) intent should
 // downgrade; that lands with the provenance-aware pass.
 
+import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
 import {
   applySuppressionsToFindings,
   bodyShapesMatch,
@@ -198,6 +199,14 @@ function indexCodeByBoundary(
 ): Map<string, BehavioralSummary[]> {
   const byKey = new Map<string, BehavioralSummary[]>();
   for (const summary of code) {
+    // Intent declares what a boundary PROVIDES. A consumer at the same
+    // key (a client calling GET /users/{id}) is a caller, not an
+    // implementation — comparing intent outcomes against its
+    // return/render transitions would report every declared outcome as
+    // uncovered. Same role split the behavioural checker's pairing uses.
+    if (BOUNDARY_ROLE[summary.kind] !== "provider") {
+      continue;
+    }
     const binding = summary.identity.boundaryBinding;
     if (binding === null) {
       continue;
@@ -278,6 +287,7 @@ function compareIntentToImpl(
       .filter((o) => o.kind === "response" && o.status !== null)
       .map((o) => o.status),
   );
+  const undeclaredStatuses = new Set<number>();
   for (const co of codeOutcomes) {
     if (
       co.kind !== "response" ||
@@ -286,13 +296,19 @@ function compareIntentToImpl(
     ) {
       continue;
     }
+    // One finding per undeclared status — several branches producing
+    // the same status (two catch arms both returning 500) are one
+    // deviation from the declaration, not many.
+    undeclaredStatuses.add(co.status);
+  }
+  for (const status of undeclaredStatuses) {
     findings.push({
       kind: "undeclaredOutcome",
       severity: "info",
       boundary,
       intent: { name: intent.name },
       code: ref,
-      message: `${impl.identity.name} produces status ${co.status} at ${boundary}; intent "${intent.name}" does not declare it.`,
+      message: `${impl.identity.name} produces status ${status} at ${boundary}; intent "${intent.name}" does not declare it.`,
     });
   }
 

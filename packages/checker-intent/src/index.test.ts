@@ -57,9 +57,10 @@ function codeSummary(
   boundary: BoundaryBinding,
   outputs: Output[],
   name = "getUser",
+  kind: BehavioralSummary["kind"] = "handler",
 ): BehavioralSummary {
   return {
-    kind: "handler",
+    kind,
     location: {
       file: "src/handler.ts",
       range: { start: 1, end: 20 },
@@ -221,6 +222,67 @@ describe("checkIntentAgreement — REST", () => {
         implementations: [],
       },
     ]);
+  });
+
+  it("does not treat a consumer at the boundary key as an implementation", () => {
+    // A client calling the boundary shares its key but provides
+    // nothing; with only a consumer present the boundary is
+    // unimplemented, not uncovered.
+    const consumer = codeSummary(
+      restCodeBinding,
+      [{ type: "return", value: userShape }],
+      "UserCard",
+      "client",
+    );
+    const result = checkIntentAgreement(
+      [boundaryIntent(restIntentBinding, [response(200, userShape)])],
+      [consumer],
+    );
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "unimplementedBoundary",
+    ]);
+    expect(result.checked).toEqual([
+      {
+        intent: "users-lookup",
+        boundary: "GET /users/{id}",
+        implementations: [],
+      },
+    ]);
+  });
+
+  it("compares only provider-role summaries when a consumer shares the key", () => {
+    const provider = codeSummary(restCodeBinding, [
+      restResponse(200, userShape),
+    ]);
+    const consumer = codeSummary(
+      restCodeBinding,
+      [{ type: "return", value: userShape }],
+      "UserCard",
+      "client",
+    );
+    const result = checkIntentAgreement(
+      [boundaryIntent(restIntentBinding, [response(200, userShape)])],
+      [consumer, provider],
+    );
+    expect(result.findings).toHaveLength(0);
+    expect(result.checked[0].implementations).toEqual([
+      "src/handler.ts::getUser",
+    ]);
+  });
+
+  it("emits one undeclaredOutcome per status, not per transition", () => {
+    const result = checkIntentAgreement(
+      [boundaryIntent(restIntentBinding, [response(200, userShape)])],
+      [
+        codeSummary(restCodeBinding, [
+          restResponse(200, userShape),
+          restResponse(500, null),
+          restResponse(500, errorShape),
+        ]),
+      ],
+    );
+    expect(result.findings.map((f) => f.kind)).toEqual(["undeclaredOutcome"]);
+    expect(result.findings[0].message).toContain("status 500");
   });
 
   it("reports PRD docs as unchecked, never silently dropped", () => {
