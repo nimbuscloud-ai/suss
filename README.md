@@ -201,7 +201,8 @@ const effective = applySuppressions(findings, mySuppressions);
 | [`@suss/intent-ir`](packages/intent-ir) | Team-authored intent: system intent (what a boundary should do) + PRD outcome intent, paired against derived summaries. | ![](.github/badges/coverage-intent-ir.svg) |
 | [`@suss/extractor`](packages/extractor) | Assembly engine. Converts raw extracted structure into `BehavioralSummary`. | ![](.github/badges/coverage-extractor.svg) |
 | [`@suss/adapter-typescript`](packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](.github/badges/coverage-typescript.svg) |
-| [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker. | ![](.github/badges/coverage-checker.svg) |
+| [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker (behavioral). | ![](.github/badges/coverage-checker.svg) |
+| [`@suss/checker-intent`](packages/checker-intent) | Pairs team-authored intent against derived code; emits `IntentFinding` coverage. | ![](.github/badges/coverage-checker-intent.svg) |
 | [`@suss/cli`](packages/cli) | CLI wrapper. | ![](.github/badges/coverage-cli.svg) |
 | **Frameworks** | | |
 | [`@suss/framework-ts-rest`](packages/framework/ts-rest) | ts-rest providers + clients (contract-backed). | ![](.github/badges/coverage-ts-rest.svg) |

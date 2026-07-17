@@ -1,23 +1,22 @@
 {
-  "name": "@suss/contract-intent",
+  "name": "@suss/checker-intent",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Read team-authored intent specs (*.intent / *.prd, YAML or JSON) into IntentSummary[] for the intent checker to pair against derived code summaries.",
+  "description": "Pair team-authored intent (IntentSummary) against derived code (BehavioralSummary) and report where they diverge.",
   "keywords": [
     "suss",
-    "behavioral-summary",
     "intent",
-    "prd",
-    "contract"
+    "checker",
+    "coverage"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/contract/intent#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/checker-intent#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/contract/intent"
+    "directory": "packages/checker-intent"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -45,14 +44,18 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@suss/intent-ir": "*",
-    "yaml": "^2.4.0",
+  "peerDependencies": {
     "zod": "^4.0.0"
+  },
+  "dependencies": {
+    "@suss/behavioral-ir": "*",
+    "@suss/intent-ir": "*",
+    "@suss/ir-core": "*"
   },
   "devDependencies": {
     "tsup": "*",
     "typescript": "*",
-    "vitest": "*"
+    "vitest": "*",
+    "zod": "^4.0.0"
   }
 }

@@ -1,76 +1,59 @@
-// @suss/contract-intent — read team-authored intent specs and turn them
-// into BehavioralSummary[] for the same checker that handles OpenAPI /
-// GraphQL / Prisma / ... declarations.
+// @suss/contract-intent — read team-authored intent specs into
+// IntentSummary[]. A thin reader over @suss/intent-ir: file / directory
+// discovery and YAML / JSON parsing live here; the schema and the
+// normalisation to IntentSummary live in intent-ir.
 //
-// Two file shapes ship in v0.1, discriminated by the top-level `kind`:
+// Two file shapes, discriminated by the top-level `kind`:
 //
-//   kind: boundary  — engineer-authored system intent for a REST
-//                     boundary (status codes, body shapes, outcome ids).
-//   kind: prd       — PM-authored outcome intent (purpose, audience,
-//                     scenarios that reference system-intent outcomes
-//                     by qualified id).
+//   kind: boundary  — engineer-authored system intent (REST or
+//                     function-call): the outcomes a boundary should
+//                     produce.
+//   kind: prd       — PM-authored outcome intent: scenarios that link to
+//                     system-intent outcomes by qualified id.
 //
-// The full design lives in docs/internal/proposals/intent-specs.md.
+// Unlike the other contract readers, intent does NOT produce
+// BehavioralSummary — intent is a separate citizen with its own type
+// (IntentSummary) and its own checker. The full design lives in
+// docs/internal/proposals/intent-specs.md.
 
 import fs from "node:fs";
 import path from "node:path";
 
 import YAML from "yaml";
 
-import { IntentDocSchema } from "./schema.js";
-import { intentDocToSummary } from "./summaryBuilder.js";
+import { IntentDocSchema, intentDocToSummary } from "@suss/intent-ir";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { IntentDoc } from "./schema.js";
-
-export { IntentDocSchema, IntentSpecSchema } from "./schema.js";
+import type { IntentSummary } from "@suss/intent-ir";
 
 export type {
-  BodyShape,
-  BoundaryIntent,
-  BoundaryTransition,
-  IntentDoc,
-  IntentSpec,
-  Prd,
-  PrdScenario,
-  RestBoundary,
-  RestTransition,
-} from "./schema.js";
+  BoundaryIntentSummary,
+  IntentOutcome,
+  IntentSummary,
+  PrdScenarioSummary,
+  PrdSummary,
+} from "@suss/intent-ir";
 
-export interface IntentToSummariesOptions {
-  /** Override the source string recorded on `summary.location.file`. */
-  source?: string;
+/**
+ * Validate an in-memory intent doc (already parsed from YAML / JSON) and
+ * normalise it to an IntentSummary. Throws on validation failure —
+ * malformed specs are a load-time error, never a comparison finding.
+ *
+ * Accepts both `kind: boundary` and `kind: prd`; the transform
+ * dispatches on the discriminator.
+ */
+export function loadIntentDoc(raw: unknown): IntentSummary {
+  return intentDocToSummary(IntentDocSchema.parse(raw));
 }
 
 /**
- * Validate an in-memory intent doc (already parsed from YAML / JSON)
- * and turn it into a single `BehavioralSummary`. Throws when the doc
- * fails validation — malformed docs are a load-time error, never a
- * comparison finding.
+ * Read a single intent-doc file (YAML or JSON, chosen by extension) and
+ * normalise it. JSON is parsed strictly; everything else goes through
+ * the YAML parser, which also accepts JSON syntax.
  *
- * Accepts both `kind: boundary` and `kind: prd` docs; the summary
- * builder dispatches on the discriminator.
+ * Accepts both `*.intent.{yaml,yml,json}` and `*.prd.{yaml,yml,json}` —
+ * the document's `kind` picks the shape.
  */
-export function intentSpecToSummaries(
-  raw: unknown,
-  options: IntentToSummariesOptions = {},
-): BehavioralSummary[] {
-  const doc: IntentDoc = IntentDocSchema.parse(raw);
-  return [intentDocToSummary(doc, options)];
-}
-
-/**
- * Read a single intent-doc file (YAML or JSON, chosen by extension)
- * and return its summary. JSON is parsed strictly; everything else
- * goes through the YAML parser, which also accepts JSON syntax.
- *
- * Accepts both `*.intent.{yaml,yml,json}` and `*.prd.{yaml,yml,json}`
- * — the discriminator inside the document picks the shape.
- */
-export function intentSpecFileToSummaries(
-  filepath: string,
-  options: IntentToSummariesOptions = {},
-): BehavioralSummary[] {
+export function loadIntentFile(filepath: string): IntentSummary {
   const resolved = path.resolve(filepath);
   if (!fs.existsSync(resolved)) {
     throw new Error(`Intent spec not found: ${resolved}`);
@@ -87,34 +70,23 @@ export function intentSpecFileToSummaries(
   if (parsed === null || typeof parsed !== "object") {
     throw new Error(`Intent spec ${resolved} is not an object`);
   }
-  return intentSpecToSummaries(parsed, {
-    source: options.source ?? `intent:${path.basename(resolved)}`,
-  });
+  return loadIntentDoc(parsed);
 }
 
 /**
- * Walk `dir` for `*.intent.{yaml,yml,json}` and `*.prd.{yaml,yml,json}`
- * files and return the flattened summary set. Subdirectories are
- * walked recursively; intent and PRD docs can live anywhere under the
- * root, organised however the team prefers.
+ * Walk `dir` recursively for `*.intent.{yaml,yml,json}` and
+ * `*.prd.{yaml,yml,json}` files and normalise each. Specs can live
+ * anywhere under the root, organised however the team prefers.
  */
-export function intentSpecDirectoryToSummaries(
-  dir: string,
-  options: IntentToSummariesOptions = {},
-): BehavioralSummary[] {
+export function loadIntentDirectory(dir: string): IntentSummary[] {
   const resolved = path.resolve(dir);
   if (!fs.existsSync(resolved)) {
     throw new Error(`Intent directory not found: ${resolved}`);
   }
-  const stat = fs.statSync(resolved);
-  if (!stat.isDirectory()) {
+  if (!fs.statSync(resolved).isDirectory()) {
     throw new Error(`Intent path is not a directory: ${resolved}`);
   }
-  const out: BehavioralSummary[] = [];
-  for (const file of walkIntentFiles(resolved)) {
-    out.push(...intentSpecFileToSummaries(file, options));
-  }
-  return out;
+  return walkIntentFiles(resolved).map((file) => loadIntentFile(file));
 }
 
 function walkIntentFiles(dir: string): string[] {

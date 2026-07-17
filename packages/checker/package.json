@@ -50,6 +50,7 @@
   },
   "dependencies": {
     "@suss/behavioral-ir": "*",
+    "@suss/ir-core": "*",
     "graphql": "^16.8.0"
   },
   "devDependencies": {

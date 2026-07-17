@@ -248,29 +248,11 @@ export const FindingKindSchema = z.enum([
    * disclosure.
    */
   "opaquePredicateBlocking",
-  /**
-   * A team-authored intent spec declares a transition (status code +
-   * body shape) the paired implementation never produces. Severity:
-   * error. Emitted by checkIntentAgreement. Distinct from
-   * `providerContractViolation` because the contract source here is
-   * team intent rather than a third-party schema. Intent specs come
-   * in via `@suss/contract-intent` with `recognition: "intent"` on
-   * the boundary binding.
-   */
-  "intentUnimplemented",
-  /**
-   * A paired implementation produces a transition the team-authored
-   * intent spec does not declare. Severity: error (the team didn't
-   * mean to ship that case). Emitted by checkIntentAgreement.
-   */
-  "intentExceeded",
-  /**
-   * Intent declares a body shape that disagrees with the paired
-   * implementation's body shape at the same status code. Severity:
-   * error. Reuses bodyShapesMatch from the contract checker.
-   * Emitted by checkIntentAgreement.
-   */
-  "intentFieldMismatch",
+  // Intent vs code findings are NOT behavioural Finding kinds — intent
+  // is a separate citizen with its own one-sided coverage finding
+  // (`IntentFinding` in @suss/intent-ir, emitted by @suss/checker-intent).
+  // Keeping intent kinds out of this enum keeps the behavioural IR free
+  // of intent concepts.
 ]);
 
 export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);

@@ -138,7 +138,7 @@ What's still missing from the taxonomy:
 
 - **Observation shapes.** No reader ingests Jest snapshots, Playwright traces, or production observability data yet. The IR shape that would carry these (`confidence.source: "observation"`) exists; the reader pipeline doesn't.
 - **Test shapes.** Same gap — RSpec / supertest / RTL test assertions aren't yet a source.
-- **Intent shapes.** Team-authored intent specs are scoped in [`proposals/intent-specs.md`](internal/proposals/intent-specs.md) as the next major direction. Third-party schemas (OpenAPI, GraphQL SDL) cover some intent today, but they were authored as specs, not as team intent.
+- **Intent shapes** — partially shipped. Team-authored intent specs (`*.intent` / `*.prd` via `@suss/contract-intent`) are their own artifact stream: they parse to `IntentSummary`, not `BehavioralSummary`, and `@suss/checker-intent` pairs them against derived code (`suss check --dir --intent`). Boundary-level intent checks today; PRD scenario coverage is next. Design and sequencing in [`proposals/intent-specs.md`](internal/proposals/intent-specs.md). Third-party schemas (OpenAPI, GraphQL SDL) cover some intent, but they were authored as wire contracts, not as team intent — which is why intent docs are *open* specifications (they declare what must exist, not a closed enumeration; code exceeding intent is info, not error).
 - **Design shapes.** Figma / design-token integration is deliberately deferred — design files rarely live in the repo, and the Figma REST API integration is expensive relative to the signal. The taxonomy keeps design-as-contract listed because the *epistemic character* (intent) is distinct; the *artifact pipeline* isn't planned.
 
 ## Metadata namespacing as shipped

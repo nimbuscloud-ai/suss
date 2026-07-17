@@ -10,12 +10,25 @@ import path from "node:path";
 
 import yaml from "yaml";
 
+import { FINDING_KINDS } from "@suss/behavioral-ir";
 import {
   type SuppressionFile,
   SuppressionFileSchema,
   type SuppressionRule,
   validateRule,
 } from "@suss/checker";
+import { IntentFindingKindSchema } from "@suss/intent-ir";
+
+/**
+ * Every kind a rule may target: behavioural finding kinds plus intent
+ * finding kinds. The rule schema keeps `kind` open (it lives below
+ * both IRs); the loader owns typo rejection so a misspelled kind fails
+ * loud instead of silently never matching.
+ */
+const KNOWN_FINDING_KINDS: ReadonlySet<string> = new Set([
+  ...FINDING_KINDS,
+  ...IntentFindingKindSchema.options,
+]);
 
 /** Candidate filenames checked in order when no --sussignore is given. */
 export const DEFAULT_SUPPRESSIONS_FILENAMES = [
@@ -63,6 +76,11 @@ export function loadSuppressions(filePath: string): SuppressionRule[] {
     const err = validateRule(rule);
     if (err !== null) {
       problems.push(`  - rules[${idx}] (${rule.reason}): ${err}`);
+    }
+    if (rule.kind !== undefined && !KNOWN_FINDING_KINDS.has(rule.kind)) {
+      problems.push(
+        `  - rules[${idx}] (${rule.reason}): unknown finding kind "${rule.kind}"`,
+      );
     }
   });
   if (problems.length > 0) {

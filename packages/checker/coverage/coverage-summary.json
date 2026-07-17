@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1611,
-      "covered": 1404,
+      "total": 1395,
+      "covered": 1222,
       "skipped": 0,
-      "pct": 87.15
+      "pct": 87.59
     },
     "statements": {
-      "total": 1631,
-      "covered": 1424,
+      "total": 1411,
+      "covered": 1238,
       "skipped": 0,
-      "pct": 87.3
+      "pct": 87.73
     },
     "functions": {
-      "total": 237,
-      "covered": 208,
+      "total": 215,
+      "covered": 186,
       "skipped": 0,
-      "pct": 87.76
+      "pct": 86.51
     },
     "branches": {
-      "total": 1163,
-      "covered": 928,
+      "total": 960,
+      "covered": 769,
       "skipped": 0,
-      "pct": 79.79
+      "pct": 80.1
     },
     "branchesTrue": {
       "total": 0,
@@ -59,10 +59,10 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 40,
-      "covered": 24,
+      "total": 39,
+      "covered": 23,
       "skipped": 0,
-      "pct": 60
+      "pct": 58.97
     },
     "functions": {
       "total": 9,
@@ -71,10 +71,10 @@
       "pct": 55.55
     },
     "statements": {
-      "total": 40,
-      "covered": 24,
+      "total": 39,
+      "covered": 23,
       "skipped": 0,
-      "pct": 60
+      "pct": 58.97
     },
     "branches": {
       "total": 16,
@@ -111,28 +111,28 @@
   },
   "src/suppressions.ts": {
     "lines": {
-      "total": 53,
-      "covered": 49,
+      "total": 9,
+      "covered": 7,
       "skipped": 0,
-      "pct": 92.45
+      "pct": 77.77
     },
     "functions": {
-      "total": 7,
-      "covered": 7,
+      "total": 2,
+      "covered": 2,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 54,
-      "covered": 50,
+      "total": 9,
+      "covered": 7,
       "skipped": 0,
-      "pct": 92.59
+      "pct": 77.77
     },
     "branches": {
-      "total": 45,
-      "covered": 40,
+      "total": 15,
+      "covered": 12,
       "skipped": 0,
-      "pct": 88.88
+      "pct": 80
     }
   },
   "src/__fixtures__/pairs.ts": {
@@ -164,9 +164,9 @@
   "src/body/bodyCompatibility.ts": {
     "lines": {
       "total": 99,
-      "covered": 74,
+      "covered": 96,
       "skipped": 0,
-      "pct": 74.74
+      "pct": 96.96
     },
     "functions": {
       "total": 10,
@@ -176,41 +176,41 @@
     },
     "statements": {
       "total": 100,
-      "covered": 75,
+      "covered": 97,
       "skipped": 0,
-      "pct": 75
+      "pct": 97
     },
     "branches": {
       "total": 84,
-      "covered": 58,
+      "covered": 81,
       "skipped": 0,
-      "pct": 69.04
+      "pct": 96.42
     }
   },
   "src/body/bodyMatch.ts": {
     "lines": {
-      "total": 91,
-      "covered": 87,
+      "total": 0,
+      "covered": 0,
       "skipped": 0,
-      "pct": 95.6
+      "pct": 100
     },
     "functions": {
-      "total": 8,
-      "covered": 8,
+      "total": 0,
+      "covered": 0,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 94,
-      "covered": 90,
+      "total": 0,
+      "covered": 0,
       "skipped": 0,
-      "pct": 95.74
+      "pct": 100
     },
     "branches": {
-      "total": 112,
-      "covered": 105,
+      "total": 0,
+      "covered": 0,
       "skipped": 0,
-      "pct": 93.75
+      "pct": 100
     }
   },
   "src/consumer/consumerContract.ts": {
@@ -395,32 +395,6 @@
       "pct": 79.41
     }
   },
-  "src/contract/intentAgreement.ts": {
-    "lines": {
-      "total": 60,
-      "covered": 55,
-      "skipped": 0,
-      "pct": 91.66
-    },
-    "functions": {
-      "total": 6,
-      "covered": 6,
-      "skipped": 0,
-      "pct": 100
-    },
-    "statements": {
-      "total": 60,
-      "covered": 55,
-      "skipped": 0,
-      "pct": 91.66
-    },
-    "branches": {
-      "total": 40,
-      "covered": 31,
-      "skipped": 0,
-      "pct": 77.5
-    }
-  },
   "src/coverage/providerCoverage.ts": {
     "lines": {
       "total": 63,
@@ -553,28 +527,28 @@
   },
   "src/pairing/pairing.ts": {
     "lines": {
-      "total": 62,
-      "covered": 61,
+      "total": 42,
+      "covered": 42,
       "skipped": 0,
-      "pct": 98.38
+      "pct": 100
     },
     "functions": {
-      "total": 4,
-      "covered": 4,
+      "total": 1,
+      "covered": 1,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 62,
-      "covered": 61,
+      "total": 42,
+      "covered": 42,
       "skipped": 0,
-      "pct": 98.38
+      "pct": 100
     },
     "branches": {
-      "total": 37,
-      "covered": 34,
+      "total": 16,
+      "covered": 16,
       "skipped": 0,
-      "pct": 91.89
+      "pct": 100
     }
   },
   "src/pairing/semanticBridging.ts": {

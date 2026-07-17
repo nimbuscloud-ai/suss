@@ -729,6 +729,232 @@ describe("checkDir", () => {
     expect(output).toContain("No findings");
   });
 
+  it("checks intent specs against code summaries via --intent", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-intentdir-"));
+    fs.writeFileSync(
+      path.join(intentDir, "users.intent.json"),
+      JSON.stringify({
+        kind: "boundary",
+        name: "users-lookup",
+        purpose: "Look up a user by id.",
+        audience: "web-client",
+        boundary: {
+          transport: "http",
+          semantics: "rest",
+          method: "GET",
+          path: "/users/:id",
+        },
+        transitions: [
+          { id: "found", when: "user exists", response: { status: 200 } },
+          {
+            id: "not-found",
+            when: "missing",
+            response: {
+              status: 404,
+              body: { properties: { error: { type: "string" } } },
+            },
+          },
+        ],
+      }),
+    );
+    try {
+      const output = captureStdout(() => {
+        const result = checkDir({ dir: tmpDir, intent: intentDir });
+        const kinds = (result.intent?.findings ?? []).map((f) => f.kind);
+        // Code produces 200 but not the declared 404.
+        expect(kinds).toContain("uncoveredOutcome");
+        expect(result.hasErrors).toBe(true);
+        // The intent was paired and compared — coverage accounting.
+        expect(result.intent?.checked).toHaveLength(1);
+        expect(result.intent?.unchecked).toHaveLength(0);
+
+        // --fail-on none keeps the same intent findings but never fails.
+        const lenient = checkDir({
+          dir: tmpDir,
+          intent: intentDir,
+          failOn: "none",
+        });
+        expect(lenient.intent?.findings).toHaveLength(
+          result.intent?.findings.length ?? 0,
+        );
+        expect(lenient.hasErrors).toBe(false);
+
+        // JSON output carries the intent pass alongside behavioural findings.
+        const asJson = checkDir({ dir: tmpDir, intent: intentDir, json: true });
+        expect((asJson.intent?.findings ?? []).length).toBeGreaterThan(0);
+
+        // Writing to a file works with --intent.
+        const outFile = path.join(tmpDir, "out.txt");
+        checkDir({ dir: tmpDir, intent: intentDir, output: outFile });
+        expect(fs.readFileSync(outFile, "utf8")).toContain("Intent:");
+      });
+      expect(output).toContain("Intent:");
+      expect(output).toContain("1 boundary intent checked against code");
+      expect(output).toContain('"intent"');
+    } finally {
+      fs.rmSync(intentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("suppresses intent findings via .sussignore with the same rule shape", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-intsupp-"));
+    fs.writeFileSync(
+      path.join(intentDir, "users.intent.json"),
+      JSON.stringify({
+        kind: "boundary",
+        name: "users-lookup",
+        purpose: "Look up a user by id.",
+        audience: "web-client",
+        boundary: {
+          transport: "http",
+          semantics: "rest",
+          method: "GET",
+          path: "/users/:id",
+        },
+        transitions: [
+          { id: "not-found", when: "missing", response: { status: 404 } },
+        ],
+      }),
+    );
+    const sussignore = path.join(intentDir, ".sussignore.json");
+    fs.writeFileSync(
+      sussignore,
+      JSON.stringify({
+        version: 1,
+        rules: [
+          {
+            kind: "uncoveredOutcome",
+            boundary: "GET /users/:id",
+            reason: "404 path ships next sprint",
+            effect: "mark",
+          },
+        ],
+      }),
+    );
+    try {
+      const output = captureStdout(() => {
+        const result = checkDir({
+          dir: tmpDir,
+          intent: intentDir,
+          sussignore,
+        });
+        // The finding is still reported, annotated — but mark excludes
+        // it from gating, so the run passes.
+        expect(result.intent?.findings[0].suppressed).toEqual({
+          reason: "404 path ships next sprint",
+          effect: "mark",
+        });
+        expect(result.hasErrors).toBe(false);
+      });
+      expect(output).toContain("suppressed (mark): 404 path ships next sprint");
+    } finally {
+      fs.rmSync(intentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects .sussignore rules that target an unknown finding kind", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const sussignore = path.join(tmpDir, ".sussignore.json");
+    fs.writeFileSync(
+      sussignore,
+      JSON.stringify({
+        version: 1,
+        rules: [
+          {
+            kind: "unconvexedOutcome",
+            boundary: "GET /users/:id",
+            reason: "typo'd kind",
+          },
+        ],
+      }),
+    );
+    expect(() => checkDir({ dir: tmpDir, sussignore })).toThrow(
+      /unknown finding kind "unconvexedOutcome"/,
+    );
+  });
+
+  it("surfaces PRD docs as not-yet-checked instead of silently passing", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prdonly-"));
+    fs.writeFileSync(
+      path.join(intentDir, "orders.prd.json"),
+      JSON.stringify({
+        kind: "prd",
+        title: "orders",
+        purpose: "Track orders end to end.",
+        audience: "ops",
+        scenarios: [{ when: "an order arrives", expect: "it is queued" }],
+      }),
+    );
+    try {
+      const output = captureStdout(() => {
+        const result = checkDir({ dir: tmpDir, intent: intentDir });
+        expect(result.intent?.findings).toHaveLength(0);
+        expect(result.intent?.unchecked).toEqual([
+          {
+            intent: "orders",
+            reason: "prd",
+            detail: "PRD scenario coverage is not checked yet",
+          },
+        ]);
+      });
+      expect(output).toContain(
+        "not checked: orders — PRD scenario coverage is not checked yet",
+      );
+    } finally {
+      fs.rmSync(intentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an intent directory containing no intent docs", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-noint-"));
+    try {
+      expect(() => checkDir({ dir: tmpDir, intent: intentDir })).toThrow(
+        /No intent docs/,
+      );
+    } finally {
+      fs.rmSync(intentDir, { recursive: true, force: true });
+    }
+  });
+
   it("pairs across param syntax styles (:id vs {id})", () => {
     fs.writeFileSync(
       path.join(tmpDir, "provider.json"),

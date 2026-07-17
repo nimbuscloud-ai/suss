@@ -17,7 +17,7 @@ import {
   type ComparisonOpSchema,
   type DerivationSchema,
   type EffectSchema,
-  type FindingKindSchema,
+  FindingKindSchema,
   type FindingSchema,
   type FindingSeveritySchema,
   type FindingSideSchema,
@@ -74,6 +74,13 @@ export type CodeUnitKind = z.infer<typeof CodeUnitKindSchema>;
 export type ComparisonOp = z.infer<typeof ComparisonOpSchema>;
 export type OpaqueReason = z.infer<typeof OpaqueReasonSchema>;
 export type FindingKind = z.infer<typeof FindingKindSchema>;
+
+/**
+ * Every behavioural finding kind, as runtime values. For consumers
+ * that validate user-supplied kind references (e.g. .sussignore rules)
+ * without reaching into the schema module, which is not public API.
+ */
+export const FINDING_KINDS: readonly FindingKind[] = FindingKindSchema.options;
 export type FindingSeverity = z.infer<typeof FindingSeveritySchema>;
 export type BoundaryAspect = z.infer<typeof BoundaryAspectSchema>;
 
