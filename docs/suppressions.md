@@ -29,8 +29,8 @@ rules:
 
 | Field | Required | Notes |
 |---|---|---|
-| `kind` | at least one of kind/boundary/consumer.transitionId unless `scope: broad` | Any value from `FindingKindSchema` — see the [findings catalog](/reference/findings) for the full list (REST coverage / contract / consumer kinds, GraphQL pairing, React-Storybook, storage-relational, message-bus, runtime-config, plus meta kinds like `lowConfidence`). |
-| `boundary` | see above | Human-readable key: `"METHOD /path"`. Both `:id` and `{id}` syntaxes accepted. |
+| `kind` | at least one of kind/boundary/consumer.transitionId unless `scope: broad` | Any behavioural finding kind — see the [findings catalog](/reference/findings) for the full list (REST coverage / contract / consumer kinds, GraphQL pairing, React-Storybook, storage-relational, message-bus, runtime-config, plus meta kinds like `lowConfidence`) — or any intent finding kind (`uncoveredOutcome`, `unimplementedBoundary`, `outcomeShapeMismatch`, `undeclaredOutcome`, `unkeyableBoundary`). Unknown kinds are rejected at load time. |
+| `boundary` | see above | Human-readable key: `"METHOD /path"` (both `:id` and `{id}` accepted), or a non-REST key verbatim (`"fn:@acme/api::getUser"`, `"gql:Query.user"`). |
 | `consumer.summary` | optional | `${file}::${name}` key matching the consumer side of the finding. |
 | `consumer.transitionId` | optional | Matches `Finding.consumer.transitionId`. |
 | `scope` | optional, default `"narrow"` | `"broad"` opts in to kind-only or boundary-only matches. |
@@ -50,6 +50,12 @@ A finding matches a rule when every specified field on the rule equals the corre
 - **`mark`** (default) — finding is still shown and returned to downstream tools, annotated `suppressed (mark): <reason>`. Excluded from the `--fail-on` exit-code threshold. Reviewers still see it.
 - **`downgrade`** — severity drops one level (`error` → `warning` → `info`). The original severity is preserved in `suppressed.originalSeverity`. Still counts toward the threshold at the *downgraded* severity, so `--fail-on info` still catches it.
 - **`hide`** — finding is removed from output and excluded from the threshold. Use when the noise genuinely serves no one; lose some transparency for it.
+
+## Intent findings
+
+The same rules apply to intent findings from `suss check --dir --intent`. `kind` and `boundary` match the same way (the intent finding's boundary is already a key string); `consumer` never matches an intent finding — there is no consumer side. Effects and threshold semantics are identical.
+
+Note: `.sussignore.json` living inside the `--dir` summaries directory is recognised as suppression config and excluded from the summaries walk.
 
 ## CLI flags
 

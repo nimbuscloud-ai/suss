@@ -1,79 +1,13 @@
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
+import { boundaryKey } from "@suss/ir-core";
 
-import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 
-// ---------------------------------------------------------------------------
-// Path normalization
-// ---------------------------------------------------------------------------
-
-/**
- * Normalize a route path to a canonical form for matching.
- *
- * - Converts Express-style params (`:id`) to brace-style (`{id}`)
- * - Strips trailing slashes (except bare `/`)
- * - Lowercases the static segments (params stay case-sensitive)
- */
-export function normalizePath(path: string): string {
-  // :param → {param}
-  let normalized = path.replace(/:([a-zA-Z_]\w*)/g, "{$1}");
-
-  // Strip trailing slash (keep bare /)
-  if (normalized.length > 1 && normalized.endsWith("/")) {
-    normalized = normalized.slice(0, -1);
-  }
-
-  // Lowercase static segments, preserve param names inside braces
-  normalized = normalized.replace(/\{[^}]+\}|[^{]+/g, (segment) =>
-    segment.startsWith("{") ? segment : segment.toLowerCase(),
-  );
-
-  return normalized;
-}
-
-// ---------------------------------------------------------------------------
-// Boundary key
-// ---------------------------------------------------------------------------
-
-/**
- * Compute a stable string key from a boundary binding for grouping.
- * Dispatches on `semantics.name`:
- *   - `rest` → `"METHOD /normalized/path"` (null if method or path empty)
- *   - `graphql-resolver` → `"gql:<TypeName>.<fieldName>"` (resolver-level
- *     pairing — a consumer operation that targets the same resolver
- *     would key here too once the resolver-selection mapping lands).
- *   - `graphql-operation` → null for v0 (operation-level pairing needs
- *     to map to N resolver-level keys; deferred with the consumer arc).
- *   - `function-call` → `"fn:<package>::<exportPath>"` when both
- *     `package` and `exportPath` are set (the package-export identity
- *     used by `library` providers and `caller` consumers). Other
- *     in-process function-call units (intra-repo React components,
- *     bare handlers without cross-module pairing) return null.
- */
-export function boundaryKey(binding: BoundaryBinding): string | null {
-  const semantics = binding.semantics;
-  if (semantics.name === "rest") {
-    if (semantics.method === "" || semantics.path === "") {
-      return null;
-    }
-    const method = semantics.method.toUpperCase();
-    const path = normalizePath(semantics.path);
-    return `${method} ${path}`;
-  }
-  if (semantics.name === "graphql-resolver") {
-    return `gql:${semantics.typeName}.${semantics.fieldName}`;
-  }
-  if (semantics.name === "function-call") {
-    if (
-      semantics.package !== undefined &&
-      semantics.exportPath !== undefined &&
-      semantics.exportPath.length > 0
-    ) {
-      return `fn:${semantics.package}::${semantics.exportPath.join(".")}`;
-    }
-    return null;
-  }
-  return null;
-}
+// boundaryKey / normalizePath are shared comparison primitives owned by
+// @suss/ir-core (the intent checker keys boundaries the same way). Kept
+// re-exported here so the checker's internal modules and external
+// consumers that import them from this module are unaffected by the move.
+export { boundaryKey, normalizePath } from "@suss/ir-core";
 
 // ---------------------------------------------------------------------------
 // Pairing

@@ -118,6 +118,21 @@ These terms are used consistently across the codebase. The running example is th
 ## Packages and what each owns
 
 ```
+@suss/ir-core                shared IR primitives: TypeShape, boundary
+    │                        bindings + boundaryKey, source locations,
+    │                        confidence. Both IRs build on this; neither
+    │                        depends on the other.
+    │
+    ├─ @suss/intent-ir       team-authored intent IR: IntentDoc (authoring),
+    │     │                  IntentSummary (checkable form), IntentFinding.
+    │     │
+    │     ├─ @suss/contract-intent   *.intent / *.prd reader → IntentSummary
+    │     │                          (not BehavioralSummary — intent is its
+    │     │                          own artifact stream)
+    │     │
+    │     └─ @suss/checker-intent    intent ↔ code checker; also consumes
+    │                                behavioural summaries. IR-only consumer.
+    │
 @suss/behavioral-ir          zod schemas, types, parsers. Install this to
     │                        consume summaries.
     │
@@ -158,18 +173,25 @@ These terms are used consistently across the codebase. The running example is th
     │
     └─ @suss/checker         pairwise cross-boundary checker. IR-only consumer.
           │
-       @suss/cli             thin wrapper over extractor + checker + contracts
+       @suss/cli             thin wrapper over extractor + checkers + contracts.
+                             The orchestration seam: loads both artifact
+                             streams (behavioural + intent) and dispatches to
+                             the matching checker.
 ```
 
 ### Dependency rules
 
+- `@suss/ir-core` — one peer dep on `zod`. Primitives both IRs share (`TypeShape`, `BoundaryBinding` + `boundaryKey`, `SourceLocation`, `ConfidenceInfo`) plus the comparison primitives both checkers share (`bodyShapesMatch`). Intent and behaviour describe boundaries the same way because they build on the same vocabulary; neither IR depends on the other.
 - `@suss/behavioral-ir` — one peer dep on `zod`. Runtime validators (`parseSummaries`, `safeParseSummaries`) and the generated JSON Schema both come from the zod schemas. This is what downstream consumers install.
+- `@suss/intent-ir` — depends on `ir-core` only. Authoring schema (`IntentDoc`), checkable form (`IntentSummary`), and the intent finding shape (`IntentFinding` — deliberately not the behavioural `Finding`, which is a two-sided peer comparison; intent findings are one-sided coverage).
+- `@suss/contract-intent` — reader for `*.intent` / `*.prd` files. Unlike the other `contract-*` readers it produces `IntentSummary`, not `BehavioralSummary`: intent is a separate artifact stream that gets *compared against* behaviour, not folded into it.
+- `@suss/checker-intent` — depends on both IRs (it compares them) and `ir-core`. Pure function `checkIntentAgreement(intents, code)` → findings + checked / unchecked accounting. Peer of `@suss/checker`, not a dependency of it.
 - `@suss/extractor` — depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript` — depends on IR, extractor, ts-morph. The heavyweight package.
 - **All pack kinds** (framework, client, runtime) — depend only on `@suss/extractor` for the `PatternPack` type. They're data, not logic.
 - `@suss/contract-*` packages — depend only on the IR, plus on each other where they compose (`cloudformation` delegates to `openapi` + `aws-apigateway`). Produce `BehavioralSummary[]` from specs, manifests, schemas; carry `confidence.source: "contract"`. See [`contract-sources.md`](contract-sources.md).
 - `@suss/checker` — depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or packs — operates on the serialized IR.
-- `@suss/cli` — depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs.
+- `@suss/cli` — depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs. The CLI is the orchestration seam for multi-stream checking: it loads behavioural summaries and intent docs and dispatches each to its checker. The checkers stay IR-only consumers and never depend on each other.
 
 ### Ownership rules
 

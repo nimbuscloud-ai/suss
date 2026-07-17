@@ -66,6 +66,13 @@ const RestBoundarySchema = z.object({
   path: z.string().min(1),
 });
 
+// Deliberately permissive: a function-call boundary is pairable today
+// only when `package` + `exportPath` are set (see @suss/ir-core
+// boundaryKey), but module-level boundaries stay authorable — declared-
+// ahead-of-capability intent is a valid pending state, same as an
+// unlinked PRD scenario. The checker reports such intent as unchecked
+// (unkeyableBoundary) rather than this schema rejecting it; don't
+// tighten this without also shipping module-level keying.
 const FunctionCallBoundarySchema = z.object({
   transport: z.string().default("in-process"),
   semantics: z.literal("function-call"),

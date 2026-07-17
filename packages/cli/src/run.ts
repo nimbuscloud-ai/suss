@@ -23,7 +23,7 @@ Usage:
   suss inspect --dir <directory>
   suss inspect --diff <before.json> <after.json>
   suss check <provider.json> <consumer.json> [--json] [-o <output>]
-  suss check --dir <directory> [--json] [-o <output>]
+  suss check --dir <directory> [--intent <intent-dir>] [--json] [-o <output>]
   suss contract --from <source> <spec> [-o <output.json>]
 
 Commands:
@@ -43,6 +43,8 @@ Options (extract):
 
 Options (check):
   --dir            Directory of summary JSON files (auto-pairs by method+path)
+  --intent         Directory of intent specs (*.intent / *.prd) to check the
+                   code summaries against; requires --dir
   --json           Emit findings as JSON (default: human-readable)
   -o, --output     Write findings to file instead of stdout
   --fail-on        Exit non-zero threshold: error (default), warning, info, none
@@ -193,6 +195,7 @@ function runCheck(args: string[]): number {
       json: { type: "boolean" },
       output: { type: "string", short: "o" },
       dir: { type: "string" },
+      intent: { type: "string" },
       "fail-on": { type: "string" },
     },
     allowPositionals: true,
@@ -224,8 +227,19 @@ function runCheck(args: string[]): number {
   };
 
   if (values.dir !== undefined) {
-    const result = checkDir({ dir: values.dir, ...shared });
+    const result = checkDir({
+      dir: values.dir,
+      ...shared,
+      ...(values.intent !== undefined ? { intent: values.intent } : {}),
+    });
     return result.hasErrors ? 1 : 0;
+  }
+
+  if (values.intent !== undefined) {
+    process.stderr.write(
+      "Error: --intent requires --dir <directory> of code summaries to check against\n",
+    );
+    return 1;
   }
 
   if (positionals.length < 2) {
