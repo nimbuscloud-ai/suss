@@ -1,0 +1,55 @@
+# Raw AWS::AppSync::* API whose SDL lives in a separate .graphql file
+# referenced by DefinitionS3Location as a local relative path (the shape
+# schema-first services use before a packaging step rewrites it to s3://).
+Resources:
+  NotesApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: Notes
+      AuthenticationType: API_KEY
+
+  NotesSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId: !Ref NotesApi
+      DefinitionS3Location: ./schema.graphql
+
+  NotesTableDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !Ref NotesApi
+      Name: NotesTable
+      Type: AMAZON_DYNAMODB
+
+  NotesLambdaDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !Ref NotesApi
+      Name: NotesLambda
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt NotesFunction.Arn
+
+  QueryNotesResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !Ref NotesApi
+      TypeName: Query
+      FieldName: notes
+      DataSourceName: !Ref NotesTableDataSource
+
+  QueryNoteResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !Ref NotesApi
+      TypeName: Query
+      FieldName: note
+      DataSourceName: !Ref NotesTableDataSource
+
+  MutationCreateNoteResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !Ref NotesApi
+      TypeName: Mutation
+      FieldName: createNote
+      DataSourceName: !Ref NotesLambdaDataSource

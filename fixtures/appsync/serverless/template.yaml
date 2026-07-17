@@ -1,0 +1,68 @@
+# SAM shorthand: one AWS::Serverless::GraphQLApi carries the schema,
+# data sources, pipeline functions, and per-field resolvers inline. The
+# SAM transform would expand this into the raw AWS::AppSync::* resources;
+# this reader normalizes it into the same model directly.
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  BlogApi:
+    Type: AWS::Serverless::GraphQLApi
+    Properties:
+      Name: Blog
+      SchemaUri: ./schema.graphql
+      Auth:
+        Type: AWS_IAM
+      DataSources:
+        Lambdas:
+          PostsResolverDataSource:
+            FunctionArn: !GetAtt PostsFunction.Arn
+        DynamoDb:
+          CommentsTable:
+            TableName: comments
+            TableArn: !GetAtt CommentsTable.Arn
+      Functions:
+        validatePost:
+          Runtime:
+            Name: APPSYNC_JS
+            Version: "1.0.0"
+          DataSource: PostsResolverDataSource
+          CodeUri: ./functions/validatePost.js
+        writePost:
+          Runtime:
+            Name: APPSYNC_JS
+            Version: "1.0.0"
+          DataSource: PostsResolverDataSource
+          CodeUri: ./functions/writePost.js
+      Resolvers:
+        Query:
+          posts:
+            Runtime:
+              Name: APPSYNC_JS
+              Version: "1.0.0"
+            CodeUri: ./resolvers/posts.js
+            DataSource: PostsResolverDataSource
+          post:
+            Runtime:
+              Name: APPSYNC_JS
+              Version: "1.0.0"
+            CodeUri: ./resolvers/post.js
+            DataSource: PostsResolverDataSource
+        Mutation:
+          addPost:
+            Runtime:
+              Name: APPSYNC_JS
+              Version: "1.0.0"
+            Pipeline:
+              - validatePost
+              - writePost
+
+  PostsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs20.x
+      CodeUri: ./src/posts/
+
+  CommentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: comments
