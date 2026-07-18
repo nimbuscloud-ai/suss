@@ -1,0 +1,25 @@
+# System intent for @suss/checker's single-pair entry point.
+#
+# checkPair runs the provider/consumer checks for one already-paired
+# summary pair and returns the findings. The return is a bare array
+# (Finding[]); the intent body vocabulary describes object properties,
+# not a top-level array, so the outcome is declared without a body — the
+# assertion is only that a value is returned, never thrown.
+
+kind: boundary
+
+name: checker-check-pair
+purpose: Run the provider/consumer checks for one summary pair and return the findings.
+audience: downstream-consumers
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker"
+  exportPath: ["checkPair"]
+
+transitions:
+  - id: findings
+    when: called with a provider summary and a consumer summary
+    returns: {}

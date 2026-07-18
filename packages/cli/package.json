@@ -48,7 +48,8 @@
     "test:coverage": "vitest run --coverage",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:self": "node ../../scripts/checkSelf.mjs"
   },
   "peerDependencies": {
     "zod": "^4.0.0"

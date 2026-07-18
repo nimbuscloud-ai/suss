@@ -1,0 +1,39 @@
+# System intent for @suss/checker's top-level entry point.
+#
+# checkAll is the behavioural orchestrator the CLI drives: given a flat
+# list of summaries, it auto-pairs providers with consumers and returns
+# the findings plus the pairing accounting. The declared outcome is the
+# CheckAllResult shape — a total function over well-typed input, no
+# thrown errors.
+#
+# Body shapes name the top-level keys only. The intent body vocabulary
+# expresses object properties with primitive value types, not the nested
+# arrays / records these keys actually hold, so the values are declared
+# `unknown`. The assertion that still bites: rename or drop one of these
+# keys and the code's return shape stops satisfying the declaration.
+
+kind: boundary
+
+name: checker-check-all
+purpose: >-
+  Pair every provider summary against consumers sharing its boundary key
+  and return findings plus pairing accounting for the whole summary set.
+audience: suss-cli
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker"
+  exportPath: ["checkAll"]
+
+transitions:
+  - id: result
+    when: called with a list of behavioural summaries
+    returns:
+      body:
+        properties:
+          findings: { type: unknown }
+          pairs: { type: unknown }
+          unmatched: { type: unknown }
+        required: [findings, pairs, unmatched]
