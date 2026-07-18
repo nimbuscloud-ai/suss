@@ -769,6 +769,70 @@ describe("appsyncToSummaries — SAM shape edge cases", () => {
       reason: "remote",
     });
   });
+
+  it("treats an api with neither SchemaInline nor SchemaUri as schema-absent", () => {
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::Serverless::GraphQLApi",
+          Properties: {
+            Name: "NoSchema",
+            Resolvers: {
+              Query: { ping: { DataSource: "PingDS" } },
+            },
+          },
+        },
+      },
+    });
+    expect(summaries.map((s) => s.identity.name)).toEqual(["Query.ping"]);
+    expect(appsyncMeta(summaries[0]).schemaMatched).toBe(false);
+  });
+
+  it("skips malformed DataSources categories and Resolvers blocks", () => {
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::Serverless::GraphQLApi",
+          Properties: {
+            Name: "Malformed",
+            SchemaInline: "type Query { ping: String }",
+            DataSources: {
+              Lambdas: "not-a-record",
+              DynamoDb: { Table: { TableName: "T" } },
+            },
+            Resolvers: "not-a-record",
+          },
+        },
+      },
+    });
+    expect(summaries).toHaveLength(0);
+  });
+
+  it("reads pipeline resolver Functions and defaults omitted Kind to UNIT", () => {
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::Serverless::GraphQLApi",
+          Properties: {
+            Name: "Pipeline",
+            SchemaInline: "type Query { ping: String }",
+            Resolvers: {
+              Query: {
+                ping: {
+                  Pipeline: ["FnOne", { Bogus: true }],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(summaries).toHaveLength(1);
+    const meta = appsyncMeta(summaries[0]) as Record<string, unknown>;
+    expect(meta.kind).toBe("PIPELINE");
+    // The malformed pipeline entry is dropped; the string entry resolves.
+    expect(meta.pipelineFunctions).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

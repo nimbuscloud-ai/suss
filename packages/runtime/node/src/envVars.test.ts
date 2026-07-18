@@ -193,6 +193,26 @@ describe("findProcessEnvReads helper", () => {
     const port = reads.find((r) => r.name === "PORT") ?? raise("no PORT");
     expect(port.defaulted).toBe(true);
   });
+
+  it("skips accesses whose middle segment is not env", () => {
+    const file = makeProject(`
+      const a = process.argv.length;
+      const b = config.env.MODE;
+      const c = process.env.KEEP;
+    `);
+    const reads = findProcessEnvReads(file);
+    expect(reads.map((r) => r.name)).toEqual(["KEEP"]);
+  });
+
+  it("does not mark defaulted for non-?? binary parents", () => {
+    const file = makeProject(`
+      const same = process.env.MODE === "production";
+      const fallback = readFile() ?? process.env.BACKUP_PATH;
+    `);
+    const reads = findProcessEnvReads(file);
+    expect(reads.find((r) => r.name === "MODE")?.defaulted).toBe(false);
+    expect(reads.find((r) => r.name === "BACKUP_PATH")?.defaulted).toBe(false);
+  });
 });
 
 describe("node runtime pack — env-var wiring", () => {

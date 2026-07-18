@@ -197,6 +197,47 @@ describe("runCli — extract", () => {
     expect(exit).toBe(1);
     expect(io.stderr).toContain("--gaps must be");
   });
+
+  it("extracts a project to a file and reports timing under --timing", async () => {
+    const srcDir = path.join(tmpDir, "src");
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(srcDir, "consumer.ts"),
+      [
+        `import axios from "axios";`,
+        "export async function loadPet(id: string) {",
+        "  const res = await axios.get(\`/pets/\${id}\`);",
+        "  return res.data;",
+        "}",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: { strict: true, module: "esnext" },
+        include: ["src"],
+      }),
+    );
+    const outFile = path.join(tmpDir, "out", "summaries.json");
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "-p",
+        path.join(tmpDir, "tsconfig.json"),
+        "-f",
+        "axios",
+        "-o",
+        outFile,
+        "--timing",
+        "--no-cache",
+      ]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain("Wrote");
+    expect(io.stderr).toContain("Timing:");
+    const written = JSON.parse(fs.readFileSync(outFile, "utf8"));
+    expect(Array.isArray(written)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

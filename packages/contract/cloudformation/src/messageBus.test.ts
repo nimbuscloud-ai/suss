@@ -559,3 +559,108 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     expect(eventBridgeConsumers(out)).toHaveLength(2);
   });
 });
+
+describe("buildMessageBusSummaries — EventBridge edge shapes", () => {
+  const consumerFn = {
+    Type: "AWS::Serverless::Function",
+    Properties: { CodeUri: "src/consumer/" },
+  };
+
+  function ruleTemplate(ruleProps: Record<string, unknown>) {
+    return cloudFormationToSummaries({
+      Resources: {
+        Consumer: consumerFn,
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            Targets: [{ Arn: { "Fn::GetAtt": ["Consumer", "Arn"] }, Id: "t" }],
+            ...ruleProps,
+          },
+        },
+      },
+    });
+  }
+
+  it("resolves an event-bus ARN string to its bus name segment", () => {
+    const out = ruleTemplate({
+      EventBusName:
+        "arn:aws:events:us-east-1:123456789012:event-bus/orders-bus",
+      EventPattern: { "detail-type": ["OrderPlaced"] },
+    });
+    expect(eventBridgeProviders(out)[0]?.identity.name).toBe(
+      "orders-bus#OrderPlaced",
+    );
+  });
+
+  it("uses a literal bus name string as the bus token", () => {
+    const out = ruleTemplate({
+      EventBusName: "orders-bus",
+      EventPattern: { "detail-type": ["OrderPlaced"] },
+    });
+    expect(eventBridgeProviders(out)[0]?.identity.name).toBe(
+      "orders-bus#OrderPlaced",
+    );
+  });
+
+  it("marks a non-array detail-type as unresolvable", () => {
+    const out = ruleTemplate({
+      EventPattern: { "detail-type": "OrderPlaced" },
+    });
+    const unresolvable = out.filter((s) => resolutionOf(s) === "unresolvable");
+    expect(unresolvable.length).toBeGreaterThan(0);
+  });
+
+  it("marks an empty detail-type array as unresolvable", () => {
+    const out = ruleTemplate({
+      EventPattern: { "detail-type": [] },
+    });
+    expect(out.some((s) => resolutionOf(s) === "unresolvable")).toBe(true);
+  });
+
+  it("resolves a target Arn given as short-form GetAtt string", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Consumer: consumerFn,
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [{ Arn: { "Fn::GetAtt": "Consumer.Arn" }, Id: "t" }],
+          },
+        },
+      },
+    });
+    expect(eventBridgeConsumers(out)).toHaveLength(1);
+  });
+
+  it("skips targets whose Arn names a resource missing from the template", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [{ Arn: { "Fn::GetAtt": ["Ghost", "Arn"] }, Id: "t" }],
+          },
+        },
+      },
+    });
+    expect(eventBridgeConsumers(out)).toHaveLength(0);
+  });
+
+  it("skips malformed target entries without an Arn", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Consumer: consumerFn,
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [null, { Id: "no-arn" }, "bogus"],
+          },
+        },
+      },
+    });
+    expect(eventBridgeConsumers(out)).toHaveLength(0);
+  });
+});
