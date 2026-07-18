@@ -1,10 +1,9 @@
 # Worked example for the intent-layer-design proposal, v0.2 territory
-# (workflow shape + non-HTTP boundaries).
-#
-# A PRD spanning two services connected by a queue. The "order
-# intake" service accepts an order; the "order processing" service
-# picks it up. Both are owned by the same team; the PRD describes the
-# end-to-end behaviour from the customer's point of view.
+# (workflow shape + non-HTTP boundaries). NOT loadable by the shipped
+# v0.1 loader — kind: workflow, effect outcomes, and multi-target
+# links are proposed shapes. Field naming tracks the settled v0.1
+# convention: `when` / `expect` are human text, `link` is the
+# structured reference.
 
 kind: prd
 
@@ -18,13 +17,13 @@ audience: end-user
 scenarios:
   - title: Order is accepted and queued
     when: a customer places a valid order
-    then: the order is acknowledged and queued for processing
-    expect:
+    expect: the order is acknowledged and queued for processing
+    link:
       - order-intake.acknowledged
       - order-intake.queued-for-processing
 
   - title: Processing acts on the queued order
     when: an accepted order reaches the processor
-    then: the processor handles the order
-    expect:
+    expect: the processor handles the order
+    link:
       - order-processing.processed
