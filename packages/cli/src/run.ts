@@ -48,6 +48,8 @@ Options (check):
   --json           Emit findings as JSON (default: human-readable)
   -o, --output     Write findings to file instead of stdout
   --fail-on        Exit non-zero threshold: error (default), warning, info, none
+  --sussignore     Path to a .sussignore file (overrides auto-discovery)
+  --no-suppressions  Ignore any .sussignore, reporting every finding
 
 Options (contract):
   --from           Contract source kind: openapi, cloudformation, storybook, appsync, prisma, graphql
@@ -197,6 +199,8 @@ function runCheck(args: string[]): number {
       dir: { type: "string" },
       intent: { type: "string" },
       "fail-on": { type: "string" },
+      sussignore: { type: "string" },
+      "no-suppressions": { type: "boolean" },
     },
     allowPositionals: true,
   });
@@ -224,6 +228,10 @@ function runCheck(args: string[]): number {
     ...(values.json === true ? { json: true } : {}),
     ...(values.output !== undefined ? { output: values.output } : {}),
     ...(failOn !== undefined ? { failOn } : {}),
+    ...(values.sussignore !== undefined
+      ? { sussignore: values.sussignore }
+      : {}),
+    ...(values["no-suppressions"] === true ? { noSuppressions: true } : {}),
   };
 
   if (values.dir !== undefined) {

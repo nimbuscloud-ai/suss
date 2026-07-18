@@ -279,6 +279,39 @@ describe("intentDocToSummary — body shapes and outcome edges", () => {
     expect(summary.outcomes[0].body).toBeNull();
   });
 
+  it("treats a null outcome (bare `returns:` in YAML) as body-less", () => {
+    // YAML `returns:` with no value parses to null; it must mean the
+    // same as `returns: {}`, not fail as "expected object, received null".
+    const doc = {
+      kind: "boundary",
+      name: "bare-returns",
+      purpose: "returns a value, body unspecified",
+      audience: "test",
+      boundary: { semantics: "function-call", exportName: "f" },
+      transitions: [{ id: "ok", when: "always", returns: null }],
+    };
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(doc),
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0].kind).toBe("return");
+    expect(summary.outcomes[0].body).toBeNull();
+  });
+
+  it("treats a null throws outcome as a body-less throw", () => {
+    const doc = {
+      kind: "boundary",
+      name: "bare-throws",
+      purpose: "throws, error type unspecified",
+      audience: "test",
+      boundary: { semantics: "function-call", exportName: "f" },
+      transitions: [{ id: "boom", when: "on error", throws: null }],
+    };
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(doc),
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0].kind).toBe("throw");
+  });
+
   it("yields a null body for a response body with no declared properties", () => {
     const doc = {
       kind: "boundary",
