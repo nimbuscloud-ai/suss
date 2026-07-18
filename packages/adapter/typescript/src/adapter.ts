@@ -56,9 +56,13 @@ import { deriveGraphqlContract } from "./graphqlContract.js";
 import { expandReachableClosure } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
-import { createTsSubUnitContext } from "./subUnitContext.js";
+import {
+  createTsSubUnitContext,
+  type TsSubUnitContext,
+} from "./subUnitContext.js";
 import { createTimer, type TimingReport } from "./timing.js";
 import { computeAdapterPacksDigest } from "./version.js";
+import { type DescentBarriers, NO_BARRIERS } from "./walk/descent.js";
 
 import type {
   BehavioralSummary,
@@ -457,6 +461,7 @@ export function extractCodeStructure(
   filePath: string,
   invocationRecognizers: InvocationRecognizer[] = [],
   accessRecognizers: AccessRecognizer[] = [],
+  barriers: DescentBarriers = NO_BARRIERS,
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   const params = extractParameters(func, pack.inputMapping);
@@ -465,6 +470,7 @@ export function extractCodeStructure(
     pack.terminals,
     invocationRecognizers,
     accessRecognizers,
+    barriers,
   );
   const depCalls = extractDependencyCalls(func);
 
@@ -714,6 +720,46 @@ function collectAccessRecognizers(
   return out;
 }
 
+/**
+ * Nested function nodes the discovering pack claims as sub-units of
+ * `unit`. The body walkers stop at these so a sub-unit's behavior lands
+ * on its own summary, not the parent's. Computed from the same
+ * `subUnits` hook `synthesizeSubUnits` runs later, so the barrier set
+ * matches exactly the functions that become sub-units — without it,
+ * descent would attribute a React handler's or effect's calls to the
+ * component AND to the handler/effect summary.
+ */
+function computeSubUnitBarriers(
+  unit: DiscoveredUnit,
+  pack: PatternPack,
+  ctx: TsSubUnitContext,
+): DescentBarriers {
+  if (pack.subUnits === undefined) {
+    return NO_BARRIERS;
+  }
+  const parentHandle: DiscoveredSubUnitParent = {
+    func: unit.func,
+    name: unit.name,
+    kind: unit.kind,
+  };
+  try {
+    const subUnits = pack.subUnits(parentHandle, ctx);
+    if (subUnits.length === 0) {
+      return NO_BARRIERS;
+    }
+    const barriers = new Set<Node>();
+    for (const su of subUnits) {
+      barriers.add(su.func as Node);
+    }
+    return barriers;
+  } catch (err) {
+    process.stderr.write(
+      `[suss] subUnits hook in pack "${pack.name}" threw during barrier computation: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return NO_BARRIERS;
+  }
+}
+
 function extractFromSourceFile(
   sourceFile: SourceFile,
   frameworks: PatternPack[],
@@ -727,6 +773,11 @@ function extractFromSourceFile(
   // claim dedup below.
   const allInvocationRecognizers = collectInvocationRecognizers(frameworks);
   const allAccessRecognizers = collectAccessRecognizers(frameworks);
+  // Shared context for the discovering pack's `subUnits` hook, used here
+  // only to compute descent barriers (which nested functions are
+  // sub-units). Sub-unit *summaries* are synthesized later in
+  // `synthesizeSubUnits`.
+  const subUnitCtx = createTsSubUnitContext();
 
   // Cross-pack dedup: when two packs both claim the same (function, kind)
   // — e.g. React and React Router both discovering a default-exported
@@ -784,12 +835,14 @@ function extractFromSourceFile(
         continue;
       }
       claimed.add(claimKey);
+      const barriers = computeSubUnitBarriers(unit, pack, subUnitCtx);
       const raw = extractCodeStructure(
         unit,
         pack,
         filePath,
         allInvocationRecognizers,
         allAccessRecognizers,
+        barriers,
       );
 
       // The discovery pattern that produced this unit is attached by

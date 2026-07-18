@@ -5,12 +5,16 @@ import path from "node:path";
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { assembleSummary } from "@suss/extractor";
+
 import { createTypeScriptAdapter, extractCodeStructure } from "./adapter.js";
 import { readContract } from "./contract.js";
 import { discoverUnits } from "./discovery/index.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
+import type { FunctionRoot } from "./conditions.js";
+import type { DiscoveredUnit } from "./discovery/index.js";
 
 function restMethodOf(
   target:
@@ -3174,5 +3178,221 @@ describe("inline JSX conditional decomposition", () => {
       throw new Error("expected element whenTrue");
     }
     expect(child.whenTrue.tag).toBe("span");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Walker descent — docs/internal/proposals/adapter-ecmascript-spec.md
+//
+// Recognizers, effects, and escaping terminals fire inside nested
+// function expressions / arrows (Promise executors, `.then` callbacks)
+// as if the code were inline. Named nested declarations and pack-
+// declared sub-units remain hard stops.
+// ---------------------------------------------------------------------------
+
+const expressResPack: PatternPack = {
+  name: "express",
+  protocol: "http",
+  languages: ["typescript"],
+  discovery: [
+    { kind: "handler", match: { type: "namedExport", names: ["handleUser"] } },
+  ],
+  terminals: [
+    {
+      kind: "response",
+      match: {
+        type: "parameterMethodCall",
+        parameterPosition: 1,
+        methodChain: ["json"],
+      },
+      extraction: {
+        body: { from: "argument", position: 0 },
+        defaultStatusCode: 200,
+      },
+    },
+  ],
+  inputMapping: {
+    type: "positionalParams",
+    params: [
+      { position: 0, role: "request" },
+      { position: 1, role: "response" },
+    ],
+  },
+};
+
+describe("walker descent", () => {
+  it("(a) finds a handler's terminal produced inside a Promise executor", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      declare function loadUser(id: string): { name: string };
+      export function handleUser(req: any, res: any) {
+        new Promise<void>((resolve) => {
+          const user = loadUser(req.params.id);
+          res.json({ name: user.name });
+          resolve();
+        });
+      }
+    `;
+    const file = project.createSourceFile("handler.ts", source);
+    const units = discoverUnits(file, expressResPack.discovery);
+    const raw = extractCodeStructure(units[0], expressResPack, "handler.ts");
+
+    // The terminal `res.json({ name })` lives inside the executor arrow;
+    // descent finds it because `res` is the handler's own parameter.
+    const responseBranches = raw.branches.filter(
+      (b) => b.terminal.kind === "response",
+    );
+    expect(responseBranches).toHaveLength(1);
+    const shape = responseBranches[0].terminal.body?.shape;
+    expect(shape?.type).toBe("record");
+    if (shape?.type === "record") {
+      expect(Object.keys(shape.properties)).toContain("name");
+    }
+
+    const summary = assembleSummary(raw);
+    const responses = summary.transitions.filter(
+      (t) => t.output.type === "response",
+    );
+    expect(responses).toHaveLength(1);
+    const out = responses[0].output;
+    if (out.type !== "response") {
+      throw new Error("expected response output");
+    }
+    expect(out.statusCode).toEqual({ type: "literal", value: 200 });
+  });
+
+  it("(c) descends a class method's nested arrow to find the terminal", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      declare function loadUser(id: string): Promise<{ name: string }>;
+      export class UserController {
+        getUser(req: any, res: any) {
+          loadUser(req.params.id).then((user) => {
+            res.json({ name: user.name });
+          });
+        }
+      }
+    `;
+    const file = project.createSourceFile("controller.ts", source);
+    const method = file
+      .getClassOrThrow("UserController")
+      .getMethodOrThrow("getUser");
+    const unit: DiscoveredUnit = {
+      func: method as FunctionRoot,
+      kind: "handler",
+      name: "UserController.getUser",
+    };
+    const raw = extractCodeStructure(unit, expressResPack, "controller.ts");
+
+    // Class-method body is walked exactly like a function body; the
+    // `res.json(...)` terminal inside the `.then` callback is found.
+    const responseBranches = raw.branches.filter(
+      (b) => b.terminal.kind === "response",
+    );
+    expect(responseBranches).toHaveLength(1);
+    const shape = responseBranches[0].terminal.body?.shape;
+    expect(shape?.type).toBe("record");
+    if (shape?.type === "record") {
+      expect(Object.keys(shape.properties)).toContain("name");
+    }
+
+    const summary = assembleSummary(raw);
+    expect(summary.transitions).not.toHaveLength(0);
+    expect(summary.transitions.some((t) => t.output.type === "response")).toBe(
+      true,
+    );
+  });
+
+  it("attributes an effect inside a `.then` callback to the enclosing unit", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      declare const audit: { record(msg: string): void };
+      declare function loadUser(id: string): Promise<{ name: string }>;
+      export function handleUser(req: any, res: any) {
+        loadUser(req.params.id).then((user) => {
+          audit.record("loaded");
+          res.json({ name: user.name });
+        });
+      }
+    `;
+    const file = project.createSourceFile("handler.ts", source);
+    const units = discoverUnits(file, expressResPack.discovery);
+    const raw = extractCodeStructure(units[0], expressResPack, "handler.ts");
+
+    // `audit.record(...)` is a bare expression-statement call inside the
+    // `.then` callback; descent captures it as an invocation effect on
+    // the enclosing handler's default branch.
+    const defaultBranch = raw.branches.find((b) => b.isDefault);
+    const callees = (defaultBranch?.effects ?? []).flatMap((e) =>
+      e.type === "invocation" ? [e.callee] : [],
+    );
+    expect(callees).toContain("audit.record");
+  });
+
+  it("stops descent at a pack-declared sub-unit boundary", () => {
+    // A pack whose subUnits hook claims the arrow argument of `defer(...)`.
+    // Its body must NOT be attributed to the parent — that behavior
+    // belongs to the sub-unit's own summary.
+    const deferPack: PatternPack = {
+      ...expressResPack,
+      name: "defer-pack",
+      subUnits: (parent, ctx) => {
+        const c = ctx as {
+          findCallExpressionsByName: (
+            f: unknown,
+            name: string,
+          ) => Array<unknown>;
+          getCallArgumentFunction: (call: unknown, position: number) => unknown;
+        };
+        const out: Array<{ func: unknown; kind: string; name: string }> = [];
+        for (const call of c.findCallExpressionsByName(parent.func, "defer")) {
+          const fn = c.getCallArgumentFunction(call, 0);
+          if (fn !== null) {
+            out.push({
+              func: fn,
+              kind: "handler",
+              name: `${parent.name}.defer`,
+            });
+          }
+        }
+        return out as never;
+      },
+    };
+
+    const project = new Project({ useInMemoryFileSystem: true });
+    const source = `
+      declare function defer(cb: () => void): void;
+      declare const audit: { record(msg: string): void };
+      export function handleUser(req: any, res: any) {
+        defer(() => {
+          audit.record("deferred");
+        });
+        res.json({ ok: true });
+      }
+    `;
+    project.createSourceFile("handler.ts", source);
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [deferPack],
+      includeReachable: false,
+    });
+
+    return adapter.extractAll().then((summaries) => {
+      const parent = summaries.find((s) => s.identity.name === "handleUser");
+      expect(parent).toBeDefined();
+      const parentCallees = (parent?.transitions ?? []).flatMap((t) =>
+        t.effects.flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
+      );
+      // The deferred callback's `audit.record` belongs to the sub-unit,
+      // not the parent — the barrier stopped descent there.
+      expect(parentCallees).not.toContain("audit.record");
+      // And the sub-unit summary captured it.
+      const sub = summaries.find((s) => s.identity.name === "handleUser.defer");
+      expect(sub).toBeDefined();
+      const subCallees = (sub?.transitions ?? []).flatMap((t) =>
+        t.effects.flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
+      );
+      expect(subCallees).toContain("audit.record");
+    });
   });
 });
