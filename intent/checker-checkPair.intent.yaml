@@ -1,0 +1,31 @@
+# System intent for @suss/checker's single-pair entry point.
+#
+# checkPair runs the provider/consumer checks for one already-paired
+# summary pair and returns the findings: an array of records that each
+# carry at least a kind and a severity.
+
+kind: boundary
+
+name: checker-check-pair
+purpose: Run the provider/consumer checks for one summary pair and return the findings.
+audience: downstream-consumers
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker"
+  exportPath: ["checkPair"]
+
+transitions:
+  - id: findings
+    when: called with a provider summary and a consumer summary
+    returns:
+      body:
+        type: array
+        items:
+          type: object
+          properties:
+            kind: { type: string }
+            severity: { type: string }
+

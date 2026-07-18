@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { IntentDocSchema, intentDocToSummary } from "./index.js";
+import {
+  IntentDocSchema,
+  IntentFindingKindSchema,
+  intentDocToSummary,
+} from "./index.js";
 
 import type { BoundaryIntentSummary, PrdSummary } from "./index.js";
 
@@ -159,6 +163,64 @@ describe("intentDocToSummary — function-call boundary", () => {
 });
 
 describe("intentDocToSummary — body shapes and outcome edges", () => {
+  it("maps arrays and nested objects onto TypeShape recursively", () => {
+    const doc = {
+      kind: "boundary",
+      name: "nested",
+      purpose: "arrays and nested records",
+      audience: "test",
+      boundary: { semantics: "function-call", exportName: "f" },
+      transitions: [
+        {
+          id: "result",
+          when: "always",
+          returns: {
+            body: {
+              type: "object",
+              properties: {
+                findings: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: { kind: { type: "string" } },
+                  },
+                },
+                bare: { type: "array" },
+              },
+            },
+          },
+        },
+        {
+          id: "list",
+          when: "top-level array return",
+          returns: {
+            body: { type: "array", items: { type: "string" } },
+          },
+        },
+      ],
+    };
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(doc),
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0].body).toEqual({
+      type: "record",
+      properties: {
+        findings: {
+          type: "array",
+          items: {
+            type: "record",
+            properties: { kind: { type: "text" } },
+          },
+        },
+        bare: { type: "array", items: { type: "unknown" } },
+      },
+    });
+    expect(summary.outcomes[1].body).toEqual({
+      type: "array",
+      items: { type: "text" },
+    });
+  });
+
   it("maps every primitive type onto its TypeShape", () => {
     const doc = {
       kind: "boundary",
@@ -255,5 +317,17 @@ describe("intentDocToSummary — PRD", () => {
         link: [],
       },
     ]);
+  });
+});
+
+describe("IntentFindingKindSchema", () => {
+  it("carries the PRD scenario-coverage kinds alongside the boundary kinds", () => {
+    expect(IntentFindingKindSchema.options).toEqual(
+      expect.arrayContaining([
+        "unlinkedScenario",
+        "danglingScenarioLink",
+        "ambiguousScenarioLink",
+      ]),
+    );
   });
 });

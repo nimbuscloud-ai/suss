@@ -165,6 +165,13 @@ function buildRouteSummary(
             statusCode,
           })),
         },
+        // Additive pointer to the code that implements this route (SAM
+        // Lambda proxy Handler), so a checker can correlate the declared
+        // route with the extracted handler summary carrying the same
+        // REST binding.
+        ...(route.implementingHandler !== undefined
+          ? { implementingHandler: route.implementingHandler }
+          : {}),
       },
     },
   };

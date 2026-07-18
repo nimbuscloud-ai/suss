@@ -43,6 +43,7 @@
     "lint:fix": "turbo lint:fix",
     "format": "biome format --write .",
     "typecheck": "turbo typecheck",
+    "check:self": "turbo check:self",
     "prepare": "husky",
     "badges": "node scripts/generate-coverage-badges.mjs",
     "test:badges": "npm run test:coverage && npm run badges",

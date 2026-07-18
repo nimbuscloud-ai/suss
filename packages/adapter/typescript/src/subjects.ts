@@ -1,6 +1,11 @@
 // subjects.ts — ValueRef resolution from ts-morph Expression nodes (Task 2.2)
 
-import { type Expression, Node } from "ts-morph";
+import {
+  type CallExpression,
+  type Expression,
+  Node,
+  type ParameterDeclaration,
+} from "ts-morph";
 
 import type { ValueRef } from "@suss/behavioral-ir";
 
@@ -21,6 +26,162 @@ function resolveCallInitializer(init: Expression): ValueRef | null {
 }
 
 const MAX_RESOLVE_DEPTH = 8;
+
+// ---------------------------------------------------------------------------
+// Promise `.then` / `.catch` parameter binding
+//
+// ECMAScript defines what `Promise.prototype.then` resolves to, so this
+// binding lives in the adapter (docs/architecture.md, "Adapter vs pack
+// ownership"). In `expr.then(cb)` the first parameter of `cb` is the
+// resolved value of `expr`; resolving that parameter as a subject
+// follows the chain back to the upstream expression's value rather than
+// treating it as a unit input.
+//
+//   fetch(url).then(res => { if (!res.ok) ... })
+//     → res resolves to the result of `fetch` (dependency)
+//   fetch(url).then(res => res.json()).then(data => use(data))
+//     → data resolves to the result of `res.json()` (dependency)
+//
+// Strict by default: bind only when the receiver is `Promise`-typed per
+// the TypeScript checker (proposal open question — start strict, loosen
+// if useful cases are missed). `.catch` binds the parameter to the
+// rejected value, which is opaque, so it degrades to `unresolved`.
+// ---------------------------------------------------------------------------
+
+/**
+ * If `call` is `expr.then(...)` / `expr.catch(...)`, return the method
+ * and the receiver `expr`. Null for any other call shape.
+ */
+function thenLikeCall(
+  call: CallExpression,
+): { method: "then" | "catch"; receiver: Expression } | null {
+  const callee = call.getExpression();
+  if (!Node.isPropertyAccessExpression(callee)) {
+    return null;
+  }
+  const name = callee.getName();
+  if (name !== "then" && name !== "catch") {
+    return null;
+  }
+  return { method: name, receiver: callee.getExpression() };
+}
+
+function receiverIsPromiseTyped(receiver: Expression): boolean {
+  let type: ReturnType<Expression["getType"]>;
+  try {
+    type = receiver.getType();
+  } catch {
+    return false;
+  }
+  const symbolName = (type.getSymbol() ?? type.getAliasSymbol())?.getName();
+  if (symbolName === "Promise") {
+    return true;
+  }
+  const text = type.getText();
+  return text === "Promise" || text.startsWith("Promise<");
+}
+
+/**
+ * The expression a callback resolves to — its expression body, or the
+ * argument of a single trailing `return` in a block body. Null when the
+ * callback isn't a resolvable function or its return can't be pinned to
+ * one expression.
+ */
+function callbackReturnExpression(
+  node: Expression | undefined,
+): Expression | null {
+  if (
+    node === undefined ||
+    !(Node.isArrowFunction(node) || Node.isFunctionExpression(node))
+  ) {
+    return null;
+  }
+  const body = node.getBody();
+  if (body === undefined) {
+    return null;
+  }
+  if (!Node.isBlock(body)) {
+    // Expression-body arrow: the body IS the resolved value.
+    return body as Expression;
+  }
+  const returns = body.getStatements().filter(Node.isReturnStatement);
+  if (returns.length !== 1) {
+    return null;
+  }
+  return returns[0].getExpression() ?? null;
+}
+
+/**
+ * The resolved value of a promise-producing expression. A plain call
+ * resolves to its result (a dependency); a chained `.then` resolves to
+ * its callback's return value, recursively.
+ */
+function resolvePromiseValue(expr: Expression, depth: number): ValueRef {
+  if (depth >= MAX_RESOLVE_DEPTH) {
+    return { type: "unresolved", sourceText: expr.getText() };
+  }
+  const inner = Node.isAwaitExpression(expr)
+    ? expr.getExpression()
+    : Node.isParenthesizedExpression(expr)
+      ? expr.getExpression()
+      : expr;
+
+  if (Node.isCallExpression(inner)) {
+    const chained = thenLikeCall(inner);
+    if (chained !== null && chained.method === "then") {
+      const ret = callbackReturnExpression(
+        inner.getArguments()[0] as Expression | undefined,
+      );
+      if (ret !== null) {
+        return resolvePromiseValue(ret, depth + 1);
+      }
+      return { type: "unresolved", sourceText: inner.getText() };
+    }
+    return {
+      type: "dependency",
+      name: inner.getExpression().getText(),
+      accessChain: [],
+    };
+  }
+  return resolveSubject(inner, depth + 1);
+}
+
+/**
+ * When `decl` is the first parameter of a `.then` / `.catch` callback
+ * whose receiver is `Promise`-typed, resolve it to the upstream resolved
+ * value. Null when the parameter isn't such a binding.
+ */
+function resolveThenParameter(
+  decl: ParameterDeclaration,
+  depth: number,
+): ValueRef | null {
+  const fn = decl.getParent();
+  if (
+    fn === undefined ||
+    !(Node.isArrowFunction(fn) || Node.isFunctionExpression(fn))
+  ) {
+    return null;
+  }
+  if (fn.getParameters()[0] !== decl) {
+    return null;
+  }
+  const call = fn.getParent();
+  if (call === undefined || !Node.isCallExpression(call)) {
+    return null;
+  }
+  if (call.getArguments()[0] !== fn) {
+    return null;
+  }
+  const chained = thenLikeCall(call);
+  if (chained === null || !receiverIsPromiseTyped(chained.receiver)) {
+    return null;
+  }
+  // `.catch(err => ...)` binds to the rejected value — opaque.
+  if (chained.method === "catch") {
+    return { type: "unresolved", sourceText: decl.getName() };
+  }
+  return resolvePromiseValue(chained.receiver, depth + 1);
+}
 
 /**
  * Resolve a ts-morph Expression node to a structured ValueRef.
@@ -117,8 +278,14 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
       return { type: "unresolved", sourceText };
     }
 
-    // Parameter declaration → input
+    // Parameter declaration → input, unless it's the resolved-value
+    // parameter of a Promise `.then` / `.catch` callback, in which case
+    // it binds to the upstream expression's value.
     if (Node.isParameterDeclaration(decl)) {
+      const thenBinding = resolveThenParameter(decl, depth);
+      if (thenBinding !== null) {
+        return thenBinding;
+      }
       return { type: "input", inputRef: decl.getName(), path: [] };
     }
 

@@ -52,6 +52,7 @@
     "@suss/behavioral-ir": "*",
     "@suss/contract-aws-apigateway": "*",
     "@suss/contract-openapi": "*",
+    "@suss/manifest-aws": "*",
     "yaml": "^2.4.0"
   },
   "devDependencies": {

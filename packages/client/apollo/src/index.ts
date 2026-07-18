@@ -1,25 +1,30 @@
-// @suss/client-apollo — PatternPack for @apollo/client hooks.
+// @suss/client-apollo — PatternPack for @apollo/client.
 //
-// Each call to `useQuery` / `useMutation` / `useSubscription` becomes
-// a `client`-kind BehavioralSummary bound to a
-// `graphql-operation(operationType, operationName?)` boundary. The
-// adapter extracts the operation header by parsing the first
-// argument's gql-tagged template literal — directly inline or
-// resolved through one const-binding of an identifier.
+// Each `useQuery` / `useMutation` / `useSubscription` hook call and each
+// imperative `client.query` / `client.mutate` / `client.subscribe` call
+// becomes a `client`-kind BehavioralSummary bound to a
+// `graphql-operation(operationType, operationName?)` boundary.
+//
+// The document argument resolves across the shapes production codebases
+// use: an inline `gql` tag, a const binding (same module or imported
+// from another module), a `.graphql` / `.gql` file import, and — the
+// dominant pattern — a generated `TypedDocumentNode` object literal from
+// graphql-codegen client-preset, imported from the generated module.
+// Operation type + name come from the document body when readable, from
+// the `TypedDocumentNode<Result, Vars>` type arguments when it isn't,
+// and from the call shape (hook / method) as the final fallback. A
+// document that stays unresolvable surfaces on the summary as
+// `metadata.graphql.unresolvedDocument` — the boundary is still emitted.
+//
+// Operation-header `$variables` become summary inputs with role
+// "variable"; the `variables: { ... }` call option isn't read on its
+// own (the header is the authoritative variable declaration).
 //
 // Pairs with provider-side summaries (Apollo resolvers, AppSync
 // resolvers) when the pairing layer grows operation→resolver
 // selection-set mapping. Until then, graphql-operation bindings land
-// in `unmatched` rather than pairing automatically — v0 is about
-// surfacing the consumer boundary, not joining it.
-//
-// Deferred:
-//   - Imperative `client.query({ query })` / `client.mutate(...)`.
-//     Structurally different from hooks; a follow-up once a concrete
-//     consumer codebase exercises it.
-//   - `.graphql` files imported via build loaders.
-//   - Variables → structured inputs (v0 doesn't yet capture the
-//     `variables: { ... }` option's shape as summary inputs).
+// in `unmatched` rather than pairing automatically — surfacing the
+// consumer boundary, not joining it.
 
 import type { PatternPack } from "@suss/extractor";
 
@@ -39,7 +44,11 @@ export function apolloClientPack(): PatternPack {
         match: {
           type: "graphqlHookCall",
           importModule: "@apollo/client",
-          hookNames: ["useQuery", "useMutation", "useSubscription"],
+          hooks: [
+            { hookName: "useQuery", operationType: "query" },
+            { hookName: "useMutation", operationType: "mutation" },
+            { hookName: "useSubscription", operationType: "subscription" },
+          ],
         },
         // Prefix match: covers `@apollo/client` AND `@apollo/client/react`
         // AND `@apollo/client/...` sub-paths in one go. The `importModule`
@@ -55,7 +64,11 @@ export function apolloClientPack(): PatternPack {
         match: {
           type: "graphqlHookCall",
           importModule: "@apollo/client/react",
-          hookNames: ["useQuery", "useMutation", "useSubscription"],
+          hooks: [
+            { hookName: "useQuery", operationType: "query" },
+            { hookName: "useMutation", operationType: "mutation" },
+            { hookName: "useSubscription", operationType: "subscription" },
+          ],
         },
         requiresImport: ["@apollo/client"],
       },
@@ -108,10 +121,10 @@ export function apolloClientPack(): PatternPack {
     ],
 
     inputMapping: {
-      // Apollo hooks don't take positional params we care about —
-      // the surface inputs come from variables passed via the hook
-      // options. Capturing variables structurally is Phase B.4.5
-      // follow-up.
+      // Apollo hooks take no positional params we track — the surface
+      // inputs are the operation-header `$variables`, which the adapter
+      // reads from the resolved document and stamps onto the summary
+      // directly (role "variable"), independent of this mapping.
       type: "positionalParams",
       params: [],
     },

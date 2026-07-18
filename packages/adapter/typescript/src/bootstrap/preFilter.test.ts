@@ -62,17 +62,17 @@ describe("computePackApplicability — pack-level requiresImport", () => {
   });
 
   it("recognizer-only pack WITHOUT requiresImport stays ungated (every file)", () => {
-    const processEnvPack = basePack({
-      name: "process-env",
-      // No requiresImport — process.env is a Node.js global
+    const nodeRuntimePack = basePack({
+      name: "node",
+      // No requiresImport — the process surface is a Node.js global
       accessRecognizers: [noopAccess],
     });
     const file1 = makeFile("export const a = 1;", "f1.ts");
     const file2 = makeFile(`import x from "y"; export const b = 2;`, "f2.ts");
 
-    const result = computePackApplicability([file1, file2], [processEnvPack]);
-    expect(result.get(file1)).toEqual([processEnvPack]);
-    expect(result.get(file2)).toEqual([processEnvPack]);
+    const result = computePackApplicability([file1, file2], [nodeRuntimePack]);
+    expect(result.get(file1)).toEqual([nodeRuntimePack]);
+    expect(result.get(file2)).toEqual([nodeRuntimePack]);
   });
 
   it("gates accessRecognizer-only packs the same as invocation-only", () => {

@@ -121,17 +121,154 @@ function innerTemplateText(template: Node): string {
   return raw;
 }
 
+export type GraphqlOperationType = "query" | "mutation" | "subscription";
+
 /**
- * Resolve a hook-call argument to the inner source text of its
- * gql-tagged template literal. Handles:
- *   `useQuery(gql\`query ...\`)`             — inline gql tag
- *   `useQuery(GET_USER)`                      — const-bound gql tag
- *   `import GET_USER from "./q.graphql"`      — .graphql file import
+ * Result of resolving a hook / imperative call argument to the GraphQL
+ * document it references.
  *
- * The `.graphql` / `.gql` file path resolves relative to the source
- * file. Files that don't exist on disk (common under
- * `useInMemoryFileSystem` test projects) fall back to null rather
- * than throwing — discovery stays advisory, not punitive.
+ *   - `document` set    → the document body was read statically; the
+ *                         caller parses it for the full operation shape.
+ *   - `document` unset, `operationType`/`operationName` set → header-only:
+ *                         the body wasn't readable but the operation
+ *                         header was recovered from the
+ *                         `TypedDocumentNode<Result, Vars>` type argument.
+ *   - `unresolved` set  → recognized as a GraphQL document reference but
+ *                         the header couldn't be fully read. The caller
+ *                         still emits the boundary (operation type comes
+ *                         from the call shape) and surfaces the gap so
+ *                         nothing is silently dropped.
+ */
+export interface DocumentResolution {
+  document?: string;
+  operationType?: GraphqlOperationType;
+  operationName?: string;
+  unresolved?: { reference: string; reason: string };
+}
+
+/**
+ * Resolve a hook / imperative call argument to a GraphQL document.
+ *
+ * Tries, in order:
+ *   `useQuery(gql\`query ...\`)`          — inline gql tag
+ *   `useQuery(GET_USER)`                   — const-bound gql tag, same
+ *                                            module OR imported from
+ *                                            another module
+ *   `import GET_USER from "./q.graphql"`   — .graphql / .gql file import
+ *   `useQuery(FooDocument)`                — generated TypedDocumentNode
+ *                                            object literal (graphql-
+ *                                            codegen client-preset),
+ *                                            same or cross module
+ *   `useQuery(FooDocument)` where the body — header recovered from the
+ *     isn't a readable object literal         `TypedDocumentNode<FooQuery,
+ *                                             FooQueryVariables>` type args
+ *
+ * Returns null when the argument isn't recognizable as a GraphQL
+ * document reference — the caller skips it. Returns a `DocumentResolution`
+ * with `unresolved` set when it IS recognizable but the header couldn't
+ * be fully read.
+ */
+export function resolveGraphqlDocument(arg: Node): DocumentResolution | null {
+  // Peel `FooDocument as DocumentNode` / parenthesization at the call
+  // site so the underlying identifier or tagged template is reached.
+  const stripped = stripDocumentNodeCasts(arg);
+  const templateText = resolveGqlTemplateText(stripped);
+  if (templateText !== null) {
+    return { document: templateText };
+  }
+  const objectDoc = resolveTypedDocumentSource(stripped);
+  if (objectDoc !== null) {
+    return { document: objectDoc };
+  }
+  return resolveTypedDocumentHeader(stripped);
+}
+
+/** Operation shape a discovered GraphQL consumer unit carries. */
+export interface ResolvedOperationInfo {
+  operationType: GraphqlOperationType;
+  operationName?: string;
+  document?: string;
+  variables: Array<{ name: string; type: string; required: boolean }>;
+  rootFields: string[];
+  unresolved?: { reference: string; reason: string };
+}
+
+/**
+ * Turn a document resolution into the operation info a discovered unit
+ * carries. A readable body is parsed for the full shape; an anonymous
+ * operation (`gql\`{ ... }\``, which graphql-js parses as a query by
+ * default) takes its type from the call shape (the hook or imperative
+ * method). A header-only or unresolvable resolution falls back to the
+ * call-shape type and carries the gap through. Returns null only when a
+ * readable document fails to parse.
+ */
+export function operationInfoFromResolution(
+  resolution: DocumentResolution,
+  callOperationType: GraphqlOperationType,
+): ResolvedOperationInfo | null {
+  if (resolution.document !== undefined) {
+    const operation = parseGraphqlOperation(resolution.document);
+    if (operation === null) {
+      return null;
+    }
+    const operationType =
+      operation.operationName !== undefined
+        ? operation.operationType
+        : callOperationType;
+    return { ...operation, operationType, document: resolution.document };
+  }
+  return {
+    operationType: resolution.operationType ?? callOperationType,
+    ...(resolution.operationName !== undefined
+      ? { operationName: resolution.operationName }
+      : {}),
+    variables: [],
+    rootFields: [],
+    ...(resolution.unresolved !== undefined
+      ? { unresolved: resolution.unresolved }
+      : {}),
+  };
+}
+
+/**
+ * Follow an identifier through same-module const bindings and
+ * cross-module named / default imports to the initializer expression(s)
+ * of the variable declaration(s) it refers to.
+ *
+ * `getAliasedSymbol` resolves an import specifier to the exported
+ * declaration in the defining module (the local symbol's declarations
+ * are the ImportSpecifier, which carries no initializer); the fallback
+ * to the local symbol covers same-module bindings that have no alias to
+ * follow. This is the single cross-module resolution primitive the
+ * GraphQL document resolvers share.
+ */
+function importedVariableInitializers(identifier: Node): Node[] {
+  if (!Node.isIdentifier(identifier)) {
+    return [];
+  }
+  const symbol = identifier.getSymbol();
+  if (symbol === undefined) {
+    return [];
+  }
+  const resolved = symbol.getAliasedSymbol() ?? symbol;
+  const inits: Node[] = [];
+  for (const decl of resolved.getDeclarations()) {
+    if (Node.isVariableDeclaration(decl)) {
+      const init = decl.getInitializer();
+      if (init !== undefined) {
+        inits.push(init);
+      }
+    }
+  }
+  return inits;
+}
+
+/**
+ * Resolve an argument to the inner source text of its gql-tagged
+ * template literal — inline, const-bound (same or cross module), or
+ * imported from a `.graphql` / `.gql` file. Files that don't exist on
+ * disk (common under `useInMemoryFileSystem` test projects) fall back
+ * to null rather than throwing — discovery stays advisory, not punitive.
  */
 export function resolveGqlTemplateText(arg: Node): string | null {
   if (Node.isTaggedTemplateExpression(arg)) {
@@ -141,26 +278,32 @@ export function resolveGqlTemplateText(arg: Node): string | null {
     }
     return innerTemplateText(arg.getTemplate());
   }
-  if (Node.isIdentifier(arg)) {
-    const symbol = arg.getSymbol();
-    if (symbol === undefined) {
-      return null;
-    }
-    for (const decl of symbol.getDeclarations()) {
-      if (Node.isVariableDeclaration(decl)) {
-        const init = decl.getInitializer();
-        if (init !== undefined && Node.isTaggedTemplateExpression(init)) {
-          return resolveGqlTemplateText(init);
-        }
+  if (!Node.isIdentifier(arg)) {
+    return null;
+  }
+  const symbol = arg.getSymbol();
+  if (symbol === undefined) {
+    return null;
+  }
+  // `.graphql` / `.gql` file import resolves against the local import
+  // declaration — the aliased symbol points at a synthetic module with
+  // no readable initializer, so this branch reads the on-disk file.
+  for (const decl of symbol.getDeclarations()) {
+    if (Node.isImportClause(decl) || Node.isImportSpecifier(decl)) {
+      const fromGraphqlFile = resolveGraphqlFileImport(decl);
+      if (fromGraphqlFile !== null) {
+        return fromGraphqlFile;
       }
-      // Default-import form: `import GET_USER from "./q.graphql"`.
-      // The declaration on the symbol chain is an ImportClause whose
-      // parent import declaration points at the module specifier.
-      if (Node.isImportClause(decl) || Node.isImportSpecifier(decl)) {
-        const fromGraphqlFile = resolveGraphqlFileImport(decl);
-        if (fromGraphqlFile !== null) {
-          return fromGraphqlFile;
-        }
+    }
+  }
+  // gql-tagged const — same module, or resolved through the import to
+  // the defining module's declaration.
+  for (const init of importedVariableInitializers(arg)) {
+    const stripped = stripDocumentNodeCasts(init);
+    if (Node.isTaggedTemplateExpression(stripped)) {
+      const text = resolveGqlTemplateText(stripped);
+      if (text !== null) {
+        return text;
       }
     }
   }
@@ -168,9 +311,9 @@ export function resolveGqlTemplateText(arg: Node): string | null {
 }
 
 /**
- * Resolve a hook-call argument that's a TypedDocumentNode reference —
- * the dominant production shape produced by GraphQL Code Generator. The
- * declaration looks like:
+ * Resolve an argument that's a TypedDocumentNode reference — the
+ * dominant production shape produced by GraphQL Code Generator's
+ * client-preset. The declaration looks like:
  *
  *   export const FooDocument = {
  *     kind: "Document",
@@ -182,35 +325,17 @@ export function resolveGqlTemplateText(arg: Node): string | null {
  *     }],
  *   } as unknown as DocumentNode<FooQuery, FooQueryVariables>;
  *
- * Strategy: walk the identifier to its initializer, evaluate the
- * object-literal AST as a plain JS value (the JSON-shaped structure
- * mirrors a graphql-js DocumentNode), then re-serialize via
- * `graphqlPrint` so the rest of the pipeline (which expects a GraphQL
- * source string) works unchanged.
+ * Strategy: follow the identifier to its initializer (same or cross
+ * module), evaluate the object-literal AST as a plain JS value (the
+ * JSON-shaped structure mirrors a graphql-js DocumentNode), then
+ * re-serialize via `graphqlPrint` so the rest of the pipeline (which
+ * expects a GraphQL source string) works unchanged.
  */
 export function resolveTypedDocumentSource(arg: Node): string | null {
   if (!Node.isIdentifier(arg)) {
     return null;
   }
-  const symbol = arg.getSymbol();
-  if (symbol === undefined) {
-    return null;
-  }
-  // Follow `import { FooDocument } from "..."` to the source-file
-  // declaration. Without aliasing the symbol's declarations land on
-  // the ImportSpecifier in the consumer file, which carries no
-  // initializer to read. `getAliasedSymbol` resolves to the original
-  // VariableDeclaration; falls back to the local symbol when the
-  // identifier wasn't imported.
-  const resolved = symbol.getAliasedSymbol() ?? symbol;
-  for (const decl of resolved.getDeclarations()) {
-    if (!Node.isVariableDeclaration(decl)) {
-      continue;
-    }
-    const init = decl.getInitializer();
-    if (init === undefined) {
-      continue;
-    }
+  for (const init of importedVariableInitializers(arg)) {
     const inner = stripDocumentNodeCasts(init);
     if (!Node.isObjectLiteralExpression(inner)) {
       continue;
@@ -228,6 +353,127 @@ export function resolveTypedDocumentSource(arg: Node): string | null {
     } catch {
       // Malformed AST — skip rather than throw.
       return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Fallback for a TypedDocumentNode reference whose document body isn't a
+ * statically-readable object literal (the generated document is produced
+ * by a helper call, imported from an opaque module, etc.). Recovers the
+ * operation header from the `TypedDocumentNode<Result, Vars>` cast's
+ * first type argument, whose codegen name is `<OperationName><Kind>`
+ * (e.g. `GetPetQuery`, `CreatePetMutation`, `OnTickSubscription`).
+ *
+ * Returns null when the argument isn't recognizable as a
+ * TypedDocumentNode reference at all. When it IS recognizable, always
+ * returns a resolution with `unresolved` set — the document body wasn't
+ * read — carrying the header when the type argument was named.
+ */
+function resolveTypedDocumentHeader(arg: Node): DocumentResolution | null {
+  if (!Node.isIdentifier(arg)) {
+    return null;
+  }
+  const reference = arg.getText();
+  const symbol = arg.getSymbol();
+  if (symbol === undefined) {
+    return null;
+  }
+  const resolved = symbol.getAliasedSymbol() ?? symbol;
+  for (const decl of resolved.getDeclarations()) {
+    if (!Node.isVariableDeclaration(decl)) {
+      continue;
+    }
+    const init = decl.getInitializer();
+    if (init === undefined) {
+      continue;
+    }
+    const typeArgs = documentNodeCastTypeArgs(init);
+    if (typeArgs === null) {
+      continue;
+    }
+    const header = operationHeaderFromResultType(typeArgs[0]);
+    if (header !== null) {
+      return {
+        operationType: header.operationType,
+        ...(header.operationName !== undefined
+          ? { operationName: header.operationName }
+          : {}),
+        unresolved: {
+          reference,
+          reason:
+            "document body not statically readable; operation header inferred from TypedDocumentNode type arguments",
+        },
+      };
+    }
+    return {
+      unresolved: {
+        reference,
+        reason:
+          "recognized as a TypedDocumentNode reference but neither the document body nor its type arguments were statically readable",
+      },
+    };
+  }
+  return null;
+}
+
+/**
+ * Walk an `as ...` cast chain and return the type arguments of the first
+ * `TypedDocumentNode<...>` / `DocumentNode<...>` reference found, or null
+ * when the chain carries no such cast.
+ */
+function documentNodeCastTypeArgs(node: Node): Node[] | null {
+  let current: Node = node;
+  while (
+    Node.isAsExpression(current) ||
+    Node.isParenthesizedExpression(current)
+  ) {
+    if (Node.isAsExpression(current)) {
+      const typeNode = current.getTypeNode();
+      if (typeNode !== undefined && Node.isTypeReference(typeNode)) {
+        const name = typeNode.getTypeName().getText();
+        const simpleName = name.includes(".")
+          ? (name.split(".").pop() ?? name)
+          : name;
+        if (
+          simpleName === "TypedDocumentNode" ||
+          simpleName === "DocumentNode"
+        ) {
+          return typeNode.getTypeArguments();
+        }
+      }
+    }
+    current = current.getExpression();
+  }
+  return null;
+}
+
+/**
+ * Derive the operation header from a codegen result-type reference named
+ * `<OperationName><Kind>`. Returns operation type + name when the suffix
+ * matches, operation type alone when the name is exactly the kind, and
+ * null when the type argument isn't a named reference (inline object
+ * type, missing, etc.).
+ */
+function operationHeaderFromResultType(
+  typeNode: Node | undefined,
+): { operationType: GraphqlOperationType; operationName?: string } | null {
+  if (typeNode === undefined || !Node.isTypeReference(typeNode)) {
+    return null;
+  }
+  const name = typeNode.getTypeName().getText();
+  const suffixes: Array<[string, GraphqlOperationType]> = [
+    ["Subscription", "subscription"],
+    ["Mutation", "mutation"],
+    ["Query", "query"],
+  ];
+  for (const [suffix, operationType] of suffixes) {
+    if (name === suffix) {
+      return { operationType };
+    }
+    if (name.endsWith(suffix) && name.length > suffix.length) {
+      return { operationType, operationName: name.slice(0, -suffix.length) };
     }
   }
   return null;

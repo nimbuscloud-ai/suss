@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Fixture for the EventBridge pairing integration test. One event bus,
+  two rules, and a schedule exercise the four cases:
+    1. Reducible rule, paired: OrderProducer publishes OrderPlaced and a
+       rule routes OrderPlaced to OrderConsumer.
+    2. Reducible rule, consumer-orphan: the same rule also routes
+       OrderShipped to OrderConsumer, but no code publishes OrderShipped.
+    3. Irreducible pattern (content filter): AuditConsumer's SAM
+       EventBridgeRule matches a detail-type prefix, which v0 can't
+       reduce to exact detail-types → surfaced as unpaired-unresolvable.
+    4. Schedule: DigestFunction is time-triggered, no message producer.
+
+Resources:
+  OrderEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: order-events
+
+  # Producer — publishes OrderPlaced to the bus named via an env var the
+  # checker chain-collapses to the OrderEventBus logical id.
+  OrderProducer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/order-producer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          ORDER_EVENT_BUS_NAME: !Ref OrderEventBus
+
+  # Rule 1 (raw AWS::Events::Rule): routes OrderPlaced + OrderShipped to
+  # OrderConsumer. Producer sends OrderPlaced (paired) but never
+  # OrderShipped (consumer-orphan).
+  OrderEventsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref OrderEventBus
+      EventPattern:
+        source:
+          - orders.service
+        detail-type:
+          - OrderPlaced
+          - OrderShipped
+      Targets:
+        - Arn: !GetAtt OrderConsumer.Arn
+          Id: OrderConsumerTarget
+
+  OrderConsumer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/order-consumer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+
+  # Rule 2 (SAM Events Type: EventBridgeRule) with a content-filter
+  # detail-type. v0 reduces routing to exact detail-type match, so this
+  # prefix filter is unresolvable — surfaced, never silently dropped.
+  AuditConsumer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/audit-consumer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Events:
+        OnAnyOrderChange:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref OrderEventBus
+            Pattern:
+              source:
+                - orders.service
+              detail-type:
+                - prefix: Order
+
+  # Schedule (SAM Events Type: Schedule): time-triggered, no producer.
+  DigestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/digest/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Events:
+        DailyDigest:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 day)

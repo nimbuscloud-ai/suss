@@ -1,8 +1,8 @@
 // @suss/runtime-node — pack for the Node.js runtime surface.
 //
 // Models scheduling primitives (setImmediate / setTimeout / setInterval /
-// queueMicrotask / process.nextTick), the process surface (argv, exit,
-// metadata), and module-loading globals (__dirname, __filename,
+// queueMicrotask / process.nextTick), the process surface (argv, env,
+// exit, metadata), and module-loading globals (__dirname, __filename,
 // import.meta.url) that aren't expressible as imports.
 //
 // Recognizer-only pack (no top-level discovery patterns). The pack's
@@ -13,6 +13,7 @@
 //
 // See `docs/internal/proposals/runtime-node.md` for the design.
 
+import { envVarRecognizer } from "./envVars.js";
 import {
   fileLocationRecognizer,
   importMetaRecognizer,
@@ -22,6 +23,11 @@ import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
 
 import type { PatternPack } from "@suss/extractor";
 
+export {
+  type EnvVarRecognizerOptions,
+  envVarRecognizer,
+  findProcessEnvReads,
+} from "./envVars.js";
 export {
   fileLocationRecognizer,
   findBareFileLocationGlobals,
@@ -36,10 +42,19 @@ export {
   schedulingRecognizer,
 } from "./scheduling.js";
 
+// Pack behavior stamp, fed into the adapter's cache-invalidation
+// digest (see @suss/adapter-typescript `computeAdapterPacksDigest`).
+// Bumped when the merge of `process.env.X` recognition into this pack
+// changed what it extracts, so warm caches from the pre-merge node
+// pack (which skipped env vars) re-extract instead of returning stale
+// summaries. Bump again on any future change to discovered units /
+// emitted effects.
+const PACK_VERSION = "0.1.0";
+
 export interface NodeRuntimePackOptions {
   /**
-   * Deployment context for runtime-config reads (process.argv).
-   * Defaults to `"lambda"`.
+   * Deployment context for runtime-config reads (process.env.X,
+   * process.argv). Defaults to `"lambda"`.
    */
   deploymentTarget?: "lambda" | "ecs-task" | "container" | "k8s-deployment";
   /**
@@ -52,16 +67,19 @@ export interface NodeRuntimePackOptions {
 export function nodeRuntimePack(
   options: NodeRuntimePackOptions = {},
 ): PatternPack {
-  const processRecognizer = processSurfaceRecognizer({
+  const configOptions = {
     ...(options.deploymentTarget !== undefined
       ? { deploymentTarget: options.deploymentTarget }
       : {}),
     ...(options.instanceName !== undefined
       ? { instanceName: options.instanceName }
       : {}),
-  });
+  };
+  const processRecognizer = processSurfaceRecognizer(configOptions);
+  const envRecognizer = envVarRecognizer(configOptions);
   return {
     name: "node",
+    version: PACK_VERSION,
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],
@@ -69,6 +87,10 @@ export function nodeRuntimePack(
     inputMapping: { type: "positionalParams", params: [] },
     invocationRecognizers: [schedulingRecognizer],
     accessRecognizers: [
+      // `envRecognizer` owns `process.env.X`; `processRecognizer`
+      // owns the rest of the process surface and skips env reads —
+      // together they partition `process.*` without duplication.
+      envRecognizer,
       processRecognizer,
       importMetaRecognizer,
       fileLocationRecognizer,

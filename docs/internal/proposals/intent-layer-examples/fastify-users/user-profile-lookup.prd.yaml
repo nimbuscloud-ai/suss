@@ -1,11 +1,12 @@
 # Worked example for the intent-layer-design proposal.
 #
-# Author-facing PRD shape (kind: prd). The team's product description
-# of how user profile lookup should behave from the user's point of
-# view. Each scenario reads on its own through `when` / `then`; the
-# optional `expect` is the structured link to a system-intent outcome
-# (here pre-filled, but a facilitator could supply it later — a PRD
-# with `when` / `then` and no `expect` is a valid pending-link state).
+# Author-facing PRD shape (kind: prd), in the SHIPPED v0.1 schema —
+# this file loads through @suss/contract-intent as written. Each
+# scenario reads on its own through `when` / `expect` (both human
+# text); the optional `link` is the structured reference to a system
+# intent's transition id (`<intent-name>.<transition-id>`). A scenario
+# with no `link` is a valid pending state — the checker reports it as
+# unlinkedScenario (info), never an error.
 
 kind: prd
 
@@ -17,22 +18,18 @@ purpose: |
 audience: web-client
 
 scenarios:
-  - title: Successful lookup
-    when: a request arrives with a known user id
-    then: the caller receives the user's profile
-    expect: users-lookup.found
+  - when: a request arrives with a known user id
+    expect: the caller receives the user's profile
+    link: users-lookup.found
 
-  - title: Admin gets enriched data
-    when: the looked-up user has the admin role
-    then: the caller receives the profile with admin details
-    expect: users-lookup.found-admin
+  - when: the looked-up user has the admin role
+    expect: the caller receives the profile with admin details
+    link: users-lookup.found-admin
 
-  - title: Missing id
-    when: the request omits the id parameter
-    then: the caller is told the id is required
-    expect: users-lookup.missing-id
+  - when: the request omits the id parameter
+    expect: the caller is told the id is required
+    link: users-lookup.missing-id
 
-  - title: Unknown user
-    when: the id doesn't match any record
-    then: the caller is told the user wasn't found
-    expect: users-lookup.not-found
+  - when: the id doesn't match any record
+    expect: the caller is told the user wasn't found
+    link: users-lookup.not-found

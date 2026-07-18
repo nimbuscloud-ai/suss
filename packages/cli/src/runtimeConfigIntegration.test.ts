@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { checkAll } from "@suss/checker";
 import { cloudFormationFileToSummaries } from "@suss/contract-cloudformation";
-import { processEnvFramework } from "@suss/framework-process-env";
+import { nodeRuntimePack } from "@suss/runtime-node";
 
 import type { PatternPack } from "@suss/extractor";
 
@@ -130,7 +130,7 @@ async function runPipeline(): Promise<
 > {
   const adapter = createTypeScriptAdapter({
     tsConfigFilePath: path.join(fixtureRoot, "tsconfig.json"),
-    frameworks: [lambdaHandlerPack, processEnvFramework()],
+    frameworks: [lambdaHandlerPack, nodeRuntimePack()],
     cacheDir: null,
   });
   const codeSummaries = await adapter.extractAll();

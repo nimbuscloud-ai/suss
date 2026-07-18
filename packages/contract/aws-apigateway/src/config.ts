@@ -77,6 +77,30 @@ export interface RequestValidationConfig {
   configRef?: ConfigRef;
 }
 
+/**
+ * Pointer from a declared route to the code that implements it. A
+ * manifest reader (CFN/SAM, CDK, Terraform) fills this in when it knows
+ * which module + export backs the route — e.g. a SAM Lambda proxy
+ * integration whose `Handler` names the file and export. The fields are
+ * generic "where is the code" identity, not any one manifest's
+ * semantics; `aws-apigateway` carries the pointer onto the summary
+ * (`metadata.http.implementingHandler`) without interpreting it, so a
+ * checker can later correlate the declared route with the extracted
+ * handler summary that carries the same REST binding.
+ */
+export interface HandlerPointer {
+  /** Raw handler reference, e.g. "src/handlers/confirmToken.handler". */
+  handler: string;
+  /** Module-path portion (before the final dot), e.g. "src/handlers/confirmToken". */
+  modulePath: string;
+  /** Exported symbol the handler names, e.g. "handler". */
+  exportName: string;
+  /** Base directory the module path resolves against (SAM CodeUri). */
+  codeUri?: string;
+  /** Logical id of the function resource that declared the handler. */
+  functionLogicalId?: string;
+}
+
 export type IntegrationType =
   | "lambda"
   | "lambda-proxy"
@@ -132,6 +156,12 @@ export interface RestEndpointConfig {
    * to `${method.toUpperCase()} ${path}`.
    */
   name?: string;
+  /**
+   * Code that implements this endpoint, when the manifest names it
+   * (SAM Lambda proxy `Handler`). Emitted as
+   * `metadata.http.implementingHandler`; purely additive.
+   */
+  implementingHandler?: HandlerPointer;
   configRef?: ConfigRef;
 }
 
@@ -175,6 +205,12 @@ export interface HttpRouteConfig {
   authorizer?: HttpAuthorizerConfig | null;
   throttle?: ThrottleConfig;
   name?: string;
+  /**
+   * Code that implements this route, when the manifest names it (SAM
+   * Lambda proxy `Handler`). Emitted as
+   * `metadata.http.implementingHandler`; purely additive.
+   */
+  implementingHandler?: HandlerPointer;
   configRef?: ConfigRef;
 }
 
