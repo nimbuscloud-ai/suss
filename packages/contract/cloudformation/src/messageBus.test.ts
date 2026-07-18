@@ -252,3 +252,415 @@ describe("buildMessageBusSummaries", () => {
     expect(pickConsumers(out)).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// EventBridge
+// ---------------------------------------------------------------------------
+
+function isEventBridge(summary: BehavioralSummary): boolean {
+  const sem = summary.identity.boundaryBinding?.semantics;
+  return sem?.name === "message-bus" && sem.messageBus === "eventbridge";
+}
+
+function eventBridgeProviders(
+  summaries: BehavioralSummary[],
+): BehavioralSummary[] {
+  return pickProviders(summaries).filter(isEventBridge);
+}
+
+function eventBridgeConsumers(
+  summaries: BehavioralSummary[],
+): BehavioralSummary[] {
+  return pickConsumers(summaries).filter(isEventBridge);
+}
+
+function resolutionOf(summary: BehavioralSummary): string | undefined {
+  return (summary.metadata as { messageBus?: { patternResolution?: string } })
+    ?.messageBus?.patternResolution;
+}
+
+describe("buildMessageBusSummaries — EventBridge", () => {
+  it("emits a provider per (bus, detailType) a raw AWS::Events::Rule routes", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        OrderConsumer: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/order-consumer/" },
+        },
+        OrderEventsRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventBusName: { Ref: "OrderEventBus" },
+            EventPattern: { "detail-type": ["OrderPlaced", "OrderShipped"] },
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["OrderConsumer", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    expect(
+      eventBridgeProviders(out)
+        .map((p) => p.identity.name)
+        .sort(),
+    ).toEqual(["OrderEventBus#OrderPlaced", "OrderEventBus#OrderShipped"]);
+  });
+
+  it("emits a consumer per (target, detailType) with the shared channel + codeScope", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        OrderConsumer: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/order-consumer/" },
+        },
+        OrderEventsRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventBusName: { Ref: "OrderEventBus" },
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["OrderConsumer", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    const consumers = eventBridgeConsumers(out);
+    expect(consumers).toHaveLength(1);
+    const consumer = consumers[0] ?? raise("no consumer");
+    expect(consumer.identity.name).toBe("OrderConsumer#OrderPlaced");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "message-bus",
+      messageBus: "eventbridge",
+      channel: "OrderEventBus#OrderPlaced",
+    });
+    expect(consumer.metadata?.codeScope).toEqual({
+      kind: "codeUri",
+      path: "src/order-consumer/",
+    });
+    expect(resolutionOf(consumer)).toBe("exact");
+  });
+
+  it('defaults the bus to "default" when EventBusName is omitted', () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        DefaultConsumer: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/default-consumer/" },
+        },
+        DefaultRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["DefaultConsumer", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    expect(eventBridgeProviders(out).map((p) => p.identity.name)).toEqual([
+      "default#OrderPlaced",
+    ]);
+  });
+
+  it("handles SAM Events Type: EventBridgeRule targeting the owning Lambda", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        AuditConsumer: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/audit-consumer/",
+            Events: {
+              OnOrderPlaced: {
+                Type: "EventBridgeRule",
+                Properties: {
+                  EventBusName: { Ref: "OrderEventBus" },
+                  Pattern: { "detail-type": ["OrderPlaced"] },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.name).toBe("AuditConsumer#OrderPlaced");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrderEventBus#OrderPlaced",
+    });
+  });
+
+  it("marks a rule with no detail-type as unresolvable (never silent)", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        AuditConsumer: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/audit-consumer/" },
+        },
+        SourceOnlyRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventBusName: { Ref: "OrderEventBus" },
+            EventPattern: { source: ["orders.service"] },
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["AuditConsumer", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    const consumers = eventBridgeConsumers(out);
+    expect(consumers).toHaveLength(1);
+    const consumer = consumers[0] ?? raise("no consumer");
+    expect(resolutionOf(consumer)).toBe("unresolvable");
+    // No provider is emitted for an unresolvable pattern.
+    expect(eventBridgeProviders(out)).toEqual([]);
+    const reason = (
+      consumer.metadata as {
+        messageBus?: { unresolvableReason?: string };
+      }
+    )?.messageBus?.unresolvableReason;
+    expect(reason).toContain("detail-type");
+  });
+
+  it("marks a content-filter detail-type as unresolvable", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        AuditConsumer: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/audit-consumer/",
+            Events: {
+              OnAnyOrderChange: {
+                Type: "EventBridgeRule",
+                Properties: {
+                  EventBusName: { Ref: "OrderEventBus" },
+                  Pattern: { "detail-type": [{ prefix: "Order" }] },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+    expect(resolutionOf(consumer)).toBe("unresolvable");
+  });
+
+  it("marks a raw AWS::Events::Rule ScheduleExpression as a schedule", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        ReportGenerator: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/report/" },
+        },
+        ReportSchedule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            ScheduleExpression: "rate(1 day)",
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["ReportGenerator", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+    expect(resolutionOf(consumer)).toBe("schedule");
+    // A schedule declares no message channel, so no provider.
+    expect(eventBridgeProviders(out)).toEqual([]);
+  });
+
+  it("marks SAM Events Type: Schedule as a schedule", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        DigestFunction: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/digest/",
+            Events: {
+              DailyDigest: {
+                Type: "Schedule",
+                Properties: { Schedule: "rate(1 day)" },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.name).toBe("DigestFunction.DailyDigest");
+    expect(resolutionOf(consumer)).toBe("schedule");
+  });
+
+  it("skips rules whose only targets are non-Lambda resources", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        DeadLetter: { Type: "AWS::SQS::Queue", Properties: {} },
+        ToQueueRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventBusName: { Ref: "OrderEventBus" },
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["DeadLetter", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    expect(eventBridgeConsumers(out)).toEqual([]);
+    expect(eventBridgeProviders(out)).toEqual([]);
+  });
+
+  it("dedupes provider summaries when two rules route the same channel", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        ConsumerA: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/a/" },
+        },
+        ConsumerB: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/b/" },
+        },
+        RuleA: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventBusName: { Ref: "OrderEventBus" },
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["ConsumerA", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+        RuleB: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventBusName: { Ref: "OrderEventBus" },
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["ConsumerB", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    // One provider (deduped by channel), two consumers (one per target).
+    expect(eventBridgeProviders(out)).toHaveLength(1);
+    expect(eventBridgeConsumers(out)).toHaveLength(2);
+  });
+});
+
+describe("buildMessageBusSummaries — EventBridge edge shapes", () => {
+  const consumerFn = {
+    Type: "AWS::Serverless::Function",
+    Properties: { CodeUri: "src/consumer/" },
+  };
+
+  function ruleTemplate(ruleProps: Record<string, unknown>) {
+    return cloudFormationToSummaries({
+      Resources: {
+        Consumer: consumerFn,
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            Targets: [{ Arn: { "Fn::GetAtt": ["Consumer", "Arn"] }, Id: "t" }],
+            ...ruleProps,
+          },
+        },
+      },
+    });
+  }
+
+  it("resolves an event-bus ARN string to its bus name segment", () => {
+    const out = ruleTemplate({
+      EventBusName:
+        "arn:aws:events:us-east-1:123456789012:event-bus/orders-bus",
+      EventPattern: { "detail-type": ["OrderPlaced"] },
+    });
+    expect(eventBridgeProviders(out)[0]?.identity.name).toBe(
+      "orders-bus#OrderPlaced",
+    );
+  });
+
+  it("uses a literal bus name string as the bus token", () => {
+    const out = ruleTemplate({
+      EventBusName: "orders-bus",
+      EventPattern: { "detail-type": ["OrderPlaced"] },
+    });
+    expect(eventBridgeProviders(out)[0]?.identity.name).toBe(
+      "orders-bus#OrderPlaced",
+    );
+  });
+
+  it("marks a non-array detail-type as unresolvable", () => {
+    const out = ruleTemplate({
+      EventPattern: { "detail-type": "OrderPlaced" },
+    });
+    const unresolvable = out.filter((s) => resolutionOf(s) === "unresolvable");
+    expect(unresolvable.length).toBeGreaterThan(0);
+  });
+
+  it("marks an empty detail-type array as unresolvable", () => {
+    const out = ruleTemplate({
+      EventPattern: { "detail-type": [] },
+    });
+    expect(out.some((s) => resolutionOf(s) === "unresolvable")).toBe(true);
+  });
+
+  it("resolves a target Arn given as short-form GetAtt string", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Consumer: consumerFn,
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [{ Arn: { "Fn::GetAtt": "Consumer.Arn" }, Id: "t" }],
+          },
+        },
+      },
+    });
+    expect(eventBridgeConsumers(out)).toHaveLength(1);
+  });
+
+  it("skips targets whose Arn names a resource missing from the template", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [{ Arn: { "Fn::GetAtt": ["Ghost", "Arn"] }, Id: "t" }],
+          },
+        },
+      },
+    });
+    expect(eventBridgeConsumers(out)).toHaveLength(0);
+  });
+
+  it("skips malformed target entries without an Arn", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Consumer: consumerFn,
+        Rule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [null, { Id: "no-arn" }, "bogus"],
+          },
+        },
+      },
+    });
+    expect(eventBridgeConsumers(out)).toHaveLength(0);
+  });
+});

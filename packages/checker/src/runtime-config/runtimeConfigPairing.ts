@@ -170,15 +170,15 @@ function readEnvVarSources(
 /**
  * Walk every transition's effects looking for `interaction(class:
  * "config-read")` records — the unified shape emitted by
- * `@suss/framework-process-env` (and any future config-source
- * recognizer like dotenv). Each record carries the env-var name
- * directly; no arg-walking required.
+ * `@suss/runtime-node`'s env-var recognizer (and any future
+ * config-source recognizer like dotenv). Each record carries the
+ * env-var name directly; no arg-walking required.
  *
  * Falls back to scanning invocation effect args for the
  * `process.env.X` identifier pattern when no config-read effects are
  * present. This keeps the pairing pass working on summaries
- * extracted before the process-env recognizer existed (or when the
- * pack isn't in the framework list).
+ * extracted before the env-var recognizer existed (or when the
+ * node runtime pack isn't in the framework list).
  */
 function lookupConfigReads(
   index: InteractionIndex,

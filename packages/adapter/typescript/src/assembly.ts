@@ -15,6 +15,7 @@ import {
   functionMayFallThrough,
   makeFallthroughTerminal,
 } from "./terminals/index.js";
+import { type DescentBarriers, NO_BARRIERS } from "./walk/descent.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -53,12 +54,13 @@ export function extractRawBranches(
   terminalPatterns: TerminalPattern[],
   invocationRecognizers: InvocationRecognizer[] = [],
   accessRecognizers: AccessRecognizer[] = [],
+  barriers: DescentBarriers = NO_BARRIERS,
 ): RawBranch[] {
-  const terminals = findTerminals(func, terminalPatterns);
-  const invocations = extractInvocationEffects(func);
+  const terminals = findTerminals(func, terminalPatterns, barriers);
+  const invocations = extractInvocationEffects(func, barriers);
   const recognized = [
-    ...runInvocationRecognizers(func, invocationRecognizers),
-    ...runAccessRecognizers(func, accessRecognizers),
+    ...runInvocationRecognizers(func, invocationRecognizers, barriers),
+    ...runAccessRecognizers(func, accessRecognizers, barriers),
   ];
 
   // Synthesise a fall-through terminal when (a) the pack opted in by

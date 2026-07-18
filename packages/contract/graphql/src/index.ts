@@ -105,6 +105,23 @@ export function graphqlSdlFileToSummaries(
   });
 }
 
+/**
+ * Read an SDL file from disk and return its text, or `null` when the
+ * file can't be read. Shared entry point for callers that need the raw
+ * SDL rather than the derived summaries — e.g. @suss/contract-appsync
+ * resolving an external schema file referenced by a CloudFormation /
+ * SAM template's `DefinitionS3Location` / `SchemaUri`. Reading fails
+ * best-effort (missing file, permission error) so the caller can record
+ * an unresolved-schema gap instead of throwing.
+ */
+export function loadSdlFile(filepath: string): string | null {
+  try {
+    return fs.readFileSync(filepath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------

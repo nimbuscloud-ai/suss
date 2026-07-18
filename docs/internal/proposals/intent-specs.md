@@ -426,29 +426,43 @@ the boundary intent schema in v0.1 keeps the migration path clear.
 
 | Stage | Adds | Demo fixture | Status |
 |---|---|---|---|
-| **v0.1** | Boundary system intent + PRD shape + coverage checker + outcome ids on transitions + `source` provenance field | Express `/users/:id` | Shipped: `@suss/ir-core` primitives, `@suss/intent-ir` (schema + summary + `IntentFinding`), `@suss/contract-intent` reader (boundary + prd), `@suss/checker-intent` (`checkIntentAgreement` → findings + checked / unchecked accounting), CLI `suss check --dir --intent`. Remaining: PRD coverage checker, provenance-aware severity downgrade |
+| **v0.1** | Boundary system intent + PRD shape + coverage checker + outcome ids on transitions + `source` provenance field | Express `/users/:id` | Shipped: `@suss/ir-core` primitives, `@suss/intent-ir` (schema + summary + `IntentFinding`), `@suss/contract-intent` reader (boundary + prd), `@suss/checker-intent` (`checkIntentAgreement` → findings + checked / unchecked accounting, including PRD scenario coverage and provenance-aware severity downgrade), CLI `suss check --dir --intent`. Remaining: `scenarioBodyDrift` (needs a PRD-side body expectation, which the v0.1 scenario shape doesn't carry — deferred with the v0.2 workflow body grain) |
 | **v0.1.1** | `suss infer` (infers intent from code for brownfield adoption) | Same Express fixture, inferred then curated | ~2 days |
 | **v0.2** | Workflow shape (effects, inputs, queue references); non-HTTP boundary semantics; three-way merge for generator refresh | aws-sqs Orders | Pending; ~5 days |
 | **v0.3** | Concept declarations with state + actions + failure-mode predicates | TBD | Gated on workflow shape shipping |
 | **v0.4** | Runtime observability adapters; SLO declarations | Gated on runtime observability adapters | Gated |
 
-The intent-vs-code half of v0.1 is shipped (schema with transition
-ids + `source`, PRD shape, reader, `@suss/checker-intent`, CLI
-wiring). The remaining v0.1 work:
+v0.1 is shipped end to end (schema with transition ids + `source`,
+PRD shape, reader, `@suss/checker-intent`, CLI wiring), including PRD
+scenario coverage:
 
-1. Build the PRD coverage checker (in `@suss/checker-intent`) that
-   walks PRDs, resolves outcome refs against system intents, and
-   emits the new finding kinds:
+1. The PRD coverage checker (in `@suss/checker-intent`) walks PRDs,
+   resolves each scenario's structured link against the loaded system
+   intents, and emits:
    - `unlinkedScenario` (info — scenario authored, link pending)
-   - `danglingScenarioLink` (link names an outcome no system intent
-     declares)
-   - `ambiguousScenarioLink` (multiple system intents match)
-   - `scenarioBodyDrift` (linked outcome's body disagrees with the
-     PRD's stated expectation)
-2. Provenance-aware severity: downgrade findings against
-   `source: "inferred"` intent that hasn't been curated.
-3. Integration test: run the Fastify worked-example through the
-   pipeline, assert each drift case fires as expected.
+   - `danglingScenarioLink` (link names an intent / outcome no system
+     intent declares — including a matched intent whose outcome id is
+     unknown, keyed on that intent's boundary)
+   - `ambiguousScenarioLink` (multiple system intents share the name)
+
+   Coverage resolves against the loaded system intents and stops
+   there: whether the code implements a linked outcome stays the
+   boundary pass's job (`uncoveredOutcome` / `unimplementedBoundary`),
+   so the two hops remain independently useful and a PRD can be
+   checked before any code exists. PRDs move from `unchecked` into
+   `checked` accounting (total / resolved / unlinked scenario counts).
+2. Provenance-aware severity: findings against `source: "inferred"`
+   (not-yet-curated) intent — boundary or PRD — are downgraded one
+   level; curation restores full severity.
+3. Integration coverage: `@suss/checker-intent` and `@suss/cli`
+   exercise resolved / unlinked / dangling / ambiguous scenarios plus
+   the coverage accounting.
+
+`scenarioBodyDrift` (linked outcome's body disagrees with the PRD's
+stated expectation) is deferred: a v0.1 PRD scenario carries `when` /
+`expect` / `link` but no body expectation, so there's nothing to
+compare against the resolved outcome's body. It lands with the v0.2
+workflow body grain, where scenarios reference effect bodies.
 
 **Settled while shipping: malformed specs are load-time errors, not
 findings.** The earlier draft listed `intentSpecMalformed` as a

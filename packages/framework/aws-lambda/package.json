@@ -1,23 +1,26 @@
 {
-  "name": "@suss/framework-process-env",
+  "name": "@suss/framework-aws-lambda",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Recognize process.env.X reads in TypeScript code and emit config-read interaction effects.",
+  "description": "Pattern pack for extracting suss behavioral summaries from AWS Lambda HTTP handlers, paired to SAM/CloudFormation-declared routes.",
   "keywords": [
     "suss",
     "behavioral-summary",
-    "process-env",
-    "node",
-    "config"
+    "framework-pack",
+    "aws",
+    "lambda",
+    "sam",
+    "api-gateway",
+    "static-analysis"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/process-env#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/aws-lambda#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/framework/process-env"
+    "directory": "packages/framework/aws-lambda"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -49,10 +52,12 @@
     "ts-morph": ">=20"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "*",
+    "@suss/adapter-typescript": "*",
+    "@suss/manifest-aws": "*",
     "@suss/extractor": "*"
   },
   "devDependencies": {
+    "@suss/behavioral-ir": "*",
     "ts-morph": "*",
     "tsup": "*",
     "typescript": "*",

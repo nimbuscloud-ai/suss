@@ -13,8 +13,11 @@
 //      graph has no edges through them.
 //
 // Scope:
-//   * Skip nested function bodies — their calls belong to those
-//     functions' summaries.
+//   * Descend into nested function expressions / arrows (Promise
+//     executors, `.then` callbacks, `forEach` bodies, IIFEs) — their
+//     calls are behavior of the enclosing unit. Named nested
+//     declarations and pack-declared sub-unit boundaries are hard
+//     stops (see `walk/descent.ts`).
 //   * Don't classify semantics. All captured calls become
 //     `invocation` effects with the callee's source text.
 //   * Async detection via `Node.isAwaitExpression` on the call.
@@ -26,6 +29,11 @@ import {
   conditionInfoToRawCondition,
   type FunctionRoot,
 } from "../conditions.js";
+import {
+  type DescentBarriers,
+  isDescentStop,
+  NO_BARRIERS,
+} from "../walk/descent.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -102,17 +110,12 @@ export interface TsInvocationRecognizerContext {
 
 export function extractInvocationEffects(
   func: FunctionRoot,
+  barriers: DescentBarriers = NO_BARRIERS,
 ): InvocationEffectLocation[] {
   const results: InvocationEffectLocation[] = [];
 
   func.forEachDescendant((node, traversal) => {
-    if (
-      node !== func &&
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node))
-    ) {
+    if (isDescentStop(node, func, barriers)) {
       traversal.skip();
       return;
     }
@@ -202,8 +205,10 @@ export function extractInvocationEffects(
 
 /**
  * Walk the function body for `InvocationRecognizer` dispatch only.
- * Visits EVERY `CallExpression` in the body (skipping nested
- * function bodies the same way the invocation walker does).
+ * Visits EVERY `CallExpression` in the body, descending through nested
+ * function expressions / arrows so a recognizer fires inside a Promise
+ * executor or `.then` callback as if the call were inline. Named nested
+ * declarations and pack-declared sub-unit boundaries are hard stops.
  *
  * Distinct from `extractInvocationEffects` because the existing
  * walker is intentionally narrow — it captures a specific subset
@@ -219,6 +224,7 @@ export function extractInvocationEffects(
 export function runInvocationRecognizers(
   func: FunctionRoot,
   recognizers: InvocationRecognizer[],
+  barriers: DescentBarriers = NO_BARRIERS,
 ): RecognizedEffectLocation[] {
   if (recognizers.length === 0) {
     return [];
@@ -227,13 +233,7 @@ export function runInvocationRecognizers(
   const sourceFile = func.getSourceFile();
 
   func.forEachDescendant((node, traversal) => {
-    if (
-      node !== func &&
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node))
-    ) {
+    if (isDescentStop(node, func, barriers)) {
       traversal.skip();
       return;
     }
@@ -277,8 +277,9 @@ export function runInvocationRecognizers(
 
 /**
  * Walk the function body for property-access recognizer dispatch.
- * Visits every PropertyAccessExpression in the body (skipping nested
- * function bodies the same way `runInvocationRecognizers` does).
+ * Visits every PropertyAccessExpression in the body, descending through
+ * nested function expressions / arrows the same way
+ * `runInvocationRecognizers` does.
  *
  * Same scope contract: recognizers fire on every PropertyAccess in
  * the body, regardless of whether it's read as an arg, assigned to
@@ -288,6 +289,7 @@ export function runInvocationRecognizers(
 export function runAccessRecognizers(
   func: FunctionRoot,
   recognizers: AccessRecognizer[],
+  barriers: DescentBarriers = NO_BARRIERS,
 ): RecognizedEffectLocation[] {
   if (recognizers.length === 0) {
     return [];
@@ -296,13 +298,7 @@ export function runAccessRecognizers(
   const sourceFile = func.getSourceFile();
 
   func.forEachDescendant((node, traversal) => {
-    if (
-      node !== func &&
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node))
-    ) {
+    if (isDescentStop(node, func, barriers)) {
       traversal.skip();
       return;
     }

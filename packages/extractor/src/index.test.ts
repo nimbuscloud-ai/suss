@@ -211,6 +211,99 @@ describe("assembleSummary — optional metadata plumbing", () => {
       expect(effect.preconditions).toHaveLength(1);
     }
   });
+
+  it("passes declaredContract and unresolvedDocument through to graphql metadata", () => {
+    const raw: RawCodeStructure = {
+      identity: {
+        name: "me",
+        kind: "resolver",
+        file: "src/resolvers.ts",
+        range: { start: 1, end: 10 },
+        exportName: "me",
+        exportPath: ["me"],
+      },
+      boundaryBinding: {
+        transport: "graphql",
+        semantics: {
+          name: "graphql-resolver",
+          typeName: "Query",
+          fieldName: "me",
+        },
+        recognition: "apollo",
+      },
+      parameters: [],
+      branches: [
+        {
+          conditions: [],
+          terminal: {
+            kind: "response",
+            statusCode: { type: "literal", value: 200 },
+            // Neither a structural shape nor a type name: the body
+            // converter's null fallback.
+            body: { typeText: "", shape: null },
+            exceptionType: null,
+            message: null,
+            component: null,
+            delegateTarget: null,
+            emitEvent: null,
+            renderTree: null,
+            location: { start: 5, end: 5 },
+          },
+          expectedInput: null,
+          effects: [],
+          location: { start: 5, end: 5 },
+          isDefault: false,
+        },
+        {
+          conditions: [],
+          terminal: {
+            kind: "return",
+            statusCode: null,
+            body: null,
+            exceptionType: null,
+            message: null,
+            component: null,
+            delegateTarget: null,
+            emitEvent: null,
+            renderTree: null,
+            location: { start: 8, end: 8 },
+          },
+          expectedInput: null,
+          effects: [],
+          location: { start: 8, end: 8 },
+          isDefault: true,
+        },
+      ],
+      dependencyCalls: [],
+      // A declared contract alongside a non-response transition: gap
+      // detection must skip the return branch when collecting produced
+      // statuses.
+      declaredContract: {
+        framework: "test",
+        responses: [{ statusCode: 200 }, { statusCode: 404 }],
+      },
+      graphqlDeclaredContract: {
+        returnType: "User",
+        provenance: "sdl",
+      },
+      graphqlUnresolvedDocument: {
+        reference: "SomeDocument",
+        reason: "imported from a module the adapter could not resolve",
+      },
+    };
+
+    const summary = assembleSummary(raw);
+
+    expect(summary.metadata?.graphql).toMatchObject({
+      declaredContract: { returnType: "User", provenance: "sdl" },
+      unresolvedDocument: { reference: "SomeDocument" },
+    });
+    expect(summary.transitions[0].output).toMatchObject({
+      type: "response",
+      body: null,
+    });
+    expect(summary.gaps.some((g) => g.description.includes("404"))).toBe(true);
+  });
 });
 
 describe("assembleSummary", () => {

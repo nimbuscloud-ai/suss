@@ -11,7 +11,12 @@ import {
 
 import { applyIntentSuppressions, checkIntentAgreement } from "./index.js";
 
-import type { IntentOutcome, IntentSummary } from "@suss/intent-ir";
+import type {
+  IntentOutcome,
+  IntentSource,
+  IntentSummary,
+  PrdScenarioSummary,
+} from "@suss/intent-ir";
 
 const userShape: TypeShape = {
   type: "record",
@@ -122,6 +127,7 @@ describe("checkIntentAgreement — REST", () => {
     expect(result.findings).toHaveLength(0);
     expect(result.checked).toEqual([
       {
+        kind: "boundary",
         intent: "users-lookup",
         boundary: "GET /users/{id}",
         implementations: ["src/handler.ts::getUser"],
@@ -217,6 +223,7 @@ describe("checkIntentAgreement — REST", () => {
     // The comparison ran — the intent is checked, with no implementations.
     expect(result.checked).toEqual([
       {
+        kind: "boundary",
         intent: "users-lookup",
         boundary: "GET /users/{id}",
         implementations: [],
@@ -243,6 +250,7 @@ describe("checkIntentAgreement — REST", () => {
     ]);
     expect(result.checked).toEqual([
       {
+        kind: "boundary",
         intent: "users-lookup",
         boundary: "GET /users/{id}",
         implementations: [],
@@ -265,9 +273,10 @@ describe("checkIntentAgreement — REST", () => {
       [consumer, provider],
     );
     expect(result.findings).toHaveLength(0);
-    expect(result.checked[0].implementations).toEqual([
-      "src/handler.ts::getUser",
-    ]);
+    expect(result.checked[0]).toMatchObject({
+      kind: "boundary",
+      implementations: ["src/handler.ts::getUser"],
+    });
   });
 
   it("emits one undeclaredOutcome per status, not per transition", () => {
@@ -283,26 +292,6 @@ describe("checkIntentAgreement — REST", () => {
     );
     expect(result.findings.map((f) => f.kind)).toEqual(["undeclaredOutcome"]);
     expect(result.findings[0].message).toContain("status 500");
-  });
-
-  it("reports PRD docs as unchecked, never silently dropped", () => {
-    const prd: IntentSummary = {
-      kind: "prd",
-      title: "orders",
-      purpose: "p",
-      audience: "a",
-      source: "author",
-      scenarios: [],
-    };
-    const result = checkIntentAgreement([prd], []);
-    expect(result.findings).toHaveLength(0);
-    expect(result.unchecked).toEqual([
-      {
-        intent: "orders",
-        reason: "prd",
-        detail: "PRD scenario coverage is not checked yet",
-      },
-    ]);
   });
 
   it("reports an unkeyable boundary as a warning finding plus unchecked", () => {
@@ -411,6 +400,188 @@ describe("checkIntentAgreement — function-call", () => {
   });
 });
 
+function outcomeById(id: string, status = 200): IntentOutcome {
+  return {
+    id,
+    when: "",
+    kind: "response",
+    status,
+    body: null,
+    errorType: null,
+  };
+}
+
+function scenario(
+  link: string[],
+  title: string | null = null,
+): PrdScenarioSummary {
+  return { title, when: "condition", expect: "outcome", link };
+}
+
+function prdDoc(
+  scenarios: PrdScenarioSummary[],
+  opts: { title?: string; source?: IntentSource } = {},
+): IntentSummary {
+  return {
+    kind: "prd",
+    title: opts.title ?? "profile-prd",
+    purpose: "Fetch a profile.",
+    audience: "web-client",
+    source: opts.source ?? "author",
+    scenarios,
+  };
+}
+
+// A boundary intent + code that fully implements it, so the boundary pass
+// contributes no findings and result.findings is exactly the PRD coverage.
+const usersLookup = boundaryIntent(
+  restIntentBinding,
+  [outcomeById("found"), outcomeById("found-admin")],
+  "users-lookup",
+);
+const implementedCode = [
+  codeSummary(restCodeBinding, [restResponse(200, null)]),
+];
+
+describe("checkIntentAgreement — PRD scenario coverage", () => {
+  it("emits nothing and accounts a PRD whose links all resolve", () => {
+    const result = checkIntentAgreement(
+      [
+        usersLookup,
+        prdDoc([scenario(["users-lookup.found"], "Successful lookup")]),
+      ],
+      implementedCode,
+    );
+    expect(result.findings).toHaveLength(0);
+    expect(result.unchecked).toHaveLength(0);
+    expect(result.checked).toContainEqual({
+      kind: "prd",
+      intent: "profile-prd",
+      scenarios: 1,
+      resolved: 1,
+      unlinked: 0,
+    });
+  });
+
+  it("flags an unlinked scenario as info and counts it, never dropping it", () => {
+    const result = checkIntentAgreement(
+      [prdDoc([scenario([], "Missing id")])],
+      [],
+    );
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      kind: "unlinkedScenario",
+      severity: "info",
+      boundary: "prd:profile-prd",
+      intent: { name: "profile-prd" },
+      scenario: { title: "Missing id" },
+    });
+    expect(result.checked).toContainEqual({
+      kind: "prd",
+      intent: "profile-prd",
+      scenarios: 1,
+      resolved: 0,
+      unlinked: 1,
+    });
+  });
+
+  it("flags a link to an intent name that isn't loaded (dangling)", () => {
+    const result = checkIntentAgreement(
+      [usersLookup, prdDoc([scenario(["orders-intake.acknowledged"])])],
+      implementedCode,
+    );
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "danglingScenarioLink",
+    ]);
+    expect(result.findings[0]).toMatchObject({
+      severity: "warning",
+      boundary: "prd:profile-prd",
+      scenario: { link: "orders-intake.acknowledged" },
+    });
+    expect(result.findings[0].message).toContain(
+      'no boundary intent named "orders-intake"',
+    );
+  });
+
+  it("flags a link to an unknown outcome and keys it on the intent's boundary", () => {
+    const result = checkIntentAgreement(
+      [usersLookup, prdDoc([scenario(["users-lookup.ghost"])])],
+      implementedCode,
+    );
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "danglingScenarioLink",
+    ]);
+    // Resolved the intent but not the outcome — keyed on the real boundary
+    // so a narrow .sussignore rule can target it.
+    expect(result.findings[0].boundary).toBe("GET /users/{id}");
+    expect(result.findings[0].message).toContain(
+      "known outcomes: found, found-admin",
+    );
+  });
+
+  it("flags a link that resolves to two intents sharing a name (ambiguous)", () => {
+    const dupA = boundaryIntent(restIntentBinding, [outcomeById("x")], "dup");
+    const dupB = boundaryIntent(restCodeBinding, [outcomeById("x")], "dup");
+    const result = checkIntentAgreement(
+      [dupA, dupB, prdDoc([scenario(["dup.x"])])],
+      implementedCode,
+    );
+    const scenarioFindings = result.findings.filter(
+      (f) => f.kind === "ambiguousScenarioLink",
+    );
+    expect(scenarioFindings).toHaveLength(1);
+    expect(scenarioFindings[0]).toMatchObject({
+      severity: "warning",
+      boundary: "prd:profile-prd",
+    });
+    expect(scenarioFindings[0].message).toContain("2 boundary intents");
+  });
+
+  it("reports one finding per unresolved link and doesn't count the scenario resolved", () => {
+    const result = checkIntentAgreement(
+      [
+        usersLookup,
+        prdDoc([scenario(["users-lookup.found", "users-lookup.ghost"])]),
+      ],
+      implementedCode,
+    );
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "danglingScenarioLink",
+    ]);
+    expect(result.checked).toContainEqual({
+      kind: "prd",
+      intent: "profile-prd",
+      scenarios: 1,
+      resolved: 0,
+      unlinked: 0,
+    });
+  });
+
+  it("downgrades PRD coverage findings from inferred, not-yet-curated intent", () => {
+    const inferred = checkIntentAgreement(
+      [
+        usersLookup,
+        prdDoc([scenario(["users-lookup.ghost"])], { source: "inferred" }),
+      ],
+      implementedCode,
+    );
+    expect(inferred.findings[0]).toMatchObject({
+      kind: "danglingScenarioLink",
+      severity: "info", // warning downgraded one level
+    });
+    const curated = checkIntentAgreement(
+      [
+        usersLookup,
+        prdDoc([scenario(["users-lookup.ghost"])], {
+          source: "inferred, curated",
+        }),
+      ],
+      implementedCode,
+    );
+    expect(curated.findings[0].severity).toBe("warning");
+  });
+});
+
 describe("applyIntentSuppressions", () => {
   const uncovered = () =>
     checkIntentAgreement(
@@ -498,5 +669,40 @@ describe("applyIntentSuppressions", () => {
     const downgraded = out.find((f) => f.kind === "uncoveredOutcome");
     expect(downgraded?.severity).toBe("warning");
     expect(downgraded?.suppressed?.originalSeverity).toBe("error");
+  });
+
+  it("suppresses a PRD coverage finding on its prd: key", () => {
+    const findings = checkIntentAgreement(
+      [usersLookup, prdDoc([scenario(["orders-intake.acknowledged"])])],
+      implementedCode,
+    ).findings;
+    const out = applyIntentSuppressions(findings, [
+      {
+        kind: "danglingScenarioLink",
+        boundary: "prd:profile-prd",
+        scope: "narrow",
+        reason: "downstream service ships next sprint",
+        effect: "hide",
+      },
+    ]);
+    expect(out).toHaveLength(0);
+  });
+
+  it("suppresses a dangling-outcome finding on the resolved boundary key", () => {
+    const findings = checkIntentAgreement(
+      [usersLookup, prdDoc([scenario(["users-lookup.ghost"])])],
+      implementedCode,
+    ).findings;
+    const out = applyIntentSuppressions(findings, [
+      {
+        kind: "danglingScenarioLink",
+        boundary: "GET /users/:id",
+        scope: "narrow",
+        reason: "outcome id pending rename",
+        effect: "mark",
+      },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].suppressed?.effect).toBe("mark");
   });
 });

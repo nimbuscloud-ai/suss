@@ -29,7 +29,7 @@ rules:
 
 | Field | Required | Notes |
 |---|---|---|
-| `kind` | at least one of kind/boundary/consumer.transitionId unless `scope: broad` | Any behavioural finding kind — see the [findings catalog](/reference/findings) for the full list (REST coverage / contract / consumer kinds, GraphQL pairing, React-Storybook, storage-relational, message-bus, runtime-config, plus meta kinds like `lowConfidence`) — or any intent finding kind (`uncoveredOutcome`, `unimplementedBoundary`, `outcomeShapeMismatch`, `undeclaredOutcome`, `unkeyableBoundary`). Unknown kinds are rejected at load time. |
+| `kind` | at least one of kind/boundary/consumer.transitionId unless `scope: broad` | Any behavioural finding kind — see the [findings catalog](/reference/findings) for the full list (REST coverage / contract / consumer kinds, GraphQL pairing, React-Storybook, storage-relational, message-bus, runtime-config, plus meta kinds like `lowConfidence`) — or any intent finding kind: system-intent-vs-code (`uncoveredOutcome`, `unimplementedBoundary`, `outcomeShapeMismatch`, `undeclaredOutcome`, `unkeyableBoundary`) and PRD scenario coverage (`unlinkedScenario`, `danglingScenarioLink`, `ambiguousScenarioLink`). Unknown kinds are rejected at load time. |
 | `boundary` | see above | Human-readable key: `"METHOD /path"` (both `:id` and `{id}` accepted), or a non-REST key verbatim (`"fn:@acme/api::getUser"`, `"gql:Query.user"`). |
 | `consumer.summary` | optional | `${file}::${name}` key matching the consumer side of the finding. |
 | `consumer.transitionId` | optional | Matches `Finding.consumer.transitionId`. |
@@ -54,6 +54,8 @@ A finding matches a rule when every specified field on the rule equals the corre
 ## Intent findings
 
 The same rules apply to intent findings from `suss check --dir --intent`. `kind` and `boundary` match the same way (the intent finding's boundary is already a key string); `consumer` never matches an intent finding — there is no consumer side. Effects and threshold semantics are identical.
+
+PRD scenario-coverage findings don't always resolve to a real boundary. A `danglingScenarioLink` whose intent name *did* resolve is keyed on that intent's boundary (`GET /users/{id}`), so a narrow `kind` + `boundary` rule targets it. An `unlinkedScenario`, an `ambiguousScenarioLink`, or a link whose intent name doesn't resolve has no boundary to key on, so it carries a `prd:<title>` key instead — match those with `boundary: "prd:<title>"` verbatim, or with `scope: broad` on `kind` alone.
 
 Note: `.sussignore.json` living inside the `--dir` summaries directory is recognised as suppression config and excluded from the summaries walk.
 

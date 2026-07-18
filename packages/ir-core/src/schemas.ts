@@ -154,14 +154,23 @@ export const StorageRelationalSemanticsSchema = z.object({
 });
 
 /**
- * Provider-side message-bus boundary — SQS / BullMQ / Kafka / NATS.
- * Producer `interaction(class: "message-send")` effects pair against
- * these via `(messageBus, channel)`.
+ * Provider-side message-bus boundary — SQS / EventBridge / BullMQ /
+ * Kafka / NATS. Producer `interaction(class: "message-send")` effects
+ * pair against these via `(messageBus, channel)`.
+ *
+ * The `channel` string is per-bus. SQS keys it on the single queue
+ * identity (CFN logical id / env-var name). EventBridge carries a
+ * two-part identity — the event bus AND the DetailType a rule matches —
+ * encoded as `"<bus>#<detailType>"`, because one bus multiplexes many
+ * event types and a rule subscribes to a subset. See
+ * `@suss/framework-aws-eventbridge` for the producer-side scheme and
+ * `@suss/contract-cloudformation`'s messageBus reader for the
+ * consumer/provider-side scheme.
  */
 export const MessageBusSemanticsSchema = z.object({
   name: z.literal("message-bus"),
-  messageBus: z.enum(["sqs", "bullmq", "kafka", "nats"]),
-  /** Stable channel identifier — CFN logical id, queue/topic name, subject pattern. */
+  messageBus: z.enum(["sqs", "eventbridge", "bullmq", "kafka", "nats"]),
+  /** Stable channel identifier — CFN logical id, queue/topic name, subject pattern, `bus#detailType`. */
   channel: z.string(),
 });
 

@@ -1,16 +1,18 @@
 # Worked example for the intent-layer-design proposal.
 #
-# System intent shape (kind: boundary). The engineer's declaration of
-# what the system actually does — every outcome the boundary can
-# produce, named by id so PRD scenarios can reference them. Specificity
-# is at the contract level (status codes, body shapes); this is what
-# the checker compares against derived code.
+# System intent shape (kind: boundary), in the SHIPPED v0.1 schema —
+# this file loads through @suss/contract-intent as written. The
+# engineer's declaration of what the system does: every outcome the
+# boundary can produce, named by id so PRD scenarios can link to them.
+# Specificity is at the contract level (status codes, body shapes);
+# this is what the checker compares against derived code.
 
 kind: boundary
 
 name: users-lookup
 purpose: GET /users/:id retrieves a single user record.
 audience: web-client
+source: author
 
 boundary:
   transport: http
@@ -21,7 +23,7 @@ boundary:
 transitions:
   - id: missing-id
     when: id parameter is empty
-    output:
+    response:
       status: 400
       body:
         properties:
@@ -29,7 +31,7 @@ transitions:
 
   - id: not-found
     when: user with the requested id does not exist
-    output:
+    response:
       status: 404
       body:
         properties:
@@ -37,21 +39,21 @@ transitions:
 
   - id: found-admin
     when: user is an admin
-    output:
+    response:
       status: 200
       body:
         properties:
-          id:    { type: string }
-          name:  { type: string }
-          role:  { type: string }
+          id: { type: string }
+          name: { type: string }
+          role: { type: string }
           admin: { type: boolean }
 
   - id: found
     when: user exists and is not an admin
-    output:
+    response:
       status: 200
       body:
         properties:
-          id:   { type: string }
+          id: { type: string }
           name: { type: string }
           role: { type: string }

@@ -13,6 +13,9 @@
 //   messageBusProducerOrphan       warning  code sends to channel X but no provider declares X
 //   messageBusConsumerOrphan       warning  consumer Lambda exists for channel X but no producer sends to X
 //   messageBusUnused               warning  channel X declared but no producer or consumer
+//   unsupportedSemantics           info     an EventBridge rule's EventPattern couldn't be reduced
+//                                           to exact detail-types (content filter / no detail-type);
+//                                           the target Lambda is surfaced as unpaired-unresolvable
 //   boundaryFieldUnknown (aspect: receive)
 //                                  warning  consumer destructures field X from JSON.parse(record.body)
 //                                           but no producer to this channel sends X
@@ -85,7 +88,25 @@ export function checkMessageBus(
   const queueProviders = messageBusSummaries.filter(
     (s) => s.kind === "library",
   );
-  const consumers = messageBusSummaries.filter((s) => s.kind === "consumer");
+  const allConsumers = messageBusSummaries.filter((s) => s.kind === "consumer");
+  // EventBridge rules whose pattern couldn't be reduced to exact
+  // detail-types, and scheduled invocations, carry a patternResolution
+  // marker. Unresolvable rules surface as an info finding (never
+  // silent); scheduled invocations are accounted for by their summary's
+  // presence and exempt from producer/consumer pairing (a schedule has
+  // no message producer by design). Everything else pairs normally.
+  const consumers: BehavioralSummary[] = [];
+  for (const consumer of allConsumers) {
+    const resolution = readPatternResolution(consumer);
+    if (resolution === "unresolvable") {
+      findings.push(makeUnresolvableRuleFinding(consumer));
+      continue;
+    }
+    if (resolution === "schedule") {
+      continue;
+    }
+    consumers.push(consumer);
+  }
   const producers: ProducerRecord[] = interactionsOf(
     idx,
     "message-send",
@@ -238,7 +259,11 @@ function resolveProducerChannels(
     if (semantics.name !== "message-bus") {
       continue;
     }
-    const envVarName = semantics.channel;
+    // SQS keys the whole channel on the env-var name. EventBridge keys
+    // it on `${bus}#${detailType}`, where only the bus segment is env-
+    // derived — split it off, resolve the bus, recompose with the
+    // detail-type intact.
+    const { busToken, detailSuffix } = splitBusChannel(semantics);
     const runtime = findRuntimeForFile(
       runtimeProviders,
       producer.summary.location.file,
@@ -247,11 +272,62 @@ function resolveProducerChannels(
       continue;
     }
     const targets = readEnvVarTargets(runtime);
-    const target = targets[envVarName];
+    const target = targets[busToken];
     if (target !== undefined) {
-      producer.resolvedChannel = target.logicalId;
+      producer.resolvedChannel =
+        detailSuffix !== null
+          ? `${target.logicalId}#${detailSuffix}`
+          : target.logicalId;
     }
   }
+}
+
+/**
+ * Split a message-bus channel into the env-resolvable bus token and an
+ * optional detail suffix. SQS channels are a single token (the whole
+ * channel is the bus / queue identity). EventBridge channels are
+ * `${bus}#${detailType}` — only the bus segment resolves via the
+ * env-var chain-collapse, so it's split out and the detail-type is
+ * recomposed after resolution.
+ */
+function splitBusChannel(semantics: MessageBusSemantics): {
+  busToken: string;
+  detailSuffix: string | null;
+} {
+  if (semantics.messageBus === "eventbridge") {
+    const hash = semantics.channel.indexOf("#");
+    if (hash !== -1) {
+      return {
+        busToken: semantics.channel.slice(0, hash),
+        detailSuffix: semantics.channel.slice(hash + 1),
+      };
+    }
+  }
+  return { busToken: semantics.channel, detailSuffix: null };
+}
+
+/**
+ * Read the EventBridge pattern-resolution marker off a CFN consumer
+ * summary. Present only on EventBridge consumers: "schedule" for time-
+ * triggered invocations, "unresolvable" for rules whose EventPattern
+ * couldn't be reduced to exact detail-types, "exact" for reduced rules.
+ * Absent (null) on SQS consumers and any summary without the marker.
+ */
+function readPatternResolution(
+  summary: BehavioralSummary,
+): "exact" | "schedule" | "unresolvable" | null {
+  const meta = summary.metadata as
+    | { messageBus?: { patternResolution?: unknown } }
+    | undefined;
+  const resolution = meta?.messageBus?.patternResolution;
+  if (
+    resolution === "exact" ||
+    resolution === "schedule" ||
+    resolution === "unresolvable"
+  ) {
+    return resolution;
+  }
+  return null;
 }
 
 function findRuntimeForFile(
@@ -340,6 +416,47 @@ function makeUnusedQueueFinding(
     consumer: makeSide(provider),
     description: `${semantics.messageBus} channel "${semantics.channel}" is declared in infrastructure but neither produced to nor consumed from. Likely orphan resource left over from a removed feature.`,
     severity: "warning",
+  };
+}
+
+/**
+ * An EventBridge rule whose EventPattern couldn't be reduced to exact
+ * detail-types (no detail-type field, content filters, etc.). v0 pairs
+ * on exact detail-type match only, so this rule's target can't be
+ * matched to producers. Surfaced as info rather than dropped — the
+ * target might well be wired correctly; suss just can't verify the
+ * pattern subsumption.
+ */
+function makeUnresolvableRuleFinding(consumer: BehavioralSummary): Finding {
+  const binding = consumer.identity.boundaryBinding as BoundaryBinding;
+  const meta = consumer.metadata as
+    | {
+        messageBus?: {
+          rule?: unknown;
+          eventBus?: unknown;
+          unresolvableReason?: unknown;
+        };
+      }
+    | undefined;
+  const rule =
+    typeof meta?.messageBus?.rule === "string"
+      ? meta.messageBus.rule
+      : consumer.identity.name;
+  const eventBus =
+    typeof meta?.messageBus?.eventBus === "string"
+      ? meta.messageBus.eventBus
+      : "default";
+  const reason =
+    typeof meta?.messageBus?.unresolvableReason === "string"
+      ? meta.messageBus.unresolvableReason
+      : "the EventPattern couldn't be reduced to exact detail-types";
+  return {
+    kind: "unsupportedSemantics",
+    boundary: binding,
+    provider: makeSide(consumer),
+    consumer: makeSide(consumer),
+    description: `EventBridge rule "${rule}" on bus "${eventBus}" routes to ${consumer.identity.name}, but ${reason}. v0 pairs producers to rules on exact detail-type match, so this rule can't be paired — it's surfaced as unpaired-unresolvable rather than dropped. Pattern subsumption (prefix / content-based filtering) is out of scope for now.`,
+    severity: "info",
   };
 }
 

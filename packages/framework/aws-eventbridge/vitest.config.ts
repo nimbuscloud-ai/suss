@@ -11,6 +11,9 @@ export default defineConfig({
       thresholds: {
         lines: 80,
         functions: 80,
+        // Many recognizer branches are defensive null/shape checks for
+        // malformed AST inputs that real ts-morph never produces; testing
+        // them adds little value. 70% covers the meaningful branches.
         branches: 70,
         statements: 80,
       },

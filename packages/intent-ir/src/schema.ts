@@ -48,12 +48,38 @@ const PrimitiveTypeName = z.enum([
   "unknown",
 ]);
 
-const PropertySchema = z.object({ type: PrimitiveTypeName });
+export interface AuthoredShape {
+  type: z.infer<typeof PrimitiveTypeName> | "array" | "object";
+  items?: AuthoredShape | undefined;
+  properties?: Record<string, AuthoredShape> | undefined;
+  required?: string[] | undefined;
+}
 
-export const BodyShapeSchema = z.object({
-  properties: z.record(z.string(), PropertySchema).optional(),
-  required: z.array(z.string()).optional(),
-});
+// Recursive: a property can itself be an array or a nested object, so
+// a declared body can commit to `Finding[]`-style returns and nested
+// records, not only flat objects of primitives.
+const ShapeSchema: z.ZodType<AuthoredShape> = z.lazy(() =>
+  z.union([
+    z.object({ type: PrimitiveTypeName }),
+    z.object({ type: z.literal("array"), items: ShapeSchema.optional() }),
+    z.object({
+      type: z.literal("object"),
+      properties: z.record(z.string(), ShapeSchema).optional(),
+      required: z.array(z.string()).optional(),
+    }),
+  ]),
+);
+
+// Top level accepts either a full shape (`type: array`, `type: object`,
+// a bare primitive) or the record shorthand — `properties:` with no
+// `type:` — which existing docs use.
+export const BodyShapeSchema = z.union([
+  ShapeSchema,
+  z.object({
+    properties: z.record(z.string(), ShapeSchema).optional(),
+    required: z.array(z.string()).optional(),
+  }),
+]);
 
 // ---------------------------------------------------------------------------
 // Boundary — REST or function-call, in @suss/ir-core's vocabulary.

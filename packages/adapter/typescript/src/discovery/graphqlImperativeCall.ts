@@ -8,9 +8,9 @@ import { Node, type SourceFile } from "ts-morph";
 import {
   enclosingFunctionRoot,
   functionNameOrAnon,
-  parseGraphqlOperation,
-  resolveGqlTemplateText,
-  resolveTypedDocumentSource,
+  type GraphqlOperationType,
+  operationInfoFromResolution,
+  resolveGraphqlDocument,
 } from "./graphqlShared.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
 
@@ -38,7 +38,7 @@ export function discoverGraphqlImperativeCalls(
     string,
     {
       documentKey: string;
-      operationType: "query" | "mutation" | "subscription";
+      operationType: GraphqlOperationType;
     }
   >();
   for (const method of match.methods) {
@@ -75,37 +75,36 @@ export function discoverGraphqlImperativeCalls(
     if (docValue === null) {
       return;
     }
-    const docText =
-      resolveGqlTemplateText(docValue) ?? resolveTypedDocumentSource(docValue);
-    if (docText === null) {
+    const resolution = resolveGraphqlDocument(docValue);
+    if (resolution === null) {
       return;
     }
-    const operation = parseGraphqlOperation(docText);
-    if (operation === null) {
+    // Method-driven operation type wins when the gql header is
+    // anonymous — `client.mutate({ mutation: gql\`...\` })` is a
+    // mutation regardless of whether the doc says `mutation` or just
+    // `{ ... }` — and supplies the type when the document body isn't
+    // statically readable at all.
+    const operationInfo = operationInfoFromResolution(
+      resolution,
+      spec.operationType,
+    );
+    if (operationInfo === null) {
       return;
     }
     const enclosing = enclosingFunctionRoot(node);
     if (enclosing === null) {
       return;
     }
-    // Method-driven operation type wins when the gql header is
-    // anonymous — `client.mutate({ mutation: gql\`...\` })` is a
-    // mutation regardless of whether the doc says `mutation` or
-    // just `{ ... }`.
-    const operationType =
-      operation.operationName !== undefined
-        ? operation.operationType
-        : spec.operationType;
+    const nameToken =
+      operationInfo.operationName ??
+      operationInfo.unresolved?.reference ??
+      `<anon-${operationInfo.operationType}>`;
     results.push({
       func: enclosing,
       kind,
-      name: `${functionNameOrAnon(enclosing)}.${operation.operationName ?? `<anon-${operationType}>`}`,
+      name: `${functionNameOrAnon(enclosing)}.${nameToken}`,
       callSite: { callExpression: node, methodName },
-      operationInfo: {
-        ...operation,
-        operationType,
-        document: docText,
-      },
+      operationInfo,
     });
   });
   return results;

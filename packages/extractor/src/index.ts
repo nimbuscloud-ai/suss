@@ -307,6 +307,16 @@ export interface RawCodeStructure {
    * discovery. NestJS GraphQL (decorator-based) is a follow-up.
    */
   graphqlDeclaredContract?: Record<string, unknown>;
+  /**
+   * Set on a consumer-side GraphQL summary whose document reference was
+   * recognized (an imported `TypedDocumentNode` from graphql-codegen,
+   * say) but whose body couldn't be read statically. Surfaced as
+   * `summary.metadata.graphql.unresolvedDocument` so the unreadable
+   * document is accounted for rather than silently dropped. `reference`
+   * is the identifier passed to the hook / imperative call; `reason`
+   * explains what defeated static resolution.
+   */
+  graphqlUnresolvedDocument?: { reference: string; reason: string };
 }
 
 // =============================================================================
@@ -470,6 +480,9 @@ function buildGraphqlMetadata(
   }
   if (raw.graphqlDeclaredContract !== undefined) {
     graphql.declaredContract = raw.graphqlDeclaredContract;
+  }
+  if (raw.graphqlUnresolvedDocument !== undefined) {
+    graphql.unresolvedDocument = raw.graphqlUnresolvedDocument;
   }
   return Object.keys(graphql).length > 0 ? graphql : null;
 }
