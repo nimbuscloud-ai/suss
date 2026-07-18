@@ -759,6 +759,10 @@ function extractFromSourceFile(
             ...(cu.inputMapping !== undefined
               ? { inputMapping: cu.inputMapping }
               : {}),
+            // A callback that discovers manifest-declared routes (SAM/CFN
+            // Events) attaches `routeInfo`; the downstream REST binding
+            // path (see below) picks it up exactly as decoratedRoute does.
+            ...(cu.routeInfo !== undefined ? { routeInfo: cu.routeInfo } : {}),
             ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
           } as (typeof units)[number]);
         }
@@ -779,7 +783,15 @@ function extractFromSourceFile(
         unit.packageExportInfo !== undefined
           ? `-${unit.packageExportInfo.packageName}::${unit.packageExportInfo.exportPath.join(".")}`
           : "";
-      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}`;
+      // routeInfo distinguishes units that share a handler function but
+      // bind to different (method, path) pairs — one Lambda handler
+      // wired to several SAM route Events, or one function registered
+      // for GET and POST. Mirrors the dedup in discovery/index.ts.
+      const routeSuffix =
+        unit.routeInfo !== undefined
+          ? `-${unit.routeInfo.method} ${unit.routeInfo.path}`
+          : "";
+      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}`;
       if (claimed.has(claimKey)) {
         continue;
       }
@@ -955,7 +967,20 @@ function extractFromSourceFile(
         }
       }
 
-      summaries.push(assembleSummary(raw, options));
+      const summary = assembleSummary(raw, options);
+      // Merge any pack-supplied unit metadata (from a `discoverUnits`
+      // callback) onto the summary — the discovery-layer counterpart of
+      // the sub-unit metadata merge in `synthesizeSubUnit`.
+      if (
+        unit.metadata !== undefined &&
+        Object.keys(unit.metadata).length > 0
+      ) {
+        summary.metadata = {
+          ...(summary.metadata ?? {}),
+          ...unit.metadata,
+        };
+      }
+      summaries.push(summary);
     }
   }
 

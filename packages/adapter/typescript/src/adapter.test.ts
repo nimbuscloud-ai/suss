@@ -3176,3 +3176,109 @@ describe("inline JSX conditional decomposition", () => {
     expect(child.whenTrue.tag).toBe("span");
   });
 });
+
+// ---------------------------------------------------------------------------
+// discoverUnits callback → REST binding + merged metadata (manifest-driven
+// packs like @suss/framework-aws-lambda that carry routeInfo/metadata on the
+// units they discover rather than a data-driven DiscoveryMatch).
+// ---------------------------------------------------------------------------
+
+describe("discoverUnits callback with routeInfo + metadata", () => {
+  const manifestPack: PatternPack = {
+    name: "manifest-lambda",
+    protocol: "http",
+    languages: ["typescript", "javascript"],
+    discovery: [],
+    terminals: [
+      {
+        kind: "response",
+        match: { type: "returnShape", requiredProperties: ["statusCode"] },
+        extraction: {
+          statusCode: { from: "property", name: "statusCode" },
+          body: { from: "property", name: "body", unwrapJsonStringify: true },
+        },
+      },
+    ],
+    inputMapping: {
+      type: "positionalParams",
+      params: [{ position: 0, role: "event" }],
+    },
+    discoverUnits: (sf, ctx) => {
+      const c = ctx as {
+        exportedFunctions: (
+          s: unknown,
+        ) => Array<{ name: string; func: unknown }>;
+      };
+      const handler = c.exportedFunctions(sf).find((f) => f.name === "handler");
+      if (handler === undefined) {
+        return [];
+      }
+      const base = {
+        func: handler.func,
+        kind: "handler",
+        name: "Fn.handler",
+        metadata: { manifest: { fn: "Fn" } },
+      };
+      return [
+        { ...base, routeInfo: { method: "GET", path: "/things/{id}" } },
+        { ...base, routeInfo: { method: "DELETE", path: "/things/{id}" } },
+      ];
+    },
+  };
+
+  async function run(): Promise<BehavioralSummary[]> {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "handler.ts",
+      `
+      export const handler = async (event: any) => {
+        if (!event.id) {
+          return { statusCode: 400, body: JSON.stringify({ error: "no id" }) };
+        }
+        return { statusCode: 200, body: JSON.stringify({ id: event.id }) };
+      };
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [manifestPack],
+    });
+    return await adapter.extractAll();
+  }
+
+  it("emits one REST-bound summary per routeInfo on a shared function", async () => {
+    const summaries = await run();
+    const get = summaries.find(
+      (s) => restMethodOf(s) === "GET" && restPathOf(s) === "/things/{id}",
+    );
+    const del = summaries.find(
+      (s) => restMethodOf(s) === "DELETE" && restPathOf(s) === "/things/{id}",
+    );
+    expect(get).toBeDefined();
+    expect(del).toBeDefined();
+    // The two routes on one handler body don't collapse in claim dedup.
+    expect(summaries).toHaveLength(2);
+  });
+
+  it("merges the callback's unit metadata onto the summary", async () => {
+    const summaries = await run();
+    const get = summaries.find((s) => restMethodOf(s) === "GET");
+    expect(get?.metadata?.manifest).toEqual({ fn: "Fn" });
+  });
+
+  it("unwraps JSON.stringify bodies through the callback-discovered unit", async () => {
+    const summaries = await run();
+    const get = summaries.find((s) => restMethodOf(s) === "GET");
+    const ok = get?.transitions.find(
+      (t) =>
+        t.output.type === "response" &&
+        t.output.statusCode?.type === "literal" &&
+        t.output.statusCode.value === 200,
+    );
+    expect(ok?.output.type).toBe("response");
+    if (ok?.output.type === "response") {
+      expect(JSON.stringify(ok.output.body)).toContain("id");
+      expect(JSON.stringify(ok.output.body)).not.toContain("JSON.stringify");
+    }
+  });
+});
