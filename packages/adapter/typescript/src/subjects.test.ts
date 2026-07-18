@@ -398,3 +398,106 @@ describe("resolveSubject — intermediate variable assignments", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Promise `.then` / `.catch` parameter binding
+// (docs/internal/proposals/adapter-ecmascript-spec.md)
+// ---------------------------------------------------------------------------
+
+describe("Promise .then parameter binding", () => {
+  function propAccess(source: string, text: string): Expression {
+    const project = new Project({
+      useInMemoryFileSystem: true,
+      compilerOptions: { strict: true, target: 9 /* ES2022 */ },
+    });
+    const file = project.createSourceFile("chain.ts", source);
+    const found = file
+      .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+      .find((n) => n.getText() === text);
+    if (found === undefined) {
+      throw new Error(`property access "${text}" not found`);
+    }
+    return found;
+  }
+
+  it("binds a .then callback param to the upstream call result", () => {
+    const source = `
+      interface Resp { ok: boolean; }
+      declare function fetchUser(): Promise<Resp>;
+      function consume() {
+        fetchUser().then((res) => {
+          if (!res.ok) {
+            return;
+          }
+        });
+      }
+    `;
+    // `res` is the resolved value of `fetchUser()`, not an input.
+    expect(resolveSubject(propAccess(source, "res.ok"))).toEqual({
+      type: "derived",
+      from: { type: "dependency", name: "fetchUser", accessChain: [] },
+      derivation: { type: "propertyAccess", property: "ok" },
+    });
+  });
+
+  it("binds a chained .then param to the previous callback's return value", () => {
+    const source = `
+      interface Resp { ok: boolean; json(): Promise<{ name: string }>; }
+      declare function fetchUser(): Promise<Resp>;
+      function consume() {
+        fetchUser()
+          .then((res) => res.json())
+          .then((data) => {
+            if (!data.name) {
+              return;
+            }
+          });
+      }
+    `;
+    // `data` is the resolved value of the upstream `res.json()`.
+    expect(resolveSubject(propAccess(source, "data.name"))).toEqual({
+      type: "derived",
+      from: { type: "dependency", name: "res.json", accessChain: [] },
+      derivation: { type: "propertyAccess", property: "name" },
+    });
+  });
+
+  it("leaves a non-Promise `.then` receiver param as an input (strict gate)", () => {
+    const source = `
+      interface Builder { then(cb: (x: { ok: boolean }) => void): void; }
+      declare const builder: Builder;
+      function consume() {
+        builder.then((res) => {
+          if (!res.ok) {
+            return;
+          }
+        });
+      }
+    `;
+    // The receiver is a custom thenable, not Promise<T>; strict binding
+    // declines and the parameter resolves as an ordinary input.
+    expect(resolveSubject(propAccess(source, "res.ok"))).toEqual({
+      type: "derived",
+      from: { type: "input", inputRef: "res", path: [] },
+      derivation: { type: "propertyAccess", property: "ok" },
+    });
+  });
+
+  it("treats a .catch param's rejected value as opaque", () => {
+    const source = `
+      declare function fetchUser(): Promise<{ ok: boolean }>;
+      function consume() {
+        fetchUser().catch((err) => {
+          if (err.code) {
+            return;
+          }
+        });
+      }
+    `;
+    expect(resolveSubject(propAccess(source, "err.code"))).toEqual({
+      type: "derived",
+      from: { type: "unresolved", sourceText: "err" },
+      derivation: { type: "propertyAccess", property: "code" },
+    });
+  });
+});
