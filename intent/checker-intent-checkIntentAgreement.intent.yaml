@@ -1,0 +1,38 @@
+# System intent for @suss/checker-intent's top-level entry point.
+#
+# checkIntentAgreement pairs team-authored boundary intent against
+# derived code summaries and returns the findings plus the coverage
+# accounting (which intents were checked, which were not and why). Like
+# checkAll it is total over well-typed input — docs it can't compare are
+# reported in `unchecked`, never thrown.
+#
+# The three top-level keys of CheckIntentResult are named here; their
+# nested element shapes exceed the intent body vocabulary and are left
+# `unknown`.
+
+kind: boundary
+
+name: checker-intent-check-agreement
+purpose: >-
+  Pair each boundary intent against the code summaries sharing its key,
+  reporting where code fails a declared outcome and which intents could
+  not be checked.
+audience: suss-cli
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker-intent"
+  exportPath: ["checkIntentAgreement"]
+
+transitions:
+  - id: result
+    when: called with intent summaries and code summaries
+    returns:
+      body:
+        properties:
+          findings: { type: unknown }
+          checked: { type: unknown }
+          unchecked: { type: unknown }
+        required: [findings, checked, unchecked]

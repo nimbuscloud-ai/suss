@@ -1,0 +1,23 @@
+# System intent for @suss/checker's dedupeFindings export.
+#
+# dedupeFindings collapses identical findings that came from overlapping
+# sources into one representative and returns the reduced array. Bare
+# array return, declared body-less (see checker-check-pair for why).
+
+kind: boundary
+
+name: checker-dedupe-findings
+purpose: Collapse duplicate findings from overlapping sources into one representative each.
+audience: downstream-consumers
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker"
+  exportPath: ["dedupeFindings"]
+
+transitions:
+  - id: deduped
+    when: called with a list of findings
+    returns: {}

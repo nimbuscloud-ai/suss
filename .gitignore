@@ -14,6 +14,9 @@ docs/.vitepress/cache/
 # Dogfood output (regenerated on demand via `node scripts/dogfood.mjs`)
 scripts/dogfood-report.json
 
+# Self-check summaries (regenerated on demand via `npm run check:self`)
+.self-check/
+
 # Per-package extraction cache (local to each working tree)
 **/.suss/
 
