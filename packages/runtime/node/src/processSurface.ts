@@ -3,11 +3,10 @@
 // stamped with an opacity reason so downstream tooling sees the
 // dependency on the runtime surface.
 //
-// `process.env.X` reads are deliberately NOT handled here — they're
-// already covered by @suss/framework-process-env, which emits a
-// pairing-grade `config-read` interaction. Subsuming that recognizer
-// is its own follow-up (per the design doc); for now both packs can
-// be loaded together without duplication because the env-var
+// `process.env.X` reads are deliberately NOT handled here — the
+// sibling `envVarRecognizer` (envVars.ts) owns that slice and emits
+// a pairing-grade `config-read` interaction. The two recognizers
+// partition the `process.*` space without duplication: the env-var
 // recognizer fires only on `process.env.X`, and the process-surface
 // recognizer here skips that shape explicitly.
 
@@ -38,9 +37,9 @@ export interface ProcessSurfaceOptions {
 }
 
 /**
- * Read of `process.env.X` — let the env-var pack handle these.
- * Returns true when `node` is the outer `.X` access on a
- * `process.env` chain.
+ * Read of `process.env.X` — let the sibling `envVarRecognizer`
+ * handle these. Returns true when `node` is the outer `.X` access on
+ * a `process.env` chain.
  */
 function isProcessEnvVarRead(node: PropertyAccessExpression): boolean {
   const inner = node.getExpression();
@@ -98,7 +97,7 @@ function recognizeProperty(
   deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
   instanceName: string,
 ): Effect[] | null {
-  // Skip env-var reads — handled by @suss/framework-process-env.
+  // Skip env-var reads — handled by the sibling envVarRecognizer.
   if (isProcessEnvVarRead(node)) {
     return null;
   }

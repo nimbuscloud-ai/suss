@@ -7,9 +7,11 @@ import {
 } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { findProcessEnvReads, processEnvFramework } from "./index.js";
+import { envVarRecognizer, findProcessEnvReads } from "./envVars.js";
+import nodeRuntimePack from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
+import type { AccessRecognizer } from "@suss/extractor";
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -27,9 +29,10 @@ function makeProject(userSource: string): SourceFile {
   return project.createSourceFile("user.ts", userSource);
 }
 
-function recognizeAll(sourceFile: SourceFile): Effect[] {
-  const pack = processEnvFramework();
-  const recognizer = pack.accessRecognizers?.[0] ?? raise("no recognizer");
+function recognizeWith(
+  recognizer: AccessRecognizer,
+  sourceFile: SourceFile,
+): Effect[] {
   const effects: Effect[] = [];
   sourceFile.forEachDescendant((node) => {
     if (!Node.isPropertyAccessExpression(node)) {
@@ -42,6 +45,10 @@ function recognizeAll(sourceFile: SourceFile): Effect[] {
     }
   });
   return effects;
+}
+
+function recognizeAll(sourceFile: SourceFile): Effect[] {
+  return recognizeWith(envVarRecognizer(), sourceFile);
 }
 
 function configReadEffectsOf(effects: Effect[]): Array<
@@ -66,7 +73,7 @@ function configReadEffectsOf(effects: Effect[]): Array<
   return out;
 }
 
-describe("process-env recognizer — happy path", () => {
+describe("env-var recognizer — happy path", () => {
   it("recognizes process.env.X reads", () => {
     const file = makeProject(`
       const key = process.env.STRIPE_API_KEY;
@@ -135,31 +142,24 @@ describe("process-env recognizer — happy path", () => {
       name: "runtime-config",
       deploymentTarget: "lambda",
     });
+    expect(read.binding.recognition).toBe("@suss/runtime-node");
   });
 
   it("threads deploymentTarget option into the binding", () => {
     const file = makeProject(`
       const x = process.env.FOO;
     `);
-    const pack = processEnvFramework({ deploymentTarget: "ecs-task" });
-    const recognizer = pack.accessRecognizers?.[0] ?? raise("no recognizer");
-    const effects: Effect[] = [];
-    file.forEachDescendant((node) => {
-      if (Node.isPropertyAccessExpression(node)) {
-        const emitted = recognizer(node, { access: node, sourceFile: file });
-        if (emitted !== null) {
-          effects.push(...emitted);
-        }
-      }
-    });
-    const read = configReadEffectsOf(effects)[0] ?? raise("no read");
+    const recognizer = envVarRecognizer({ deploymentTarget: "ecs-task" });
+    const read =
+      configReadEffectsOf(recognizeWith(recognizer, file))[0] ??
+      raise("no read");
     expect(read.binding.semantics).toMatchObject({
       deploymentTarget: "ecs-task",
     });
   });
 });
 
-describe("process-env recognizer — rejection cases", () => {
+describe("env-var recognizer — rejection cases", () => {
   it("ignores property accesses that aren't process.env.X", () => {
     const file = makeProject(`
       const obj = { env: { X: "y" } };
@@ -195,14 +195,25 @@ describe("findProcessEnvReads helper", () => {
   });
 });
 
-describe("process-env pack metadata", () => {
-  it("declares correct identity (no discovery, no terminals, accessRecognizer present)", () => {
-    const pack = processEnvFramework();
-    expect(pack.name).toBe("process-env");
-    expect(pack.protocol).toBe("in-process");
-    expect(pack.discovery).toEqual([]);
-    expect(pack.terminals).toEqual([]);
-    expect(pack.accessRecognizers).toHaveLength(1);
-    expect(pack.invocationRecognizers).toBeUndefined();
+describe("node runtime pack — env-var wiring", () => {
+  it("includes an access recognizer that recognizes process.env.X", () => {
+    const pack = nodeRuntimePack();
+    const recognizers = pack.accessRecognizers ?? raise("no recognizers");
+    const file = makeProject(`
+      const x = process.env.FOO;
+    `);
+    const effects: Effect[] = [];
+    for (const rec of recognizers) {
+      effects.push(...recognizeWith(rec, file));
+    }
+    const reads = configReadEffectsOf(effects);
+    // Exactly one recognizer (the env-var one) claims process.env.FOO;
+    // the process-surface recognizer skips it, so no duplication.
+    expect(reads).toHaveLength(1);
+    expect(reads[0]?.interaction.name).toBe("FOO");
+  });
+
+  it("declares a version stamp so the merge invalidates warm caches", () => {
+    expect(nodeRuntimePack().version).toBe("0.1.0");
   });
 });

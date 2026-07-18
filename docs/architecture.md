@@ -152,7 +152,6 @@ These terms are used consistently across the codebase. The running example is th
     │     │     @suss/framework-apollo
     │     │     @suss/framework-aws-sqs
     │     │     @suss/framework-prisma
-    │     │     @suss/framework-process-env
     │     │
     │     ├─ Client packs                consumer-side discovery
     │     │     @suss/client-web         (fetch)
@@ -224,7 +223,7 @@ The four functions compose in step 5 (**assembly**): for each terminal, concaten
 
 Two parallel mechanisms feed effects and sub-units into this pipeline:
 
-- **Recognizers** fire when the walker encounters a specific call or property access inside a code unit. The runtime-node pack's `schedulingRecognizer` fires on `setTimeout(...)` and attaches a scheduling effect to the surrounding unit; `processSurfaceRecognizer` fires on `process.env.X` reads and attaches a config-read effect.
+- **Recognizers** fire when the walker encounters a specific call or property access inside a code unit. The runtime-node pack's `schedulingRecognizer` fires on `setTimeout(...)` and attaches a scheduling effect to the surrounding unit; its env-var recognizer fires on `process.env.X` reads and attaches a config-read effect.
 - **Sub-units** synthesize new code units inside an existing one — typically a callback passed to a host function (`setTimeout(callback)`, `array.forEach(callback)`, a Promise executor). The walker descends into the sub-unit and runs recognizer dispatch there, so effects in nested function bodies aren't missed.
 
 ## Why `RawCodeStructure` exists

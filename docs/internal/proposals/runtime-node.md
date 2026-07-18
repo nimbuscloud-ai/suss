@@ -2,6 +2,10 @@
 
 A single pack that models the Node.js runtime: scheduling primitives, the `process` surface, and module-loading conventions. Sits below framework packs in the layering — Express handlers stay in `framework-express`, but a `setImmediate(handler)` call inside an Express handler is the runtime pack's responsibility.
 
+## Status
+
+Shipped as `@suss/runtime-node`. The `process.env.X` env-var recognizer, originally shipped as the standalone `@suss/framework-process-env` pack, was folded into this pack (`src/envVars.ts`) alongside the process-surface recognizer; the standalone pack was removed (it was unpublished, so no compat re-export was needed). The pack declares a `version` stamp so re-extraction with the merged pack invalidates warm caches from the pre-merge node pack.
+
 ## Why this exists
 
 Today, suss has no model for asynchronous scheduling outside of what individual framework packs declare. A function passed to `setImmediate`, `queueMicrotask`, or `setTimeout(fn, 0)` is invisible — it's treated as a function reference passed as data, with no record that it will run. This means:
@@ -10,7 +14,7 @@ Today, suss has no model for asynchronous scheduling outside of what individual 
 - A handler that does `setImmediate(() => sendNotification(user))` shows the `sendNotification` reference as unused, when it's actually scheduled.
 - The dogfood pipeline, which runs against suss itself, won't notice because the suss codebase doesn't lean on `setImmediate`. This invisibility shows up as soon as we point suss at a non-trivial Node service.
 
-The same problem applies to the `process` surface (env vars, exit codes, argv) and to module loading (`require.resolve`, `__dirname`). Some of these are partially handled today: `@suss/framework-process-env` covers `process.env.X` reads. The platform pack absorbs that work and extends it.
+The same problem applies to the `process` surface (env vars, exit codes, argv) and to module loading (`require.resolve`, `__dirname`). `process.env.X` reads were the first slice handled — originally in a standalone `@suss/framework-process-env` pack, now merged into this runtime pack (see [Status](#status)). The runtime pack absorbs that work and extends it.
 
 ## Scope — v0
 
@@ -38,7 +42,7 @@ The sub-unit has no `boundaryBinding` — being scheduled isn't a contract. It e
 
 ### 2. Process surface
 
-- `process.env.X` reads — already covered by `framework-process-env`. Move that recognizer here. Keep the existing pack as a stub that re-exports for compat, deprecate later.
+- `process.env.X` reads — the `envVarRecognizer` now lives in this pack (`src/envVars.ts`). The standalone `framework-process-env` pack was removed outright rather than kept as a compat re-export stub, since it was never published.
 - `process.argv` reads — runtime config channel of the deployable unit (cf. `project_env_var_boundary.md`). Same boundary semantics as env vars.
 - `process.exit(code)` — terminal. Status code from the argument; fallback `0`. Adds a `processExit` terminal kind.
 - `process.cwd()`, `process.platform`, `process.version` — opaque reads against runtime metadata. Mark as `opaque` predicates with a clear reason so downstream tooling sees the dependency without inventing structure.
@@ -142,7 +146,7 @@ Package: `@suss/runtime-node`. Directory: `packages/runtime/node/`. Default expo
 ## Cost estimate
 
 - Scheduling primitives: ~5 recognizers + 5 subUnit declarations + 1 new `Effect` kind. Half a day.
-- Process surface: move existing process-env recognizer + add argv/exit/cwd. Half a day.
+- Process surface: relocate the env-var recognizer into this pack + add argv/exit/cwd. Half a day.
 - Module surface: 3 access recognizers + opacity-reason taxonomy. Half a day.
 - Tests + integration test + dogfood validation. One day.
 
