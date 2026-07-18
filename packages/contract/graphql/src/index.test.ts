@@ -1,6 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { graphqlSdlToSummaries } from "./index.js";
+import { graphqlSdlToSummaries, loadSdlFile } from "./index.js";
 
 describe("graphqlSdlToSummaries", () => {
   it("emits one resolver summary per Query field", () => {
@@ -116,5 +120,22 @@ describe("graphqlSdlToSummaries", () => {
   it("returns no summaries for SDL without root types", () => {
     const sdl = "type User { id: ID! }";
     expect(graphqlSdlToSummaries(sdl)).toEqual([]);
+  });
+});
+
+describe("loadSdlFile", () => {
+  it("returns the file text when the SDL file exists", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-graphql-"));
+    const file = path.join(tmp, "schema.graphql");
+    fs.writeFileSync(file, "type Query { ping: String }");
+    try {
+      expect(loadSdlFile(file)).toBe("type Query { ping: String }");
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
+    }
+  });
+
+  it("returns null when the file can't be read", () => {
+    expect(loadSdlFile("/no/such/schema.graphql")).toBeNull();
   });
 });

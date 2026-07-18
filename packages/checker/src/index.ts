@@ -193,7 +193,8 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // Runtime-config pairing: pair runtime providers (CFN/SAM Lambda
   // env-var declarations) against config-read interaction effects (or
   // legacy invocation-arg `process.env.X` patterns when the
-  // process-env recognizer wasn't in the framework list).
+  // node runtime pack's env-var recognizer wasn't in the framework
+  // list).
   findings.push(...checkRuntimeConfig(summaries, interactionIndex));
 
   // Relational-storage pairing: pair schema-derived providers

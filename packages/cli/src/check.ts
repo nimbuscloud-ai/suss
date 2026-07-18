@@ -225,10 +225,20 @@ function renderIntentSection(intent: CheckIntentResult | undefined): string {
     return "";
   }
   const lines = ["", "Intent:"];
-  const n = intent.checked.length;
+  const boundaries = intent.checked.filter((c) => c.kind === "boundary");
+  const prds = intent.checked.filter((c) => c.kind === "prd");
+  const n = boundaries.length;
   lines.push(
     `  ${n} boundary intent${n === 1 ? "" : "s"} checked against code`,
   );
+  if (prds.length > 0) {
+    const scenarios = prds.reduce((sum, p) => sum + p.scenarios, 0);
+    const resolved = prds.reduce((sum, p) => sum + p.resolved, 0);
+    const unlinked = prds.reduce((sum, p) => sum + p.unlinked, 0);
+    lines.push(
+      `  ${prds.length} PRD${prds.length === 1 ? "" : "s"} checked: ${scenarios} scenario${scenarios === 1 ? "" : "s"}, ${resolved} resolved, ${unlinked} unlinked`,
+    );
+  }
   for (const f of intent.findings) {
     lines.push(`  [${f.severity}] ${f.boundary} — ${f.message}`);
     if (f.suppressed !== undefined) {

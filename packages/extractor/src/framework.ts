@@ -96,10 +96,17 @@ export type DiscoveryMatch =
        * Consumer-side GraphQL hook call — the canonical Apollo Client
        * and urql shape. Each call to one of the listed hooks becomes
        * a `client`-kind code unit whose binding semantics is
-       * `graphql-operation(operationType, operationName?)`. The
-       * operation identity comes from parsing the first argument's
-       * gql-tagged template literal — either inline or resolved
-       * through one const-binding of an identifier.
+       * `graphql-operation(operationType, operationName?)`.
+       *
+       * The document argument resolves through several shapes: an inline
+       * `gql`-tagged template, a const binding (same module or imported
+       * from another module), a `.graphql` / `.gql` file import, and a
+       * generated `TypedDocumentNode` object literal from graphql-codegen
+       * client-preset. When the document body isn't statically readable,
+       * the operation header falls back to the `TypedDocumentNode` type
+       * arguments; a still-unresolvable document surfaces on the summary
+       * as `metadata.graphql.unresolvedDocument` rather than dropping the
+       * boundary.
        *
        * Example:
        * ```ts
@@ -112,20 +119,25 @@ export type DiscoveryMatch =
        * ```
        *
        * The adapter records the operation name / type on the
-       * DiscoveredUnit's `operationInfo`; binding construction uses
-       * that to emit `graphql-operation(...)`. Inline `gql`-less
-       * string arguments and cross-module gql documents are left
-       * for a follow-up — v0 covers the dominant shape.
+       * DiscoveredUnit's `operationInfo`; binding construction uses that
+       * to emit `graphql-operation(...)`. The per-hook `operationType`
+       * is authoritative when the document header can't be read (mirrors
+       * `graphqlImperativeCall.methods`).
        */
       type: "graphqlHookCall";
       importModule: string;
       /**
-       * Hook names to match on that import (e.g. `["useQuery",
-       * "useMutation", "useSubscription"]`). Each hook is reported
-       * as `kind = "client"` by default; packs can override via the
-       * enclosing `DiscoveryPattern.kind`.
+       * Hooks to match on that import, each mapped to the operation
+       * type it performs (`useQuery` → query, `useMutation` → mutation,
+       * `useSubscription` → subscription). The mapping supplies the
+       * operation type when the document body isn't statically readable.
+       * Each hook is reported as `kind = "client"` by default; packs can
+       * override via the enclosing `DiscoveryPattern.kind`.
        */
-      hookNames: string[];
+      hooks: Array<{
+        hookName: string;
+        operationType: "query" | "mutation" | "subscription";
+      }>;
     }
   | {
       /**
@@ -485,8 +497,12 @@ export interface TerminalExtraction {
         position: number;
         codes: Record<string, number>;
       };
-  body?:
-    | { from: "property"; name: string } // { body: data } → name: "body"
+  body?: // { body: data } → name: "body". `unwrapJsonStringify` peels a
+  // `JSON.stringify(x)` initializer down to the shape of `x` — the
+  // Lambda-proxy envelope convention where `body` is the serialized
+  // payload string, not the payload itself. Off by default so packs
+  // that want the literal property value keep it.
+    | { from: "property"; name: string; unwrapJsonStringify?: boolean }
     | { from: "argument"; position: number; minArgs?: number }; // res.json(data) → position: 0
   /** Fallback status code when none is extracted. e.g. Express res.json() defaults to 200. */
   defaultStatusCode?: number;
@@ -796,9 +812,9 @@ export interface PatternPack {
    * packs whose ONLY mechanism is recognizers (no discovery).
    *
    * Empty / undefined means "no gate" — pack walks every file (the
-   * default for truly universal recognizers like
-   * `@suss/framework-process-env`, since `process.env` is available
-   * without an import).
+   * default for truly universal recognizers like `@suss/runtime-node`'s
+   * process-surface / env-var recognizers, since `process.*` is
+   * available without an import).
    */
   requiresImport?: string[];
   /**
@@ -886,6 +902,20 @@ export interface DiscoveredCustomUnit {
    * `inputMapping` when unset.
    */
   inputMapping?: InputMappingPattern;
+  /**
+   * REST route identity for units a callback discovers against an
+   * external manifest (a SAM/CFN template's `Events` block, an infra
+   * routing declaration, etc.) rather than an in-code registration.
+   * When set, the adapter builds a `rest` binding from `(method, path)`
+   * — the same binding NestJS controllers get via decorator-derived
+   * `routeInfo`, without the discoverUnits callback needing to reach
+   * into the adapter's binding machinery.
+   *
+   * One function bound to several routes emits one DiscoveredCustomUnit
+   * per route; the adapter's per-file claim dedup keys on
+   * `(func, kind, method, path)` so the variants survive.
+   */
+  routeInfo?: { method: string; path: string };
   /**
    * Metadata merged onto the resulting summary's `metadata` field.
    */

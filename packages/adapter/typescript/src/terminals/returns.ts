@@ -352,10 +352,12 @@ export function tryMatchReturnStatement(
   }
 
   // Expression-body arrow: `(v) => setValue(v)` or `() => cond ? a : b`.
-  // The body expression IS the return value. The per-node walker skips
-  // into nested arrow bodies, so we only match the outermost arrow
-  // (which IS the function being analysed) here — nested callbacks get
-  // their own findTerminals pass when they're themselves discovered.
+  // The body expression IS the return value. The walker descends into
+  // nested arrows now, but gates return-valued terminals to the unit's
+  // own scope (see `NESTED_ESCAPING_MATCH_TYPES` in terminals/index.ts),
+  // so this branch only fires for the arrow that IS the function being
+  // analysed — a nested `.then(res => res.json())` callback yields its
+  // own value, not the unit's.
   if (Node.isArrowFunction(node)) {
     const body = node.getBody();
     if (body === undefined || Node.isBlock(body)) {

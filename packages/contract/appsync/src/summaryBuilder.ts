@@ -1,18 +1,19 @@
-// summary-builder.ts — Assemble BehavioralSummary objects from parsed
-// AppSync CFN + SDL input.
+// summaryBuilder.ts — Assemble BehavioralSummary objects from the
+// normalized AppSync model (raw AWS::AppSync::* and SAM
+// AWS::Serverless::GraphQLApi converge here).
 //
-// The schema-first angle drives most of the shape here: every
-// resolver's observable behavior is gated by its SDL field
-// declaration. The stub emits one summary per (TypeName, FieldName)
-// declared by a Resolver resource that matches an indexed SDL field.
-// Dangling resolvers (no SDL declaration for the target field) still
-// produce a summary — they're a real boundary that AppSync would
-// fail at deploy time, and surfacing them is more useful than
-// silently dropping.
+// The schema-first angle drives most of the shape: every resolver's
+// observable behavior is gated by its SDL field declaration. One summary
+// is emitted per (TypeName, FieldName) declared by a resolver. Dangling
+// resolvers (no SDL declaration for the target field) still produce a
+// summary — they're a boundary AppSync would fail at deploy time, and
+// surfacing them beats silently dropping. Lambda data-source attribution
+// rides on each summary so it can later correlate to handler code.
 
 import { graphqlResolverBinding } from "@suss/behavioral-ir";
 
 import { schemaKey } from "./schema.js";
+import { resolvedSdl } from "./schemaSource.js";
 
 import type {
   BehavioralSummary,
@@ -20,58 +21,78 @@ import type {
   Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
-import type { AppSyncApi, AppSyncFunction, AppSyncResolver } from "./cfn.js";
+import type {
+  AppSyncApi,
+  AppSyncConfig,
+  AppSyncDataSource,
+  AppSyncFunction,
+  AppSyncResolver,
+} from "./cfn.js";
 import type { FieldInfo, SchemaIndex } from "./schema.js";
+import type { ResolvedSchema } from "./schemaSource.js";
 
 export interface BuildOptions {
   /** Logical source path recorded on each summary's `location.file`. */
   source?: string;
 }
 
+interface PipelineFunctionMeta {
+  logicalId: string;
+  name: string | null;
+  dataSourceLogicalId: string | null;
+  lambdaFunctionLogicalId: string | null;
+  codeUri: string | null;
+  runtime: string | null;
+}
+
+interface Indexes {
+  apiById: Map<string, AppSyncApi>;
+  functionById: Map<string, AppSyncFunction>;
+  dataSourceById: Map<string, AppSyncDataSource>;
+}
+
 export function buildResolverSummaries(
-  apis: AppSyncApi[],
-  resolvers: AppSyncResolver[],
-  functions: AppSyncFunction[],
+  config: AppSyncConfig,
+  resolvedByApi: Map<string, ResolvedSchema>,
   schemasByApi: Map<string, SchemaIndex>,
   options: BuildOptions = {},
 ): BehavioralSummary[] {
   const sourceFile = options.source ?? "appsync";
-  const apiById = indexApisByLogicalId(apis);
-  const functionById = indexFunctionsByLogicalId(functions);
-  return resolvers.map((resolver) =>
-    buildOne(resolver, apiById, functionById, schemasByApi, sourceFile),
+  const indexes: Indexes = {
+    apiById: byLogicalId(config.apis),
+    functionById: byLogicalId(config.functions),
+    dataSourceById: byLogicalId(config.dataSources),
+  };
+  return config.resolvers.map((resolver) =>
+    buildOne(resolver, indexes, resolvedByApi, schemasByApi, sourceFile),
   );
 }
 
-function indexApisByLogicalId(apis: AppSyncApi[]): Map<string, AppSyncApi> {
-  const out = new Map<string, AppSyncApi>();
-  for (const api of apis) {
-    out.set(api.logicalId, api);
-  }
-  return out;
-}
-
-function indexFunctionsByLogicalId(
-  functions: AppSyncFunction[],
-): Map<string, AppSyncFunction> {
-  const out = new Map<string, AppSyncFunction>();
-  for (const fn of functions) {
-    out.set(fn.logicalId, fn);
+function byLogicalId<T extends { logicalId: string }>(
+  items: T[],
+): Map<string, T> {
+  const out = new Map<string, T>();
+  for (const item of items) {
+    out.set(item.logicalId, item);
   }
   return out;
 }
 
 function buildOne(
   resolver: AppSyncResolver,
-  apiById: Map<string, AppSyncApi>,
-  functionById: Map<string, AppSyncFunction>,
+  indexes: Indexes,
+  resolvedByApi: Map<string, ResolvedSchema>,
   schemasByApi: Map<string, SchemaIndex>,
   sourceFile: string,
 ): BehavioralSummary {
   const api =
     resolver.apiLogicalId === null
       ? null
-      : (apiById.get(resolver.apiLogicalId) ?? null);
+      : (indexes.apiById.get(resolver.apiLogicalId) ?? null);
+  const resolved =
+    resolver.apiLogicalId === null
+      ? null
+      : (resolvedByApi.get(resolver.apiLogicalId) ?? null);
   const schema =
     resolver.apiLogicalId === null
       ? null
@@ -80,6 +101,7 @@ function buildOne(
     schema?.get(schemaKey(resolver.typeName, resolver.fieldName)) ?? null;
 
   const ownerKey = `${resolver.typeName}.${resolver.fieldName}`;
+  const schemaSdl = resolved === null ? null : resolvedSdl(resolved);
 
   return {
     kind: "resolver",
@@ -93,7 +115,7 @@ function buildOne(
       exportPath: null,
       boundaryBinding: graphqlResolverBinding({
         // AppSync is invoked over HTTPS-to-AWS. Keeping transport
-        // explicit here matches the aws-apigateway stub's posture
+        // explicit here matches the aws-apigateway reader's posture
         // and leaves room for a future AWS-SDK-direct transport
         // ("aws-sdk") once Lambda-invoke semantics land.
         transport: "aws-https",
@@ -107,47 +129,105 @@ function buildOne(
     gaps: [],
     confidence: { source: "derived", level: "high" },
     metadata: {
-      appsync: {
-        apiLogicalId: resolver.apiLogicalId,
-        apiName: api?.name ?? null,
-        dataSourceLogicalId: resolver.dataSourceLogicalId,
-        kind: resolver.kind,
-        authenticationType: api?.authenticationType ?? null,
-        // Surface when the SDL couldn't be matched so downstream
-        // consumers can distinguish "schema said X" from "we didn't
-        // see a schema at all."
-        schemaMatched: field !== null,
-        // For PIPELINE resolvers, surface the ordered function
-        // chain so downstream tools can show the dispatch path.
-        // Each entry resolves `logicalId` → (Name, DataSource).
-        // Empty for UNIT resolvers; empty with `kind: "PIPELINE"`
-        // means the Functions array was dynamically-referenced
-        // and we couldn't resolve it statically.
-        ...(resolver.pipelineFunctionLogicalIds.length > 0
-          ? {
-              pipelineFunctions: resolver.pipelineFunctionLogicalIds.map(
-                (logicalId) => {
-                  const fn = functionById.get(logicalId) ?? null;
-                  return {
-                    logicalId,
-                    name: fn?.name ?? null,
-                    dataSourceLogicalId: fn?.dataSourceLogicalId ?? null,
-                  };
-                },
-              ),
-            }
-          : {}),
-      },
-      // Surface the inline SDL so the checker can resolve nested
-      // selections against this resolver's return type. Repeated
-      // across every resolver from the same API by design — each
-      // summary travels independently; keeping the SDL on-hand is
-      // simpler than cross-summary schema lookup, and the checker
-      // caches parses per-SDL.
-      ...(api?.schemaSdl != null
-        ? { graphql: { schemaSdl: api.schemaSdl } }
-        : {}),
+      appsync: buildAppsyncMetadata(resolver, api, resolved, field, indexes),
+      // Surface the resolved SDL so the checker can resolve nested
+      // selections against this resolver's return type. Repeated across
+      // every resolver from the same API by design — each summary
+      // travels independently; keeping the SDL on-hand is simpler than
+      // cross-summary schema lookup, and the checker caches parses
+      // per-SDL.
+      ...(schemaSdl !== null ? { graphql: { schemaSdl } } : {}),
     },
+  };
+}
+
+function buildAppsyncMetadata(
+  resolver: AppSyncResolver,
+  api: AppSyncApi | null,
+  resolved: ResolvedSchema | null,
+  field: FieldInfo | null,
+  indexes: Indexes,
+): Record<string, unknown> {
+  const pipelineFunctions = resolver.pipelineFunctionLogicalIds.map(
+    (logicalId) => pipelineFunctionMeta(logicalId, indexes),
+  );
+  return {
+    apiLogicalId: resolver.apiLogicalId,
+    apiName: api?.name ?? null,
+    dataSourceLogicalId: resolver.dataSourceLogicalId,
+    // Lambda behind this resolver's own data source (UNIT resolvers).
+    // PIPELINE resolvers attribute per-function below; their top-level
+    // data source is null, so this is null too.
+    lambdaFunctionLogicalId: lambdaBehind(
+      resolver.dataSourceLogicalId,
+      indexes,
+    ),
+    kind: resolver.kind,
+    authenticationType: api?.authenticationType ?? null,
+    // SAM JS/VTL resolver code location + runtime (null for raw
+    // AWS::AppSync::Resolver resources).
+    codeUri: resolver.codeUri,
+    runtime: resolver.runtime,
+    // Distinguish "schema said X" from "we didn't see a schema at all"
+    // (field-level), and record how the SDL itself was obtained
+    // (source-level) so a genuinely-remote schema is never silent.
+    schemaMatched: field !== null,
+    schemaSource: schemaSourceMetadata(resolved),
+    // For PIPELINE resolvers, surface the ordered function chain so
+    // downstream tools can show the dispatch path. Empty for UNIT
+    // resolvers; empty with `kind: "PIPELINE"` means the Functions
+    // array was dynamically-referenced and we couldn't resolve it.
+    ...(pipelineFunctions.length > 0 ? { pipelineFunctions } : {}),
+  };
+}
+
+function pipelineFunctionMeta(
+  logicalId: string,
+  indexes: Indexes,
+): PipelineFunctionMeta {
+  const fn = indexes.functionById.get(logicalId) ?? null;
+  return {
+    logicalId,
+    name: fn?.name ?? null,
+    dataSourceLogicalId: fn?.dataSourceLogicalId ?? null,
+    lambdaFunctionLogicalId: lambdaBehind(
+      fn?.dataSourceLogicalId ?? null,
+      indexes,
+    ),
+    codeUri: fn?.codeUri ?? null,
+    runtime: fn?.runtime ?? null,
+  };
+}
+
+function lambdaBehind(
+  dataSourceLogicalId: string | null,
+  indexes: Indexes,
+): string | null {
+  if (dataSourceLogicalId === null) {
+    return null;
+  }
+  return (
+    indexes.dataSourceById.get(dataSourceLogicalId)?.lambdaFunctionLogicalId ??
+    null
+  );
+}
+
+function schemaSourceMetadata(
+  resolved: ResolvedSchema | null,
+): Record<string, unknown> {
+  if (resolved === null || resolved.status === "absent") {
+    return { status: "absent" };
+  }
+  if (resolved.status === "inline") {
+    return { status: "inline" };
+  }
+  if (resolved.status === "external-file") {
+    return { status: "external-file", location: resolved.location };
+  }
+  return {
+    status: "unresolved",
+    location: resolved.location,
+    reason: resolved.reason,
   };
 }
 
@@ -178,8 +258,8 @@ function buildInputs(field: FieldInfo | null): Input[] {
  *      resolver parsing.
  *
  * When the schema doesn't declare the field, the success transition
- * falls back to a `ref: unknown` return — we still model the
- * boundary, just without shape detail.
+ * falls back to a `ref: unknown` return — we still model the boundary,
+ * just without shape detail.
  */
 function buildTransitions(
   ownerKey: string,

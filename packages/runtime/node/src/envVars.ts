@@ -1,25 +1,28 @@
-// @suss/framework-process-env — recognize `process.env.X` reads in
-// TypeScript code and emit `interaction(class: "config-read")` effects
-// on the transitions that contain them.
+// envVars.ts — recognize `process.env.X` reads and emit
+// `interaction(class: "config-read")` effects on the units that
+// contain them.
 //
 // Pattern:
 //   process.env.STRIPE_API_KEY     → config-read for "STRIPE_API_KEY"
 //   process.env["FOO"]             → config-read for "FOO"
 //   process.env.X ?? "default"     → config-read for "X" with defaulted=true
 //
-// The recognizer fires on PropertyAccessExpression nodes (sister to
-// invocationRecognizers but for property reads). Each match emits one
-// effect; pairing logic in checkRuntimeConfig matches them against
-// runtime-config provider summaries (Lambda env-var declarations,
-// ECS env blocks, etc.).
+// `process.env` is Node-defined behavior — the env-var channel is part
+// of the deployable unit's runtime-config contract — so this lives
+// alongside the rest of the process surface in the node runtime pack.
+// The sibling `processSurfaceRecognizer` (processSurface.ts) covers
+// argv / cwd / platform / etc. and skips `process.env.X` so the two
+// recognizers partition the `process.*` space without duplication.
 //
 // Pairing identity for config-read interactions doesn't need a
 // boundaryBinding — the env-var name IS the channel identity, and
 // runtime-config providers carry the full env-var set in their
 // metadata. The recognizer emits effects with a synthetic binding
-// (recognition: "@suss/framework-process-env", semantics:
-// runtime-config) so the unified pairing dispatcher can route the
-// effect to the right finding generator.
+// (recognition: "@suss/runtime-node", semantics: runtime-config) so
+// the unified pairing dispatcher can route the effect to the right
+// finding generator. `checkRuntimeConfig` matches the emitted
+// effects against runtime-config provider summaries (Lambda env-var
+// declarations, ECS env blocks, etc.).
 
 import {
   Node as N,
@@ -31,9 +34,9 @@ import {
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { AccessRecognizer, PatternPack } from "@suss/extractor";
+import type { AccessRecognizer } from "@suss/extractor";
 
-export interface ProcessEnvRecognizerOptions {
+export interface EnvVarRecognizerOptions {
   /**
    * Deployment target context for the emitted binding. Defaults to
    * `"lambda"` since that's the dominant deployment for which suss
@@ -52,16 +55,8 @@ export interface ProcessEnvRecognizerOptions {
   instanceName?: string;
 }
 
-function makeRecognizer(opts: ProcessEnvRecognizerOptions): AccessRecognizer {
-  const deploymentTarget = opts.deploymentTarget ?? "lambda";
-  const instanceName = opts.instanceName ?? "<unknown>";
-  return (access, ctx) =>
-    recognizeProcessEnvRead(access, ctx, deploymentTarget, instanceName);
-}
-
 function recognizeProcessEnvRead(
   access: unknown,
-  _ctx: unknown,
   deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
   instanceName: string,
 ): Effect[] | null {
@@ -98,7 +93,7 @@ function recognizeProcessEnvRead(
     {
       type: "interaction",
       binding: runtimeConfigBinding({
-        recognition: "@suss/framework-process-env",
+        recognition: "@suss/runtime-node",
         deploymentTarget,
         instanceName,
       }),
@@ -133,10 +128,10 @@ function isNullishCoalescingWith(parent: Node, child: Node): boolean {
 
 /**
  * Walk PropertyAccessExpression nodes for `process.env.X` reads
- * inside an `index.ts`-style source file. Used by tests and by
- * downstream packs that want to consume env-var reads outside the
- * recognizer dispatch (rare). Most consumers should let the adapter
- * wire the recognizer via the pack.
+ * inside a source file. Used by tests and by downstream consumers
+ * that want to enumerate env-var reads outside the recognizer
+ * dispatch (rare). Most consumers should let the adapter wire the
+ * recognizer via the pack.
  */
 export function findProcessEnvReads(
   sourceFile: SourceFile,
@@ -170,23 +165,16 @@ export function findProcessEnvReads(
 }
 
 /**
- * Pack export. Recognizer-only — no discovery patterns or terminals.
- * The runtime-config provider summaries it pairs against come from
- * @suss/contract-cloudformation (or future container/k8s contract
- * sources).
+ * Access recognizer for `process.env.X` reads. Sister to
+ * `processSurfaceRecognizer` — both fire on PropertyAccessExpression
+ * nodes; this one owns the `process.env.*` slice, the other owns the
+ * rest of the process surface.
  */
-export function processEnvFramework(
-  options: ProcessEnvRecognizerOptions = {},
-): PatternPack {
-  return {
-    name: "process-env",
-    protocol: "in-process",
-    languages: ["typescript", "javascript"],
-    discovery: [],
-    terminals: [],
-    inputMapping: { type: "positionalParams", params: [] },
-    accessRecognizers: [makeRecognizer(options)],
-  };
+export function envVarRecognizer(
+  opts: EnvVarRecognizerOptions = {},
+): AccessRecognizer {
+  const deploymentTarget = opts.deploymentTarget ?? "lambda";
+  const instanceName = opts.instanceName ?? "<unknown>";
+  return (access, _ctx) =>
+    recognizeProcessEnvRead(access, deploymentTarget, instanceName);
 }
-
-export default processEnvFramework;

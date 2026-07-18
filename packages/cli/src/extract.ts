@@ -29,6 +29,8 @@ const BUILTIN_FRAMEWORKS: Record<
   "nestjs-graphql": () => import("@suss/framework-nestjs-graphql"),
   // REST controller discovery via NestJS decorators.
   "nestjs-rest": () => import("@suss/framework-nestjs-rest"),
+  // AWS Lambda HTTP handlers, paired to SAM/CFN-declared routes.
+  "aws-lambda": () => import("@suss/framework-aws-lambda"),
   // HTTP client packs (consumers).
   fetch: () => import("@suss/client-web"),
   axios: () => import("@suss/client-axios"),

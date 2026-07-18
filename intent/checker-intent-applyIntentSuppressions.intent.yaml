@@ -1,0 +1,23 @@
+# System intent for @suss/checker-intent's applyIntentSuppressions export.
+#
+# applyIntentSuppressions runs the shared .sussignore pipeline over intent
+# findings and returns the surviving (annotated) findings. Bare array
+# return, declared body-less.
+
+kind: boundary
+
+name: checker-intent-apply-suppressions
+purpose: Apply .sussignore rules to intent findings and return the surviving annotated findings.
+audience: suss-cli
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker-intent"
+  exportPath: ["applyIntentSuppressions"]
+
+transitions:
+  - id: filtered
+    when: called with intent findings and suppression rules
+    returns: {}

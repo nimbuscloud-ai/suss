@@ -151,8 +151,8 @@ These terms are used consistently across the codebase. The running example is th
     │     │     @suss/framework-nestjs-graphql
     │     │     @suss/framework-apollo
     │     │     @suss/framework-aws-sqs
+    │     │     @suss/framework-aws-eventbridge
     │     │     @suss/framework-prisma
-    │     │     @suss/framework-process-env
     │     │
     │     ├─ Client packs                consumer-side discovery
     │     │     @suss/client-web         (fetch)
@@ -188,7 +188,8 @@ These terms are used consistently across the codebase. The running example is th
 - `@suss/checker-intent` — depends on both IRs (it compares them) and `ir-core`. Pure function `checkIntentAgreement(intents, code)` → findings + checked / unchecked accounting. Peer of `@suss/checker`, not a dependency of it.
 - `@suss/extractor` — depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript` — depends on IR, extractor, ts-morph. The heavyweight package.
-- **All pack kinds** (framework, client, runtime) — depend only on `@suss/extractor` for the `PatternPack` type. They're data, not logic.
+- **All pack kinds** (framework, client, runtime) — depend only on `@suss/extractor` for the `PatternPack` type, plus `@suss/manifest-*` packages where discovery is manifest-driven. They're data, not logic.
+- `@suss/manifest-*` packages — parse deploy manifests (SAM/CFN templates) into plain data. No IR, no `@suss` dependencies. Both contract readers (manifest as specification) and framework packs (manifest as discovery index) read through them; the parse lives once, and neither witness depends on the other.
 - `@suss/contract-*` packages — depend only on the IR, plus on each other where they compose (`cloudformation` delegates to `openapi` + `aws-apigateway`). Produce `BehavioralSummary[]` from specs, manifests, schemas; carry `confidence.source: "contract"`. See [`contract-sources.md`](contract-sources.md).
 - `@suss/checker` — depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or packs — operates on the serialized IR.
 - `@suss/cli` — depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs. The CLI is the orchestration seam for multi-stream checking: it loads behavioural summaries and intent docs and dispatches each to its checker. The checkers stay IR-only consumers and never depend on each other.
@@ -197,7 +198,7 @@ These terms are used consistently across the codebase. The running example is th
 
 What goes where, when adding new behavior:
 
-- **Adapter** owns the language spec — both syntax and the runtime-semantic built-ins ECMAScript defines (Promise and its prototype methods, Array prototype methods, async/await, generators). If TC39 says it, the adapter handles it.
+- **Adapter** owns the language spec — both syntax and the runtime-semantic built-ins ECMAScript defines (Promise and its prototype methods, Array prototype methods, async/await, generators). If TC39 says it, the adapter handles it. Two concrete cases: the unit-body walkers descend into nested function expressions and arrows (Promise executors, `.then` callbacks, `forEach` bodies) so recognizers and effects inside them attach to the enclosing unit; and a `.then` callback's first parameter binds to the resolved value of the upstream promise. A pack-declared sub-unit boundary is the one opt-out — the walker stops there so the sub-unit's behavior lands on its own summary. See `docs/internal/proposals/adapter-ecmascript-spec.md`.
 - **Runtime packs** own behavior the runtime defines. `setTimeout`, `setImmediate`, `process.*` for Node. `requestAnimationFrame`, DOM APIs for browser. Even when names overlap across runtimes (setTimeout exists in both Node and browsers), each runtime owns its own — no shared "language base" pack.
 - **Framework packs** own framework-specific patterns: how handlers are registered, what response shapes look like, how inputs are delivered.
 - **Client packs** own consumer-side discovery: fetch call sites, axios calls, GraphQL clients.
@@ -224,7 +225,7 @@ The four functions compose in step 5 (**assembly**): for each terminal, concaten
 
 Two parallel mechanisms feed effects and sub-units into this pipeline:
 
-- **Recognizers** fire when the walker encounters a specific call or property access inside a code unit. The runtime-node pack's `schedulingRecognizer` fires on `setTimeout(...)` and attaches a scheduling effect to the surrounding unit; `processSurfaceRecognizer` fires on `process.env.X` reads and attaches a config-read effect.
+- **Recognizers** fire when the walker encounters a specific call or property access inside a code unit. The runtime-node pack's `schedulingRecognizer` fires on `setTimeout(...)` and attaches a scheduling effect to the surrounding unit; its env-var recognizer fires on `process.env.X` reads and attaches a config-read effect.
 - **Sub-units** synthesize new code units inside an existing one — typically a callback passed to a host function (`setTimeout(callback)`, `array.forEach(callback)`, a Promise executor). The walker descends into the sub-unit and runs recognizer dispatch there, so effects in nested function bodies aren't missed.
 
 ## Why `RawCodeStructure` exists

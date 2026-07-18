@@ -1,9 +1,5 @@
-# Worked example, v0.2 territory.
-#
-# System intent for the order-consumer Lambda. The boundary is a
-# function-call entry point with a queue-source input — the inverse
-# of order-intake's `effects` entry. The PRD's "processed" outcome
-# resolves to the single transition id below.
+# Worked example, v0.2 territory. NOT loadable by the shipped v0.1
+# loader — kind: workflow and queue-source inputs are proposed shapes.
 
 kind: workflow
 

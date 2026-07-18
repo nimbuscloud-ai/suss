@@ -146,6 +146,34 @@ Total: ~4 days, single pass.
 ## Sequencing
 
 - Ships before re-testing the pair-frontend-backend tutorial. The tutorial depends on the `.then` chain producing field-level findings.
-- Independent of #45 (`framework-process-env` merge) and #47 (`excludeCallReturns` fix); ships in any order.
+- Independent of #45 (the env-var recognizer merge into `runtime-node`, since landed) and #47 (`excludeCallReturns` fix); ships in any order.
 - Independent of #48 (URL inputs for contract reader).
 - Connects to the broader project direction — the PRD / intent generative-doc arc depends on field-level findings being trustworthy on consumer code, which this change enables.
+
+## Decision log (as shipped)
+
+Walker descent shipped complete, including class-method bodies. Promise `.then` binding shipped at the parameter-value resolver. The consumer field-access flow that unblocks the tutorial end-to-end is the explicit remainder.
+
+Structural knowledge landed in the adapter (`packages/adapter/typescript/src/walk/descent.ts`); no runtime or framework pack gained language-specific logic.
+
+- **D1 — descent scope is function expressions and arrows only.** The body walkers descend through nested `FunctionExpression` / `ArrowFunction` (Promise executors, `.then` / `.catch` / `.finally` callbacks, `forEach` / `map` bodies, IIFEs). Nested `FunctionDeclaration` / `MethodDeclaration` remain hard stops — they are named units of record reached through discovery or the reachable-closure pass, and descending into them would double-attribute their behavior. This matches the proposal's wording ("Any `FunctionExpression` or `ArrowFunctionExpression`").
+
+- **D2 — sub-unit boundaries are the only opt-out, computed from the discovering pack.** A single helper `isDescentStop(node, func, barriers)` encodes the rule; `barriers` is the set of nested functions the discovering pack's `subUnits` hook claims. Barriers are computed in `extractFromSourceFile` by invoking the same hook `synthesizeSubUnits` runs later, so the barrier set matches exactly the functions that become sub-units. Without this, descent would attribute a React handler's or `useEffect` body's calls to the component *and* to the handler/effect summary. Packs are unchanged — the adapter reads their existing `subUnits` declaration.
+
+- **D3 — terminal descent is gated to escaping outputs.** The proposal frames descent around recognizers and effects (position-independent behavior). Terminal discovery also descends, but only terminal kinds whose observable output flows through a channel the unit owns are matched inside a nested function — today that is `parameterMethodCall` (a `res.json(...)` on the unit's own `res` parameter). Value-returning terminals (`return`, returned object shape, JSX render) stay scoped to their nearest enclosing function, because a `return` inside a `.then` callback yields the callback's value, not the unit's. `throwExpression` / `functionCall` are conservatively left scoped (an async callback's throw does not escape to the unit); revisit if a concrete case needs them.
+
+- **D4 — class-method bodies descend exactly like function bodies.** `func` (the unit root) is never a descent stop, whether it is a `FunctionDeclaration`, arrow, or `MethodDeclaration`. A class method that is the discovered unit has its body walked, and a nested arrow inside it (e.g. a `.then` callback producing `res.json(...)`) is descended and its terminal found. Regression fixture (c) covers this.
+
+- **D5 — Promise binding is strict (open question resolved).** Binding fires only when the `.then` / `.catch` receiver is `Promise`-typed per the TypeScript checker (`receiverIsPromiseTyped`). A custom thenable (a builder with a `then` method that is not a `Promise<T>`) declines and the parameter resolves as an ordinary input. This is the proposal's "start strict" default; loosen to the permissive variant only if production codebases show useful cases the strict check misses.
+
+- **D6 — Promise binding is resolved inline in the parameter-value resolver, not via a symbol-table annotation.** The proposal described a `derivedFrom: { kind: "promise.then", upstream }` symbol annotation that "the existing parameter-value resolver follows." The resolver is `resolveSubject`; the shipped implementation computes the upstream on demand inside it (`resolveThenParameter` → `resolvePromiseValue`) rather than running a separate annotation pass. For the one consumer that follows parameter values today — condition-subject resolution — the observable result is identical: `fetch(url).then(res => { if (!res.ok) ... })` resolves `res` to the result of `fetch`, and `fetch(url).then(res => res.json()).then(data => use(data))` resolves `data` to the result of `res.json()`. The separate symbol-table annotation becomes the right shape when a *second* consumer needs to follow the link — see the remainder below.
+
+- **D7 — `await` chains inherit binding for free (confirmed).** `const r = await p` already resolves through the checker; `resolveSubject` strips `await`. No new work, as the proposal predicted.
+
+### Remainder (not shipped)
+
+- **Consumer field-access flow through `.then` chains.** The tutorial's end-to-end field-level findings (`docs/tutorial/pair-frontend-backend.md`) depend on the parsed body's *shape* flowing from `.then(res => res.json()).then(data => use(data))` into `collectClientFieldAccesses`, which tracks accesses off the call's variable binding (`const res = await fetch()`), not off `.then` callback parameters. Wiring the resolver-level binding (D6) into that shape-collection pass — most cleanly by materializing the `derivedFrom` symbol annotation so both the condition resolver and the field-access collector follow the same link — is the remaining work to unblock the tutorial. The resolver-level binding that shipped is the mechanism; the field-flow consumer is not yet connected.
+
+- **runtime-node body-walking migration.** `nodeSchedulingSubUnits` is retained unchanged. With adapter descent, behavior inside a scheduling callback becomes visible by attaching to the enclosing unit, which closes the "invisible behavior" gap for the common case (a `setTimeout` callback inside an Express handler — express declares no `subUnits`, so the callback is not a barrier and its calls attach to the handler). Deleting the pack's body-walking as the proposal's migration describes is entangled with cross-pack sub-unit synthesis (running every pack's `subUnits` on every parent, so a scheduling callback inside an Express handler becomes its own sub-unit) — which does not exist today and is out of scope here. Deferred to keep the runtime-node pack stable.
+
+- **`forEach` / `map` element binding** stays out of scope, as the proposal states.

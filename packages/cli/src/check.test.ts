@@ -896,7 +896,7 @@ describe("checkDir", () => {
     );
   });
 
-  it("surfaces PRD docs as not-yet-checked instead of silently passing", () => {
+  it("checks PRD scenario coverage against loaded system intents", () => {
     fs.writeFileSync(
       path.join(tmpDir, "provider.json"),
       JSON.stringify([
@@ -905,31 +905,83 @@ describe("checkDir", () => {
         ]),
       ]),
     );
-    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prdonly-"));
+    const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prd-"));
+    // A system intent the PRD scenarios link into. Its single 200 outcome
+    // is fully covered by the provider, so the boundary pass is silent and
+    // every finding below comes from PRD coverage.
     fs.writeFileSync(
-      path.join(intentDir, "orders.prd.json"),
+      path.join(intentDir, "users.intent.json"),
+      JSON.stringify({
+        kind: "boundary",
+        name: "users-lookup",
+        purpose: "Look up a user by id.",
+        audience: "web-client",
+        boundary: {
+          transport: "http",
+          semantics: "rest",
+          method: "GET",
+          path: "/users/:id",
+        },
+        transitions: [
+          { id: "found", when: "user exists", response: { status: 200 } },
+        ],
+      }),
+    );
+    fs.writeFileSync(
+      path.join(intentDir, "profile.prd.json"),
       JSON.stringify({
         kind: "prd",
-        title: "orders",
-        purpose: "Track orders end to end.",
-        audience: "ops",
-        scenarios: [{ when: "an order arrives", expect: "it is queued" }],
+        title: "profile-lookup",
+        purpose: "Fetch a user profile by id.",
+        audience: "web-client",
+        scenarios: [
+          {
+            title: "Successful lookup",
+            when: "a request arrives with a known id",
+            expect: "the caller receives the profile",
+            link: "users-lookup.found",
+          },
+          {
+            title: "Missing id",
+            when: "the id is omitted",
+            expect: "the caller is told the id is required",
+            // no link — a valid pending state
+          },
+          {
+            title: "Soft-deleted user",
+            when: "the user was soft-deleted",
+            expect: "the caller is told the user is gone",
+            link: "users-lookup.gone",
+          },
+        ],
       }),
     );
     try {
       const output = captureStdout(() => {
         const result = checkDir({ dir: tmpDir, intent: intentDir });
-        expect(result.intent?.findings).toHaveLength(0);
-        expect(result.intent?.unchecked).toEqual([
-          {
-            intent: "orders",
-            reason: "prd",
-            detail: "PRD scenario coverage is not checked yet",
-          },
-        ]);
+        const kinds = (result.intent?.findings ?? []).map((f) => f.kind);
+        expect(kinds).toContain("unlinkedScenario"); // Missing id
+        expect(kinds).toContain("danglingScenarioLink"); // links to unknown outcome
+        // Never silently dropped: the PRD is checked, not shelved.
+        expect(result.intent?.unchecked).toHaveLength(0);
+        expect(result.intent?.checked).toContainEqual({
+          kind: "prd",
+          intent: "profile-lookup",
+          scenarios: 3,
+          resolved: 1,
+          unlinked: 1,
+        });
+        // The dangling link is a warning — it gates at --fail-on warning
+        // but not at the default error threshold.
+        expect(result.hasErrors).toBe(false);
+        expect(
+          checkDir({ dir: tmpDir, intent: intentDir, failOn: "warning" })
+            .hasErrors,
+        ).toBe(true);
       });
+      expect(output).toContain("Intent:");
       expect(output).toContain(
-        "not checked: orders — PRD scenario coverage is not checked yet",
+        "1 PRD checked: 3 scenarios, 1 resolved, 1 unlinked",
       );
     } finally {
       fs.rmSync(intentDir, { recursive: true, force: true });

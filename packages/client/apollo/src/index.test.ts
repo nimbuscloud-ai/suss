@@ -38,6 +38,22 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
   return await adapter.extractAll();
 }
 
+// Codegen client-preset layout: the component imports its documents
+// from a generated module + a shared operations module. Both the
+// generated `.ts` and the consumer `.tsx` must be in the project so the
+// adapter can resolve the cross-module import to its declaration.
+async function runCodegenAdapter(): Promise<BehavioralSummary[]> {
+  const codegenDir = path.join(fixturesDir, "codegen");
+  const project = makeProject();
+  project.addSourceFilesAtPaths(path.join(codegenDir, "**/*.ts"));
+  project.addSourceFilesAtPaths(path.join(codegenDir, "**/*.tsx"));
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: [apolloClientPack()],
+  });
+  return await adapter.extractAll();
+}
+
 async function runInMemory(source: string): Promise<BehavioralSummary[]> {
   const project = new Project({
     useInMemoryFileSystem: true,
@@ -81,7 +97,9 @@ describe("apolloClientPack — pack shape", () => {
 
   it("targets the three canonical hooks", async () => {
     const hooks = pack.discovery.flatMap((d) =>
-      d.match.type === "graphqlHookCall" ? d.match.hookNames : [],
+      d.match.type === "graphqlHookCall"
+        ? d.match.hooks.map((h) => h.hookName)
+        : [],
     );
     expect(hooks).toContain("useQuery");
     expect(hooks).toContain("useMutation");
@@ -261,6 +279,101 @@ describe("apolloClientPack — integration", () => {
       (i) => i.type === "parameter" && i.name === "id",
     );
     expect(idInput).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Codegen client-preset — cross-module document resolution
+// ---------------------------------------------------------------------------
+
+describe("apolloClientPack — codegen client-preset", () => {
+  let summaries: BehavioralSummary[];
+  beforeAll(async () => {
+    summaries = await runCodegenAdapter();
+  }, 90_000);
+
+  it("discovers one summary per hook call across the module boundary", async () => {
+    // usePetList (generated TypedDocumentNode object), useAdoptPet
+    // (generated document with an unreadable body), useTags (gql const
+    // exported from another module).
+    expect(summaries).toHaveLength(3);
+    for (const s of summaries) {
+      expect(s.kind).toBe("client");
+    }
+  });
+
+  it("resolves a generated TypedDocumentNode imported from the generated module", async () => {
+    const petList = summaries.find(
+      (s) => s.identity.name === "usePetList.GetPets",
+    );
+    expect(petList).toBeDefined();
+    expect(petList?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: {
+        name: "graphql-operation",
+        operationType: "query",
+        operationName: "GetPets",
+      },
+      recognition: "apollo-client",
+    });
+  });
+
+  it("extracts operation-header variables from the generated document", async () => {
+    const petList = summaries.find(
+      (s) => s.identity.name === "usePetList.GetPets",
+    );
+    const first = petList?.inputs.find(
+      (i) => i.type === "parameter" && i.name === "first",
+    );
+    expect(first).toBeDefined();
+    if (first?.type === "parameter") {
+      expect(first.role).toBe("variable");
+      // Optional `$first: Int` — nullable ref, no `!` suffix.
+      expect(first.shape).toEqual({ type: "ref", name: "Int" });
+    }
+  });
+
+  it("resolves a gql-tagged const exported from another module", async () => {
+    const tags = summaries.find((s) => s.identity.name === "useTags.ListTags");
+    expect(tags).toBeDefined();
+    const sem = tags?.identity.boundaryBinding?.semantics;
+    expect(sem?.name === "graphql-operation" ? sem.operationName : null).toBe(
+      "ListTags",
+    );
+  });
+
+  it("falls back to TypedDocumentNode type arguments when the body isn't readable", async () => {
+    // `AdoptPetDocument` is `buildDocument(...) as unknown as
+    // TypedDocumentNode<AdoptPetMutation, AdoptPetMutationVariables>` —
+    // the object body can't be read, so the header comes from the
+    // result type argument's `<Name><Kind>` name.
+    const adopt = summaries.find(
+      (s) => s.identity.name === "useAdoptPet.AdoptPet",
+    );
+    expect(adopt).toBeDefined();
+    const sem = adopt?.identity.boundaryBinding?.semantics;
+    expect(sem?.name).toBe("graphql-operation");
+    if (sem?.name === "graphql-operation") {
+      expect(sem.operationType).toBe("mutation");
+      expect(sem.operationName).toBe("AdoptPet");
+    }
+  });
+
+  it("surfaces the unreadable document as an explicit gap, never dropping the boundary", async () => {
+    const adopt = summaries.find(
+      (s) => s.identity.name === "useAdoptPet.AdoptPet",
+    );
+    const graphqlMeta = adopt?.metadata?.graphql as
+      | { unresolvedDocument?: { reference: string; reason: string } }
+      | undefined;
+    expect(graphqlMeta?.unresolvedDocument?.reference).toBe("AdoptPetDocument");
+    expect(graphqlMeta?.unresolvedDocument?.reason).toContain("type arguments");
+    // No document body carried through — the checker's pairing layer
+    // reads that field and degrades rather than parsing an empty doc.
+    expect(
+      (adopt?.metadata?.graphql as { document?: unknown } | undefined)
+        ?.document,
+    ).toBeUndefined();
   });
 });
 

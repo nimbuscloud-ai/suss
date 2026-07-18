@@ -6,6 +6,12 @@
 
 import { Node } from "ts-morph";
 
+import {
+  crossesNestedFunctionScope,
+  type DescentBarriers,
+  isDescentStop,
+  NO_BARRIERS,
+} from "../walk/descent.js";
 import { tryMatchJsxReturn } from "./jsx.js";
 import {
   tryMatchFunctionCall,
@@ -22,30 +28,47 @@ import type { FoundTerminal } from "./shared.js";
 export type { FoundTerminal } from "./shared.js";
 
 /**
+ * Terminal match types whose observable output flows through a channel
+ * the enclosing unit owns rather than the nested function's return
+ * value — `res.json(...)` writes to a response object the unit received
+ * as a parameter. These stay matchable inside a descended nested
+ * function; value-returning terminals (`return`, returned object shape,
+ * JSX render) do not, because a `return` inside a callback yields the
+ * callback's value, not the unit's.
+ */
+const NESTED_ESCAPING_MATCH_TYPES: ReadonlySet<
+  TerminalPattern["match"]["type"]
+> = new Set(["parameterMethodCall"]);
+
+/**
  * Walk every descendant of `func` and try each pattern in order (first match
  * wins per node). Returns all matched terminals across the whole function.
+ *
+ * Descends into nested function expressions / arrows so a unit whose
+ * terminal output is produced inside a Promise executor or `.then`
+ * callback (`res.json(data)` on the unit's own `res` parameter) is still
+ * discovered. Inside a nested function only escaping terminals are
+ * matched — see `NESTED_ESCAPING_MATCH_TYPES`.
  */
 export function findTerminals(
   func: FunctionRoot,
   patterns: TerminalPattern[],
+  barriers: DescentBarriers = NO_BARRIERS,
 ): FoundTerminal[] {
   const results: FoundTerminal[] = [];
 
   func.forEachDescendant((node, traversal) => {
-    // Don't descend into nested function bodies — their terminals belong
-    // to those inner functions, not to `func`.
-    if (
-      node !== func &&
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node))
-    ) {
+    if (isDescentStop(node, func, barriers)) {
       traversal.skip();
       return;
     }
 
+    const nested = crossesNestedFunctionScope(node, func);
+
     for (const pattern of patterns) {
+      if (nested && !NESTED_ESCAPING_MATCH_TYPES.has(pattern.match.type)) {
+        continue;
+      }
       let found: FoundTerminal | null = null;
 
       if (pattern.match.type === "returnShape") {

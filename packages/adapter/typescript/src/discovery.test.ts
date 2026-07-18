@@ -1176,7 +1176,11 @@ function makeGraphqlHookPattern(
     match: {
       type: "graphqlHookCall",
       importModule: "@apollo/client",
-      hookNames: ["useQuery", "useMutation", "useSubscription"],
+      hooks: [
+        { hookName: "useQuery", operationType: "query" },
+        { hookName: "useMutation", operationType: "mutation" },
+        { hookName: "useSubscription", operationType: "subscription" },
+      ],
       ...overrides,
     },
   };
@@ -1488,6 +1492,104 @@ describe("graphqlHookCall discovery", () => {
     );
     const units = discoverUnits(file, [makeGraphqlHookPattern()]);
     expect(units[0].operationInfo?.rootFields).toEqual(["pet", "pets"]);
+  });
+
+  it("chases a gql const exported from another module", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "operations.ts",
+      `
+      import { gql } from "@apollo/client";
+      export const GET_PET = gql\`query GetPet($id: ID!) { pet(id: $id) { id } }\`;
+    `,
+    );
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      import { GET_PET } from "./operations";
+      export function usePet(id: string) {
+        return useQuery(GET_PET, { variables: { id } });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo).toMatchObject({
+      operationType: "query",
+      operationName: "GetPet",
+    });
+    expect(units[0].operationInfo?.variables[0]).toMatchObject({
+      name: "id",
+      type: "ID!",
+      required: true,
+    });
+    expect(units[0].operationInfo?.unresolved).toBeUndefined();
+  });
+
+  it("falls back to TypedDocumentNode type arguments when the body isn't a readable object", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "generated.ts",
+      `
+      export type TypedDocumentNode<R, V> = { __r?: R; __v?: V };
+      export type GetPetQuery = { pet: { id: string } };
+      export type GetPetQueryVariables = { id: string };
+      declare function build(source: string): unknown;
+      export const GetPetDocument = build("query GetPet { pet { id } }") as unknown as TypedDocumentNode<GetPetQuery, GetPetQueryVariables>;
+    `,
+    );
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      import { GetPetDocument } from "./generated";
+      export function usePet() {
+        return useQuery(GetPetDocument);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo).toMatchObject({
+      operationType: "query",
+      operationName: "GetPet",
+    });
+    // Header-only: no document body, no variables read, gap recorded.
+    expect(units[0].operationInfo?.document).toBeUndefined();
+    expect(units[0].operationInfo?.variables).toEqual([]);
+    expect(units[0].operationInfo?.unresolved).toMatchObject({
+      reference: "GetPetDocument",
+    });
+  });
+
+  it("takes the operation type from the hook when neither body nor type args are readable", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "generated.ts",
+      `
+      export type TypedDocumentNode<R, V> = { __r?: R; __v?: V };
+      declare function build(source: string): unknown;
+      export const AdoptDocument = build("mutation { adopt { id } }") as unknown as TypedDocumentNode<{ adopt: unknown }, Record<string, never>>;
+    `,
+    );
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useMutation } from "@apollo/client";
+      import { AdoptDocument } from "./generated";
+      export function useAdopt() {
+        return useMutation(AdoptDocument);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    // Operation type from `useMutation`; no name recoverable; gap recorded.
+    expect(units[0].operationInfo?.operationType).toBe("mutation");
+    expect(units[0].operationInfo?.operationName).toBeUndefined();
+    expect(units[0].operationInfo?.unresolved?.reference).toBe("AdoptDocument");
+    expect(units[0].name).toBe("useAdopt.AdoptDocument");
   });
 });
 

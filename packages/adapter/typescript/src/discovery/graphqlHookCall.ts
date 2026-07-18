@@ -8,13 +8,18 @@ import { Node, type SourceFile } from "ts-morph";
 import {
   enclosingFunctionRoot,
   functionNameOrAnon,
-  parseGraphqlOperation,
-  resolveGqlTemplateText,
-  resolveTypedDocumentSource,
+  type GraphqlOperationType,
+  operationInfoFromResolution,
+  resolveGraphqlDocument,
 } from "./graphqlShared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { DiscoveredUnit } from "./shared.js";
+
+interface HookSpec {
+  canonical: string;
+  operationType: GraphqlOperationType;
+}
 
 export function discoverGraphqlHookCalls(
   sourceFile: SourceFile,
@@ -24,21 +29,25 @@ export function discoverGraphqlHookCalls(
   // Resolve each hook's local name by walking named imports on the
   // target module. A hook imported under an alias is honored:
   // `import { useQuery as useFoo } from "@apollo/client"`.
-  const hookLocalNames = new Map<string, string>();
+  const hookByLocal = new Map<string, HookSpec>();
+  const operationTypeByHook = new Map<string, GraphqlOperationType>(
+    match.hooks.map((h) => [h.hookName, h.operationType]),
+  );
   for (const importDecl of sourceFile.getImportDeclarations()) {
     if (importDecl.getModuleSpecifierValue() !== match.importModule) {
       continue;
     }
     for (const named of importDecl.getNamedImports()) {
       const canonical = named.getName();
-      if (!match.hookNames.includes(canonical)) {
+      const operationType = operationTypeByHook.get(canonical);
+      if (operationType === undefined) {
         continue;
       }
       const local = named.getAliasNode()?.getText() ?? canonical;
-      hookLocalNames.set(local, canonical);
+      hookByLocal.set(local, { canonical, operationType });
     }
   }
-  if (hookLocalNames.size === 0) {
+  if (hookByLocal.size === 0) {
     return [];
   }
 
@@ -51,43 +60,44 @@ export function discoverGraphqlHookCalls(
     if (!Node.isIdentifier(callee)) {
       return;
     }
-    const local = callee.getText();
-    if (!hookLocalNames.has(local)) {
+    const spec = hookByLocal.get(callee.getText());
+    if (spec === undefined) {
       return;
     }
     const args = node.getArguments();
     if (args.length === 0) {
       return;
     }
-    // gql-tagged source first; fall back to TypedDocumentNode for
-    // codegen-shaped call sites (`useQuery(FooDocument)` where
-    // `FooDocument` is a generated DocumentNode object literal).
-    const docText =
-      resolveGqlTemplateText(args[0]) ?? resolveTypedDocumentSource(args[0]);
-    if (docText === null) {
+    const resolution = resolveGraphqlDocument(args[0]);
+    if (resolution === null) {
       return;
     }
-    const operation = parseGraphqlOperation(docText);
-    if (operation === null) {
+    const operationInfo = operationInfoFromResolution(
+      resolution,
+      spec.operationType,
+    );
+    if (operationInfo === null) {
       return;
     }
     const enclosing = enclosingFunctionRoot(node);
     if (enclosing === null) {
       return;
     }
+    // Name the unit after the enclosing function + operation so
+    // multiple hook calls inside one component produce distinct
+    // summary identities. Falls back to the document reference (for an
+    // unresolvable codegen import) then `<anon-...>` when the enclosing
+    // function has no declared name.
+    const nameToken =
+      operationInfo.operationName ??
+      operationInfo.unresolved?.reference ??
+      `<anon-${operationInfo.operationType}>`;
     results.push({
       func: enclosing,
       kind,
-      // Name the unit after the enclosing function + operation so
-      // multiple hook calls inside one component produce distinct
-      // summary identities. Falls back to `<anon>` when the enclosing
-      // function has no declared name (e.g. arrow passed to `forwardRef`).
-      name: `${functionNameOrAnon(enclosing)}.${operation.operationName ?? `<anon-${operation.operationType}>`}`,
-      callSite: {
-        callExpression: node,
-        methodName: hookLocalNames.get(local) ?? null,
-      },
-      operationInfo: { ...operation, document: docText },
+      name: `${functionNameOrAnon(enclosing)}.${nameToken}`,
+      callSite: { callExpression: node, methodName: spec.canonical },
+      operationInfo,
     });
   });
   return results;

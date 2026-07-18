@@ -96,12 +96,14 @@ describe("appsyncFileToSummaries — petstore fixture", () => {
           kind?: string;
           authenticationType?: string | null;
           schemaMatched?: boolean;
+          schemaSource?: unknown;
         }
       | undefined;
     expect(meta?.apiName).toBe("PetStore");
     expect(meta?.kind).toBe("UNIT");
     expect(meta?.authenticationType).toBe("AMAZON_COGNITO_USER_POOLS");
     expect(meta?.schemaMatched).toBe(true);
+    expect(meta?.schemaSource).toEqual({ status: "inline" });
   });
 });
 
@@ -238,7 +240,7 @@ describe("appsyncToSummaries — template shape edge cases", () => {
     });
   });
 
-  it("leaves schemaSdl null when only DefinitionS3Location is provided", () => {
+  it("records a remote s3:// DefinitionS3Location as an unresolved schema gap", () => {
     const summaries = appsyncToSummaries({
       Resources: {
         Api: {
@@ -263,9 +265,122 @@ describe("appsyncToSummaries — template shape edge cases", () => {
       },
     });
     const meta = summaries[0].metadata?.appsync as
-      | { schemaMatched?: boolean }
+      | { schemaMatched?: boolean; schemaSource?: unknown }
       | undefined;
     expect(meta?.schemaMatched).toBe(false);
+    expect(meta?.schemaSource).toEqual({
+      status: "unresolved",
+      location: "s3://bucket/schema.graphql",
+      reason: "remote",
+    });
+  });
+
+  it("records a relative schema path with no base dir as unresolved (no-base-dir)", () => {
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::AppSync::GraphQLApi",
+          Properties: { Name: "T" },
+        },
+        Schema: {
+          Type: "AWS::AppSync::GraphQLSchema",
+          Properties: {
+            ApiId: { Ref: "Api" },
+            DefinitionS3Location: "./schema.graphql",
+          },
+        },
+        R: {
+          Type: "AWS::AppSync::Resolver",
+          Properties: {
+            ApiId: { Ref: "Api" },
+            TypeName: "Query",
+            FieldName: "ping",
+          },
+        },
+      },
+    });
+    const meta = summaries[0].metadata?.appsync as
+      | { schemaSource?: unknown }
+      | undefined;
+    expect(meta?.schemaSource).toEqual({
+      status: "unresolved",
+      location: "./schema.graphql",
+      reason: "no-base-dir",
+    });
+  });
+
+  it("records a missing local schema file as unresolved (not-found)", () => {
+    const summaries = appsyncToSummaries(
+      {
+        Resources: {
+          Api: {
+            Type: "AWS::AppSync::GraphQLApi",
+            Properties: { Name: "T" },
+          },
+          Schema: {
+            Type: "AWS::AppSync::GraphQLSchema",
+            Properties: {
+              ApiId: { Ref: "Api" },
+              DefinitionS3Location: "./nope.graphql",
+            },
+          },
+          R: {
+            Type: "AWS::AppSync::Resolver",
+            Properties: {
+              ApiId: { Ref: "Api" },
+              TypeName: "Query",
+              FieldName: "ping",
+            },
+          },
+        },
+      },
+      { baseDir: fixturesDir },
+    );
+    const meta = summaries[0].metadata?.appsync as
+      | { schemaSource?: unknown }
+      | undefined;
+    expect(meta?.schemaSource).toEqual({
+      status: "unresolved",
+      location: "./nope.graphql",
+      reason: "not-found",
+    });
+  });
+
+  it("resolves a relative external schema against an explicit baseDir", () => {
+    const summaries = appsyncToSummaries(
+      {
+        Resources: {
+          Api: {
+            Type: "AWS::AppSync::GraphQLApi",
+            Properties: { Name: "T" },
+          },
+          Schema: {
+            Type: "AWS::AppSync::GraphQLSchema",
+            Properties: {
+              ApiId: { Ref: "Api" },
+              DefinitionS3Location: "./schema.graphql",
+            },
+          },
+          R: {
+            Type: "AWS::AppSync::Resolver",
+            Properties: {
+              ApiId: { Ref: "Api" },
+              TypeName: "Query",
+              FieldName: "note",
+            },
+          },
+        },
+      },
+      { baseDir: path.join(fixturesDir, "external-schema") },
+    );
+    const meta = summaries[0].metadata?.appsync as
+      | { schemaMatched?: boolean; schemaSource?: unknown }
+      | undefined;
+    expect(meta?.schemaMatched).toBe(true);
+    expect(meta?.schemaSource).toEqual({
+      status: "external-file",
+      location: "./schema.graphql",
+    });
   });
 
   it("tolerates malformed SDL (parse error) without throwing", () => {
@@ -363,11 +478,17 @@ describe("appsyncToSummaries — template shape edge cases", () => {
         logicalId: "GetUser",
         name: "GetUser",
         dataSourceLogicalId: "UsersDS",
+        lambdaFunctionLogicalId: null,
+        codeUri: null,
+        runtime: null,
       },
       {
         logicalId: "GetPosts",
         name: "GetPosts",
         dataSourceLogicalId: "PostsDS",
+        lambdaFunctionLogicalId: null,
+        codeUri: null,
+        runtime: null,
       },
     ]);
   });
@@ -434,6 +555,219 @@ describe("appsyncToSummaries — template shape edge cases", () => {
       | { schemaMatched?: boolean }
       | undefined;
     expect(meta?.schemaMatched).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// External schema file — raw AppSync with DefinitionS3Location local path
+// ---------------------------------------------------------------------------
+
+interface AppsyncMeta {
+  apiName?: string | null;
+  kind?: string;
+  authenticationType?: string | null;
+  dataSourceLogicalId?: string | null;
+  lambdaFunctionLogicalId?: string | null;
+  codeUri?: string | null;
+  runtime?: string | null;
+  schemaMatched?: boolean;
+  schemaSource?: unknown;
+  pipelineFunctions?: Array<{
+    logicalId: string;
+    name: string | null;
+    dataSourceLogicalId: string | null;
+    lambdaFunctionLogicalId: string | null;
+    codeUri: string | null;
+    runtime: string | null;
+  }>;
+}
+
+function appsyncMeta(summary: BehavioralSummary | undefined): AppsyncMeta {
+  return (summary?.metadata?.appsync ?? {}) as AppsyncMeta;
+}
+
+describe("appsyncFileToSummaries — external schema file (raw AppSync)", () => {
+  const file = path.join(fixturesDir, "external-schema", "template.yaml");
+  const summaries = appsyncFileToSummaries(file);
+
+  it("emits one summary per resolver, sourced from the external SDL", () => {
+    const names = summaries.map((s) => s.identity.name).sort();
+    expect(names).toEqual(["Mutation.createNote", "Query.note", "Query.notes"]);
+  });
+
+  it("marks the schema as an external file and matches fields against it", () => {
+    const note = summaries.find((s) => s.identity.name === "Query.note");
+    const meta = appsyncMeta(note);
+    expect(meta.schemaMatched).toBe(true);
+    expect(meta.schemaSource).toEqual({
+      status: "external-file",
+      location: "./schema.graphql",
+    });
+    expect(note?.inputs).toEqual([
+      {
+        type: "parameter",
+        name: "id",
+        position: 0,
+        role: "args",
+        shape: { type: "ref", name: "ID!" },
+      },
+    ]);
+  });
+
+  it("attributes the Lambda behind a resolver's data source", () => {
+    const create = summaries.find(
+      (s) => s.identity.name === "Mutation.createNote",
+    );
+    expect(appsyncMeta(create).lambdaFunctionLogicalId).toBe("NotesFunction");
+  });
+
+  it("leaves lambda attribution null for a non-Lambda (DynamoDB) data source", () => {
+    const notes = summaries.find((s) => s.identity.name === "Query.notes");
+    expect(appsyncMeta(notes).lambdaFunctionLogicalId).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SAM shorthand — AWS::Serverless::GraphQLApi
+// ---------------------------------------------------------------------------
+
+describe("appsyncFileToSummaries — SAM AWS::Serverless::GraphQLApi", () => {
+  const file = path.join(fixturesDir, "serverless", "template.yaml");
+  const summaries = appsyncFileToSummaries(file);
+
+  it("emits one summary per Resolvers.<Type>.<field>", () => {
+    const names = summaries.map((s) => s.identity.name).sort();
+    expect(names).toEqual(["Mutation.addPost", "Query.post", "Query.posts"]);
+    for (const s of summaries) {
+      expect(s.kind).toBe("resolver");
+    }
+  });
+
+  it("binds each resolver via graphql-resolver semantics on aws-https", () => {
+    const posts = summaries.find((s) => s.identity.name === "Query.posts");
+    expect(posts?.identity.boundaryBinding).toEqual({
+      transport: "aws-https",
+      semantics: {
+        name: "graphql-resolver",
+        typeName: "Query",
+        fieldName: "posts",
+      },
+      recognition: "appsync",
+    });
+  });
+
+  it("resolves SchemaUri to the external SDL and carries API metadata", () => {
+    const posts = summaries.find((s) => s.identity.name === "Query.posts");
+    const meta = appsyncMeta(posts);
+    expect(meta.apiName).toBe("Blog");
+    expect(meta.authenticationType).toBe("AWS_IAM");
+    expect(meta.schemaMatched).toBe(true);
+    expect(meta.schemaSource).toEqual({
+      status: "external-file",
+      location: "./schema.graphql",
+    });
+  });
+
+  it("attributes Lambda data source + resolver code for a UNIT resolver", () => {
+    const posts = summaries.find((s) => s.identity.name === "Query.posts");
+    const meta = appsyncMeta(posts);
+    expect(meta.kind).toBe("UNIT");
+    expect(meta.dataSourceLogicalId).toBe("BlogApiPostsResolverDataSource");
+    expect(meta.lambdaFunctionLogicalId).toBe("PostsFunction");
+    expect(meta.codeUri).toBe("./resolvers/posts.js");
+    expect(meta.runtime).toBe("APPSYNC_JS");
+  });
+
+  it("expands a PIPELINE resolver's function chain with lambda + code", () => {
+    const addPost = summaries.find(
+      (s) => s.identity.name === "Mutation.addPost",
+    );
+    const meta = appsyncMeta(addPost);
+    expect(meta.kind).toBe("PIPELINE");
+    expect(meta.pipelineFunctions).toEqual([
+      {
+        logicalId: "BlogApivalidatePost",
+        name: "validatePost",
+        dataSourceLogicalId: "BlogApiPostsResolverDataSource",
+        lambdaFunctionLogicalId: "PostsFunction",
+        codeUri: "./functions/validatePost.js",
+        runtime: "APPSYNC_JS",
+      },
+      {
+        logicalId: "BlogApiwritePost",
+        name: "writePost",
+        dataSourceLogicalId: "BlogApiPostsResolverDataSource",
+        lambdaFunctionLogicalId: "PostsFunction",
+        codeUri: "./functions/writePost.js",
+        runtime: "APPSYNC_JS",
+      },
+    ]);
+  });
+
+  it("derives mutation inputs + return shape from the external SDL", () => {
+    const addPost = summaries.find(
+      (s) => s.identity.name === "Mutation.addPost",
+    );
+    const argNames = addPost?.inputs
+      .filter((i) => i.type === "parameter")
+      .map((i) => (i.type === "parameter" ? i.name : "?"));
+    expect(argNames).toEqual(["title", "body"]);
+    const defaultTxn = addPost?.transitions.find((t) => t.isDefault === true);
+    if (defaultTxn?.output.type === "return") {
+      expect(defaultTxn.output.value).toEqual({ type: "ref", name: "Post!" });
+    }
+  });
+});
+
+describe("appsyncToSummaries — SAM shape edge cases", () => {
+  it("derives resolvers from inline SchemaInline without a file on disk", () => {
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::Serverless::GraphQLApi",
+          Properties: {
+            Name: "Inline",
+            SchemaInline: "type Query { ping: String }",
+            Resolvers: {
+              Query: {
+                ping: { DataSource: "PingDS" },
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(summaries.map((s) => s.identity.name)).toEqual(["Query.ping"]);
+    const meta = appsyncMeta(summaries[0]);
+    expect(meta.schemaSource).toEqual({ status: "inline" });
+    expect(meta.schemaMatched).toBe(true);
+    expect(meta.dataSourceLogicalId).toBe("ApiPingDS");
+  });
+
+  it("records a remote SchemaUri as an unresolved schema gap", () => {
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::Serverless::GraphQLApi",
+          Properties: {
+            Name: "Remote",
+            SchemaUri: "s3://bucket/schema.graphql",
+            Resolvers: {
+              Query: {
+                ping: { DataSource: "PingDS" },
+              },
+            },
+          },
+        },
+      },
+    });
+    const meta = appsyncMeta(summaries[0]);
+    expect(meta.schemaMatched).toBe(false);
+    expect(meta.schemaSource).toEqual({
+      status: "unresolved",
+      location: "s3://bucket/schema.graphql",
+      reason: "remote",
+    });
   });
 });
 
