@@ -104,18 +104,9 @@ async function main() {
     );
   }
 
-  // `suss check --dir` auto-discovers .sussignore from the summaries
-  // directory (there is no --sussignore flag on the check command), so
-  // copy the committed self-check suppressions into the generated dir.
-  if (fs.existsSync(suppressionsSrc)) {
-    fs.copyFileSync(
-      suppressionsSrc,
-      path.join(summariesDir, ".sussignore.yml"),
-    );
-  }
-
-  // Non-gating: report findings, never fail the run.
-  const code = await runCli([
+  // Non-gating: report findings, never fail the run. Point --sussignore
+  // straight at the committed self-check rules.
+  const args = [
     "check",
     "--dir",
     summariesDir,
@@ -123,7 +114,11 @@ async function main() {
     intentDir,
     "--fail-on",
     "none",
-  ]);
+  ];
+  if (fs.existsSync(suppressionsSrc)) {
+    args.push("--sussignore", suppressionsSrc);
+  }
+  const code = await runCli(args);
   process.exit(code);
 }
 

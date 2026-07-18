@@ -134,13 +134,21 @@ const ThrowsOutcomeSchema = z.object({
   errorType: z.string().optional(),
 });
 
+// A key written with no value (`returns:` on its own line) parses to
+// null in YAML. Treat a null outcome as the empty outcome so `returns:`
+// and `returns: {}` mean the same body-less thing, instead of failing
+// with "expected object, received null".
+function emptyIfNull<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess((v) => (v === null ? {} : v), schema);
+}
+
 const BoundaryTransitionSchema = z
   .object({
     id: z.string().min(1),
     when: z.string().min(1),
-    response: ResponseOutcomeSchema.optional(),
-    returns: ReturnsOutcomeSchema.optional(),
-    throws: ThrowsOutcomeSchema.optional(),
+    response: emptyIfNull(ResponseOutcomeSchema).optional(),
+    returns: emptyIfNull(ReturnsOutcomeSchema).optional(),
+    throws: emptyIfNull(ThrowsOutcomeSchema).optional(),
   })
   .refine(
     (t) =>

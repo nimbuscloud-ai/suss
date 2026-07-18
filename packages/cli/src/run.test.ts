@@ -357,6 +357,79 @@ describe("runCli — check", () => {
     expect(exit).toBe(0);
     expect(io.stdout).toContain("Paired");
   });
+
+  it("--sussignore applies the named rule file to two-file checks", async () => {
+    const provider = writeJson("provider.json", [
+      {
+        ...minimalSummary,
+        transitions: [
+          ...minimalSummary.transitions,
+          {
+            id: "h:response:500:t",
+            conditions: [],
+            output: {
+              type: "response",
+              statusCode: { type: "literal", value: 500 },
+              body: null,
+              headers: {},
+            },
+            effects: [],
+            location: { start: 6, end: 7 },
+            isDefault: false,
+          },
+        ],
+      },
+    ]);
+    const consumer = writeJson("consumer.json", [matchingConsumer]);
+    const ignore = writeJson("rules.yml", null);
+    fs.writeFileSync(
+      ignore,
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: unhandledProviderCase",
+        '    boundary: "GET /x"',
+        "    reason: 500 is retried by middleware",
+        "    effect: hide",
+      ].join("\n"),
+    );
+    const { exit } = await capture(() =>
+      runCli(["check", provider, consumer, "--sussignore", ignore]),
+    );
+    // The one error finding is hidden, so the run passes.
+    expect(exit).toBe(0);
+  });
+
+  it("--no-suppressions ignores an auto-discovered .sussignore", async () => {
+    // A rule that would hide the finding sits in cwd; --no-suppressions
+    // must report it anyway. Runs in the check --dir path.
+    writeJson("provider.json", [
+      {
+        ...minimalSummary,
+        transitions: [
+          ...minimalSummary.transitions,
+          {
+            id: "h:response:500:t",
+            conditions: [],
+            output: {
+              type: "response",
+              statusCode: { type: "literal", value: 500 },
+              body: null,
+              headers: {},
+            },
+            effects: [],
+            location: { start: 6, end: 7 },
+            isDefault: false,
+          },
+        ],
+      },
+    ]);
+    writeJson("consumer.json", [matchingConsumer]);
+    const { exit } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--no-suppressions"]),
+    );
+    expect(exit).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
