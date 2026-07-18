@@ -324,3 +324,263 @@ describe("body-shape pairing", () => {
     ).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// EventBridge pairing
+// ---------------------------------------------------------------------------
+
+function eventBridgeProducer(opts: {
+  name: string;
+  filePath: string;
+  channel: string;
+}): BehavioralSummary {
+  const sendEffect: Effect = {
+    type: "interaction",
+    binding: {
+      transport: "eventbridge",
+      semantics: {
+        name: "message-bus",
+        messageBus: "eventbridge",
+        channel: opts.channel,
+      },
+      recognition: "@suss/framework-aws-eventbridge",
+    },
+    interaction: { class: "message-send" },
+  };
+  return {
+    kind: "handler",
+    location: {
+      file: opts.filePath,
+      range: { start: 0, end: 0 },
+      exportName: "handler",
+    },
+    identity: { name: opts.name, exportPath: null, boundaryBinding: null },
+    inputs: [],
+    transitions: [emptyTransition("t-0", [sendEffect])],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+function eventBridgeProvider(channel: string): BehavioralSummary {
+  return {
+    kind: "library",
+    location: {
+      file: "template.yaml",
+      range: { start: 0, end: 0 },
+      exportName: null,
+    },
+    identity: {
+      name: channel,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "eventbridge",
+        semantics: {
+          name: "message-bus",
+          messageBus: "eventbridge",
+          channel,
+        },
+        recognition: "cloudformation",
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+  };
+}
+
+function eventBridgeConsumer(opts: {
+  name: string;
+  channel: string;
+  patternResolution: "exact" | "schedule" | "unresolvable";
+  rule?: string;
+  eventBus?: string;
+  unresolvableReason?: string;
+}): BehavioralSummary {
+  return {
+    kind: "consumer",
+    location: {
+      file: "template.yaml",
+      range: { start: 0, end: 0 },
+      exportName: null,
+    },
+    identity: {
+      name: opts.name,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "eventbridge",
+        semantics: {
+          name: "message-bus",
+          messageBus: "eventbridge",
+          channel: opts.channel,
+        },
+        recognition: "cloudformation",
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      messageBus: {
+        patternResolution: opts.patternResolution,
+        ...(opts.rule !== undefined ? { rule: opts.rule } : {}),
+        ...(opts.eventBus !== undefined ? { eventBus: opts.eventBus } : {}),
+        ...(opts.unresolvableReason !== undefined
+          ? { unresolvableReason: opts.unresolvableReason }
+          : {}),
+      },
+    },
+  };
+}
+
+function runtimeConfigProvider(opts: {
+  instanceName: string;
+  codeScopePath: string;
+  envVarTargets: Record<string, { kind: "ref"; logicalId: string }>;
+}): BehavioralSummary {
+  return {
+    kind: "library",
+    location: {
+      file: "template.yaml",
+      range: { start: 0, end: 0 },
+      exportName: null,
+    },
+    identity: {
+      name: opts.instanceName,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "runtime-config",
+        semantics: {
+          name: "runtime-config",
+          deploymentTarget: "lambda",
+          instanceName: opts.instanceName,
+        },
+        recognition: "cloudformation",
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      codeScope: { kind: "codeUri", path: opts.codeScopePath },
+      runtimeContract: {
+        envVars: Object.keys(opts.envVarTargets),
+        envVarTargets: opts.envVarTargets,
+      },
+    },
+  };
+}
+
+describe("eventbridge pairing", () => {
+  it("chain-collapses an env-derived bus so the producer pairs against the rule provider", () => {
+    const summaries = [
+      eventBridgeProvider("OrderEventBus#OrderPlaced"),
+      eventBridgeConsumer({
+        name: "OrderConsumer#OrderPlaced",
+        channel: "OrderEventBus#OrderPlaced",
+        patternResolution: "exact",
+      }),
+      eventBridgeProducer({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "ORDER_EVENT_BUS_NAME#OrderPlaced",
+      }),
+      runtimeConfigProvider({
+        instanceName: "OrderProducer",
+        codeScopePath: "src/order-producer/",
+        envVarTargets: {
+          ORDER_EVENT_BUS_NAME: { kind: "ref", logicalId: "OrderEventBus" },
+        },
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter((f) => f.kind === "messageBusProducerOrphan"),
+    ).toEqual([]);
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
+    ).toEqual([]);
+  });
+
+  it("flags an orphan producer when the env-derived bus can't chain-collapse", () => {
+    const summaries = [
+      eventBridgeProvider("OrderEventBus#OrderPlaced"),
+      eventBridgeProducer({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "ORDER_EVENT_BUS_NAME#OrderPlaced",
+      }),
+      // No runtime-config provider → env var stays unresolved.
+    ];
+    const findings = checkMessageBus(summaries);
+    const orphan = findings.find((f) => f.kind === "messageBusProducerOrphan");
+    expect(orphan).toBeDefined();
+    expect(orphan?.description).toContain("ORDER_EVENT_BUS_NAME");
+  });
+
+  it("flags a consumer orphan for a routed detailType no producer sends", () => {
+    const summaries = [
+      eventBridgeProvider("OrderEventBus#OrderShipped"),
+      eventBridgeConsumer({
+        name: "OrderConsumer#OrderShipped",
+        channel: "OrderEventBus#OrderShipped",
+        patternResolution: "exact",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const orphan = findings.find((f) => f.kind === "messageBusConsumerOrphan");
+    expect(orphan).toBeDefined();
+    expect(orphan?.boundary.semantics.name).toBe("message-bus");
+    if (orphan?.boundary.semantics.name === "message-bus") {
+      expect(orphan.boundary.semantics.channel).toBe(
+        "OrderEventBus#OrderShipped",
+      );
+    }
+  });
+
+  it("surfaces an unresolvable rule as unsupportedSemantics (info), not an orphan", () => {
+    const summaries = [
+      eventBridgeConsumer({
+        name: "AuditConsumer.OnAnyOrderChange",
+        channel: "OrderEventBus#<unresolved>",
+        patternResolution: "unresolvable",
+        rule: "AuditConsumer.OnAnyOrderChange",
+        eventBus: "OrderEventBus",
+        unresolvableReason: "detail-type contains a content filter",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const unresolvable = findings.find(
+      (f) => f.kind === "unsupportedSemantics",
+    );
+    expect(unresolvable).toBeDefined();
+    expect(unresolvable?.severity).toBe("info");
+    expect(unresolvable?.description).toContain(
+      "AuditConsumer.OnAnyOrderChange",
+    );
+    // Not double-reported as a consumer orphan.
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
+    ).toEqual([]);
+  });
+
+  it("does not flag a scheduled consumer as an orphan", () => {
+    const summaries = [
+      eventBridgeConsumer({
+        name: "DigestFunction.DailyDigest",
+        channel: "schedule:DigestFunction.DailyDigest",
+        patternResolution: "schedule",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
+    ).toEqual([]);
+    expect(findings.filter((f) => f.kind === "unsupportedSemantics")).toEqual(
+      [],
+    );
+  });
+});
