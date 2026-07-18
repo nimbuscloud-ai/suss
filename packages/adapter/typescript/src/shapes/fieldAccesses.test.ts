@@ -346,6 +346,144 @@ describe("expectedInput on client transitions", () => {
     }
   });
 
+  // A pack with fetch-shaped response semantics so `.json()` reads as a
+  // body accessor and `.status` filters out. Mirrors @suss/client-web.
+  const webPack: PatternPack = {
+    ...fetchPack,
+    name: "web",
+    responseSemantics: [
+      {
+        name: "ok",
+        access: "property",
+        semantics: { type: "statusRange", min: 200, max: 299 },
+      },
+      { name: "status", access: "property", semantics: { type: "statusCode" } },
+      { name: "json", access: "method", semantics: { type: "body" } },
+      { name: "text", access: "method", semantics: { type: "body" } },
+      { name: "body", access: "property", semantics: { type: "body" } },
+      { name: "headers", access: "property", semantics: { type: "headers" } },
+    ],
+  };
+
+  it("tracks fields read through a fetch().then(res => ...) chain", async () => {
+    // No variable binding: the response flows through `.then` callback
+    // parameters. `data.name` after `res.json()` is a body field read.
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export function loadUser(id: string) {
+        return fetch("/users/" + id)
+          .then((res) => res.json())
+          .then((data) => data.name);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    const withInput = summaries[0].transitions.find(
+      (t) => t.expectedInput?.type === "record",
+    );
+    expect(withInput).toBeDefined();
+    const input = withInput?.expectedInput;
+    // Body reached via `res.json()` — recorded under the `json` accessor,
+    // which the checker strips as a body accessor when comparing.
+    if (input?.type === "record" && input.properties.json?.type === "record") {
+      expect(input.properties.json.properties).toHaveProperty("name");
+    } else {
+      throw new Error("expected json record carrying name");
+    }
+  });
+
+  it("keeps status-conditioned field accesses through a .then chain", async () => {
+    // Status branch inside the `.then` callback: the non-404 path reads a
+    // body field. `res.status` is filtered as non-body; `data.fullName`
+    // through `res.json()` is the body read.
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export function loadUser(id: string) {
+        return fetch("/users/" + id).then((res) => {
+          if (res.status === 404) {
+            return null;
+          }
+          return res.json().then((data) => data.fullName);
+        });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+
+    const withInput = summaries[0].transitions.find(
+      (t) =>
+        t.expectedInput?.type === "record" &&
+        t.expectedInput.properties.json !== undefined,
+    );
+    expect(withInput).toBeDefined();
+    const input = withInput?.expectedInput;
+    if (input?.type === "record" && input.properties.json?.type === "record") {
+      expect(input.properties.json.properties).toHaveProperty("fullName");
+    } else {
+      throw new Error("expected json record carrying fullName");
+    }
+    // Status must not surface as a body field on any transition.
+    for (const t of summaries[0].transitions) {
+      if (t.expectedInput?.type === "record") {
+        expect(t.expectedInput.properties).not.toHaveProperty("status");
+      }
+    }
+  });
+
+  it("follows a two-hop chain where json() flows into the next callback", async () => {
+    // `res.json()` result binds to `data`; a nested read `data.profile.name`
+    // must nest under the body accessor: json → profile → name.
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export function loadUser(id: string) {
+        return fetch("/users/" + id)
+          .then((res) => res.json())
+          .then((data) => data.profile.name);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webPack],
+    });
+    const summaries = await adapter.extractAll();
+    const withInput = summaries[0].transitions.find(
+      (t) => t.expectedInput?.type === "record",
+    );
+    const input = withInput?.expectedInput;
+    if (
+      input?.type === "record" &&
+      input.properties.json?.type === "record" &&
+      input.properties.json.properties.profile?.type === "record"
+    ) {
+      expect(
+        input.properties.json.properties.profile.properties,
+      ).toHaveProperty("name");
+    } else {
+      throw new Error("expected json.profile.name nesting");
+    }
+  });
+
   it("filters out status/ok/headers accesses", async () => {
     const project = createProject();
     project.createSourceFile(
