@@ -13,13 +13,13 @@ suss has four commands. They form one pipeline:
 | Command | Inputs | Output | When you reach for it |
 |---|---|---|---|
 | `extract` | TypeScript source + a framework pack | `BehavioralSummary[]` JSON | You have code and want a structured description of every execution path. |
-| `stub` | A specification (OpenAPI, CFN, Storybook, ...) | `BehavioralSummary[]` JSON | You have a spec instead of code, or want to compare code against a spec. Stubs are summaries with the same shape as `extract`'s output, so they pair against extracted summaries. |
-| `check` | One or more summary files | Findings (text or JSON) | You have summaries from two sides of a boundary — provider + consumer, contract + handler — and want to know where they disagree. |
+| `contract` | A specification (OpenAPI, CFN, Storybook, ...) | `BehavioralSummary[]` JSON | You have a spec instead of code, or want to compare code against a spec. Contract summaries have the same shape as `extract`'s output, so they pair against extracted summaries. |
+| `check` | One or more summary files | Findings (text or JSON) | You have summaries from two sides of a boundary, provider + consumer, contract + handler, and want to know where they disagree. |
 | `inspect` | A summary file | Human-readable text | You want to read what the summaries say without parsing JSON. The output is the form you paste into a code review or an AI prompt. |
 
 The summary JSON is the canonical artifact. `inspect` is a renderer
 over it; `check` is a comparator. Anything you can do in `inspect` or
-`check` you can also do by reading the JSON yourself — they're
+`check` you can also do by reading the JSON yourself, they're
 conveniences, not parsing layers.
 
 ## `suss extract`
@@ -43,7 +43,7 @@ suss extract -p TSCONFIG -f FRAMEWORK [-f FRAMEWORK ...] [-o OUTPUT]
 | `-f`, `--framework NAME` | yes | Framework pack name. Repeatable. See [built-in packs](#built-in-packs) below. Custom packs resolve via the `@suss/framework-NAME` convention. |
 | `-o`, `--output PATH` | no | Write JSON to file. Default: stdout. Parent dirs created automatically. |
 | `--files F1 F2 ...` | no | Scope extraction to specific files. Default: every file in the tsconfig. Paths are resolved relative to cwd. |
-| `--gaps MODE` | no | `strict` (default) — record gaps where conditions can't be decomposed. `permissive` — record gaps silently. `silent` — skip gap detection entirely. |
+| `--gaps MODE` | no | `strict` (default), record gaps where conditions can't be decomposed. `permissive`, record gaps silently. `silent`, skip gap detection entirely. |
 
 ### Built-in packs
 
@@ -66,8 +66,8 @@ resolves it automatically.
 
 ### Exit codes
 
-- `0` — extraction succeeded (regardless of how many summaries emerged).
-- Non-zero — extraction threw (invalid tsconfig, unknown framework, missing files).
+- `0`: extraction succeeded (regardless of how many summaries emerged).
+- Non-zero, extraction threw (invalid tsconfig, unknown framework, missing files).
 
 ## `suss contract`
 
@@ -76,7 +76,7 @@ Generate summaries from a declared contract instead of from code.
 **What it does.** Reads a specification (OpenAPI, CloudFormation,
 Storybook stories, AppSync schema) and emits the same
 `BehavioralSummary` shape that `extract` produces. The point isn't
-"render the spec as JSON" — it's "produce a summary with declared
+"render the spec as JSON", it's "produce a summary with declared
 behavior so the cross-boundary checker can pair it with an
 extracted summary the same way it would pair two extracted
 summaries."
@@ -97,7 +97,7 @@ suss contract --from SOURCE SPEC [-o OUTPUT]
 
 `SPEC` is either a local file path or an `http(s)` URL. When a URL is
 given, the document is fetched, written to a temp file, and parsed
-the same way as a local spec — useful for vendor specs hosted on
+the same way as a local spec, useful for vendor specs hosted on
 GitHub or a docs site, e.g.
 `https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml`.
 The fetched extension drives parser selection (`.json` → JSON, anything
@@ -122,8 +122,8 @@ else including no extension → YAML).
 
 ### Exit codes
 
-- `0` — contract source loaded.
-- Non-zero — unknown source, file not found, parse error.
+- `0`: contract source loaded.
+- Non-zero, unknown source, file not found, parse error.
 
 ## `suss check`
 
@@ -137,21 +137,21 @@ branch that handles it? Does every status the contract declares
 have a producer? Are the body shapes structurally compatible?
 
 The "two sides of a boundary" framing is general:
-- **Two extracted summaries** — handler vs. fetch client.
-- **A stub vs. an extracted summary** — OpenAPI spec vs. handler;
+- **Two extracted summaries**: handler vs. fetch client.
+- **A contract vs. an extracted summary**, OpenAPI spec vs. handler;
   Storybook story vs. component.
-- **Two stubs** — OpenAPI vs. CloudFormation, when both describe
+- **Two contracts**, OpenAPI vs. CloudFormation, when both describe
   the same API.
 
 A finding always names the boundary, the two sides, and what
-disagrees. There's no global "compliance score" — every finding is
+disagrees. There's no global "compliance score", every finding is
 a concrete pair.
 
 ```
 # Two explicit summary files
 suss check PROVIDER.json CONSUMER.json [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 
-# A whole directory — auto-pairs by boundary key
+# A whole directory, auto-pairs by boundary key
 suss check --dir DIR [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 ```
 
@@ -160,12 +160,12 @@ suss check --dir DIR [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 | `--dir PATH` | Directory containing summary JSON files. suss reads every `.json` in the dir and auto-pairs by boundary. Mutually exclusive with positional args. |
 | `--json` | Emit findings as JSON rather than human-readable text. Default: human text. |
 | `-o`, `--output PATH` | Write findings to file. Default: stdout. |
-| `--fail-on THRESHOLD` | `error` (default) — exit non-zero when any error-severity finding exists. `warning` — also fail on warnings. `info` — fail on any finding. `none` — never fail (still prints). |
+| `--fail-on THRESHOLD` | `error` (default), exit non-zero when any error-severity finding exists. `warning`, also fail on warnings. `info`, fail on any finding. `none`, never fail (still prints). |
 
 ### Exit codes
 
-- `0` — no findings at or above the threshold (after suppressions).
-- `1` — at least one finding at or above the threshold.
+- `0`: no findings at or above the threshold (after suppressions).
+- `1`: at least one finding at or above the threshold.
 
 Suppressions (`.sussignore`) affect counting: `mark` and `hide`
 effects don't count toward the threshold; `downgrade` counts at
@@ -180,7 +180,7 @@ text.
 view: summaries grouped by source file, decision-tree branches
 under each summary, side effects under each branch, follow-references
 to other summaries inline. The output is meant to be the form you
-paste into a code review or an AI prompt — short enough to share,
+paste into a code review or an AI prompt, short enough to share,
 self-describing enough to read cold, structurally aligned with the
 underlying IR.
 
@@ -200,7 +200,7 @@ suss inspect --diff BEFORE.json AFTER.json
 | `--dir PATH` | Render every summary in a directory, grouped by boundary with pair-discovery annotations. |
 | `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions. |
 
-No JSON output mode — `inspect` is always human-formatted. For
+No JSON output mode, `inspect` is always human-formatted. For
 programmatic consumption, read the summary files directly (they
 ARE JSON).
 
@@ -233,14 +233,14 @@ app/routes/_bff.architecture.containers.$id.files.ts
 
 Five things to read for, in order:
 
-1. **The file path** — what file these summaries come from.
-2. **The header line** for each summary — what's summarized and
+1. **The file path**, what file these summaries come from.
+2. **The header line** for each summary, what's summarized and
    what kind it is.
-3. **The branch tree** — every execution path's condition and
+3. **The branch tree**, every execution path's condition and
    output.
-4. **The effect lines** under each output — what the path calls
+4. **The effect lines** under each output, what the path calls
    into.
-5. **The `→` markers** — pointers to other summaries you can
+5. **The `→` markers**, pointers to other summaries you can
    navigate to for detail.
 
 #### Header line
@@ -252,8 +252,8 @@ Five things to read for, in order:
 | Field | Meaning |
 |---|---|
 | `<name>` | Identity. `METHOD /path` for REST endpoints; `<package>::<exportPath>` for package exports; bare function name otherwise. Generic / colliding names get path-qualified (`app/routes/_app.tsx.loader`). |
-| `<recognition>` | Which discovery variant produced this summary — `react`, `react-router`, `ts-rest`, `reachable`, etc. Tells you *why* this thing is here. |
-| `<kind>` | Behavioral role — `handler`, `loader`, `action`, `component`, `library`, `caller`, `client`, `useEffect`, ... See [`ir-reference.md`](/ir-reference). |
+| `<recognition>` | Which discovery variant produced this summary, `react`, `react-router`, `ts-rest`, `reachable`, etc. Tells you *why* this thing is here. |
+| `<kind>` | Behavioral role, `handler`, `loader`, `action`, `component`, `library`, `caller`, `client`, `useEffect`, ... See [`ir-reference.md`](/ir-reference). |
 | `line N` | Source line where the function starts. |
 | `<metadata>` | Optional kind-specific suffix. `useEffect` shows its dependency array (`[user, prefs]`, `(mount)`, `(every render)`). `confidence: medium` appears when not high. |
 
@@ -277,15 +277,15 @@ Each branch reads like an `if` in source:
   Shared prefixes across siblings are collapsed so each branch
   shows only the predicate that decides it.
 - **Outputs** appear after `-> `:
-  - `-> 200 { id, name, email }` — REST response, literal status,
+  - `-> 200 { id, name, email }`, REST response, literal status,
     body shape. `{ ... }` records show keys; `[...]` are arrays;
     primitives are `string` / `int` / `bool` / `null`; unions
     join with `|`.
-  - `-> return <shape>` — function return; `-> return` alone for
+  - `-> return <shape>`: function return; `-> return` alone for
     empty.
-  - `-> throw <ExceptionType>` — exception with the constructor
+  - `-> throw <ExceptionType>`: exception with the constructor
     name when known.
-  - `-> render` followed by an indented JSX-style subtree — React
+  - `-> render` followed by an indented JSX-style subtree, React
     component output. Self-closing leaves (`<X />`) collapse
     inline; elements with children expand to open/close tags.
   - `-> delegate -> <target>` / `-> emit "<event>"` / `-> void`.
@@ -298,7 +298,7 @@ branch.
 #### Effect lines
 
 Under each output, lines starting with `+ ` describe what that
-branch *also* does — calls invoked on the path to the terminal,
+branch *also* does, calls invoked on the path to the terminal,
 mutations, emissions, state changes:
 
 ```
@@ -308,14 +308,14 @@ mutations, emissions, state changes:
           + + app/util/vcs.fetchFromVcs →
 ```
 
-- `+ <callee>` — a plain call. No marker means the callee isn't
+- `+ <callee>`: a plain call. No marker means the callee isn't
   a separate summary suss can navigate to.
-- `+ <callee> →` — a follow reference. The callee resolves to
+- `+ <callee> →`: a follow reference. The callee resolves to
   another summary in the file. Look for it nearby.
-- `+ <path/file>.<callee> →` — a cross-file follow reference.
+- `+ <path/file>.<callee> →`: a cross-file follow reference.
   The callee resolves to a summary in another file (path shown
   without extension); scroll to that file's group to read it.
-- `+ <Parent>.effect#N →` — a sub-unit reference. React
+- `+ <Parent>.effect#N →`: a sub-unit reference. React
   components with `useEffect(...)` calls split into the
   parent component's summary and one summary per effect body.
   The parent's effect line points at the `effect#0`, `effect#1`,
@@ -332,21 +332,21 @@ past. Short summaries are unaffected.
 
 | Shape | Means |
 |---|---|
-| Top-level `!! <description>` | A gap — the declared contract says a status exists but no branch produces it, or a branch produces a status the contract doesn't declare. |
+| Top-level `!! <description>` | A gap, the declared contract says a status exists but no branch produces it, or a branch produces a status the contract doesn't declare. |
 | Trailing `!! undeclared` on an output | That output's status code isn't in the declared contract for this endpoint. |
 
 ### Format stability
 
 `inspect` output is curated for human and AI reading, not for parsing.
 If you need to programmatically consume what suss extracted, read the
-summary JSON directly — `inspect` is a renderer over it, and the JSON
+summary JSON directly, `inspect` is a renderer over it, and the JSON
 is the canonical artifact. See [behavioral summary format](/behavioral-summary-format)
 for the JSON's own stability guarantees.
 
 Within v0, `inspect` commits to keeping these shapes intact across
 minor versions:
 
-- **Grouping by source file**, with each summary rendered under its
+- **Grouping by source file**: with each summary rendered under its
   file's path header.
 - **Header line layout**: `<name>  (<recognition> <kind> | line N [| <metadata>])`.
 - **Branch tree keywords**: `if` / `elif` / `else`, with `-> ` prefixing
@@ -361,7 +361,7 @@ minor versions:
 
 Free to change without warning:
 
-- Exact tree-decoration characters (`├─`, `└─`, `│`) — these are
+- Exact tree-decoration characters (`├─`, `└─`, `│`), these are
   cosmetic and may shift to align with other tools.
 - Whitespace, indentation widths, column alignment.
 - Predicate rendering style (operator precedence, parenthesization,
@@ -377,8 +377,8 @@ summary JSON instead.
 
 ### Exit codes
 
-- `0` — rendered successfully.
-- Non-zero — input file missing or not valid summary JSON.
+- `0`: rendered successfully.
+- Non-zero, input file missing or not valid summary JSON.
 
 ## Top-level flags
 
@@ -394,7 +394,7 @@ None. All behavior is configured via flags.
 
 | Target | Default |
 |---|---|
-| stdout | Summary JSON (`extract`, `stub`), human text (`inspect`, `check`), finding JSON (`check --json`) |
+| stdout | Summary JSON (`extract`, `contract`), human text (`inspect`, `check`), finding JSON (`check --json`) |
 | stderr | "Wrote N summaries to PATH" acknowledgements, extraction warnings, error messages |
 | exit code | Per-command threshold as described above |
 

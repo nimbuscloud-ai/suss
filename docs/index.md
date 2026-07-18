@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: suss
-  text: Behavioral correctness for TypeScript
-  tagline: "Catch the drift between what your code says it does and what it does. suss derives every execution path, pairs the derivations across boundaries, and reports bugs that compile, type-check, and pass the tests."
+  text: A machine-readable summary of what your code actually does
+  tagline: "suss derives it from your source, path by path, with no annotations to write. Diff behavior on a pull request, check a caller against its handler, or catch the bugs that compile and pass the tests."
   actions:
     - theme: brand
       text: Get started
@@ -18,15 +18,15 @@ hero:
 
 features:
   - title: Drift other tools miss
-    details: "Code compiles, tests pass, types line up — and the consumer still reads a 200 the provider stopped producing. suss compares behavioural derivations directly, not just the shapes around them."
+    details: "Code compiles, tests pass, types line up, and the consumer still reads a 200 the provider stopped producing. suss compares what the two sides actually do, at the branch level."
     link: /motivation
-    linkText: Why behavioral summaries
+    linkText: Why suss
   - title: One model across every boundary
     details: "HTTP handlers, GraphQL resolvers, React components, queue producers, storage calls, and client call sites all produce the same summary shape. Cross-boundary checking is diffing two summaries."
-    link: /boundary-semantics
-    linkText: Boundary semantics
+    link: /glossary
+    linkText: Glossary
   - title: Add a framework in one file
-    details: "ts-rest, Express, Fastify, NestJS, React, React Router, Apollo Server, Prisma, AWS SQS, and process.env ship in the box. New frameworks are a small declarative pack — no fork of the analyser."
+    details: "ts-rest, Express, Fastify, NestJS, React, React Router, Apollo Server, Prisma, AWS SQS, and process.env ship in the box. New frameworks are a small declarative pack, with no fork of the analyzer."
     link: /guides/writing-a-pack
     linkText: Write a pack
   - title: Compare against declared contracts
@@ -34,11 +34,11 @@ features:
     link: /cross-boundary-checking
     linkText: How checking works
   - title: Runs on the code you already have
-    details: "No annotations, no decorators, no rewrites. Point suss at your tsconfig and get summaries from the source as it stands today."
+    details: "Point suss at your tsconfig and get summaries from the source as it stands. No annotations or decorators to add."
     link: /guides/add-to-project
     linkText: Add to a project
-  - title: Explicit about what it can't analyse
-    details: "When a condition is too dynamic for static analysis, the branch is labelled unresolved rather than silently dropped. Coverage stops are visible in the output."
+  - title: Explicit about what it can't analyze
+    details: "When a condition is too dynamic for static analysis, the branch is labeled unresolved rather than silently dropped. Coverage stops are visible in the output."
     link: /motivation#what-suss-is-not
     linkText: What suss is not
 ---
@@ -81,19 +81,19 @@ src/handlers.ts
 1 summaries inspected.
 ```
 
-`suss inspect` rendering one summary. The header line names the endpoint, recognition pack, kind, and source line. The decision tree shows every execution path as a branch with its own output shape. The `+` lines under an output are the side-effects on that path; the `→` marker points to other summaries nearby. The `!!` annotation is a gap — the contract declared a 500 the handler can't produce.
+`suss inspect` rendering one summary. The header line names the endpoint, recognition pack, kind, and source line. The decision tree shows every execution path as a branch with its own output shape. The `+` lines under an output are the side-effects on that path; the `→` marker points to other summaries nearby. The `!!` annotation is a gap: the contract declared a 500 the handler can't produce.
 
 The same data as JSON is what `@suss/checker` and downstream tools consume. `inspect` is a renderer over it.
 
 ## Reading order
 
-Four concepts carry everything: a **boundary** is where two units of code meet; a **summary** is what suss derives about a unit's behavior; a **check** pairs summaries and reports findings where they disagree; a **pack** teaches suss a framework. Beyond derivation, team-authored intent docs can declare what a boundary *should* do and be checked the same way — see [Contracts](/contracts).
+Four concepts carry everything: a **boundary** is where two units of code meet; a **summary** is what suss derives about a unit's behavior; a **check** pairs summaries and reports findings where they disagree; a **pack** teaches suss a framework. Beyond derivation, team-authored intent docs can declare what a boundary *should* do and be checked the same way (see [Contracts](/contracts)).
 
 The navigation splits conceptual material into **Understanding suss** (for users) and **Internals** (for contributors). Common entry points:
 
 - **First time on the site:** [Get started](/tutorial/get-started) walks the smallest end-to-end example, then [Motivation](/motivation) explains why this layer exists.
-- **Adding suss to an existing project:** [Add suss to a project](/guides/add-to-project) → [Set up CI](/guides/ci-integration).
+- **Adding suss to an existing project:** [Add suss to a project](/guides/add-to-project), then [Set up CI](/guides/ci-integration).
 - **Looking up a flag, finding, or term:** [CLI reference](/reference/cli) · [Findings catalog](/reference/findings) · [Glossary](/glossary) · [FAQ](/faq).
 - **Choosing packs for your stack:** [Packages & packs](/reference/packages).
 - **Writing or modifying a pack:** [Write a pack](/guides/writing-a-pack).
-- **Consuming the summary format:** [Behavioral summary format](/behavioral-summary-format) → [IR reference](/ir-reference).
+- **Consuming the summary format:** [Behavioral summary format](/behavioral-summary-format), then [IR reference](/ir-reference).

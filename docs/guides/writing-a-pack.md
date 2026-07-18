@@ -4,7 +4,7 @@ Step-by-step instructions for creating a new framework, client, or runtime pack.
 
 This guide includes worked walkthroughs of two existing packs (ts-rest and runtime-node) that read alongside the steps, plus a more detailed Fastify example at the end.
 
-## Step 1 — Create the package
+## Step 1: Create the package
 
 ```
 packages/framework/<name>/
@@ -17,14 +17,14 @@ packages/framework/<name>/
   vitest.config.ts
 ```
 
-For runtime packs use `packages/runtime/<name>/`; for client packs use `packages/client/<name>/`. The shape is otherwise the same. The quickest way is to copy an existing pack directory and rename. Each pack is 50–300 lines of declarative data plus a small test file.
+For runtime packs use `packages/runtime/<name>/`; for client packs use `packages/client/<name>/`. The shape is otherwise the same. The quickest way is to copy an existing pack directory and rename. Each pack is 50-300 lines of declarative data plus a small test file.
 
-## Step 2 — Decide on pack kind
+## Step 2: Decide on pack kind
 
 - **Discovery-driven** (most framework + client packs). Populate `discovery`, `terminals`, `inputMapping`. Optionally `contractReading` if the framework has declarative contracts.
 - **Recognizer-only** (runtime packs, library-specific framework packs like aws-sqs / prisma). Leave `discovery: []` and `terminals: []`. Populate `invocationRecognizers` / `accessRecognizers` / `subUnits`. Add `requiresImport` if scoped to a specific library.
 
-## Step 3 — Answer the questions
+## Step 3: Answer the questions
 
 **For discovery-driven packs:**
 
@@ -39,9 +39,9 @@ For runtime packs use `packages/runtime/<name>/`; for client packs use `packages
 2. **Sub-units** *(optional)*: Does the call schedule an inline callback whose body should be analyzed as its own unit?
 3. **Import gate** *(optional)*: Is the pack scoped to a specific library? Set `requiresImport`.
 
-If an existing pattern variant doesn't fit, talk to the maintainers before adding a new one — extending the pattern types has ripple effects through the adapter.
+If an existing pattern variant doesn't fit, talk to the maintainers before adding a new one, extending the pattern types has ripple effects through the adapter.
 
-## Step 4 — Write the pack as a function
+## Step 4: Write the pack as a function
 
 ```typescript
 import type { PatternPack } from "@suss/extractor";
@@ -76,12 +76,12 @@ discovery: httpRouteDiscovery({
 
 This emits one `DiscoveryPattern` per name with binding extraction (`method` from the registration method, `path` from argument 0) wired up. The Express and Fastify packs use this; anything with a different registration shape (`@ts-rest/express`'s `initServer().router()`, decorators, file-convention) should declare `discovery` entries directly.
 
-## Step 5 — Write the tests
+## Step 5: Write the tests
 
 A pack test has two layers:
 
-1. **Pack shape** — structural correctness of the returned `PatternPack`. Check `pack.discovery[i].kind`, `pack.terminals[i].match.type`, `inputMapping.knownProperties`.
-2. **Integration** — build an in-memory ts-morph project over `fixtures/<name>/*.ts`, run `createTypeScriptAdapter({ project, frameworks: [yourPack()] }).extractAll()`, and assert on the resulting `BehavioralSummary[]`: transition counts, status codes, isDefault flags, input roles, gaps (if the pack has `contractReading`), effects (for recognizer-only packs). Share the summaries via `beforeAll` so ts-morph setup runs once per file — raise the hook timeout to 30s under turbo concurrency.
+1. **Pack shape**, structural correctness of the returned `PatternPack`. Check `pack.discovery[i].kind`, `pack.terminals[i].match.type`, `inputMapping.knownProperties`.
+2. **Integration**, build an in-memory ts-morph project over `fixtures/<name>/*.ts`, run `createTypeScriptAdapter({ project, frameworks: [yourPack()] }).extractAll()`, and assert on the resulting `BehavioralSummary[]`: transition counts, status codes, isDefault flags, input roles, gaps (if the pack has `contractReading`), effects (for recognizer-only packs). Share the summaries via `beforeAll` so ts-morph setup runs once per file, raise the hook timeout to 30s under turbo concurrency.
 
 See `packages/framework/ts-rest/src/index.test.ts` for a discovery-driven pack with contract reading, `packages/framework/express/src/index.test.ts` for one without, and `packages/runtime/node/src/scheduling.test.ts` for a recognizer-only pack.
 
@@ -94,7 +94,7 @@ A pack author doesn't need to understand:
 - How the extraction engine assembles summaries.
 - How any other pack works.
 
-That's the whole point of the declarative design. If writing a new pack requires touching any file outside `packages/<kind>/<name>/`, the pattern system has a gap that needs a structural fix — flag it rather than working around it in the pack.
+That's the whole point of the declarative design. If writing a new pack requires touching any file outside `packages/<kind>/<name>/`, the pattern system has a gap that needs a structural fix, flag it rather than working around it in the pack.
 
 ## Anatomy of a framework pack: ts-rest
 
@@ -172,7 +172,7 @@ inputMapping: {
 },
 ```
 
-ts-rest handlers receive a destructured object: `({ params, body, query }) => { ... }`. Each property name maps to a semantic role. The role ends up on `Input.role`, which downstream tools use to correlate inputs across services — "the consumer's `pathParams.id` matches the provider's `pathParams.id`".
+ts-rest handlers receive a destructured object: `({ params, body, query }) => { ... }`. Each property name maps to a semantic role. The role ends up on `Input.role`, which downstream tools use to correlate inputs across services, "the consumer's `pathParams.id` matches the provider's `pathParams.id`".
 
 ## Anatomy of a runtime pack: runtime-node
 
@@ -198,7 +198,7 @@ return {
 };
 ```
 
-`discovery: []` and `terminals: []` are explicit no-ops — runtime-node doesn't claim any unit. `inputMapping` is required by the interface but unused. The work happens in the three recognizer fields plus `subUnits`.
+`discovery: []` and `terminals: []` are explicit no-ops, runtime-node doesn't claim any unit. `inputMapping` is required by the interface but unused. The work happens in the three recognizer fields plus `subUnits`.
 
 ### Invocation recognizer
 
@@ -236,7 +236,7 @@ The recognizer returns `null` for any call that isn't a scheduling primitive. Th
 
 ### Access recognizer
 
-`processSurfaceRecognizer` fires on `PropertyAccessExpression` and `ElementAccessExpression` nodes. It recognizes `process.argv`, `process.cwd`, `process.platform`, `process.argv[N]`, etc. — but skips `process.env.X`, which the sibling `envVarRecognizer` in the same pack owns. The two recognizers partition the `process.*` space without duplication:
+`processSurfaceRecognizer` fires on `PropertyAccessExpression` and `ElementAccessExpression` nodes. It recognizes `process.argv`, `process.cwd`, `process.platform`, `process.argv[N]`, etc., but skips `process.env.X`, which the sibling `envVarRecognizer` in the same pack owns. The two recognizers partition the `process.*` space without duplication:
 
 ```typescript
 function recognizeProperty(node, deploymentTarget, instanceName): Effect[] | null {
@@ -291,18 +291,18 @@ The synthesized sub-unit flows through the adapter's normal pipeline: it gets te
 
 ### Why no `requiresImport` here
 
-runtime-node is universal — `setTimeout` works without importing anything. Other recognizer-only packs that target a specific library should declare `requiresImport`:
+runtime-node is universal, `setTimeout` works without importing anything. Other recognizer-only packs that target a specific library should declare `requiresImport`:
 
 ```typescript
 // in @suss/framework-aws-sqs
 requiresImport: ["@aws-sdk/client-sqs"],
 ```
 
-This tells the adapter's pre-filter to only consider this pack applicable to source files importing one of the listed modules. Without it, a recognizer-only pack walks every file in the project — correct but wasted work in monorepos where most files don't import the library.
+This tells the adapter's pre-filter to only consider this pack applicable to source files importing one of the listed modules. Without it, a recognizer-only pack walks every file in the project, correct but wasted work in monorepos where most files don't import the library.
 
 ## A worked example: the Fastify pack
 
-The shipped Fastify pack lives in [`packages/framework/fastify/`](https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/fastify) — read it alongside this section. Fastify handlers look like:
+The shipped Fastify pack lives in [`packages/framework/fastify/`](https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/fastify), read it alongside this section. Fastify handlers look like:
 
 ```typescript
 import Fastify from "fastify";
@@ -320,7 +320,7 @@ app.get("/users/:id", async (request, reply) => {
 
 Walking through the four questions:
 
-**Discovery.** Handlers are registered via `app.<verb>("/path", handler)` where `app` is the result of calling the imported `Fastify` (or named-import `fastify`). This is a `registrationCall` pattern. The pack ships two discovery entries — one for the default-import shape (`importName: "Fastify"`) and one for the named-import shape (`importName: "fastify"`) — because `defaultImport.getText() === match.importName` matches against the local binding name.
+**Discovery.** Handlers are registered via `app.<verb>("/path", handler)` where `app` is the result of calling the imported `Fastify` (or named-import `fastify`). This is a `registrationCall` pattern. The pack ships two discovery entries, one for the default-import shape (`importName: "Fastify"`) and one for the named-import shape (`importName: "fastify"`), because `defaultImport.getText() === match.importName` matches against the local binding name.
 
 ```typescript
 discovery: [
@@ -372,7 +372,7 @@ terminals: [
 
 The `defaultStatusCode: 200` field is important: without it the implicit-200 chain (`reply.send(body)`) would emit a transition with `statusCode: null`, and inspect would render `???`. The pack declares the framework-level default and the adapter applies it when extraction can't pull a numeric value from the call.
 
-**Inputs.** Fastify's handler signature is `(request, reply) => ...` — positional:
+**Inputs.** Fastify's handler signature is `(request, reply) => ...`, positional:
 
 ```typescript
 inputMapping: {
@@ -386,6 +386,6 @@ inputMapping: {
 
 **Contracts.** Fastify supports JSON Schema validation attached to route options inline with the handler. v0 doesn't declare a `contractReading` and relies on inferred transitions alone.
 
-**Bare `return value` bodies.** Fastify also lets handlers serialise a returned value as the response body (`return user` or `return { id, name }`). The pack covers that path with a `returnStatement` terminal that uses `excludeCallReturns: true`, so `return reply.send(...)` (already a `parameterMethodCall` match) doesn't double-fire. Bare `return;` exits — the kind that follow `reply.code(404).send(...)` early-return guards — are skipped, since they don't produce a value.
+**Bare `return value` bodies.** Fastify also lets handlers serialise a returned value as the response body (`return user` or `return { id, name }`). The pack covers that path with a `returnStatement` terminal that uses `excludeCallReturns: true`, so `return reply.send(...)` (already a `parameterMethodCall` match) doesn't double-fire. Bare `return;` exits, the kind that follow `reply.code(404).send(...)` early-return guards, are skipped, since they don't produce a value.
 
 The whole pack is ~120 lines of declarative data plus an integration test against an in-memory ts-morph project.

@@ -135,7 +135,7 @@ export function UserCard({ id }: { id: string }) {
 
 Two things to notice:
 
-1. The component reads `data.name` — but the backend (and the contract) return `fullName`.
+1. The component reads `data.name`, but the backend (and the contract) return `fullName`.
 2. The component doesn't check `res.status` or `res.ok`, so it has no branch for the 404.
 
 Both are drift bugs that survive type-checking because the frontend never imports the backend's types. Let suss catch them.
@@ -157,7 +157,7 @@ Quick look at what came out of the backend:
 npx suss inspect summaries/backend.json
 ```
 
-You should see the `GET /users/:id` handler with two transitions — a 404 path gated on `!user`, and a default 200 path returning the user object.
+You should see the `GET /users/:id` handler with two transitions, a 404 path gated on `!user`, and a default 200 path returning the user object.
 
 ## Step 6. Run the checker
 
@@ -183,10 +183,10 @@ Expected output (wording may vary slightly):
 
 The two findings come from different parts of the IR:
 
-1. **`unhandledProviderCase`** — the provider's transitions include a 404; the consumer's code has no branch on `res.status` or `res.ok`. The checker pairs the two summaries on `(GET, /users/:id)` and notices the asymmetry.
-2. **`consumerFieldMismatch`** — the provider's 200 body has shape `{ id, fullName }`; the consumer reads `.name` off the parsed body. Field-level shape comparison handles this in `body/bodyMatch.ts`.
+1. **`unhandledProviderCase`**, the provider's transitions include a 404; the consumer's code has no branch on `res.status` or `res.ok`. The checker pairs the two summaries on `(GET, /users/:id)` and notices the asymmetry.
+2. **`consumerFieldMismatch`**, the provider's 200 body has shape `{ id, fullName }`; the consumer reads `.name` off the parsed body. Field-level shape comparison handles this in `body/bodyMatch.ts`.
 
-The OpenAPI contract participates too — the `contract.json` summary declares the same 200 and 404 shapes, so the consumer's gaps are gaps against the declared contract, not only against the implementation.
+The OpenAPI contract participates too, the `contract.json` summary declares the same 200 and 404 shapes, so the consumer's gaps are gaps against the declared contract, not only against the implementation.
 
 ## Step 7. Fix the findings
 
@@ -227,12 +227,12 @@ Both findings should be gone. `suss check` exits 0.
 ## What this run exercises
 
 - **Cross-stack pairing.** Express on one side, `fetch` from a React component on the other, no shared types. suss read each side's behavior into the same shape and paired them on `(method, path)` automatically.
-- **Field-level body matching.** The consumer's `.name` access compared against the provider's `{ id, fullName }` body went through structural comparison. TypeScript wouldn't catch this — the frontend never imports the backend's types.
+- **Field-level body matching.** The consumer's `.name` access compared against the provider's `{ id, fullName }` body went through structural comparison. TypeScript wouldn't catch this, the frontend never imports the backend's types.
 - **Status-handling gaps.** The missing 404 branch is a reachability check against the provider's transitions, not a coverage measurement. The finding fires regardless of whether the 404 path is exercised at runtime.
 
 ## Further reading
 
-- [Get started](/tutorial/get-started) — the same workflow with ts-rest, where the contract is in the framework rather than a separate document.
-- [Pair against OpenAPI](/guides/pair-against-openapi) — recipe form of this workflow once you know it.
-- [Findings catalog](/reference/findings) — every finding kind with an example.
-- [Three kinds of truth](/contracts) — the specification / observation / derivation taxonomy that grounds the checker's finding semantics.
+- [Get started](/tutorial/get-started), the same workflow with ts-rest, where the contract is in the framework rather than a separate document.
+- [Pair against OpenAPI](/guides/pair-against-openapi), recipe form of this workflow once you know it.
+- [Findings catalog](/reference/findings), every finding kind with an example.
+- [Three kinds of truth](/contracts), the specification / observation / derivation taxonomy that grounds the checker's finding semantics.

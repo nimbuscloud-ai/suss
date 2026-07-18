@@ -1,7 +1,7 @@
 # Set up CI checking
 
 Run suss on every pull request. The goal is a single check that
-flags boundary drift before it merges — provider producing a
+flags boundary drift before it merges, provider producing a
 status the client doesn't handle, client contract not matching a
 declared spec, GraphQL selection against a field the schema
 doesn't have.
@@ -63,8 +63,8 @@ directory and let `check --dir` auto-pair everything:
 
 `check --dir` pairs every provider summary with every consumer
 summary that shares a boundary key (`GET /users/:id`,
-`gql:Query.pet`, etc.). Sources don't have to match origin — a
-stub-from-OpenAPI provider pairs naturally against a
+`gql:Query.pet`, etc.). Sources don't have to match origin, a
+contract-from-OpenAPI provider pairs naturally against a
 runtime-axios consumer.
 
 ## JSON output for downstream tooling
@@ -84,7 +84,7 @@ for PR-comment bots, dashboards, dedicated reporting steps:
     findings: findings.json
 ```
 
-The JSON shape is the IR's `Finding[]` — same types the checker
+The JSON shape is the IR's `Finding[]`, same types the checker
 exports. Downstream tools that consume it can validate via
 `@suss/behavioral-ir`'s exported schema or the generated
 JSON Schema (`packages/ir/schema/behavioral-summary.schema.json`).
@@ -98,7 +98,7 @@ produced. The `.sussignore` file holds these exceptions, each
 carrying a written reason:
 
 ```yaml
-# .sussignore — one rule per accepted finding
+# .sussignore: one rule per accepted finding
 rules:
   - kind: deadConsumerBranch
     boundary: GET /legacy/health
@@ -120,12 +120,12 @@ syntax and the three effects (`mark` / `downgrade` / `hide`).
   Start at `error`, tighten to `warning` when the team is ready.
 - **Don't commit the `summaries/` directory.** Extracted
   summaries are derived artifacts; regenerating them in CI keeps
-  them current with the source. Do commit `.sussignore` — it's a
+  them current with the source. Do commit `.sussignore`, it's a
   curated list of decisions.
 - **Don't run extract against a partial tsconfig.** If
   `include` in your tsconfig excludes source files, suss can't see
   them. Use the same tsconfig your build uses (or a superset).
 - **Don't gate on `suss check` alone for breaking-change reviews.**
-  Use `suss inspect --diff before.json after.json` in parallel —
+  Use `suss inspect --diff before.json after.json` in parallel , 
   it shows which transitions changed, not just which pair
   mismatched.
