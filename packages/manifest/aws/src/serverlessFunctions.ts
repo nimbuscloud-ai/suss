@@ -55,7 +55,7 @@ export interface ServerlessFunctionInfo {
   nonHttpEvents: ServerlessNonHttpEvent[];
 }
 
-interface ParsedHandler {
+export interface ParsedHandler {
   modulePath: string;
   exportName: string;
 }

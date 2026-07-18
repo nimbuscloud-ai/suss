@@ -42,32 +42,32 @@ import {
   restApiToSummaries,
 } from "@suss/contract-aws-apigateway";
 import { openApiToSummaries } from "@suss/contract-openapi";
-
-import { buildMessageBusSummaries } from "./messageBus.js";
-import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
-import { parseHandler } from "./serverlessFunctions.js";
 import {
   type CloudFormationResource,
   type CloudFormationTemplate,
   loadCloudFormationTemplate,
+  parseHandler,
   refTarget,
-} from "./templateLoader.js";
+} from "@suss/manifest-aws";
+
+import { buildMessageBusSummaries } from "./messageBus.js";
+import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "@suss/contract-openapi";
 
+// Re-exported so existing consumers of the parse layer keep working;
+// the canonical home is @suss/manifest-aws.
 export {
+  type CloudFormationResource,
+  type CloudFormationTemplate,
+  loadCloudFormationTemplate,
   parseHandler,
   readServerlessFunctions,
   type ServerlessFunctionInfo,
   type ServerlessHttpRoute,
   type ServerlessNonHttpEvent,
-} from "./serverlessFunctions.js";
-export {
-  type CloudFormationResource,
-  type CloudFormationTemplate,
-  loadCloudFormationTemplate,
-} from "./templateLoader.js";
+} from "@suss/manifest-aws";
 
 export interface CloudFormationToSummariesOptions {
   /** Override the logical source file recorded on each summary. */

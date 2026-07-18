@@ -2,12 +2,12 @@
 // file and index its Serverless::Function handlers by resolved module
 // path.
 //
-// The manifest semantics (loading the template, reading function
-// resources + Events) are imported from @suss/contract-cloudformation —
-// this module only does the filesystem discovery (walk up to the
-// template) and the code-path resolution (CodeUri + Handler → an
-// absolute module path) that a framework pack needs to map a handler
-// export back to the routes that invoke it.
+// The manifest parse (loading the template, reading function
+// resources + Events) comes from @suss/manifest-aws — this module only
+// does the filesystem discovery (walk up to the template) and the
+// code-path resolution (CodeUri + Handler → an absolute module path)
+// that a framework pack needs to map a handler export back to the
+// routes that invoke it.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -17,7 +17,7 @@ import {
   readServerlessFunctions,
   type ServerlessHttpRoute,
   type ServerlessNonHttpEvent,
-} from "@suss/contract-cloudformation";
+} from "@suss/manifest-aws";
 
 /** One Serverless::Function's handler + the Events that reach it. */
 export interface HandlerEntry {

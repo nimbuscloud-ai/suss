@@ -1,26 +1,23 @@
 {
-  "name": "@suss/framework-aws-lambda",
+  "name": "@suss/manifest-aws",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Pattern pack for extracting suss behavioral summaries from AWS Lambda HTTP handlers, paired to SAM/CloudFormation-declared routes.",
+  "description": "Parse AWS CloudFormation / SAM templates into plain data — the shared facts layer contract readers and manifest-driven framework packs both consume.",
   "keywords": [
     "suss",
-    "behavioral-summary",
-    "framework-pack",
-    "aws",
-    "lambda",
+    "cloudformation",
     "sam",
-    "api-gateway",
-    "static-analysis"
+    "aws",
+    "manifest"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/aws-lambda#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/manifest/aws#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/framework/aws-lambda"
+    "directory": "packages/manifest/aws"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -48,17 +45,10 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
-  "peerDependencies": {
-    "ts-morph": ">=20"
-  },
   "dependencies": {
-    "@suss/adapter-typescript": "*",
-    "@suss/manifest-aws": "*",
-    "@suss/extractor": "*"
+    "yaml": "^2.4.0"
   },
   "devDependencies": {
-    "@suss/behavioral-ir": "*",
-    "ts-morph": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
