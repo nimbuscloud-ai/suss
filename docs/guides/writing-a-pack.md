@@ -236,11 +236,11 @@ The recognizer returns `null` for any call that isn't a scheduling primitive. Th
 
 ### Access recognizer
 
-`processSurfaceRecognizer` fires on `PropertyAccessExpression` and `ElementAccessExpression` nodes. It recognizes `process.argv`, `process.cwd`, `process.platform`, `process.argv[N]`, etc. — but skips `process.env.X` because `@suss/framework-process-env` handles those (a known historical split — the merge into runtime-node is tracked separately):
+`processSurfaceRecognizer` fires on `PropertyAccessExpression` and `ElementAccessExpression` nodes. It recognizes `process.argv`, `process.cwd`, `process.platform`, `process.argv[N]`, etc. — but skips `process.env.X`, which the sibling `envVarRecognizer` in the same pack owns. The two recognizers partition the `process.*` space without duplication:
 
 ```typescript
 function recognizeProperty(node, deploymentTarget, instanceName): Effect[] | null {
-  if (isProcessEnvVarRead(node)) return null;  // delegate to env-var pack
+  if (isProcessEnvVarRead(node)) return null;  // sibling envVarRecognizer owns these
 
   const subject = node.getExpression();
   const name = node.getName();

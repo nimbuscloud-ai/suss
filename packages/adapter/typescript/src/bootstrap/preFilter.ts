@@ -74,8 +74,9 @@ function packIsUngated(pack: PatternPack): boolean {
   // access recognizers) without a pack-level gate fall through to
   // "ungated" — they walk every file because they have no other way
   // to declare relevance. Truly universal recognizers like
-  // `@suss/framework-process-env` (process.env is always available)
-  // are the intended consumers of this fallback.
+  // `@suss/runtime-node`'s process-surface / env-var recognizers
+  // (process.* is always available) are the intended consumers of
+  // this fallback.
   const hasInvocationRecognizers =
     pack.invocationRecognizers !== undefined &&
     pack.invocationRecognizers.length > 0;

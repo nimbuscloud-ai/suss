@@ -146,6 +146,6 @@ Total: ~4 days, single pass.
 ## Sequencing
 
 - Ships before re-testing the pair-frontend-backend tutorial. The tutorial depends on the `.then` chain producing field-level findings.
-- Independent of #45 (`framework-process-env` merge) and #47 (`excludeCallReturns` fix); ships in any order.
+- Independent of #45 (the env-var recognizer merge into `runtime-node`, since landed) and #47 (`excludeCallReturns` fix); ships in any order.
 - Independent of #48 (URL inputs for contract reader).
 - Connects to the broader project direction — the PRD / intent generative-doc arc depends on field-level findings being trustworthy on consumer code, which this change enables.

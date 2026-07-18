@@ -796,9 +796,9 @@ export interface PatternPack {
    * packs whose ONLY mechanism is recognizers (no discovery).
    *
    * Empty / undefined means "no gate" — pack walks every file (the
-   * default for truly universal recognizers like
-   * `@suss/framework-process-env`, since `process.env` is available
-   * without an import).
+   * default for truly universal recognizers like `@suss/runtime-node`'s
+   * process-surface / env-var recognizers, since `process.*` is
+   * available without an import).
    */
   requiresImport?: string[];
   /**

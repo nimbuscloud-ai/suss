@@ -87,7 +87,7 @@ You don't have to install everything. Common combinations:
 - **ts-rest full-stack:** `@suss/framework-ts-rest` (provider + client through the contract).
 - **Express + fetch:** `@suss/framework-express @suss/client-web`.
 - **React + GraphQL:** `@suss/framework-react @suss/client-apollo`.
-- **Lambda + SQS:** `@suss/framework-aws-sqs @suss/contract-cloudformation @suss/framework-process-env`.
+- **Lambda + SQS:** `@suss/framework-aws-sqs @suss/contract-cloudformation @suss/runtime-node`.
 - **App backed by Postgres:** add `@suss/framework-prisma @suss/contract-prisma` to any of the above.
 
 The full pack list is in the [Packages](#packages) table. The [add-to-project guide](docs/guides/add-to-project.md) walks the integration end-to-end.
@@ -214,12 +214,11 @@ const effective = applySuppressions(findings, mySuppressions);
 | [`@suss/framework-nestjs-graphql`](packages/framework/nestjs-graphql) | NestJS GraphQL resolvers. | ![](.github/badges/coverage-nestjs-graphql.svg) |
 | [`@suss/framework-prisma`](packages/framework/prisma) | Prisma client calls — emits storage-access interactions per read / write. | ![](.github/badges/coverage-prisma.svg) |
 | [`@suss/framework-aws-sqs`](packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls — emits message-send interactions. | ![](.github/badges/coverage-aws-sqs.svg) |
-| [`@suss/framework-process-env`](packages/framework/process-env) | `process.env.X` access — emits config-read interactions. | ![](.github/badges/coverage-process-env.svg) |
 | **Runtimes (client packs)** | | |
 | [`@suss/client-web`](packages/client/web) | Global `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
 | [`@suss/client-axios`](packages/client/axios) | axios call sites + `axios.create` factories. | ![](.github/badges/coverage-axios.svg) |
 | [`@suss/client-apollo`](packages/client/apollo) | `@apollo/client` hooks + imperative `client.query`. | ![](.github/badges/coverage-apollo-client.svg) |
-| [`@suss/runtime-node`](packages/runtime/node) | Node.js runtime primitives — scheduling, the `process` surface, module-loading globals — emitted as interaction effects. | ![](.github/badges/coverage-runtime-node.svg) |
+| [`@suss/runtime-node`](packages/runtime/node) | Node.js runtime primitives — scheduling, the `process` surface (incl. `process.env.X` config-read interactions), module-loading globals — emitted as interaction effects. | ![](.github/badges/coverage-runtime-node.svg) |
 | **Contract sources** | | |
 | [`@suss/contract-openapi`](packages/contract/openapi) | OpenAPI 3.x → behavioral summaries. | ![](.github/badges/coverage-contract-openapi.svg) |
 | [`@suss/contract-graphql`](packages/contract/graphql) | Plain GraphQL SDL → resolver-kind summaries (Query/Mutation/Subscription fields). | ![](.github/badges/coverage-contract-graphql.svg) |
