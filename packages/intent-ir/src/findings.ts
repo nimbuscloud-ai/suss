@@ -17,6 +17,13 @@ export const IntentFindingKindSchema = z.enum([
   "outcomeShapeMismatch", // a matched outcome whose body shapes disagree
   "undeclaredOutcome", // code produces a REST status the intent doesn't declare
   "unkeyableBoundary", // intent boundary can't be keyed, so it can't be checked
+  // Outcome intent (kind: prd) — scenario link coverage against system
+  // intent. These concretise the proposal's "scenario not linked /
+  // dangling / ambiguous" set (docs/internal/proposals/intent-specs.md);
+  // the proposal deferred concrete names to implementation time.
+  "unlinkedScenario", // scenario carries no structured link (info — a valid pending state)
+  "danglingScenarioLink", // link names an intent / outcome no boundary intent declares
+  "ambiguousScenarioLink", // link resolves to two or more boundary intents sharing the name
 ]);
 export type IntentFindingKind = z.infer<typeof IntentFindingKindSchema>;
 
@@ -63,6 +70,20 @@ export const IntentFindingSchema = z.object({
    * concerns a specific implementation. Absent for unimplementedBoundary.
    */
   code: z.string().optional(),
+  /**
+   * PRD-scenario extension — present only on outcome-intent findings
+   * (unlinkedScenario / danglingScenarioLink / ambiguousScenarioLink).
+   * Identifies the scenario (by its optional title) and the qualified
+   * outcome ref (`<intent-name>.<outcome-id>`) that failed to resolve.
+   * The peer / boundary findings leave it unset — this is the "intent
+   * finding extension" decision 2 of the proposal anticipated.
+   */
+  scenario: z
+    .object({
+      title: z.string().optional(),
+      link: z.string().optional(),
+    })
+    .optional(),
   message: z.string(),
   /** Present when a .sussignore rule matched this finding. */
   suppressed: IntentFindingSuppressionSchema.optional(),
