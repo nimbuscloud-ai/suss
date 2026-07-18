@@ -425,16 +425,16 @@ describe("returnShape — arrow expression body", () => {
 // ---------------------------------------------------------------------------
 
 describe("nested function boundary", () => {
-  it("does NOT find res.json() inside a nested closure", () => {
+  it("finds res.json() inside a nested closure — it writes the parent's response param", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
       `
       function handler(req: any, res: any) {
         const fetchData = () => {
-          res.json({ wrong: true });
+          res.json({ nested: true });
         };
-        res.json({ correct: true });
+        res.json({ direct: true });
       }
     `,
     );
@@ -444,15 +444,41 @@ describe("nested function boundary", () => {
       makeParamMethodPattern(["json"], 1),
     ]);
 
-    // Only the direct call, not the one inside the nested arrow
+    // Descent: `res.json` on the handler's own `res` parameter is the
+    // handler's observable output regardless of the closure it sits in.
+    // Both the nested call and the direct call are terminals; source
+    // order puts the nested one first.
+    expect(terminals).toHaveLength(2);
+    expect(terminals.map((t) => t.terminal.body?.typeText)).toEqual([
+      "{ nested: true }",
+      "{ direct: true }",
+    ]);
+  });
+
+  it("does NOT find res.json() on the nested arrow's OWN parameter", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function handler(req: any, res: any) {
+        [1].forEach((res: any) => {
+          res.json({ shadowed: true });
+        });
+        res.json({ direct: true });
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [
+      makeParamMethodPattern(["json"], 1),
+    ]);
+
+    // The nested `res` shadows the parameter, so `res.json` inside the
+    // callback resolves to the callback's own param — not the handler's
+    // response channel — and is not a handler terminal.
     expect(terminals).toHaveLength(1);
-    expect(terminals[0].terminal.body).toEqual({
-      typeText: "{ correct: true }",
-      shape: {
-        type: "record",
-        properties: { correct: { type: "literal", value: true } },
-      },
-    });
+    expect(terminals[0].terminal.body?.typeText).toBe("{ direct: true }");
   });
 
   it("does NOT find return { status, body } inside a nested function", () => {
