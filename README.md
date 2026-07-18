@@ -2,7 +2,7 @@
 
 suss catches behavioral drift between what your TypeScript code says it does and what it does. The bugs it surfaces are the ones that compile cleanly, type-check, and pass their tests — code where a consumer reads a `200` whose shape the provider quietly changed, or a Prisma write touches a column the schema doesn't declare. The bug shows up at runtime; nothing in CI today catches it.
 
-Mechanically, suss is static behavioral analysis: it derives what every function does on every execution path and pairs those derivations across boundaries — the points where two units of code meet, like the consumer and provider above, or the Prisma call and its schema. The drift falls out of the comparison without runtime instrumentation and without you having to write specs.
+suss derives what every function does on every execution path and pairs those derivations across boundaries — the points where two units of code meet. The drift falls out of the comparison, without runtime instrumentation and without you writing specs.
 
 ```
 suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
@@ -10,9 +10,9 @@ suss extract -p apps/web/tsconfig.json -f axios -o summaries/consumer.json
 suss check summaries/
 ```
 
-## What suss produces
+## What a summary looks like
 
-For every function reachable from a recognized entry point — HTTP handlers, React components, GraphQL resolvers, queue consumers, client call sites, transitively-called helpers — suss emits a `BehavioralSummary`: a JSON object describing the function's transitions (one per execution path), the predicates that gate each transition, the outputs each transition produces, and the side effects on the way (HTTP calls, storage reads/writes, message sends, env-var reads, throws).
+For every function reachable from a recognized entry point, suss emits a `BehavioralSummary`: the transitions the function produces (one per execution path), the predicates gating each, the outputs, and the side effects along the way. `suss inspect` renders one:
 
 ```
 GET /users/:id
@@ -27,232 +27,58 @@ GET /users/:id
     !! Declared response 500 is never produced by the handler
 ```
 
-That's `suss inspect` rendering one summary. The same data as JSON is what `@suss/checker` and any downstream tool consumes.
+The decision tree shows every path with its output shape; the `!!` line is a gap between the declared contract and the implementation. The same data as JSON is what `@suss/checker` and any downstream tool consumes — `inspect` is a renderer over it.
 
-The summary is the product. Checking is the most-developed use; others include reading what code does without reading source, generating documentation, enumerating test cases, feeding AI agents structured context, and tracking boundary drift across releases.
+The summary is the product. Checking is the most-developed use; others include reading what code does without reading source, generating documentation, enumerating test cases, and feeding AI agents structured context.
 
-## How suss gets data into and out of the IR
+## Four CLI surfaces
 
-Four CLI surfaces over the same `BehavioralSummary[]`:
+Over the same `BehavioralSummary[]`:
 
 - `suss extract` — derive summaries from TypeScript source.
-- `suss contract` — derive summaries from declared contracts (OpenAPI, CloudFormation, AppSync, Storybook).
-- `suss check` — pair providers with consumers and emit findings where they disagree.
-- `suss inspect` — render summaries as readable text, or `--diff BEFORE AFTER` to see what a change added, removed, or altered.
+- `suss contract` — derive summaries from declared contracts (OpenAPI, CloudFormation, AppSync, GraphQL SDL, Prisma schema, Storybook).
+- `suss check` — pair providers with consumers and emit findings where they disagree. Exit code crosses the `--fail-on error|warning|info|none` threshold.
+- `suss inspect` — render summaries as text, or `--diff BEFORE AFTER` to see what a change added, removed, or altered.
 
-`extract` and `contract` both produce the same shape, so a TypeScript handler and an OpenAPI spec for that handler are directly comparable. The same goes for a CloudFormation template and the Lambda code it deploys, or a Storybook CSF3 file and the React component it documents.
+`extract` and `contract` produce the same shape, so a TypeScript handler and an OpenAPI spec for it are directly comparable — as are a CloudFormation template and the Lambda code it deploys, or a Storybook CSF3 file and the React component it documents.
 
-## What's modeled today
-
-| Boundary kind | Frameworks | Clients | Contracts |
-|---|---|---|---|
-| HTTP | ts-rest, Express, Fastify, NestJS REST | fetch, axios | OpenAPI 3.x, AWS API Gateway (REST + HTTP API), AWS SAM |
-| GraphQL | Apollo Server, NestJS GraphQL | Apollo Client | AWS AppSync |
-| React | React (components + handlers + `useEffect`), React Router (loaders + actions) | — | Storybook CSF3 |
-| Storage | Prisma (read / write / selector / fields) | — | Prisma schema |
-| Message bus | AWS SQS (producer) | — | CloudFormation event-source mappings |
-| Runtime config | `process.env` access | — | CloudFormation `Environment` blocks |
-
-Each row is an additive pack. Adding a framework is one pack file (~100–300 lines of declarative `PatternPack` configuration); adding a contract source is one reader. The IR is protocol-agnostic, so new boundary kinds (gRPC, Kafka, EventBridge, hand-authored interface specs) slot in without architectural change.
-
-## Three kinds of truth
-
-A distinction that shapes everything: artifacts about code have different *epistemic characters*.
-
-| Character | Answers | Examples | Completeness |
-|---|---|---|---|
-| **Specification** | *what should happen* | OpenAPI, TypeScript interfaces, Storybook stories, Prisma schemas, CloudFormation templates | Under-specified — declares what's allowed, rarely when each case fires |
-| **Observation** | *what did happen, once* | Snapshots, Pact recordings, Playwright tests, production logs | Point-samples — covers only what was tested |
-| **Derivation** | *what the code does, across all paths* | A suss `BehavioralSummary` | Complete over paths; limited by analyzer fidelity |
-
-Interesting findings are cross-character: a derivation has a path no specification declares; a specification declares a case no derivation can reach; an observation shows something derivation says can't happen. Each pair has its own severity and its own owner.
-
-See [`docs/contracts.md`](docs/contracts.md) for the full taxonomy and how it grounds the checker's finding semantics.
-
-## Usage
-
-### Install
+## Install
 
 suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and contract sources you use:
 
 ```bash
-npm install --save-dev \
-  @suss/cli \
-  @suss/framework-ts-rest \
-  @suss/client-axios
+npm install --save-dev @suss/cli @suss/framework-ts-rest @suss/client-axios
 ```
 
-You don't have to install everything. Common combinations:
-
-- **ts-rest full-stack:** `@suss/framework-ts-rest` (provider + client through the contract).
-- **Express + fetch:** `@suss/framework-express @suss/client-web`.
-- **React + GraphQL:** `@suss/framework-react @suss/client-apollo`.
-- **Lambda + SQS:** `@suss/framework-aws-sqs @suss/contract-cloudformation @suss/runtime-node`.
-- **App backed by Postgres:** add `@suss/framework-prisma @suss/contract-prisma` to any of the above.
-
-The full pack list is in the [Packages](#packages) table. The [add-to-project guide](docs/guides/add-to-project.md) walks the integration end-to-end.
-
-### Extract summaries from source
-
-```bash
-# Provider side: extract handlers using the ts-rest pack
-suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
-
-# Consumer side: extract axios call sites
-suss extract -p apps/web/tsconfig.json -f axios -o summaries/consumer.json
-```
-
-`-f` may be repeated: `-f ts-rest -f axios` runs both packs in one pass. Output is a JSON array of `BehavioralSummary` objects.
-
-### Pair providers against consumers
-
-```bash
-suss check summaries/provider.json summaries/consumer.json
-```
-
-Emits findings — unhandled statuses, dead consumer branches, body-field mismatches, dead-promise contract violations, message-bus producer/consumer pairing gaps, storage-column read/write mismatches, env-var configuration drift. Exit code is non-zero when any `error`-severity finding exists; tune with `--fail-on error|warning|info|none`.
-
-Whole-directory mode pairs every summary against every other by boundary key (e.g. `(GET, /users/:id)`):
-
-```bash
-suss check --dir summaries/
-suss check --dir summaries/ --fail-on warning --json > findings.json
-```
-
-### Inspect a summary file
-
-```bash
-suss inspect summaries/provider.json                       # human-readable view
-suss inspect --diff before.json after.json                 # diff two points in time
-suss inspect --dir summaries/                              # boundary-pair overview
-```
-
-### Generate summaries from declared contracts
-
-`suss contract` runs a contract reader over a non-source artifact and produces summaries in the same shape as `extract`:
-
-```bash
-# OpenAPI 3.x (3.0 and 3.1)
-suss contract --from openapi -i openapi.yaml -o summaries/stripe-provider.json
-
-# AWS CloudFormation / SAM (handles inline OpenAPI bodies, native REST/HTTP API
-# resources, SAM Events blocks, SQS event-source mappings, Lambda Environment)
-suss contract --from cloudformation -i template.yaml -o summaries/api-provider.json
-
-# AppSync GraphQL schema + resolver mapping
-suss contract --from appsync -i template.yaml -o summaries/graphql-provider.json
-
-# Storybook CSF3 stories
-suss contract --from storybook -p tsconfig.json -o summaries/stories.json
-```
-
-Contract-derived summaries carry `confidence.source: "contract"` and pair with extracted consumers exactly like source-extracted provider summaries. (The `@suss/contract-*` packages were called `@suss/stub-*` in earlier versions; see [docs/contract-sources.md](docs/contract-sources.md) for the rename.)
-
-### Suppress accepted findings
-
-Create `.sussignore.yml` at the project root:
-
-```yaml
-version: 1
-rules:
-  - kind: deadConsumerBranch
-    boundary: "GET /pet/{petId}"
-    consumer:
-      transitionId: ct-500
-    reason: Upstream returns 500 only in force-majeure handled by retry middleware.
-    effect: mark  # mark | downgrade | hide — default "mark"
-```
-
-`mark` keeps the finding visible but excludes it from exit code; `downgrade` drops severity a level; `hide` removes it entirely. `reason` is required. See [`docs/suppressions.md`](docs/suppressions.md) for the full format.
-
-### Use in CI
-
-```yaml
-# .github/workflows/contracts.yml
-- name: Extract
-  run: npx suss extract -p tsconfig.json -f ts-rest -f axios -o summaries.json
-- name: Contracts from third-party APIs
-  run: npx suss contract --from openapi -i vendor/stripe.yaml -o stripe.json
-- name: Check
-  run: npx suss check --dir . --fail-on warning
-```
-
-The CLI exits non-zero when findings cross the `--fail-on` threshold, so standard CI gating works without extra plumbing. `--json` output is stable for downstream tools (dashboards, PR comment bots, metric collectors).
-
-### Programmatic API
-
-```typescript
-import { parseSummaries } from "@suss/behavioral-ir";
-import { checkAll, applySuppressions } from "@suss/checker";
-
-const summaries = parseSummaries(JSON.parse(readFileSync("summaries.json", "utf8")));
-const { findings } = checkAll(summaries);
-const effective = applySuppressions(findings, mySuppressions);
-```
-
-## Packages
-
-![combined](.github/badges/coverage.svg)
-
-| Package | Description | Coverage |
-|---------|-------------|----------|
-| [`@suss/ir-core`](packages/ir-core) | Shared IR primitives — type shapes, boundary bindings + constructors, source locations, confidence. Base for `behavioral-ir` and `intent-ir`. | ![](.github/badges/coverage-ir-core.svg) |
-| [`@suss/behavioral-ir`](packages/ir) | zod schemas, types, parsers, and generated [JSON Schema](packages/ir/schema/behavioral-summary.schema.json). Install this to consume summaries. | ![](.github/badges/coverage-ir.svg) |
-| [`@suss/intent-ir`](packages/intent-ir) | Team-authored intent: system intent (what a boundary should do) + PRD outcome intent, paired against derived summaries. | ![](.github/badges/coverage-intent-ir.svg) |
-| [`@suss/extractor`](packages/extractor) | Assembly engine. Converts raw extracted structure into `BehavioralSummary`. | ![](.github/badges/coverage-extractor.svg) |
-| [`@suss/adapter-typescript`](packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](.github/badges/coverage-typescript.svg) |
-| [`@suss/checker`](packages/checker) | Pairwise cross-boundary checker (behavioral). | ![](.github/badges/coverage-checker.svg) |
-| [`@suss/checker-intent`](packages/checker-intent) | Pairs team-authored intent against derived code; emits `IntentFinding` coverage. | ![](.github/badges/coverage-checker-intent.svg) |
-| [`@suss/cli`](packages/cli) | CLI wrapper. | ![](.github/badges/coverage-cli.svg) |
-| **Frameworks** | | |
-| [`@suss/framework-ts-rest`](packages/framework/ts-rest) | ts-rest providers + clients (contract-backed). | ![](.github/badges/coverage-ts-rest.svg) |
-| [`@suss/framework-express`](packages/framework/express) | Express handlers. | ![](.github/badges/coverage-express.svg) |
-| [`@suss/framework-fastify`](packages/framework/fastify) | Fastify handlers. | ![](.github/badges/coverage-fastify.svg) |
-| [`@suss/framework-react`](packages/framework/react) | React function components, event handlers, `useEffect` bodies. | ![](.github/badges/coverage-react.svg) |
-| [`@suss/framework-react-router`](packages/framework/react-router) | React Router loaders / actions / routes. | ![](.github/badges/coverage-react-router.svg) |
-| [`@suss/framework-apollo`](packages/framework/apollo) | Apollo Server resolvers (code-first). | ![](.github/badges/coverage-apollo.svg) |
-| [`@suss/framework-nestjs-rest`](packages/framework/nestjs-rest) | NestJS REST controllers. | ![](.github/badges/coverage-nestjs-rest.svg) |
-| [`@suss/framework-nestjs-graphql`](packages/framework/nestjs-graphql) | NestJS GraphQL resolvers. | ![](.github/badges/coverage-nestjs-graphql.svg) |
-| [`@suss/framework-prisma`](packages/framework/prisma) | Prisma client calls — emits storage-access interactions per read / write. | ![](.github/badges/coverage-prisma.svg) |
-| [`@suss/framework-aws-sqs`](packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls — emits message-send interactions. | ![](.github/badges/coverage-aws-sqs.svg) |
-| **Runtimes (client packs)** | | |
-| [`@suss/client-web`](packages/client/web) | Global `fetch` call sites. | ![](.github/badges/coverage-web.svg) |
-| [`@suss/client-axios`](packages/client/axios) | axios call sites + `axios.create` factories. | ![](.github/badges/coverage-axios.svg) |
-| [`@suss/client-apollo`](packages/client/apollo) | `@apollo/client` hooks + imperative `client.query`. | ![](.github/badges/coverage-apollo-client.svg) |
-| [`@suss/runtime-node`](packages/runtime/node) | Node.js runtime primitives — scheduling, the `process` surface (incl. `process.env.X` config-read interactions), module-loading globals — emitted as interaction effects. | ![](.github/badges/coverage-runtime-node.svg) |
-| **Contract sources** | | |
-| [`@suss/contract-openapi`](packages/contract/openapi) | OpenAPI 3.x → behavioral summaries. | ![](.github/badges/coverage-contract-openapi.svg) |
-| [`@suss/contract-graphql`](packages/contract/graphql) | Plain GraphQL SDL → resolver-kind summaries (Query/Mutation/Subscription fields). | ![](.github/badges/coverage-contract-graphql.svg) |
-| [`@suss/contract-aws-apigateway`](packages/contract/aws-apigateway) | API Gateway resource semantics — REST/HTTP API configs → summaries with platform-injected transitions. | ![](.github/badges/coverage-contract-aws-apigateway.svg) |
-| [`@suss/contract-cloudformation`](packages/contract/cloudformation) | CloudFormation / SAM templates → summaries (delegates to contract-openapi + contract-aws-apigateway; also handles SQS event-source mappings + Lambda Environment). | ![](.github/badges/coverage-contract-cloudformation.svg) |
-| [`@suss/contract-appsync`](packages/contract/appsync) | AppSync GraphQL schema + resolver mapping templates. | ![](.github/badges/coverage-contract-appsync.svg) |
-| [`@suss/contract-storybook`](packages/contract/storybook) | Storybook CSF3 stories → component contract summaries. | ![](.github/badges/coverage-contract-storybook.svg) |
-| [`@suss/contract-prisma`](packages/contract/prisma) | Prisma schema → storage provider summaries. | ![](.github/badges/coverage-contract-prisma.svg) |
-| [`@suss/contract-intent`](packages/contract/intent) | Team-authored intent specs (`*.intent` / `*.prd`) → intent summaries. | ![](.github/badges/coverage-contract-intent.svg) |
+See [docs/reference/packages.md](docs/reference/packages.md) for the full pack matrix and common stack combinations, and the [add-to-project guide](docs/guides/add-to-project.md) for end-to-end integration.
 
 ## A complete example
 
-[`examples/petstore-axios-openapi/`](examples/petstore-axios-openapi/) is a runnable end-to-end demo: a small TypeScript axios consumer of the Petstore API, paired against the Petstore OpenAPI spec via `suss contract`. `make all` runs the full pipeline (extract → contract → check) and produces actionable findings — unhandled status codes plus consumer reads of fields the provider declares optional.
+[`examples/petstore-axios-openapi/`](examples/petstore-axios-openapi/) is a runnable end-to-end demo: a TypeScript axios consumer of the Petstore API, paired against the Petstore OpenAPI spec via `suss contract`. `make all` runs the full pipeline (extract → contract → check) and produces actionable findings — unhandled status codes plus consumer reads of fields the provider declares optional.
 
 ## Docs
 
-- [`docs/behavioral-summary-format.md`](docs/behavioral-summary-format.md) — the summary format spec, JSON Schema, publishing convention, what you can build on this
-- [`docs/motivation.md`](docs/motivation.md) — the problem, why existing tools don't catch it, prior art, design principles
-- [`docs/architecture.md`](docs/architecture.md) — how the pieces fit together, the vocabulary (with examples), package dependency rules
-- [`docs/pipelines.md`](docs/pipelines.md) — sequence diagrams for each CLI action plus the internal assembly and pairing flows
-- [`docs/extraction-algorithm.md`](docs/extraction-algorithm.md) — the four extraction functions, pseudocode, edge cases
-- [`docs/ir-reference.md`](docs/ir-reference.md) — type-by-type walkthrough of `@suss/behavioral-ir`
-- [`docs/packs.md`](docs/packs.md) — what packs are; [`docs/guides/writing-a-pack.md`](docs/guides/writing-a-pack.md) — how to write one; [`docs/reference/pack-patterns.md`](docs/reference/pack-patterns.md) — pattern catalogue
-- [`docs/cross-boundary-checking.md`](docs/cross-boundary-checking.md) — the pairwise checker: provider coverage, consumer satisfaction, contract consistency
-- [`docs/suppressions.md`](docs/suppressions.md) — `.sussignore` file format
-- [`docs/contract-sources.md`](docs/contract-sources.md) — non-source-code contracts (specs, manifests, vendor docs); reader/semantics layering
-- [`docs/contracts.md`](docs/contracts.md) — the five contract shapes and their epistemic characters
-- [`docs/boundary-semantics.md`](docs/boundary-semantics.md) — the layered transport / semantics / recognition model
-- [`docs/internal/status.md`](docs/internal/status.md) — capability matrix, decisions log
+Start here:
+
+- [Get started](docs/tutorial/get-started.md) — the smallest end-to-end example.
+- [Motivation](docs/motivation.md) — the problem, why existing tools miss it, prior art, design principles.
+- [Glossary](docs/glossary.md) — one canonical definition per term.
+- [FAQ](docs/faq.md) — how suss relates to linters, types, OpenAPI, tests, observability.
+
+Understanding suss:
+
+- [Contracts](docs/contracts.md) — the shapes of contract (schema, examples, tests, snapshots, design), their epistemic characters, and how they ground finding semantics.
+- [Cross-boundary checking](docs/cross-boundary-checking.md) — how the pairwise checker works.
+- [Suppressions](docs/suppressions.md) — the `.sussignore` file format.
+- [Contract sources](docs/contract-sources.md) — deriving summaries from specs, manifests, and vendor docs.
+
+Intent docs (team-authored intent, checked against derived code) pair alongside behavioral summaries; see the intent section of [Contracts](docs/contracts.md#intent).
+
+Reference and internals: [Summary format](docs/behavioral-summary-format.md), [IR reference](docs/ir-reference.md), [Architecture](docs/architecture.md), [Packs](docs/packs.md).
 
 ## Status
 
-The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs. Shipped recognition: ts-rest, React Router, Express, Fastify, Apollo Server, NestJS REST + GraphQL, React (components + handlers + effects), fetch, axios, Apollo Client, Prisma, AWS SQS producers, `process.env`. Shipped contract sources: OpenAPI 3.x, AWS API Gateway, CloudFormation / SAM, AppSync, Storybook CSF3, Prisma schema.
+The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs. Shipped recognition: ts-rest, React Router, Express, Fastify, Apollo Server, NestJS REST + GraphQL, React (components + handlers + effects), fetch, axios, Apollo Client, Prisma, AWS SQS + EventBridge producers, AWS Lambda, `process.env`. Shipped contract sources: OpenAPI 3.x, GraphQL SDL, AWS API Gateway, CloudFormation / SAM, AppSync, Storybook CSF3, Prisma schema.
 
 ## License
 

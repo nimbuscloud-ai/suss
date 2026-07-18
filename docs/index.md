@@ -87,11 +87,13 @@ The same data as JSON is what `@suss/checker` and downstream tools consume. `ins
 
 ## Reading order
 
-The site's navigation is grouped Diátaxis-style — tutorial, how-to guides, reference, conceptual. A few common entry points:
+Four concepts carry everything: a **boundary** is where two units of code meet; a **summary** is what suss derives about a unit's behavior; a **check** pairs summaries and reports findings where they disagree; a **pack** teaches suss a framework. Beyond derivation, team-authored intent docs can declare what a boundary *should* do and be checked the same way — see [Contracts](/contracts).
+
+The navigation splits conceptual material into **Understanding suss** (for users) and **Internals** (for contributors). Common entry points:
 
 - **First time on the site:** [Get started](/tutorial/get-started) walks the smallest end-to-end example, then [Motivation](/motivation) explains why this layer exists.
 - **Adding suss to an existing project:** [Add suss to a project](/guides/add-to-project) → [Set up CI](/guides/ci-integration).
-- **Looking up a flag or finding:** [CLI reference](/reference/cli) · [Findings catalog](/reference/findings) · [FAQ](/faq).
+- **Looking up a flag, finding, or term:** [CLI reference](/reference/cli) · [Findings catalog](/reference/findings) · [Glossary](/glossary) · [FAQ](/faq).
+- **Choosing packs for your stack:** [Packages & packs](/reference/packages).
 - **Writing or modifying a pack:** [Write a pack](/guides/writing-a-pack).
 - **Consuming the summary format:** [Behavioral summary format](/behavioral-summary-format) → [IR reference](/ir-reference).
-- **Tracking what's shipped:** [Status & decisions](/internal/status).
