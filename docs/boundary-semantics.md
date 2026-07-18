@@ -30,22 +30,22 @@ consumer reads?"
 What the participants think they're doing. This is the layer cross-boundary
 checking actually cares about.
 
-- **REST resource** — discriminated by HTTP status code; payload is the
+- **REST resource**: discriminated by HTTP status code; payload is the
   response body (typically JSON). Pairing key: `(method, normalizedPath)`.
-- **GraphQL operation** — discriminated by `errors.length === 0` plus
+- **GraphQL operation**: discriminated by `errors.length === 0` plus
   per-field nulls in `data`; payload is the structured `data` object.
   Pairing key: `(typeName, fieldName)` for resolver-level; operation-to-
   resolver mapping via `pairGraphqlOperations`.
-- **Lambda direct invoke** — discriminated by `FunctionError === undefined`
+- **Lambda direct invoke**: discriminated by `FunctionError === undefined`
   vs `"Handled"` vs `"Unhandled"`; payload is `Payload`. Pairing key:
   `FunctionName`. The HTTP layer is invisible to an `aws-sdk` consumer.
-- **Kafka consume** — discriminated by topic + message headers; payload is
+- **Kafka consume**: discriminated by topic + message headers; payload is
   `value` plus headers. Pairing key: topic.
-- **Queue job (SQS, BullMQ, …)** — discriminated by job type; payload is
+- **Queue job (SQS, BullMQ, …)**: discriminated by job type; payload is
   job arguments. Pairing key: queue name + job name.
-- **In-process function call** — discriminated by thrown exception type vs
+- **In-process function call**: discriminated by thrown exception type vs
   normal return; payload is the return value.
-- **React component ↔ DOM** — a single component source yields multiple
+- **React component ↔ DOM**: a single component source yields multiple
   code units sharing a component identity: the render body (inputs=props/
   state/context, output=JSX tree), one code unit per event handler
   (inputs=synthetic event + closed-over state, outputs=state mutations +
@@ -54,13 +54,13 @@ checking actually cares about.
   Discriminator is the unit kind; payload is the tree-or-effect produced.
   Pairing key: `(component identity, unit kind, unit name?)`. See
   [`roadmap-react.md`](roadmap-react.md) for the multi-unit framing.
-- **gRPC unary call** — discriminated by gRPC status enum (its own code
+- **gRPC unary call**: discriminated by gRPC status enum (its own code
   space, not HTTP status); payload is the response message. Pairing
   key: `(service, method)`.
 
 The same transport can carry many semantics. REST, GraphQL, and Lambda
 all travel over HTTPS but describe entirely different boundary shapes.
-Conversely, the same semantics can travel over multiple transports —
+Conversely, the same semantics can travel over multiple transports , 
 an SQS queue and a Kafka topic are both message-queue semantics with
 different transports.
 
@@ -121,7 +121,7 @@ type Semantics =
 
 ### Semantics in use today
 
-**`rest`** is the dispatch-dominant case — pairing, provider coverage,
+**`rest`** is the dispatch-dominant case, pairing, provider coverage,
 consumer satisfaction, body compatibility, and semantic bridging all read
 `semantics.name === "rest"` and narrow to `method` + `path`. `method === ""`
 or `path === ""` signals "extracted but unresolved"; `boundaryKey` returns
@@ -132,23 +132,23 @@ exports, Storybook stub components) that don't participate in REST pairing.
 It carries two distinct identity slots because library consumers and
 intra-repo callers look each other up through different keys:
 
-- **`module` / `exportName`** — a repo-relative module path and a named
+- **`module` / `exportName`**: a repo-relative module path and a named
   export within it. Used by packs that pair inside a single repo.
-- **`package` / `exportPath`** — a package name (`"@suss/behavioral-ir"`)
+- **`package` / `exportPath`**: a package name (`"@suss/behavioral-ir"`)
   and the path to the export within the package. Set by the `packageExports`
   discovery variant. The checker's pairing key for `function-call` reads
   these slots as `fn:<package>::<exportPath>` and pairs package exports
   that way; intra-repo `module`/`exportName` pairing is not yet wired.
 
 A React component discovered in-repo and the same component imported from a
-shipped package are different bindings — conflating the two would lose provenance.
+shipped package are different bindings, conflating the two would lose provenance.
 
 **`graphql-resolver`** and **`graphql-operation`** both ship. Resolver-level
 pairing keys on `gql:${typeName}.${fieldName}`. Operation-to-resolver pairing
 runs through `pairGraphqlOperations` (in `packages/checker/src/pairing/`),
 which walks the operation's selection set to pair root selections against the
 matching `graphql-resolver` provider. `checkGraphqlContractAgreement` then
-compares `metadata.graphql.declaredContract` across sources that declare it —
+compares `metadata.graphql.declaredContract` across sources that declare it , 
 comparing return type compatibility and argument-set agreement.
 
 **`runtime-config`** tracks the env-var channel of a deployable unit as a
@@ -184,30 +184,30 @@ messageBusBinding({ recognition, messageBus, channel })
 ```
 
 `packageExportBinding` is a thin wrapper over `functionCallBinding` that
-makes call sites declarative — it defaults `transport` to `"in-process"`.
+makes call sites declarative, it defaults `transport` to `"in-process"`.
 
 ## Dispatching on semantics
 
 The checker's dispatch today is per-semantics but ad-hoc rather than
 registry-backed:
 
-- `pairing.boundaryKey(binding)` — returns `"METHOD /path"` for `rest`,
+- `pairing.boundaryKey(binding)`: returns `"METHOD /path"` for `rest`,
   `"gql:Type.field"` for `graphql-resolver`, `"fn:<package>::<exportPath>"`
   for package-export `function-call`, `null` for everything else.
-- `graphqlPairing.pairGraphqlOperations` — separate pass that pairs
+- `graphqlPairing.pairGraphqlOperations`: separate pass that pairs
   `graphql-operation` consumers against `graphql-resolver` providers by
   walking the selection set.
-- `contract/graphqlContractAgreement.ts` — compares `metadata.graphql.declaredContract`
+- `contract/graphqlContractAgreement.ts`: compares `metadata.graphql.declaredContract`
   across providers at the same resolver boundary.
 - Per-domain checker modules (`message-bus/`, `runtime-config/`, `storage/`)
-  handle their semantics directly without going through `boundaryKey` — they
+  handle their semantics directly without going through `boundaryKey`, they
   filter by `semantics.name` and apply the appropriate pairing logic.
-- `cli/inspect.ts` rendering — reads `semantics.name === "rest"` and renders
+- `cli/inspect.ts` rendering, reads `semantics.name === "rest"` and renders
   `METHOD path`; other semantics fall back to the function name or recognition
   string.
 
-A `BoundarySemantics<S>` registry — one per semantics, with `pairingKey`,
-`extractDiscriminator`, and `extractPayload` as interface methods — would
+A `BoundarySemantics<S>` registry, one per semantics, with `pairingKey`,
+`extractDiscriminator`, and `extractPayload` as interface methods, would
 consolidate the inline narrows each check function currently does. That
 abstraction has been deferred: multiple variants have shipped but the registry
 hasn't been extracted yet. It's a refactor, not a design question.
@@ -218,10 +218,10 @@ Already moved there: `metadata.http.{declaredContract, bodyAccessors,
 statusAccessors}` for REST, and `metadata.graphql.{declaredContract, schemaSdl}`
 for GraphQL. The namespace convention applies across all semantics:
 
-- `metadata.http.*` — REST-scoped
-- `metadata.graphql.*` — GraphQL-scoped
-- `metadata.runtimeContract.*` — runtime-config env var lists
-- `metadata.storageContract.*` — column declarations for storage-relational
+- `metadata.http.*`, REST-scoped
+- `metadata.graphql.*`, GraphQL-scoped
+- `metadata.runtimeContract.*`: runtime-config env var lists
+- `metadata.storageContract.*`: column declarations for storage-relational
 
 Keys outside those namespaces are semantics-neutral (e.g.
 `metadata.derivedFromWrapper` from the wrapper-expansion post-pass).
@@ -232,11 +232,11 @@ for any boundary whose provider and consumer need scope-aware pairing.
 
 Two variants remain ahead:
 
-- `{ name: "lambda-invoke"; functionName: string; qualifier?: string }` —
+- `{ name: "lambda-invoke"; functionName: string; qualifier?: string }` , 
   AWS SDK direct invokes. The forcing function here is "transport drops out
-  entirely" — a Lambda invoke is behaviorally the same whether the SDK call
+  entirely", a Lambda invoke is behaviorally the same whether the SDK call
   originates from a laptop or from API Gateway's integration.
-- `{ name: "kafka-message"; topic: string }` — Kafka topics beyond the
+- `{ name: "kafka-message"; topic: string }`, Kafka topics beyond the
   `message-bus` variants already covered by SQS/BullMQ/NATS.
 
 Each ships as an additional discriminated-union variant without reshaping
@@ -267,7 +267,7 @@ need to be true:
    header additions, and body shape changes between a unit's input binding and
    its output binding are the genuinely missing IR primitive. A proxy that
    strips a path prefix before forwarding changes the binding identity across
-   the hop — there's currently no way to declare that mapping.
+   the hop, there's currently no way to declare that mapping.
 
 A `binding.role: "proxy" | "handler" | "transform"` enum was considered and
 rejected. Transformation is a continuum; the right modeling is a
@@ -276,7 +276,7 @@ a category enum.
 
 Multi-hop chain assembly is a query-layer concern, not internal to suss. Given
 pairwise pairing over rich-enough binding identities, walking chains is graph
-traversal over the pairing results — the kind of thing an MCP tool or a query
+traversal over the pairing results, the kind of thing an MCP tool or a query
 CLI does over the summary store. The IR additions (transformation descriptor
 and richer contract packs for each infrastructure component's consumer side)
 are the work ahead.
@@ -307,7 +307,7 @@ Deferred:
    given the number of shipped variants.
 2. `lambda-invoke` and `kafka-message` semantics variants.
 3. Composable binding identities and transformation descriptors for multi-hop
-   infra chains — described in the section above.
+   infra chains, described in the section above.
 4. Operation-level consumer-side GraphQL pairing beyond root-field selection
    (nested type checking via the SDL is wired; full variable-type comparison
    against resolver arguments is not).
@@ -316,14 +316,14 @@ Deferred:
 
 See also:
 
-- [`docs/status.md`](status.md) — decisions #18 (pack-aware checker via
+- [`docs/status.md`](status.md), decisions #18 (pack-aware checker via
   summary metadata), #22 (`BOUNDARY_ROLE`), #24 (pack-driven status
   accessors), #25 (this doc).
-- [`docs/architecture.md`](architecture.md) — current package
+- [`docs/architecture.md`](architecture.md), current package
   dependency shape and protocol assumptions.
-- [`docs/reference/pack-patterns.md`](reference/pack-patterns.md) — how
+- [`docs/reference/pack-patterns.md`](reference/pack-patterns.md), how
   packs describe recognition today; extension points when semantics
   becomes a top-level axis.
-- [`docs/contract-sources.md`](contract-sources.md) — boundary layering
+- [`docs/contract-sources.md`](contract-sources.md), boundary layering
   via the AWS API Gateway contract reader is a precursor to explicit
   boundary composition.

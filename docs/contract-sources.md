@@ -2,16 +2,16 @@
 
 This doc is the mechanics of the reader pipeline: how contract sources are structured, what they emit, and how to add one. For what "contract" means and how the shapes relate to derived and observed truth, see [`contracts.md`](contracts.md).
 
-A contract source is a behavioral contract authored at the boundary, not extracted from implementation. Contract sources produce the same `BehavioralSummary[]` as the extractor and feed the same checker. The source of truth varies — an OpenAPI YAML, a CloudFormation template, the published behavior of an external service, a hand-written file — but the artifact is the same.
+A contract source is a behavioral contract authored at the boundary, not extracted from implementation. Contract sources produce the same `BehavioralSummary[]` as the extractor and feed the same checker. The source of truth varies, an OpenAPI YAML, a CloudFormation template, the published behavior of an external service, a hand-written file, but the artifact is the same.
 
-> **A note on naming:** these packages were called `@suss/stub-*` in earlier versions. They were renamed to `@suss/contract-*` because what they produce is the *full* contract (a complete `BehavioralSummary[]`), not a stub in the test-double sense. The term "stub" is reserved for a future, lighter-weight, hand-authored interface declaration format that hasn't shipped yet.
+> **A note on naming:** these packages were called `@suss/contract-*` in earlier versions. They were renamed to `@suss/contract-*` because what they produce is the *full* contract (a complete `BehavioralSummary[]`), not a stub in the test-double sense. The term "stub" is reserved for a future, lighter-weight, hand-authored interface declaration format that hasn't shipped yet.
 
 > **Related reading:**
-> - [`motivation.md`](motivation.md) — why behavioral summaries exist
-> - [`architecture.md`](architecture.md) — how packages fit together
-> - [`behavioral-summary-format.md`](behavioral-summary-format.md) — the IR / wire format
-> - [`ir-reference.md`](ir-reference.md) — type-by-type walkthrough
-> - [`contracts.md`](contracts.md) — the five shapes of declared contracts suss absorbs (schema, examples, tests, snapshots, design); every shipping contract source today reads the **schema** shape
+> - [`motivation.md`](motivation.md), why behavioral summaries exist
+> - [`architecture.md`](architecture.md), how packages fit together
+> - [`behavioral-summary-format.md`](behavioral-summary-format.md), the IR / wire format
+> - [`ir-reference.md`](ir-reference.md), type-by-type walkthrough
+> - [`contracts.md`](contracts.md), the five shapes of declared contracts suss absorbs (schema, examples, tests, snapshots, design); every shipping contract source today reads the **schema** shape
 
 ## What a contract source is, and isn't
 
@@ -30,7 +30,7 @@ Contract sources draw from one of four categories:
 | Category | Examples | Characteristics |
 |---|---|---|
 | **Specs** | OpenAPI, GraphQL SDL, AsyncAPI, `.proto` | Machine-readable, intended for tooling. Coverage gaps in the spec become coverage gaps in the summary. |
-| **Manifests** | CloudFormation, CDK synth output, Terraform plan, Kubernetes manifests | Deployment artifacts that describe a system's surface as a side effect. Often share underlying resources across formats — see "Manifest readers vs resource semantics" below. |
+| **Manifests** | CloudFormation, CDK synth output, Terraform plan, Kubernetes manifests | Deployment artifacts that describe a system's surface as a side effect. Often share underlying resources across formats, see "Manifest readers vs resource semantics" below. |
 | **Vendor docs** | AWS service behavior, Stripe API reference, GitHub API docs | Authoritative behavior for an external system, transcribed into a summary. The "spec" lives in the vendor's documentation. |
 | **Hand-authored** | Internal team contracts, `.suss.yaml` files | Used when no machine-readable source exists yet, or when the team wants to publish a contract independent of any one implementation. |
 
@@ -40,7 +40,7 @@ Each category has different update cadence and different fidelity characteristic
 
 Every transition a contract source emits carries `confidence: { source: "derived", level: <high|medium|low> }`.
 
-- `source: "derived"` tells downstream consumers (checker, inspect, diff) that this transition came from a contract, not from observed code structure. The checker treats it identically — pairing is by `(method, normalisedPath)` regardless of source — but tooling can filter or display by source.
+- `source: "derived"` tells downstream consumers (checker, inspect, diff) that this transition came from a contract, not from observed code structure. The checker treats it identically, pairing is by `(method, normalizedPath)` regardless of source, but tooling can filter or display by source.
 - `level` reflects how precisely the source declared the behavior. An OpenAPI `200` response with a typed body schema is `high`. A `2XX` range expansion or a body shape with `additionalProperties: true` may be `medium` or `low`.
 
 A contract source being marked `"derived"` does not imply lower fidelity than extracted code. It tells you *where the description came from*, not *how trustworthy it is*.
@@ -49,8 +49,8 @@ A contract source being marked `"derived"` does not imply lower fidelity than ex
 
 When the same underlying resource can be authored in multiple source formats, split the contract package along this seam:
 
-- **Manifest reader** — knows how to parse one source format. Walks the source tree, resolves cascading defaults (stage → method, API → endpoint), normalizes references, and builds a per-resource config. Calls into the resource-semantics layer.
-- **Resource semantics** — knows what the underlying resource actually does. Manifest-agnostic. Takes a normalized config, emits `BehavioralSummary[]` reflecting the full contract of that resource type.
+- **Manifest reader**: knows how to parse one source format. Walks the source tree, resolves cascading defaults (stage → method, API → endpoint), normalizes references, and builds a per-resource config. Calls into the resource-semantics layer.
+- **Resource semantics**: knows what the underlying resource actually does. Manifest-agnostic. Takes a normalized config, emits `BehavioralSummary[]` reflecting the full contract of that resource type.
 
 Worked example for AWS API Gateway:
 
@@ -62,7 +62,7 @@ packages/contract/
   aws-apigateway/      resource semantics (REST + HTTP API)
 ```
 
-All three readers ultimately call `restApiToSummaries(config)` / `httpApiToSummaries(config)`. Adding a Terraform reader doesn't reimplement API Gateway behavior — it parses Terraform, builds the same normalized config, and delegates.
+All three readers ultimately call `restApiToSummaries(config)` / `httpApiToSummaries(config)`. Adding a Terraform reader doesn't reimplement API Gateway behavior, it parses Terraform, builds the same normalized config, and delegates.
 
 For sources where there's no plausible second reader (a single OpenAPI document is the whole spec), the split adds no value. `@suss/contract-openapi` is a single package.
 
@@ -88,7 +88,7 @@ API Gateway example:
 | Lambda integration error | 502 |
 | CORS configured | Synthesized OPTIONS preflight endpoint, `Access-Control-*` headers |
 
-If the source format expresses a knob the contract source doesn't model, the summary will under-describe the system. That's a defect, not a deferral — fix it.
+If the source format expresses a knob the contract source doesn't model, the summary will under-describe the system. That's a defect, not a deferral, fix it.
 
 ## Transcribing external contracts: opaque-predicate convention
 
@@ -104,9 +104,9 @@ When a transition is gated by a contract from an external system that we can't s
 
 Naming convention for `sourceText`:
 
-- **Vendor prefix** — `aws`, `stripe`, `github`, `kubernetes`, etc.
-- **Service / resource** — `apigateway`, `s3`, `lambda`, `cards`
-- **Contract name** — `authorizer.reject`, `throttle.exceeded`, `card.declined`
+- **Vendor prefix**, `aws`, `stripe`, `github`, `kubernetes`, etc.
+- **Service / resource**, `apigateway`, `s3`, `lambda`, `cards`
+- **Contract name**, `authorizer.reject`, `throttle.exceeded`, `card.declined`
 
 Examples:
 
@@ -136,11 +136,11 @@ Contract sources use `Transition.metadata` (added to the IR for this purpose, bu
 
 Recommended keys:
 
-- `source` — package + resource that emitted the transition (e.g., `"aws::apigateway::integration.lambda-proxy"`, `"openapi::responses"`)
-- `platform` — the contract platform when applicable, used for filtering
-- `causes` — list of contributing configuration knobs when multiple collapse into one transition (see next section)
-- `configRefs` — pointers back into the source for inspect/diff to render
-- `vendor` — vendor identifier for contracts from third-party docs
+- `source`: package + resource that emitted the transition (e.g., `"aws::apigateway::integration.lambda-proxy"`, `"openapi::responses"`)
+- `platform`: the contract platform when applicable, used for filtering
+- `causes`: list of contributing configuration knobs when multiple collapse into one transition (see next section)
+- `configRefs`: pointers back into the source for inspect/diff to render
+- `vendor`: vendor identifier for contracts from third-party docs
 
 The checker ignores `metadata`. Inspect and diff use it to render attribution.
 
@@ -155,7 +155,7 @@ A single endpoint can have several configuration knobs that all produce the same
 
 ## Synthetic resources
 
-Some platform behavior doesn't modify an existing endpoint — it creates a new one. AWS API Gateway with CORS configured responds to OPTIONS requests on every CORS-enabled path with `Access-Control-*` headers. There is no handler code; the platform synthesizes the response.
+Some platform behavior doesn't modify an existing endpoint, it creates a new one. AWS API Gateway with CORS configured responds to OPTIONS requests on every CORS-enabled path with `Access-Control-*` headers. There is no handler code; the platform synthesizes the response.
 
 Emit these as standalone `BehavioralSummary` entries:
 
@@ -177,9 +177,9 @@ The checker doesn't differentiate by source. `confidence.source` is preserved on
 
 ## What's deliberately not here
 
-- **Contract sources don't validate their own input.** A malformed CFN template, an OpenAPI spec with broken `$ref`s, a config with impossible values — all produce best-effort output rather than errors. Source-format validation is the responsibility of that format's tooling, not ours.
+- **Contract sources don't validate their own input.** A malformed CFN template, an OpenAPI spec with broken `$ref`s, a config with impossible values, all produce best-effort output rather than errors. Source-format validation is the responsibility of that format's tooling, not ours.
 - **Contract sources don't predict runtime state.** A throttle-configured endpoint *can* return 429; whether it *does* depends on actual traffic. The summary represents the envelope of possible behaviors, not a prediction.
-- **Contract sources don't model authorization decisions per caller.** "Authorizer attached → 401/403 possible" is captured. "User X with role Y on resource Z is denied" is not — that's runtime state.
+- **Contract sources don't model authorization decisions per caller.** "Authorizer attached → 401/403 possible" is captured. "User X with role Y on resource Z is denied" is not, that's runtime state.
 - **Contract sources don't backfill missing fields the source format doesn't declare.** If an OpenAPI response body has no schema, the contract source emits a `null` body, not a guess.
 
 ## Adding a new contract source

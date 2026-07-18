@@ -98,7 +98,7 @@ export async function loadUser(id: string) {
 
 ## Step 4. Extract and check
 
-### Extract — turn source into structured summaries
+### Extract: turn source into structured summaries
 
 ```bash
 npx suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
@@ -110,7 +110,7 @@ the framework pack(s) you name with `-f`. The pack tells suss what
 to discover: `ts-rest` finds router handlers and contract
 declarations; `axios` finds call sites that send HTTP requests.
 The output is a JSON file with one `BehavioralSummary` per
-discovered unit — a structured description of every execution path
+discovered unit, a structured description of every execution path
 through that function: which conditions decide which output, what
 shape the output has, what effects fire along the way.
 
@@ -142,14 +142,14 @@ src/handler.ts
 The header names the endpoint, the recognition pack, the kind, and
 the source line. The decision tree shows every path the handler
 can take. The `Contract:` line shows what the ts-rest contract
-declares — handy for spotting a gap between declaration and
+declares, handy for spotting a gap between declaration and
 implementation.
 
 `inspect` is a renderer; nothing here is computed by `inspect`
 that isn't already in the JSON. Read [the CLI reference](/reference/cli#suss-inspect)
 for the full grammar of the output.
 
-### Check — pair providers with consumers
+### Check: pair providers with consumers
 
 ```bash
 npx suss check summaries/provider.json summaries/consumer.json
@@ -174,7 +174,7 @@ Expected output:
 suss read both files, matched them on `(GET, /users/:id)`, and
 noticed the consumer's branches don't cover all provider
 outcomes. The finding names the boundary, both sides, and the
-exact disagreement — no global "compliance score", just a
+exact disagreement, no global "compliance score", just a
 concrete pair-level fact.
 
 ## Step 5. Introduce drift
@@ -195,7 +195,7 @@ npx suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
 npx suss check summaries/provider.json summaries/consumer.json
 ```
 
-Now you see two findings — the original 404 miss, plus a new one
+Now you see two findings, the original 404 miss, plus a new one
 for 410. Also, because 410 isn't in the contract:
 
 ```
@@ -210,32 +210,32 @@ Three facts, surfaced automatically:
 2. The handler declares behavior the client doesn't handle
    (consumer gap).
 3. The client handles fewer cases than the contract promises
-   (client gap — this one fires earlier if you check the
+   (client gap, this one fires earlier if you check the
    client against the contract; try it with `suss check --dir`).
 
 ## What this run exercises
 
 - **Extraction.** Two `suss extract` invocations turned the
   provider's source and the consumer's source into structured
-  summaries — JSON for downstream tools, `suss inspect` for a
+  summaries, JSON for downstream tools, `suss inspect` for a
   human reading.
 - **Pairing.** `suss check` paired the two summaries by
   `(method, path)` and ran the cross-boundary checks against
   every transition.
 - **Drift detection.** The mismatch fell out of the summaries'
-  shapes — no test was written to detect it. The handler's `404`
+  shapes, no test was written to detect it. The handler's `404`
   branch existed in the source; the client never declared a `404`
   case. The check compared the two and surfaced the gap.
 
 ## Further reading
 
-- [Add suss to a project](/guides/add-to-project) — integration in an
+- [Add suss to a project](/guides/add-to-project), integration in an
   existing repo, including monorepos and per-package tsconfigs.
-- [Set up CI](/guides/ci-integration) — `suss check` as a CI gate.
-- [Findings catalog](/reference/findings) — every finding kind with an
+- [Set up CI](/guides/ci-integration), `suss check` as a CI gate.
+- [Findings catalog](/reference/findings), every finding kind with an
   example.
-- [Behavioral summary format](/behavioral-summary-format) — the
+- [Behavioral summary format](/behavioral-summary-format), the
   serialization spec; [IR reference](/ir-reference) is the type-level
   reference.
-- [Three kinds of truth](/contracts) — the specification / observation
+- [Three kinds of truth](/contracts), the specification / observation
   / derivation taxonomy that grounds the checker's finding semantics.

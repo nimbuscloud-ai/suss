@@ -1,6 +1,6 @@
 # Suppress a finding
 
-For findings you've reviewed and accepted — a legacy endpoint,
+For findings you've reviewed and accepted, a legacy endpoint,
 a planned migration, a known issue with a documented owner.
 Suppressions live in `.sussignore` at the repo root and travel
 with the code.
@@ -11,14 +11,14 @@ how do I silence this specific finding?
 
 ## Three effects
 
-A rule declares an **effect** — what happens when the rule
+A rule declares an **effect**, what happens when the rule
 matches a finding:
 
 | Effect | Shown in output? | Counts toward exit code? | Use when |
 |---|---|---|---|
 | `mark` | yes (annotated as suppressed) | no | you want the finding visible in reports but don't want CI to fail on it |
 | `downgrade` | yes, at the new severity | yes, at the downgraded severity | the finding is real but not blocking |
-| `hide` | no (filtered entirely) | no | the finding is noise you want out of the way — rare; prefer `mark` |
+| `hide` | no (filtered entirely) | no | the finding is noise you want out of the way, rare; prefer `mark` |
 
 The default is `mark` if you don't specify.
 
@@ -54,12 +54,12 @@ rules:
 ```
 
 After downgrade, `deadConsumerBranch` at `error` shows as
-`warning` — the `--fail-on` threshold still counts it, but at
+`warning`, the `--fail-on` threshold still counts it, but at
 the downgraded severity.
 
 ## Pattern 3: broad-scope category rule
 
-For an entire *kind* of finding you don't want to fail on — e.g.
+For an entire *kind* of finding you don't want to fail on, e.g.
 `lowConfidence` findings across the whole codebase:
 
 ```yaml
@@ -95,15 +95,15 @@ npx suss inspect summaries/consumer.json
 
 Each `-> output when conditions` line is a transition; the ID is
 deterministic per `(function name, terminal kind, status key,
-condition hash)` — see [Behavioral summary format](/behavioral-summary-format).
+condition hash)`, see [Behavioral summary format](/behavioral-summary-format).
 
 ## Reasons are required
 
 Every rule needs a `reason` string. No default, no elision. The
-point is that suppressions travel with context — a human reader
+point is that suppressions travel with context, a human reader
 (you, or a future maintainer) gets to see *why* this was accepted.
 
-If you can't write a reason, the finding isn't accepted — fix the
+If you can't write a reason, the finding isn't accepted, fix the
 underlying issue instead.
 
 ## Verify it worked
