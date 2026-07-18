@@ -97,7 +97,7 @@ The **resource-semantics** phase turns each normalized config into `BehavioralSu
 
 ```
 User
- │  suss contract --from cloudformation -i template.yaml -o api.json
+ │  suss contract --from cloudformation template.yaml -o api.json
  ▼
 @suss/cli
  │  read template.yaml
