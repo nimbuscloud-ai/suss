@@ -92,6 +92,7 @@ export default defineConfig({
         items: [
           { text: "CLI commands & flags", link: "/reference/cli" },
           { text: "Findings catalog", link: "/reference/findings" },
+          { text: "Packages & packs", link: "/reference/packages" },
           { text: "Summary format", link: "/behavioral-summary-format" },
           { text: "IR types & schemas", link: "/ir-reference" },
           { text: "Pack patterns", link: "/reference/pack-patterns" },
@@ -99,23 +100,28 @@ export default defineConfig({
         ],
       },
       {
-        text: "Explanation",
+        text: "Understanding suss",
         collapsed: false,
         items: [
           { text: "Motivation", link: "/motivation" },
-          {
-            text: "Why behavioral summaries",
-            link: "/why-behavioral-summaries",
-          },
+          { text: "Glossary", link: "/glossary" },
+          { text: "Contracts", link: "/contracts" },
+          { text: "Cross-boundary checking", link: "/cross-boundary-checking" },
+          { text: "Suppressions (model)", link: "/suppressions" },
+        ],
+      },
+      {
+        // Contributor / maintainer material — how the pieces are built,
+        // not what a user needs to run suss.
+        text: "Internals",
+        collapsed: true,
+        items: [
           { text: "Architecture", link: "/architecture" },
           { text: "Packs", link: "/packs" },
-          { text: "Three kinds of truth", link: "/contracts" },
           { text: "Boundary semantics", link: "/boundary-semantics" },
           { text: "Pipelines", link: "/pipelines" },
           { text: "Extraction algorithm", link: "/extraction-algorithm" },
-          { text: "Cross-boundary checking", link: "/cross-boundary-checking" },
           { text: "Contract sources", link: "/contract-sources" },
-          { text: "Suppressions (model)", link: "/suppressions" },
         ],
       },
       {
