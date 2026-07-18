@@ -20,4 +20,12 @@ boundary:
 transitions:
   - id: deduped
     when: called with a list of findings
-    returns: {}
+    returns:
+      body:
+        type: array
+        items:
+          type: object
+          properties:
+            kind: { type: string }
+            severity: { type: string }
+

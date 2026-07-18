@@ -25,4 +25,7 @@ boundary:
 transitions:
   - id: label
     when: called with any boundary binding
-    returns: {}
+    returns:
+      body:
+        type: string
+

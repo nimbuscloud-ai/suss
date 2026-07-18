@@ -6,9 +6,9 @@
 # checkAll it is total over well-typed input — docs it can't compare are
 # reported in `unchecked`, never thrown.
 #
-# The three top-level keys of CheckIntentResult are named here; their
-# nested element shapes exceed the intent body vocabulary and are left
-# `unknown`.
+# The three top-level keys of CheckIntentResult are declared as the
+# arrays they are; per-element commitments can be added as they become
+# worth asserting.
 
 kind: boundary
 

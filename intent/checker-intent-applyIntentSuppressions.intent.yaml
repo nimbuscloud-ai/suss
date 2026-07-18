@@ -20,4 +20,12 @@ boundary:
 transitions:
   - id: filtered
     when: called with intent findings and suppression rules
-    returns: {}
+    returns:
+      body:
+        type: array
+        items:
+          type: object
+          properties:
+            kind: { type: string }
+            severity: { type: string }
+
