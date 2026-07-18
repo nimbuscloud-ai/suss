@@ -67,6 +67,7 @@
     "@suss/contract-storybook": "*",
     "@suss/extractor": "*",
     "@suss/framework-apollo": "*",
+    "@suss/framework-aws-eventbridge": "*",
     "@suss/framework-aws-sqs": "*",
     "@suss/framework-express": "*",
     "@suss/framework-fastify": "*",
@@ -84,6 +85,7 @@
     "yaml": "^2.4.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-eventbridge": "^3.1037.0",
     "@aws-sdk/client-sqs": "^3.1037.0",
     "tsup": "*",
     "typescript": "*",
