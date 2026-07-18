@@ -68,52 +68,7 @@ The split between adapter and extractor is deliberate. The extractor never sees 
 
 ## Vocabulary
 
-These terms are used consistently across the codebase. The running example is the `getUser` handler above.
-
-**[Code unit](ir-reference.md#codeunitkind)** — a callable piece of code (handler, loader, component, resolver, consumer, library function). The atomic unit of analysis. Every code unit has a **kind** that determines its behavioral model. `getUser` is a code unit of kind `"handler"`.
-
-**Boundary** — an identifiable point of interaction (REST endpoint, GraphQL operation, queue topic, package export, env-var read). Boundaries are where behavioral contracts matter. For `getUser`, the boundary is `GET /users/:id`.
-
-**Terminal** — a point in a code unit where observable output is produced. Each `return` in `getUser` is a terminal. Other shapes: `res.status(400).json(...)` in Express, `throw httpErrorJson(404)` in React Router, a JSX return in a React component.
-
-**[Transition](ir-reference.md#transition)** — `(conditions → output, effects)`. The atomic unit of behavioral description. A code unit's full behavior is its set of transitions. `getUser` has two:
-
-```json
-[
-  {
-    "id": "getUser:0",
-    "conditions": [{ "type": "truthinessCheck", "subject": <user>, "negated": true }],
-    "output": { "type": "response", "statusCode": { "type": "literal", "value": 404 }, ... },
-    "isDefault": false
-  },
-  {
-    "id": "getUser:1",
-    "conditions": [],
-    "output": { "type": "response", "statusCode": { "type": "literal", "value": 200 }, ... },
-    "isDefault": true
-  }
-]
-```
-
-**[Effect](ir-reference.md#effect)** — an observable side effect a code unit causes during execution: writing to a database, sending a queue message, scheduling work, reading a config value, calling another service. Effects are part of the output alongside the terminal value, because two implementations that produce the same return shape but different side effects don't agree.
-
-**[Predicate](ir-reference.md#predicate)** — a structured condition gating a transition. Has a **subject** (what value is tested), a **test** (nullness, equality, etc.), and composes into `and` / `or` / `negation`. The source expression `!user` becomes a `truthinessCheck` predicate against the subject `db.findById`'s result, with `negated: true`. When the extractor can't decompose an expression, it falls back to an `opaque` predicate that preserves the source text.
-
-**[Subject / ValueRef](ir-reference.md#valueref)** — a reference to a value with an *origin* (parameter, dependency call, import, context) and a *path* (property access chain). Shallow on purpose: identifies what's being tested without trying to understand its full semantics. Two predicates that test the same subject — on different sides of a service boundary — should be recognizable as referring to the same thing. That's why the shape is structural, not a raw string.
-
-**[Output](ir-reference.md#output)** — what a terminal produces. One of: `response`, `throw`, `render`, `return`, `delegate`, `emit`, or `void`.
-
-**[Gap](ir-reference.md#gap)** — a case the code unit doesn't explicitly handle. Recorded in the summary, not raised as an error. Gaps run both directions: declared-but-not-produced (e.g. the contract says the endpoint can return 500, but the handler never produces one) and produced-but-not-declared (the handler returns a shape the contract didn't list).
-
-**Declared contract** — a machine-readable behavioral declaration authored alongside the implementation: a ts-rest router, an OpenAPI document, a GraphQL SDL, a Prisma schema, a Storybook story. The extractor reads both the declaration and the implementation, and the checker compares them.
-
-**Recognizer** — a pack-declared rule that fires when the extractor encounters a specific call or property access (`setTimeout(...)`, `process.env.X`, `__dirname`). Recognizers attach effects or other metadata to whichever code unit they fire inside.
-
-**Sub-unit** — a code unit synthesized inside another code unit (a callback passed to `setTimeout`, an arrow inside `array.forEach`, a Promise executor). Sub-units exist so recognizers can fire on nested function bodies that wouldn't otherwise be discovered as their own units.
-
-**Pack** — declarative patterns the adapter and extractor consume. Packs come in four kinds — framework, runtime, contract, client — described in the next section. Packs are data, not code.
-
-**[Confidence](ir-reference.md#confidenceinfo)** — how much of a code unit's behavior was structurally analyzed vs. opaque. Computed as the ratio of opaque predicates to total predicates, bucketed into `high` / `medium` / `low`. Falls back to opaque predicates when the extractor can't decompose something, so downstream consumers can treat low-confidence summaries with appropriate skepticism.
+The terms used consistently across the codebase — code unit, boundary, terminal, transition, predicate, subject, output, effect, gap, recognizer, sub-unit, pack, confidence — have one canonical definition each in the [Glossary](glossary.md). The running example there is the same `getUser` handler above. This doc uses those terms without redefining them.
 
 ## Packages and what each owns
 

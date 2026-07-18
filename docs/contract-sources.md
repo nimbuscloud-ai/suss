@@ -1,5 +1,7 @@
 # Contract sources
 
+This doc is the mechanics of the reader pipeline: how contract sources are structured, what they emit, and how to add one. For what "contract" means and how the shapes relate to derived and observed truth, see [`contracts.md`](contracts.md).
+
 A contract source is a behavioral contract authored at the boundary, not extracted from implementation. Contract sources produce the same `BehavioralSummary[]` as the extractor and feed the same checker. The source of truth varies — an OpenAPI YAML, a CloudFormation template, the published behavior of an external service, a hand-written file — but the artifact is the same.
 
 > **A note on naming:** these packages were called `@suss/stub-*` in earlier versions. They were renamed to `@suss/contract-*` because what they produce is the *full* contract (a complete `BehavioralSummary[]`), not a stub in the test-double sense. The term "stub" is reserved for a future, lighter-weight, hand-authored interface declaration format that hasn't shipped yet.
@@ -10,7 +12,6 @@ A contract source is a behavioral contract authored at the boundary, not extract
 > - [`behavioral-summary-format.md`](behavioral-summary-format.md) — the IR / wire format
 > - [`ir-reference.md`](ir-reference.md) — type-by-type walkthrough
 > - [`contracts.md`](contracts.md) — the five shapes of declared contracts suss absorbs (schema, examples, tests, snapshots, design); every shipping contract source today reads the **schema** shape
-> - [`roadmap-react.md`](roadmap-react.md) — the first domain where multiple contract shapes for one boundary are actively planned
 
 ## What a contract source is, and isn't
 
