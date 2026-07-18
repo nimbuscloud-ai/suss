@@ -227,7 +227,13 @@
                           },
                           "messageBus": {
                             "type": "string",
-                            "enum": ["sqs", "bullmq", "kafka", "nats"]
+                            "enum": [
+                              "sqs",
+                              "eventbridge",
+                              "bullmq",
+                              "kafka",
+                              "nats"
+                            ]
                           },
                           "channel": {
                             "type": "string"
@@ -792,7 +798,13 @@
                                   },
                                   "messageBus": {
                                     "type": "string",
-                                    "enum": ["sqs", "bullmq", "kafka", "nats"]
+                                    "enum": [
+                                      "sqs",
+                                      "eventbridge",
+                                      "bullmq",
+                                      "kafka",
+                                      "nats"
+                                    ]
                                   },
                                   "channel": {
                                     "type": "string"

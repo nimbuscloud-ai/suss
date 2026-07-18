@@ -245,7 +245,7 @@ export function storageRelationalBinding(opts: {
  */
 export function messageBusBinding(opts: {
   recognition: string;
-  messageBus: "sqs" | "bullmq" | "kafka" | "nats";
+  messageBus: "sqs" | "eventbridge" | "bullmq" | "kafka" | "nats";
   channel: string;
 }): BoundaryBinding {
   return {
