@@ -345,7 +345,7 @@ The extractor populates `gaps` in two scenarios today: (1) a declared contract r
 
 ```typescript
 interface ConfidenceInfo {
-  source: "inferred_static" | "inferred_ai" | "declared" | "stub";
+  source: "inferred_static" | "inferred_ai" | "declared" | "derived";
   level: "high" | "medium" | "low";
 }
 ```
@@ -354,8 +354,8 @@ How much of the behavior was structurally analyzed vs. opaque, and where the inf
 
 - **`inferred_static`**: structural analysis of the source code (the common case)
 - **`inferred_ai`**: future: LLM-assisted semantic labels on opaque predicates
-- **`declared`**: the summary was authored, not extracted (e.g., for community stubs)
-- **`stub`**: a placeholder with no extracted information
+- **`declared`**: the summary was authored by hand, not extracted (e.g., a community-maintained summary for a library)
+- **`derived`**: produced from a contract source (OpenAPI, CloudFormation, a schema), not extracted from code
 
 Level is computed as the ratio of opaque predicates to total predicates:
 

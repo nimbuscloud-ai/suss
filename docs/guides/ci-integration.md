@@ -64,7 +64,7 @@ directory and let `check --dir` auto-pair everything:
 `check --dir` pairs every provider summary with every consumer
 summary that shares a boundary key (`GET /users/:id`,
 `gql:Query.pet`, etc.). Sources don't have to match origin, a
-stub-from-OpenAPI provider pairs naturally against a
+contract-from-OpenAPI provider pairs naturally against a
 runtime-axios consumer.
 
 ## JSON output for downstream tooling

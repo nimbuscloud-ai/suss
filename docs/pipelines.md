@@ -77,13 +77,13 @@ Pairing is HTTP-shaped today. See [`boundary-semantics.md`](boundary-semantics.m
 
 ## `suss contract --from openapi`
 
-Turns an OpenAPI 3.x spec into `BehavioralSummary[]` carrying `confidence.source: "contract"`. Output is the same shape as `suss extract`, pairable with extracted consumers.
+Turns an OpenAPI 3.x spec into `BehavioralSummary[]` carrying `confidence.source: "derived"`. Output is the same shape as `suss extract`, pairable with extracted consumers.
 
 `@suss/contract-openapi` walks every `(path, operation)` in the spec. For each operation it emits one handler summary with:
 
 - one transition per declared response (status code → body schema, converted to `TypeShape`),
 - `metadata.http.declaredContract` populated so `checkContractConsistency` can cross-check a hypothetical provider (if you later extract one) against the spec,
-- `confidence.source: "contract"` so downstream consumers know where this came from.
+- `confidence.source: "derived"` so downstream consumers know where this came from.
 
 The CLI writes the result to disk after round-tripping through `safeParseSummaries` to catch any shape drift.
 

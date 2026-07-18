@@ -1,6 +1,6 @@
 # Motivation
 
-suss catches behavioral drift between what your TypeScript code says it does and what it does. The class of failures it targets is the one other tooling leaves uncovered, code that compiles, type-checks, passes its tests, and validates against the declared contract, but at runtime sends a consumer a `200` whose shape it doesn't expect (or writes to a database column the schema doesn't declare). The mechanism is static behavioral analysis: extracting what every function does on every execution path, then pairing those derivations across the boundaries where they meet.
+suss finds a class of bug that other tooling misses: code that compiles, type-checks, passes its tests, and matches its declared contract, but at runtime sends a consumer a `200` whose shape it doesn't expect, or writes to a database column the schema doesn't declare. The approach is static behavioral analysis. suss extracts what each function does on each execution path, then pairs those extractions across the boundaries where two units of code meet.
 
 ## The problem
 
@@ -12,7 +12,7 @@ Every boundary between two units of code carries behavioral assumptions the call
 
 A `getUser` handler changes from returning `404` for soft-deleted accounts to returning `200` with `status: "deleted"`. Tests pass: the response is a valid `User`, the status code is a valid HTTP code. TypeScript type-checks. The declared contract (OpenAPI, ts-rest) still says `200 | 404`, which is still true. Nothing in the implementation's shape changed. Any caller that had read `200` as "the user exists and is usable" now receives a `200` that violates that reading, and no tool in the stack can point at the divergence.
 
-The same shape of divergence exists without a network hop. A `useUser()` hook's consumer reads `null` as "loading"; the hook adds a `null` case for deleted users. A resolver reads `context.user.email`; the middleware populating `context.user` stops setting `email` for OAuth sessions. A utility's caller assumes the return is non-empty; the utility adds a case that returns `[]`. The unit of analysis isn't the service, it's the boundary, and there's one at every call site.
+The same shape of divergence exists without a network hop. A `useUser()` hook's consumer reads `null` as "loading"; the hook adds a `null` case for deleted users. A resolver reads `context.user.email`; the middleware populating `context.user` stops setting `email` for OAuth sessions. A utility's caller assumes the return is non-empty; the utility adds a case that returns `[]`. The unit of analysis is the boundary, and there's one at every call site.
 
 ## Why existing tools miss it
 

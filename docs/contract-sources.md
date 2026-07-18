@@ -4,7 +4,7 @@ This doc is the mechanics of the reader pipeline: how contract sources are struc
 
 A contract source is a behavioral contract authored at the boundary, not extracted from implementation. Contract sources produce the same `BehavioralSummary[]` as the extractor and feed the same checker. The source of truth varies, an OpenAPI YAML, a CloudFormation template, the published behavior of an external service, a hand-written file, but the artifact is the same.
 
-> **A note on naming:** these packages were called `@suss/contract-*` in earlier versions. They were renamed to `@suss/contract-*` because what they produce is the *full* contract (a complete `BehavioralSummary[]`), not a stub in the test-double sense. The term "stub" is reserved for a future, lighter-weight, hand-authored interface declaration format that hasn't shipped yet.
+> **A note on naming:** these packages were called `@suss/stub-*` in earlier versions. They were renamed to `@suss/contract-*` because what they produce is the *full* contract (a complete `BehavioralSummary[]`), not a stub in the test-double sense. The term "stub" is reserved for a future, lighter-weight, hand-authored interface declaration format that hasn't shipped yet.
 
 > **Related reading:**
 > - [`motivation.md`](motivation.md), why behavioral summaries exist

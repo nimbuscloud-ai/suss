@@ -287,13 +287,13 @@ suss check node_modules/my-api/dist/suss-summaries.json my-consumer-summaries.js
 
 For libraries that don't publish their own summaries, a community repository can maintain them, similar to DefinitelyTyped for type definitions. The same `BehavioralSummary[]` format applies; the summaries come from a different source.
 
-### Stub summaries
+### Summaries without source code
 
-When source code isn't available, summaries can be written by hand or generated from documentation. Set `confidence.source` to `"stub"` and `confidence.level` to `"low"` to signal that the summary wasn't extracted from code:
+When source code isn't available, a summary can be authored by hand (`confidence.source: "declared"`) or generated from a contract or documentation (`confidence.source: "derived"`). Set `confidence.level` to reflect how much to trust it:
 
 ```json
 {
-  "confidence": { "source": "stub", "level": "low" }
+  "confidence": { "source": "declared", "level": "low" }
 }
 ```
 

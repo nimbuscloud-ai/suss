@@ -1,8 +1,8 @@
 # suss
 
-suss catches behavioral drift between what your TypeScript code says it does and what it does. The bugs it surfaces are the ones that compile cleanly, type-check, and pass their tests: code where a consumer reads a `200` whose shape the provider quietly changed, or a Prisma write touches a column the schema doesn't declare. The bug shows up at runtime, and nothing in CI today catches it.
+suss finds the bugs that compile cleanly, type-check, and pass their tests, and still break at runtime. A consumer reads a `200` whose shape the provider changed. A Prisma write touches a column the schema doesn't declare. The types line up on both sides, so nothing in CI flags it.
 
-suss derives what every function does on every execution path and pairs those derivations across boundaries, the points where two units of code meet. The drift falls out of the comparison, without runtime instrumentation and without you writing specs.
+suss reads what each function does on every path it can follow, then compares those readings wherever two units of code meet: a caller against a handler, a query against a schema. Where they disagree, you get a finding. It runs on your source as it stands, without instrumentation or authored specs.
 
 ```
 suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json

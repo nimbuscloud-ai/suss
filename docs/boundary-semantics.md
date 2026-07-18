@@ -128,7 +128,7 @@ or `path === ""` signals "extracted but unresolved"; `boundaryKey` returns
 `null` for these, keeping them out of automatic pairing.
 
 **`function-call`** handles in-process units (React components, bare function
-exports, Storybook stub components) that don't participate in REST pairing.
+exports, Storybook contract components) that don't participate in REST pairing.
 It carries two distinct identity slots because library consumers and
 intra-repo callers look each other up through different keys:
 

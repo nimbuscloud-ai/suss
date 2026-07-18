@@ -4,7 +4,7 @@ layout: home
 hero:
   name: suss
   text: Behavioral analysis for TypeScript
-  tagline: "Some bugs compile, type-check, and pass the tests: the code and its callers quietly disagree about what a response means, and nothing catches it. suss reads what each function actually does and checks it across the boundaries it crosses."
+  tagline: "Some bugs compile, type-check, and pass the tests. A function starts returning a shape its callers don't expect, and nothing notices until it breaks in production. suss reads what your code actually does on each path, and finds the mismatch first."
   actions:
     - theme: brand
       text: Get started
