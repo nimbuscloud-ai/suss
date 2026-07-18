@@ -6,11 +6,10 @@
 # CheckAllResult shape — a total function over well-typed input, no
 # thrown errors.
 #
-# Body shapes name the top-level keys only. The intent body vocabulary
-# expresses object properties with primitive value types, not the nested
-# arrays / records these keys actually hold, so the values are declared
-# `unknown`. The assertion that still bites: rename or drop one of these
-# keys and the code's return shape stops satisfying the declaration.
+# Each top-level key is declared as the array it actually is. Item
+# shapes stay open (arrays of unknown) until per-element commitments
+# are worth authoring; renaming or dropping a key, or returning a
+# non-array, stops satisfying the declaration.
 
 kind: boundary
 
@@ -33,7 +32,11 @@ transitions:
     returns:
       body:
         properties:
-          findings: { type: unknown }
-          pairs: { type: unknown }
-          unmatched: { type: unknown }
+          findings: { type: array }
+          pairs: { type: array }
+          unmatched:
+            type: object
+            properties:
+              providers: { type: array }
+              consumers: { type: array }
         required: [findings, pairs, unmatched]

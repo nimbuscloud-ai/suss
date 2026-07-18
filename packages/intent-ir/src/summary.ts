@@ -14,6 +14,7 @@ import {
 } from "@suss/ir-core";
 
 import type {
+  AuthoredShape,
   BodyShape,
   Boundary,
   BoundaryIntent,
@@ -170,12 +171,36 @@ function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {
 }
 
 function bodyToTypeShape(body: BodyShape): TypeShape | null {
-  if (body.properties === undefined) {
-    return null;
+  // Record shorthand: `properties:` with no `type:` field.
+  if (!("type" in body)) {
+    if (body.properties === undefined) {
+      return null;
+    }
+    return recordShape(body.properties);
   }
+  return shapeToTypeShape(body);
+}
+
+function shapeToTypeShape(shape: AuthoredShape): TypeShape {
+  if (shape.type === "array") {
+    return {
+      type: "array",
+      items:
+        shape.items !== undefined
+          ? shapeToTypeShape(shape.items)
+          : { type: "unknown" },
+    };
+  }
+  if (shape.type === "object") {
+    return recordShape(shape.properties ?? {});
+  }
+  return PRIMITIVE_TYPE_SHAPES[shape.type];
+}
+
+function recordShape(authored: Record<string, AuthoredShape>): TypeShape {
   const properties: Record<string, TypeShape> = {};
-  for (const [name, prop] of Object.entries(body.properties)) {
-    properties[name] = PRIMITIVE_TYPE_SHAPES[prop.type];
+  for (const [name, prop] of Object.entries(authored)) {
+    properties[name] = shapeToTypeShape(prop);
   }
   return { type: "record", properties };
 }

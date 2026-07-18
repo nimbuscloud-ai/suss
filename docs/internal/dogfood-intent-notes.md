@@ -59,7 +59,7 @@ Because `check:self` generates that directory, the driver copies
 exists in the function; wiring `--sussignore` / `--no-suppressions` onto
 the `check` command removes the copy step.
 
-### 3. Intent body vocabulary can't describe function return shapes — `needs-design`
+### 3. Intent body vocabulary can't describe function return shapes — `resolved`
 
 `BodyShapeSchema` (packages/intent-ir/src/schema.ts) is an object of
 primitive-typed properties. The task asks for "declared outcomes = return
@@ -80,6 +80,15 @@ key makes the code's return shape stop satisfying the intent and fires
 property). Extending the vocabulary to arrays, nested objects, and named
 `TypeShape` references would let function-call intent describe real return
 values instead of stopping at the outer keys.
+
+**Resolved.** The authoring vocabulary is now recursive: `type: array`
+(optional `items`) and `type: object` (nested `properties`) compose with
+the primitives, and a top-level body can be a bare array or object shape.
+The record shorthand (`properties:` with no `type:`) still loads. The
+first run with the richer declarations caught a genuine authoring error:
+`checkAll`'s `unmatched` was declared an array but is an object of
+`providers` / `consumers` arrays. Named `TypeShape` references remain
+open.
 
 ### 4. A body-less return must be written `returns: {}`, not `returns:` — `fix-now`
 

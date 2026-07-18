@@ -32,7 +32,7 @@ transitions:
     returns:
       body:
         properties:
-          findings: { type: unknown }
-          checked: { type: unknown }
-          unchecked: { type: unknown }
+          findings: { type: array }
+          checked: { type: array }
+          unchecked: { type: array }
         required: [findings, checked, unchecked]
