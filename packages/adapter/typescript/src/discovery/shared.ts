@@ -51,22 +51,34 @@ export interface DiscoveredUnit {
    * `document` is the raw GraphQL document source (the inner text of
    * the gql-tagged template literal, backticks stripped). Kept
    * alongside the parsed shape so downstream tools can re-parse if
-   * they need additional detail beyond what we surface here.
+   * they need additional detail beyond what we surface here. Absent
+   * when the document body wasn't statically readable and the header
+   * was recovered from `TypedDocumentNode` type arguments — a
+   * cross-module codegen reference to a document produced by a helper.
    *
    * `variables` list the `$name: Type` declarations at the operation
    * header. Each becomes an `Input` on the resulting summary so
-   * pairing layers can match against resolver args.
+   * pairing layers can match against resolver args. Empty when the
+   * document body wasn't read.
    *
    * `rootFields` is the list of root-level selection names — the
    * fields the operation actually selects under Query / Mutation /
-   * Subscription. Used by the checker's pairing pass.
+   * Subscription. Used by the checker's pairing pass. Empty when the
+   * document body wasn't read.
+   *
+   * `unresolved` is set when the argument was recognized as a GraphQL
+   * document reference but the header couldn't be fully read. The unit
+   * is still emitted (operation type comes from the call shape) and the
+   * gap surfaces on the summary as `metadata.graphql.unresolvedDocument`
+   * so nothing is silently dropped.
    */
   operationInfo?: {
     operationType: "query" | "mutation" | "subscription";
     operationName?: string;
-    document: string;
+    document?: string;
     variables: Array<{ name: string; type: string; required: boolean }>;
     rootFields: string[];
+    unresolved?: { reference: string; reason: string };
   };
   /**
    * Populated by `packageExports` discovery. Carries the package
