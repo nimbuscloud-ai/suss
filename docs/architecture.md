@@ -175,7 +175,7 @@ These terms are used consistently across the codebase. The running example is th
 
 What goes where, when adding new behavior:
 
-- **Adapter** owns the language spec — both syntax and the runtime-semantic built-ins ECMAScript defines (Promise and its prototype methods, Array prototype methods, async/await, generators). If TC39 says it, the adapter handles it.
+- **Adapter** owns the language spec — both syntax and the runtime-semantic built-ins ECMAScript defines (Promise and its prototype methods, Array prototype methods, async/await, generators). If TC39 says it, the adapter handles it. Two concrete cases: the unit-body walkers descend into nested function expressions and arrows (Promise executors, `.then` callbacks, `forEach` bodies) so recognizers and effects inside them attach to the enclosing unit; and a `.then` callback's first parameter binds to the resolved value of the upstream promise. A pack-declared sub-unit boundary is the one opt-out — the walker stops there so the sub-unit's behavior lands on its own summary. See `docs/internal/proposals/adapter-ecmascript-spec.md`.
 - **Runtime packs** own behavior the runtime defines. `setTimeout`, `setImmediate`, `process.*` for Node. `requestAnimationFrame`, DOM APIs for browser. Even when names overlap across runtimes (setTimeout exists in both Node and browsers), each runtime owns its own — no shared "language base" pack.
 - **Framework packs** own framework-specific patterns: how handlers are registered, what response shapes look like, how inputs are delivered.
 - **Client packs** own consumer-side discovery: fetch call sites, axios calls, GraphQL clients.
