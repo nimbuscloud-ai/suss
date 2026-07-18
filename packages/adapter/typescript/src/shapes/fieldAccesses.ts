@@ -4,7 +4,19 @@
 // This module traces those accesses and builds a TypeShape representing what
 // the consumer expects the response to contain within each branch.
 
-import { type CallExpression, type IfStatement, Node } from "ts-morph";
+import {
+  type CallExpression,
+  type Expression,
+  type IfStatement,
+  Node,
+  type ParameterDeclaration,
+} from "ts-morph";
+
+import {
+  callbackReturnExpression,
+  thenLikeCall,
+  thenParameterLink,
+} from "../promiseThen.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { ResponsePropertyMapping } from "@suss/extractor";
@@ -23,10 +35,17 @@ import type { ResponsePropertyMapping } from "@suss/extractor";
  *   property it refers to (`{ data: "data", code: "status" }` for
  *   `{ data, status: code }`). Standalone uses of a local name resolve to
  *   the bound property; chained uses (`data.id`) extend that path.
+ * - `thenChain`: `fetch(url).then(res => res.json()).then(data => ...)`
+ *   form, where the response never binds to a variable. `bindings` maps
+ *   each `.then` callback parameter to the property chain (rooted at the
+ *   response) its resolved value stands for: `res → []` (the response
+ *   itself), `data → ["json"]` (the parsed body). A read like `data.name`
+ *   becomes `["json", "name"]`, and `res.status` becomes `["status"]`.
  */
 export type ResponseAccessor =
   | { kind: "identifier"; name: string }
-  | { kind: "destructured"; bindings: Map<string, string> };
+  | { kind: "destructured"; bindings: Map<string, string> }
+  | { kind: "thenChain"; bindings: Map<string, string[]> };
 
 /**
  * Given a call expression like `fetch(url)` or `client.getUser(params)`,
@@ -83,6 +102,199 @@ export function findResponseVariable(callExpr: CallExpression): string | null {
   return accessor?.kind === "identifier" ? accessor.name : null;
 }
 
+/**
+ * Build a `thenChain` accessor for a response that flows through Promise
+ * `.then` callbacks instead of a variable binding
+ * (`fetch(url).then(res => res.json()).then(data => use(data))`).
+ *
+ * Every `.then` / `.catch` callback parameter inside `func` that carries a
+ * `derivedFrom` link (via `thenParameterLink`) is resolved to the property
+ * chain, rooted at the response call, that its value stands for. `res`
+ * binds to the response itself (`[]`); `res.json()` flowing into the next
+ * callback's `data` binds to `["json"]`. This covers the outer chain
+ * (`.then(res=>res.json()).then(data=>...)`) and inner chains rooted at an
+ * already-bound parameter (`res.json().then(data=>...)`) uniformly,
+ * because each parameter resolves through its own link back to the
+ * response call.
+ */
+function buildThenChainAccessor(
+  callExpr: CallExpression,
+  func: Node,
+): ResponseAccessor | null {
+  const bindings = new Map<string, string[]>();
+  func.forEachDescendant((node) => {
+    if (!Node.isParameterDeclaration(node)) {
+      return;
+    }
+    const nameNode = node.getNameNode();
+    if (!Node.isIdentifier(nameNode)) {
+      return;
+    }
+    const prefix = prefixOfThenParam(node, callExpr, 0);
+    if (prefix !== null) {
+      bindings.set(nameNode.getText(), prefix);
+    }
+  });
+  if (bindings.size === 0) {
+    return null;
+  }
+  return { kind: "thenChain", bindings };
+}
+
+const MAX_PREFIX_DEPTH = 8;
+
+/**
+ * The property chain (rooted at `responseCall`) that a `.then` callback
+ * parameter's resolved value stands for. Null when `param` isn't a
+ * `.then`-bound parameter or its upstream can't be pinned to a chain.
+ */
+function prefixOfThenParam(
+  param: ParameterDeclaration,
+  responseCall: CallExpression,
+  depth: number,
+): string[] | null {
+  if (depth >= MAX_PREFIX_DEPTH) {
+    return null;
+  }
+  const link = thenParameterLink(param);
+  if (link === null || link.method === "catch") {
+    return null;
+  }
+  return prefixOfExpr(link.upstream, responseCall, depth + 1);
+}
+
+/**
+ * The property chain (rooted at `responseCall`) that a promise-producing
+ * expression's resolved value stands for. The response call itself
+ * resolves to `[]`. A `.then` call resolves to its callback's return,
+ * relative to the callback parameter. A member expression rooted at a
+ * `.then`-bound parameter (`res.json()`, `res.body`) extends that
+ * parameter's prefix. Null when the expression can't be pinned.
+ */
+function prefixOfExpr(
+  expr: Expression,
+  responseCall: CallExpression,
+  depth: number,
+): string[] | null {
+  if (depth >= MAX_PREFIX_DEPTH) {
+    return null;
+  }
+  const node = unwrap(expr);
+  if (node === responseCall) {
+    return [];
+  }
+  if (Node.isCallExpression(node)) {
+    const hop = thenLikeCall(node);
+    if (hop !== null) {
+      if (hop.method === "catch") {
+        return null;
+      }
+      const receiverPrefix = prefixOfExpr(
+        hop.receiver,
+        responseCall,
+        depth + 1,
+      );
+      if (receiverPrefix === null) {
+        return null;
+      }
+      const callback = node.getArguments()[0];
+      const paramName = firstCallbackParamName(callback);
+      const ret = callbackReturnExpression(callback);
+      if (paramName === null || ret === null) {
+        return null;
+      }
+      const segments = chainRootedAt(ret, paramName);
+      return segments === null ? null : [...receiverPrefix, ...segments];
+    }
+  }
+  return prefixOfMemberExpr(node, responseCall, depth);
+}
+
+/**
+ * The property chain of a member expression rooted at a `.then`-bound
+ * parameter — `res.json()` → `[...prefix(res), "json"]`, `res.body` →
+ * `[...prefix(res), "body"]`. Null when the root isn't such a parameter.
+ */
+function prefixOfMemberExpr(
+  expr: Node,
+  responseCall: CallExpression,
+  depth: number,
+): string[] | null {
+  const chain = memberChain(expr);
+  if (chain === null) {
+    return null;
+  }
+  const decl = chain.root.getSymbol()?.getDeclarations()?.[0];
+  if (decl === undefined || !Node.isParameterDeclaration(decl)) {
+    return null;
+  }
+  const base = prefixOfThenParam(decl, responseCall, depth + 1);
+  return base === null ? null : [...base, ...chain.segments];
+}
+
+function firstCallbackParamName(callback: Node | undefined): string | null {
+  if (
+    callback === undefined ||
+    !(Node.isArrowFunction(callback) || Node.isFunctionExpression(callback))
+  ) {
+    return null;
+  }
+  const param = callback.getParameters()[0];
+  if (param === undefined) {
+    return null;
+  }
+  const nameNode = param.getNameNode();
+  return Node.isIdentifier(nameNode) ? nameNode.getText() : null;
+}
+
+function unwrap(expr: Expression): Node {
+  let node: Node = expr;
+  while (
+    Node.isAwaitExpression(node) ||
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node)
+  ) {
+    node = node.getExpression();
+  }
+  return node;
+}
+
+/**
+ * The property segments of `expr` when it is a chain rooted at the
+ * identifier `rootName`, e.g. `res.json` → `["json"]`, `data.body.name`
+ * → `["body", "name"]`, bare `res` → `[]`. A single trailing call is
+ * unwrapped so `res.json()` reads the same as `res.json`. Null when the
+ * chain isn't rooted at `rootName`.
+ */
+function chainRootedAt(expr: Expression, rootName: string): string[] | null {
+  const chain = memberChain(expr);
+  if (chain === null) {
+    return null;
+  }
+  return Node.isIdentifier(chain.root) && chain.root.getText() === rootName
+    ? chain.segments
+    : null;
+}
+
+/**
+ * Split a member expression into its root node and property segments.
+ * `res.json()` → `{ root: res, segments: ["json"] }`; `data.a.b` →
+ * `{ root: data, segments: ["a", "b"] }`; bare `res` →
+ * `{ root: res, segments: [] }`. A single trailing call is unwrapped.
+ */
+function memberChain(expr: Node): { root: Node; segments: string[] } | null {
+  let node = Node.isExpression(expr) ? unwrap(expr) : expr;
+  if (Node.isCallExpression(node)) {
+    node = node.getExpression();
+  }
+  const segments: string[] = [];
+  while (Node.isPropertyAccessExpression(node)) {
+    segments.unshift(node.getName());
+    node = node.getExpression();
+  }
+  return { root: node, segments };
+}
+
 // ---------------------------------------------------------------------------
 // Collect property access paths within a subtree
 // ---------------------------------------------------------------------------
@@ -99,6 +311,8 @@ interface AccessPath {
  * Identifier accessor: `result.body.name` → chain `["body", "name"]`.
  * Destructured accessor: given `const { data, status: code } = ...`,
  *   the consumer's `data.id` → `["data", "id"]`, bare `code` → `["status"]`.
+ * thenChain accessor: given `.then(res => res.json()).then(data => ...)`,
+ *   the consumer's `data.name` → `["json", "name"]`, `res.status` → `["status"]`.
  */
 function collectPropertyAccesses(
   subtree: Node,
@@ -134,20 +348,29 @@ function collectPropertyAccesses(
     return paths;
   }
 
-  // Destructured accessor: walk every Identifier whose text matches a local
-  // binding and convert to a chain in terms of the underlying property.
-  const bindings = accessor.bindings;
+  // Destructured and thenChain accessors both map local names (a
+  // destructured binding, or a `.then` callback parameter) to a property
+  // prefix rooted at the response. Walk every Identifier matching a local
+  // name and extend its prefix with the property chain read off it.
+  const prefixOf =
+    accessor.kind === "destructured"
+      ? (name: string): string[] | undefined => {
+          const source = accessor.bindings.get(name);
+          return source === undefined ? undefined : [source];
+        }
+      : (name: string): string[] | undefined => accessor.bindings.get(name);
+
   subtree.forEachDescendant((node) => {
     if (!Node.isIdentifier(node)) {
       return;
     }
-    const localName = node.getText();
-    const sourceProperty = bindings.get(localName);
-    if (sourceProperty === undefined) {
+    const prefix = prefixOf(node.getText());
+    if (prefix === undefined) {
       return;
     }
-    // Skip the binding's own declaration site.
-    if (isInsideObjectBindingPattern(node)) {
+    // Skip the binding's own declaration site (a destructured element or a
+    // callback parameter name) — it isn't a read of the response.
+    if (isBindingDeclarationSite(node)) {
       return;
     }
     // Find the topmost property-access chain rooted on this identifier
@@ -171,9 +394,26 @@ function collectPropertyAccesses(
       current = current.getExpression();
     }
     segments.reverse();
-    pushChain([sourceProperty, ...segments]);
+    pushChain([...prefix, ...segments]);
   });
   return paths;
+}
+
+/**
+ * Whether `node` is the declaration site of a local binding rather than a
+ * read of it — a destructured element (inside an object binding pattern)
+ * or a callback parameter's own name node.
+ */
+function isBindingDeclarationSite(node: Node): boolean {
+  if (isInsideObjectBindingPattern(node)) {
+    return true;
+  }
+  const parent = node.getParent();
+  return (
+    parent !== undefined &&
+    Node.isParameterDeclaration(parent) &&
+    parent.getNameNode() === node
+  );
 }
 
 function isInsideObjectBindingPattern(node: Node): boolean {
@@ -354,7 +594,11 @@ export function collectClientFieldAccesses(
   branchLocations: Array<{ start: number; end: number }>,
   responseSemantics?: ResponsePropertyMapping[],
 ): BranchFieldAccesses[] {
-  const accessor = findResponseAccessor(callExpr);
+  // Prefer the variable-binding accessor (`const res = await fetch(...)`);
+  // fall back to the `.then` chain accessor when the response never binds
+  // to a variable (`fetch(url).then(res => res.json()).then(...)`).
+  const accessor =
+    findResponseAccessor(callExpr) ?? buildThenChainAccessor(callExpr, func);
   if (accessor === null) {
     return branchLocations.map((loc) => ({
       terminalLocation: loc,
