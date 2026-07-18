@@ -136,6 +136,7 @@ These terms are used consistently across the codebase. The running example is th
     │     │     @suss/framework-nestjs-graphql
     │     │     @suss/framework-apollo
     │     │     @suss/framework-aws-sqs
+    │     │     @suss/framework-aws-eventbridge
     │     │     @suss/framework-prisma
     │     │     @suss/framework-process-env
     │     │
