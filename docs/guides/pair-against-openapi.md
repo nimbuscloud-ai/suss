@@ -8,19 +8,19 @@ declares, and flags drift when the spec changes.
 ## The two artifacts
 
 ```
-spec.yaml / spec.json   ─── @suss/contract-openapi ───▶  stub.json
+spec.yaml / spec.json   ─── @suss/contract-openapi ───▶  stripe.json
                                                         │
 your client code        ─── @suss/client-axios  ───▶  client.json
                                                         │
                                                         ▼
-                                       suss check stub.json client.json
+                                       suss check stripe.json client.json
 ```
 
 Both produce the same `BehavioralSummary[]` shape; the checker
 pairs them by `(method, normalizedPath)` without caring which side
 came from code vs a spec.
 
-## Step 1. Turn the spec into a stub
+## Step 1. Turn the spec into a contract
 
 ```bash
 npm install -D @suss/contract-openapi

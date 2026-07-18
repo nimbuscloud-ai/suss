@@ -13,7 +13,7 @@ suss has four commands. They form one pipeline:
 | Command | Inputs | Output | When you reach for it |
 |---|---|---|---|
 | `extract` | TypeScript source + a framework pack | `BehavioralSummary[]` JSON | You have code and want a structured description of every execution path. |
-| `stub` | A specification (OpenAPI, CFN, Storybook, ...) | `BehavioralSummary[]` JSON | You have a spec instead of code, or want to compare code against a spec. Stubs are summaries with the same shape as `extract`'s output, so they pair against extracted summaries. |
+| `contract` | A specification (OpenAPI, CFN, Storybook, ...) | `BehavioralSummary[]` JSON | You have a spec instead of code, or want to compare code against a spec. Contract summaries have the same shape as `extract`'s output, so they pair against extracted summaries. |
 | `check` | One or more summary files | Findings (text or JSON) | You have summaries from two sides of a boundary, provider + consumer, contract + handler, and want to know where they disagree. |
 | `inspect` | A summary file | Human-readable text | You want to read what the summaries say without parsing JSON. The output is the form you paste into a code review or an AI prompt. |
 
@@ -138,9 +138,9 @@ have a producer? Are the body shapes structurally compatible?
 
 The "two sides of a boundary" framing is general:
 - **Two extracted summaries**: handler vs. fetch client.
-- **A stub vs. an extracted summary**, OpenAPI spec vs. handler;
+- **A contract vs. an extracted summary**, OpenAPI spec vs. handler;
   Storybook story vs. component.
-- **Two stubs**, OpenAPI vs. CloudFormation, when both describe
+- **Two contracts**, OpenAPI vs. CloudFormation, when both describe
   the same API.
 
 A finding always names the boundary, the two sides, and what
@@ -394,7 +394,7 @@ None. All behavior is configured via flags.
 
 | Target | Default |
 |---|---|
-| stdout | Summary JSON (`extract`, `stub`), human text (`inspect`, `check`), finding JSON (`check --json`) |
+| stdout | Summary JSON (`extract`, `contract`), human text (`inspect`, `check`), finding JSON (`check --json`) |
 | stderr | "Wrote N summaries to PATH" acknowledgements, extraction warnings, error messages |
 | exit code | Per-command threshold as described above |
 

@@ -120,18 +120,18 @@ errors. Flags:
 
 When you consume an API you don't own (Stripe, an internal team,
 a third-party), you don't have the source, so `extract` can't run
-on it. Instead, run `stub` over the API's specification. Stubs are
-summaries with the same shape as `extract`'s output, declared
-behavior rather than derived: "this is what the spec says
-happens." Once a stub exists, `check` pairs it with your client
-the same way it would pair two extracted summaries.
+on it. Instead, run `contract` over the API's specification. It
+produces summaries with the same shape as `extract`'s output,
+describing what the spec says happens. Once the contract summary
+exists, `check` pairs it with your client the same way it would
+pair two extracted summaries.
 
 ```bash
 npx suss contract --from openapi stripe-openapi.json -o summaries/stripe.json
 npx suss check summaries/stripe.json summaries/your-client.json
 ```
 
-AWS API Gateway? CloudFormation stub reads the template:
+AWS API Gateway? The CloudFormation contract reader reads the template:
 
 ```bash
 npx suss contract --from cloudformation template.yaml -o summaries/api.json
