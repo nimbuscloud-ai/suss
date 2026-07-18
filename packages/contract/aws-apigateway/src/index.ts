@@ -14,6 +14,7 @@ export type {
   AuthorizerType,
   ConfigRef,
   CorsConfig,
+  HandlerPointer,
   HttpApiConfig,
   HttpAuthorizerConfig,
   HttpAuthorizerType,

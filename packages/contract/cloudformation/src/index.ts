@@ -23,15 +23,13 @@
 // expanded into synthetic Method / Route entries in the appropriate
 // API's config — that's the dominant SAM authoring idiom.
 
-import fs from "node:fs";
 import path from "node:path";
-
-import YAML from "yaml";
 
 import {
   type AuthorizerConfig,
   type AuthorizerType,
   type CorsConfig,
+  type HandlerPointer,
   type HttpApiConfig,
   type HttpAuthorizerConfig,
   type HttpAuthorizerType,
@@ -47,9 +45,29 @@ import { openApiToSummaries } from "@suss/contract-openapi";
 
 import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
+import { parseHandler } from "./serverlessFunctions.js";
+import {
+  type CloudFormationResource,
+  type CloudFormationTemplate,
+  loadCloudFormationTemplate,
+  refTarget,
+} from "./templateLoader.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "@suss/contract-openapi";
+
+export {
+  parseHandler,
+  readServerlessFunctions,
+  type ServerlessFunctionInfo,
+  type ServerlessHttpRoute,
+  type ServerlessNonHttpEvent,
+} from "./serverlessFunctions.js";
+export {
+  type CloudFormationResource,
+  type CloudFormationTemplate,
+  loadCloudFormationTemplate,
+} from "./templateLoader.js";
 
 export interface CloudFormationToSummariesOptions {
   /** Override the logical source file recorded on each summary. */
@@ -66,16 +84,6 @@ const API_RESOURCE_BODIES: Record<string, "Body" | "DefinitionBody"> = {
   "AWS::Serverless::Api": "DefinitionBody",
   "AWS::Serverless::HttpApi": "DefinitionBody",
 };
-
-interface CloudFormationTemplate {
-  Resources?: Record<string, CloudFormationResource>;
-}
-
-interface CloudFormationResource {
-  Type?: string;
-  Properties?: Record<string, unknown>;
-  Metadata?: Record<string, unknown>;
-}
 
 /**
  * Convert an in-memory CloudFormation template into a `BehavioralSummary[]`.
@@ -674,6 +682,33 @@ function readHttpAuthorizer(
 // each Function. We expand them into the same RestEndpointConfig /
 // HttpRouteConfig shapes the manual Method walks produce.
 
+/**
+ * Build a code pointer from a Serverless::Function's Handler / CodeUri
+ * so the declared route summary can name the implementation. Returns
+ * undefined when the Handler isn't a parseable `module.export` string.
+ */
+function readHandlerPointer(
+  fnId: string,
+  resource: CloudFormationResource,
+): HandlerPointer | undefined {
+  const handlerRaw = resource.Properties?.Handler;
+  if (typeof handlerRaw !== "string") {
+    return undefined;
+  }
+  const parsed = parseHandler(handlerRaw);
+  if (parsed === null) {
+    return undefined;
+  }
+  const codeUri = resource.Properties?.CodeUri;
+  return {
+    handler: handlerRaw,
+    modulePath: parsed.modulePath,
+    exportName: parsed.exportName,
+    functionLogicalId: fnId,
+    ...(typeof codeUri === "string" ? { codeUri } : {}),
+  };
+}
+
 function readSamApiEvents(
   apiId: string,
   resources: Record<string, CloudFormationResource>,
@@ -720,6 +755,7 @@ function readSamApiEvents(
       if (method === "" || method === "ANY" || path === "") {
         continue;
       }
+      const implementingHandler = readHandlerPointer(fnId, resource);
       out.push({
         method,
         path,
@@ -729,6 +765,7 @@ function readSamApiEvents(
           configRef: { file: sourceFile, pointer: `Resources/${fnId}` },
         },
         name: `${fnId}:${eventId}`,
+        ...(implementingHandler !== undefined ? { implementingHandler } : {}),
         configRef: {
           file: sourceFile,
           pointer: `Resources/${fnId}/Events/${eventId}`,
@@ -783,6 +820,7 @@ function readSamHttpApiEvents(
       if (method === "" || method === "ANY" || pathProp === "") {
         continue;
       }
+      const implementingHandler = readHandlerPointer(fnId, resource);
       out.push({
         routeKey: `${method} ${pathProp}`,
         integration: {
@@ -791,6 +829,7 @@ function readSamHttpApiEvents(
           configRef: { file: sourceFile, pointer: `Resources/${fnId}` },
         },
         name: `${fnId}:${eventId}`,
+        ...(implementingHandler !== undefined ? { implementingHandler } : {}),
         configRef: {
           file: sourceFile,
           pointer: `Resources/${fnId}/Events/${eventId}`,
@@ -903,30 +942,6 @@ function readStringArray(value: unknown): string[] | null {
 // CFN reference helpers
 // ---------------------------------------------------------------------------
 
-/**
- * CloudFormation references show up in three shapes after parsing:
- *   - { Ref: "LogicalId" }
- *   - { "Fn::GetAtt": ["LogicalId", "Attr"] }
- *   - the bare logical id when the parser doesn't recognise the YAML tag
- */
-function refTarget(value: unknown): string | null {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (value === null || typeof value !== "object") {
-    return null;
-  }
-  const obj = value as Record<string, unknown>;
-  if (typeof obj.Ref === "string") {
-    return obj.Ref;
-  }
-  const getAtt = obj["Fn::GetAtt"];
-  if (Array.isArray(getAtt) && typeof getAtt[0] === "string") {
-    return getAtt[0];
-  }
-  return null;
-}
-
 function parseStatus(value: unknown): number | null {
   if (typeof value === "number" && Number.isInteger(value)) {
     return value;
@@ -936,45 +951,6 @@ function parseStatus(value: unknown): number | null {
   }
   return null;
 }
-
-// ---------------------------------------------------------------------------
-// CloudFormation YAML intrinsic tags
-// ---------------------------------------------------------------------------
-//
-// CloudFormation YAML uses shorthand tags (`!Ref X`, `!GetAtt X.Y`,
-// `!Sub "..."`) that the default `yaml` schema doesn't know about. Without
-// a handler the parser would either error or leave them as opaque tagged
-// nodes. We register a small set covering the intrinsics that affect
-// resource references — anything else collapses to its raw scalar value
-// rather than failing the whole parse.
-
-const CLOUDFORMATION_YAML_TAGS = [
-  {
-    tag: "!Ref",
-    resolve: (value: string) => ({ Ref: value }),
-  },
-  {
-    tag: "!GetAtt",
-    resolve: (value: string) => ({
-      "Fn::GetAtt": value.includes(".") ? value.split(".") : [value],
-    }),
-  },
-  ...[
-    "!Sub",
-    "!Join",
-    "!Select",
-    "!Split",
-    "!FindInMap",
-    "!ImportValue",
-    "!Base64",
-    "!Cidr",
-    "!If",
-    "!Not",
-    "!And",
-    "!Or",
-    "!Equals",
-  ].map((tag) => ({ tag, resolve: (value: unknown) => value })),
-];
 
 /**
  * Load a CloudFormation template from disk and convert it into behavioral
@@ -986,20 +962,10 @@ export function cloudFormationFileToSummaries(
   templatePath: string,
   options: CloudFormationToSummariesOptions = {},
 ): BehavioralSummary[] {
-  const resolved = path.resolve(templatePath);
-  if (!fs.existsSync(resolved)) {
-    throw new Error(`CloudFormation template not found: ${resolved}`);
-  }
-  const raw = fs.readFileSync(resolved, "utf-8");
-  const ext = path.extname(resolved).toLowerCase();
-  const parsed: unknown =
-    ext === ".json"
-      ? JSON.parse(raw)
-      : YAML.parse(raw, { customTags: CLOUDFORMATION_YAML_TAGS });
-  if (parsed === null || typeof parsed !== "object") {
-    throw new Error(`CloudFormation template is not an object: ${resolved}`);
-  }
-  return cloudFormationToSummaries(parsed as CloudFormationTemplate, {
-    source: options.source ?? `cloudformation:${path.basename(resolved)}`,
+  const template = loadCloudFormationTemplate(templatePath);
+  return cloudFormationToSummaries(template, {
+    source:
+      options.source ??
+      `cloudformation:${path.basename(path.resolve(templatePath))}`,
   });
 }
