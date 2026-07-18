@@ -96,10 +96,17 @@ export type DiscoveryMatch =
        * Consumer-side GraphQL hook call — the canonical Apollo Client
        * and urql shape. Each call to one of the listed hooks becomes
        * a `client`-kind code unit whose binding semantics is
-       * `graphql-operation(operationType, operationName?)`. The
-       * operation identity comes from parsing the first argument's
-       * gql-tagged template literal — either inline or resolved
-       * through one const-binding of an identifier.
+       * `graphql-operation(operationType, operationName?)`.
+       *
+       * The document argument resolves through several shapes: an inline
+       * `gql`-tagged template, a const binding (same module or imported
+       * from another module), a `.graphql` / `.gql` file import, and a
+       * generated `TypedDocumentNode` object literal from graphql-codegen
+       * client-preset. When the document body isn't statically readable,
+       * the operation header falls back to the `TypedDocumentNode` type
+       * arguments; a still-unresolvable document surfaces on the summary
+       * as `metadata.graphql.unresolvedDocument` rather than dropping the
+       * boundary.
        *
        * Example:
        * ```ts
@@ -112,20 +119,25 @@ export type DiscoveryMatch =
        * ```
        *
        * The adapter records the operation name / type on the
-       * DiscoveredUnit's `operationInfo`; binding construction uses
-       * that to emit `graphql-operation(...)`. Inline `gql`-less
-       * string arguments and cross-module gql documents are left
-       * for a follow-up — v0 covers the dominant shape.
+       * DiscoveredUnit's `operationInfo`; binding construction uses that
+       * to emit `graphql-operation(...)`. The per-hook `operationType`
+       * is authoritative when the document header can't be read (mirrors
+       * `graphqlImperativeCall.methods`).
        */
       type: "graphqlHookCall";
       importModule: string;
       /**
-       * Hook names to match on that import (e.g. `["useQuery",
-       * "useMutation", "useSubscription"]`). Each hook is reported
-       * as `kind = "client"` by default; packs can override via the
-       * enclosing `DiscoveryPattern.kind`.
+       * Hooks to match on that import, each mapped to the operation
+       * type it performs (`useQuery` → query, `useMutation` → mutation,
+       * `useSubscription` → subscription). The mapping supplies the
+       * operation type when the document body isn't statically readable.
+       * Each hook is reported as `kind = "client"` by default; packs can
+       * override via the enclosing `DiscoveryPattern.kind`.
        */
-      hookNames: string[];
+      hooks: Array<{
+        hookName: string;
+        operationType: "query" | "mutation" | "subscription";
+      }>;
     }
   | {
       /**

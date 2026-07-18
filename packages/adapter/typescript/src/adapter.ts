@@ -914,7 +914,17 @@ function extractFromSourceFile(
         });
         // Carry the raw document through so the checker's pairing
         // layer can re-parse if it needs shapes we don't surface.
-        raw.graphqlDocument = unit.operationInfo.document;
+        // Absent when the document body wasn't statically readable
+        // (header recovered from TypedDocumentNode type arguments).
+        if (unit.operationInfo.document !== undefined) {
+          raw.graphqlDocument = unit.operationInfo.document;
+        }
+        // A recognized-but-unreadable document surfaces the gap on the
+        // summary rather than dropping the boundary — nothing discovered
+        // is silently lost.
+        if (unit.operationInfo.unresolved !== undefined) {
+          raw.graphqlUnresolvedDocument = unit.operationInfo.unresolved;
+        }
         // Each `$name: Type` variable in the operation header
         // becomes an Input on the summary. Role `"variable"` keeps
         // them distinguishable from positional callback params when
