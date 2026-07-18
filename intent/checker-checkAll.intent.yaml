@@ -32,7 +32,13 @@ transitions:
     returns:
       body:
         properties:
-          findings: { type: array }
+          findings:
+            type: array
+            items:
+              type: object
+              properties:
+                kind: { type: string }
+                severity: { type: string }
           pairs: { type: array }
           unmatched:
             type: object
