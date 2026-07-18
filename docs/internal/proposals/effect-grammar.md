@@ -2,205 +2,211 @@
 
 Status: draft, seeking alignment. No implementation yet.
 
-suss's type half (TypeShape) is a designed calculus with satisfaction
-semantics and a matcher. Its effect half is six interaction classes that
-accreted one pack at a time. This proposal designs the effect vocabulary
-as a grammar with the same care: every effect a code unit performs is a
-point in one space, new channel kinds are additions to that space rather
-than new special cases, and three downstream features (capability
-projection, effect diffs, intent effect outcomes) read the same
-vocabulary instead of inventing their own.
+## The problem, by example
 
-In program-language terms: suss infers a type-and-effect judgment over
-code that never had an effect system, and resolves the effects to
-concrete infrastructure. The effect grammar is the effect half of that
-judgment, written down.
+Extract this handler today:
 
-## What exists today
-
-Six interaction classes on `Effect` (packages/ir/src/schemas.ts), each
-with bespoke fields:
-
-| class | carried today | channel identity |
-|---|---|---|
-| `storage-access` | kind (read/write), fields, selector, operation | binding semantics (storage-relational) |
-| `service-call` | method, payload, responseShape | binding (rest) |
-| `message-send` | body, routingKey | binding semantics channel |
-| `message-receive` | body | enclosing handler's binding |
-| `config-read` | name, defaulted | binding (runtime-config) |
-| `schedule` | via, callbackRef, hasDelay | none (not a contract) |
-
-Plus unclassified invocation effects: callee name and argument shapes,
-no channel, no verb. `console.log`, `fs.writeFileSync`, and every other
-call the packs don't classify land here. They render in inspect but
-cannot pair, cannot be projected as a capability, and cannot be named by
-an intent.
-
-Three observations drive the redesign:
-
-- The classes already share an implicit structure (a kind of resource, a
-  direction, a target, a payload) but each spells it differently:
-  `storage-access.kind`, message classes split send/receive into two
-  class names, `config-read` bakes the direction into the class name.
-- Channel identity lives in the enclosing `Effect.binding` for some
-  classes and nowhere for others. Whether an effect can pair depends on
-  which class it is, not on whether its target is known.
-- There is no io family at all, so "writes to stdout" and "writes this
-  file" are invisible as capabilities even though the CLI surface and
-  most build tooling consist of little else.
-
-## The grammar
-
-An interaction effect is a 5-tuple:
-
-```
-effect = (family, verb, target, payload, conditions)
+```typescript
+export const placeOrder = async (event) => {
+  const order = parseOrder(event.body);
+  if (order.total > 0) {
+    await client.send(new SendMessageCommand({
+      QueueUrl: process.env.ORDERS_QUEUE_URL,
+      MessageBody: JSON.stringify({ id: order.id, total: order.total }),
+    }));
+  }
+  console.log("order received", order.id);
+  fs.appendFileSync(auditPath, line);
+  return { statusCode: 202, body: "{}" };
+};
 ```
 
-- **family** — the kind of resource the effect touches. Initial set:
-  `storage`, `http`, `message`, `config`, `io`, `time`. Families are
-  infrastructure kinds, never framework names (the death test below).
-- **verb** — what is done to it, from a small per-family set:
-  `read` / `write` / `delete` for storage and io, `call` for http,
-  `send` / `receive` for message, `read` for config, `schedule` for
-  time. Verbs are directions of dataflow, not API method names.
-- **target** — the resolved channel identity: a table name, a URL or
-  host, a queue or bus#detailType channel, an env-var name, a stream
-  (`stdout`, `stderr`) or path, a scheduling API. Targets may be
-  `unresolved` with a reason; an unresolved target is surfaced, never
-  dropped, matching the summary philosophy.
-- **payload** — the TypeShape crossing the channel, when extractable.
-  The existing per-class extras (fields/selector for storage,
-  responseShape for http, defaulted for config, callbackRef/hasDelay for
-  time) become family-specific payload metadata rather than top-level
-  class fields.
-- **conditions** — the predicates gating the transition the effect sits
-  on. Already modeled; the grammar makes explicit that a capability
-  claim is conditional ("sends to OrdersQueue when total > 0").
+The summary records three side effects, each treated differently:
 
-The six current classes map losslessly:
+- The queue send is fully understood: it has a class (`message-send`),
+  a channel (`ORDERS_QUEUE_URL`), a payload shape (`{id, total}`), and
+  a condition (`order.total > 0`). It can pair against the consumer on
+  the other side of the queue.
+- The `console.log` is recorded as "a call to console.log with these
+  arguments". No category, no channel. You can see it in inspect
+  output, but you cannot ask "what does this unit write to".
+- The `fs.appendFileSync` is the same: visible as a call, invisible as
+  a capability.
 
-| today | grammar |
-|---|---|
-| storage-access (kind: read) | (storage, read, table, fields) |
-| storage-access (kind: write) | (storage, write, table, fields) |
-| service-call | (http, call, url/host, payload + responseShape) |
-| message-send | (message, send, channel, body) |
-| message-receive | (message, receive, channel, body) |
-| config-read | (config, read, var name, defaulted) |
-| schedule | (time, schedule, via, callbackRef + hasDelay) |
+The difference is not in the code. It is in whether a pack happened to
+classify that kind of call. We have six categories (storage access,
+HTTP calls, message send, message receive, config reads, scheduling),
+each added when some pack needed it, each with its own field names.
+There is no category for writing to stdout or the filesystem at all.
 
-New with the grammar, closing the known hole:
+This proposal replaces the grab-bag with one shape that every side
+effect fits, so that "what does this code touch" has a single answer
+regardless of which pack recognized it.
 
-| new | grammar |
-|---|---|
-| process.stdout.write / console.* | (io, write, stdout/stderr, arg shape) |
-| fs read APIs | (io, read, path-or-unresolved, shape) |
-| fs write APIs | (io, write, path-or-unresolved, shape) |
+## The shape
 
-## Literature this leans on, and what each contributes
+Every effect becomes five things:
 
-- **Type-and-effect systems** (Lucassen and Gifford 1988; Talpin and
-  Jouvelot; Koka's effect rows). Contributes the judgment shape: a
-  unit's effect set is a row of labeled operations, rows compose across
-  calls, and a row with fewer labels satisfies a declaration with more.
-  We import the satisfaction direction directly: a declared effect set
-  is a floor read one way (these effects are committed) and a ceiling
-  read the other (an intent may forbid), and both readings come from
-  row subsumption rather than ad hoc rules.
-- **Object-capability literature** (Dennis and Van Horn; Miller).
-  Contributes the discipline about what suss is not: capabilities
-  answer what code MAY touch, suss effects answer what code DOES touch,
-  under which conditions, with which payload. The grammar stays
-  descriptive. Enforcement ("must not touch X") is expressed at the
-  intent layer as a forbidden effect, checked like any declaration, so
-  the IR never carries permission semantics.
-- **Cloud IAM action vocabularies** (AWS `service:Verb` on a resource
-  ARN, and the GCP/Azure equivalents). Contributes a pre-validated
-  enumeration of the channel families production code actually touches,
-  and a target-naming convention that already matches the deploy
-  manifests we parse. Two consequences worth designing for: family/verb
-  pairs should be mappable onto IAM action classes (send on a message
-  channel maps into sqs:SendMessage territory), and a unit's projected
-  capability set becomes directly comparable to the IAM policy its
-  template grants. Statically checkable least-privilege drift (code
-  sends to a queue the role can't reach; role grants a table no path
-  writes) falls out of the same comparison machinery the checker
-  already has.
-- **WASI capability descriptors and Deno permission flags.** Contribute
-  the io family's shape: read/write split per stream or path prefix,
-  and precedent that stdout/stderr/fs/net is a complete-enough starter
-  partition.
+```
+(family, verb, target, payload, conditions)
+```
 
-## What the grammar unlocks, in build order
+Read it as a sentence: this code **verb**s a **family** resource named
+**target**, carrying **payload**, when **conditions** hold.
 
-1. **The vocabulary itself** (IR change, additive). One
-   interaction shape with family/verb/target replacing the six-way
-   discriminated union; old classes parse forward via a compatibility
-   mapping for one release of the summary format.
-2. **Capability projection** (derived, no new extraction). Fold a
-   unit's transition effects into a per-unit capability set:
-   `(family, verb, target)` with the union of payloads and the
-   disjunction of conditions. Queryable ("which units write
-   OrdersQueue") and rendered as a short block in inspect.
-3. **Effect deltas in `inspect --diff`.** The reviewer story for
-   agent-written code: "this change added (http, call,
-   api.example.com) and (config, read, PAYMENT_KEY)". Highest
-   value per unit of work in the whole arc; it reads projection
-   output, so it ships immediately after 2.
-4. **Intent effect outcomes** (the intent v0.2 workflow kind already
-   sketched in intent-specs.md). An outcome may be an effect tuple;
-   PRD scenarios link to it ("the order is queued"). Same vocabulary,
-   no parallel naming scheme.
-5. **IAM comparison** (new checker input, later). Parse the role
-   policies the manifests already carry and compare granted actions
-   against projected capabilities, both directions.
-6. **Transitive closure** (the expensive one, last). A unit's
-   effective capability includes its callees' effects. This is the
-   access-tracing arc; blocked on nothing above and blocking nothing
-   above.
+- **family** — what kind of resource. Six to start: `storage`,
+  `network`, `message`, `config`, `io`, `time`. These are kinds of
+  infrastructure, never framework names. There will never be an
+  "express" or "prisma" family.
+- **verb** — what is done to it. A small fixed set per family:
+  read / write / delete for storage and io, call for network,
+  send / receive for message, read for config, schedule for time.
+- **target** — the specific thing touched: a table name, a host, a
+  queue, an env-var name, `stdout`, a file path. When the analyzer
+  cannot work the target out, it records `unresolved` with a reason.
+  It never silently drops the effect.
+- **payload** — the shape of the data crossing, in TypeShape (the same
+  shape language bodies and intent declarations already use), when
+  extractable.
+- **conditions** — the predicates on the transition the effect sits on.
+  These already exist; the point of naming them here is that a
+  capability is conditional: "sends to OrdersQueue **when total > 0**"
+  is the whole fact.
+
+The example handler, in the grammar:
+
+```
+(message, send,  OrdersQueue,   {id, total},  total > 0)
+(io,      write, stdout,        text,         always)
+(io,      write, <audit path>,  text,         always)
+```
+
+All three are now the same kind of fact. The first pairs against the
+queue's consumer, exactly as today. The other two exist for the first
+time.
+
+Nothing about extraction changes. The six current categories map into
+the grammar one-for-one (storage-access with kind read becomes
+`(storage, read, table, fields)`, and so on down the list). Their
+per-class extras (which fields a query touched, whether a config read
+had a `??` default, whether a timer had a delay) move into
+family-specific payload metadata. The io rows are the only genuinely
+new extraction, and they are ordinary recognizers in the node runtime
+pack.
+
+## What it buys, in build order
+
+1. **The vocabulary itself.** An additive IR change. Old summaries
+   keep parsing; the six classes are read as their grammar
+   equivalents for one release.
+2. **A capability view per unit.** Fold the effects of every
+   transition together and you get "what this unit touches":
+
+   ```
+   placeOrder
+     message send  OrdersQueue     when total > 0
+     io      write stdout, <audit path>
+   ```
+
+   Derived from data we already have. Queryable ("which units write
+   OrdersQueue"), and rendered as a short block in inspect.
+3. **Effect deltas in `inspect --diff`.** The reviewer story,
+   especially for agent-written code: a PR's diff summary says
+   "added: network call to api.example.com; added: config read of
+   PAYMENT_KEY". You learn what a change *reaches*, without reading
+   the diff line by line. This is the highest-value item in the arc
+   and ships immediately after 2, since it just diffs capability
+   views.
+4. **Intent can declare effects.** The planned v0.2 intent shape lets
+   an outcome be an effect: "on success, the order is queued". A PRD
+   scenario links to "the order was queued" instead of only to a
+   status code. Same tuples, so nothing gets a second name.
+5. **Compare against IAM policy.** Our manifest parsing already sees
+   the role policy next to each Lambda. A capability view and an IAM
+   policy are the same shape of statement (verb on a resource), so the
+   checker can compare them both ways: code sends to a queue the role
+   cannot reach, or the role grants a table nothing in the code
+   touches. Static least-privilege drift, from machinery we already
+   have.
+6. **Transitive closure, last.** Today an effect belongs to the
+   function whose body performs it. A handler's true capability
+   includes what its callees do. That is the existing access-tracing
+   arc, is the expensive part, and blocks nothing above.
+
+## Prior art, and what we take from each
+
+We are not inventing this vocabulary; forty years of work exists. The
+job is to take from it selectively:
+
+- **Effect systems** (research languages like Koka; Java's checked
+  exceptions are a primitive one). These languages track "what a
+  function does" in its type: this function reads, writes, throws.
+  We take the bookkeeping rules: effect lists compose when functions
+  call each other, and a list with fewer entries satisfies a
+  declaration that allows more. That gives intent checking its floor
+  semantics for free. The difference: those systems require writing
+  your code in their language, and the effects are abstract labels
+  like "io". suss infers the list from code that never opted in, and
+  the entries name concrete infrastructure: not "io" but "writes
+  OrdersQueue".
+- **Capability systems** (the object-capability line of work). These
+  answer "what MAY this code touch" and enforce it. We take the
+  boundary lesson: suss describes what code DOES touch and stays out
+  of the permission business. "Must not touch X" belongs in an intent
+  document, checked like any other declaration, so the IR never
+  carries enforcement semantics.
+- **Cloud IAM vocabularies** (AWS actions like `sqs:SendMessage` on a
+  queue ARN). AWS already maintains a tested enumeration of every
+  channel production code touches, named as verb-on-resource. We take
+  the taxonomy shape and the target naming, which is what makes item
+  5 (policy comparison) a mechanical join instead of a research
+  project.
+- **WASI and Deno permissions.** Both partition io as read/write per
+  stream or path prefix. We take that partition as the io family's
+  shape.
 
 ## Guardrails
 
-- **The death test.** Families and verbs must survive any framework's
-  death. If a framework dying would force a family or verb change,
-  framework vocabulary leaked into the grammar. Packs translate
-  surface syntax into the grammar; they never extend it.
-- **Description, not permission.** The IR states what code does.
-  "May" and "must not" live in intent documents that reference the
-  same tuples.
-- **Unresolved is a value.** A target the analyzer can't resolve is
-  recorded with a reason and surfaced in accounting, following the
-  summary philosophy. A capability set with unresolved entries says so;
-  it never silently narrows.
-- **No new authoring surface.** Nothing here asks users to annotate
-  code. The grammar is extracted; only intent documents are written by
-  hand, and only if the team wants effect declarations.
+- **The death test.** If a framework dying would ever force a family
+  or verb change, framework vocabulary leaked into the grammar. Packs
+  translate surface syntax into the grammar; they never extend it.
+- **Description, not permission.** The IR states what code does. May
+  and must-not live in intent documents that reference the same
+  tuples.
+- **Unresolved is a value.** A target the analyzer cannot resolve is
+  recorded with a reason and shows up in accounting. A capability view
+  with unresolved entries says so; it never silently narrows.
+- **No new authoring surface.** Nobody annotates code. The grammar is
+  extracted. The only hand-written artifacts are intent documents,
+  and only if a team wants effect declarations.
 
 ## Migration
 
-- Additive schema first: new interaction shape beside the old classes,
-  packs emit the new shape, `parseSummaries` upgrades old-class
-  documents on read.
-- The checker's pairing keys (message channel, config name, storage
-  table) are unchanged: they become target values, so pairing logic
-  rewrites mechanically.
-- Remove the old classes from the published JSON schema one release
-  after every in-repo producer emits the new shape.
+- Additive schema first: the new shape lands beside the old classes,
+  packs switch to emitting it, `parseSummaries` upgrades old documents
+  on read.
+- Pairing keys (message channel, config name, storage table) are
+  unchanged; they become target values, so the checker rewrite is
+  mechanical.
+- The old classes leave the published JSON schema one release after
+  every in-repo producer emits the new shape.
 
 ## Open questions for alignment
 
-1. Family granularity: is `http` a family or a verb-carrier under a
-   broader `network` family (grpc and websocket land eventually)?
-   Proposal: `network` family with protocol on the target, so new
-   protocols are data.
-2. Does `schedule` belong in the grammar at all, given it pairs with
-   nothing? Proposal: yes, as (time, schedule); capability projection
-   including "schedules work" is useful to reviewers even without
-   pairing.
-3. Invocation effects: fold into the grammar as (call, callee) or keep
-   as the unclassified substrate below it? Proposal: keep separate;
-   they are the raw material recognizers classify, not capabilities.
-4. How far to normalize targets (URL vs host vs host+path-prefix)?
-   Proposal: family-specific target shapes, exact for message/config,
-   host + optional path prefix for network, path prefix for io.
+1. Is HTTP its own family, or a `network` family with the protocol on
+   the target (grpc and websocket will arrive eventually)?
+   Recommendation: `network`, so new protocols are data, not schema.
+2. Does `time`/schedule belong in the grammar even though it pairs
+   with nothing? Recommendation: yes; "schedules background work" is
+   worth seeing in a capability view even without a partner to check
+   against.
+3. Do unclassified invocation effects (plain calls with argument
+   shapes) fold into the grammar, or stay beneath it as the raw
+   material recognizers classify? Recommendation: stay beneath it;
+   a call is not a capability until something resolves what it
+   touches.
+4. How exact are targets? A queue name is exact; a URL could be a
+   host, or host plus path prefix; a file path could be a prefix.
+   Recommendation: per-family target shapes: exact for message and
+   config, host plus optional path prefix for network, path prefix
+   for io.
