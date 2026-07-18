@@ -49,7 +49,7 @@ or a framework that reads `package.json`) would let the intent workflow
 run without bespoke glue. Until then, any team pointing intent at a
 library boundary has to write the same driver.
 
-### 2. `suss check --dir` can't point at a committed .sussignore — `fix-now`
+### 2. `suss check --dir` can't point at a committed .sussignore — `resolved`
 
 `CheckDirOptions` carries `sussignore` and `noSuppressions`, but
 `runCheck`'s arg parser (packages/cli/src/run.ts) doesn't expose them.
@@ -58,6 +58,9 @@ Because `check:self` generates that directory, the driver copies
 `intent/self.sussignore.yml` into it as `.sussignore.yml`. The capability
 exists in the function; wiring `--sussignore` / `--no-suppressions` onto
 the `check` command removes the copy step.
+
+**Resolved.** `check` now parses `--sussignore <path>` and
+`--no-suppressions`, threaded to both the two-file and `--dir` paths.
 
 ### 3. Intent body vocabulary can't describe function return shapes — `resolved`
 
@@ -90,13 +93,17 @@ first run with the richer declarations caught a genuine authoring error:
 `providers` / `consumers` arrays. Named `TypeShape` references remain
 open.
 
-### 4. A body-less return must be written `returns: {}`, not `returns:` — `fix-now`
+### 4. A body-less return must be written `returns: {}`, not `returns:` — `resolved`
 
 Bare `returns:` parses as YAML null and fails Zod with
 `expected object, received null` at `transitions.0.returns`. Nothing tells
 the author that `{}` is the intended empty form. Either accept null as an
 empty returns outcome, or special-case the message ("write `returns: {}`
 for a body-less return").
+
+**Resolved.** The three outcome fields (`response`, `returns`, `throws`)
+now coerce a null value to `{}`, so `returns:` and `returns: {}` mean the
+same body-less outcome.
 
 ### 5. The proposal's worked examples don't match the shipped schema — `fix-now`
 

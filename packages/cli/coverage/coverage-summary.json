@@ -19,10 +19,10 @@
       "pct": 84.56
     },
     "branches": {
-      "total": 592,
-      "covered": 473,
+      "total": 596,
+      "covered": 478,
       "skipped": 0,
-      "pct": 79.89
+      "pct": 80.2
     },
     "branchesTrue": {
       "total": 0,
@@ -181,10 +181,10 @@
       "pct": 97.82
     },
     "branches": {
-      "total": 86,
-      "covered": 71,
+      "total": 90,
+      "covered": 76,
       "skipped": 0,
-      "pct": 82.55
+      "pct": 84.44
     }
   },
   "src/suppressionsLoader.ts": {
