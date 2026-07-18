@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Widget catalog service — invented fixture for the aws-lambda pack.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    CodeUri: .
+    Timeout: 10
+
+Resources:
+  # Explicit HTTP API — the Function HttpApi Events attach here, so the
+  # declared-route summaries pair against the extracted handlers.
+  WidgetHttpApi:
+    Type: AWS::Serverless::HttpApi
+
+  ConfirmTokenFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/confirmToken.handler
+      Events:
+        Confirm:
+          Type: HttpApi
+          Properties:
+            Method: POST
+            Path: /tokens/{tokenId}/confirm
+
+  ListWidgetsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/listWidgets.handler
+      Events:
+        List:
+          Type: HttpApi
+          Properties:
+            Method: GET
+            Path: /widgets
+
+  # One function bound to two route Events (GET + DELETE on the same path).
+  WidgetItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/widgetItem.handler
+      Events:
+        Get:
+          Type: HttpApi
+          Properties:
+            Method: GET
+            Path: /widgets/{widgetId}
+        Remove:
+          Type: HttpApi
+          Properties:
+            Method: DELETE
+            Path: /widgets/{widgetId}
+
+  # Non-HTTP handler — surfaces as recognized-not-http accounting.
+  QueueWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/queueWorker.handler
+      Events:
+        Jobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt JobsQueue.Arn
+
+  JobsQueue:
+    Type: AWS::SQS::Queue

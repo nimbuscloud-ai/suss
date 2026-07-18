@@ -497,8 +497,12 @@ export interface TerminalExtraction {
         position: number;
         codes: Record<string, number>;
       };
-  body?:
-    | { from: "property"; name: string } // { body: data } → name: "body"
+  body?: // { body: data } → name: "body". `unwrapJsonStringify` peels a
+  // `JSON.stringify(x)` initializer down to the shape of `x` — the
+  // Lambda-proxy envelope convention where `body` is the serialized
+  // payload string, not the payload itself. Off by default so packs
+  // that want the literal property value keep it.
+    | { from: "property"; name: string; unwrapJsonStringify?: boolean }
     | { from: "argument"; position: number; minArgs?: number }; // res.json(data) → position: 0
   /** Fallback status code when none is extracted. e.g. Express res.json() defaults to 200. */
   defaultStatusCode?: number;
@@ -898,6 +902,20 @@ export interface DiscoveredCustomUnit {
    * `inputMapping` when unset.
    */
   inputMapping?: InputMappingPattern;
+  /**
+   * REST route identity for units a callback discovers against an
+   * external manifest (a SAM/CFN template's `Events` block, an infra
+   * routing declaration, etc.) rather than an in-code registration.
+   * When set, the adapter builds a `rest` binding from `(method, path)`
+   * — the same binding NestJS controllers get via decorator-derived
+   * `routeInfo`, without the discoverUnits callback needing to reach
+   * into the adapter's binding machinery.
+   *
+   * One function bound to several routes emits one DiscoveredCustomUnit
+   * per route; the adapter's per-file claim dedup keys on
+   * `(func, kind, method, path)` so the variants survive.
+   */
+  routeInfo?: { method: string; path: string };
   /**
    * Metadata merged onto the resulting summary's `metadata` field.
    */

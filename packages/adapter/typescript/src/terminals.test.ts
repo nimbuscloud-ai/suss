@@ -1912,3 +1912,59 @@ describe("extraction edge cases", () => {
     });
   });
 });
+
+describe("findTerminals — JSON.stringify body unwrap", () => {
+  function makeEnvelopePattern(): TerminalPattern {
+    return {
+      kind: "response",
+      match: { type: "returnShape", requiredProperties: ["statusCode"] },
+      extraction: {
+        statusCode: { from: "property", name: "statusCode" },
+        body: { from: "property", name: "body", unwrapJsonStringify: true },
+      },
+    };
+  }
+
+  it("unwraps JSON.stringify(x) in the body property to the shape of x", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      async function handler() {
+        return { statusCode: 200, body: JSON.stringify({ id: "w1" }) };
+      }
+    `,
+    );
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeEnvelopePattern()]);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
+    // Body is the stringified payload's shape, not the call wrapper.
+    expect(terminals[0].terminal.body?.typeText).toBe('{ id: "w1" }');
+    expect(terminals[0].terminal.body?.shape).toEqual({
+      type: "record",
+      properties: { id: { type: "literal", value: "w1" } },
+    });
+  });
+
+  it("leaves a non-JSON.stringify body property untouched", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      async function handler() {
+        return { statusCode: 204, body: "" };
+      }
+    `,
+    );
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeEnvelopePattern()]);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.body?.typeText).toBe('""');
+  });
+});

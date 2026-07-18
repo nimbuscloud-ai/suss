@@ -70,6 +70,7 @@
     "@suss/extractor": "*",
     "@suss/framework-apollo": "*",
     "@suss/framework-aws-eventbridge": "*",
+    "@suss/framework-aws-lambda": "*",
     "@suss/framework-aws-sqs": "*",
     "@suss/framework-express": "*",
     "@suss/framework-fastify": "*",

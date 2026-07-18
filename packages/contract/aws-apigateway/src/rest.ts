@@ -154,6 +154,13 @@ function buildEndpointSummary(
             statusCode,
           })),
         },
+        // Additive pointer to the code that implements this endpoint
+        // (SAM Lambda proxy Handler), so a checker can correlate the
+        // declared route with the extracted handler summary carrying the
+        // same REST binding.
+        ...(endpoint.implementingHandler !== undefined
+          ? { implementingHandler: endpoint.implementingHandler }
+          : {}),
       },
     },
   };

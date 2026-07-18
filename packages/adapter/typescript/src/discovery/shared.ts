@@ -102,6 +102,13 @@ export interface DiscoveredUnit {
     method: string;
     path: string;
   };
+  /**
+   * Metadata merged onto the assembled summary's `metadata` field.
+   * Populated when a pack's `discoverUnits` callback stamps provenance
+   * on the units it returns (the discovery-layer sibling of the
+   * per-sub-unit `metadata` the `subUnits` hook carries).
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /** Extract FunctionRoot from something that might be a function or wrap one. */

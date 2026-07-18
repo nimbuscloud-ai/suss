@@ -20,6 +20,37 @@ export function unwrapAs(node: Expression): Expression {
   return Node.isAsExpression(node) ? unwrapAs(node.getExpression()) : node;
 }
 
+/**
+ * Peel a `JSON.stringify(x)` call down to `x`. The Lambda-proxy
+ * envelope serializes the response payload into the `body` string, so
+ * the shape worth comparing across the boundary is the argument, not
+ * the stringified wrapper. Casts / parens around either the call or the
+ * argument are unwrapped. Returns the node unchanged when it isn't a
+ * `JSON.stringify(...)` call.
+ */
+export function unwrapJsonStringify(node: Expression): Expression {
+  const outer = unwrapAs(node);
+  if (!Node.isCallExpression(outer)) {
+    return node;
+  }
+  const callee = outer.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(callee) ||
+    callee.getName() !== "stringify"
+  ) {
+    return node;
+  }
+  const receiver = callee.getExpression();
+  if (!Node.isIdentifier(receiver) || receiver.getText() !== "JSON") {
+    return node;
+  }
+  const args = outer.getArguments();
+  if (args.length === 0) {
+    return node;
+  }
+  return unwrapAs(args[0] as Expression);
+}
+
 // ---------------------------------------------------------------------------
 // Extraction context
 //
@@ -234,7 +265,9 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
         return null;
       }
 
-      return { typeText: val.getText(), shape: extractShape(val) };
+      const target =
+        b.unwrapJsonStringify === true ? unwrapJsonStringify(val) : val;
+      return { typeText: target.getText(), shape: extractShape(target) };
     }
 
     return null;
