@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { IntentDocSchema, intentDocToSummary } from "./index.js";
+import {
+  IntentDocSchema,
+  IntentFindingKindSchema,
+  intentDocToSummary,
+} from "./index.js";
 
 import type { BoundaryIntentSummary, PrdSummary } from "./index.js";
 
@@ -255,5 +259,17 @@ describe("intentDocToSummary — PRD", () => {
         link: [],
       },
     ]);
+  });
+});
+
+describe("IntentFindingKindSchema", () => {
+  it("carries the PRD scenario-coverage kinds alongside the boundary kinds", () => {
+    expect(IntentFindingKindSchema.options).toEqual(
+      expect.arrayContaining([
+        "unlinkedScenario",
+        "danglingScenarioLink",
+        "ambiguousScenarioLink",
+      ]),
+    );
   });
 });
