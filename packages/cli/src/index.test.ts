@@ -568,7 +568,7 @@ describe("extract — errors", () => {
         tsconfig: "/nonexistent/tsconfig.json",
         frameworks: ["express"],
       }),
-    ).rejects.toThrow("tsconfig not found");
+    ).rejects.toThrow("No tsconfig at");
   });
 
   it("throws on unknown framework", async () => {
@@ -596,7 +596,7 @@ describe("extract — errors", () => {
         tsconfig: tsconfigPath,
         frameworks: [],
       }),
-    ).rejects.toThrow("At least one framework");
+    ).rejects.toThrow("at least one pack");
 
     fs.rmSync(tmpDir, { recursive: true });
   });
@@ -642,7 +642,7 @@ describe("inspect", () => {
       expect(output).toContain("GET /users/:id");
       expect(output).toContain("-> 200");
       expect(output).toContain("Contract:");
-      expect(output).toContain("summaries inspected");
+      expect(output).toMatch(/\d+ summar(y|ies)\./);
 
       // Clean up
       fs.rmSync(tmpDir, { recursive: true });

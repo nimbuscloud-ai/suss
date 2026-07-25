@@ -315,7 +315,7 @@ describe("check CLI command", () => {
         providerFile: path.join(tmpDir, "does-not-exist.json"),
         consumerFile: consumerPath,
       }),
-    ).toThrow("File not found");
+    ).toThrow("No file at");
   });
 
   it("throws with parse issues when summary JSON is not an array", () => {
@@ -326,7 +326,7 @@ describe("check CLI command", () => {
         providerFile: providerPath,
         consumerFile: consumerPath,
       }),
-    ).toThrow(/Invalid summary file/);
+    ).toThrow(/could not read/);
   });
 
   it("throws with parse issues when a summary element is malformed", () => {
@@ -340,7 +340,7 @@ describe("check CLI command", () => {
         providerFile: providerPath,
         consumerFile: consumerPath,
       }),
-    ).toThrow(/Invalid summary file/);
+    ).toThrow(/could not read/);
   });
 
   it("human output annotates sub-`high` confidence alongside the finding", () => {
@@ -725,7 +725,7 @@ describe("checkDir", () => {
       expect(result.result.pairs).toHaveLength(1);
       expect(result.result.pairs[0].key).toBe("GET /users/{id}");
     });
-    expect(output).toContain("Paired 1 provider-consumer combination");
+    expect(output).toContain("Compared 1 boundary");
     expect(output).toContain("No findings");
   });
 
@@ -1000,7 +1000,7 @@ describe("checkDir", () => {
     const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-noint-"));
     try {
       expect(() => checkDir({ dir: tmpDir, intent: intentDir })).toThrow(
-        /No intent docs/,
+        /no intent docs/,
       );
     } finally {
       fs.rmSync(intentDir, { recursive: true, force: true });
@@ -1050,7 +1050,7 @@ describe("checkDir", () => {
       expect(result.result.unmatched.providers).toHaveLength(1);
       expect(result.result.unmatched.consumers).toHaveLength(1);
     });
-    expect(output).toContain("Unmatched");
+    expect(output).toContain("Nothing was compared");
     expect(output).toContain("getUser");
     expect(output).toContain("OrgPage");
   });
@@ -1146,14 +1146,14 @@ describe("checkDir", () => {
 
   it("throws when directory does not exist", () => {
     expect(() => checkDir({ dir: path.join(tmpDir, "nonexistent") })).toThrow(
-      "Directory not found",
+      "No directory at",
     );
   });
 
   it("throws when directory has no JSON files", () => {
     const emptyDir = path.join(tmpDir, "empty");
     fs.mkdirSync(emptyDir);
-    expect(() => checkDir({ dir: emptyDir })).toThrow("No JSON files");
+    expect(() => checkDir({ dir: emptyDir })).toThrow("has no JSON files");
   });
 });
 

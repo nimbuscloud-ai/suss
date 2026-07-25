@@ -1771,6 +1771,14 @@ export function createTypeScriptAdapter(
       // write are swallowed — a failed cache write shouldn't
       // fail the extract.
       await timer.timeAsync("cache.write", async () => {
+        // An empty result is never cached. Serving it from the cache
+        // would skip the stages that populate the funnel, so a user who
+        // ran into a misconfiguration would get "0 summaries" with no
+        // explanation on every run after the first. Re-running an
+        // extract that finds nothing is cheap by definition.
+        if (enriched.length === 0) {
+          return;
+        }
         try {
           await cache.write(cacheInput, enriched);
         } catch {

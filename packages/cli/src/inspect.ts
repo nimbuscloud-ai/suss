@@ -1042,7 +1042,9 @@ export function inspect(options: InspectOptions): void {
     }
   }
 
-  process.stdout.write(`\n${summaries.length} summaries inspected.\n`);
+  process.stdout.write(
+    `\n${plural(summaries.length, "summary", "summaries")}.\n`,
+  );
 }
 
 function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
@@ -1380,29 +1382,41 @@ export function inspectDir(options: DirOptions): void {
     if (pairsByKey.size > 0) {
       process.stdout.write("\n");
     }
-    process.stdout.write(`${unmatchedCount} unmatched:\n`);
+    process.stdout.write("Not paired:\n");
     for (const p of providers) {
       const key = restKey(p) ?? "no path";
-      process.stdout.write(
-        `  ${p.identity.name} (${key}) — no matching client\n`,
-      );
+      process.stdout.write(`  ${p.identity.name} (${key}) has no client\n`);
     }
     for (const c of consumers) {
       const key = restKey(c) ?? "no path";
-      process.stdout.write(
-        `  ${c.identity.name} (${key}) — no matching provider\n`,
-      );
+      process.stdout.write(`  ${c.identity.name} (${key}) has no provider\n`);
     }
-    for (const s of noBinding) {
-      process.stdout.write(`  ${s.identity.name} — no boundary binding\n`);
+    if (noBinding.length > 0) {
+      // Internal helpers arrive here by the dozen from the closure pass.
+      // Naming each one buries the boundaries above it, and a function
+      // with no boundary is the normal case, not a problem to report.
+      process.stdout.write(
+        `  ${noBinding.length} internal function${noBinding.length === 1 ? "" : "s"} with no boundary\n`,
+      );
     }
   }
 
   if (pairsByKey.size === 0 && unmatchedCount === 0) {
-    process.stdout.write("No summaries found.\n");
+    process.stdout.write(
+      `No summaries in ${options.dir}. Write some there with \`suss extract -o\` first.\n`,
+    );
+    return;
   }
 
+  const fileCount = fs
+    .readdirSync(path.resolve(options.dir))
+    .filter((f) => f.endsWith(".json")).length;
   process.stdout.write(
-    `\n${summaries.length} summaries from ${fs.readdirSync(path.resolve(options.dir)).filter((f) => f.endsWith(".json")).length} files.\n`,
+    `\n${plural(summaries.length, "summary", "summaries")} from ${plural(fileCount, "file", "files")}.\n`,
   );
+}
+
+/** "1 file" / "3 files", so counted nouns read as written English. */
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
 }

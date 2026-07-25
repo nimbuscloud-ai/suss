@@ -175,7 +175,9 @@ export async function contract(
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, `${json}\n`);
     process.stderr.write(
-      `Wrote ${summaries.length} contract summaries to ${outPath}\n`,
+      summaries.length === 0
+        ? `${options.spec} declares no boundaries suss could read.\n`
+        : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
     );
   } else {
     process.stdout.write(`${json}\n`);

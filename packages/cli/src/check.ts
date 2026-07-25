@@ -126,7 +126,9 @@ export function checkDir(
 ): CheckResult & { result: CheckAllResult } {
   const resolved = path.resolve(options.dir);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-    throw new Error(`Directory not found: ${resolved}`);
+    throw new Error(
+      `No directory at ${resolved}. Pass the folder holding the summary files you wrote with \`suss extract -o\`.`,
+    );
   }
 
   // .sussignore.json is auto-discovered from this same directory — it's
@@ -137,7 +139,9 @@ export function checkDir(
       (f) => f.endsWith(".json") && !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
     );
   if (files.length === 0) {
-    throw new Error(`No JSON files found in ${resolved}`);
+    throw new Error(
+      `${resolved} has no JSON files in it. Write summaries there first, for example: suss extract -p tsconfig.json -f express -o ${path.join(options.dir, "api.json")}`,
+    );
   }
 
   const allSummaries: BehavioralSummary[] = [];
@@ -195,7 +199,7 @@ function runIntentPass(
     // Same convention as an empty --dir: pointing at a directory with
     // nothing to load is a usage error, not a clean pass.
     throw new Error(
-      `No intent docs (*.intent.{yaml,yml,json} / *.prd.{yaml,yml,json}) found in ${intentDir}`,
+      `${intentDir} holds no intent docs. suss looks for *.intent.yaml, *.intent.yml, *.intent.json, and the same three for *.prd.`,
     );
   }
   const result = checkIntentAgreement(intents, code);
@@ -296,13 +300,13 @@ function meetsThreshold(findings: Finding[], failOn: FailOn): boolean {
 function readSummaries(file: string): BehavioralSummary[] {
   const resolved = path.resolve(file);
   if (!fs.existsSync(resolved)) {
-    throw new Error(`File not found: ${resolved}`);
+    throw new Error(`No file at ${resolved}.`);
   }
   const parsed = JSON.parse(fs.readFileSync(resolved, "utf-8")) as unknown;
   const result = safeParseSummaries(parsed);
   if (!result.success) {
     throw new Error(
-      `Invalid summary file ${resolved}:\n${formatParseIssues(result.error.issues)}`,
+      `suss could not read ${resolved} as summaries. It should be the output of \`suss extract\` or \`suss contract\`. What did not fit:\n${formatParseIssues(result.error.issues)}`,
     );
   }
   return result.data;
@@ -412,42 +416,107 @@ function renderDirHuman(
   confidence: ConfidenceLookup,
 ): string {
   const lines: string[] = [];
+  const { providers, consumers, noBinding } = result.unmatched;
 
-  // Pairing summary
-  lines.push(
-    `Paired ${result.pairs.length} provider-consumer combination${result.pairs.length === 1 ? "" : "s"}:`,
-  );
-  for (const pair of result.pairs) {
-    lines.push(`  ${pair.key}: ${pair.provider} <-> ${pair.consumer}`);
+  // Lead with how much was actually compared. "No findings" on its own
+  // reads as a pass, and a run where nothing paired has checked nothing
+  // at all, which is the opposite of a pass.
+  if (result.pairs.length > 0) {
+    lines.push(
+      `Compared ${result.pairs.length} boundar${result.pairs.length === 1 ? "y" : "ies"}:`,
+    );
+    for (const pair of result.pairs) {
+      lines.push(`  ${pair.key}: ${pair.provider} <-> ${pair.consumer}`);
+    }
+  } else {
+    lines.push("Nothing was compared.");
+    lines.push("");
+    // Counted by boundary, matching how they are listed below. Two
+    // summaries describing one route are one thing missing a client.
+    lines.push(
+      `  ${nothingComparedReason(groupByKey(providers).size, groupByKey(consumers).size)}`,
+    );
+    lines.push(
+      "  Extract both sides of the boundary into the same folder, then check them together:",
+    );
+    lines.push(
+      "    suss extract -p <tsconfig> -f <pack> -o summaries/<name>.json",
+    );
+    lines.push("    suss check --dir summaries/");
   }
 
-  const { providers, consumers, noBinding } = result.unmatched;
-  if (providers.length > 0 || consumers.length > 0 || noBinding.length > 0) {
+  // Group by boundary rather than by summary. One route described by
+  // both a deploy template and its handler code is one boundary waiting
+  // for a client, and listing it twice makes the count read wrong.
+  if (providers.length > 0) {
     lines.push("");
-    lines.push("Unmatched:");
-    for (const p of providers) {
-      lines.push(
-        `  provider ${p.name} (${p.key ?? "no path"}) — no matching consumer`,
-      );
+    lines.push("Providers with no client to compare against:");
+    for (const [key, names] of groupByKey(providers)) {
+      lines.push(`  ${key}`);
+      lines.push(`    ${names.join(", ")}`);
     }
-    for (const c of consumers) {
-      lines.push(
-        `  consumer ${c.name} (${c.key ?? "no path"}) — no matching provider`,
-      );
+  }
+
+  if (consumers.length > 0) {
+    lines.push("");
+    lines.push("Clients with no provider to compare against:");
+    for (const [key, names] of groupByKey(consumers)) {
+      lines.push(`  ${key}`);
+      lines.push(`    ${names.join(", ")}`);
     }
-    for (const name of noBinding) {
-      lines.push(`  ${name} — no boundary binding`);
-    }
+  }
+
+  // Internal helpers reached through the closure pass land here by the
+  // dozen. Listing each one buries whatever else is on screen, and a
+  // function with no boundary is the normal case rather than a problem.
+  if (noBinding.length > 0) {
+    lines.push("");
+    lines.push(
+      `${noBinding.length} other summar${noBinding.length === 1 ? "y is" : "ies are"} internal code with no boundary, so nothing pairs with ${noBinding.length === 1 ? "it" : "them"}.`,
+    );
   }
 
   lines.push("");
 
-  // Findings
-  if (result.findings.length === 0) {
-    lines.push("No findings.");
-  } else {
+  if (result.findings.length > 0) {
     lines.push(renderHuman(result.findings, confidence).trimEnd());
+  } else if (result.pairs.length > 0) {
+    lines.push("No findings. Every compared boundary agreed.");
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+/** Collapse summaries onto the boundary they describe. */
+function groupByKey(
+  entries: ReadonlyArray<{ name: string; key?: string | null }>,
+): Map<string, string[]> {
+  const byKey = new Map<string, string[]>();
+  for (const entry of entries) {
+    const key = entry.key ?? "no path";
+    const names = byKey.get(key);
+    if (names !== undefined) {
+      names.push(entry.name);
+    } else {
+      byKey.set(key, [entry.name]);
+    }
+  }
+  return byKey;
+}
+
+/** Why a run compared nothing, in terms of what the user has and lacks. */
+function nothingComparedReason(
+  providerCount: number,
+  consumerCount: number,
+): string {
+  if (providerCount > 0 && consumerCount === 0) {
+    return `These summaries cover ${providerCount} boundar${providerCount === 1 ? "y" : "ies"} on the provider side and none on the client side, so there was no other side to compare against.`;
+  }
+  if (consumerCount > 0 && providerCount === 0) {
+    return `These summaries cover ${consumerCount} boundar${consumerCount === 1 ? "y" : "ies"} on the client side and none on the provider side, so there was no other side to compare against.`;
+  }
+  if (providerCount > 0 && consumerCount > 0) {
+    return "No provider and client shared a boundary, so none of them line up. Check that the paths match, including any prefix your router adds.";
+  }
+  return "None of these summaries describe a boundary, so there was nothing to pair.";
 }

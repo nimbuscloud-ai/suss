@@ -27,39 +27,42 @@ Usage:
   suss contract --from <source> <spec> [-o <output.json>]
 
 Commands:
-  extract   Extract behavioral summaries from TypeScript source files
-  inspect   Display human-readable output from a summaries JSON file
-  check     Compare summary files and report cross-boundary findings
-  contract  Generate behavioral summaries from a declared contract source
+  extract   Read your source and describe what each boundary does
+  inspect   Read a summaries file back in a form meant for people
+  check     Compare two sides of a boundary and report what disagrees
+  contract  Describe boundaries from a schema or deploy template
 
 Options (extract):
-  -p, --project    Path to tsconfig.json (required)
-  -f, --framework  Framework name. Repeatable. Built-in: ts-rest, react-router,
-                   express, fastify, react, apollo, fetch, axios, apollo-client.
-                   Custom packs resolve via @suss/framework-<name>.
-  -o, --output     Write JSON to file instead of stdout
-  --files          Specific source files to extract from
-  --gaps           Gap handling: strict (default), permissive, silent
-  --explain        Print the extraction funnel (files, gates, units, summaries).
-                   Printed automatically when a run produces nothing.
-  --fail-on-empty  Exit non-zero when the run produces no summaries
+  -p, --project    Path to the tsconfig covering the code to read (required)
+  -f, --framework  Which pack to use. Repeatable. Built in: ts-rest,
+                   react-router, express, fastify, nestjs-rest, nestjs-graphql,
+                   react, apollo, aws-lambda, fetch, axios, apollo-client, node.
+                   Other packs resolve as @suss/framework-<name>.
+  -o, --output     Write JSON to a file instead of stdout
+  --files          Read only these source files
+  --gaps           What to do with gaps: strict (default), permissive, silent
+  --explain        Show where the summaries came from, file by file and pack by
+                   pack. Shown automatically when a run finds nothing.
+  --fail-on-empty  Exit non-zero when a run finds nothing
 
 Options (check):
-  --dir            Directory of summary JSON files (auto-pairs by method+path)
-  --intent         Directory of intent specs (*.intent / *.prd) to check the
-                   code summaries against; requires --dir
-  --json           Emit findings as JSON (default: human-readable)
-  -o, --output     Write findings to file instead of stdout
-  --fail-on        Exit non-zero threshold: error (default), warning, info, none
-  --sussignore     Path to a .sussignore file (overrides auto-discovery)
-  --no-suppressions  Ignore any .sussignore, reporting every finding
+  --dir            Folder of summary files, paired up by method and path
+  --intent         Folder of intent docs (*.intent / *.prd) to check the code
+                   against. Needs --dir.
+  --json           Write findings as JSON instead of prose
+  -o, --output     Write findings to a file instead of stdout
+  --fail-on        Which severity fails the run: error (default), warning,
+                   info, none
+  --sussignore     Path to a .sussignore file, instead of finding one nearby
+  --no-suppressions  Report every finding, ignoring any .sussignore
 
 Options (contract):
-  --from           Contract source kind: openapi, cloudformation, storybook, appsync, prisma, graphql
-  -o, --output     Write JSON to file instead of stdout
+  --from           What kind of file to read: openapi, cloudformation,
+                   storybook, appsync, prisma, graphql
+  -o, --output     Write JSON to a file instead of stdout
 
 Exit codes:
-  check exits non-zero when any error-severity findings are present.
+  check exits non-zero when it finds anything at error severity.
 `.trim();
 
 /**
@@ -91,7 +94,9 @@ export async function runCli(args: string[]): Promise<number> {
     return await runContract(args.slice(1));
   }
 
-  process.stderr.write(`Unknown command: ${command}\n`);
+  process.stderr.write(
+    `There is no "${command}" command. suss has extract, inspect, check, and contract.\n`,
+  );
   process.stderr.write(`${USAGE}\n`);
   return 1;
 }
@@ -117,14 +122,16 @@ async function runExtract(args: string[]): Promise<number> {
   const frameworks = values.framework ?? [];
 
   if (tsconfig === undefined) {
-    process.stderr.write("Error: --project (-p) is required for extract\n");
-    process.stderr.write(`${USAGE}\n`);
+    process.stderr.write(
+      "extract needs a tsconfig. Try: suss extract -p tsconfig.json -f express\n",
+    );
     return 1;
   }
 
   if (frameworks.length === 0) {
-    process.stderr.write("Error: at least one --framework (-f) is required\n");
-    process.stderr.write(`${USAGE}\n`);
+    process.stderr.write(
+      "extract needs at least one pack, so it knows what to look for. Try: suss extract -p tsconfig.json -f express\nRun `suss --help` for the built-in packs.\n",
+    );
     return 1;
   }
 
@@ -136,7 +143,7 @@ async function runExtract(args: string[]): Promise<number> {
     gaps !== "silent"
   ) {
     process.stderr.write(
-      `Error: --gaps must be "strict", "permissive", or "silent"\n`,
+      `--gaps takes "strict", "permissive", or "silent". It got "${gaps}".\n`,
     );
     return 1;
   }
@@ -168,8 +175,9 @@ function runInspect(args: string[]): number {
     const before = args[1];
     const after = args[2];
     if (before === undefined || after === undefined) {
-      process.stderr.write("Error: --diff requires two summary file paths\n");
-      process.stderr.write(`${USAGE}\n`);
+      process.stderr.write(
+        "--diff compares two summary files. Try: suss inspect --diff before.json after.json\n",
+      );
       return 1;
     }
     inspectDiff({ before, after });
@@ -178,8 +186,9 @@ function runInspect(args: string[]): number {
   if (args[0] === "--dir") {
     const dir = args[1];
     if (dir === undefined) {
-      process.stderr.write("Error: --dir requires a directory path\n");
-      process.stderr.write(`${USAGE}\n`);
+      process.stderr.write(
+        "--dir needs the folder holding your summary files. Try: suss inspect --dir summaries/\n",
+      );
       return 1;
     }
     inspectDir({ dir });
@@ -188,9 +197,8 @@ function runInspect(args: string[]): number {
   const file = args[0];
   if (file === undefined) {
     process.stderr.write(
-      "Error: inspect requires a summaries JSON file path\n",
+      "inspect needs a summaries file to read. Try: suss inspect summaries/api.json, or --dir to read a whole folder.\n",
     );
-    process.stderr.write(`${USAGE}\n`);
     return 1;
   }
   inspect({ file });
@@ -252,16 +260,15 @@ function runCheck(args: string[]): number {
 
   if (values.intent !== undefined) {
     process.stderr.write(
-      "Error: --intent requires --dir <directory> of code summaries to check against\n",
+      "--intent checks your intent docs against code summaries, so it needs --dir too. Try: suss check --dir summaries/ --intent intent/\n",
     );
     return 1;
   }
 
   if (positionals.length < 2) {
     process.stderr.write(
-      "Error: check requires two summary file paths or --dir <directory>\n",
+      "check compares two sides of a boundary. Pass both files, or a folder holding them:\n  suss check summaries/api.json summaries/web.json\n  suss check --dir summaries/\n",
     );
-    process.stderr.write(`${USAGE}\n`);
     return 1;
   }
 
@@ -285,8 +292,9 @@ async function runContract(args: string[]): Promise<number> {
 
   const from = values.from as ContractSource | undefined;
   if (from === undefined) {
-    process.stderr.write("Error: --from is required for contract\n");
-    process.stderr.write(`${USAGE}\n`);
+    process.stderr.write(
+      "contract needs --from, so it knows how to read the file. Try: suss contract --from openapi openapi.yaml\n",
+    );
     return 1;
   }
   const SUPPORTED_FROM: ContractSource[] = [
@@ -299,14 +307,15 @@ async function runContract(args: string[]): Promise<number> {
   ];
   if (!SUPPORTED_FROM.includes(from)) {
     process.stderr.write(
-      `Error: unknown --from value "${from}". Supported: ${SUPPORTED_FROM.join(", ")}\n`,
+      `suss cannot read "${from}" contracts. It reads: ${SUPPORTED_FROM.join(", ")}.\n`,
     );
     return 1;
   }
 
   if (positionals.length === 0) {
-    process.stderr.write("Error: contract requires a spec file path\n");
-    process.stderr.write(`${USAGE}\n`);
+    process.stderr.write(
+      `contract needs the file to read. Try: suss contract --from ${from} <path>\n`,
+    );
     return 1;
   }
 

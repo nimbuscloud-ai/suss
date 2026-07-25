@@ -103,11 +103,15 @@ export async function extract(
   const tsconfigPath = path.resolve(options.tsconfig);
 
   if (!fs.existsSync(tsconfigPath)) {
-    throw new Error(`tsconfig not found: ${tsconfigPath}`);
+    throw new Error(
+      `No tsconfig at ${tsconfigPath}. Point -p at the tsconfig that covers the code you want read, usually the one your build uses.`,
+    );
   }
 
   if (options.frameworks.length === 0) {
-    throw new Error("At least one framework (-f) is required");
+    throw new Error(
+      "Pick at least one pack with -f, for example: -f express. Run `suss --help` for the built-in list.",
+    );
   }
 
   // Resolve all framework packs
@@ -164,8 +168,13 @@ export async function extract(
     const outPath = path.resolve(options.output);
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, `${json}\n`);
+    // An empty run gets its own line. "Wrote 0 summaries" announces an
+    // empty file as if it were an accomplishment, and the funnel that
+    // follows explains what actually happened.
     process.stderr.write(
-      `Wrote ${summaries.length} summaries to ${outPath}${formatTimingTotal(timingReport)}\n`,
+      summaries.length === 0
+        ? `No summaries to write${formatTimingTotal(timingReport)}.\n`
+        : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}${formatTimingTotal(timingReport)}\n`,
     );
   } else {
     process.stdout.write(`${json}\n`);
@@ -199,60 +208,113 @@ export async function extract(
   return summaries;
 }
 
-/** What each empty stage means, and what the user should do about it. */
-const EMPTY_STAGE_EXPLANATION: Record<EmptyStage, string> = {
-  tsconfig:
-    "The tsconfig matched no files. Check its `include` and `files` against where your source actually lives.",
-  gateResolution:
-    "A pack's gate specifier does not resolve from this tsconfig, listed below. Packs that rely on type information find nothing when the dependency is missing, so install the project's dependencies and re-run.",
-  candidateFiles:
-    "No file imported anything the active packs gate on. Either the project does not use these frameworks, or it reaches them through a local wrapper module rather than importing them directly.",
-  discovery:
-    "The packs saw candidate files but recognized no units in them. The code likely expresses its boundaries in a shape the pack does not describe yet.",
-  assembly:
-    "Units were discovered but none produced a summary. This is a bug worth reporting, with the source shape that triggered it.",
+/**
+ * What went wrong and what to do about it, per stage. Written to be
+ * read by someone who has never opened this codebase: the cause names
+ * what suss looked for and did not find, and the next step is
+ * something they can act on without knowing how extraction works.
+ *
+ * Each entry reads the counts so it can be specific. "102 files import
+ * @apollo/client and the package is missing" tells a user what to do;
+ * "a gate specifier did not resolve" does not.
+ */
+const EMPTY_STAGE_COPY: Record<
+  EmptyStage,
+  (report: ExtractionReport) => { cause: string; next: string }
+> = {
+  tsconfig: () => ({
+    cause: "That tsconfig matched no source files.",
+    next: "Check its `include` and `files` patterns against where your source actually lives.",
+  }),
+  gateResolution: (report) => {
+    const blocked = report.packs.filter((p) => p.unresolvedGates.length > 0);
+    const missing = [...new Set(blocked.flatMap((p) => p.unresolvedGates))];
+    const files = blocked.reduce((sum, p) => sum + p.candidateFiles, 0);
+    return {
+      cause: `${files} ${files === 1 ? "file imports" : "files import"} ${listOf(missing)}, but ${missing.length === 1 ? "that package is" : "those packages are"} not installed here, so suss cannot see what those calls do.`,
+      next: "Install this project's dependencies, then run the command again.",
+    };
+  },
+  candidateFiles: (report) => ({
+    cause: `No file imports anything ${listOf(report.packs.map((p) => p.pack))} looks for.`,
+    next: "Either this project does not use it, or your code reaches it through a local wrapper module. suss only recognizes direct imports today.",
+  }),
+  discovery: (report) => ({
+    cause: `suss read ${report.filesWalked} ${report.filesWalked === 1 ? "file" : "files"} but recognized no boundaries in them.`,
+    next: "Your code probably declares its boundaries in a shape this pack does not describe yet. Worth opening an issue with an example.",
+  }),
+  assembly: (report) => ({
+    cause: `suss recognized ${totalUnits(report)} boundaries but built no summaries from them.`,
+    next: "That is a bug in suss. Please open an issue with the code shape that triggered it.",
+  }),
 };
 
+function totalUnits(report: ExtractionReport): number {
+  return report.packs.reduce((sum, p) => sum + p.unitsDiscovered, 0);
+}
+
+function listOf(items: ReadonlyArray<string>): string {
+  if (items.length <= 1) {
+    return items[0] ?? "";
+  }
+  if (items.length === 2) {
+    return `${items[0]} and ${items[1]}`;
+  }
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
 /**
- * Render the funnel. Every row is a count produced by the stage that
- * owns it, so the reader can see which stage the count died at rather
- * than inferring it from a single "0 summaries" line.
+ * Show where the summaries came from, or where the count reached zero.
+ *
+ * Leads with the outcome and the next step, then the numbers as
+ * supporting evidence, because someone reading this wants to know what
+ * to do before they want to know how many files were walked.
  */
 export function formatExtractionReport(report: ExtractionReport): string {
   const lines: string[] = [];
-  lines.push("  extraction funnel:");
-  if (report.filesInProject !== null) {
-    lines.push(`    files in tsconfig:  ${report.filesInProject}`);
-  }
-  lines.push(`    files walked:       ${report.filesWalked}`);
-
-  for (const pack of report.packs) {
-    const gate =
-      pack.gates.length > 0 ? pack.gates.join(", ") : "(applies to every file)";
-    lines.push(`    pack ${pack.pack}:`);
-    lines.push(`      gate:             ${gate}`);
-    if (pack.unresolvedGates.length > 0) {
-      // A gate that does not resolve is only a problem when the pack
-      // also found nothing. Packs that match on import text alone work
-      // fine against an uninstalled dependency, and calling that out as
-      // a failure on a run that produced summaries would be noise.
-      const hint =
-        pack.summariesProduced === 0
-          ? " (dependency not installed?)"
-          : " (matched on import text; type information unavailable)";
-      lines.push(
-        `      unresolved:       ${pack.unresolvedGates.join(", ")}${hint}`,
-      );
-    }
-    lines.push(`      candidate files:  ${pack.candidateFiles}`);
-    lines.push(`      units discovered: ${pack.unitsDiscovered}`);
-    lines.push(`      summaries:        ${pack.summariesProduced}`);
-  }
 
   if (report.emptyStage !== null) {
+    const { cause, next } = EMPTY_STAGE_COPY[report.emptyStage](report);
+    lines.push(`  ${cause}`);
+    lines.push(`  ${next}`);
     lines.push("");
+    lines.push("  Where it stopped:");
+  } else {
+    lines.push("  Where these came from:");
+  }
+
+  const rows: Array<[number, string]> = [];
+  if (report.filesInProject !== null) {
+    rows.push([report.filesInProject, "files in the tsconfig"]);
+  }
+  rows.push([report.filesWalked, "files read"]);
+
+  for (const pack of report.packs) {
+    const imports =
+      pack.gates.length > 0
+        ? `files importing ${listOf(pack.gates)}`
+        : `files ${pack.pack} looked at`;
+    rows.push([pack.candidateFiles, imports]);
+    rows.push([pack.unitsDiscovered, `boundaries recognized by ${pack.pack}`]);
+    rows.push([pack.summariesProduced, `summaries from ${pack.pack}`]);
+  }
+
+  const width = Math.max(...rows.map(([count]) => String(count).length));
+  for (const [count, label] of rows) {
+    lines.push(`    ${String(count).padStart(width)}  ${label}`);
+  }
+
+  // A dependency suss could not resolve while the pack still produced
+  // summaries is worth a note but not an alarm: packs that match on
+  // import text keep working, they only lose type information.
+  const degraded = report.packs.filter(
+    (p) => p.unresolvedGates.length > 0 && p.summariesProduced > 0,
+  );
+  for (const pack of degraded) {
+    lines.push("");
+    const packages = listOf(pack.unresolvedGates.map((g) => `\`${g}\``));
     lines.push(
-      `  Nothing was produced. ${EMPTY_STAGE_EXPLANATION[report.emptyStage]}`,
+      `  Note: ${packages} ${pack.unresolvedGates.length === 1 ? "is" : "are"} not installed here, so the ${pack.pack} pack matched on import names alone. Installing dependencies may produce more detail.`,
     );
   }
 

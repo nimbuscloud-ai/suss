@@ -55,10 +55,10 @@ exports[`inspect --dir output snapshots > shows paired boundaries with transitio
 `;
 
 exports[`inspect --dir output snapshots > shows unmatched summaries 1`] = `
-"1 unmatched:
-  getUser (GET /users/:id) — no matching client
+"Not paired:
+  getUser (GET /users/:id) has no client
 
-1 summaries from 1 files.
+1 summary from 1 file.
 "
 `;
 
@@ -79,7 +79,7 @@ exports[`inspect output snapshots > expands render subtrees so branches sharing 
              <LoginForm />
            </Container>
 
-1 summaries inspected.
+1 summary.
 "
 `;
 
@@ -97,7 +97,7 @@ src/vcs.ts
 └─ fetchFromVcs  (reachable library | line 1)
        -> return
 
-3 summaries inspected.
+3 summaries.
 "
 `;
 
@@ -110,7 +110,7 @@ app/routes/_app.admin.tsx
 └─ loader  (react-router loader | line 10)
        -> return
 
-2 summaries inspected.
+2 summaries.
 "
 `;
 
@@ -122,7 +122,7 @@ exports[`inspect output snapshots > renders a client summary 1`] = `
        else
          -> return
 
-1 summaries inspected.
+1 summary.
 "
 `;
 
@@ -137,7 +137,7 @@ exports[`inspect output snapshots > renders a handler with contract and body sha
        else
          -> 200 { id, name, email }
 
-1 summaries inspected.
+1 summary.
 "
 `;
 
@@ -153,7 +153,7 @@ src/handler.ts
          + logger.info
          + src/helpers.formatPayload →
 
-2 summaries inspected.
+2 summaries.
 "
 `;
 
@@ -166,7 +166,7 @@ src/app.ts
 └─ initApp → @ex/lib::makeBinding  (package-import:@ex/app caller | line 42)
        -> return
 
-2 summaries inspected.
+2 summaries.
 "
 `;
 
@@ -188,7 +188,7 @@ src/pages/user.ts
        else
          -> return
 
-2 summaries inspected.
+2 summaries.
 "
 `;
 
@@ -206,7 +206,7 @@ exports[`inspect output snapshots > renders useEffect deps: mount-only, every-re
 └─ Bar.effect#2  (react useEffect [user, prefs.locale] | line 12)
        -> return
 
-4 summaries inspected.
+4 summaries.
 "
 `;
 
@@ -223,7 +223,7 @@ exports[`inspect output snapshots > replaces useEffect effect with a reference t
 └─ Foo.effect#1  (react useEffect (every render) | line 13)
        -> return
 
-3 summaries inspected.
+3 summaries.
 "
 `;
 
@@ -253,7 +253,7 @@ exports[`inspect variant rendering > renders every Output variant 1`] = `
      Contract: 200, 400, 404, 500
        -> void
 
-6 summaries inspected.
+6 summaries.
 "
 `;
 
@@ -272,7 +272,7 @@ exports[`inspect variant rendering > renders every Predicate variant 1`] = `
                      elif  weirdSync()
                        -> 200
 
-1 summaries inspected.
+1 summary.
 "
 `;
 
@@ -286,7 +286,7 @@ exports[`inspect variant rendering > renders every ValueRef and Derivation varia
              if  state.loaded === MAGIC
                -> 200
 
-1 summaries inspected.
+1 summary.
 "
 `;
 
@@ -296,7 +296,7 @@ exports[`inspect variant rendering > renders every primitive TypeShape variant i
      Contract: 200, 400, 404, 500
        -> 200 { text, int, num, bool, n }
 
-1 summaries inspected.
+1 summary.
 "
 `;
 
@@ -306,7 +306,7 @@ exports[`inspect variant rendering > renders union, array, dictionary, ref, lite
      Contract: 200, 400, 404, 500
        -> 200 { tags, byKey, shape, literal, ... }
 
-1 summaries inspected.
+1 summary.
 "
 `;
 
@@ -320,6 +320,6 @@ exports[`inspect variant rendering > simplifies double negations and !truthiness
        else
          -> 200
 
-1 summaries inspected.
+1 summary.
 "
 `;
