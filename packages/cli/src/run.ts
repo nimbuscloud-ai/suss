@@ -38,9 +38,10 @@ Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
                    suss uses the nearest tsconfig, or reads the current
                    directory when there is none.
-  -f, --framework  Which pack to use. Repeatable. Built in: ts-rest,
-                   react-router, express, fastify, nestjs-rest, nestjs-graphql,
-                   react, apollo, aws-lambda, fetch, axios, apollo-client, node.
+  -f, --framework  Which pack to use. Repeatable. Built in: hono, express,
+                   fastify, ts-rest, nestjs-rest, nestjs-graphql, apollo,
+                   aws-lambda, react, react-router, fetch, axios,
+                   apollo-client, node.
                    Other packs resolve as @suss/framework-<name>.
   -o, --output     Write JSON to a file instead of stdout
   --files          Read only these source files

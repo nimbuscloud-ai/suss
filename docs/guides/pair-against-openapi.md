@@ -7,18 +7,57 @@ declares, and flags drift when the spec changes.
 
 ## The two artifacts
 
-```
-spec.yaml / spec.json   ─── @suss/contract-openapi ───▶  stripe.json
-                                                        │
-your client code        ─── @suss/client-axios  ───▶  client.json
-                                                        │
-                                                        ▼
-                                       suss check stripe.json client.json
-```
+<svg class="suss-diagram" viewBox="0 0 660 268" role="img" aria-labelledby="openapi-title openapi-desc">
+  <title id="openapi-title">A vendor's spec and your code, read into the same shape</title>
+  <desc id="openapi-desc">The vendor's OpenAPI file goes through the OpenAPI contract reader, and your client code goes through the axios pack. Both produce summary files in the same format, which suss check compares against each other.</desc>
 
-Both produce the same `BehavioralSummary[]` shape; the checker
-pairs them by `(method, normalizedPath)` without caring which side
-came from code vs a spec.
+  <defs>
+    <marker id="openapi-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path class="arrow-head" d="M0,1 L7,4 L0,7 Z" />
+    </marker>
+  </defs>
+
+  <text class="axis" x="95" y="16" text-anchor="middle">Theirs</text>
+  <rect class="box" x="10" y="26" width="170" height="42" rx="6" />
+  <text class="label-mono" x="95" y="45" text-anchor="middle">stripe-openapi.yaml</text>
+  <text class="note" x="95" y="61" text-anchor="middle">what they say they return</text>
+
+  <text class="axis" x="95" y="112" text-anchor="middle">Yours</text>
+  <rect class="box" x="10" y="122" width="170" height="42" rx="6" />
+  <text class="label-mono" x="95" y="141" text-anchor="middle">src/payments.ts</text>
+  <text class="note" x="95" y="157" text-anchor="middle">what you handle</text>
+
+  <line class="arrow" x1="180" y1="47" x2="212" y2="47" marker-end="url(#openapi-arrow)" />
+  <line class="arrow" x1="180" y1="143" x2="212" y2="143" marker-end="url(#openapi-arrow)" />
+
+  <rect class="box" x="216" y="26" width="184" height="42" rx="6" />
+  <text class="label-mono" x="308" y="52" text-anchor="middle">contract --from openapi</text>
+
+  <rect class="box" x="216" y="122" width="184" height="42" rx="6" />
+  <text class="label-mono" x="308" y="148" text-anchor="middle">extract -f axios</text>
+
+  <line class="arrow" x1="400" y1="47" x2="432" y2="47" marker-end="url(#openapi-arrow)" />
+  <line class="arrow" x1="400" y1="143" x2="432" y2="143" marker-end="url(#openapi-arrow)" />
+
+  <rect class="box-data" x="436" y="26" width="150" height="42" rx="6" />
+  <text class="label-mono" x="511" y="52" text-anchor="middle">stripe.json</text>
+
+  <rect class="box-data" x="436" y="122" width="150" height="42" rx="6" />
+  <text class="label-mono" x="511" y="148" text-anchor="middle">client.json</text>
+
+  <text class="note" x="600" y="90" text-anchor="middle">same</text>
+  <text class="note" x="600" y="105" text-anchor="middle">shape</text>
+
+  <path class="arrow" d="M511,68 L511,95 L330,95 L330,214" marker-end="url(#openapi-arrow)" />
+  <path class="arrow" d="M511,164 L511,190 L330,190" />
+
+  <rect class="box" x="200" y="220" width="260" height="40" rx="6" />
+  <text class="label-mono" x="330" y="245" text-anchor="middle">suss check --dir summaries/</text>
+</svg>
+
+Both sides come out in the same format, and the checker pairs them by
+`(method, normalizedPath)`. It does not care that one side was written
+by Stripe and the other was read out of your code.
 
 ## Step 1. Turn the spec into a contract
 
