@@ -26,7 +26,7 @@ features:
     link: /glossary
     linkText: Glossary
   - title: Add a framework in one file
-    details: "ts-rest, Express, Fastify, NestJS, React, React Router, Apollo Server, Prisma, AWS SQS, and process.env ship in the box. New frameworks are a small declarative pack, with no fork of the analyzer."
+    details: "Hono, Express, Fastify, NestJS, ts-rest, React, React Router, Apollo Server, AWS Lambda, Prisma, AWS SQS, and process.env ship in the box. A new framework is a small declarative pack, with no fork of the analyzer."
     link: /guides/writing-a-pack
     linkText: Write a pack
   - title: Compare against declared contracts
@@ -46,42 +46,44 @@ features:
 ## Quick start
 
 ```bash
-npm install --save-dev @suss/cli @suss/framework-ts-rest @suss/client-axios
+npm install --save-dev @suss/cli @suss/framework-hono @suss/client-web
 
-# Extract summaries from source
-suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
-suss extract -p apps/web/tsconfig.json -f axios -o summaries/consumer.json
+# Read each side of the boundary
+suss extract -f hono -o summaries/api.json
+suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
 
-# Pair providers against consumers
-suss check summaries/provider.json summaries/consumer.json
+# Compare them
+suss check --dir summaries/
 
-# Human-readable view of a summary file
-suss inspect summaries/provider.json
+# Read a summary file back
+suss inspect summaries/api.json
 ```
 
 ## What a summary looks like
 
 ```
-src/handlers.ts
-└─ GET /users/:id  (ts-rest handler | line 24)
-     Contract: 200, 404, 500
-       if  !params.id
-         -> 404 { error }
-       elif  !db.findById()
-         -> 404 { error }
-       elif  db.findById().deletedAt
-         -> 404 { error }
-       else
-         -> 200 { id, name, email }
-           + logger.info
-           + auditLog →
+src/api.ts
+├─ GET /users/:id  (hono handler | line 11)
+│      if  !findUser()
+│        -> 404 { error }
+│      elif  findUser().deletedAt
+│        -> 410 { error }
+│      else
+│        -> 200 { id, name }
+│
+├─ POST /users  (hono handler | line 25)
+│      if  !c.req.json().name
+│        -> 400 "name is required"
+│      else
+│        -> 201 { id, name }
+│
+└─ GET /legacy/:id  (hono handler | line 35)
+       -> 302
 
-     !! Declared response 500 is never produced by the handler
-
-1 summaries inspected.
+3 summaries.
 ```
 
-`suss inspect` rendering one summary. The header line names the endpoint, recognition pack, kind, and source line. The decision tree shows every execution path as a branch with its own output shape. The `+` lines under an output are the side-effects on that path; the `→` marker points to other summaries nearby. The `!!` annotation is a gap: the contract declared a 500 the handler can't produce.
+`suss inspect` rendering three summaries from one file. Each header names the endpoint, the pack that recognized it, and the source line. Under it, every path the code can take, with the status and body shape that path produces. Where a handler has side effects, they appear as `+` lines, and a `!!` line marks a gap between what a declared contract promises and what the code does.
 
 The same data as JSON is what `@suss/checker` and downstream tools consume. `inspect` is a renderer over it.
 

@@ -98,6 +98,25 @@ return json(code, payload);           // both, since `code` is unknown here.
 One thing it will not do yet: follow a helper reached through an
 object, like `responses.json(...)`. A helper called by name is read.
 
+## Several services in one folder
+
+suss identifies an HTTP boundary by its method and path, and nothing
+else. Two services that both expose `GET /users` read as one boundary,
+so a client of either pairs against both:
+
+```
+Providers with no client to compare against:
+  GET /users
+    get, get      <- two unrelated services, one entry
+```
+
+Check one service at a time until this is fixed:
+
+```bash
+suss extract -p services/auth/tsconfig.json -f hono -o auth/api.json
+suss check --dir auth/
+```
+
 ## Not supported
 
 | | |

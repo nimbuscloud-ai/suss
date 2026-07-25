@@ -1,241 +1,220 @@
 # Get started
 
-A small ts-rest API with a known mismatch between handler and
-client. Walk through extracting summaries from both sides,
-pairing them, and reading the resulting finding.
-
-The handler returns one status the client doesn't handle. suss
-catches it from the source alone, without a spec or a runtime trace.
+A Hono endpoint and the code that calls it. suss reads both sides,
+works out what each one does, and reports where they disagree. Nothing
+runs, and neither side needs a shared type or a generated client.
 
 ## Step 1. Set up a workspace
 
 ```bash
 mkdir suss-tutorial && cd suss-tutorial
 npm init -y
-npm install --save-dev \
-  typescript \
-  @suss/cli \
-  @suss/framework-ts-rest \
-  @suss/client-axios \
-  @ts-rest/core @ts-rest/express express axios zod
+npm pkg set type=module
+
+npm install hono
+npm install --save-dev @suss/cli @suss/framework-hono @suss/client-web typescript
 ```
 
-Create `tsconfig.json`:
+One pack per thing you want read: `framework-hono` for the routes,
+`client-web` for the `fetch` calls.
+
+`tsconfig.json`:
 
 ```json
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ES2022",
+    "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true
+    "noEmit": true
   },
   "include": ["src"]
 }
 ```
 
-## Step 2. Write the provider
+## Step 2. Write the endpoint
 
-`src/handler.ts`:
+`src/api.ts`:
 
 ```ts
-import { initContract, initServer } from "@ts-rest/core";
-import { z } from "zod";
+import { Hono } from "hono";
 
-const c = initContract();
+const app = new Hono();
 
-export const contract = c.router({
-  getUser: {
-    method: "GET",
-    path: "/users/:id",
-    responses: {
-      200: c.type<{ id: string; name: string }>(),
-      404: c.type<{ error: string }>(),
-    },
-  },
+app.get("/users/:id", async (c) => {
+  const user = await findUser(c.req.param("id"));
+
+  if (!user) {
+    return c.json({ error: "not found" }, 404);
+  }
+
+  return c.json({ id: user.id, name: user.name });
 });
 
-const s = initServer();
+declare function findUser(
+  id: string,
+): Promise<{ id: string; name: string } | null>;
 
-export const router = s.router(contract, {
-  getUser: async ({ params }) => {
-    if (!params.id) {
-      return { status: 404, body: { error: "id required" } };
-    }
-    const user = await findUser(params.id);
-    if (!user) {
-      return { status: 404, body: { error: "not found" } };
-    }
-    // Contract says 500 isn't declared; the handler never
-    // produces it. But watch what happens when we add one —
-    // we'll revisit in step 5.
-    return { status: 200, body: user };
-  },
-});
-
-declare function findUser(id: string): Promise<{ id: string; name: string } | null>;
+export default app;
 ```
 
-## Step 3. Write the consumer
+Two outcomes: 404 when there is no such user, 200 with the user
+otherwise.
+
+## Step 3. Write the caller
 
 `src/client.ts`:
 
 ```ts
-import axios from "axios";
-
 export async function loadUser(id: string) {
-  const res = await axios.get<{ id: string; name: string }>(`/users/${id}`);
-  if (res.status === 200) {
-    return res.data;
+  const response = await fetch(`/users/${id}`);
+
+  if (response.status === 200) {
+    const user = await response.json();
+    return { state: "ready", name: user.name };
   }
-  // The consumer only handles 200. It has no branch for 404.
-  // That's the mismatch we'll see in step 4.
-  throw new Error("unexpected status");
+
+  return { state: "error" };
 }
 ```
 
-## Step 4. Extract and check
+It checks for 200 and treats everything else the same way.
 
-### Extract: turn source into structured summaries
-
-```bash
-npx suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
-npx suss extract -p tsconfig.json -f axios -o summaries/consumer.json
-```
-
-`extract` walks the source pointed at by `tsconfig.json` and runs
-the framework pack(s) you name with `-f`. The pack tells suss what
-to discover: `ts-rest` finds router handlers and contract
-declarations; `axios` finds call sites that send HTTP requests.
-The output is a JSON file with one `BehavioralSummary` per
-discovered unit, a structured description of every execution path
-through that function: which conditions decide which output, what
-shape the output has, what effects fire along the way.
-
-This is the canonical artifact. Everything else (`inspect`,
-`check`, downstream tooling) consumes this JSON.
-
-Have a look:
+## Step 4. Read both sides
 
 ```bash
-npx suss inspect summaries/provider.json
+npx suss extract -f hono -o summaries/api.json
+npx suss extract -f fetch -o summaries/web.json
 ```
 
-You'll see something like:
+Each command writes a summary: a description of what that code does, as
+data. There is no tsconfig path to pass, because suss finds the one in
+this directory.
+
+Look at what it read:
+
+```bash
+npx suss inspect summaries/api.json
+```
 
 ```
-src/handler.ts
-└─ GET /users/:id  (ts-rest handler | line 15)
-     Contract: 200, 404
-       if  !params.id
-         -> 404 { error }
-       elif  !findUser()
+src/api.ts
+└─ GET /users/:id  (hono handler | line 5)
+       if  !findUser()
          -> 404 { error }
        else
          -> 200 { id, name }
 
-1 summaries inspected.
+1 summary.
 ```
 
-The header names the endpoint, the recognition pack, the kind, and
-the source line. The decision tree shows every path the handler
-can take. The `Contract:` line shows what the ts-rest contract
-declares, handy for spotting a gap between declaration and
-implementation.
+That is the endpoint's behaviour rather than its types: which condition
+leads to which status, and what the body holds in each case. Note that
+`c.json(body, status)` was read correctly without suss being told which
+argument is which.
 
-`inspect` is a renderer; nothing here is computed by `inspect`
-that isn't already in the JSON. Read [the CLI reference](/reference/cli#suss-inspect)
-for the full grammar of the output.
-
-### Check: pair providers with consumers
+## Step 5. Compare them
 
 ```bash
-npx suss check summaries/provider.json summaries/consumer.json
+npx suss check --dir summaries/
 ```
 
-`check` reads two summary files, pairs them by their boundary key
-(here, `(GET, /users/:id)`), and runs each pair through agreement
-checks: every status the provider produces should have a consumer
-branch that handles it; every status the contract declares should
-have a producer; body shapes should be structurally compatible.
-
-Expected output:
-
 ```
-[WARNING] unhandledProviderCase
+Compared 1 boundary:
+  GET /users/{id}: get <-> loadUser
+
+────────────────────────────────────────────────────────────
+[ERROR] unhandledProviderCase
   Provider produces status 404 but no consumer branch handles it
-  provider: src/handler.ts::getUser @ ... (src/handler.ts:15)
-  consumer: src/client.ts::loadUser (src/client.ts:3)
-  boundary: ts-rest (http) GET /users/:id
+  provider: src/api.ts::get @ get:response:404 (src/api.ts:5)
+  consumer: src/client.ts::loadUser (src/client.ts:1)
+  boundary: hono (http) GET /users/:id
+────────────────────────────────────────────────────────────
+1 finding: 1 error, 0 warning, 0 info
 ```
 
-suss read both files, matched them on `(GET, /users/:id)`, and
-noticed the consumer's branches don't cover all provider
-outcomes. The finding names the boundary, both sides, and the
-exact disagreement, no global "compliance score", just a
-concrete pair-level fact.
+The endpoint separates "no such user" from every other failure. The
+caller does not, so a missing user and a database outage both reach the
+screen as `{ state: "error" }`. Both files typecheck, so nothing else
+was going to tell you.
 
-## Step 5. Introduce drift
-
-Edit `src/handler.ts` to add a new status code:
+Give the caller its own branch:
 
 ```ts
-// inside getUser, after the not-found check:
-if (user.deletedAt) {
-  return { status: 410, body: { error: "gone" } };
+export async function loadUser(id: string) {
+  const response = await fetch(`/users/${id}`);
+
+  if (response.status === 404) {
+    return { state: "missing" };
+  }
+
+  if (response.status === 200) {
+    const user = await response.json();
+    return { state: "ready", name: user.name };
+  }
+
+  return { state: "error" };
 }
 ```
 
-Re-extract and re-check:
+```bash
+npx suss extract -f fetch -o summaries/web.json
+npx suss check --dir summaries/
+```
+
+```
+Compared 1 boundary:
+  GET /users/{id}: get <-> loadUser
+
+No findings. Every compared boundary agreed.
+```
+
+## Step 6. Change the endpoint and watch it break
+
+Deleted users should read differently from missing ones, so add a case
+for them:
+
+```ts
+  if (user.deletedAt) {
+    return c.json({ error: "gone" }, 410);
+  }
+```
+
+with `findUser` now returning `deletedAt: string | null`. Read the
+endpoint again and compare:
 
 ```bash
-npx suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
-npx suss check summaries/provider.json summaries/consumer.json
+npx suss extract -f hono -o summaries/api.json
+npx suss check --dir summaries/
 ```
 
-Now you see two findings, the original 404 miss, plus a new one
-for 410. Also, because 410 isn't in the contract:
-
 ```
-[ERROR] providerContractViolation
-  Handler produces status 410 which is not declared in the ts-rest contract
+────────────────────────────────────────────────────────────
+[ERROR] unhandledProviderCase
+  Provider produces status 410 but no consumer branch handles it
+  consumer: src/client.ts::loadUser (src/client.ts:1)
+  boundary: hono (http) GET /users/:id
+────────────────────────────────────────────────────────────
+1 finding: 1 error, 0 warning, 0 info
 ```
 
-Three facts, surfaced automatically:
+Nobody touched the caller, and the caller is now wrong. `check` exits
+non-zero, so this fails on the pull request that adds the 410 rather
+than in a bug report a week later.
 
-1. The handler declares behavior the contract doesn't promise
-   (contract drift).
-2. The handler declares behavior the client doesn't handle
-   (consumer gap).
-3. The client handles fewer cases than the contract promises
-   (client gap, this one fires earlier if you check the
-   client against the contract; try it with `suss check --dir`).
+## What happened
 
-## What this run exercises
+- `extract` read each side and wrote down its behaviour: conditions,
+  statuses, body shapes.
+- `check` paired the two by method and path, then compared what one
+  produces against what the other handles.
+- The finding named a status, a file, and a line on both sides.
 
-- **Extraction.** Two `suss extract` invocations turned the
-  provider's source and the consumer's source into structured
-  summaries, JSON for downstream tools, `suss inspect` for a
-  human reading.
-- **Pairing.** `suss check` paired the two summaries by
-  `(method, path)` and ran the cross-boundary checks against
-  every transition.
-- **Drift detection.** The mismatch fell out of the summaries'
-  shapes, no test was written to detect it. The handler's `404`
-  branch existed in the source; the client never declared a `404`
-  case. The check compared the two and surfaced the gap.
+## Next
 
-## Further reading
-
-- [Add suss to a project](/guides/add-to-project), integration in an
-  existing repo, including monorepos and per-package tsconfigs.
-- [Set up CI](/guides/ci-integration), `suss check` as a CI gate.
-- [Findings catalog](/reference/findings), every finding kind with an
-  example.
-- [Behavioral summary format](/behavioral-summary-format), the
-  serialization spec; [IR reference](/ir-reference) is the type-level
-  reference.
-- [Three kinds of truth](/contracts), the specification / observation
-  / derivation taxonomy that grounds the checker's finding semantics.
+- [Add suss to an existing project](/guides/add-to-project)
+- [Set up CI checking](/guides/ci-integration)
+- [Compatibility](/reference/compatibility), for languages, module
+  systems, and where suss stops
+- [Findings catalog](/reference/findings), for every finding kind
