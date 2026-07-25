@@ -315,7 +315,7 @@ describe("check CLI command", () => {
         providerFile: path.join(tmpDir, "does-not-exist.json"),
         consumerFile: consumerPath,
       }),
-    ).toThrow("File not found");
+    ).toThrow("No file at");
   });
 
   it("throws with parse issues when summary JSON is not an array", () => {
@@ -326,7 +326,7 @@ describe("check CLI command", () => {
         providerFile: providerPath,
         consumerFile: consumerPath,
       }),
-    ).toThrow(/Invalid summary file/);
+    ).toThrow(/could not read/);
   });
 
   it("throws with parse issues when a summary element is malformed", () => {
@@ -340,7 +340,7 @@ describe("check CLI command", () => {
         providerFile: providerPath,
         consumerFile: consumerPath,
       }),
-    ).toThrow(/Invalid summary file/);
+    ).toThrow(/could not read/);
   });
 
   it("human output annotates sub-`high` confidence alongside the finding", () => {
@@ -725,8 +725,48 @@ describe("checkDir", () => {
       expect(result.result.pairs).toHaveLength(1);
       expect(result.result.pairs[0].key).toBe("GET /users/{id}");
     });
-    expect(output).toContain("Paired 1 provider-consumer combination");
+    expect(output).toContain("Compared 1 boundary");
     expect(output).toContain("No findings");
+  });
+
+  it("says when two files claim the same boundary", () => {
+    // suss tells HTTP boundaries apart by method and path alone, so two
+    // services that both serve GET /users read as one. Whoever calls
+    // either gets compared against both, which is worth saying out loud
+    // rather than reporting findings from the wrong API in silence.
+    for (const service of ["svc-a", "svc-b"]) {
+      fs.writeFileSync(
+        path.join(tmpDir, `${service}.json`),
+        JSON.stringify([
+          providerWithRoute(`${service}Handler`, "GET", "/users", [
+            transition(`${service}-200`, { statusCode: 200, isDefault: true }),
+          ]),
+        ]),
+      );
+    }
+
+    const output = captureStdout(() => {
+      checkDir({ dir: tmpDir });
+    });
+    expect(output).toContain("claimed by more than one file");
+    expect(output).toContain("GET /users");
+    expect(output).toContain("svc-a.json and svc-b.json");
+  });
+
+  it("stays quiet when each boundary comes from one file", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+
+    const output = captureStdout(() => {
+      checkDir({ dir: tmpDir });
+    });
+    expect(output).not.toContain("claimed by more than one file");
   });
 
   it("checks intent specs against code summaries via --intent", () => {
@@ -1000,7 +1040,7 @@ describe("checkDir", () => {
     const intentDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-noint-"));
     try {
       expect(() => checkDir({ dir: tmpDir, intent: intentDir })).toThrow(
-        /No intent docs/,
+        /no intent docs/,
       );
     } finally {
       fs.rmSync(intentDir, { recursive: true, force: true });
@@ -1050,7 +1090,7 @@ describe("checkDir", () => {
       expect(result.result.unmatched.providers).toHaveLength(1);
       expect(result.result.unmatched.consumers).toHaveLength(1);
     });
-    expect(output).toContain("Unmatched");
+    expect(output).toContain("Nothing was compared");
     expect(output).toContain("getUser");
     expect(output).toContain("OrgPage");
   });
@@ -1146,14 +1186,14 @@ describe("checkDir", () => {
 
   it("throws when directory does not exist", () => {
     expect(() => checkDir({ dir: path.join(tmpDir, "nonexistent") })).toThrow(
-      "Directory not found",
+      "No directory at",
     );
   });
 
   it("throws when directory has no JSON files", () => {
     const emptyDir = path.join(tmpDir, "empty");
     fs.mkdirSync(emptyDir);
-    expect(() => checkDir({ dir: emptyDir })).toThrow("No JSON files");
+    expect(() => checkDir({ dir: emptyDir })).toThrow("has no JSON files");
   });
 });
 

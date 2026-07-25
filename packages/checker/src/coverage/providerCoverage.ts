@@ -46,7 +46,7 @@ export function checkProviderCoverage(
         boundary,
         provider: makeSide(provider, pt.id),
         consumer: makeSide(consumer),
-        description: `Provider transition ${pt.id} has an opaque status code; coverage cannot be verified`,
+        description: `One of the provider's statuses could not be read, so coverage cannot be confirmed`,
         severity: "info",
       });
       continue;
@@ -118,7 +118,7 @@ export function checkProviderCoverage(
             boundary,
             provider: makeSide(provider, pt.id),
             consumer: makeSide(consumer),
-            description: `Provider has ${providerTransitions.length} distinct cases for status ${status} but consumer does not distinguish between them (transition ${pt.id} has conditions the consumer ignores)`,
+            description: `Provider returns status ${status} in ${providerTransitions.length} different situations, and the consumer treats them all the same`,
             severity: "warning",
           });
         }
@@ -159,7 +159,7 @@ export function checkProviderCoverage(
             boundary,
             provider: makeSide(provider, pt.id),
             consumer: makeSide(consumer),
-            description: `Provider transition ${pt.id} for status ${status} has conditions that cannot be verified against consumer predicates`,
+            description: `Provider returns status ${status} under a condition that could not be compared with the consumer's branches`,
             severity: "info",
           });
         }

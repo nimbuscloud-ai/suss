@@ -1,13 +1,11 @@
 {
   "name": "@suss/contract-openapi",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "description": "Generate suss behavioral summaries from OpenAPI 3.x specifications.",
   "keywords": [
     "suss",
     "behavioral-summary",
-
     "openapi",
     "swagger",
     "contract"
@@ -47,12 +45,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "*",
+    "@suss/behavioral-ir": "0.0.1",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

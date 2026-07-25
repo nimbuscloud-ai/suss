@@ -5,6 +5,7 @@
 import {
   type CallExpression,
   type Expression,
+  type Identifier,
   Node,
   type ObjectLiteralExpression,
   type ParameterDeclaration,
@@ -16,6 +17,7 @@ import {
   extractBody,
   extractStatusCode,
 } from "./extract.js";
+import { resolveHelperReturn } from "./helperResolution.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -131,41 +133,98 @@ function isInReturnPosition(ole: Node): boolean {
   return false;
 }
 
+/**
+ * Match a returned object against a `returnShape` pattern.
+ *
+ * Returns a list because a return can produce more than one outcome. A
+ * handler returning `json(...)` produces one per branch the helper can
+ * take, which is how the IR expresses alternatives: separate
+ * transitions, not one output holding a set of possibilities.
+ */
 export function tryMatchReturnShape(
   node: Node,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
+): FoundTerminal[] {
+  if (Node.isObjectLiteralExpression(node)) {
+    if (!isInReturnPosition(node)) {
+      return [];
+    }
+    const terminal = terminalFromReturnedObject(node, node, pattern, match);
+    return terminal === null ? [] : [terminal];
+  }
+
+  if (!Node.isReturnStatement(node)) {
+    return [];
+  }
+
+  const returned = node.getExpression();
+  if (returned === undefined) {
+    return [];
+  }
+
+  if (Node.isObjectLiteralExpression(returned)) {
+    const terminal = terminalFromReturnedObject(returned, node, pattern, match);
+    return terminal === null ? [] : [terminal];
+  }
+
+  if (!Node.isCallExpression(returned)) {
+    return [];
+  }
+
+  // `return json(200, payload)`. Most handlers build the response in a
+  // helper rather than at the return site, and the helper belongs to the
+  // project, so read it instead of guessing what its arguments mean.
+  const resolved = resolveHelperReturn(returned);
+  if (resolved.kind === "notLocal") {
+    return [];
+  }
+  if (resolved.kind === "unreadable") {
+    return [{ node, terminal: unresolvedTerminal(pattern.kind, returned) }];
+  }
+
+  const terminals: FoundTerminal[] = [];
+  for (const value of resolved.returnValues) {
+    const terminal = terminalFromReturnedObject(
+      value,
+      node,
+      pattern,
+      match,
+      resolved.substitutions,
+    );
+    if (terminal !== null) {
+      terminals.push(terminal);
+    }
+  }
+  return terminals;
+}
+
+/**
+ * Build one terminal from one returned object.
+ *
+ * `obj` is where the properties are read from, which may be inside a
+ * helper. `anchor` is where it is reported, which is always the caller's
+ * own return statement, so a finding points at the handler rather than
+ * at a helper shared by fifty of them.
+ */
+function terminalFromReturnedObject(
+  obj: ObjectLiteralExpression,
+  anchor: Node,
+  pattern: TerminalPattern,
+  match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
+  substitutions?: ReadonlyMap<string, Expression>,
 ): FoundTerminal | null {
-  let obj: ObjectLiteralExpression | null = null;
-
-  if (Node.isReturnStatement(node)) {
-    const arg = node.getExpression();
-    if (arg !== undefined && Node.isObjectLiteralExpression(arg)) {
-      obj = arg;
-    }
-  } else if (Node.isObjectLiteralExpression(node)) {
-    if (isInReturnPosition(node)) {
-      obj = node;
-    }
-  }
-
-  if (obj === null) {
-    return null;
-  }
-
-  // Check required properties
   const required = match.requiredProperties;
   if (required !== undefined && required.length > 0) {
     const presentNames = new Set<string>();
-
     for (const prop of obj.getProperties()) {
-      if (Node.isPropertyAssignment(prop)) {
-        presentNames.add(prop.getName());
-      } else if (Node.isShorthandPropertyAssignment(prop)) {
+      if (
+        Node.isPropertyAssignment(prop) ||
+        Node.isShorthandPropertyAssignment(prop)
+      ) {
         presentNames.add(prop.getName());
       }
     }
-
     for (const name of required) {
       if (!presentNames.has(name)) {
         return null;
@@ -176,6 +235,7 @@ export function tryMatchReturnShape(
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
     returnedObj: obj,
+    ...(substitutions !== undefined ? { substitutions } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   // For a returnShape terminal, the returned object IS the body. `extractBody`
@@ -190,23 +250,24 @@ export function tryMatchReturnShape(
     body = { typeText: obj.getText(), shape: extractShape(obj) };
   }
 
-  const terminal: RawTerminal = {
-    kind: pattern.kind,
-    statusCode,
-    body,
-    exceptionType: null,
-    message: null,
-    component: null,
-    delegateTarget: null,
-    emitEvent: null,
-    renderTree: null,
-    location: {
-      start: node.getStartLineNumber(),
-      end: node.getEndLineNumber(),
+  return {
+    node: anchor,
+    terminal: {
+      kind: pattern.kind,
+      statusCode,
+      body,
+      exceptionType: null,
+      message: null,
+      component: null,
+      delegateTarget: null,
+      emitEvent: null,
+      renderTree: null,
+      location: {
+        start: anchor.getStartLineNumber(),
+        end: anchor.getEndLineNumber(),
+      },
     },
   };
-
-  return { node, terminal };
 }
 
 export function tryMatchParameterMethodCall(
@@ -405,6 +466,67 @@ function buildReturnTerminal(
   return { node: locationNode, terminal };
 }
 
+/**
+ * Was this name imported from `module`? Prefix match, so "react-router"
+ * also covers "react-router/server", mirroring how `requiresImport`
+ * gates discovery.
+ *
+ * Reads the file's import declarations rather than resolving the symbol,
+ * which keeps it working against a project whose dependencies are not
+ * installed. That case is common enough to matter: a checkout without an
+ * `npm install` still has its imports written down.
+ */
+function importedFromAny(
+  callee: Identifier,
+  modules: ReadonlyArray<string>,
+): boolean {
+  const name = callee.getText();
+  for (const declaration of callee.getSourceFile().getImportDeclarations()) {
+    const specifier = declaration.getModuleSpecifierValue();
+    const matches = modules.some(
+      (module) => specifier === module || specifier.startsWith(`${module}/`),
+    );
+    if (!matches) {
+      continue;
+    }
+    for (const named of declaration.getNamedImports()) {
+      if ((named.getAliasNode() ?? named.getNameNode()).getText() === name) {
+        return true;
+      }
+    }
+    if (declaration.getDefaultImport()?.getText() === name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * A terminal that says the call produced a response without claiming to
+ * know which one. `dynamic` carries the source text, so a reader sees
+ * the call that produced it.
+ */
+function unresolvedTerminal(
+  kind: TerminalPattern["kind"],
+  node: Node,
+): RawTerminal {
+  return {
+    kind,
+    statusCode: { type: "dynamic", sourceText: node.getText() },
+    body: null,
+    exceptionType: null,
+    message: null,
+    component: null,
+    delegateTarget: null,
+    emitEvent: null,
+    renderTree: null,
+    location: {
+      start: node.getStartLineNumber(),
+      end: node.getEndLineNumber(),
+    },
+  };
+}
+
 export function tryMatchFunctionCall(
   node: Node,
   pattern: TerminalPattern,
@@ -420,6 +542,19 @@ export function tryMatchFunctionCall(
   }
 
   if (callee.getText() !== match.functionName) {
+    return null;
+  }
+
+  // A pack that names a function is describing a library's own calling
+  // convention, so the name has to have come from that library. Matching
+  // the bare name would claim any same-named function in the user's
+  // project, and `json` is a common name for a project's own response
+  // helper, whose argument order is its author's business.
+  if (
+    match.requiresImport !== undefined &&
+    match.requiresImport.length > 0 &&
+    !importedFromAny(callee, match.requiresImport)
+  ) {
     return null;
   }
 

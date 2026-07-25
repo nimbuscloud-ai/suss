@@ -16,9 +16,13 @@ import { Node, SyntaxKind } from "ts-morph";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type {
+  ArrowFunction,
   CallExpression,
   ElementAccessExpression,
+  FunctionDeclaration,
+  FunctionExpression,
   Identifier,
+  MethodDeclaration,
   PropertyAccessExpression,
 } from "ts-morph";
 
@@ -422,10 +426,10 @@ export function resolveCallableBody(
 function extractParamNames(decl: Node): string[] {
   const getParams = (
     fn:
-      | import("ts-morph").FunctionDeclaration
-      | import("ts-morph").ArrowFunction
-      | import("ts-morph").FunctionExpression
-      | import("ts-morph").MethodDeclaration,
+      | FunctionDeclaration
+      | ArrowFunction
+      | FunctionExpression
+      | MethodDeclaration,
   ) => fn.getParameters().map((p) => p.getName());
 
   if (

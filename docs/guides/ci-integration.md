@@ -126,6 +126,5 @@ syntax and the three effects (`mark` / `downgrade` / `hide`).
   `include` in your tsconfig excludes source files, suss can't see
   them. Use the same tsconfig your build uses (or a superset).
 - **Don't gate on `suss check` alone for breaking-change reviews.**
-  Use `suss inspect --diff before.json after.json` in parallel , 
-  it shows which transitions changed, not just which pair
-  mismatched.
+  Use `suss inspect --diff before.json after.json` in parallel: it
+  shows which transitions changed, not just which pair mismatched.

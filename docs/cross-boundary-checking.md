@@ -2,13 +2,54 @@
 
 Given behavioral summaries for two sides of a boundary, a provider (the handler producing a response) and a consumer (the call site reading it), is their behavior compatible?
 
-This document covers the checker mechanics: which comparisons run, what the IR gives them to work with, and the findings they emit. For the contract taxonomy those comparisons rest on, the three kinds of truth and the three contracts at every boundary, see [`contracts.md`](contracts.md). For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
+For the contract taxonomy these comparisons rest on, the three kinds of truth and the three contracts at every boundary, see [`contracts.md`](contracts.md). For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
 
 **Shipping scope: HTTP (REST), GraphQL resolver↔operation, and in-process function-call (package exports).** REST is the dispatch-dominant case, status code as the outcome discriminator, response body as the payload, `(method, normalizedPath)` as the pairing key. GraphQL resolvers pair by `(typeName, fieldName)`. In-process `function-call` pairs by `fn:<package>::<exportPath>`, introduced with the `packageExports` / `packageImport` discovery variants so a library's provider summaries pair with every caller that imports from it. See [`boundary-semantics.md`](boundary-semantics.md) for the layered model; see [`reference/pack-patterns.md`](reference/pack-patterns.md) for the discovery variants.
 
 ## The comparison matrix
 
 Every boundary carries three contracts, the declared contract (a specification), the provider's inferred contract, and the consumer's inferred contract (both derivations). [`contracts.md`](contracts.md#the-three-contracts-at-a-boundary) defines them. The checker's job is to compare them pairwise; each comparison catches a different class of failure.
+
+<svg class="suss-diagram" viewBox="0 0 660 300" role="img" aria-labelledby="matrix-title matrix-desc">
+  <title id="matrix-title">The three contracts at one boundary</title>
+  <desc id="matrix-desc">One boundary, GET /users/:id, carries a declared contract that is a specification, and two derivations, one read from the provider's code and one from the consumer's. Arrows show which pairs the checker compares and what each comparison catches.</desc>
+
+  <defs>
+    <marker id="matrix-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path class="arrow-head" d="M0,1 L7,4 L0,7 Z" />
+    </marker>
+  </defs>
+
+  <text class="axis" x="330" y="16" text-anchor="middle">One boundary: GET /users/:id</text>
+
+  <rect class="box-data" x="200" y="30" width="260" height="70" rx="6" />
+  <text class="label" x="330" y="52" text-anchor="middle">Declared contract</text>
+  <text class="note" x="330" y="70" text-anchor="middle">a specification, written by a person</text>
+  <text class="note" x="330" y="87" text-anchor="middle">an OpenAPI file, an SDL, a SAM template</text>
+
+  <rect class="box" x="20" y="200" width="250" height="70" rx="6" />
+  <text class="label" x="145" y="222" text-anchor="middle">Provider's behaviour</text>
+  <text class="note" x="145" y="240" text-anchor="middle">a derivation, read from the handler</text>
+  <text class="note" x="145" y="257" text-anchor="middle">"404 when the user is missing"</text>
+
+  <rect class="box" x="390" y="200" width="250" height="70" rx="6" />
+  <text class="label" x="515" y="222" text-anchor="middle">Consumer's expectations</text>
+  <text class="note" x="515" y="240" text-anchor="middle">a derivation, read from the call site</text>
+  <text class="note" x="515" y="257" text-anchor="middle">"handles 200 and 500"</text>
+
+  <line class="arrow" x1="255" y1="97" x2="160" y2="196" marker-end="url(#matrix-arrow)" />
+  <text class="note" x="150" y="124" text-anchor="middle">does the code</text>
+  <text class="note" x="150" y="140" text-anchor="middle">do what it promised?</text>
+
+  <line class="arrow" x1="405" y1="97" x2="500" y2="196" marker-end="url(#matrix-arrow)" />
+  <text class="note" x="512" y="124" text-anchor="middle">does the caller expect</text>
+  <text class="note" x="512" y="140" text-anchor="middle">what was promised?</text>
+
+  <line class="arrow" x1="270" y1="235" x2="386" y2="235" marker-end="url(#matrix-arrow)" />
+  <line class="arrow" x1="390" y1="248" x2="274" y2="248" marker-end="url(#matrix-arrow)" />
+  <text class="note" x="330" y="192" text-anchor="middle">do the two sides agree</text>
+  <text class="note" x="330" y="285" text-anchor="middle">about statuses, sub-cases, and body fields?</text>
+</svg>
 
 | Comparison | What it catches | Implemented |
 |---|---|---|

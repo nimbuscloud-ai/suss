@@ -1,8 +1,8 @@
 # Add suss to an existing project
 
-Assumes a TypeScript project with at least one boundary suss recognises
-,  an HTTP handler, a GraphQL resolver, a React component tree, a queue
-producer, a Prisma call, or a `process.env` access.
+Assumes a TypeScript project with at least one boundary suss
+recognises: an HTTP handler, a GraphQL resolver, a React component
+tree, a queue producer, a Prisma call, or a `process.env` access.
 
 ## What you're setting up
 
@@ -23,6 +23,48 @@ Three pieces, in order:
 The output of (2) is a JSON file. The input to (3) is one or more JSON
 files. (2) is useful on its own if all you want is a structured
 description of what your handlers do.
+
+## Let suss work out what you need
+
+```bash
+npx @suss/cli init
+```
+
+It reads your `package.json` and looks for schemas and templates on
+disk, then prints the packs to install and the commands to run:
+
+```
+✓ Found 3 things to read in services/auth
+
+  Your code
+    aws-sqs          @aws-sdk/client-sqs in dependencies
+    aws-lambda       @types/aws-lambda in devDependencies
+
+  Declared contracts
+    cloudformation   a SAM template at template.yaml
+
+1. Install the packs
+
+   npm install --save-dev @suss/cli @suss/framework-aws-sqs @suss/framework-aws-lambda @suss/contract-cloudformation
+
+2. Read each side into one folder
+
+   suss extract -f aws-sqs -f aws-lambda -o summaries/code.json
+   suss contract --from cloudformation template.yaml -o summaries/cloudformation.json
+
+3. Compare them
+
+   suss check --dir summaries/
+
+4. Decide what to do about the findings
+   ...
+
+5. Run it on every change
+   ...
+```
+
+It writes nothing and installs nothing. The rest of this page is the
+same thing done by hand.
 
 ## Install the pieces you need
 
@@ -74,8 +116,8 @@ resolution your compiler sees, same `paths` aliases, same
 cross package boundaries (`@app/lib/db`, monorepo workspace
 imports) wouldn't resolve and most type information would be lost.
 
-Use the tsconfig that matches the source you want analyzed , 
-often the app's `tsconfig.json`, but for monorepos you'll
+Use the tsconfig that matches the source you want analyzed, usually
+the app's `tsconfig.json`, but for monorepos you'll
 typically run it per-package.
 
 ```bash

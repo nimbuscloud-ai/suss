@@ -1,9 +1,8 @@
 {
   "name": "@suss/adapter-typescript",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
-  "description": "TypeScript adapter for suss \u2014 walks source files with ts-morph and emits raw extractions for the suss pipeline.",
+  "description": "TypeScript adapter for suss — walks source files with ts-morph and emits raw extractions for the suss pipeline.",
   "keywords": [
     "suss",
     "behavioral-summary",
@@ -47,8 +46,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "*",
-    "@suss/extractor": "*",
+    "@suss/behavioral-ir": "0.0.1",
+    "@suss/extractor": "0.0.1",
     "graphql": "^16.8.0",
     "ts-morph": "^23.0.0"
   },
@@ -57,5 +56,8 @@
     "typescript": "*",
     "vitest": "*",
     "@types/node": "*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

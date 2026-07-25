@@ -5,9 +5,9 @@ suss finds the bugs that compile cleanly, type-check, and pass their tests, and 
 suss reads what each function does on every path it can follow, then compares those readings wherever two units of code meet: a caller against a handler, a query against a schema. Where they disagree, you get a finding. It runs on your source as it stands, without instrumentation or authored specs.
 
 ```
-suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
-suss extract -p apps/web/tsconfig.json -f axios -o summaries/consumer.json
-suss check summaries/
+suss extract -f hono -o summaries/api.json
+suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
+suss check --dir summaries/
 ```
 
 ## What a summary looks like
@@ -15,19 +15,23 @@ suss check summaries/
 For every function reachable from a recognized entry point, suss emits a `BehavioralSummary`: the transitions the function produces (one per execution path), the predicates gating each, the outputs, and the side effects along the way. `suss inspect` renders one:
 
 ```
-GET /users/:id
-  ts-rest handler | handlers.ts:24
-  Contract: 200, 404, 500
-
-    -> 404 { error }  when  !params.id
-    -> 404 { error }  when  params.id && !db.findById()
-    -> 404 { error }  when  params.id && db.findById() && db.findById().deletedAt
-    -> 200 { id, name, email }  (default)
-
-    !! Declared response 500 is never produced by the handler
+src/api.ts
+├─ GET /users/:id  (hono handler | line 11)
+│      if  !findUser()
+│        -> 404 { error }
+│      elif  findUser().deletedAt
+│        -> 410 { error }
+│      else
+│        -> 200 { id, name }
+│
+└─ POST /users  (hono handler | line 25)
+       if  !c.req.json().name
+         -> 400 "name is required"
+       else
+         -> 201 { id, name }
 ```
 
-The decision tree shows every path with its output shape. The `!!` line is a gap between the declared contract and the implementation. The same data as JSON is what `@suss/checker` and any downstream tool consumes, and `inspect` is a renderer over it.
+Every path the code can take, with the status and body shape it produces. Where a declared contract promises something the code never produces, a `!!` line marks the gap. The same data as JSON is what `@suss/checker` and any downstream tool consumes, and `inspect` is a renderer over it.
 
 The summary is the product. Checking is the most-developed use; others include reading what code does without reading source, generating documentation, enumerating test cases, and feeding AI agents structured context.
 

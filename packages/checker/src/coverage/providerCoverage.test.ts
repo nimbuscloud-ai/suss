@@ -200,13 +200,12 @@ describe("checkProviderCoverage — sub-case analysis", () => {
 
     const findings = checkProviderCoverage(p, c);
     // Should warn about the conditional 200 (deleted user) that consumer ignores
-    const subcaseFindings = findings.filter((f) =>
-      f.description.includes("distinct cases"),
+    const subcaseFindings = findings.filter(
+      (f) => f.kind === "unhandledProviderCase" && f.severity === "warning",
     );
     expect(subcaseFindings).toHaveLength(1);
-    expect(subcaseFindings[0].severity).toBe("warning");
     expect(subcaseFindings[0].provider.transitionId).toBe("t-200-deleted");
-    expect(subcaseFindings[0].description).toContain("2 distinct cases");
+    expect(subcaseFindings[0].description).toContain("2 different situations");
   });
 
   it("does not emit sub-case warnings when provider has only one transition per status", () => {
@@ -287,12 +286,12 @@ describe("checkProviderCoverage — sub-case analysis", () => {
     ]);
 
     const findings = checkProviderCoverage(p, c);
-    const subcaseFindings = findings.filter((f) =>
-      f.description.includes("distinct cases"),
+    const subcaseFindings = findings.filter(
+      (f) => f.kind === "unhandledProviderCase" && f.severity === "warning",
     );
     // All three 404 transitions have conditions, consumer doesn't distinguish
     expect(subcaseFindings).toHaveLength(3);
-    expect(subcaseFindings[0].description).toContain("3 distinct cases");
+    expect(subcaseFindings[0].description).toContain("3 different situations");
     expect(subcaseFindings[0].description).toContain("status 404");
   });
 });

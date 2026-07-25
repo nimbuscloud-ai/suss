@@ -6,6 +6,7 @@ import { resolveCallableBody } from "./resolve/astResolve.js";
 import { resolveSubject } from "./subjects.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
+import type { CallExpression } from "ts-morph";
 
 const MAX_INLINE_DEPTH = 4;
 
@@ -280,9 +281,7 @@ export function parseConditionExpression(
  * Example: `[200, 201, 204].includes(status)` →
  *   `status === 200 || status === 201 || status === 204`
  */
-function tryExpandArrayIncludes(
-  call: import("ts-morph").CallExpression,
-): Predicate | null {
+function tryExpandArrayIncludes(call: CallExpression): Predicate | null {
   const callee = call.getExpression();
   if (!Node.isPropertyAccessExpression(callee)) {
     return null;
@@ -353,7 +352,7 @@ function tryExpandArrayIncludes(
  * → `truthinessCheck(derived(resolveSubject(user), propertyAccess("deletedAt")), negated: true)`
  */
 function tryInlineCallPredicate(
-  call: import("ts-morph").CallExpression,
+  call: CallExpression,
   depth: number,
 ): Predicate | null {
   const callee = call.getExpression();
@@ -391,84 +390,118 @@ function tryInlineCallPredicate(
 // Parameter substitution
 // ---------------------------------------------------------------------------
 
+/**
+ * One substituter per predicate kind. A Record keyed on the
+ * discriminant fails to compile when a new predicate kind lands without
+ * an entry here, which a switch does not (decision 8).
+ */
+type PredicateSubstituters = {
+  [K in Predicate["type"]]: (
+    pred: Extract<Predicate, { type: K }>,
+    subs: Map<string, ValueRef>,
+  ) => Predicate;
+};
+
+const SUBSTITUTE_PREDICATE: PredicateSubstituters = {
+  truthinessCheck: (pred, subs) => ({
+    ...pred,
+    subject: substituteValueRef(pred.subject, subs),
+  }),
+  nullCheck: (pred, subs) => ({
+    ...pred,
+    subject: substituteValueRef(pred.subject, subs),
+  }),
+  comparison: (pred, subs) => ({
+    ...pred,
+    left: substituteValueRef(pred.left, subs),
+    right: substituteValueRef(pred.right, subs),
+  }),
+  typeCheck: (pred, subs) => ({
+    ...pred,
+    subject: substituteValueRef(pred.subject, subs),
+  }),
+  propertyExists: (pred, subs) => ({
+    ...pred,
+    subject: substituteValueRef(pred.subject, subs),
+  }),
+  negation: (pred, subs) => ({
+    ...pred,
+    operand: substitutePredicate(pred.operand, subs),
+  }),
+  compound: (pred, subs) => ({
+    ...pred,
+    operands: pred.operands.map((op) => substitutePredicate(op, subs)),
+  }),
+  call: (pred, subs) => ({
+    ...pred,
+    args: pred.args.map((arg) => substituteValueRef(arg, subs)),
+  }),
+  // Opaque holds source text, so there is nothing to substitute into.
+  opaque: (pred) => pred,
+};
+
 function substitutePredicate(
   pred: Predicate,
   subs: Map<string, ValueRef>,
 ): Predicate {
-  switch (pred.type) {
-    case "truthinessCheck":
-      return {
-        ...pred,
-        subject: substituteValueRef(pred.subject, subs),
-      };
-    case "nullCheck":
-      return {
-        ...pred,
-        subject: substituteValueRef(pred.subject, subs),
-      };
-    case "comparison":
-      return {
-        ...pred,
-        left: substituteValueRef(pred.left, subs),
-        right: substituteValueRef(pred.right, subs),
-      };
-    case "typeCheck":
-      return {
-        ...pred,
-        subject: substituteValueRef(pred.subject, subs),
-      };
-    case "propertyExists":
-      return {
-        ...pred,
-        subject: substituteValueRef(pred.subject, subs),
-      };
-    case "negation":
-      return {
-        ...pred,
-        operand: substitutePredicate(pred.operand, subs),
-      };
-    case "compound":
-      return {
-        ...pred,
-        operands: pred.operands.map((op) => substitutePredicate(op, subs)),
-      };
-    case "call":
-      return {
-        ...pred,
-        args: pred.args.map((arg) => substituteValueRef(arg, subs)),
-      };
-    case "opaque":
-      return pred; // Can't substitute into opaque source text
-  }
+  const substitute = SUBSTITUTE_PREDICATE[pred.type] as (
+    p: Predicate,
+    s: Map<string, ValueRef>,
+  ) => Predicate;
+  return substitute(pred, subs);
 }
 
 function substituteValueRef(
   ref: ValueRef,
   subs: Map<string, ValueRef>,
 ): ValueRef {
-  switch (ref.type) {
-    case "input": {
-      const sub = subs.get(ref.inputRef);
-      if (sub === undefined) {
-        return ref;
-      }
-      // If the input has a path, chain property accesses onto the substituted value
-      let result = sub;
-      for (const segment of ref.path) {
-        result = {
-          type: "derived",
-          from: result,
-          derivation: { type: "propertyAccess", property: segment },
-        };
-      }
-      return result;
-    }
-    case "derived":
-      return {
-        ...ref,
-        from: substituteValueRef(ref.from, subs),
-      };
-    default:
-      return ref;
-  }
+  const substitute = SUBSTITUTE_VALUE_REF[ref.type] as (
+    r: ValueRef,
+    s: Map<string, ValueRef>,
+  ) => ValueRef;
+  return substitute(ref, subs);
 }
+
+/**
+ * One substituter per value-reference kind. Same reason as the
+ * predicate table above: a new kind without an entry stops the build
+ * rather than falling through a `default` that quietly returns the
+ * reference unchanged.
+ */
+type ValueRefSubstituters = {
+  [K in ValueRef["type"]]: (
+    ref: Extract<ValueRef, { type: K }>,
+    subs: Map<string, ValueRef>,
+  ) => ValueRef;
+};
+
+const SUBSTITUTE_VALUE_REF: ValueRefSubstituters = {
+  input: (ref, subs) => {
+    const sub = subs.get(ref.inputRef);
+    if (sub === undefined) {
+      return ref;
+    }
+    // The input carried a path, so chain those property accesses onto
+    // whatever it was substituted with.
+    let result = sub;
+    for (const segment of ref.path) {
+      result = {
+        type: "derived",
+        from: result,
+        derivation: { type: "propertyAccess", property: segment },
+      };
+    }
+    return result;
+  },
+  derived: (ref, subs) => ({
+    ...ref,
+    from: substituteValueRef(ref.from, subs),
+  }),
+  // None of these name an input, so there is nothing to replace. `state`
+  // was reached through a `default` before this table existed, which is
+  // the kind of silent pass-through the table is here to stop.
+  literal: (ref) => ref,
+  dependency: (ref) => ref,
+  state: (ref) => ref,
+  unresolved: (ref) => ref,
+};

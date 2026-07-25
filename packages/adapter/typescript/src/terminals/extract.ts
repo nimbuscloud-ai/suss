@@ -11,8 +11,9 @@ import {
   type ObjectLiteralExpression,
 } from "ts-morph";
 
-import { extractShape } from "../shapes/shapes.js";
+import { extractShape, extractShapeWithArguments } from "../shapes/shapes.js";
 
+import type { TypeShape } from "@suss/behavioral-ir";
 import type { RawTerminal, TerminalExtraction } from "@suss/extractor";
 
 /** Unwrap `expr as const` / `expr as Type` to the inner expression. */
@@ -21,10 +22,9 @@ export function unwrapAs(node: Expression): Expression {
 }
 
 /**
- * Peel a `JSON.stringify(x)` call down to `x`. The Lambda-proxy
- * envelope serializes the response payload into the `body` string, so
- * the shape worth comparing across the boundary is the argument, not
- * the stringified wrapper. Casts / parens around either the call or the
+ * Peel a `JSON.stringify(x)` call down to `x`. A Lambda handler
+ * serializes its payload into the `body` string, so the shape worth
+ * comparing across the boundary is the argument, not the string. Casts / parens around either the call or the
  * argument are unwrapped. Returns the node unchanged when it isn't a
  * `JSON.stringify(...)` call.
  */
@@ -69,6 +69,36 @@ export interface ExtractionContext {
   calls?: CallExpression[];
   /** Text of the thrown constructor — supplied by throwExpression only. */
   exceptionType?: string;
+  /**
+   * Parameter name to call argument, when `returnedObj` came from a
+   * helper rather than from the return site. `return json(200, payload)`
+   * against `json(statusCode, body)` binds `statusCode` to `200`, so the
+   * same property extraction reads the caller's values.
+   */
+  substitutions?: ReadonlyMap<string, Expression>;
+}
+
+/**
+ * The expression a property's value stands for. Identical to the value
+ * itself, except inside a resolved helper, where an identifier naming
+ * one of its parameters stands for whatever the caller passed.
+ */
+function substituted(value: Expression, ctx: ExtractionContext): Expression {
+  if (ctx.substitutions === undefined || !Node.isIdentifier(value)) {
+    return value;
+  }
+  return ctx.substitutions.get(value.getText()) ?? value;
+}
+
+/**
+ * The shape of an expression, reading a helper's parameters as the
+ * arguments this caller passed. `{ error: payload }` inside a helper is
+ * `{ error: "boom" }` when the caller passed "boom", at any depth.
+ */
+function shapeOf(node: Expression, ctx: ExtractionContext): TypeShape | null {
+  return ctx.substitutions === undefined
+    ? extractShape(node)
+    : extractShapeWithArguments(node, ctx.substitutions);
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +188,15 @@ function extractStatusCodeFromRule(
         // Handle shorthand: ShorthandPropertyAssignment
         if (Node.isShorthandPropertyAssignment(prop)) {
           if (prop.getName() === sc.name) {
+            // `{ statusCode }` inside a helper names one of its
+            // parameters, so the caller's argument is the status.
+            const resolved = ctx.substitutions?.get(prop.getName());
+            if (resolved !== undefined) {
+              const val = unwrapAs(resolved);
+              return Node.isNumericLiteral(val)
+                ? { type: "literal", value: Number(val.getText()) }
+                : { type: "dynamic", sourceText: val.getText() };
+            }
             return { type: "dynamic", sourceText: prop.getName() };
           }
         }
@@ -173,7 +212,7 @@ function extractStatusCodeFromRule(
         return null;
       }
 
-      const val = unwrapAs(raw);
+      const val = unwrapAs(substituted(raw, ctx));
       if (Node.isNumericLiteral(val)) {
         return { type: "literal", value: Number(val.getText()) };
       }
@@ -250,6 +289,19 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
       if (!Node.isPropertyAssignment(prop)) {
         if (Node.isShorthandPropertyAssignment(prop)) {
           if (prop.getName() === b.name) {
+            // `{ body }` inside a helper names one of its parameters, so
+            // the caller's argument is the payload.
+            const resolved = ctx.substitutions?.get(prop.getName());
+            if (resolved !== undefined) {
+              const target =
+                b.unwrapJsonStringify === true
+                  ? unwrapJsonStringify(resolved)
+                  : resolved;
+              return {
+                typeText: target.getText(),
+                shape: shapeOf(target, ctx),
+              };
+            }
             return { typeText: prop.getName(), shape: null };
           }
         }
@@ -265,9 +317,12 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
         return null;
       }
 
+      // Unwrap the serialization first: the payload the caller passed is
+      // what pairs with a declared body, not the string the helper wraps
+      // it in.
       const target =
         b.unwrapJsonStringify === true ? unwrapJsonStringify(val) : val;
-      return { typeText: target.getText(), shape: extractShape(target) };
+      return { typeText: target.getText(), shape: shapeOf(target, ctx) };
     }
 
     return null;

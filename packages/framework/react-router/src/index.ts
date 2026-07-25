@@ -3,6 +3,24 @@
 import type { PatternPack } from "@suss/extractor";
 
 /**
+ * Modules that export `json`, `data`, and `redirect`. The response
+ * helpers moved between packages as Remix became React Router, and a
+ * project on any of these versions writes the same call, so all of them
+ * count.
+ *
+ * Prefix matching covers the sub-paths (`@remix-run/node/dist/...`), so
+ * only the package roots are listed.
+ */
+const RESPONSE_MODULES = [
+  "react-router",
+  "react-router-dom",
+  "@remix-run/node",
+  "@remix-run/cloudflare",
+  "@remix-run/deno",
+  "@remix-run/server-runtime",
+];
+
+/**
  * Status codes for the `http-errors` package's named constructors.
  * React Router loaders / actions throw `httpErrorJson(new HttpError.X())`
  * and the arg's class name is the status source. Kept as a module-scope
@@ -73,7 +91,14 @@ export function reactRouterFramework(): PatternPack {
       {
         // json(data, init?) — e.g. return json({ user })
         kind: "response",
-        match: { type: "functionCall", functionName: "json" },
+        match: {
+          type: "functionCall",
+          functionName: "json",
+          // These names come from the router, so a same-named helper
+          // the project wrote is a different function, with its own
+          // argument order, and must not match.
+          requiresImport: RESPONSE_MODULES,
+        },
         extraction: {
           body: { from: "argument", position: 0 },
           defaultStatusCode: 200,
@@ -82,7 +107,14 @@ export function reactRouterFramework(): PatternPack {
       {
         // data(value, init?) — React Router v7 replacement for json()
         kind: "response",
-        match: { type: "functionCall", functionName: "data" },
+        match: {
+          type: "functionCall",
+          functionName: "data",
+          // These names come from the router, so a same-named helper
+          // the project wrote is a different function, with its own
+          // argument order, and must not match.
+          requiresImport: RESPONSE_MODULES,
+        },
         extraction: {
           body: { from: "argument", position: 0 },
           defaultStatusCode: 200,
@@ -91,7 +123,14 @@ export function reactRouterFramework(): PatternPack {
       {
         // redirect(url, status?) — e.g. return redirect("/login")
         kind: "response",
-        match: { type: "functionCall", functionName: "redirect" },
+        match: {
+          type: "functionCall",
+          functionName: "redirect",
+          // These names come from the router, so a same-named helper
+          // the project wrote is a different function, with its own
+          // argument order, and must not match.
+          requiresImport: RESPONSE_MODULES,
+        },
         extraction: {
           statusCode: { from: "argument", position: 1 },
           defaultStatusCode: 302,

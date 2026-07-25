@@ -2,7 +2,7 @@
 
 A pack teaches suss how to find and interpret code written for a specific framework, runtime, or library, for example, ts-rest for HTTP handlers, or runtime-node for Node's scheduling primitives. Packs are **declarative data**: a `PatternPack` object describing patterns. The language adapter interprets the patterns against the AST.
 
-This document explains what packs are, how they're categorized, and the structural distinction between the two main shapes a pack can take. For the type-by-type pattern catalogue, see [`reference/pack-patterns.md`](reference/pack-patterns.md). For step-by-step instructions on writing a new pack, see [`guides/writing-a-pack.md`](guides/writing-a-pack.md).
+For the type-by-type pattern catalogue, see [`reference/pack-patterns.md`](reference/pack-patterns.md). For step-by-step instructions on writing a new pack, see [`guides/writing-a-pack.md`](guides/writing-a-pack.md).
 
 ## Pack kinds
 

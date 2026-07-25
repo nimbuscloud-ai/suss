@@ -217,7 +217,7 @@ export function checkBodyCompatibility(
             boundary,
             provider: makeSide(provider, pt.id),
             consumer: makeSide(consumer, ct.id),
-            description: `Provider body shape for status ${status} is missing fields that consumer reads`,
+            description: `Consumer reads fields on status ${status} that the provider never sends`,
             severity: "error",
           });
         } else if (result === "unknown") {
@@ -226,7 +226,7 @@ export function checkBodyCompatibility(
             boundary,
             provider: makeSide(provider, pt.id),
             consumer: makeSide(consumer, ct.id),
-            description: `Provider body shape for status ${status} cannot be fully compared against consumer field expectations`,
+            description: `The provider's body on status ${status} could not be fully compared with what the consumer reads`,
             severity: "info",
           });
         }
@@ -275,7 +275,7 @@ export function checkBodyCompatibility(
             boundary,
             provider: makeSide(provider, pt.id),
             consumer: makeSide(consumer, ct.id),
-            description: `Provider body shape for status ${providerStatus} is missing fields that consumer reads in default branch`,
+            description: `Consumer's default branch reads fields on status ${providerStatus} that the provider never sends`,
             severity: "error",
           });
         }

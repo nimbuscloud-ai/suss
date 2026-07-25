@@ -39,24 +39,48 @@ Two summaries from anywhere in the system get compared by the same checker. Fron
 
 Extraction is a straight line with one intermediate data shape, `RawCodeStructure`, between the AST-shaped layer (the adapter) and the assembly layer (the extractor):
 
-```
-Source files
-    │
-    │  Language adapter (@suss/adapter-typescript)
-    │    loads project via compiler API (ts-morph)
-    │    uses pack patterns to discover code units
-    │    for each unit: finds terminals, walks condition chains,
-    │                    resolves subjects, reads declared contracts
-    ▼
-RawCodeStructure
-    │
-    │  Assembly engine (@suss/extractor)
-    │    normalizes predicates (wraps unstructured as opaque)
-    │    detects gaps (declared ↔ produced mismatches)
-    │    assesses confidence
-    ▼
-BehavioralSummary[]   JSON, language- and framework-agnostic
-```
+<svg class="suss-diagram" viewBox="0 0 660 412" role="img" aria-labelledby="pipeline-title pipeline-desc">
+  <title id="pipeline-title">The extraction pipeline</title>
+  <desc id="pipeline-desc">Source files pass through the language adapter, which produces RawCodeStructure. The assembly engine turns that into BehavioralSummary. The adapter is the only stage that touches an AST, and the extractor is the only stage that touches RawCodeStructure.</desc>
+
+  <defs>
+    <marker id="pipeline-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path class="arrow-head" d="M0,1 L7,4 L0,7 Z" />
+    </marker>
+  </defs>
+
+  <rect class="box" x="210" y="8" width="240" height="34" rx="6" />
+  <text class="label" x="330" y="30" text-anchor="middle">Your source files</text>
+  <line class="arrow" x1="330" y1="42" x2="330" y2="66" marker-end="url(#pipeline-arrow)" />
+
+  <rect class="box" x="130" y="72" width="400" height="86" rx="6" />
+  <text class="label" x="330" y="94" text-anchor="middle">Language adapter</text>
+  <text class="note" x="330" y="112" text-anchor="middle">reads the project through the compiler, one tsconfig at a time</text>
+  <text class="note" x="330" y="128" text-anchor="middle">finds the units a pack describes, then their branches and outputs</text>
+  <text class="label-mono" x="330" y="148" text-anchor="middle">@suss/adapter-typescript</text>
+  <line class="arrow" x1="330" y1="158" x2="330" y2="182" marker-end="url(#pipeline-arrow)" />
+
+  <rect class="box-data" x="210" y="188" width="240" height="34" rx="6" />
+  <text class="label-mono" x="330" y="209" text-anchor="middle">RawCodeStructure</text>
+  <line class="arrow" x1="330" y1="222" x2="330" y2="246" marker-end="url(#pipeline-arrow)" />
+
+  <rect class="box" x="130" y="252" width="400" height="76" rx="6" />
+  <text class="label" x="330" y="274" text-anchor="middle">Assembly engine</text>
+  <text class="note" x="330" y="292" text-anchor="middle">normalizes conditions, finds gaps, scores confidence</text>
+  <text class="label-mono" x="330" y="313" text-anchor="middle">@suss/extractor</text>
+  <line class="arrow" x1="330" y1="328" x2="330" y2="352" marker-end="url(#pipeline-arrow)" />
+
+  <rect class="box-data" x="210" y="358" width="240" height="46" rx="6" />
+  <text class="label-mono" x="330" y="378" text-anchor="middle">BehavioralSummary[]</text>
+  <text class="note" x="330" y="394" text-anchor="middle">JSON. No language or framework in it.</text>
+
+  <line class="seam" x1="20" y1="205" x2="130" y2="205" />
+  <line class="seam" x1="450" y1="205" x2="644" y2="205" />
+  <text class="note" x="20" y="196" text-anchor="start">only this stage</text>
+  <text class="note" x="20" y="221" text-anchor="start">sees an AST</text>
+  <text class="note" x="644" y="196" text-anchor="end">everything below</text>
+  <text class="note" x="644" y="221" text-anchor="end">reads plain data</text>
+</svg>
 
 See [`pipelines.md`](pipelines.md) for per-CLI-action walkthroughs.
 
@@ -68,7 +92,7 @@ The split between adapter and extractor is deliberate. The extractor never sees 
 
 ## Vocabulary
 
-The terms used consistently across the codebase, code unit, boundary, terminal, transition, predicate, subject, output, effect, gap, recognizer, sub-unit, pack, confidence, have one canonical definition each in the [Glossary](glossary.md). The running example there is the same `getUser` handler above. This doc uses those terms without redefining them.
+The terms used consistently across the codebase, code unit, boundary, terminal, transition, predicate, subject, output, effect, gap, recognizer, sub-unit, pack, confidence, have one canonical definition each in the [Glossary](glossary.md). The running example there is the same `getUser` handler above.
 
 ## Packages and what each owns
 

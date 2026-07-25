@@ -120,7 +120,7 @@ export function checkContractConsistency(
           boundary,
           provider: makeSide(provider, pt.id),
           consumer: makeSide(consumer),
-          description: `Handler transition ${pt.id} returns a body shape incompatible with the declared schema for status ${declared.statusCode}`,
+          description: `Handler returns a body on status ${declared.statusCode} that does not match the declared schema`,
           severity: "error",
         });
         continue;
@@ -130,7 +130,7 @@ export function checkContractConsistency(
         boundary,
         provider: makeSide(provider, pt.id),
         consumer: makeSide(consumer),
-        description: `Handler transition ${pt.id} body shape cannot be compared to the declared schema for status ${declared.statusCode}`,
+        description: `Handler returns a body on status ${declared.statusCode} that could not be compared with the declared schema`,
         severity: "info",
       });
     }

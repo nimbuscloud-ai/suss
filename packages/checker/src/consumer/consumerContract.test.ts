@@ -89,7 +89,9 @@ describe("checkConsumerContract", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].kind).toBe("consumerContractViolation");
     expect(findings[0].severity).toBe("warning");
-    expect(findings[0].description).toContain("undeclared");
+    expect(findings[0].description).toContain(
+      "the declared contract does not promise",
+    );
   });
 
   it("emits no findings when no declared contract exists", () => {

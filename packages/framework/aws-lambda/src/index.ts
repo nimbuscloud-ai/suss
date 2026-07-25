@@ -1,22 +1,26 @@
 // @suss/framework-aws-lambda — PatternPack for AWS Lambda HTTP handlers.
 //
 // The template declares the routing (SAM `Events: { HttpApi | Api }`),
-// the code declares the behavior (the handler's return envelope). This
+// the code declares the behavior (what the handler returns). This
 // pack extracts the code side and binds it to the same REST identity the
 // declared route carries, so the two pair by `(method, normalizedPath)`.
 //
 // Discovery is template-driven (see `discovery.ts`): handlers are found
 // by resolving each Serverless::Function's `Handler` back to a source
-// file + export, not by an in-code registration call. Envelope
-// extraction covers the two dominant shapes:
+// file + export, not by an in-code registration call.
 //
-//   1. A direct object literal `{ statusCode, body, headers? }`, where
-//      `body` is `JSON.stringify(x)` (the shape of `x` is what pairs) or
-//      a string.
-//   2. A same-module helper — `json(payload, status?)` /
-//      `redirect(url, status?)` — that wraps the envelope. The helper's
-//      argument is the payload shape; the pack declares the envelope its
-//      name implies rather than resolving the helper body.
+// The pack declares one response shape: an object carrying
+// `statusCode`, where `body` is `JSON.stringify(x)`, since the shape of
+// `x` is what pairs with a declared body.
+//
+// Most handlers build that object in a helper rather than at the return
+// site, and the helper belongs to the service, so this pack does not try
+// to name it. The adapter follows a returned call into the project and
+// applies the same declaration to the object it finds there, reading the
+// helper's parameters to see which argument carries which field. A
+// service writing `json(status, payload)` and one writing
+// `json(payload, status)` both come out right, as does one that calls
+// the helper `respond`.
 //
 // Out of scope: SQS / Schedule / SNS event handlers. Those surface as
 // `recognized-not-http` accounting units (see `discovery.ts`) — the
@@ -40,43 +44,32 @@ export function awsLambdaFramework(): PatternPack {
     discovery: [],
     discoverUnits: awsLambdaDiscovery,
 
-    // Gate on the `aws-lambda` types import — the discovery callback's
-    // per-file template lookup is cheap but pointless on files that
-    // aren't typed handlers. Handlers the template declares but that
-    // don't import the types are out of v0 scope; they still surface as
-    // declared routes on the contract side.
-    requiresImport: ["aws-lambda"],
+    // No import gate, on purpose.
+    //
+    // A TypeScript handler writes `import type { APIGatewayProxyHandlerV2 }
+    // from "aws-lambda"`, which TypeScript resolves to
+    // `@types/aws-lambda`, to annotate its export. A JavaScript handler
+    // has nothing to annotate and writes no such import. Gating
+    // discovery on it therefore meant "TypeScript handlers that bothered
+    // to annotate", and every JavaScript Lambda service extracted
+    // nothing.
+    //
+    // The SAM template is the gate instead, and a better one, because it
+    // names the handlers outright. `discoverUnits` looks each file up in
+    // the template reachable from it, and a directory with no template
+    // resolves to null once and stays memoized.
 
     terminals: [
       {
-        // Direct proxy envelope: `return { statusCode, body, headers? }`.
-        // `body` is the serialized payload — unwrap `JSON.stringify(x)`
-        // to the shape of `x` so it pairs with the declared body.
+        // `return { statusCode, body, headers? }`, written at the return
+        // site or built by a helper the adapter follows into. `body`
+        // holds the serialized payload, so unwrap `JSON.stringify(x)` to
+        // the shape of `x`.
         kind: "response",
         match: { type: "returnShape", requiredProperties: ["statusCode"] },
         extraction: {
           statusCode: { from: "property", name: "statusCode" },
           body: { from: "property", name: "body", unwrapJsonStringify: true },
-        },
-      },
-      {
-        // `return json(payload, status?)` — same-module response helper.
-        // Payload is arg 0; an explicit status is arg 1, else 200.
-        kind: "response",
-        match: { type: "functionCall", functionName: "json" },
-        extraction: {
-          statusCode: { from: "argument", position: 1 },
-          body: { from: "argument", position: 0 },
-          defaultStatusCode: 200,
-        },
-      },
-      {
-        // `return redirect(url, status?)` — location redirect helper.
-        kind: "response",
-        match: { type: "functionCall", functionName: "redirect" },
-        extraction: {
-          statusCode: { from: "argument", position: 1 },
-          defaultStatusCode: 302,
         },
       },
       {

@@ -88,7 +88,7 @@ If suppression rot becomes a material problem affecting production teams, we'll 
 
 ## Interaction with the `lowConfidence` finding kind
 
-The checker already emits `lowConfidence` findings when opaque predicates prevented it from reaching a definite conclusion ("couldn't tell"). That is orthogonal to suppression: a `lowConfidence` finding is not a suppressed finding, it's a *diagnostic* finding. You can suppress a `lowConfidence` finding like any other (`kind: lowConfidence` in a rule); you shouldn't treat unsuppressed low-confidence as silently-ignored, it's the tool explicitly telling you "I don't know."
+The checker already emits `lowConfidence` findings when opaque predicates prevented it from reaching a definite conclusion ("couldn't tell"). That is orthogonal to suppression: a `lowConfidence` finding is a diagnostic. You can suppress one like any other (`kind: lowConfidence` in a rule). An unsuppressed low-confidence finding is the checker saying it could not tell, which is different from a finding being ignored.
 
 ## See also
 

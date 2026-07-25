@@ -57,6 +57,22 @@ jobs:
       - name: Build
         run: npm run build
 
+      # A package that drifts back to private, or picks up a "*" range on
+      # a sibling, only fails at publish time. Catching it on every PR
+      # keeps the release step boring.
+      - name: Publish readiness
+        run: npm run check:publish
+
+      # Hand-authored SVG buys layout control and costs the guarantee
+      # that a label fits where it was put. Two collisions shipped before
+      # this ran.
+      - name: Diagram geometry
+        run: npm run check:diagrams
+
+      # The style rules Biome has no rule for.
+      - name: Style conventions
+        run: npm run check:style
+
       - name: Test
         run: npm run test:coverage
 

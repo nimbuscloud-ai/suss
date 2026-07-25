@@ -6,30 +6,46 @@ How the TypeScript adapter turns a function AST into a `RawCodeStructure`. This 
 
 For each code unit, extraction runs in five composable steps:
 
-```
-function body AST
-    │
-    │  Step 1 — findTerminals
-    │  (framework pack patterns)
-    ▼
-list of terminal AST nodes
-    │
-    │  For each terminal:
-    │
-    │    Step 2 — collectAncestorBranches
-    │    (pure AST walk, no symbol resolution)
-    │
-    │    Step 3 — collectEarlyReturns
-    │    (pure AST walk, no symbol resolution)
-    │
-    │    Step 4 — parseConditionExpression + resolveSubject
-    │    (expression → Predicate, using the symbol table)
-    │
-    │    Step 5 — assemble RawBranch
-    │
-    ▼
-RawBranch[]
-```
+<svg class="suss-diagram" viewBox="0 0 660 388" role="img" aria-labelledby="algo-title algo-desc">
+  <title id="algo-title">The five extraction steps</title>
+  <desc id="algo-desc">Terminals are found first, using the pack's patterns. Each terminal then runs through three steps that walk the AST alone, and one that resolves symbols through the type checker, before being assembled into a raw branch.</desc>
+
+  <defs>
+    <marker id="algo-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path class="arrow-head" d="M0,1 L7,4 L0,7 Z" />
+    </marker>
+  </defs>
+
+  <rect class="box-data" x="230" y="8" width="200" height="30" rx="5" />
+  <text class="label" x="330" y="28" text-anchor="middle">One function's AST</text>
+  <line class="arrow" x1="330" y1="38" x2="330" y2="58" marker-end="url(#algo-arrow)" />
+
+  <rect class="box" x="150" y="64" width="360" height="46" rx="6" />
+  <text class="label" x="330" y="83" text-anchor="middle">1. Find the terminals</text>
+  <text class="note" x="330" y="100" text-anchor="middle">every place this function produces an output, per the pack</text>
+  <line class="arrow" x1="330" y1="110" x2="330" y2="130" marker-end="url(#algo-arrow)" />
+
+  <rect class="box-data" x="215" y="136" width="230" height="30" rx="5" />
+  <text class="label" x="330" y="156" text-anchor="middle">A list of terminals</text>
+  <line class="arrow" x1="330" y1="166" x2="330" y2="186" marker-end="url(#algo-arrow)" />
+
+  <text class="axis" x="348" y="181" text-anchor="start">for each one</text>
+
+  <rect class="box" x="140" y="192" width="380" height="130" rx="6" />
+  <text class="label" x="330" y="212" text-anchor="middle">2. Collect the branches above it</text>
+  <text class="label" x="330" y="232" text-anchor="middle">3. Collect the early returns before it</text>
+  <text class="note" x="330" y="250" text-anchor="middle">both walk the tree and nothing else</text>
+  <line class="seam" x1="160" y1="262" x2="500" y2="262" />
+  <text class="label" x="330" y="282" text-anchor="middle">4. Turn each condition into a predicate</text>
+  <text class="note" x="330" y="299" text-anchor="middle">the only step that asks the type checker anything,</text>
+
+  <text class="note" x="330" y="314" text-anchor="middle">so the expensive one and the language-specific one</text>
+
+  <line class="arrow" x1="330" y1="322" x2="330" y2="340" marker-end="url(#algo-arrow)" />
+  <rect class="box" x="140" y="346" width="380" height="30" rx="5" />
+  <text class="label" x="330" y="366" text-anchor="middle">5. Assemble a branch, one per terminal</text>
+
+</svg>
 
 Steps 2 and 3 are pure AST traversal, no framework knowledge, no symbol resolution. They can be tested in isolation with tiny fixture functions.
 

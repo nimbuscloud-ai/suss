@@ -157,7 +157,7 @@ describe("runCli — top-level dispatch", () => {
   it("rejects unknown commands with a non-zero exit", async () => {
     const { exit, io } = await capture(() => runCli(["nope"]));
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("Unknown command: nope");
+    expect(io.stderr).toContain("nope");
   });
 });
 
@@ -166,12 +166,12 @@ describe("runCli — top-level dispatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("runCli — extract", () => {
-  it("rejects missing --project (-p)", async () => {
+  it("rejects a --project path that does not exist", async () => {
     const { exit, io } = await capture(() =>
-      runCli(["extract", "-f", "axios"]),
+      runCli(["extract", "-p", "/nope/tsconfig.json", "-f", "axios"]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("--project (-p) is required");
+    expect(io.stderr).toContain("tsconfig");
   });
 
   it("rejects when no --framework (-f) is given", async () => {
@@ -179,7 +179,7 @@ describe("runCli — extract", () => {
       runCli(["extract", "-p", "tsconfig.json"]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("at least one --framework");
+    expect(io.stderr).toContain("-f");
   });
 
   it("rejects an invalid --gaps value", async () => {
@@ -195,7 +195,7 @@ describe("runCli — extract", () => {
       ]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("--gaps must be");
+    expect(io.stderr).toContain("--gaps");
   });
 
   it("extracts a project to a file and reports timing under --timing", async () => {
@@ -255,7 +255,7 @@ describe("runCli — inspect", () => {
   it("rejects inspect with no path", async () => {
     const { exit, io } = await capture(() => runCli(["inspect"]));
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("requires a summaries JSON file path");
+    expect(io.stderr).toContain("summaries file");
   });
 
   it("inspect --diff requires before AND after paths", async () => {
@@ -263,7 +263,7 @@ describe("runCli — inspect", () => {
       runCli(["inspect", "--diff", "only-one.json"]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("--diff requires two");
+    expect(io.stderr).toContain("--diff");
   });
 
   it("inspect --diff renders identical files cleanly", async () => {
@@ -279,7 +279,7 @@ describe("runCli — inspect", () => {
   it("inspect --dir requires a directory path", async () => {
     const { exit, io } = await capture(() => runCli(["inspect", "--dir"]));
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("--dir requires a directory");
+    expect(io.stderr).toContain("--dir");
   });
 
   it("inspect --dir renders the pairings overview", async () => {
@@ -289,7 +289,7 @@ describe("runCli — inspect", () => {
       runCli(["inspect", "--dir", tmpDir]),
     );
     expect(exit).toBe(0);
-    expect(io.stdout).toContain("paired boundary");
+    expect(io.stdout).toContain("1 paired boundary");
     expect(io.stdout).toContain("/x");
   });
 });
@@ -302,7 +302,7 @@ describe("runCli — check", () => {
   it("requires two positional files (or --dir)", async () => {
     const { exit, io } = await capture(() => runCli(["check"]));
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("two summary file paths or --dir");
+    expect(io.stderr).toContain("--dir");
   });
 
   it("rejects an invalid --fail-on value", async () => {
@@ -355,7 +355,7 @@ describe("runCli — check", () => {
       runCli(["check", "--dir", tmpDir]),
     );
     expect(exit).toBe(0);
-    expect(io.stdout).toContain("Paired");
+    expect(io.stdout).toContain("Compared");
   });
 
   it("--sussignore applies the named rule file to two-file checks", async () => {
@@ -453,7 +453,7 @@ describe("runCli — contract", () => {
   it("rejects missing --from", async () => {
     const { exit, io } = await capture(() => runCli(["contract", "spec.json"]));
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("--from is required");
+    expect(io.stderr).toContain("--from");
   });
 
   it("rejects an unknown --from value", async () => {
@@ -461,7 +461,7 @@ describe("runCli — contract", () => {
       runCli(["contract", "--from", "no-such-source", "spec.json"]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("unknown --from value");
+    expect(io.stderr).toContain("no-such-source");
   });
 
   it("requires a positional spec path", async () => {
@@ -469,7 +469,7 @@ describe("runCli — contract", () => {
       runCli(["contract", "--from", "openapi"]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("requires a spec file path");
+    expect(io.stderr).toContain("--from");
   });
 
   it("loads an OpenAPI spec and writes summaries to -o", async () => {

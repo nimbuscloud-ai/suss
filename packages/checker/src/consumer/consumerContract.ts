@@ -86,7 +86,7 @@ export function checkConsumerContract(
           boundary,
           provider: makeSide(provider),
           consumer: makeSide(consumer, ct.id),
-          description: `Consumer reads fields from status ${status} response that the declared contract does not include — consumer depends on undeclared implementation details`,
+          description: `Consumer reads fields on status ${status} that the declared contract does not promise, so it relies on something the provider never agreed to keep`,
           severity: "warning",
         });
       } else if (result === "unknown") {
@@ -95,7 +95,7 @@ export function checkConsumerContract(
           boundary,
           provider: makeSide(provider),
           consumer: makeSide(consumer, ct.id),
-          description: `Cannot determine whether consumer's field expectations for status ${status} are covered by the declared contract`,
+          description: `Cannot tell whether the fields the consumer reads on status ${status} are covered by the declared contract`,
           severity: "info",
         });
       }

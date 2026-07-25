@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Static behavioral analysis for TypeScript — extract, compare, and publish summaries of what your code does.",
+  "description": "Static behavioral analysis for TypeScript \u2014 extract, compare, and publish summaries of what your code does.",
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
   "homepage": "https://github.com/nimbuscloud-ai/suss#readme",
@@ -44,12 +44,16 @@
     "format": "biome format --write .",
     "typecheck": "turbo typecheck",
     "check:self": "turbo check:self",
+    "check:publish": "node scripts/preparePublish.mjs --check",
+    "prepare:publish": "node scripts/preparePublish.mjs",
     "prepare": "husky",
     "badges": "node scripts/generate-coverage-badges.mjs",
     "test:badges": "npm run test:coverage && npm run badges",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "check:diagrams": "node scripts/checkDiagrams.mjs",
+    "check:style": "node scripts/checkStyle.mjs"
   },
   "lint-staged": {
     "*": [

@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { safeParseSummaries } from "@suss/behavioral-ir";
+import { BOUNDARY_ROLE, safeParseSummaries } from "@suss/behavioral-ir";
 import {
   applySuppressions,
+  boundaryKey,
   checkAll,
   checkPair,
   countsForThreshold,
@@ -126,7 +127,9 @@ export function checkDir(
 ): CheckResult & { result: CheckAllResult } {
   const resolved = path.resolve(options.dir);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-    throw new Error(`Directory not found: ${resolved}`);
+    throw new Error(
+      `No directory at ${resolved}. Pass the folder holding the summary files you wrote with \`suss extract -o\`.`,
+    );
   }
 
   // .sussignore.json is auto-discovered from this same directory — it's
@@ -137,12 +140,20 @@ export function checkDir(
       (f) => f.endsWith(".json") && !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
     );
   if (files.length === 0) {
-    throw new Error(`No JSON files found in ${resolved}`);
+    throw new Error(
+      `${resolved} has no JSON files in it. Write summaries there first, for example: suss extract -p tsconfig.json -f express -o ${path.join(options.dir, "api.json")}`,
+    );
   }
 
   const allSummaries: BehavioralSummary[] = [];
+  // Which file each summary came from, so a boundary drawing providers
+  // from two of them can be called out below.
+  const sourceFile = new Map<BehavioralSummary, string>();
   for (const file of files) {
-    allSummaries.push(...readSummaries(path.join(resolved, file)));
+    for (const summary of readSummaries(path.join(resolved, file))) {
+      allSummaries.push(summary);
+      sourceFile.set(summary, file);
+    }
   }
 
   const rawResult = checkAll(allSummaries);
@@ -161,9 +172,13 @@ export function checkDir(
   // The same .sussignore rules apply to both finding streams.
   const intent = runIntentPass(options.intent, allSummaries, suppressions);
 
+  const collisions = findBoundaryCollisions(allSummaries, sourceFile);
+
   const rendered = options.json
-    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched }, null, 2)}\n`
-    : renderDirHuman(result, confidence) + renderIntentSection(intent);
+    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched, collisions }, null, 2)}\n`
+    : renderDirHuman(result, confidence) +
+      renderCollisions(collisions) +
+      renderIntentSection(intent);
 
   if (options.output !== undefined) {
     fs.writeFileSync(options.output, rendered);
@@ -182,6 +197,83 @@ export function checkDir(
   };
 }
 
+/** A boundary whose providers came from more than one summary file. */
+interface BoundaryCollision {
+  key: string;
+  files: string[];
+}
+
+/**
+ * Boundaries that two different summary files both claim to provide.
+ *
+ * suss identifies an HTTP boundary by its method and path, with nothing
+ * to say which service serves it, so two services that both expose
+ * `GET /users` land on one key. Whoever calls either one then pairs
+ * against both and gets findings from an API they never touch.
+ *
+ * One file per service is the usual layout, so two files providing one
+ * key is a good sign that this happened. Reporting it beats comparing
+ * unrelated services and saying nothing.
+ */
+function findBoundaryCollisions(
+  summaries: ReadonlyArray<BehavioralSummary>,
+  sourceFile: ReadonlyMap<BehavioralSummary, string>,
+): BoundaryCollision[] {
+  const filesByKey = new Map<string, Set<string>>();
+
+  for (const summary of summaries) {
+    const binding = summary.identity.boundaryBinding;
+    if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
+      continue;
+    }
+    const key = boundaryKey(binding);
+    const file = sourceFile.get(summary);
+    if (key === null || file === undefined) {
+      continue;
+    }
+    const seen = filesByKey.get(key);
+    if (seen === undefined) {
+      filesByKey.set(key, new Set([file]));
+    } else {
+      seen.add(file);
+    }
+  }
+
+  const collisions: BoundaryCollision[] = [];
+  for (const [key, files] of filesByKey) {
+    if (files.size > 1) {
+      collisions.push({ key, files: [...files].sort() });
+    }
+  }
+  return collisions.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function renderCollisions(
+  collisions: ReadonlyArray<BoundaryCollision>,
+): string {
+  if (collisions.length === 0) {
+    return "";
+  }
+  const lines = [
+    "",
+    `${collisions.length} ${collisions.length === 1 ? "boundary is" : "boundaries are"} claimed by more than one file:`,
+  ];
+  for (const collision of collisions) {
+    lines.push(`  ${collision.key}  in ${collision.files.join(" and ")}`);
+  }
+  lines.push("");
+  lines.push(
+    "  suss tells boundaries apart by method and path, so two services that",
+  );
+  lines.push(
+    "  serve the same route look like one. Anything compared against these",
+  );
+  lines.push(
+    "  was compared against both. Check one service at a time to be sure.",
+  );
+  return `${lines.join("\n")}\n`;
+}
+
 function runIntentPass(
   intentDir: string | undefined,
   code: BehavioralSummary[],
@@ -195,7 +287,7 @@ function runIntentPass(
     // Same convention as an empty --dir: pointing at a directory with
     // nothing to load is a usage error, not a clean pass.
     throw new Error(
-      `No intent docs (*.intent.{yaml,yml,json} / *.prd.{yaml,yml,json}) found in ${intentDir}`,
+      `${intentDir} holds no intent docs. suss looks for *.intent.yaml, *.intent.yml, *.intent.json, and the same three for *.prd.`,
     );
   }
   const result = checkIntentAgreement(intents, code);
@@ -296,13 +388,13 @@ function meetsThreshold(findings: Finding[], failOn: FailOn): boolean {
 function readSummaries(file: string): BehavioralSummary[] {
   const resolved = path.resolve(file);
   if (!fs.existsSync(resolved)) {
-    throw new Error(`File not found: ${resolved}`);
+    throw new Error(`No file at ${resolved}.`);
   }
   const parsed = JSON.parse(fs.readFileSync(resolved, "utf-8")) as unknown;
   const result = safeParseSummaries(parsed);
   if (!result.success) {
     throw new Error(
-      `Invalid summary file ${resolved}:\n${formatParseIssues(result.error.issues)}`,
+      `suss could not read ${resolved} as summaries. It should be the output of \`suss extract\` or \`suss contract\`. What did not fit:\n${formatParseIssues(result.error.issues)}`,
     );
   }
   return result.data;
@@ -356,6 +448,10 @@ function renderHuman(
     lines.push(
       `  boundary: ${f.boundary.recognition} (${f.boundary.transport})${formatRoute(f.boundary)}`,
     );
+    const handle = formatTransitionHandle(f);
+    if (handle !== null) {
+      lines.push(handle);
+    }
   }
   lines.push("─".repeat(60));
   lines.push(
@@ -384,16 +480,26 @@ function formatSide(
   confidence: ConfidenceLookup,
 ): string {
   const loc = `${side.location.file}:${side.location.range.start}`;
-  const txn = side.transitionId ? ` @ ${side.transitionId}` : "";
   const info = confidence.get(side.summary);
-  // Only annotate when the level is below `high` — reviewers don't need
-  // to know the analysis was confident; they need to know when it
-  // wasn't. Informational only; checker severity is unchanged.
+  // Only annotate when the level is below `high`. A reviewer does not
+  // need telling the analysis was confident; they need telling when it
+  // was not. Informational only; checker severity is unchanged.
   const conf =
     info !== undefined && info.level !== "high"
       ? ` (confidence: ${info.level})`
       : "";
-  return `${side.summary}${txn} (${loc})${conf}`;
+  return `${side.summary} (${loc})${conf}`;
+}
+
+/**
+ * The transition a finding points at, on its own line.
+ *
+ * It reads as noise in the middle of the provider line, and it is the
+ * handle a `.sussignore` rule uses, so it is worth naming as one.
+ */
+function formatTransitionHandle(f: Finding): string | null {
+  const id = f.provider.transitionId ?? f.consumer.transitionId;
+  return id === undefined ? null : `  to silence this one: ${id}`;
 }
 
 function formatRoute(boundary: Finding["boundary"]): string {
@@ -412,42 +518,107 @@ function renderDirHuman(
   confidence: ConfidenceLookup,
 ): string {
   const lines: string[] = [];
+  const { providers, consumers, noBinding } = result.unmatched;
 
-  // Pairing summary
-  lines.push(
-    `Paired ${result.pairs.length} provider-consumer combination${result.pairs.length === 1 ? "" : "s"}:`,
-  );
-  for (const pair of result.pairs) {
-    lines.push(`  ${pair.key}: ${pair.provider} <-> ${pair.consumer}`);
+  // Lead with how much was actually compared. "No findings" on its own
+  // reads as a pass, and a run where nothing paired has checked nothing
+  // at all, which is the opposite of a pass.
+  if (result.pairs.length > 0) {
+    lines.push(
+      `Compared ${result.pairs.length} boundar${result.pairs.length === 1 ? "y" : "ies"}:`,
+    );
+    for (const pair of result.pairs) {
+      lines.push(`  ${pair.key}: ${pair.provider} <-> ${pair.consumer}`);
+    }
+  } else {
+    lines.push("Nothing was compared.");
+    lines.push("");
+    // Counted by boundary, matching how they are listed below. Two
+    // summaries describing one route are one thing missing a client.
+    lines.push(
+      `  ${nothingComparedReason(groupByKey(providers).size, groupByKey(consumers).size)}`,
+    );
+    lines.push(
+      "  Extract both sides of the boundary into the same folder, then check them together:",
+    );
+    lines.push(
+      "    suss extract -p <tsconfig> -f <pack> -o summaries/<name>.json",
+    );
+    lines.push("    suss check --dir summaries/");
   }
 
-  const { providers, consumers, noBinding } = result.unmatched;
-  if (providers.length > 0 || consumers.length > 0 || noBinding.length > 0) {
+  // Group by boundary rather than by summary. One route described by
+  // both a deploy template and its handler code is one boundary waiting
+  // for a client, and listing it twice makes the count read wrong.
+  if (providers.length > 0) {
     lines.push("");
-    lines.push("Unmatched:");
-    for (const p of providers) {
-      lines.push(
-        `  provider ${p.name} (${p.key ?? "no path"}) — no matching consumer`,
-      );
+    lines.push("Providers with no client to compare against:");
+    for (const [key, names] of groupByKey(providers)) {
+      lines.push(`  ${key}`);
+      lines.push(`    ${names.join(", ")}`);
     }
-    for (const c of consumers) {
-      lines.push(
-        `  consumer ${c.name} (${c.key ?? "no path"}) — no matching provider`,
-      );
+  }
+
+  if (consumers.length > 0) {
+    lines.push("");
+    lines.push("Clients with no provider to compare against:");
+    for (const [key, names] of groupByKey(consumers)) {
+      lines.push(`  ${key}`);
+      lines.push(`    ${names.join(", ")}`);
     }
-    for (const name of noBinding) {
-      lines.push(`  ${name} — no boundary binding`);
-    }
+  }
+
+  // Internal helpers reached through the closure pass land here by the
+  // dozen. Listing each one buries whatever else is on screen, and a
+  // function with no boundary is the normal case rather than a problem.
+  if (noBinding.length > 0) {
+    lines.push("");
+    lines.push(
+      `${noBinding.length} other summar${noBinding.length === 1 ? "y is" : "ies are"} internal code with no boundary, so nothing pairs with ${noBinding.length === 1 ? "it" : "them"}.`,
+    );
   }
 
   lines.push("");
 
-  // Findings
-  if (result.findings.length === 0) {
-    lines.push("No findings.");
-  } else {
+  if (result.findings.length > 0) {
     lines.push(renderHuman(result.findings, confidence).trimEnd());
+  } else if (result.pairs.length > 0) {
+    lines.push("No findings. Every compared boundary agreed.");
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+/** Collapse summaries onto the boundary they describe. */
+function groupByKey(
+  entries: ReadonlyArray<{ name: string; key?: string | null }>,
+): Map<string, string[]> {
+  const byKey = new Map<string, string[]>();
+  for (const entry of entries) {
+    const key = entry.key ?? "no path";
+    const names = byKey.get(key);
+    if (names !== undefined) {
+      names.push(entry.name);
+    } else {
+      byKey.set(key, [entry.name]);
+    }
+  }
+  return byKey;
+}
+
+/** Why a run compared nothing, in terms of what the user has and lacks. */
+function nothingComparedReason(
+  providerCount: number,
+  consumerCount: number,
+): string {
+  if (providerCount > 0 && consumerCount === 0) {
+    return `These summaries cover ${providerCount} boundar${providerCount === 1 ? "y" : "ies"} on the provider side and none on the client side, so there was no other side to compare against.`;
+  }
+  if (consumerCount > 0 && providerCount === 0) {
+    return `These summaries cover ${consumerCount} boundar${consumerCount === 1 ? "y" : "ies"} on the client side and none on the provider side, so there was no other side to compare against.`;
+  }
+  if (providerCount > 0 && consumerCount > 0) {
+    return "No provider and client shared a boundary, so none of them line up. Check that the paths match, including any prefix your router adds.";
+  }
+  return "None of these summaries describe a boundary, so there was nothing to pair.";
 }

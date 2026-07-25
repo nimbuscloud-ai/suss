@@ -219,3 +219,74 @@ describe("predicatesMatch", () => {
     expect(predicatesMatch(a, b)).toBe("nomatch");
   });
 });
+
+describe("predicatesMatch across every predicate kind", () => {
+  // Each kind is its own entry in the dispatch tables that replaced the
+  // switch statements, so each needs exercising. A `default` case used
+  // to cover them all at once and hid which ones were never reached.
+  const resolved: ValueRef = { type: "input", inputRef: "args", path: ["id"] };
+  const unresolved: ValueRef = {
+    type: "unresolved",
+    sourceText: "somethingDynamic()",
+  };
+
+  const kinds: Array<[string, Predicate, Predicate]> = [
+    [
+      "typeCheck",
+      { type: "typeCheck", subject: resolved, expectedType: "string" },
+      { type: "typeCheck", subject: unresolved, expectedType: "string" },
+    ],
+    [
+      "propertyExists",
+      {
+        type: "propertyExists",
+        subject: resolved,
+        property: "id",
+        negated: false,
+      },
+      {
+        type: "propertyExists",
+        subject: unresolved,
+        property: "id",
+        negated: false,
+      },
+    ],
+    [
+      "nullCheck",
+      { type: "nullCheck", subject: resolved, negated: false },
+      { type: "nullCheck", subject: unresolved, negated: false },
+    ],
+    [
+      "truthinessCheck",
+      { type: "truthinessCheck", subject: resolved, negated: false },
+      { type: "truthinessCheck", subject: unresolved, negated: false },
+    ],
+    [
+      "call",
+      { type: "call", callee: "isAdmin", args: [resolved] },
+      { type: "call", callee: "isAdmin", args: [unresolved] },
+    ],
+  ];
+
+  for (const [kind, withResolved, withUnresolved] of kinds) {
+    it(`compares two ${kind} predicates that resolve`, () => {
+      expect(predicatesMatch(withResolved, withResolved)).not.toBe("unknown");
+    });
+
+    it(`gives up on a ${kind} predicate holding an unresolved subject`, () => {
+      expect(predicatesMatch(withUnresolved, withUnresolved)).toBe("unknown");
+    });
+  }
+
+  it("treats an opaque predicate as carrying nothing unresolved of its own", () => {
+    // Opaque holds source text, so there is no value reference inside it
+    // to be unresolved. It is unknown because it is opaque, not because
+    // of anything it contains.
+    const opaque: Predicate = {
+      type: "opaque",
+      sourceText: "x && y",
+      reason: "unsupportedSyntax",
+    };
+    expect(predicatesMatch(opaque, opaque)).toBe("unknown");
+  });
+});

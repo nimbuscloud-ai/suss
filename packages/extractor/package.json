@@ -1,7 +1,6 @@
 {
   "name": "@suss/extractor",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "description": "Framework-agnostic extraction pipeline that turns raw extractions into suss behavioral summaries.",
   "keywords": [
@@ -46,11 +45,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "*"
+    "@suss/behavioral-ir": "0.0.1"
   },
   "devDependencies": {
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

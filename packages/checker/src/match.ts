@@ -37,38 +37,45 @@ function valueRefContainsUnresolved(v: ValueRef): boolean {
   return false;
 }
 
+/**
+ * One test per predicate kind. A Record keyed on the discriminant stops
+ * the build when a new kind lands without an entry, which a switch with
+ * a `default` does not (decision 8).
+ */
+type PredicateTests = {
+  [K in Predicate["type"]]: (p: Extract<Predicate, { type: K }>) => boolean;
+};
+
+const CONTAINS_OPAQUE: PredicateTests = {
+  opaque: () => true,
+  compound: (p) => p.operands.some(predicateContainsOpaque),
+  negation: (p) => predicateContainsOpaque(p.operand),
+  nullCheck: () => false,
+  truthinessCheck: () => false,
+  typeCheck: () => false,
+  propertyExists: () => false,
+  comparison: () => false,
+  call: () => false,
+};
+
 function predicateContainsOpaque(p: Predicate): boolean {
-  switch (p.type) {
-    case "opaque":
-      return true;
-    case "compound":
-      return p.operands.some(predicateContainsOpaque);
-    case "negation":
-      return predicateContainsOpaque(p.operand);
-    default:
-      return false;
-  }
+  return (CONTAINS_OPAQUE[p.type] as (q: Predicate) => boolean)(p);
 }
 
+const CONTAINS_UNRESOLVED: PredicateTests = {
+  nullCheck: (p) => valueRefContainsUnresolved(p.subject),
+  truthinessCheck: (p) => valueRefContainsUnresolved(p.subject),
+  typeCheck: (p) => valueRefContainsUnresolved(p.subject),
+  propertyExists: (p) => valueRefContainsUnresolved(p.subject),
+  comparison: (p) =>
+    valueRefContainsUnresolved(p.left) || valueRefContainsUnresolved(p.right),
+  call: (p) => p.args.some(valueRefContainsUnresolved),
+  compound: (p) => p.operands.some(predicateContainsUnresolved),
+  negation: (p) => predicateContainsUnresolved(p.operand),
+  // Opaque holds source text, so nothing inside it is a value reference.
+  opaque: () => false,
+};
+
 function predicateContainsUnresolved(p: Predicate): boolean {
-  switch (p.type) {
-    case "nullCheck":
-    case "truthinessCheck":
-    case "typeCheck":
-    case "propertyExists":
-      return valueRefContainsUnresolved(p.subject);
-    case "comparison":
-      return (
-        valueRefContainsUnresolved(p.left) ||
-        valueRefContainsUnresolved(p.right)
-      );
-    case "call":
-      return p.args.some(valueRefContainsUnresolved);
-    case "compound":
-      return p.operands.some(predicateContainsUnresolved);
-    case "negation":
-      return predicateContainsUnresolved(p.operand);
-    case "opaque":
-      return false;
-  }
+  return (CONTAINS_UNRESOLVED[p.type] as (q: Predicate) => boolean)(p);
 }

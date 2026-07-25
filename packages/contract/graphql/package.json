@@ -1,7 +1,6 @@
 {
   "name": "@suss/contract-graphql",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "description": "Generate behavioral summaries from a plain GraphQL SDL file (Query/Mutation/Subscription field definitions become resolver-kind summaries).",
   "keywords": [
@@ -46,12 +45,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "*",
+    "@suss/behavioral-ir": "0.0.1",
     "graphql": "^16.8.0"
   },
   "devDependencies": {
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
