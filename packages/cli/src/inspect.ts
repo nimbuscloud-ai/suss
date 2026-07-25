@@ -433,6 +433,31 @@ function predicateEqual(a: Predicate, b: Predicate): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/**
+ * Strip every `negation` wrapper, tracking whether an odd number came
+ * off. `!!x` and `x` are the same test, and the assembler produces the
+ * doubled form for a fall-through past a guard whose condition is a
+ * call: the guard is `!lookup()`, so reaching the code after it is
+ * `!!lookup()`.
+ *
+ * Peeling one layer left the two conditions looking like different
+ * predicates, so the fall-through never lined up with its own guard and
+ * the tree dropped it. That hid the success path of any handler written
+ * as `if (!check()) return error;` followed by a return.
+ */
+function peelNegations(condition: Predicate): {
+  predicate: Predicate;
+  positive: boolean;
+} {
+  let predicate = condition;
+  let positive = true;
+  while (predicate.type === "negation") {
+    positive = !positive;
+    predicate = predicate.operand;
+  }
+  return { predicate, positive };
+}
+
 function insertIntoTree(
   node: TreeNode,
   conditions: Predicate[],
@@ -455,9 +480,7 @@ function insertIntoTree(
     // innermost empty else which corresponds to the fall-through.
     return attachToDeepestEmptyElse(node, leaf);
   }
-  const cond = conditions[i];
-  const positive = cond.type !== "negation";
-  const pred = positive ? cond : cond.operand;
+  const { predicate: pred, positive } = peelNegations(conditions[i]);
 
   if (node.kind === "empty") {
     const branch: TreeNode = {

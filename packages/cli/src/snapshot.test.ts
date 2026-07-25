@@ -1041,6 +1041,58 @@ function makeHandlerWith(
 }
 
 describe("inspect variant rendering", () => {
+  it("shows the branch past a guard whose condition is a call", () => {
+    // `if (!lookup()) { return error; } return ok;` gives the guard the
+    // condition `!lookup()` and the fall-through `!!lookup()`. Peeling
+    // one negation left those looking like different predicates, so the
+    // success path never joined the tree and the endpoint rendered with
+    // its 200 missing.
+    const guard: BehavioralSummary["transitions"][number]["conditions"][number] =
+      {
+        type: "negation",
+        operand: { type: "call", callee: "lookup", args: [] },
+      };
+
+    const summary: BehavioralSummary = {
+      ...handlerSummary,
+      transitions: [
+        {
+          id: "h:guard:400",
+          conditions: [guard],
+          output: {
+            type: "response",
+            statusCode: { type: "literal", value: 400 },
+            body: null,
+            headers: {},
+          },
+          effects: [],
+          location: { start: 12, end: 14 },
+          isDefault: false,
+        },
+        {
+          id: "h:guard:200",
+          conditions: [{ type: "negation", operand: guard }],
+          output: {
+            type: "response",
+            statusCode: { type: "literal", value: 200 },
+            body: null,
+            headers: {},
+          },
+          effects: [],
+          location: { start: 15, end: 16 },
+          isDefault: true,
+        },
+      ],
+    };
+
+    const filePath = writeTempJson([summary]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+
+    expect(output).toContain("-> 400");
+    expect(output).toContain("-> 200");
+  });
+
   it("renders every primitive TypeShape variant in body shapes", () => {
     const summary = makeHandlerWith({
       output: {

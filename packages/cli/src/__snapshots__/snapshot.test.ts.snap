@@ -314,11 +314,11 @@ exports[`inspect variant rendering > simplifies double negations and !truthiness
 "src/handlers/users.ts
 └─ GET /users/:id  (express handler | line 10)
      Contract: 200, 400, 404, 500
-       if  !x
-       elif  y
-       elif  z == null
-       else
-         -> 200
+       if  x
+         if  y
+         elif  z == null
+         else
+           -> 200
 
 1 summary.
 "
