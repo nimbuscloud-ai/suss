@@ -162,7 +162,7 @@ function providerBodyMismatch(findings: Finding[]): Finding | undefined {
   return findings.find(
     (f) =>
       f.kind === "unhandledProviderCase" &&
-      f.description.includes("missing fields that consumer reads"),
+      f.description.includes("the provider never sends"),
   );
 }
 

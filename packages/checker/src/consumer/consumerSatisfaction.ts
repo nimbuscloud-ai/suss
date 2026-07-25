@@ -42,7 +42,7 @@ export function checkConsumerSatisfaction(
           boundary,
           provider: makeSide(provider),
           consumer: makeSide(consumer, ct.id),
-          description: `Consumer expects status ${status}; provider has an opaque status code so satisfaction cannot be verified`,
+          description: `Consumer expects status ${status}, and one of the provider's statuses could not be read, so this cannot be confirmed either way`,
           severity: "info",
         });
         continue;

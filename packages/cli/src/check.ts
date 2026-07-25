@@ -448,6 +448,10 @@ function renderHuman(
     lines.push(
       `  boundary: ${f.boundary.recognition} (${f.boundary.transport})${formatRoute(f.boundary)}`,
     );
+    const handle = formatTransitionHandle(f);
+    if (handle !== null) {
+      lines.push(handle);
+    }
   }
   lines.push("─".repeat(60));
   lines.push(
@@ -476,16 +480,26 @@ function formatSide(
   confidence: ConfidenceLookup,
 ): string {
   const loc = `${side.location.file}:${side.location.range.start}`;
-  const txn = side.transitionId ? ` @ ${side.transitionId}` : "";
   const info = confidence.get(side.summary);
-  // Only annotate when the level is below `high` — reviewers don't need
-  // to know the analysis was confident; they need to know when it
-  // wasn't. Informational only; checker severity is unchanged.
+  // Only annotate when the level is below `high`. A reviewer does not
+  // need telling the analysis was confident; they need telling when it
+  // was not. Informational only; checker severity is unchanged.
   const conf =
     info !== undefined && info.level !== "high"
       ? ` (confidence: ${info.level})`
       : "";
-  return `${side.summary}${txn} (${loc})${conf}`;
+  return `${side.summary} (${loc})${conf}`;
+}
+
+/**
+ * The transition a finding points at, on its own line.
+ *
+ * It reads as noise in the middle of the provider line, and it is the
+ * handle a `.sussignore` rule uses, so it is worth naming as one.
+ */
+function formatTransitionHandle(f: Finding): string | null {
+  const id = f.provider.transitionId ?? f.consumer.transitionId;
+  return id === undefined ? null : `  to silence this one: ${id}`;
 }
 
 function formatRoute(boundary: Finding["boundary"]): string {

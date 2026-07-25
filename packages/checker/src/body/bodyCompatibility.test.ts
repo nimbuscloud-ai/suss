@@ -96,7 +96,7 @@ describe("checkBodyCompatibility", () => {
     expect(findings[0].kind).toBe("unhandledProviderCase");
     expect(findings[0].severity).toBe("error");
     expect(findings[0].description).toContain("status 200");
-    expect(findings[0].description).toContain("missing fields");
+    expect(findings[0].description).toContain("the provider never sends");
   });
 
   it("emits lowConfidence when provider body has unknown/ref shapes", () => {
