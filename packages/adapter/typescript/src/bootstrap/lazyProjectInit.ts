@@ -26,6 +26,8 @@ import path from "node:path";
 
 import { Project, type SourceFile, ts } from "ts-morph";
 
+import { collectPackGates, packIsUngated } from "./preFilter.js";
+
 import type { PatternPack } from "@suss/extractor";
 
 // Re-export type so consumers don't need a separate import.
@@ -166,27 +168,11 @@ async function selectCandidateFiles(
   return matched;
 }
 
-function packIsUngated(pack: PatternPack): boolean {
-  for (const pattern of pack.discovery) {
-    const requires = pattern.requiresImport;
-    if (requires === undefined || requires.length === 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function collectAllGates(packs: ReadonlyArray<PatternPack>): string[] {
   const gates = new Set<string>();
   for (const pack of packs) {
-    for (const pattern of pack.discovery) {
-      const requires = pattern.requiresImport;
-      if (requires === undefined) {
-        continue;
-      }
-      for (const g of requires) {
-        gates.add(g);
-      }
+    for (const g of collectPackGates(pack)) {
+      gates.add(g);
     }
   }
   return [...gates];

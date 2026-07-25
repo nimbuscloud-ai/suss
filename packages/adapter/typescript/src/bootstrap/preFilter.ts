@@ -63,7 +63,16 @@ export function computePackApplicability(
   return result;
 }
 
-function packIsUngated(pack: PatternPack): boolean {
+/**
+ * Whether a pack applies to every file (no import gate to filter by).
+ *
+ * Shared with the lazy bootstrap in `lazyProjectInit.ts`, which makes
+ * the same gated/ungated decision one stage earlier — over unparsed
+ * file content rather than over `SourceFile`s. The two stages must
+ * agree: a pack the bootstrap treats as gated never gets its files
+ * loaded, so a divergence here means silent zero-summary extraction.
+ */
+export function packIsUngated(pack: PatternPack): boolean {
   // A pack-level `requiresImport` is ALWAYS a gate, even on
   // recognizer-only packs. Lets `@suss/framework-aws-sqs` declare
   // `["@aws-sdk/client-sqs"]` and skip files that don't import it.
@@ -100,7 +109,8 @@ function packIsUngated(pack: PatternPack): boolean {
   return false;
 }
 
-function collectPackGates(pack: PatternPack): string[] {
+/** Every import specifier that makes a gated pack applicable to a file. */
+export function collectPackGates(pack: PatternPack): string[] {
   const gates = new Set<string>();
   // Pack-level gate (recognizer-only packs use this).
   if (pack.requiresImport !== undefined) {

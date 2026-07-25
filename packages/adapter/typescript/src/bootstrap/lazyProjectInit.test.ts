@@ -64,6 +64,32 @@ const ungatedPack: PatternPack = {
   inputMapping: { type: "positionalParams", params: [] },
 };
 
+// A callback-driven pack: no data-driven discovery patterns, a
+// pack-level import gate, and a `discoverUnits` callback. This is the
+// shape `@suss/framework-aws-lambda` uses (routing lives in the SAM
+// template, not in code), and the shape the bootstrap has to gate on
+// the pack-level `requiresImport` rather than on per-pattern gates.
+const callbackPack: PatternPack = {
+  name: "test-callback",
+  protocol: "http",
+  languages: ["typescript"],
+  discovery: [],
+  discoverUnits: () => [],
+  requiresImport: ["@callback/lib"],
+  terminals: [],
+  inputMapping: { type: "positionalParams", params: [] },
+};
+
+const recognizerOnlyPack: PatternPack = {
+  name: "test-recognizer-only",
+  protocol: "http",
+  languages: ["typescript"],
+  discovery: [],
+  discoverUnits: () => [],
+  terminals: [],
+  inputMapping: { type: "positionalParams", params: [] },
+};
+
 describe("createLazyProject", () => {
   it("loads only files matching a gated pack's requiresImport", async () => {
     const { tsconfigPath } = await makeTempProject({
@@ -85,6 +111,26 @@ describe("createLazyProject", () => {
       "b.ts": "export const b = 2;",
     });
     const result = await createLazyProject(tsconfigPath, [ungatedPack]);
+    expect(result.loadedFiles).toHaveLength(2);
+  });
+
+  it("gates a discoverUnits-only pack on its pack-level requiresImport", async () => {
+    const { tsconfigPath } = await makeTempProject({
+      "handler.ts": `import type { H } from "@callback/lib"; export const handler: H = () => 1;`,
+      "unrelated.ts": "export const x = 1;",
+    });
+    const result = await createLazyProject(tsconfigPath, [callbackPack]);
+    expect(
+      result.loadedFiles.map((sf) => path.basename(sf.getFilePath())),
+    ).toEqual(["handler.ts"]);
+  });
+
+  it("loads every file for a discoverUnits-only pack with no pack-level gate", async () => {
+    const { tsconfigPath } = await makeTempProject({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    });
+    const result = await createLazyProject(tsconfigPath, [recognizerOnlyPack]);
     expect(result.loadedFiles).toHaveLength(2);
   });
 
