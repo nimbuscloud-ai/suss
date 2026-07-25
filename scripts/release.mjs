@@ -13,6 +13,12 @@
 // on the registry at this version is skipped, so a run that half
 // finished can be repeated with a fresh password and will pick up only
 // what is left.
+//
+// The skip check is not always right. npm's read path can trail its
+// write path by minutes, so a package published moments ago still reads
+// as missing. Publishing it again comes back with "cannot publish over
+// the previously published versions", which this counts as success,
+// because it is the registry saying the version is up.
 
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -69,7 +75,9 @@ const packages = findPackages().map((dir) => ({
   name: readJson(path.join(dir, "package.json")).name,
 }));
 
-console.log(`\nChecking which of ${packages.length} packages are already at ${next}...`);
+console.log(
+  `\nChecking which of ${packages.length} packages are already at ${next}...`,
+);
 const pending = packages.filter(({ name }) => !isPublished(name, next));
 const skipped = packages.length - pending.length;
 if (skipped > 0) {
@@ -109,12 +117,18 @@ if (failures.length > 0) {
   console.error(
     `\n${failures.length} of ${pending.length} did not publish. The ones that` +
       ` did are on the registry at ${next}.\nRe-run the same command with a` +
-      ` fresh --otp; it will pick up only what is left.`,
+      " fresh --otp; it will pick up only what is left.",
   );
   process.exit(1);
 }
 
-console.log(`\nPublished ${pending.length} packages at ${next}.`);
+const alreadyThere = results.filter((r) => r.alreadyThere).length;
+console.log(
+  `\nPublished ${pending.length - alreadyThere} packages at ${next}.` +
+    (alreadyThere > 0
+      ? ` ${alreadyThere} were already up from an earlier run.`
+      : ""),
+);
 console.log(
   `\nStill to do:\n  git commit -am "chore: release ${next}"\n  git tag v${next}\n  git push --follow-tags`,
 );
@@ -138,7 +152,9 @@ function resolveVersion(from, request) {
 
   const parts = from.split(".").map(Number);
   if (parts.length !== 3 || parts.some(Number.isNaN)) {
-    fail(`The root version is "${from}", which this cannot bump. Pass an exact version.`);
+    fail(
+      `The root version is "${from}", which this cannot bump. Pass an exact version.`,
+    );
   }
   return step(parts).join(".");
 }
@@ -228,7 +244,7 @@ async function publishAll(pending) {
       results.push(result);
       done += 1;
       process.stdout.write(
-        `  ${result.ok ? "published" : "failed   "} ${result.name}  (${done}/${pending.length})\n`,
+        `  ${label(result)} ${result.name}  (${done}/${pending.length})\n`,
       );
     }
   };
@@ -237,6 +253,13 @@ async function publishAll(pending) {
     Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker),
   );
   return results;
+}
+
+function label(result) {
+  if (!result.ok) {
+    return "failed     ";
+  }
+  return result.alreadyThere ? "already up " : "published  ";
 }
 
 function publishOne({ dir, name }) {
@@ -254,17 +277,31 @@ function publishOne({ dir, name }) {
     child.stderr.on("data", (d) => {
       output += String(d);
     });
-    child.on("error", (err) => resolve({ name, ok: false, message: String(err) }));
+    child.on("error", (err) =>
+      resolve({ name, ok: false, message: String(err) }),
+    );
     child.on("close", (code) => {
       if (code === 0) {
         resolve({ name, ok: true });
+        return;
+      }
+      // The registry refuses to overwrite a version, and that refusal is
+      // proof the version is up. It comes back on a retry because npm's
+      // read path can trail its write path by several minutes, so the
+      // skip check above still thinks the package is missing.
+      if (/cannot publish over/.test(output)) {
+        resolve({ name, ok: true, alreadyThere: true });
         return;
       }
       const line =
         output.split("\n").find((l) => /npm error (?:code |4|5)/.test(l)) ??
         output.split("\n").slice(-2)[0] ??
         `exit ${code}`;
-      resolve({ name, ok: false, message: line.replace(/^npm error /, "").trim() });
+      resolve({
+        name,
+        ok: false,
+        message: line.replace(/^npm error /, "").trim(),
+      });
     });
   });
 }
