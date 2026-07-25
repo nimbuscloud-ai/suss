@@ -233,18 +233,8 @@ describe("predicatesMatch across every predicate kind", () => {
   const kinds: Array<[string, Predicate, Predicate]> = [
     [
       "typeCheck",
-      {
-        type: "typeCheck",
-        subject: resolved,
-        checkType: "string",
-        negated: false,
-      },
-      {
-        type: "typeCheck",
-        subject: unresolved,
-        checkType: "string",
-        negated: false,
-      },
+      { type: "typeCheck", subject: resolved, expectedType: "string" },
+      { type: "typeCheck", subject: unresolved, expectedType: "string" },
     ],
     [
       "propertyExists",
