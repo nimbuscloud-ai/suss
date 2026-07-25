@@ -24,6 +24,48 @@ The output of (2) is a JSON file. The input to (3) is one or more JSON
 files. (2) is useful on its own if all you want is a structured
 description of what your handlers do.
 
+## Let suss work out what you need
+
+```bash
+npx @suss/cli init
+```
+
+It reads your `package.json` and looks for schemas and templates on
+disk, then prints the packs to install and the commands to run:
+
+```
+✓ Found 3 things to read in services/auth
+
+  Your code
+    aws-sqs          @aws-sdk/client-sqs in dependencies
+    aws-lambda       @types/aws-lambda in devDependencies
+
+  Declared contracts
+    cloudformation   a SAM template at template.yaml
+
+1. Install the packs
+
+   npm install --save-dev @suss/cli @suss/framework-aws-sqs @suss/framework-aws-lambda @suss/contract-cloudformation
+
+2. Read each side into one folder
+
+   suss extract -f aws-sqs -f aws-lambda -o summaries/code.json
+   suss contract --from cloudformation template.yaml -o summaries/cloudformation.json
+
+3. Compare them
+
+   suss check --dir summaries/
+
+4. Decide what to do about the findings
+   ...
+
+5. Run it on every change
+   ...
+```
+
+It writes nothing and installs nothing. The rest of this page is the
+same thing done by hand.
+
 ## Install the pieces you need
 
 suss ships as discrete packages. You install one pack per framework

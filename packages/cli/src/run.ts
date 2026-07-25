@@ -14,12 +14,14 @@ import { parseArgs } from "node:util";
 import { check, checkDir } from "./check.js";
 import { contract } from "./contract.js";
 import { extract } from "./extract.js";
+import { init } from "./init.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 
 import type { ContractSource } from "./contract.js";
 
 export const USAGE = `
 Usage:
+  suss init [directory]
   suss extract [-p <tsconfig>] -f <framework> [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss inspect <summaries.json>
   suss inspect --dir <directory>
@@ -29,6 +31,7 @@ Usage:
   suss contract --from <source> <spec> [-o <output.json>]
 
 Commands:
+  init      Work out which packs this project needs, and print the commands
   extract   Read your source and describe what each boundary does
   inspect   Read a summaries file back in a form meant for people
   check     Compare two sides of a boundary and report what disagrees
@@ -86,6 +89,9 @@ export async function runCli(args: string[]): Promise<number> {
 
   const command = args[0];
 
+  if (command === "init") {
+    return runInit(args.slice(1));
+  }
   if (command === "extract") {
     return await runExtract(args.slice(1));
   }
@@ -104,6 +110,11 @@ export async function runCli(args: string[]): Promise<number> {
   );
   process.stderr.write(`${USAGE}\n`);
   return 1;
+}
+
+function runInit(args: string[]): number {
+  init(args[0] !== undefined ? { dir: args[0] } : {});
+  return 0;
 }
 
 async function runExtract(args: string[]): Promise<number> {
