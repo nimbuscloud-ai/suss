@@ -1,0 +1,73 @@
+/* Diagrams are authored inline as SVG so they follow the site's theme
+   toggle. VitePress switches themes with a class on <html>, which a
+   referenced <img> cannot see, so an external file would follow the OS
+   preference instead and could contradict the page around it.
+
+   Everything here reads from VitePress's own custom properties, so the
+   diagrams pick up a brand-colour change without being edited. */
+
+.suss-diagram {
+  display: block;
+  width: 100%;
+  max-width: 44rem;
+  height: auto;
+  margin: 1.75rem auto;
+  font-family: var(--vp-font-family-base);
+}
+
+/* Boxes holding a named thing: a stage, a package, a summary. */
+.suss-diagram .box {
+  fill: var(--vp-c-bg-soft);
+  stroke: var(--vp-c-divider);
+  stroke-width: 1;
+}
+
+/* The data shapes that travel between stages, rather than the stages. */
+.suss-diagram .box-data {
+  fill: var(--vp-c-brand-soft);
+  stroke: var(--vp-c-brand-2);
+  stroke-width: 1;
+}
+
+.suss-diagram .label {
+  fill: var(--vp-c-text-1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.suss-diagram .label-mono {
+  fill: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+}
+
+.suss-diagram .note {
+  fill: var(--vp-c-text-2);
+  font-size: 11px;
+}
+
+.suss-diagram .arrow {
+  stroke: var(--vp-c-text-3);
+  stroke-width: 1.25;
+  fill: none;
+}
+
+.suss-diagram .arrow-head {
+  fill: var(--vp-c-text-3);
+}
+
+/* The adapter/extractor seam, and other "nothing crosses here" lines. */
+.suss-diagram .seam {
+  stroke: var(--vp-c-text-3);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  opacity: 0.7;
+}
+
+.suss-diagram .axis {
+  fill: var(--vp-c-text-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

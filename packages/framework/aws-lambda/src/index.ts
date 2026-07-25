@@ -44,15 +44,20 @@ export function awsLambdaFramework(): PatternPack {
     discovery: [],
     discoverUnits: awsLambdaDiscovery,
 
-    // No import gate. Gating on the `aws-lambda` types import skips
-    // files that are not typed handlers, which is cheaper, and it also
-    // skips every handler written in JavaScript, since the types package
-    // has nothing to offer there and nobody imports it. A pack that
-    // cannot see a whole language is not worth the parse it saves.
+    // No import gate, on purpose.
     //
-    // The template is the real gate: `discoverUnits` looks each file up
-    // in the SAM template reachable from it, and a directory with no
-    // template resolves to null once and stays memoized.
+    // A TypeScript handler writes `import type { APIGatewayProxyHandlerV2 }
+    // from "aws-lambda"`, which TypeScript resolves to
+    // `@types/aws-lambda`, to annotate its export. A JavaScript handler
+    // has nothing to annotate and writes no such import. Gating
+    // discovery on it therefore meant "TypeScript handlers that bothered
+    // to annotate", and every JavaScript Lambda service extracted
+    // nothing.
+    //
+    // The SAM template is the gate instead, and a better one, because it
+    // names the handlers outright. `discoverUnits` looks each file up in
+    // the template reachable from it, and a directory with no template
+    // resolves to null once and stays memoized.
 
     terminals: [
       {

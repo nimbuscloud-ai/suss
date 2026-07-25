@@ -16,8 +16,8 @@
 //
 // None of these projects has node_modules. That is deliberate: a
 // checkout without an install is the state a new user is in, and the
-// aws-lambda pack matches on import text, so it has to keep working
-// there.
+// routes here come from the SAM template rather than from a resolved
+// import, so extraction has to keep working without one.
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";

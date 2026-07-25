@@ -96,6 +96,7 @@ export default defineConfig({
           { text: "Summary format", link: "/behavioral-summary-format" },
           { text: "IR types & schemas", link: "/ir-reference" },
           { text: "Pack patterns", link: "/reference/pack-patterns" },
+          { text: "What suss reads", link: "/reference/compatibility" },
           { text: "FAQ", link: "/faq" },
         ],
       },
