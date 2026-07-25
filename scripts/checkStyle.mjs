@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 // checkStyle.mjs — the conventions Biome has no rule for.
 //
-// Biome covers formatting and most lint rules. Three conventions in
+// Biome covers formatting and most lint rules. Two conventions in
 // docs/internal/style.md it cannot express live here instead, so they
 // fail a build rather than waiting for someone to spot them in review.
-//
-// Run with --fix to rewrite what can be rewritten mechanically.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -22,6 +20,22 @@ const SKIP_DIRECTORIES = new Set([
   "fixtures",
 ]);
 
+/**
+ * Sites that broke a rule before it was enforced.
+ *
+ * Each one is a switch on a discriminated union, which decision 8 says
+ * should be a Record-typed table so a missing case fails to compile.
+ * Converting them touches predicate matching and predicate
+ * substitution, which is worth doing on its own rather than alongside
+ * unrelated work, so they are recorded here and the rule blocks any
+ * new ones. Delete an entry when you convert it; an entry that no
+ * longer matches anything fails too, so the list cannot go stale.
+ */
+const KNOWN = new Set([
+  "packages/adapter/typescript/src/predicates.ts:switch-on-discriminant",
+  "packages/checker/src/match.ts:switch-on-discriminant",
+]);
+
 const RULES = [
   {
     name: "inline-import-type",
@@ -34,11 +48,15 @@ const RULES = [
     appliesTo: (file) => file.endsWith(".ts") || file.endsWith(".tsx"),
   },
   {
-    name: "switch-statement",
+    name: "switch-on-discriminant",
     // Decision 8: dispatch on a discriminated union through a
     // Record-typed table, which the type system checks for
     // exhaustiveness, rather than a switch, which it does not.
-    pattern: /\bswitch\s*\(/g,
+    //
+    // Only a switch on a discriminant is caught. `switch (name)` over a
+    // set of strings is a different thing, and the type system has
+    // nothing to check there either way.
+    pattern: /\bswitch\s*\(\s*\w+\.(type|kind|name)\s*\)/g,
     message:
       "dispatch through a Record-typed table instead, so a missing case fails to compile",
     appliesTo: (file) =>
@@ -88,19 +106,35 @@ for (const file of sourceFiles(path.join(ROOT, "packages"))) {
   }
 }
 
-if (violations.length === 0) {
-  process.stdout.write("Style conventions hold across every package.\n");
+const seen = new Set(violations.map((v) => `${v.file}:${v.rule}`));
+const fresh = violations.filter((v) => !KNOWN.has(`${v.file}:${v.rule}`));
+const stale = [...KNOWN].filter((entry) => !seen.has(entry));
+
+if (fresh.length === 0 && stale.length === 0) {
+  const carried = KNOWN.size;
+  process.stdout.write(
+    carried === 0
+      ? "Style conventions hold across every package.\n"
+      : `Style conventions hold, with ${carried} recorded ${carried === 1 ? "site" : "sites"} still to convert.\n`,
+  );
   process.exit(0);
 }
 
-for (const violation of violations) {
+for (const violation of fresh) {
   process.stderr.write(
     `${violation.file}:${violation.line}  ${violation.rule}\n` +
       `  ${violation.source}\n` +
       `  ${violation.message}\n\n`,
   );
 }
+
+for (const entry of stale) {
+  process.stderr.write(
+    `${entry} is recorded as a known exception but no longer matches. Delete it from KNOWN in scripts/checkStyle.mjs.\n\n`,
+  );
+}
+const total = fresh.length + stale.length;
 process.stderr.write(
-  `${violations.length} ${violations.length === 1 ? "line breaks" : "lines break"} a convention in docs/internal/style.md.\n`,
+  `${total} ${total === 1 ? "problem" : "problems"} against the conventions in docs/internal/style.md.\n`,
 );
 process.exit(1);

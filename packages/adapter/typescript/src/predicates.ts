@@ -6,6 +6,7 @@ import { resolveCallableBody } from "./resolve/astResolve.js";
 import { resolveSubject } from "./subjects.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
+import type { CallExpression } from "ts-morph";
 
 const MAX_INLINE_DEPTH = 4;
 
@@ -280,9 +281,7 @@ export function parseConditionExpression(
  * Example: `[200, 201, 204].includes(status)` →
  *   `status === 200 || status === 201 || status === 204`
  */
-function tryExpandArrayIncludes(
-  call: import("ts-morph").CallExpression,
-): Predicate | null {
+function tryExpandArrayIncludes(call: CallExpression): Predicate | null {
   const callee = call.getExpression();
   if (!Node.isPropertyAccessExpression(callee)) {
     return null;
@@ -353,7 +352,7 @@ function tryExpandArrayIncludes(
  * → `truthinessCheck(derived(resolveSubject(user), propertyAccess("deletedAt")), negated: true)`
  */
 function tryInlineCallPredicate(
-  call: import("ts-morph").CallExpression,
+  call: CallExpression,
   depth: number,
 ): Predicate | null {
   const callee = call.getExpression();

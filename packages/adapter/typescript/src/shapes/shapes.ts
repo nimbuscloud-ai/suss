@@ -37,6 +37,7 @@ import { resolveNodeFromAst } from "../resolve/astResolve.js";
 import { shapeFromNodeType } from "./typeShapes.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
+import type { ArrayLiteralExpression, PropertyAssignment } from "ts-morph";
 
 // Module-local recursion guard. `extractShape` and `resolveNodeFromAst`
 // can call each other transitively (extractShape → resolveNodeFromAst →
@@ -248,9 +249,7 @@ function numericLiteralShape(value: number, raw: string): TypeShape {
   return { type: "literal", value, raw };
 }
 
-function shapeFromArrayLiteral(
-  arr: import("ts-morph").ArrayLiteralExpression,
-): TypeShape {
+function shapeFromArrayLiteral(arr: ArrayLiteralExpression): TypeShape {
   const elements = arr.getElements();
   if (elements.length === 0) {
     return { type: "array", items: { type: "unknown" } };
@@ -343,9 +342,7 @@ function shapeFromObjectLiteral(obj: ObjectLiteralExpression): TypeShape {
     : { type: "record", properties };
 }
 
-function propertyName(
-  prop: import("ts-morph").PropertyAssignment,
-): string | null {
+function propertyName(prop: PropertyAssignment): string | null {
   const nameNode = prop.getNameNode();
   if (
     Node.isIdentifier(nameNode) ||

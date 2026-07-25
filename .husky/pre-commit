@@ -1,1 +1,5 @@
 npx lint-staged
+
+# The conventions Biome cannot express. Fast enough to run on every
+# commit, and cheaper to catch here than in review.
+node scripts/checkStyle.mjs

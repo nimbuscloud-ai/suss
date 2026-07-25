@@ -6,6 +6,7 @@ import { Node } from "ts-morph";
 
 import type { RenderNode } from "@suss/behavioral-ir";
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
+import type { JsxOpeningElement, JsxSelfClosingElement } from "ts-morph";
 import type { FoundTerminal } from "./shared.js";
 
 /**
@@ -117,9 +118,7 @@ function jsxToRenderNode(node: Node): RenderNode | null {
  * JSX range for consumers that need it.
  */
 function collectJsxAttributes(
-  opening:
-    | import("ts-morph").JsxOpeningElement
-    | import("ts-morph").JsxSelfClosingElement,
+  opening: JsxOpeningElement | JsxSelfClosingElement,
 ): Record<string, string> | null {
   const entries: Record<string, string> = {};
   for (const attr of opening.getAttributes()) {

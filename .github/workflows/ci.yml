@@ -69,6 +69,10 @@ jobs:
       - name: Diagram geometry
         run: npm run check:diagrams
 
+      # The style rules Biome has no rule for.
+      - name: Style conventions
+        run: npm run check:style
+
       - name: Test
         run: npm run test:coverage
 
