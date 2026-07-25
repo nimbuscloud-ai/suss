@@ -63,6 +63,12 @@ jobs:
       - name: Publish readiness
         run: npm run check:publish
 
+      # Hand-authored SVG buys layout control and costs the guarantee
+      # that a label fits where it was put. Two collisions shipped before
+      # this ran.
+      - name: Diagram geometry
+        run: npm run check:diagrams
+
       - name: Test
         run: npm run test:coverage
 

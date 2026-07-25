@@ -73,6 +73,56 @@ Each check is pure over `(provider, consumer)`, emits `Finding[]`, and knows not
 
 `suss check --dir summaries/` is the same flow with an upstream step: `pairSummaries` groups every summary by its boundary key (`(method, normalizedPath)` for HTTP today) and by role (`BOUNDARY_ROLE[kind]`), producing matched pairs + buckets of unmatched providers / consumers / summaries-with-no-binding. `checkPair` runs on each matched pair.
 
+<svg class="suss-diagram" viewBox="0 0 660 356" role="img" aria-labelledby="check-title check-desc">
+  <title id="check-title">How a folder of summaries becomes findings</title>
+  <desc id="check-desc">Every summary in the folder is grouped by its boundary key and by whether it provides or consumes. Groups holding both sides become pairs, which run through six independent checks. Groups holding one side are reported as waiting for a counterpart.</desc>
+
+  <defs>
+    <marker id="check-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path class="arrow-head" d="M0,1 L7,4 L0,7 Z" />
+    </marker>
+  </defs>
+
+  <text class="axis" x="330" y="14" text-anchor="middle">summaries/</text>
+  <rect class="box-data" x="150" y="24" width="80" height="30" rx="5" />
+  <text class="label-mono" x="190" y="43" text-anchor="middle">api.json</text>
+  <rect class="box-data" x="240" y="24" width="80" height="30" rx="5" />
+  <text class="label-mono" x="280" y="43" text-anchor="middle">web.json</text>
+  <rect class="box-data" x="330" y="24" width="90" height="30" rx="5" />
+  <text class="label-mono" x="375" y="43" text-anchor="middle">stripe.json</text>
+  <rect class="box-data" x="430" y="24" width="80" height="30" rx="5" />
+  <text class="note" x="470" y="43" text-anchor="middle">and so on</text>
+
+  <line class="arrow" x1="330" y1="54" x2="330" y2="76" marker-end="url(#check-arrow)" />
+
+  <rect class="box" x="140" y="82" width="380" height="56" rx="6" />
+  <text class="label" x="330" y="102" text-anchor="middle">Group every summary by the boundary it describes</text>
+  <text class="note" x="330" y="119" text-anchor="middle">the key is (method, path) for HTTP, and each summary is</text>
+  <text class="note" x="330" y="133" text-anchor="middle">either the side that provides it or the side that calls it</text>
+
+  <line class="arrow" x1="260" y1="138" x2="220" y2="176" marker-end="url(#check-arrow)" />
+  <line class="arrow" x1="400" y1="138" x2="490" y2="176" marker-end="url(#check-arrow)" />
+
+  <rect class="box" x="30" y="182" width="380" height="40" rx="6" />
+  <text class="label" x="220" y="200" text-anchor="middle">Both sides present</text>
+  <text class="note" x="220" y="215" text-anchor="middle">one pair per group</text>
+
+  <rect class="box" x="430" y="182" width="210" height="40" rx="6" />
+  <text class="label" x="535" y="200" text-anchor="middle">One side only</text>
+  <text class="note" x="535" y="215" text-anchor="middle">reported, not compared</text>
+
+  <line class="arrow" x1="220" y1="222" x2="220" y2="244" marker-end="url(#check-arrow)" />
+
+  <rect class="box" x="30" y="250" width="380" height="70" rx="6" />
+  <text class="label" x="220" y="269" text-anchor="middle">Six checks, each reading only this pair</text>
+  <text class="note" x="220" y="286" text-anchor="middle">statuses in both directions, sub-cases within a status,</text>
+  <text class="note" x="220" y="300" text-anchor="middle">body fields, the declared contract, and semantic bridging</text>
+  <text class="note" x="220" y="314" text-anchor="middle">none of them can see what another found</text>
+
+  <line class="arrow" x1="220" y1="320" x2="220" y2="340" marker-end="url(#check-arrow)" />
+  <text class="label" x="220" y="352" text-anchor="middle">Findings</text>
+</svg>
+
 Pairing is HTTP-shaped today. See [`boundary-semantics.md`](boundary-semantics.md) for the planned refactor when a second boundary semantics lands.
 
 ## `suss contract --from openapi`
@@ -91,9 +141,9 @@ The CLI writes the result to disk after round-tripping through `safeParseSummari
 
 The most layered contract reader: the same physical API can be expressed several ways in CFN, and we want them all to produce the same summaries.
 
-Three layers, deliberately separated. The raw template parse (a file on disk to plain data, resolving the CFN intrinsic YAML tags) lives in `@suss/manifest-aws`, shared with the manifest-driven framework packs. On top of it, the **manifest-reader** layer in `@suss/contract-cloudformation` walks the parsed tree and builds normalized `RestApiConfig` / `HttpApiConfig` values (what is this API, what endpoints, what authorizer, CORS, throttle, and integration config). That is pure grouping: it handles `AWS::ApiGateway::RestApi` + `AWS::ApiGateway::Method`, `AWS::ApiGatewayV2::Api` + `AWS::ApiGatewayV2::Route` + `AWS::ApiGatewayV2::Integration`, the SAM `AWS::Serverless::Api` / `AWS::Serverless::HttpApi` shorthand, and SAM `Events.Api` / `Events.HttpApi` blocks. It also handles inline OpenAPI bodies on RestApis.
+Three layers, deliberately separated. The raw template parse (a file on disk to plain data, resolving the CFN intrinsic YAML tags) lives in `@suss/manifest-aws`, shared with the manifest-driven framework packs. On top of it, the **manifest-reader** layer in `@suss/contract-cloudformation` walks the parsed tree and builds normalized `RestApiConfig` / `HttpApiConfig` values (what is this API, what endpoints, what authorizer, CORS, throttle, and integration config), through `buildRestApiConfigs`, `buildHttpApiConfigs`, `readSamApiEvents`, `readSamHttpApiEvents`, and `readCors`. That is pure grouping: it handles `AWS::ApiGateway::RestApi` + `AWS::ApiGateway::Method`, `AWS::ApiGatewayV2::Api` + `AWS::ApiGatewayV2::Route` + `AWS::ApiGatewayV2::Integration`, the SAM `AWS::Serverless::Api` / `AWS::Serverless::HttpApi` shorthand, and SAM `Events.Api` / `Events.HttpApi` blocks. It also handles inline OpenAPI bodies on RestApis.
 
-The **resource-semantics** layer turns each normalized config into `BehavioralSummary[]` with platform-injected transitions: authorizer 401/403, API key 403, request-validator 400, throttle 429, integration 502/504, CORS preflight OPTIONS. That logic lives in `@suss/contract-aws-apigateway`, which is independently consumable, so a future hand-authored API Gateway path (no CFN involved) would go straight into the semantics layer. When the manifest has an inline OpenAPI body, CFN delegates that part to `@suss/contract-openapi` instead.
+The **resource-semantics** layer turns each normalized config into `BehavioralSummary[]` with platform-injected transitions: authorizer 401/403, API key 403, request-validator 400, throttle 429, integration 502/504, CORS preflight OPTIONS. That logic lives in `restApiToSummaries` and `httpApiToSummaries` in `@suss/contract-aws-apigateway`, which is independently consumable, so a future hand-authored API Gateway path (no CFN involved) would go straight into the semantics layer. When the manifest has an inline OpenAPI body, CFN delegates that part to `@suss/contract-openapi` instead.
 
 The three layers, and why each one is separate:
 
@@ -130,38 +180,11 @@ The three layers, and why each one is separate:
   <text class="note" x="330" y="294" text-anchor="middle">statuses your handler never writes and your caller still receives</text>
   <text class="label-mono" x="330" y="309" text-anchor="middle">@suss/contract-aws-apigateway</text>
 
-  <line class="seam" x1="560" y1="242" x2="640" y2="242" />
-  <text class="note" x="640" y="234" text-anchor="end">reachable on its own,</text>
-  <text class="note" x="640" y="262" text-anchor="end">without a template</text>
+  <line class="seam" x1="548" y1="242" x2="652" y2="242" />
+  <text class="note" x="652" y="233" text-anchor="end">usable alone,</text>
+  <text class="note" x="652" y="261" text-anchor="end">no template</text>
 </svg>
 
-```
-User
- │  suss contract --from cloudformation template.yaml -o api.json
- ▼
-@suss/cli
- │  read template.yaml
- ▼
-@suss/contract-cloudformation
- │
- │  ── manifest-reader phase ─────────────────────────────
- │    buildRestApiConfigs:   group AWS::ApiGateway::Method by RestApiId
- │    buildHttpApiConfigs:   group AWS::ApiGatewayV2::Route by ApiId
- │    readSamApiEvents / readSamHttpApiEvents: expand SAM Events
- │    readCors, collect authorizers / throttle / integration types
- │    (→ normalized RestApiConfig / HttpApiConfig)
- │
- │  ── resource-semantics phase ──────────────────────────
- │    inline OpenAPI body?  →  @suss/contract-openapi
- │    restApiToSummaries(config)  →  @suss/contract-aws-apigateway
- │    httpApiToSummaries(config)  →  @suss/contract-aws-apigateway
- │                (emits handler transitions per declared status
- │                 + authorizer 401/403, apiKey 403, validator 400,
- │                 throttle 429, integration 502/504, CORS OPTIONS)
- │
- ▼
-BehavioralSummary[] → write api.json
-```
 
 See [`contract-sources.md`](contract-sources.md) for the doctrine behind this split and the opaque-predicate naming convention for transcribed external contracts.
 

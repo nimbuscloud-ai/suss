@@ -45,14 +45,11 @@ declares, and flags drift when the spec changes.
   <rect class="box-data" x="436" y="122" width="150" height="42" rx="6" />
   <text class="label-mono" x="511" y="148" text-anchor="middle">client.json</text>
 
-  <text class="note" x="600" y="90" text-anchor="middle">same</text>
-  <text class="note" x="600" y="105" text-anchor="middle">shape</text>
+  <path class="arrow" d="M586,47 L616,47 L616,240 L468,240" marker-end="url(#openapi-arrow)" />
+  <path class="arrow" d="M586,143 L616,143" />
 
-  <path class="arrow" d="M511,68 L511,95 L330,95 L330,214" marker-end="url(#openapi-arrow)" />
-  <path class="arrow" d="M511,164 L511,190 L330,190" />
-
-  <rect class="box" x="200" y="220" width="260" height="40" rx="6" />
-  <text class="label-mono" x="330" y="245" text-anchor="middle">suss check --dir summaries/</text>
+  <rect class="box" x="204" y="220" width="260" height="40" rx="6" />
+  <text class="label-mono" x="334" y="245" text-anchor="middle">suss check --dir summaries/</text>
 </svg>
 
 Both sides come out in the same format, and the checker pairs them by
