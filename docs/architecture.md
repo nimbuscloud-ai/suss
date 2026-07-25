@@ -70,7 +70,7 @@ Extraction is a straight line with one intermediate data shape, `RawCodeStructur
   <text class="label-mono" x="350" y="313" text-anchor="middle">@suss/extractor</text>
   <line class="arrow" x1="350" y1="328" x2="350" y2="352" marker-end="url(#pipeline-arrow)" />
 
-  <rect class="box-data" x="230" y="358" width="240" height="46" rx="6" />
+  <rect class="box-data" x="205" y="358" width="290" height="46" rx="6" />
   <text class="label-mono" x="350" y="378" text-anchor="middle">BehavioralSummary[]</text>
   <text class="note" x="350" y="394" text-anchor="middle">JSON. No language or framework left in it.</text>
 

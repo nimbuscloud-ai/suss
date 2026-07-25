@@ -22,9 +22,10 @@ Every boundary carries three contracts, the declared contract (a specification),
 
   <text class="axis" x="330" y="16" text-anchor="middle">One boundary: GET /users/:id</text>
 
-  <rect class="box-data" x="215" y="34" width="230" height="52" rx="6" />
-  <text class="label" x="330" y="54" text-anchor="middle">Declared contract</text>
-  <text class="note" x="330" y="72" text-anchor="middle">a specification: OpenAPI, SDL, a SAM template</text>
+  <rect class="box-data" x="200" y="30" width="260" height="70" rx="6" />
+  <text class="label" x="330" y="52" text-anchor="middle">Declared contract</text>
+  <text class="note" x="330" y="70" text-anchor="middle">a specification, written by a person</text>
+  <text class="note" x="330" y="87" text-anchor="middle">an OpenAPI file, an SDL, a SAM template</text>
 
   <rect class="box" x="20" y="200" width="250" height="70" rx="6" />
   <text class="label" x="145" y="222" text-anchor="middle">Provider's behaviour</text>
@@ -36,11 +37,11 @@ Every boundary carries three contracts, the declared contract (a specification),
   <text class="note" x="515" y="240" text-anchor="middle">a derivation, read from the call site</text>
   <text class="note" x="515" y="257" text-anchor="middle">"handles 200 and 500"</text>
 
-  <line class="arrow" x1="270" y1="80" x2="160" y2="196" marker-end="url(#matrix-arrow)" />
+  <line class="arrow" x1="255" y1="97" x2="160" y2="196" marker-end="url(#matrix-arrow)" />
   <text class="note" x="150" y="124" text-anchor="middle">does the code</text>
   <text class="note" x="150" y="140" text-anchor="middle">do what it promised?</text>
 
-  <line class="arrow" x1="390" y1="80" x2="500" y2="196" marker-end="url(#matrix-arrow)" />
+  <line class="arrow" x1="405" y1="97" x2="500" y2="196" marker-end="url(#matrix-arrow)" />
   <text class="note" x="512" y="124" text-anchor="middle">does the caller expect</text>
   <text class="note" x="512" y="140" text-anchor="middle">what was promised?</text>
 
