@@ -20,22 +20,6 @@ const SKIP_DIRECTORIES = new Set([
   "fixtures",
 ]);
 
-/**
- * Sites that broke a rule before it was enforced.
- *
- * Each one is a switch on a discriminated union, which decision 8 says
- * should be a Record-typed table so a missing case fails to compile.
- * Converting them touches predicate matching and predicate
- * substitution, which is worth doing on its own rather than alongside
- * unrelated work, so they are recorded here and the rule blocks any
- * new ones. Delete an entry when you convert it; an entry that no
- * longer matches anything fails too, so the list cannot go stale.
- */
-const KNOWN = new Set([
-  "packages/adapter/typescript/src/predicates.ts:switch-on-discriminant",
-  "packages/checker/src/match.ts:switch-on-discriminant",
-]);
-
 const RULES = [
   {
     name: "inline-import-type",
@@ -106,35 +90,19 @@ for (const file of sourceFiles(path.join(ROOT, "packages"))) {
   }
 }
 
-const seen = new Set(violations.map((v) => `${v.file}:${v.rule}`));
-const fresh = violations.filter((v) => !KNOWN.has(`${v.file}:${v.rule}`));
-const stale = [...KNOWN].filter((entry) => !seen.has(entry));
-
-if (fresh.length === 0 && stale.length === 0) {
-  const carried = KNOWN.size;
-  process.stdout.write(
-    carried === 0
-      ? "Style conventions hold across every package.\n"
-      : `Style conventions hold, with ${carried} recorded ${carried === 1 ? "site" : "sites"} still to convert.\n`,
-  );
+if (violations.length === 0) {
+  process.stdout.write("Style conventions hold across every package.\n");
   process.exit(0);
 }
 
-for (const violation of fresh) {
+for (const violation of violations) {
   process.stderr.write(
     `${violation.file}:${violation.line}  ${violation.rule}\n` +
       `  ${violation.source}\n` +
       `  ${violation.message}\n\n`,
   );
 }
-
-for (const entry of stale) {
-  process.stderr.write(
-    `${entry} is recorded as a known exception but no longer matches. Delete it from KNOWN in scripts/checkStyle.mjs.\n\n`,
-  );
-}
-const total = fresh.length + stale.length;
 process.stderr.write(
-  `${total} ${total === 1 ? "problem" : "problems"} against the conventions in docs/internal/style.md.\n`,
+  `${violations.length} ${violations.length === 1 ? "line breaks" : "lines break"} a convention in docs/internal/style.md.\n`,
 );
 process.exit(1);
