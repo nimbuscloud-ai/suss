@@ -4,6 +4,46 @@ suss finds the bugs that compile cleanly, type-check, and pass their tests, and 
 
 suss reads what each function does on every path it can follow, then compares those readings wherever two units of code meet: a caller against a handler, a query against a schema. Where they disagree, you get a finding. It runs on your source as it stands, without instrumentation or authored specs.
 
+## Getting started
+
+`suss init` reads your project, works out which packs it needs, and
+offers to set them up:
+
+```
+┌  suss init
+│
+◇  Found ─────────────────────────────╮
+│                                     │
+│  hono          hono in dependencies │
+│  apollo-client @apollo/client in .. │
+│  cloudformation a SAM template at.. │
+│                                     │
+├─────────────────────────────────────╯
+│
+◇  Install 4 packages as devDependencies?
+│  ● Yes / ○ No
+│
+◇  Installed 4 packages
+│
+◇  Read the code now and compare what it finds?
+│  ● Yes / ○ No
+│
+◇  suss extract -f hono -f apollo-client -o summaries/code.json
+◇  suss contract --from cloudformation template.yaml -o summaries/cloudformation.json
+│
+◆  Add a .sussignore for findings you decide to accept?
+│  ○ Yes / ● No
+│
+└  Done. Re-run `suss check --dir summaries/` whenever code changes.
+```
+
+Nothing is written or installed unless you say yes, and every question
+takes Ctrl-C. At a monorepo root it finds the workspace and asks which
+packages to set up. Piped or in CI it prints the commands instead of
+asking, so `suss init --plain` fits in a script.
+
+Or run the three commands yourself:
+
 ```
 suss extract -f hono -o summaries/api.json
 suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json

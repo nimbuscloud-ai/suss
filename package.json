@@ -46,6 +46,7 @@
     "check:self": "turbo check:self",
     "check:publish": "node scripts/preparePublish.mjs --check",
     "prepare:publish": "node scripts/preparePublish.mjs",
+    "release": "node scripts/release.mjs",
     "prepare": "husky",
     "badges": "node scripts/generate-coverage-badges.mjs",
     "test:badges": "npm run test:coverage && npm run badges",

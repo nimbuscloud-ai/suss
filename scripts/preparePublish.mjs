@@ -100,7 +100,26 @@ const check = process.argv.includes("--check");
 const manifests = findManifests(PACKAGES_DIR);
 let problems = 0;
 
+// npm only ships a LICENSE that sits in the package directory, so every
+// package gets a copy of the root one. They are gitignored; this script
+// is what puts them there before a publish.
+const LICENSE = fs.readFileSync(path.join(ROOT, "LICENSE"), "utf8");
+
 for (const manifest of manifests) {
+  const licenseFile = path.join(path.dirname(manifest), "LICENSE");
+  const licensed =
+    fs.existsSync(licenseFile) && fs.readFileSync(licenseFile, "utf8") === LICENSE;
+  if (!licensed) {
+    if (check) {
+      problems += 1;
+      process.stdout.write(
+        `  ${path.relative(ROOT, licenseFile)}: missing or out of date\n`,
+      );
+    } else {
+      fs.writeFileSync(licenseFile, LICENSE);
+    }
+  }
+
   const changes = prepare(manifest, { write: !check });
   if (changes.length === 0) {
     continue;

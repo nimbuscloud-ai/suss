@@ -29,3 +29,6 @@ scripts/dogfood-report.json
 PLAN.md
 CLAUDE.md
 .claude/
+
+# Copied from the root LICENSE by scripts/preparePublish.mjs so npm ships one per package.
+packages/**/LICENSE

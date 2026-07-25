@@ -310,16 +310,6 @@ function* filesUnder(dir: string, depth = 0): Generator<string> {
   }
 }
 
-export interface InitOptions {
-  dir?: string;
-}
-
-export function init(options: InitOptions = {}): InitReport {
-  const report = inspectProject(options.dir ?? process.cwd());
-  process.stdout.write(formatInitReport(report));
-  return report;
-}
-
 /**
  * What was found, what to install, and what to run.
  *
