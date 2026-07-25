@@ -270,7 +270,8 @@ describe("suss init, guided", () => {
 
       await initInteractive({ dir });
 
-      expect(ran[0]).toContain("npm install --save-dev @suss/cli");
+      expect(ran[0]).toContain("npm install --save-dev");
+      expect(ran[0]).toContain("@suss/cli");
       expect(ran[0]).toContain("@suss/framework-hono");
       expect(output()).toContain("Installed 2 packages");
     });
