@@ -70,6 +70,28 @@ describe("inspectProject", () => {
     expect(names(dir)).toEqual([]);
   });
 
+  it("leaves a nested project's schemas to that project", () => {
+    // A directory with its own package.json is its own project. Claiming
+    // its schema here would report a sibling service's contract as this
+    // one's, which is what running init one directory too high produced.
+    writeManifest({ dependencies: {} });
+    const nested = path.join(dir, "services", "other");
+    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(path.join(nested, "package.json"), "{}");
+    fs.writeFileSync(path.join(nested, "template.yaml"), "Resources: {}\n");
+
+    expect(names(dir)).toEqual([]);
+  });
+
+  it("still reads a subdirectory that is part of this project", () => {
+    writeManifest({ dependencies: {} });
+    const nested = path.join(dir, "infra");
+    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(path.join(nested, "template.yaml"), "Resources: {}\n");
+
+    expect(names(dir)).toEqual(["cloudformation"]);
+  });
+
   it("notices whether the project has a tsconfig", () => {
     writeManifest({ dependencies: { hono: "^4.0.0" } });
     expect(inspectProject(dir).tsconfig).toBeNull();

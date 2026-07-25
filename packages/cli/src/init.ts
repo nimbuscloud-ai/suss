@@ -279,10 +279,11 @@ function dependenciesOf(root: string): Array<[string, string]> {
 }
 
 function* filesUnder(dir: string, depth = 0): Generator<string> {
-  // A SAM template or a schema sits near the top of a service. Going
+  // A SAM template or a schema sits near the top of a service, so going
   // deeper finds mostly source files, which the dependency scan already
-  // covers.
-  if (depth > 4) {
+  // covers. Pointed at a home directory, a deeper walk also starts
+  // reporting other people's projects as if they were this one.
+  if (depth > 3) {
     return;
   }
   let entries: fs.Dirent[];
@@ -297,6 +298,11 @@ function* filesUnder(dir: string, depth = 0): Generator<string> {
     }
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      // A directory with its own package.json is its own project. Its
+      // schemas belong to it, so stop rather than claim them here.
+      if (depth > 0 && fs.existsSync(path.join(full, "package.json"))) {
+        continue;
+      }
       yield* filesUnder(full, depth + 1);
     } else {
       yield full;
