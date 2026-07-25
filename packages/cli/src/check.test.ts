@@ -729,6 +729,46 @@ describe("checkDir", () => {
     expect(output).toContain("No findings");
   });
 
+  it("says when two files claim the same boundary", () => {
+    // suss tells HTTP boundaries apart by method and path alone, so two
+    // services that both serve GET /users read as one. Whoever calls
+    // either gets compared against both, which is worth saying out loud
+    // rather than reporting findings from the wrong API in silence.
+    for (const service of ["svc-a", "svc-b"]) {
+      fs.writeFileSync(
+        path.join(tmpDir, `${service}.json`),
+        JSON.stringify([
+          providerWithRoute(`${service}Handler`, "GET", "/users", [
+            transition(`${service}-200`, { statusCode: 200, isDefault: true }),
+          ]),
+        ]),
+      );
+    }
+
+    const output = captureStdout(() => {
+      checkDir({ dir: tmpDir });
+    });
+    expect(output).toContain("claimed by more than one file");
+    expect(output).toContain("GET /users");
+    expect(output).toContain("svc-a.json and svc-b.json");
+  });
+
+  it("stays quiet when each boundary comes from one file", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+
+    const output = captureStdout(() => {
+      checkDir({ dir: tmpDir });
+    });
+    expect(output).not.toContain("claimed by more than one file");
+  });
+
   it("checks intent specs against code summaries via --intent", () => {
     fs.writeFileSync(
       path.join(tmpDir, "provider.json"),

@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { safeParseSummaries } from "@suss/behavioral-ir";
+import { BOUNDARY_ROLE, safeParseSummaries } from "@suss/behavioral-ir";
 import {
   applySuppressions,
+  boundaryKey,
   checkAll,
   checkPair,
   countsForThreshold,
@@ -145,8 +146,14 @@ export function checkDir(
   }
 
   const allSummaries: BehavioralSummary[] = [];
+  // Which file each summary came from, so a boundary drawing providers
+  // from two of them can be called out below.
+  const sourceFile = new Map<BehavioralSummary, string>();
   for (const file of files) {
-    allSummaries.push(...readSummaries(path.join(resolved, file)));
+    for (const summary of readSummaries(path.join(resolved, file))) {
+      allSummaries.push(summary);
+      sourceFile.set(summary, file);
+    }
   }
 
   const rawResult = checkAll(allSummaries);
@@ -165,9 +172,13 @@ export function checkDir(
   // The same .sussignore rules apply to both finding streams.
   const intent = runIntentPass(options.intent, allSummaries, suppressions);
 
+  const collisions = findBoundaryCollisions(allSummaries, sourceFile);
+
   const rendered = options.json
-    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched }, null, 2)}\n`
-    : renderDirHuman(result, confidence) + renderIntentSection(intent);
+    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched, collisions }, null, 2)}\n`
+    : renderDirHuman(result, confidence) +
+      renderCollisions(collisions) +
+      renderIntentSection(intent);
 
   if (options.output !== undefined) {
     fs.writeFileSync(options.output, rendered);
@@ -184,6 +195,83 @@ export function checkDir(
       intentMeetsThreshold(intent?.findings ?? [], failOn),
     result,
   };
+}
+
+/** A boundary whose providers came from more than one summary file. */
+interface BoundaryCollision {
+  key: string;
+  files: string[];
+}
+
+/**
+ * Boundaries that two different summary files both claim to provide.
+ *
+ * suss identifies an HTTP boundary by its method and path, with nothing
+ * to say which service serves it, so two services that both expose
+ * `GET /users` land on one key. Whoever calls either one then pairs
+ * against both and gets findings from an API they never touch.
+ *
+ * One file per service is the usual layout, so two files providing one
+ * key is a good sign that this happened. Reporting it beats comparing
+ * unrelated services and saying nothing.
+ */
+function findBoundaryCollisions(
+  summaries: ReadonlyArray<BehavioralSummary>,
+  sourceFile: ReadonlyMap<BehavioralSummary, string>,
+): BoundaryCollision[] {
+  const filesByKey = new Map<string, Set<string>>();
+
+  for (const summary of summaries) {
+    const binding = summary.identity.boundaryBinding;
+    if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
+      continue;
+    }
+    const key = boundaryKey(binding);
+    const file = sourceFile.get(summary);
+    if (key === null || file === undefined) {
+      continue;
+    }
+    const seen = filesByKey.get(key);
+    if (seen === undefined) {
+      filesByKey.set(key, new Set([file]));
+    } else {
+      seen.add(file);
+    }
+  }
+
+  const collisions: BoundaryCollision[] = [];
+  for (const [key, files] of filesByKey) {
+    if (files.size > 1) {
+      collisions.push({ key, files: [...files].sort() });
+    }
+  }
+  return collisions.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function renderCollisions(
+  collisions: ReadonlyArray<BoundaryCollision>,
+): string {
+  if (collisions.length === 0) {
+    return "";
+  }
+  const lines = [
+    "",
+    `${collisions.length} ${collisions.length === 1 ? "boundary is" : "boundaries are"} claimed by more than one file:`,
+  ];
+  for (const collision of collisions) {
+    lines.push(`  ${collision.key}  in ${collision.files.join(" and ")}`);
+  }
+  lines.push("");
+  lines.push(
+    "  suss tells boundaries apart by method and path, so two services that",
+  );
+  lines.push(
+    "  serve the same route look like one. Anything compared against these",
+  );
+  lines.push(
+    "  was compared against both. Check one service at a time to be sure.",
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 function runIntentPass(
