@@ -1,7 +1,6 @@
 {
   "name": "@suss/manifest-aws",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "description": "Parse AWS CloudFormation / SAM templates into plain data — the shared facts layer contract readers and manifest-driven framework packs both consume.",
   "keywords": [
@@ -52,5 +51,8 @@
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

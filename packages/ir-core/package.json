@@ -1,7 +1,6 @@
 {
   "name": "@suss/ir-core",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "description": "Shared IR primitives for suss — type shapes, boundary bindings, source locations, and confidence. Imported by both @suss/behavioral-ir and @suss/intent-ir so neither depends on the other.",
   "keywords": [
@@ -57,5 +56,8 @@
     "typescript": "*",
     "vitest": "*",
     "zod": "^4.3.6"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -57,6 +57,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      # A package that drifts back to private, or picks up a "*" range on
+      # a sibling, only fails at publish time. Catching it on every PR
+      # keeps the release step boring.
+      - name: Publish readiness
+        run: npm run check:publish
+
       - name: Test
         run: npm run test:coverage
 
