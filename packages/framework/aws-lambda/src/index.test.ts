@@ -78,7 +78,10 @@ describe("awsLambdaFramework — pack shape", () => {
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([]);
     expect(pack.discoverUnits).toBeDefined();
-    expect(pack.requiresImport).toEqual(["aws-lambda"]);
+    // No import gate on purpose. Gating on the `aws-lambda` types skips
+    // every handler written in JavaScript, where nobody imports them.
+    // The template decides which files are handlers.
+    expect(pack.requiresImport).toBeUndefined();
   });
 
   it("declares the envelope shape and names no helper", () => {

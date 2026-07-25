@@ -44,12 +44,15 @@ export function awsLambdaFramework(): PatternPack {
     discovery: [],
     discoverUnits: awsLambdaDiscovery,
 
-    // Gate on the `aws-lambda` types import — the discovery callback's
-    // per-file template lookup is cheap but pointless on files that
-    // aren't typed handlers. Handlers the template declares but that
-    // don't import the types are out of v0 scope; they still surface as
-    // declared routes on the contract side.
-    requiresImport: ["aws-lambda"],
+    // No import gate. Gating on the `aws-lambda` types import skips
+    // files that are not typed handlers, which is cheaper, and it also
+    // skips every handler written in JavaScript, since the types package
+    // has nothing to offer there and nobody imports it. A pack that
+    // cannot see a whole language is not worth the parse it saves.
+    //
+    // The template is the real gate: `discoverUnits` looks each file up
+    // in the SAM template reachable from it, and a directory with no
+    // template resolves to null once and stays memoized.
 
     terminals: [
       {

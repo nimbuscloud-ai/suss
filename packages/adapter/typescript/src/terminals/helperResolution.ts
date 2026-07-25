@@ -103,8 +103,29 @@ type LocalHelper =
 function resolveLocalHelper(callee: Identifier): LocalHelper {
   for (const declaration of declarationsFor(callee)) {
     const file = declaration.getSourceFile();
-    if (file.isFromExternalLibrary() || file.isDeclarationFile()) {
+    if (file.isFromExternalLibrary()) {
       return { kind: "external" };
+    }
+
+    // A .d.ts describes a helper without saying what it does. When the
+    // implementation sits next to it, which is how a compiled package in
+    // a workspace ships, read that instead.
+    if (file.isDeclarationFile()) {
+      const implementation = implementationBeside(
+        declaration,
+        callee.getText(),
+      );
+      if (implementation === null) {
+        return { kind: "external" };
+      }
+      const returned = soleReturnedObject(implementation);
+      return returned === null
+        ? { kind: "unreadable" }
+        : {
+            kind: "local",
+            params: implementation.getParameters(),
+            returned,
+          };
     }
 
     const fn = asFunctionLike(declaration);
@@ -126,6 +147,38 @@ function resolveLocalHelper(callee: Identifier): LocalHelper {
   // library import lands here too, so treat it as external and leave the
   // pack's description in charge.
   return { kind: "external" };
+}
+
+/**
+ * The function a `.d.ts` describes, found in the implementation file
+ * beside it. `response.d.ts` sits next to `response.js`, so the export
+ * with the same name in that file is the one being described.
+ */
+function implementationBeside(
+  declaration: TsNode,
+  name: string,
+): FunctionLike | null {
+  const declarationPath = declaration.getSourceFile().getFilePath();
+  const base = declarationPath.replace(/\.d\.[cm]?ts$/, "");
+  const project = declaration.getProject();
+
+  for (const extension of [".js", ".ts", ".mjs", ".cjs", ".mts", ".cts"]) {
+    const source = project.getSourceFile(`${base}${extension}`);
+    if (source === undefined) {
+      continue;
+    }
+    for (const candidate of source.getFunctions()) {
+      if (candidate.getName() === name) {
+        return candidate;
+      }
+    }
+    const variable = source.getVariableDeclaration(name);
+    const fn = variable === undefined ? null : asFunctionLike(variable);
+    if (fn !== null) {
+      return fn;
+    }
+  }
+  return null;
 }
 
 /** Declarations for an identifier, following an import to its source. */
