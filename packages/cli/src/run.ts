@@ -40,6 +40,9 @@ Options (extract):
   -o, --output     Write JSON to file instead of stdout
   --files          Specific source files to extract from
   --gaps           Gap handling: strict (default), permissive, silent
+  --explain        Print the extraction funnel (files, gates, units, summaries).
+                   Printed automatically when a run produces nothing.
+  --fail-on-empty  Exit non-zero when the run produces no summaries
 
 Options (check):
   --dir            Directory of summary JSON files (auto-pairs by method+path)
@@ -104,6 +107,8 @@ async function runExtract(args: string[]): Promise<number> {
       files: { type: "string", multiple: true },
       timing: { type: "boolean" },
       "no-cache": { type: "boolean" },
+      explain: { type: "boolean" },
+      "fail-on-empty": { type: "boolean" },
     },
     allowPositionals: true,
   });
@@ -152,8 +157,10 @@ async function runExtract(args: string[]): Promise<number> {
     ...(gaps !== undefined ? { gaps } : {}),
     ...(values.timing === true ? { timing: true } : {}),
     ...(values["no-cache"] === true ? { noCache: true } : {}),
+    ...(values.explain === true ? { explain: true } : {}),
+    ...(values["fail-on-empty"] === true ? { failOnEmpty: true } : {}),
   });
-  return 0;
+  return process.exitCode === 1 ? 1 : 0;
 }
 
 function runInspect(args: string[]): number {

@@ -50,6 +50,12 @@ import {
   createCacheLayer,
 } from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
+import {
+  buildExtractionReport,
+  createPackTallies,
+  type ExtractionReport,
+  type PackTally,
+} from "./diagnostics.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery/index.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
@@ -764,6 +770,7 @@ function extractFromSourceFile(
   sourceFile: SourceFile,
   frameworks: PatternPack[],
   options?: ExtractorOptions,
+  tallies?: Map<string, PackTally>,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   const filePath = sourceFile.getFilePath();
@@ -789,6 +796,17 @@ function extractFromSourceFile(
   const claimed = new Set<string>();
 
   for (const pack of frameworks) {
+    // Funnel accounting: this pack was applicable to this file, and
+    // whatever it discovers and builds here is attributed to it. The
+    // counts are what tell a user whose extract came back empty
+    // whether the gate matched nothing, discovery found nothing, or
+    // assembly dropped everything.
+    const tally = tallies?.get(pack.name);
+    const summariesBefore = summaries.length;
+    if (tally !== undefined) {
+      tally.candidateFiles += 1;
+    }
+
     const units = discoverUnits(sourceFile, pack.discovery);
 
     // Pack-supplied discovery callback (sibling of subUnits at the
@@ -1044,6 +1062,11 @@ function extractFromSourceFile(
         };
       }
       summaries.push(summary);
+    }
+
+    if (tally !== undefined) {
+      tally.unitsDiscovered += units.length;
+      tally.summariesProduced += summaries.length - summariesBefore;
     }
   }
 
@@ -1431,6 +1454,16 @@ export interface TypeScriptAdapterConfig {
    */
   onCacheDiagnostic?: (diagnostic: CacheDiagnostic) => void;
   /**
+   * Called once per `extractAll` with the funnel: files in the
+   * tsconfig, files walked, and per-pack gate / candidate / unit /
+   * summary counts. The CLI renders it when a run produces nothing,
+   * so "wrote 0 summaries" can say which stage the count died at
+   * instead of leaving the user to guess.
+   *
+   * Not called on a cache hit, where no stage ran.
+   */
+  onExtractionReport?: (report: ExtractionReport) => void;
+  /**
    * On-disk cache directory for the coarse-key extraction cache.
    * Pass an absolute path; defaults to `.suss/cache/` next to the
    * tsconfig (or under cwd when no tsconfig path is supplied).
@@ -1544,6 +1577,7 @@ export function createTypeScriptAdapter(
 
     async extractAll(): Promise<BehavioralSummary[]> {
       const timer = createTimer();
+      const tallies = createPackTallies(config.frameworks);
 
       // For lazy-bootstrap-eligible runs (tsconfig path supplied
       // by caller), get the include file list cheaply via the TS
@@ -1682,6 +1716,7 @@ export function createTypeScriptAdapter(
               sourceFile,
               applicablePacks,
               config.extractorOptions,
+              tallies,
             ),
           );
         }
@@ -1745,6 +1780,19 @@ export function createTypeScriptAdapter(
 
       if (config.onTiming !== undefined) {
         config.onTiming(timer.report());
+      }
+
+      if (config.onExtractionReport !== undefined) {
+        config.onExtractionReport(
+          buildExtractionReport({
+            packs: config.frameworks,
+            tallies,
+            filesInProject: tsconfigFileList?.length ?? null,
+            filesWalked: sourceFiles.length,
+            summaries: enriched.length,
+            tsConfigFilePath: config.tsConfigFilePath,
+          }),
+        );
       }
 
       return enriched;

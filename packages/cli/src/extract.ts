@@ -5,6 +5,12 @@ import path from "node:path";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 
+import type {
+  CacheDiagnostic,
+  EmptyStage,
+  ExtractionReport,
+  TimingReport,
+} from "@suss/adapter-typescript";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
 
@@ -78,6 +84,17 @@ export interface ExtractOptions {
    * intentional changes — normal runs benefit from the cache.
    */
   noCache?: boolean;
+  /**
+   * Print the extraction funnel even when the run produced summaries.
+   * A run that produced nothing prints it either way.
+   */
+  explain?: boolean;
+  /**
+   * Exit non-zero when the run produces no summaries. Off by default,
+   * since a project may legitimately have no boundaries. Worth turning
+   * on in CI, where a silent zero looks identical to a passing check.
+   */
+  failOnEmpty?: boolean;
 }
 
 export async function extract(
@@ -104,11 +121,9 @@ export async function extract(
   // one-line summary for the per-phase view. The cost of always-on
   // instrumentation is one `performance.now()` per phase entry — well
   // under the noise floor of a real extraction.
-  let timingReport: import("@suss/adapter-typescript").TimingReport | null =
-    null;
-  let cacheDiagnostic:
-    | import("@suss/adapter-typescript").CacheDiagnostic
-    | null = null;
+  let timingReport: TimingReport | null = null;
+  let cacheDiagnostic: CacheDiagnostic | null = null;
+  let extractionReport: ExtractionReport | null = null;
 
   // Create adapter
   const adapter = createTypeScriptAdapter({
@@ -121,6 +136,9 @@ export async function extract(
     },
     onCacheDiagnostic: (diag) => {
       cacheDiagnostic = diag;
+    },
+    onExtractionReport: (report) => {
+      extractionReport = report;
     },
   });
 
@@ -160,7 +178,85 @@ export async function extract(
     process.stderr.write(formatCacheDiagnostic(cacheDiagnostic));
   }
 
+  // A run that found nothing is the failure worth explaining. Print the
+  // funnel unprompted in that case, since the user has no other way to
+  // tell "this project has no boundaries" from "the packs never got to
+  // look at it". `--explain` prints it either way.
+  if (extractionReport !== null) {
+    const report = extractionReport as ExtractionReport;
+    if (options.explain === true || report.summaries === 0) {
+      process.stderr.write(formatExtractionReport(report));
+    }
+  }
+
+  if (options.failOnEmpty === true && summaries.length === 0) {
+    process.stderr.write(
+      "Failing because the extract produced no summaries (--fail-on-empty).\n",
+    );
+    process.exitCode = 1;
+  }
+
   return summaries;
+}
+
+/** What each empty stage means, and what the user should do about it. */
+const EMPTY_STAGE_EXPLANATION: Record<EmptyStage, string> = {
+  tsconfig:
+    "The tsconfig matched no files. Check its `include` and `files` against where your source actually lives.",
+  gateResolution:
+    "A pack's gate specifier does not resolve from this tsconfig, listed below. Packs that rely on type information find nothing when the dependency is missing, so install the project's dependencies and re-run.",
+  candidateFiles:
+    "No file imported anything the active packs gate on. Either the project does not use these frameworks, or it reaches them through a local wrapper module rather than importing them directly.",
+  discovery:
+    "The packs saw candidate files but recognized no units in them. The code likely expresses its boundaries in a shape the pack does not describe yet.",
+  assembly:
+    "Units were discovered but none produced a summary. This is a bug worth reporting, with the source shape that triggered it.",
+};
+
+/**
+ * Render the funnel. Every row is a count produced by the stage that
+ * owns it, so the reader can see which stage the count died at rather
+ * than inferring it from a single "0 summaries" line.
+ */
+export function formatExtractionReport(report: ExtractionReport): string {
+  const lines: string[] = [];
+  lines.push("  extraction funnel:");
+  if (report.filesInProject !== null) {
+    lines.push(`    files in tsconfig:  ${report.filesInProject}`);
+  }
+  lines.push(`    files walked:       ${report.filesWalked}`);
+
+  for (const pack of report.packs) {
+    const gate =
+      pack.gates.length > 0 ? pack.gates.join(", ") : "(applies to every file)";
+    lines.push(`    pack ${pack.pack}:`);
+    lines.push(`      gate:             ${gate}`);
+    if (pack.unresolvedGates.length > 0) {
+      // A gate that does not resolve is only a problem when the pack
+      // also found nothing. Packs that match on import text alone work
+      // fine against an uninstalled dependency, and calling that out as
+      // a failure on a run that produced summaries would be noise.
+      const hint =
+        pack.summariesProduced === 0
+          ? " (dependency not installed?)"
+          : " (matched on import text; type information unavailable)";
+      lines.push(
+        `      unresolved:       ${pack.unresolvedGates.join(", ")}${hint}`,
+      );
+    }
+    lines.push(`      candidate files:  ${pack.candidateFiles}`);
+    lines.push(`      units discovered: ${pack.unitsDiscovered}`);
+    lines.push(`      summaries:        ${pack.summariesProduced}`);
+  }
+
+  if (report.emptyStage !== null) {
+    lines.push("");
+    lines.push(
+      `  Nothing was produced. ${EMPTY_STAGE_EXPLANATION[report.emptyStage]}`,
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
 }
 
 /**
@@ -168,9 +264,7 @@ export async function extract(
  * three outcomes the cache can produce: full hit, partial hit (some
  * summaries reused, some files re-extracted), or full miss.
  */
-export function formatCacheDiagnostic(
-  diag: import("@suss/adapter-typescript").CacheDiagnostic,
-): string {
+export function formatCacheDiagnostic(diag: CacheDiagnostic): string {
   if (diag.kind === "hit") {
     return "  cache: hit (returned all summaries from manifest)\n";
   }
@@ -188,9 +282,7 @@ export function formatCacheDiagnostic(
   return `  cache: miss (${diag.missReason ?? "unknown"})\n`;
 }
 
-function formatTimingTotal(
-  report: import("@suss/adapter-typescript").TimingReport | null,
-): string {
+function formatTimingTotal(report: TimingReport | null): string {
   if (report === null) {
     return "";
   }
@@ -203,9 +295,7 @@ function formatTimingTotal(
  * `Timing:` header so it reads as a sub-block of the extract
  * acknowledgment line.
  */
-function formatTimingBreakdown(
-  report: import("@suss/adapter-typescript").TimingReport,
-): string {
+function formatTimingBreakdown(report: TimingReport): string {
   const lines: string[] = ["Timing:"];
   for (const phase of report.phases) {
     const ms = phase.durationMs.toFixed(0).padStart(6);
