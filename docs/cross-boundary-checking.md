@@ -2,7 +2,7 @@
 
 Given behavioral summaries for two sides of a boundary, a provider (the handler producing a response) and a consumer (the call site reading it), is their behavior compatible?
 
-This document covers the checker mechanics: which comparisons run, what the IR gives them to work with, and the findings they emit. For the contract taxonomy those comparisons rest on, the three kinds of truth and the three contracts at every boundary, see [`contracts.md`](contracts.md). For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
+For the contract taxonomy these comparisons rest on, the three kinds of truth and the three contracts at every boundary, see [`contracts.md`](contracts.md). For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md); for the extraction story, see [`architecture.md`](architecture.md).
 
 **Shipping scope: HTTP (REST), GraphQL resolver↔operation, and in-process function-call (package exports).** REST is the dispatch-dominant case, status code as the outcome discriminator, response body as the payload, `(method, normalizedPath)` as the pairing key. GraphQL resolvers pair by `(typeName, fieldName)`. In-process `function-call` pairs by `fn:<package>::<exportPath>`, introduced with the `packageExports` / `packageImport` discovery variants so a library's provider summaries pair with every caller that imports from it. See [`boundary-semantics.md`](boundary-semantics.md) for the layered model; see [`reference/pack-patterns.md`](reference/pack-patterns.md) for the discovery variants.
 

@@ -6,8 +6,7 @@ Suppressions live in `.sussignore` at the repo root and travel
 with the code.
 
 For the conceptual model and full rule schema see
-[Suppressions](/suppressions). This page is the task-shaped view:
-how do I silence this specific finding?
+[Suppressions](/suppressions).
 
 ## Three effects
 

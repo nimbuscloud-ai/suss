@@ -1,35 +1,49 @@
-# What suss reads
+# Compatibility
 
-Which project shapes suss handles, and where it stops. Every row is a
-committed fixture under `fixtures/compat/`, run in CI against the same
-one-route service, so this page cannot drift from what the tool does.
+suss reads your project through its tsconfig, so it sees the same files
+and the same module resolution your compiler does.
 
-## Project shapes
+## Languages
 
-| Shape | Supported | Notes |
-|---|---|---|
-| TypeScript | Yes | |
-| JavaScript | Yes | Needs `allowJs` in the tsconfig, since suss reads the file set your compiler sees. |
-| ESM | Yes | |
-| CommonJS | Yes | |
-| `moduleResolution: "bundler"` | Yes | The esbuild and Vite default. |
-| `moduleResolution: "node"` / `"node16"` / `"nodenext"` | Yes | |
-| A tsconfig that `extends` a base | Yes | Resolved the way `tsc` resolves it, including `paths`. |
-| A helper implemented in `.js` with a sibling `.d.ts` | Yes | Read from the implementation, since a declaration says nothing about behaviour. |
-| Dependencies not installed | Partly | See below. |
+| | Supported |
+|---|---|
+| TypeScript | Yes |
+| JavaScript | Yes, with `allowJs` in your tsconfig |
+| Anything else | No |
 
-## When dependencies are not installed
+## Modules and resolution
 
-Packs fall into two groups, and only one of them needs `node_modules`.
+| | Supported |
+|---|---|
+| ESM | Yes |
+| CommonJS | Yes |
+| `moduleResolution: "node"`, `"node16"`, `"nodenext"` | Yes |
+| `moduleResolution: "bundler"` | Yes |
+| `paths` aliases (`~/*`, `@app/*`) | Yes |
+| A tsconfig that `extends` a base | Yes |
+| Project references (`composite`) | Not tested |
 
-A pack that keys off something on disk keeps working without an install.
-The AWS Lambda pack reads your SAM template to find handlers, so a fresh
-checkout extracts fine.
+## Type declarations
 
-A pack that has to resolve symbols does not. The Apollo Client pack has
-to know that a `useQuery` came from `@apollo/client` before it can read
-the operation, and without the package there is nothing to resolve
-against. That run produces nothing, and says so:
+| | Supported |
+|---|---|
+| Types written inline in `.ts` | Yes |
+| A `.js` file with a sibling `.d.ts` | Yes, read from the `.js` |
+| `@types/*` packages | Yes, once installed |
+
+## Dependencies
+
+Install your project's dependencies before running suss. Some packs
+need them; the rest do not.
+
+| | What happens |
+|---|---|
+| Dependencies installed | Everything works |
+| Not installed, pack reads a file on disk | Works. The AWS pack finds handlers through your SAM template. |
+| Not installed, pack resolves symbols | Finds nothing, and tells you why |
+| A library with no pack | The call is marked unknown. The rest of the handler still comes through. |
+
+If a pack needs a package you have not installed, suss tells you which one:
 
 ```
 No summaries to write.
@@ -39,53 +53,58 @@ No summaries to write.
   Install this project's dependencies, then run the command again.
 ```
 
-Run `npm install` in the project you are analyzing before extracting.
-
-## Libraries suss knows nothing about
-
-A call into an unrecognized library does not cost you the rest of the
-summary. The handler's own branches, statuses, and body shapes still
-come through; only the value that call returns is unknown, and it is
-marked unknown rather than guessed.
+If there is no pack for a library, suss marks that call unknown and
+reads the rest of the handler normally:
 
 ```ts
-const thing = await someInternalLib.lookup(id);  // opaque
+const thing = await someInternalLib.lookup(id);  // unknown
 if (!id) {
-  return json(400, { error: "missing id" });     // still extracted
+  return json(400, { error: "missing id" });     // read
 }
-return json(200, { id, name: thing.name });      // still extracted
+return json(200, { id, name: thing.name });      // read
 ```
 
-## Response helpers
+## Your own response helpers
 
-Most handlers build their response in a helper rather than at the return
-site. suss follows the call into the helper and reads its parameters, so
-the argument order is whatever you wrote:
+Most handlers build a response through a helper rather than at the
+return site. suss follows the call and reads the helper, so your
+argument order is whatever you wrote it as:
 
 ```ts
-// Both of these extract as 200 with a body of { status }.
-return json(200, { status: "ok" });     // json(statusCode, payload)
-return json({ status: "ok" }, 200);     // json(payload, statusCode)
+return json(200, { status: "ok" });   // json(statusCode, payload)
+return json({ status: "ok" }, 200);   // json(payload, statusCode)
 ```
 
-The name does not matter either. `respond`, `ok`, and `send` work the
-same way, because the pack describes the envelope shape rather than
-naming your function.
+Both come out as 200 with a body of `{ status }`. The name does not
+matter either, so `respond`, `ok`, and `send` all work.
 
-Two limits. A helper that branches into several returns builds several
-envelopes, which suss does not model yet; those report the status as
-unknown with the source text rather than picking one. And a helper
-reached through an object (`responses.json(...)`) is not followed yet,
-only a directly named function.
+A helper that branches is read branch by branch. Each branch that can
+run becomes its own outcome, and a branch the caller's arguments cannot
+reach is left out:
+
+```ts
+function json(statusCode, payload) {
+  if (statusCode > 399) {
+    return { statusCode, body: JSON.stringify({ error: payload }) };
+  }
+  return { statusCode, body: JSON.stringify(payload) };
+}
+
+return json(200, { status: "ok" });   // 200 only. 200 > 399 is false.
+return json(500, "boom");             // 500 only, with an error body.
+return json(code, payload);           // both, since `code` is unknown here.
+```
+
+Two things it will not do yet. It does not follow a helper reached
+through an object, like `responses.json(...)`. And it substitutes your
+arguments for a parameter used on its own, not for one nested inside
+another expression, so `{ error: payload }` records that the body has
+an `error` field without recording what type that field holds.
 
 ## Not supported
 
-- **Languages other than TypeScript and JavaScript.** A Python or Ruby
-  service is invisible. The adapter interface is language-agnostic, so
-  another one could be written, but none exists.
-- **Dynamic registration.** `registerRoutes(configArray)` where the array
-  is built at runtime. suss reads what the code says statically.
-- **Local wrappers around a library primitive.** A project that wraps
-  `useQuery` in its own `useGraphQLQuery` hook is invisible to the Apollo
-  pack, which recognizes the library call itself. Following recognition
-  through a wrapper is designed but unbuilt.
+| | |
+|---|---|
+| Other languages | A Python or Ruby service is invisible. The adapter interface is language-agnostic, so one could be written. |
+| Routes registered at runtime | `registerRoutes(configBuiltAtRuntime)`. suss reads what the code says without running it. |
+| Your own wrapper around a library | A project that wraps `useQuery` in its own `useGraphQLQuery` hook is invisible to the Apollo pack, which looks for the library call itself. |

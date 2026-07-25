@@ -3,7 +3,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import {
+  createProjectWithoutTsconfig,
+  createTypeScriptAdapter,
+  findNearestTsconfig,
+} from "@suss/adapter-typescript";
 
 import type {
   CacheDiagnostic,
@@ -71,7 +75,14 @@ async function resolveFramework(name: string): Promise<PatternPack> {
 // ---------------------------------------------------------------------------
 
 export interface ExtractOptions {
-  tsconfig: string;
+  /**
+   * Path to the tsconfig covering the code to read. Optional. Without
+   * one, the nearest tsconfig or jsconfig above the working directory
+   * is used, and the directory itself is read when there is none.
+   */
+  tsconfig?: string;
+  /** Directory to read when no tsconfig is given. Defaults to cwd. */
+  dir?: string;
   frameworks: string[];
   files?: string[];
   output?: string;
@@ -97,16 +108,38 @@ export interface ExtractOptions {
   failOnEmpty?: boolean;
 }
 
+/**
+ * Where to read the code from. A tsconfig carries the project's own
+ * module resolution and path aliases, so it wins when one exists;
+ * otherwise the directory is walked directly.
+ */
+type Source =
+  | { kind: "tsconfig"; path: string; root: string }
+  | { kind: "directory"; root: string };
+
+function resolveSource(options: ExtractOptions): Source {
+  if (options.tsconfig !== undefined) {
+    const resolved = path.resolve(options.tsconfig);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(
+        `No tsconfig at ${resolved}. Leave -p off to read the current directory instead.`,
+      );
+    }
+    return { kind: "tsconfig", path: resolved, root: path.dirname(resolved) };
+  }
+
+  const root = path.resolve(options.dir ?? process.cwd());
+  const nearest = findNearestTsconfig(root);
+  if (nearest !== null) {
+    return { kind: "tsconfig", path: nearest, root: path.dirname(nearest) };
+  }
+  return { kind: "directory", root };
+}
+
 export async function extract(
   options: ExtractOptions,
 ): Promise<BehavioralSummary[]> {
-  const tsconfigPath = path.resolve(options.tsconfig);
-
-  if (!fs.existsSync(tsconfigPath)) {
-    throw new Error(
-      `No tsconfig at ${tsconfigPath}. Point -p at the tsconfig that covers the code you want read, usually the one your build uses.`,
-    );
-  }
+  const source = resolveSource(options);
 
   if (options.frameworks.length === 0) {
     throw new Error(
@@ -131,7 +164,9 @@ export async function extract(
 
   // Create adapter
   const adapter = createTypeScriptAdapter({
-    tsConfigFilePath: tsconfigPath,
+    ...(source.kind === "tsconfig"
+      ? { tsConfigFilePath: source.path }
+      : { project: createProjectWithoutTsconfig(source.root).project }),
     frameworks: packs,
     ...(extractorOptions !== undefined ? { extractorOptions } : {}),
     ...(options.noCache === true ? { cacheDir: null } : {}),
@@ -156,7 +191,7 @@ export async function extract(
 
   // Make file paths relative to the project root so summaries are portable.
   // Absolute paths leak filesystem structure and break on other machines.
-  const projectRoot = path.dirname(tsconfigPath);
+  const projectRoot = source.root;
   for (const summary of summaries) {
     summary.location.file = path.relative(projectRoot, summary.location.file);
   }

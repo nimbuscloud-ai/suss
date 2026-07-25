@@ -1,6 +1,6 @@
 # Contract sources
 
-This doc is the mechanics of the reader pipeline: how contract sources are structured, what they emit, and how to add one. For what "contract" means and how the shapes relate to derived and observed truth, see [`contracts.md`](contracts.md).
+For what "contract" means and how the shapes relate to derived and observed truth, see [`contracts.md`](contracts.md).
 
 A contract source is a behavioral contract authored at the boundary, not extracted from implementation. Contract sources produce the same `BehavioralSummary[]` as the extractor and feed the same checker. The source of truth varies, an OpenAPI YAML, a CloudFormation template, the published behavior of an external service, a hand-written file, but the artifact is the same.
 

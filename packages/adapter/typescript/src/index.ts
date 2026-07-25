@@ -5,6 +5,10 @@ export {
   extractCodeStructure,
 } from "./adapter.js";
 export { extractRawBranches } from "./assembly.js";
+export {
+  createProjectWithoutTsconfig,
+  findNearestTsconfig,
+} from "./bootstrap/noTsconfigProject.js";
 export { collectAncestorBranches, collectEarlyReturns } from "./conditions.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery/index.js";

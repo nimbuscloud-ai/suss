@@ -7,6 +7,8 @@
 // subprocess overhead and without the runtime swallowing assertions via
 // process.exit.
 
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { parseArgs } from "node:util";
 
 import { check, checkDir } from "./check.js";
@@ -18,7 +20,7 @@ import type { ContractSource } from "./contract.js";
 
 export const USAGE = `
 Usage:
-  suss extract -p <tsconfig> -f <framework> [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
+  suss extract [-p <tsconfig>] -f <framework> [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss inspect <summaries.json>
   suss inspect --dir <directory>
   suss inspect --diff <before.json> <after.json>
@@ -33,7 +35,9 @@ Commands:
   contract  Describe boundaries from a schema or deploy template
 
 Options (extract):
-  -p, --project    Path to the tsconfig covering the code to read (required)
+  -p, --project    Path to the tsconfig covering the code to read. Without it,
+                   suss uses the nearest tsconfig, or reads the current
+                   directory when there is none.
   -f, --framework  Which pack to use. Repeatable. Built in: ts-rest,
                    react-router, express, fastify, nestjs-rest, nestjs-graphql,
                    react, apollo, aws-lambda, fetch, axios, apollo-client, node.
@@ -121,13 +125,6 @@ async function runExtract(args: string[]): Promise<number> {
   const tsconfig = values.project;
   const frameworks = values.framework ?? [];
 
-  if (tsconfig === undefined) {
-    process.stderr.write(
-      "extract needs a tsconfig. Try: suss extract -p tsconfig.json -f express\n",
-    );
-    return 1;
-  }
-
   if (frameworks.length === 0) {
     process.stderr.write(
       "extract needs at least one pack, so it knows what to look for. Try: suss extract -p tsconfig.json -f express\nRun `suss --help` for the built-in packs.\n",
@@ -148,6 +145,15 @@ async function runExtract(args: string[]): Promise<number> {
     return 1;
   }
 
+  // A path that was typed and does not exist is a usage error, so it
+  // reports like one rather than surfacing as a thrown error.
+  if (tsconfig !== undefined && !existsSync(path.resolve(tsconfig))) {
+    process.stderr.write(
+      `No tsconfig at ${path.resolve(tsconfig)}. Leave -p off to read the current directory instead.\n`,
+    );
+    return 1;
+  }
+
   // Files can come from --files or positionals
   const files =
     values.files !== undefined && values.files.length > 0
@@ -157,7 +163,7 @@ async function runExtract(args: string[]): Promise<number> {
         : undefined;
 
   await extract({
-    tsconfig,
+    ...(tsconfig !== undefined ? { tsconfig } : {}),
     frameworks,
     ...(files !== undefined ? { files } : {}),
     ...(values.output !== undefined ? { output: values.output } : {}),

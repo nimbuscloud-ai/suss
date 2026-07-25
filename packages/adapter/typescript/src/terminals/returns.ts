@@ -5,6 +5,7 @@
 import {
   type CallExpression,
   type Expression,
+  type Identifier,
   Node,
   type ObjectLiteralExpression,
   type ParameterDeclaration,
@@ -16,7 +17,7 @@ import {
   extractBody,
   extractStatusCode,
 } from "./extract.js";
-import { resolveReturnedEnvelope } from "./helperResolution.js";
+import { resolveHelperReturn } from "./helperResolution.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -132,57 +133,98 @@ function isInReturnPosition(ole: Node): boolean {
   return false;
 }
 
+/**
+ * Match a returned object against a `returnShape` pattern.
+ *
+ * Returns a list because a return can produce more than one outcome. A
+ * handler returning `json(...)` produces one per branch the helper can
+ * take, which is how the IR expresses alternatives: separate
+ * transitions, not one output holding a set of possibilities.
+ */
 export function tryMatchReturnShape(
   node: Node,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
+): FoundTerminal[] {
+  if (Node.isObjectLiteralExpression(node)) {
+    if (!isInReturnPosition(node)) {
+      return [];
+    }
+    const terminal = terminalFromReturnedObject(node, node, pattern, match);
+    return terminal === null ? [] : [terminal];
+  }
+
+  if (!Node.isReturnStatement(node)) {
+    return [];
+  }
+
+  const returned = node.getExpression();
+  if (returned === undefined) {
+    return [];
+  }
+
+  if (Node.isObjectLiteralExpression(returned)) {
+    const terminal = terminalFromReturnedObject(returned, node, pattern, match);
+    return terminal === null ? [] : [terminal];
+  }
+
+  if (!Node.isCallExpression(returned)) {
+    return [];
+  }
+
+  // `return json(200, payload)`. Most handlers build the response in a
+  // helper rather than at the return site, and the helper belongs to the
+  // project, so read it instead of guessing what its arguments mean.
+  const resolved = resolveHelperReturn(returned);
+  if (resolved.kind === "notLocal") {
+    return [];
+  }
+  if (resolved.kind === "unreadable") {
+    return [{ node, terminal: unresolvedTerminal(pattern.kind, returned) }];
+  }
+
+  const terminals: FoundTerminal[] = [];
+  for (const value of resolved.returnValues) {
+    const terminal = terminalFromReturnedObject(
+      value,
+      node,
+      pattern,
+      match,
+      resolved.substitutions,
+    );
+    if (terminal !== null) {
+      terminals.push(terminal);
+    }
+  }
+  return terminals;
+}
+
+/**
+ * Build one terminal from one returned object.
+ *
+ * `obj` is where the properties are read from, which may be inside a
+ * helper. `anchor` is where it is reported, which is always the caller's
+ * own return statement, so a finding points at the handler rather than
+ * at a helper shared by fifty of them.
+ */
+function terminalFromReturnedObject(
+  obj: ObjectLiteralExpression,
+  anchor: Node,
+  pattern: TerminalPattern,
+  match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
+  substitutions?: ReadonlyMap<string, Expression>,
 ): FoundTerminal | null {
-  let obj: ObjectLiteralExpression | null = null;
-  // Set when the envelope came from a helper rather than from the return
-  // site, mapping the helper's parameters to what this caller passed.
-  let substitutions: ReadonlyMap<string, Expression> | undefined;
-
-  if (Node.isReturnStatement(node)) {
-    const arg = node.getExpression();
-    if (arg !== undefined && Node.isObjectLiteralExpression(arg)) {
-      obj = arg;
-    } else if (arg !== undefined && Node.isCallExpression(arg)) {
-      // `return json(200, payload)`. Most handlers build their envelope
-      // in a helper rather than at the return site, and the helper is
-      // the project's own, so read it instead of guessing what its
-      // arguments mean.
-      const resolved = resolveReturnedEnvelope(arg);
-      if (resolved.kind === "unreadable") {
-        return { node, terminal: unresolvedTerminal(pattern.kind, arg) };
-      }
-      if (resolved.kind === "resolved") {
-        obj = resolved.returned;
-        substitutions = resolved.substitutions;
-      }
-    }
-  } else if (Node.isObjectLiteralExpression(node)) {
-    if (isInReturnPosition(node)) {
-      obj = node;
-    }
-  }
-
-  if (obj === null) {
-    return null;
-  }
-
-  // Check required properties
   const required = match.requiredProperties;
   if (required !== undefined && required.length > 0) {
     const presentNames = new Set<string>();
-
     for (const prop of obj.getProperties()) {
-      if (Node.isPropertyAssignment(prop)) {
-        presentNames.add(prop.getName());
-      } else if (Node.isShorthandPropertyAssignment(prop)) {
+      if (
+        Node.isPropertyAssignment(prop) ||
+        Node.isShorthandPropertyAssignment(prop)
+      ) {
         presentNames.add(prop.getName());
       }
     }
-
     for (const name of required) {
       if (!presentNames.has(name)) {
         return null;
@@ -208,23 +250,24 @@ export function tryMatchReturnShape(
     body = { typeText: obj.getText(), shape: extractShape(obj) };
   }
 
-  const terminal: RawTerminal = {
-    kind: pattern.kind,
-    statusCode,
-    body,
-    exceptionType: null,
-    message: null,
-    component: null,
-    delegateTarget: null,
-    emitEvent: null,
-    renderTree: null,
-    location: {
-      start: node.getStartLineNumber(),
-      end: node.getEndLineNumber(),
+  return {
+    node: anchor,
+    terminal: {
+      kind: pattern.kind,
+      statusCode,
+      body,
+      exceptionType: null,
+      message: null,
+      component: null,
+      delegateTarget: null,
+      emitEvent: null,
+      renderTree: null,
+      location: {
+        start: anchor.getStartLineNumber(),
+        end: anchor.getEndLineNumber(),
+      },
     },
   };
-
-  return { node, terminal };
 }
 
 export function tryMatchParameterMethodCall(

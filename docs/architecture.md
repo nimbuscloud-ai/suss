@@ -92,7 +92,7 @@ The split between adapter and extractor is deliberate. The extractor never sees 
 
 ## Vocabulary
 
-The terms used consistently across the codebase, code unit, boundary, terminal, transition, predicate, subject, output, effect, gap, recognizer, sub-unit, pack, confidence, have one canonical definition each in the [Glossary](glossary.md). The running example there is the same `getUser` handler above. This doc uses those terms without redefining them.
+The terms used consistently across the codebase, code unit, boundary, terminal, transition, predicate, subject, output, effect, gap, recognizer, sub-unit, pack, confidence, have one canonical definition each in the [Glossary](glossary.md). The running example there is the same `getUser` handler above.
 
 ## Packages and what each owns
 

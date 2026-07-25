@@ -4,7 +4,7 @@ Version: **v0** (draft)
 
 A behavioral summary is a structured, language-agnostic description of a code unit's behavior. It answers: *under what conditions does this function produce what outputs?*
 
-This document describes the JSON format. The authoritative source of truth is the zod schema in [`packages/ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/ir/src/schemas.ts); the [`behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/ir/schema/behavioral-summary.schema.json) JSON Schema is generated from it at build time and committed for non-TypeScript consumers (Python, Go, etc.) that want to validate without running JS.
+The authoritative source of truth is the zod schema in [`packages/ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/ir/src/schemas.ts); the [`behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/ir/schema/behavioral-summary.schema.json) JSON Schema is generated from it at build time and committed for non-TypeScript consumers (Python, Go, etc.) that want to validate without running JS.
 
 ## File format
 

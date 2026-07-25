@@ -2,7 +2,7 @@
 
 Step-by-step instructions for creating a new framework, client, or runtime pack. For the conceptual overview of what packs are, see [`packs.md`](../packs.md). For the full pattern catalogue and interface contracts, see [`reference/pack-patterns.md`](../reference/pack-patterns.md).
 
-This guide includes worked walkthroughs of two existing packs (ts-rest and runtime-node) that read alongside the steps, plus a more detailed Fastify example at the end.
+Two existing packs, ts-rest and runtime-node, are walked through alongside the steps, with a longer Fastify example at the end.
 
 ## Step 1: Create the package
 

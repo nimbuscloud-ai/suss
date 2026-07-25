@@ -161,7 +161,7 @@ describe("reading a local response helper", () => {
     });
   });
 
-  it("says it does not know when the helper builds several envelopes", () => {
+  it("drops a branch the caller's arguments cannot reach", () => {
     const terminals = terminalsFor(`
       function json(statusCode: number, payload: unknown) {
         if (statusCode > 399) {
@@ -174,12 +174,71 @@ describe("reading a local response helper", () => {
       }
     `);
 
-    // A guess would be worth less than saying so: two envelopes leave the
-    // helper and this version does not model that.
+    // 200 > 399 is false, so the error branch cannot run here. Reporting
+    // both would describe an outcome this call site never produces.
+    expect(terminals).toHaveLength(1);
     expect(terminals[0]?.terminal.statusCode).toEqual({
-      type: "dynamic",
-      sourceText: 'json(200, { status: "ok" })',
+      type: "literal",
+      value: 200,
     });
+    expect(terminals[0]?.terminal.body?.shape).toEqual({
+      type: "record",
+      properties: { status: { type: "literal", value: "ok" } },
+    });
+  });
+
+  it("takes the error branch when that is the one the caller reaches", () => {
+    const terminals = terminalsFor(`
+      function json(statusCode: number, payload: unknown) {
+        if (statusCode > 399) {
+          return { statusCode, body: JSON.stringify({ error: payload }) };
+        }
+        return { statusCode, body: JSON.stringify(payload) };
+      }
+      export function handler() {
+        return json(500, "boom");
+      }
+    `);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0]?.terminal.statusCode).toEqual({
+      type: "literal",
+      value: 500,
+    });
+    // suss sees that the body has an `error` field, but not what type
+    // it holds. `payload` sits inside `{ error: payload }`, and
+    // arguments are only substituted for an identifier used on its own,
+    // not for one nested inside another expression.
+    expect(terminals[0]?.terminal.body?.shape).toEqual({
+      type: "record",
+      properties: { error: { type: "unknown" } },
+    });
+  });
+
+  it("reports one outcome per branch when the guard cannot be decided", () => {
+    const terminals = terminalsFor(`
+      function json(statusCode: number, payload: unknown, terse: boolean) {
+        if (terse) {
+          return { statusCode: 204, body: "" };
+        }
+        return { statusCode, body: JSON.stringify(payload) };
+      }
+      export function handler(flag: boolean) {
+        return json(200, { status: "ok" }, flag);
+      }
+    `);
+
+    // `terse` is whatever the caller was handed, so both branches stand.
+    // The IR expresses that as two transitions, not as one status
+    // holding a set of possibilities.
+    const statuses = terminals
+      .map((t) =>
+        t.terminal.statusCode?.type === "literal"
+          ? t.terminal.statusCode.value
+          : t.terminal.statusCode?.type,
+      )
+      .sort();
+    expect(statuses).toEqual([200, 204]);
   });
 
   it("leaves a call it cannot follow alone", () => {

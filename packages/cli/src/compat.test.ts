@@ -19,6 +19,7 @@
 // routes here come from the SAM template rather than from a resolved
 // import, so extraction has to keep working without one.
 
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,16 +38,23 @@ const FIXTURES = path.resolve(
 const CASES = [
   { dir: "ts-esm", what: "TypeScript over ESM" },
   { dir: "js-esm", what: "plain JavaScript through allowJs" },
+  { dir: "no-tsconfig", what: "a JavaScript project with no tsconfig at all" },
   { dir: "cjs", what: "CommonJS" },
   { dir: "extended-tsconfig", what: "a tsconfig inheriting from a base" },
   { dir: "bundler", what: 'moduleResolution "bundler"' },
+  { dir: "path-alias", what: "a tsconfig paths alias" },
   { dir: "separate-dts", what: "a .js helper described by a sibling .d.ts" },
   { dir: "untyped-external", what: "an uninstalled, undescribed dependency" },
 ];
 
 async function extractCase(dir: string): Promise<BehavioralSummary[]> {
+  const tsconfig = path.join(FIXTURES, dir, "tsconfig.json");
   return await extract({
-    tsconfig: path.join(FIXTURES, dir, "tsconfig.json"),
+    // The no-tsconfig case reads its directory instead, which is what a
+    // JavaScript project looks like.
+    ...(fs.existsSync(tsconfig)
+      ? { tsconfig }
+      : { dir: path.join(FIXTURES, dir) }),
     frameworks: ["aws-lambda"],
     // Each run reads a different project, and a stale manifest would
     // hide a case that stopped working.

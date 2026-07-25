@@ -72,8 +72,17 @@ export function findTerminals(
       let found: FoundTerminal | null = null;
 
       if (pattern.match.type === "returnShape") {
-        found = tryMatchReturnShape(node, pattern, pattern.match);
-      } else if (pattern.match.type === "returnStatement") {
+        // One return can produce several terminals: a handler returning
+        // through a helper that branches produces one per branch the
+        // helper can take at this call site.
+        const matches = tryMatchReturnShape(node, pattern, pattern.match);
+        if (matches.length > 0) {
+          results.push(...matches);
+          break;
+        }
+        continue;
+      }
+      if (pattern.match.type === "returnStatement") {
         found = tryMatchReturnStatement(node, pattern, func, patterns);
       } else if (pattern.match.type === "jsxReturn") {
         found = tryMatchJsxReturn(node, pattern);

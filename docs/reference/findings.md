@@ -281,6 +281,6 @@ A pairing pass refused to emit substantive findings because too many predicates 
 ## What this catalog is *not*
 
 - **Not every tool's finding.** Downstream tools built on top of `@suss/behavioral-ir` can emit their own kinds; those aren't listed here.
-- **Not a spec.** The authoritative list is `FindingKindSchema` in [`packages/ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/ir/src/schemas.ts), with JSDoc that this page mirrors.
+- **Not a spec.** The authoritative list is `FindingKindSchema` in [`packages/ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/ir/src/schemas.ts).
 - **Not exhaustive for severity mapping.** Severities shown are the defaults the checker emits. `.sussignore` rules can downgrade or hide any finding, see [Suppressions](/suppressions).
 - **Not a roadmap.** The *reserved* tag means the kind exists in the IR enum but no checker emits it yet; it doesn't promise an emitter will land soon.

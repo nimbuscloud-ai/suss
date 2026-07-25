@@ -166,9 +166,9 @@ describe("runCli — top-level dispatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("runCli — extract", () => {
-  it("rejects missing --project (-p)", async () => {
+  it("rejects a --project path that does not exist", async () => {
     const { exit, io } = await capture(() =>
-      runCli(["extract", "-f", "axios"]),
+      runCli(["extract", "-p", "/nope/tsconfig.json", "-f", "axios"]),
     );
     expect(exit).toBe(1);
     expect(io.stderr).toContain("tsconfig");

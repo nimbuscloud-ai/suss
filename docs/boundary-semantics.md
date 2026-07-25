@@ -3,8 +3,7 @@
 The IR's `BoundaryBinding` carries all three layers of a boundary description
 explicitly: what bytes travel (transport), what the participants think they're
 doing (semantics), and how a particular library expresses that in source code
-(recognition). This document describes the model, what's shipped, and where
-the composition story is going.
+(recognition).
 
 ## The three layers
 
