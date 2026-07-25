@@ -456,6 +456,25 @@ export type TerminalMatch =
   | {
       type: "functionCall";
       functionName: string; // e.g. "json", "redirect" — matches calls to a named function
+      /**
+       * Only match when the name was imported from one of these modules.
+       * Same name, shape, and prefix semantics as a DiscoveryPattern's
+       * gate: "react-router" also matches "react-router/server".
+       *
+       * Set it whenever the function belongs to a library, because
+       * matching a bare name claims every same-named function in the
+       * user's project too. `json` is a common name for a project's own
+       * response helper, and reading a library's argument order into one
+       * of those produces a confident wrong answer.
+       *
+       * Leave it unset only when the function is not a library's at all.
+       * A pack should generally not name a project's own helper: declare
+       * the envelope shape instead, through a `returnShape` terminal, and
+       * the adapter follows a returned call into the project and reads
+       * the helper's parameters. That covers helpers whatever they are
+       * named and in whichever argument order they were written.
+       */
+      requiresImport?: string[];
     }
   | {
       /**

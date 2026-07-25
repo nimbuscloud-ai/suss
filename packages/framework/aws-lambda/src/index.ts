@@ -7,16 +7,20 @@
 //
 // Discovery is template-driven (see `discovery.ts`): handlers are found
 // by resolving each Serverless::Function's `Handler` back to a source
-// file + export, not by an in-code registration call. Envelope
-// extraction covers the two dominant shapes:
+// file + export, not by an in-code registration call.
 //
-//   1. A direct object literal `{ statusCode, body, headers? }`, where
-//      `body` is `JSON.stringify(x)` (the shape of `x` is what pairs) or
-//      a string.
-//   2. A same-module helper — `json(payload, status?)` /
-//      `redirect(url, status?)` — that wraps the envelope. The helper's
-//      argument is the payload shape; the pack declares the envelope its
-//      name implies rather than resolving the helper body.
+// Envelope extraction declares one shape: an object carrying
+// `statusCode`, where `body` is `JSON.stringify(x)`, since the shape of
+// `x` is what pairs with a declared body.
+//
+// Most handlers build that object in a helper rather than at the return
+// site, and the helper belongs to the service, so this pack does not try
+// to name it. The adapter follows a returned call into the project and
+// applies the same declaration to the object it finds there, reading the
+// helper's parameters to see which argument carries which field. A
+// service writing `json(status, payload)` and one writing
+// `json(payload, status)` both come out right, as does one that calls
+// the helper `respond`.
 //
 // Out of scope: SQS / Schedule / SNS event handlers. Those surface as
 // `recognized-not-http` accounting units (see `discovery.ts`) — the
@@ -57,26 +61,6 @@ export function awsLambdaFramework(): PatternPack {
         extraction: {
           statusCode: { from: "property", name: "statusCode" },
           body: { from: "property", name: "body", unwrapJsonStringify: true },
-        },
-      },
-      {
-        // `return json(payload, status?)` — same-module response helper.
-        // Payload is arg 0; an explicit status is arg 1, else 200.
-        kind: "response",
-        match: { type: "functionCall", functionName: "json" },
-        extraction: {
-          statusCode: { from: "argument", position: 1 },
-          body: { from: "argument", position: 0 },
-          defaultStatusCode: 200,
-        },
-      },
-      {
-        // `return redirect(url, status?)` — location redirect helper.
-        kind: "response",
-        match: { type: "functionCall", functionName: "redirect" },
-        extraction: {
-          statusCode: { from: "argument", position: 1 },
-          defaultStatusCode: 302,
         },
       },
       {

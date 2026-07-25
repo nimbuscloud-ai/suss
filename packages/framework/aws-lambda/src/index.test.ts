@@ -81,15 +81,16 @@ describe("awsLambdaFramework — pack shape", () => {
     expect(pack.requiresImport).toEqual(["aws-lambda"]);
   });
 
-  it("declares envelope + helper response terminals", () => {
+  it("declares the envelope shape and names no helper", () => {
     const pack = awsLambdaFramework();
-    const functionCalls = pack.terminals
-      .filter((t) => t.match.type === "functionCall")
-      .map((t) =>
-        t.match.type === "functionCall" ? t.match.functionName : "",
-      );
-    expect(functionCalls).toContain("json");
-    expect(functionCalls).toContain("redirect");
+
+    // A service names its own response helper, so this pack must not.
+    // The adapter follows a returned call into the project and applies
+    // the envelope declaration below to whatever it finds, which works
+    // for `json`, `respond`, and any argument order.
+    const named = pack.terminals.filter((t) => t.match.type === "functionCall");
+    expect(named).toEqual([]);
+
     const envelope = pack.terminals.find((t) => t.match.type === "returnShape");
     expect(envelope?.extraction.body).toEqual({
       from: "property",

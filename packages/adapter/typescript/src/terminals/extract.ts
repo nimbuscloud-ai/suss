@@ -69,6 +69,26 @@ export interface ExtractionContext {
   calls?: CallExpression[];
   /** Text of the thrown constructor — supplied by throwExpression only. */
   exceptionType?: string;
+  /**
+   * Parameter name to call argument, when `returnedObj` is the envelope a
+   * project-local helper returns rather than one written at the call
+   * site. `return json(200, payload)` against `json(statusCode, body)`
+   * substitutes `statusCode` for `200`, so the same property extraction
+   * reads the caller's values.
+   */
+  substitutions?: ReadonlyMap<string, Expression>;
+}
+
+/**
+ * The expression a property's value stands for. Identical to the value
+ * itself, except inside a resolved helper, where an identifier naming
+ * one of its parameters stands for whatever the caller passed.
+ */
+function substituted(value: Expression, ctx: ExtractionContext): Expression {
+  if (ctx.substitutions === undefined || !Node.isIdentifier(value)) {
+    return value;
+  }
+  return ctx.substitutions.get(value.getText()) ?? value;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +178,15 @@ function extractStatusCodeFromRule(
         // Handle shorthand: ShorthandPropertyAssignment
         if (Node.isShorthandPropertyAssignment(prop)) {
           if (prop.getName() === sc.name) {
+            // `{ statusCode }` inside a helper names one of its
+            // parameters, so the caller's argument is the status.
+            const resolved = ctx.substitutions?.get(prop.getName());
+            if (resolved !== undefined) {
+              const val = unwrapAs(resolved);
+              return Node.isNumericLiteral(val)
+                ? { type: "literal", value: Number(val.getText()) }
+                : { type: "dynamic", sourceText: val.getText() };
+            }
             return { type: "dynamic", sourceText: prop.getName() };
           }
         }
@@ -173,7 +202,7 @@ function extractStatusCodeFromRule(
         return null;
       }
 
-      const val = unwrapAs(raw);
+      const val = unwrapAs(substituted(raw, ctx));
       if (Node.isNumericLiteral(val)) {
         return { type: "literal", value: Number(val.getText()) };
       }
@@ -250,6 +279,19 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
       if (!Node.isPropertyAssignment(prop)) {
         if (Node.isShorthandPropertyAssignment(prop)) {
           if (prop.getName() === b.name) {
+            // `{ body }` inside a helper names one of its parameters, so
+            // the caller's argument is the payload.
+            const resolved = ctx.substitutions?.get(prop.getName());
+            if (resolved !== undefined) {
+              const target =
+                b.unwrapJsonStringify === true
+                  ? unwrapJsonStringify(resolved)
+                  : resolved;
+              return {
+                typeText: target.getText(),
+                shape: extractShape(target),
+              };
+            }
             return { typeText: prop.getName(), shape: null };
           }
         }
@@ -265,8 +307,12 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
         return null;
       }
 
-      const target =
+      // Unwrap the serialization first, then substitute: the payload the
+      // caller passed is what pairs with a declared body, not the string
+      // the helper wraps it in.
+      const unwrapped =
         b.unwrapJsonStringify === true ? unwrapJsonStringify(val) : val;
+      const target = substituted(unwrapped, ctx);
       return { typeText: target.getText(), shape: extractShape(target) };
     }
 

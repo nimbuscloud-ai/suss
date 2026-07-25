@@ -16,6 +16,7 @@ import {
   extractBody,
   extractStatusCode,
 } from "./extract.js";
+import { resolveReturnedEnvelope } from "./helperResolution.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -137,11 +138,27 @@ export function tryMatchReturnShape(
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
 ): FoundTerminal | null {
   let obj: ObjectLiteralExpression | null = null;
+  // Set when the envelope came from a helper rather than from the return
+  // site, mapping the helper's parameters to what this caller passed.
+  let substitutions: ReadonlyMap<string, Expression> | undefined;
 
   if (Node.isReturnStatement(node)) {
     const arg = node.getExpression();
     if (arg !== undefined && Node.isObjectLiteralExpression(arg)) {
       obj = arg;
+    } else if (arg !== undefined && Node.isCallExpression(arg)) {
+      // `return json(200, payload)`. Most handlers build their envelope
+      // in a helper rather than at the return site, and the helper is
+      // the project's own, so read it instead of guessing what its
+      // arguments mean.
+      const resolved = resolveReturnedEnvelope(arg);
+      if (resolved.kind === "unreadable") {
+        return { node, terminal: unresolvedTerminal(pattern.kind, arg) };
+      }
+      if (resolved.kind === "resolved") {
+        obj = resolved.returned;
+        substitutions = resolved.substitutions;
+      }
     }
   } else if (Node.isObjectLiteralExpression(node)) {
     if (isInReturnPosition(node)) {
@@ -176,6 +193,7 @@ export function tryMatchReturnShape(
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
     returnedObj: obj,
+    ...(substitutions !== undefined ? { substitutions } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   // For a returnShape terminal, the returned object IS the body. `extractBody`
@@ -405,6 +423,67 @@ function buildReturnTerminal(
   return { node: locationNode, terminal };
 }
 
+/**
+ * Was this name imported from `module`? Prefix match, so "react-router"
+ * also covers "react-router/server", mirroring how `requiresImport`
+ * gates discovery.
+ *
+ * Reads the file's import declarations rather than resolving the symbol,
+ * which keeps it working against a project whose dependencies are not
+ * installed. That case is common enough to matter: a checkout without an
+ * `npm install` still has its imports written down.
+ */
+function importedFromAny(
+  callee: Identifier,
+  modules: ReadonlyArray<string>,
+): boolean {
+  const name = callee.getText();
+  for (const declaration of callee.getSourceFile().getImportDeclarations()) {
+    const specifier = declaration.getModuleSpecifierValue();
+    const matches = modules.some(
+      (module) => specifier === module || specifier.startsWith(`${module}/`),
+    );
+    if (!matches) {
+      continue;
+    }
+    for (const named of declaration.getNamedImports()) {
+      if ((named.getAliasNode() ?? named.getNameNode()).getText() === name) {
+        return true;
+      }
+    }
+    if (declaration.getDefaultImport()?.getText() === name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * A terminal that says the call produced a response without claiming to
+ * know which one. `dynamic` carries the source text, so a reader sees
+ * the call that produced it.
+ */
+function unresolvedTerminal(
+  kind: TerminalPattern["kind"],
+  node: Node,
+): RawTerminal {
+  return {
+    kind,
+    statusCode: { type: "dynamic", sourceText: node.getText() },
+    body: null,
+    exceptionType: null,
+    message: null,
+    component: null,
+    delegateTarget: null,
+    emitEvent: null,
+    renderTree: null,
+    location: {
+      start: node.getStartLineNumber(),
+      end: node.getEndLineNumber(),
+    },
+  };
+}
+
 export function tryMatchFunctionCall(
   node: Node,
   pattern: TerminalPattern,
@@ -420,6 +499,19 @@ export function tryMatchFunctionCall(
   }
 
   if (callee.getText() !== match.functionName) {
+    return null;
+  }
+
+  // A pack that names a function is describing a library's own calling
+  // convention, so the name has to have come from that library. Matching
+  // the bare name would claim any same-named function in the user's
+  // project, and `json` is a common name for a project's own response
+  // helper, whose argument order is its author's business.
+  if (
+    match.requiresImport !== undefined &&
+    match.requiresImport.length > 0 &&
+    !importedFromAny(callee, match.requiresImport)
+  ) {
     return null;
   }
 
