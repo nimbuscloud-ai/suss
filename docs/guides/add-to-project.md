@@ -1,8 +1,8 @@
 # Add suss to an existing project
 
-Assumes a TypeScript project with at least one boundary suss recognises
-,  an HTTP handler, a GraphQL resolver, a React component tree, a queue
-producer, a Prisma call, or a `process.env` access.
+Assumes a TypeScript project with at least one boundary suss
+recognises: an HTTP handler, a GraphQL resolver, a React component
+tree, a queue producer, a Prisma call, or a `process.env` access.
 
 ## What you're setting up
 
@@ -74,8 +74,8 @@ resolution your compiler sees, same `paths` aliases, same
 cross package boundaries (`@app/lib/db`, monorepo workspace
 imports) wouldn't resolve and most type information would be lost.
 
-Use the tsconfig that matches the source you want analyzed , 
-often the app's `tsconfig.json`, but for monorepos you'll
+Use the tsconfig that matches the source you want analyzed, usually
+the app's `tsconfig.json`, but for monorepos you'll
 typically run it per-package.
 
 ```bash

@@ -60,8 +60,8 @@ checking actually cares about.
 
 The same transport can carry many semantics. REST, GraphQL, and Lambda
 all travel over HTTPS but describe entirely different boundary shapes.
-Conversely, the same semantics can travel over multiple transports , 
-an SQS queue and a Kafka topic are both message-queue semantics with
+Conversely, the same semantics can travel over multiple transports: an
+SQS queue and a Kafka topic are both message-queue semantics with
 different transports.
 
 ### Recognition
@@ -148,7 +148,7 @@ pairing keys on `gql:${typeName}.${fieldName}`. Operation-to-resolver pairing
 runs through `pairGraphqlOperations` (in `packages/checker/src/pairing/`),
 which walks the operation's selection set to pair root selections against the
 matching `graphql-resolver` provider. `checkGraphqlContractAgreement` then
-compares `metadata.graphql.declaredContract` across sources that declare it , 
+compares `metadata.graphql.declaredContract` across sources that declare it,
 comparing return type compatibility and argument-set agreement.
 
 **`runtime-config`** tracks the env-var channel of a deployable unit as a
