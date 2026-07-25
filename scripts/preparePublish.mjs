@@ -101,8 +101,9 @@ const manifests = findManifests(PACKAGES_DIR);
 let problems = 0;
 
 // npm only ships a LICENSE that sits in the package directory, so every
-// package gets a copy of the root one. They are gitignored; this script
-// is what puts them there before a publish.
+// package keeps a copy of the root one. They are committed rather than
+// written at publish time, so a fresh clone is already publishable and
+// --check has something to assert against in CI.
 const LICENSE = fs.readFileSync(path.join(ROOT, "LICENSE"), "utf8");
 
 for (const manifest of manifests) {
