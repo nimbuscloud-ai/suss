@@ -67,8 +67,40 @@ export function extractShape(node: Node): TypeShape | null {
   }
 }
 
+/**
+ * Parameter name to the argument bound to it, while reading a shape from
+ * inside a helper. `{ error: payload }` in the helper is `{ error: "boom" }`
+ * at a call site that passed "boom", and the shape should say so.
+ *
+ * Module-scoped for the same reason as the depth counter: the walk
+ * recurses through a dozen shape functions, and threading a parameter
+ * through all of them to serve one caller is worse than scoping it here.
+ */
+let boundArguments: ReadonlyMap<string, Node> | null = null;
+
+/** Extract a shape, resolving a helper's parameters to the caller's arguments. */
+export function extractShapeWithArguments(
+  node: Node,
+  substitutions: ReadonlyMap<string, Node>,
+): TypeShape | null {
+  const previous = boundArguments;
+  boundArguments = substitutions;
+  try {
+    return extractShape(node);
+  } finally {
+    boundArguments = previous;
+  }
+}
+
 function extractShapeInner(node: Node): TypeShape | null {
   const unwrapped = unwrap(node);
+
+  if (boundArguments !== null && Node.isIdentifier(unwrapped)) {
+    const argument = boundArguments.get(unwrapped.getText());
+    if (argument !== undefined && argument !== unwrapped) {
+      return extractShape(argument);
+    }
+  }
 
   // Object / array literals: syntactic decomposition preserves literal
   // narrowness that the type checker would widen.

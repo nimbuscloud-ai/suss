@@ -1,7 +1,7 @@
 // @suss/framework-aws-lambda — PatternPack for AWS Lambda HTTP handlers.
 //
 // The template declares the routing (SAM `Events: { HttpApi | Api }`),
-// the code declares the behavior (the handler's return envelope). This
+// the code declares the behavior (what the handler returns). This
 // pack extracts the code side and binds it to the same REST identity the
 // declared route carries, so the two pair by `(method, normalizedPath)`.
 //
@@ -9,7 +9,7 @@
 // by resolving each Serverless::Function's `Handler` back to a source
 // file + export, not by an in-code registration call.
 //
-// Envelope extraction declares one shape: an object carrying
+// The pack declares one response shape: an object carrying
 // `statusCode`, where `body` is `JSON.stringify(x)`, since the shape of
 // `x` is what pairs with a declared body.
 //
@@ -61,9 +61,10 @@ export function awsLambdaFramework(): PatternPack {
 
     terminals: [
       {
-        // Direct proxy envelope: `return { statusCode, body, headers? }`.
-        // `body` is the serialized payload — unwrap `JSON.stringify(x)`
-        // to the shape of `x` so it pairs with the declared body.
+        // `return { statusCode, body, headers? }`, written at the return
+        // site or built by a helper the adapter follows into. `body`
+        // holds the serialized payload, so unwrap `JSON.stringify(x)` to
+        // the shape of `x`.
         kind: "response",
         match: { type: "returnShape", requiredProperties: ["statusCode"] },
         extraction: {

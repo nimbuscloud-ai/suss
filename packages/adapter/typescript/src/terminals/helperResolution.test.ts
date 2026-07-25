@@ -13,8 +13,8 @@ import { findTerminals } from "./index.js";
 import type { TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 
-/** The AWS Lambda pack's envelope declaration, which names no helper. */
-const ENVELOPE: TerminalPattern = {
+/** The AWS Lambda pack's response declaration, which names no helper. */
+const RESPONSE_SHAPE: TerminalPattern = {
   kind: "response",
   match: { type: "returnShape", requiredProperties: ["statusCode"] },
   extraction: {
@@ -25,7 +25,7 @@ const ENVELOPE: TerminalPattern = {
 
 function terminalsFor(
   source: string,
-  patterns: TerminalPattern[] = [ENVELOPE],
+  patterns: TerminalPattern[] = [RESPONSE_SHAPE],
 ) {
   const project = new Project({ useInMemoryFileSystem: true });
   const file = project.createSourceFile("handler.ts", source);
@@ -205,13 +205,9 @@ describe("reading a local response helper", () => {
       type: "literal",
       value: 500,
     });
-    // suss sees that the body has an `error` field, but not what type
-    // it holds. `payload` sits inside `{ error: payload }`, and
-    // arguments are only substituted for an identifier used on its own,
-    // not for one nested inside another expression.
     expect(terminals[0]?.terminal.body?.shape).toEqual({
       type: "record",
-      properties: { error: { type: "unknown" } },
+      properties: { error: { type: "literal", value: "boom" } },
     });
   });
 
@@ -249,12 +245,12 @@ describe("reading a local response helper", () => {
       }
     `);
 
-    // Nothing to read, and no envelope written at the return site, so no
+    // Nothing to read, and no object written at the return site, so no
     // terminal rather than an invented one.
     expect(terminals).toEqual([]);
   });
 
-  it("still reads an envelope written at the return site", () => {
+  it("still reads an object written at the return site", () => {
     const terminals = terminalsFor(`
       export function handler() {
         return { statusCode: 204, body: "" };

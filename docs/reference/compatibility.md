@@ -95,11 +95,8 @@ return json(500, "boom");             // 500 only, with an error body.
 return json(code, payload);           // both, since `code` is unknown here.
 ```
 
-Two things it will not do yet. It does not follow a helper reached
-through an object, like `responses.json(...)`. And it substitutes your
-arguments for a parameter used on its own, not for one nested inside
-another expression, so `{ error: payload }` records that the body has
-an `error` field without recording what type that field holds.
+One thing it will not do yet: follow a helper reached through an
+object, like `responses.json(...)`. A helper called by name is read.
 
 ## Not supported
 

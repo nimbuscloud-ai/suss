@@ -11,8 +11,9 @@ import {
   type ObjectLiteralExpression,
 } from "ts-morph";
 
-import { extractShape } from "../shapes/shapes.js";
+import { extractShape, extractShapeWithArguments } from "../shapes/shapes.js";
 
+import type { TypeShape } from "@suss/behavioral-ir";
 import type { RawTerminal, TerminalExtraction } from "@suss/extractor";
 
 /** Unwrap `expr as const` / `expr as Type` to the inner expression. */
@@ -21,10 +22,9 @@ export function unwrapAs(node: Expression): Expression {
 }
 
 /**
- * Peel a `JSON.stringify(x)` call down to `x`. The Lambda-proxy
- * envelope serializes the response payload into the `body` string, so
- * the shape worth comparing across the boundary is the argument, not
- * the stringified wrapper. Casts / parens around either the call or the
+ * Peel a `JSON.stringify(x)` call down to `x`. A Lambda handler
+ * serializes its payload into the `body` string, so the shape worth
+ * comparing across the boundary is the argument, not the string. Casts / parens around either the call or the
  * argument are unwrapped. Returns the node unchanged when it isn't a
  * `JSON.stringify(...)` call.
  */
@@ -70,11 +70,10 @@ export interface ExtractionContext {
   /** Text of the thrown constructor — supplied by throwExpression only. */
   exceptionType?: string;
   /**
-   * Parameter name to call argument, when `returnedObj` is the envelope a
-   * project-local helper returns rather than one written at the call
-   * site. `return json(200, payload)` against `json(statusCode, body)`
-   * substitutes `statusCode` for `200`, so the same property extraction
-   * reads the caller's values.
+   * Parameter name to call argument, when `returnedObj` came from a
+   * helper rather than from the return site. `return json(200, payload)`
+   * against `json(statusCode, body)` binds `statusCode` to `200`, so the
+   * same property extraction reads the caller's values.
    */
   substitutions?: ReadonlyMap<string, Expression>;
 }
@@ -89,6 +88,17 @@ function substituted(value: Expression, ctx: ExtractionContext): Expression {
     return value;
   }
   return ctx.substitutions.get(value.getText()) ?? value;
+}
+
+/**
+ * The shape of an expression, reading a helper's parameters as the
+ * arguments this caller passed. `{ error: payload }` inside a helper is
+ * `{ error: "boom" }` when the caller passed "boom", at any depth.
+ */
+function shapeOf(node: Expression, ctx: ExtractionContext): TypeShape | null {
+  return ctx.substitutions === undefined
+    ? extractShape(node)
+    : extractShapeWithArguments(node, ctx.substitutions);
 }
 
 // ---------------------------------------------------------------------------
@@ -289,7 +299,7 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
                   : resolved;
               return {
                 typeText: target.getText(),
-                shape: extractShape(target),
+                shape: shapeOf(target, ctx),
               };
             }
             return { typeText: prop.getName(), shape: null };
@@ -307,13 +317,12 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
         return null;
       }
 
-      // Unwrap the serialization first, then substitute: the payload the
-      // caller passed is what pairs with a declared body, not the string
-      // the helper wraps it in.
-      const unwrapped =
+      // Unwrap the serialization first: the payload the caller passed is
+      // what pairs with a declared body, not the string the helper wraps
+      // it in.
+      const target =
         b.unwrapJsonStringify === true ? unwrapJsonStringify(val) : val;
-      const target = substituted(unwrapped, ctx);
-      return { typeText: target.getText(), shape: extractShape(target) };
+      return { typeText: target.getText(), shape: shapeOf(target, ctx) };
     }
 
     return null;
