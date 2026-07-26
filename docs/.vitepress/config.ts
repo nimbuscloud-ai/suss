@@ -136,6 +136,7 @@ export default defineConfig({
           { text: "Forward-looking backlog", link: "/internal/backlog" },
           { text: "React roadmap", link: "/internal/roadmap-react" },
           { text: "Dogfooding", link: "/internal/dogfooding" },
+          { text: "Releasing", link: "/internal/releasing" },
         ],
       },
     ],
