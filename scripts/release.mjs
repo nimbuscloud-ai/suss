@@ -5,11 +5,11 @@
 //   node scripts/release.mjs 0.2.0 --otp 123456 --dry-run
 //
 // On Actions there is no password to type: npm mints a credential from
-// the workflow's OIDC token, or falls back to the NPM_TOKEN secret. That
-// is checked before anything is written, because without it all 34
-// publishes fail with ENEEDAUTH and npm's error code alone does not say
-// which of the two is missing. --verbose passes --loglevel verbose down
-// to npm, which is the only place it accounts for the token exchange.
+// the workflow's OIDC token, and there is no stored token behind it. The
+// job's ability to mint one is checked before anything is written,
+// because without it all 34 publishes fail with ENEEDAUTH and npm's
+// error code alone does not say why. --verbose passes --loglevel verbose
+// down to npm, the only place it accounts for the token exchange.
 //
 // The 34 packages share a single version, so a release is one number
 // bumped in the root package.json and propagated by preparePublish.
@@ -267,39 +267,27 @@ function checkPublishCredential({ fatal }) {
     return;
   }
 
-  // setup-node writes this into the .npmrc it points npm at. It leaves a
-  // placeholder for steps that pass no token of their own, and an empty
-  // string for a step passing a secret the repository does not have.
-  const token = process.env.NODE_AUTH_TOKEN ?? "";
-  const haveToken = token !== "" && !/^X+(-X+)*$/.test(token);
-
   // npm mints a short-lived credential from these, one per package, and
   // only for packages that name this workflow as a trusted publisher.
-  const haveOidc =
+  // There is no token behind them, by choice.
+  if (
     process.env.ACTIONS_ID_TOKEN_REQUEST_URL !== undefined &&
-    process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN !== undefined;
-
-  if (haveToken || haveOidc) {
-    const paths = [haveOidc && "trusted publishing", haveToken && "NPM_TOKEN"];
-    console.log(`Credential: ${paths.filter(Boolean).join(", then ")}.`);
+    process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN !== undefined
+  ) {
+    console.log("Credential: trusted publishing.");
     return;
   }
 
   const message =
-    "npm has nothing to publish with, so all of it would fail with" +
-      " ENEEDAUTH.\n\n" +
-      "Give the job one of these:\n\n" +
-      "  Trusted publishing. The job needs `permissions: id-token: write`," +
-      " and each package has to name this repository and this workflow on" +
-      " npmjs.com, under the package's Settings. npm exchanges the token one" +
-      " package at a time, so every package needs its own entry.\n\n" +
-      "  An automation token. Put it in the NPM_TOKEN repository secret; the" +
-      " Publish step reads it as NODE_AUTH_TOKEN. Right now that is" +
-    `${token === "" ? " empty" : " setup-node's placeholder"}, which means` +
-    " the secret is not set.";
+    "the job cannot mint an OIDC token, so npm would have nothing to" +
+    " publish with and all of it would fail with ENEEDAUTH.\n\n" +
+    "`permissions: id-token: write` on the job is what allows it. Without" +
+    " that, GitHub sets neither ACTIONS_ID_TOKEN_REQUEST_URL nor" +
+    " ACTIONS_ID_TOKEN_REQUEST_TOKEN, and npm skips the exchange without" +
+    " saying so.";
 
   if (fatal) {
-    fail(message);
+    fail(message.charAt(0).toUpperCase() + message.slice(1));
   }
   console.log(`\nNot publishing, but note: ${message}\n`);
 }
@@ -313,15 +301,14 @@ function explainFailures(failures) {
     "\nENEEDAUTH is npm having no credential at all, not one being refused.",
   );
   if (!onActions) {
-    console.error("Run `npm login`, or put a token in NPM_TOKEN.");
+    console.error("Run `npm login` first.");
     return;
   }
   console.error(
-    "The job offers two, and neither produced anything:\n" +
-      "  Trusted publishing hands out a credential per package, and only to\n" +
-      "  packages that name this repository and workflow on npmjs.com, under\n" +
-      "  the package's Settings. One that was never set up there gets nothing.\n" +
-      "  NODE_AUTH_TOKEN comes from the NPM_TOKEN secret. Empty means unset." +
+    "Trusted publishing hands out a credential per package, and only to\n" +
+      "packages that name this repository and this workflow on npmjs.com,\n" +
+      "under the package's Settings. One never set up there gets nothing,\n" +
+      "and there is no token behind it to fall back on." +
       (verbose
         ? ""
         : "\n\nRe-run with --verbose for npm's own account of the exchange."),

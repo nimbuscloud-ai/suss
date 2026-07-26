@@ -26,29 +26,22 @@ one that would really have published them.
 
 ## How npm authenticates the publish
 
-Two ways, tried in that order.
+Trusted publishing, and nothing else. npm takes the workflow's OIDC
+token, hands it to the registry, and gets back a short-lived credential.
+Nothing is stored, and there is no automation token behind it — that is
+deliberate, so there is no long-lived write credential to leak or
+rotate.
 
-**Trusted publishing.** npm takes the workflow's OIDC token, hands it
-to the registry, and gets back a short-lived credential. Nothing is
-stored and nothing expires in someone's password manager. This is the
-one to use.
-
-**An automation token,** in the `NPM_TOKEN` repository secret. The
-Publish step reads it as `NODE_AUTH_TOKEN`, which `actions/setup-node`
-has already written into the `.npmrc` it points npm at. This is the
-fallback for packages not yet converted.
-
-If neither is in place the release stops before it writes anything and
-names which one is missing. Both being absent is what produced
-`ENEEDAUTH` on all 34 packages in the 0.0.2 run — npm having no
-credential at all, rather than one being refused.
+If the job cannot mint an OIDC token at all, the release stops before it
+writes anything. That is what `ENEEDAUTH` on all 34 packages meant in
+the 0.0.2 run: npm having no credential, rather than one being refused.
 
 ## Setting up trusted publishing
 
 The exchange happens **once per package**, against a trusted publisher
 each package names for itself, at
-`POST /-/npm/v1/oidc/token/exchange/package/<name>`. A package that has
-not been set up gets nothing back, npm falls through to the token, and
+`POST /-/npm/v1/oidc/token/exchange/package/{name}`. A package that has
+not been set up gets nothing back, and with no token to fall back on,
 that package alone fails. There is no organization-wide setting and no
 bulk UI, so this is 34 passes.
 
@@ -83,16 +76,17 @@ to supply are already there:
 
 Self-hosted runners are not supported.
 
-### Once every package is across
-
 npm attaches [provenance](https://docs.npmjs.com/generating-provenance-statements)
 by itself when it publishes this way, so nothing passes `--provenance`.
 
-Then tighten the other door: **Settings → Publishing access → Require
-two-factor authentication and disallow tokens**, and revoke the
-automation token. That setting does not affect trusted publishing,
-which is not token authentication. Do it only after a real release has
-gone out over OIDC — a dry run does not exercise the exchange.
+### Closing the other door
+
+Once a package is across, set **Settings → Publishing access → Require
+two-factor authentication and disallow tokens** on it. That setting does
+not affect trusted publishing, which is not token authentication, and it
+means a stolen token cannot publish even if one is minted later. Do it
+only after a real release has gone out over OIDC — a dry run does not
+exercise the exchange.
 
 ## When a release fails
 
