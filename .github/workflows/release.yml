@@ -103,13 +103,24 @@ jobs:
             --verbose \
             ${{ inputs.dry-run && '--dry-run' || '' }}
 
-      - name: Commit the version bump and tag it
+      - name: Commit the version bump and push it with its tag
         if: ${{ !inputs.dry-run }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          git commit -am "chore: release ${VERSION}"
-          git tag "v${VERSION}"
-          git push --follow-tags origin HEAD:${{ github.ref_name }}
+          # --no-verify on both. The hooks run typecheck, the whole test
+          # suite and lint-staged, which this job has already done as its
+          # own steps; without it the release runs them a second time.
+          git commit --no-verify -am "chore: release ${VERSION}"
+          # Annotated rather than lightweight, because --follow-tags
+          # carries only annotated tags. A lightweight one stayed on the
+          # runner while the commit went out, and the release note below
+          # had no tag to hang itself on. Naming the tag in the push means
+          # it no longer turns on that distinction either way, and
+          # --atomic means the commit and the tag land together or neither
+          # does, so a release is never half-recorded.
+          git tag -a "v${VERSION}" -m "v${VERSION}"
+          git push --no-verify --atomic origin \
+            "HEAD:${{ github.ref_name }}" "v${VERSION}"
 
       - name: Draft a release note
         if: ${{ !inputs.dry-run }}
