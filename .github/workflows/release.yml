@@ -1,0 +1,107 @@
+name: Release
+
+# Publishing from here avoids the one-time password problem. npm's
+# trusted publishing hands this workflow a short-lived credential over
+# OIDC, so no token is stored and no code has to be typed in time.
+#
+# Each package has to name this repository and this workflow as its
+# trusted publisher once, on npmjs.com under the package's Settings.
+# Until that is done for a package, its publish step fails and the run
+# reports it; the rest still go out.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: What to release
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+      version:
+        description: An exact version, if you would rather name one (overrides the choice above)
+        required: false
+        type: string
+      dry-run:
+        description: List what would publish, and publish nothing
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      # OIDC needs this to mint the credential npm checks.
+      id-token: write
+      # The version bump and its tag are pushed back to the branch.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A shallow clone cannot be committed back to.
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or newer, which is ahead of
+      # what any Node release currently bundles.
+      - name: Use an npm that can publish over OIDC
+        run: npm install --global npm@latest
+
+      - run: npm ci
+
+      - name: Check every package is ready to publish
+        run: npm run check:publish
+
+      - run: npm run build
+
+      - name: Run the tests
+        run: npm test
+
+      - name: Set the committer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Publish
+        id: publish
+        env:
+          # Only read when trusted publishing has not been set up for a
+          # package. It needs an account whose two-factor setting is
+          # "authorization only", since a token cannot answer a password
+          # prompt.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          node scripts/release.mjs \
+            "${{ inputs.version || inputs.bump }}" \
+            --skip-build \
+            ${{ inputs.dry-run && '--dry-run' || '' }}
+
+      - name: Commit the version bump and tag it
+        if: ${{ !inputs.dry-run }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          git commit -am "chore: release ${VERSION}"
+          git tag "v${VERSION}"
+          git push --follow-tags origin HEAD:${{ github.ref_name }}
+
+      - name: Draft a release note
+        if: ${{ !inputs.dry-run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --generate-notes \
+            --draft

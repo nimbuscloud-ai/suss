@@ -3,10 +3,14 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
-    // storybook-integration.test runs the full extract + stub + check
-    // pipeline for each case — ~3s locally, several seconds slower on CI
-    // runners. Default 5s timeout busts on CI; 30s gives headroom.
-    testTimeout: 30_000,
+    // The storybook and prisma tests run the whole extract, contract, and
+    // check pipeline once per case. A few seconds each on their own, over
+    // a minute with v8 coverage instrumentation on and every test file
+    // competing for cores, which is the slowest this ever gets.
+    testTimeout: 180_000,
+    // The prisma tests generate a client in beforeAll, which outruns the
+    // 10s default hook timeout on a loaded machine.
+    hookTimeout: 180_000,
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],

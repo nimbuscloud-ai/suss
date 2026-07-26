@@ -14,15 +14,15 @@ import { parseArgs } from "node:util";
 import { check, checkDir } from "./check.js";
 import { contract } from "./contract.js";
 import { extract } from "./extract.js";
-import { init } from "./init.js";
+import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 
 import type { ContractSource } from "./contract.js";
 
 export const USAGE = `
 Usage:
-  suss init [directory]
-  suss extract [-p <tsconfig>] -f <framework> [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
+  suss init [directory] [--plain]
+  suss extract [-p <tsconfig> | --dir <directory>] -f <framework> [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss inspect <summaries.json>
   suss inspect --dir <directory>
   suss inspect --diff <before.json> <after.json>
@@ -31,7 +31,9 @@ Usage:
   suss contract --from <source> <spec> [-o <output.json>]
 
 Commands:
-  init      Work out which packs this project needs, and print the commands
+  init      Work out which packs this project needs and offer to set them up.
+            --plain prints the commands instead of asking. Piped or in CI,
+            it prints either way.
   extract   Read your source and describe what each boundary does
   inspect   Read a summaries file back in a form meant for people
   check     Compare two sides of a boundary and report what disagrees
@@ -90,7 +92,7 @@ export async function runCli(args: string[]): Promise<number> {
   const command = args[0];
 
   if (command === "init") {
-    return runInit(args.slice(1));
+    return await runInit(args.slice(1));
   }
   if (command === "extract") {
     return await runExtract(args.slice(1));
@@ -106,15 +108,19 @@ export async function runCli(args: string[]): Promise<number> {
   }
 
   process.stderr.write(
-    `There is no "${command}" command. suss has extract, inspect, check, and contract.\n`,
+    `There is no "${command}" command. suss has init, extract, inspect, check, and contract.\n`,
   );
   process.stderr.write(`${USAGE}\n`);
   return 1;
 }
 
-function runInit(args: string[]): number {
-  init(args[0] !== undefined ? { dir: args[0] } : {});
-  return 0;
+async function runInit(args: string[]): Promise<number> {
+  const plain = args.includes("--plain");
+  const dir = args.find((a) => !a.startsWith("-"));
+  return await initInteractive({
+    ...(dir !== undefined ? { dir } : {}),
+    ...(plain ? { plain: true } : {}),
+  });
 }
 
 async function runExtract(args: string[]): Promise<number> {
@@ -122,6 +128,7 @@ async function runExtract(args: string[]): Promise<number> {
     args,
     options: {
       project: { type: "string", short: "p" },
+      dir: { type: "string" },
       framework: { type: "string", short: "f", multiple: true },
       output: { type: "string", short: "o" },
       gaps: { type: "string" },
@@ -166,6 +173,11 @@ async function runExtract(args: string[]): Promise<number> {
     return 1;
   }
 
+  if (values.dir !== undefined && !existsSync(path.resolve(values.dir))) {
+    process.stderr.write(`No directory at ${path.resolve(values.dir)}.\n`);
+    return 1;
+  }
+
   // Files can come from --files or positionals
   const files =
     values.files !== undefined && values.files.length > 0
@@ -176,6 +188,7 @@ async function runExtract(args: string[]): Promise<number> {
 
   await extract({
     ...(tsconfig !== undefined ? { tsconfig } : {}),
+    ...(values.dir !== undefined ? { dir: values.dir } : {}),
     frameworks,
     ...(files !== undefined ? { files } : {}),
     ...(values.output !== undefined ? { output: values.output } : {}),

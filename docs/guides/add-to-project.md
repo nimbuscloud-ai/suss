@@ -24,47 +24,80 @@ The output of (2) is a JSON file. The input to (3) is one or more JSON
 files. (2) is useful on its own if all you want is a structured
 description of what your handlers do.
 
-## Let suss work out what you need
+## Let suss set it up
 
 ```bash
 npx @suss/cli init
 ```
 
-It reads your `package.json` and looks for schemas and templates on
-disk, then prints the packs to install and the commands to run:
+It reads your `package.json`, looks for schemas and templates on disk,
+and offers to do the rest:
 
 ```
-✓ Found 3 things to read in services/auth
-
-  Your code
-    aws-sqs          @aws-sdk/client-sqs in dependencies
-    aws-lambda       @types/aws-lambda in devDependencies
-
-  Declared contracts
-    cloudformation   a SAM template at template.yaml
-
-1. Install the packs
-
-   npm install --save-dev @suss/cli @suss/framework-aws-sqs @suss/framework-aws-lambda @suss/contract-cloudformation
-
-2. Read each side into one folder
-
-   suss extract -f aws-sqs -f aws-lambda -o summaries/code.json
-   suss contract --from cloudformation template.yaml -o summaries/cloudformation.json
-
-3. Compare them
-
-   suss check --dir summaries/
-
-4. Decide what to do about the findings
-   ...
-
-5. Run it on every change
-   ...
+┌  suss init
+│
+◇  Found ────────────────────────────────────────────╮
+│                                                    │
+│  aws-sqs          @aws-sdk/client-sqs in deps      │
+│  aws-lambda       @types/aws-lambda in devDeps     │
+│  cloudformation   a SAM template at template.yaml  │
+│                                                    │
+├────────────────────────────────────────────────────╯
+│
+◇  Install 4 packages as devDependencies?
+│  ● Yes / ○ No
+│
+◇  Installed 4 packages
+│
+◇  Read the code now and compare what it finds?
+│  ● Yes / ○ No
+│
+◇  suss extract -f aws-sqs -f aws-lambda -o summaries/code.json
+◇  suss contract --from cloudformation template.yaml -o summaries/cloudformation.json
+◇  suss check --dir summaries/
+│
+◆  Add a .sussignore for findings you decide to accept?
+│  ○ Yes / ● No
+│
+◆  Add a GitHub Actions workflow that runs this on every pull request?
+│  ○ Yes / ● No
+│
+└  Done. Re-run `suss check --dir summaries/` whenever code changes.
 ```
 
-It writes nothing and installs nothing. The rest of this page is the
-same thing done by hand.
+Installing defaults to yes. Writing `.sussignore` and the CI workflow
+both default to no, and nothing reaches disk unless you accept it. If
+the install fails, it stops there, prints what npm said, and leaves the
+command behind rather than carrying on.
+
+### In a monorepo
+
+At a repo root it reads the workspace declaration, from `package.json`
+workspaces, `pnpm-workspace.yaml`, `lerna.json`, or `turbo.json`, then
+asks which packages to set up:
+
+```
+◆  Which should suss set up?
+│  ◼ @acme/auth        aws-lambda, cloudformation
+│  ◼ @acme/web         react, apollo-client
+│  ◻ @acme/tooling     node
+```
+
+Worth knowing before you check several services at once: suss tells
+HTTP boundaries apart by method and path alone, so two services both
+serving `GET /users` read as one. See
+[Compatibility](/reference/compatibility#several-services-in-one-folder).
+
+### Without a terminal
+
+Piped, or in CI, or with `--plain`, it prints the commands instead of
+asking:
+
+```bash
+npx @suss/cli init --plain
+```
+
+The rest of this page is the same thing done by hand.
 
 ## Install the pieces you need
 
