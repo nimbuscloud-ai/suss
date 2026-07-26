@@ -16,10 +16,10 @@ name: Release
 #   Allowed actions       npm publish
 #
 # A package that has not been set up that way gets no credential and
-# fails on its own; the rest still go out. NPM_TOKEN covers the ones not
-# converted yet. If neither is in place the release stops before it
-# writes anything, rather than reporting ENEEDAUTH once per package and
-# leaving the cause to guess at.
+# fails on its own; the rest still go out. There is no token to fall back
+# on, so if the job cannot mint an OIDC token at all the release stops
+# before it writes anything, rather than reporting ENEEDAUTH once per
+# package and leaving the cause to guess at.
 #
 # npm attaches provenance by itself when it publishes this way, so
 # nothing here passes --provenance.
@@ -90,12 +90,6 @@ jobs:
 
       - name: Publish
         id: publish
-        env:
-          # Only read when trusted publishing has not been set up for a
-          # package. It needs an account whose two-factor setting is
-          # "authorization only", since a token cannot answer a password
-          # prompt.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           node scripts/release.mjs \
             "${{ inputs.version || inputs.bump }}" \
