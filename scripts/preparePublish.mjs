@@ -2,7 +2,7 @@
 // preparePublish.mjs — put every workspace package into a publishable
 // state, and keep them there.
 //
-// Three things have to hold before `npm publish` does the right thing:
+// Four things have to hold before `npm publish` does the right thing:
 //
 //   1. No package carries `private: true`, which npm refuses to publish.
 //   2. Every package declares `publishConfig.access: "public"`, because a
@@ -13,8 +13,17 @@
 //      but a published package carrying it would install whatever the
 //      latest release happens to be, including one built against a
 //      different IR.
+//   4. Cross-package peer dependencies carry a caret on that version.
+//      A peer is resolved by whoever installs the package rather than by
+//      the package, and since npm 7 it is installed rather than merely
+//      warned about, so the range is a claim about what this release
+//      works against and npm will act on it. "^" is that claim: it is
+//      how the third-party peers here are already written, and it widens
+//      on its own as the version grows. Below 0.1.0 it widens to
+//      nothing — ^0.0.2 is >=0.0.2 <0.0.3, one version — which is the
+//      right reading of a set that has promised no stability yet.
 //
-// Run with --check to assert all three without writing, which is what
+// Run with --check to assert all four without writing, which is what
 // CI does. Run without arguments to fix them.
 
 import fs from "node:fs";
@@ -61,7 +70,7 @@ function prepare(manifest, { write }) {
   }
 
   if (pkg.version !== VERSION) {
-    changes.push(`version ${pkg.version} should be ${VERSION}`);
+    changes.push(`version ${pkg.version} -> ${VERSION}`);
     if (write) {
       pkg.version = VERSION;
     }
@@ -74,18 +83,24 @@ function prepare(manifest, { write }) {
     }
   }
 
-  for (const field of ["dependencies", "peerDependencies"]) {
+  // A dependency is resolved for the consumer, so it names the one
+  // version this release was built against. A peer is resolved by the
+  // consumer, so it names the range this release works against.
+  for (const [field, want] of [
+    ["dependencies", VERSION],
+    ["peerDependencies", `^${VERSION}`],
+  ]) {
     const deps = pkg[field];
     if (deps === undefined) {
       continue;
     }
     for (const [name, range] of Object.entries(deps)) {
-      if (!name.startsWith("@suss/") || range === VERSION) {
+      if (!name.startsWith("@suss/") || range === want) {
         continue;
       }
-      changes.push(`${field}.${name} is "${range}"`);
+      changes.push(`${field}.${name} ${range} -> ${want}`);
       if (write) {
-        deps[name] = VERSION;
+        deps[name] = want;
       }
     }
   }
@@ -109,7 +124,8 @@ const LICENSE = fs.readFileSync(path.join(ROOT, "LICENSE"), "utf8");
 for (const manifest of manifests) {
   const licenseFile = path.join(path.dirname(manifest), "LICENSE");
   const licensed =
-    fs.existsSync(licenseFile) && fs.readFileSync(licenseFile, "utf8") === LICENSE;
+    fs.existsSync(licenseFile) &&
+    fs.readFileSync(licenseFile, "utf8") === LICENSE;
   if (!licensed) {
     if (check) {
       problems += 1;

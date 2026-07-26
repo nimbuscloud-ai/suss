@@ -4,6 +4,13 @@
 //   node scripts/release.mjs patch --otp 123456
 //   node scripts/release.mjs 0.2.0 --otp 123456 --dry-run
 //
+// On Actions there is no password to type: npm mints a credential from
+// the workflow's OIDC token, or falls back to the NPM_TOKEN secret. That
+// is checked before anything is written, because without it all 34
+// publishes fail with ENEEDAUTH and npm's error code alone does not say
+// which of the two is missing. --verbose passes --loglevel verbose down
+// to npm, which is the only place it accounts for the token exchange.
+//
 // The 34 packages share a single version, so a release is one number
 // bumped in the root package.json and propagated by preparePublish.
 //
@@ -37,6 +44,7 @@ const { values, positionals } = parseArgs({
     otp: { type: "string" },
     "dry-run": { type: "boolean" },
     "skip-build": { type: "boolean" },
+    verbose: { type: "boolean" },
   },
   allowPositionals: true,
 });
@@ -45,6 +53,10 @@ const bump = positionals[0];
 const otp = values.otp;
 const dryRun = values["dry-run"] === true;
 const skipBuild = values["skip-build"] === true;
+const verbose = values.verbose === true;
+
+/** Whether this is the release workflow rather than someone's terminal. */
+const onActions = process.env.GITHUB_ACTIONS === "true";
 
 if (bump === undefined) {
   fail(
@@ -59,6 +71,12 @@ const next = resolveVersion(current, bump);
 console.log(`${current} -> ${next}\n`);
 
 requireCleanTree();
+
+// Before 34 manifests are rewritten and 34 publishes are attempted, and
+// while the message can still name the one thing that is missing. A dry
+// run reports the same thing without stopping, so a rehearsal that says
+// 34 packages would publish is not one that would have failed on auth.
+checkPublishCredential({ fatal: !dryRun });
 
 // The version lives in the root manifest; preparePublish copies it to
 // every package and repoints their dependencies on each other.
@@ -114,10 +132,32 @@ for (const { name, message } of failures) {
 }
 
 if (failures.length > 0) {
+  // The summary above is a grep for npm's error code, which is enough
+  // when publishes fail one at a time for their own reasons. When they
+  // all fail the same way the cause is upstream of any one package, and
+  // the code on its own says nothing, so one transcript goes out whole.
+  const [first] = failures;
+  console.error(`\n--- npm output for ${first.name} ---`);
+  console.error(first.output.trimEnd());
+  console.error(`--- end ${first.name} ---`);
+  if (failures.length > 1) {
+    console.error(
+      failures.every((f) => f.message === first.message)
+        ? `The other ${failures.length - 1} failed the same way.`
+        : `${failures.length - 1} others failed, not all alike; the codes are above.`,
+    );
+  }
+
+  explainFailures(failures);
+
   console.error(
     `\n${failures.length} of ${pending.length} did not publish. The ones that` +
-      ` did are on the registry at ${next}.\nRe-run the same command with a` +
-      " fresh --otp; it will pick up only what is left.",
+      ` did are on the registry at ${next}.\n${
+        onActions
+          ? "Re-run this workflow; it will pick up only what is left."
+          : "Re-run the same command with a fresh --otp; it will pick up only" +
+            " what is left."
+      }`,
   );
   process.exit(1);
 }
@@ -215,6 +255,79 @@ function isPublished(name, version) {
   }
 }
 
+/**
+ * Whether npm has any way to prove who it is, and stop now if it has none.
+ *
+ * Only decidable on Actions. On a laptop the credential lives in
+ * ~/.npmrc, which this cannot read the way npm layers it, so npm stays
+ * the judge there.
+ */
+function checkPublishCredential({ fatal }) {
+  if (!onActions) {
+    return;
+  }
+
+  // setup-node writes this into the .npmrc it points npm at. It leaves a
+  // placeholder for steps that pass no token of their own, and an empty
+  // string for a step passing a secret the repository does not have.
+  const token = process.env.NODE_AUTH_TOKEN ?? "";
+  const haveToken = token !== "" && !/^X+(-X+)*$/.test(token);
+
+  // npm mints a short-lived credential from these, one per package, and
+  // only for packages that name this workflow as a trusted publisher.
+  const haveOidc =
+    process.env.ACTIONS_ID_TOKEN_REQUEST_URL !== undefined &&
+    process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN !== undefined;
+
+  if (haveToken || haveOidc) {
+    const paths = [haveOidc && "trusted publishing", haveToken && "NPM_TOKEN"];
+    console.log(`Credential: ${paths.filter(Boolean).join(", then ")}.`);
+    return;
+  }
+
+  const message =
+    "npm has nothing to publish with, so all of it would fail with" +
+      " ENEEDAUTH.\n\n" +
+      "Give the job one of these:\n\n" +
+      "  Trusted publishing. The job needs `permissions: id-token: write`," +
+      " and each package has to name this repository and this workflow on" +
+      " npmjs.com, under the package's Settings. npm exchanges the token one" +
+      " package at a time, so every package needs its own entry.\n\n" +
+      "  An automation token. Put it in the NPM_TOKEN repository secret; the" +
+      " Publish step reads it as NODE_AUTH_TOKEN. Right now that is" +
+    `${token === "" ? " empty" : " setup-node's placeholder"}, which means` +
+    " the secret is not set.";
+
+  if (fatal) {
+    fail(message);
+  }
+  console.log(`\nNot publishing, but note: ${message}\n`);
+}
+
+/** Say what a wall of identical failures is actually about. */
+function explainFailures(failures) {
+  if (!failures.every(({ message }) => message.includes("ENEEDAUTH"))) {
+    return;
+  }
+  console.error(
+    "\nENEEDAUTH is npm having no credential at all, not one being refused.",
+  );
+  if (!onActions) {
+    console.error("Run `npm login`, or put a token in NPM_TOKEN.");
+    return;
+  }
+  console.error(
+    "The job offers two, and neither produced anything:\n" +
+      "  Trusted publishing hands out a credential per package, and only to\n" +
+      "  packages that name this repository and workflow on npmjs.com, under\n" +
+      "  the package's Settings. One that was never set up there gets nothing.\n" +
+      "  NODE_AUTH_TOKEN comes from the NPM_TOKEN secret. Empty means unset." +
+      (verbose
+        ? ""
+        : "\n\nRe-run with --verbose for npm's own account of the exchange."),
+  );
+}
+
 /** Whether this account still needs a password on top of its token. */
 function requiresOtp() {
   try {
@@ -267,6 +380,12 @@ function publishOne({ dir, name }) {
   if (otp !== undefined) {
     publishArgs.push("--otp", otp);
   }
+  // npm accounts for the OIDC token exchange at verbose and nowhere else,
+  // so this is the only way to see why it came back with nothing. The
+  // output is captured and printed only on failure, so it costs nothing.
+  if (verbose) {
+    publishArgs.push("--loglevel", "verbose");
+  }
 
   return new Promise((resolve) => {
     const child = spawn("npm", publishArgs, { cwd: dir, stdio: "pipe" });
@@ -278,7 +397,7 @@ function publishOne({ dir, name }) {
       output += String(d);
     });
     child.on("error", (err) =>
-      resolve({ name, ok: false, message: String(err) }),
+      resolve({ name, ok: false, message: String(err), output: String(err) }),
     );
     child.on("close", (code) => {
       if (code === 0) {
@@ -301,6 +420,7 @@ function publishOne({ dir, name }) {
         name,
         ok: false,
         message: line.replace(/^npm error /, "").trim(),
+        output,
       });
     });
   });
