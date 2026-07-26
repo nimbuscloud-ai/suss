@@ -2,7 +2,7 @@
 // preparePublish.mjs — put every workspace package into a publishable
 // state, and keep them there.
 //
-// Three things have to hold before `npm publish` does the right thing:
+// Four things have to hold before `npm publish` does the right thing:
 //
 //   1. No package carries `private: true`, which npm refuses to publish.
 //   2. Every package declares `publishConfig.access: "public"`, because a
@@ -13,8 +13,14 @@
 //      but a published package carrying it would install whatever the
 //      latest release happens to be, including one built against a
 //      different IR.
+//   4. Cross-package peer dependencies do the opposite and stay at "*".
+//      A peer is resolved by whoever installs the package, not by the
+//      package, so pinning one to the version being released says the
+//      consumer has to be on that exact version too. For a set that all
+//      moves together that turns ordinary drift into an unresolvable
+//      peer conflict, where "*" leaves the choice where it belongs.
 //
-// Run with --check to assert all three without writing, which is what
+// Run with --check to assert all four without writing, which is what
 // CI does. Run without arguments to fix them.
 
 import fs from "node:fs";
@@ -61,7 +67,7 @@ function prepare(manifest, { write }) {
   }
 
   if (pkg.version !== VERSION) {
-    changes.push(`version ${pkg.version} should be ${VERSION}`);
+    changes.push(`version ${pkg.version} -> ${VERSION}`);
     if (write) {
       pkg.version = VERSION;
     }
@@ -74,18 +80,24 @@ function prepare(manifest, { write }) {
     }
   }
 
-  for (const field of ["dependencies", "peerDependencies"]) {
+  // A dependency is resolved for the consumer, so it names the version
+  // this release was built against. A peer is resolved by the consumer,
+  // so it stays open.
+  for (const [field, want] of [
+    ["dependencies", VERSION],
+    ["peerDependencies", "*"],
+  ]) {
     const deps = pkg[field];
     if (deps === undefined) {
       continue;
     }
     for (const [name, range] of Object.entries(deps)) {
-      if (!name.startsWith("@suss/") || range === VERSION) {
+      if (!name.startsWith("@suss/") || range === want) {
         continue;
       }
-      changes.push(`${field}.${name} is "${range}"`);
+      changes.push(`${field}.${name} ${range} -> ${want}`);
       if (write) {
-        deps[name] = VERSION;
+        deps[name] = want;
       }
     }
   }
