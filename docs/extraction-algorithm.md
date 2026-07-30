@@ -32,9 +32,9 @@ For each code unit, extraction runs in five composable steps:
   <text class="axis" x="348" y="181" text-anchor="start">for each one</text>
 
   <rect class="box" x="140" y="192" width="380" height="130" rx="6" />
-  <text class="label" x="330" y="212" text-anchor="middle">2. Collect the branches above it</text>
-  <text class="label" x="330" y="232" text-anchor="middle">3. Collect the early returns before it</text>
-  <text class="note" x="330" y="250" text-anchor="middle">both walk the tree and nothing else</text>
+  <text class="label" x="330" y="212" text-anchor="middle">2. Enumerate every path from entry to it</text>
+  <text class="label" x="330" y="232" text-anchor="middle">3. Read the conditions along each path</text>
+  <text class="note" x="330" y="250" text-anchor="middle">a pure walk of the statement tree, one branch per path</text>
   <line class="seam" x1="160" y1="262" x2="500" y2="262" />
   <text class="label" x="330" y="282" text-anchor="middle">4. Turn each condition into a predicate</text>
   <text class="note" x="330" y="299" text-anchor="middle">the only step that asks the type checker anything,</text>
@@ -51,7 +51,9 @@ Steps 2 and 3 are pure AST traversal, no framework knowledge, no symbol resoluti
 
 Step 4 is where symbol resolution kicks in via ts-morph's type checker. It's the most language-specific piece and the most expensive in terms of compiler calls.
 
-Each step is a separate function in its own file (`branches.ts`, `earlyReturns.ts`, `predicates.ts`, `subjects.ts`, `terminals.ts`). They compose, but they don't call each other directly, composition happens at a higher level.
+Each step lives in its own file (`paths/pathConditions.ts` for the path engine, `conditions.ts` for the expression-level walker it composes, `predicates.ts`, `subjects.ts`, `terminals/`). They compose, but they don't call each other directly, composition happens in `assembly.ts`.
+
+This document covers per-function extraction. The whole-program passes that run after it — reachable closure, re-throw enrichment, boundary effects — are rules over a shared fact database, documented in [`internal/facts-and-rules.md`](internal/facts-and-rules.md).
 
 ## Step 1: `findTerminals`
 
@@ -101,9 +103,9 @@ Response bodies and return values are extracted into `TypeShape` (see `ir-refere
 
 **Recursion and cycles.** Both the type-checker walk and the AST walker bound recursion: the type walker caps at depth 6 and tracks already-expanded type identities; the AST walker caps at 8 hops and tracks node identities. Cyclic `const a = a` (and deeper variants) terminate at a `ref`.
 
-## Steps 2+3, primary engine: CFG path conditions
+## Steps 2+3: CFG path conditions
 
-Steps 2 and 3 are computed by the CFG path engine (`paths/pathConditions.ts`) whenever the function's unit-level statement flow is *structured* — no `switch`, `try`, labels, `break`, or `continue` (nested-callback internals don't count; they're covered by the expression-level walk). The engine enumerates every entry→terminal control-flow path and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each carrying its true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps (see decision #56 in `internal/status.md`):
+Steps 2 and 3 are computed by the path engine (`paths/pathConditions.ts`) — the only condition engine. It enumerates every entry→terminal control-flow path over the function's statement flow and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each carrying its true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps (see decisions #56–#59 in `internal/status.md`):
 
 - `if (a) { if (b) return X; } Y` → Y gets the paths `[¬a]` and `[a, ¬b]` — never a fabricated `¬a ∧ ¬b` or an empty list;
 - sibling guards inside a block gate their tails (`if (a) { if (b) return X; T }` → T gets `[a, ¬b]`);
@@ -111,117 +113,24 @@ Steps 2 and 3 are computed by the CFG path engine (`paths/pathConditions.ts`) wh
 - terminals inside loops carry an opaque "some iteration" condition and post-loop terminals an opaque "loop exited" negation — quantified-over-iterations facts are not statically decidable, so the engine under-specifies rather than fabricates;
 - dead-code terminals (no entry path) produce no transitions.
 
-Expression-level branching *below* a statement (ternaries, `&&`/`||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker, preserving the legacy composition order — on shapes the legacy collectors handled soundly, condition lists (and transition IDs) are byte-identical.
+Expression-level branching *below* a statement (ternaries, `&&`/`||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker in `conditions.ts` — the path engine walks statements, the walker covers the expression tree beneath them.
 
-Functions with unstructured flow, and functions exceeding the path budget, fall back to the legacy collectors below. `SUSS_PATH_ENGINE=legacy` forces the fallback everywhere (escape hatch). The engine's fidelity is verified mechanically by the differential fuzzer (`tools/differential`; see [`internal/differential-fuzzing.md`](internal/differential-fuzzing.md)).
+The engine's fidelity is verified mechanically by the differential fuzzer (`tools/differential`; see [`internal/differential-fuzzing.md`](internal/differential-fuzzing.md)).
 
-## Step 2 (legacy fallback): `collectAncestorBranches`
+### What the engine models
 
-**Input:** a terminal AST node + the function root
-**Output:** `AncestorBranch[]`, ordered outermost to innermost
+The whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), all loop forms, `try`/`catch` (plus `finally` when it's pure cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. Two constructs deliberately abstain rather than claim:
 
-Walk from the terminal upward to the function root. At each ancestor, check whether it's a branching construct; if so, record which branch the terminal is in.
+- **Loops.** Whether a condition held *on some iteration* is not statically decidable, so in-loop terminals carry an opaque "some iteration of:" condition and post-loop terminals an opaque "loop exited" negation — under-specified, never fabricated.
+- **Catch blocks.** Which statement threw is not statically decidable, so catch-body terminals carry a single opaque `catch` condition (`source: "catchBlock"`).
 
-```
-collectAncestorBranches(terminal, functionRoot):
-    branches = []
-    current = terminal
-    while current !== functionRoot:
-        parent = current.getParent()
-        if parent is null: break
+### Declined shapes degrade, never lie
 
-        if parent is IfStatement:
-            thenBlock = parent.getThenStatement()
-            elseBlock = parent.getElseStatement()
-            if current is inside thenBlock:
-                branches.unshift({ kind: "if", branch: "then", condition: parent.getExpression() })
-            else if elseBlock && current is inside elseBlock:
-                branches.unshift({ kind: "if", branch: "else", condition: parent.getExpression() })
+A few shapes the engine does not model: labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, and functions exceeding the 256-path budget. There is no second engine behind these. They **degrade**: each terminal keeps its enclosure conditions (the ancestor branches it sits inside, which gate it regardless of how the flow weaves) plus one opaque `unmodeled control flow (<reason>)` conjunct, so the transition honestly abstains from claiming a complete condition set. Under-specification over occasionally-wrong claims — correctness principle #2.
 
-        else if parent is CaseClause:
-            switchStmt = parent.getParent().getParent()
-            if switchStmt is SwitchStatement:
-                branches.unshift({
-                    kind: "switch",
-                    caseExpression: parent.getExpressions()[0],
-                    switchExpression: switchStmt.getExpression(),
-                })
+### Below statements: the expression-level walker
 
-        else if parent is CatchClause:
-            branches.unshift({ kind: "catch", branch: "catch", condition: null })
-
-        else if parent is ConditionalExpression:  // ternary
-            if current === parent.getWhenTrue():
-                branches.unshift({ kind: "ternary", branch: "then", condition: parent.getCondition() })
-            else if current === parent.getWhenFalse():
-                branches.unshift({ kind: "ternary", branch: "else", condition: parent.getCondition() })
-
-        else if parent is BinaryExpression with operator "&&" or "||":
-            // Left side is an implicit condition on the right side
-            if current === parent.getRight():
-                polarity = (operator === "&&") ? "positive" : "negative"
-                branches.unshift({
-                    kind: "logical",
-                    branch: polarity === "positive" ? "then" : "else",
-                    condition: parent.getLeft(),
-                })
-
-        current = parent
-
-    return branches
-```
-
-**Edge cases to handle:**
-
-- **`if` without `else`**: terminal in the then-branch gets one positive condition. Terminal *after* the if gets no ancestor condition here, it gets an early return condition via Step 3.
-- **Switch fallthrough**: if a `case` has no `break`, the terminal could be reached from the previous case. For v0, record each case independently; fallthrough handling is a v1 concern.
-- **`try`/`finally`**: a terminal in the `try` block executes unconditionally (no condition added). A terminal in `finally` executes always. A terminal in `catch` records `kind: "catch"` with a null condition (polarity is positive, the catch fired).
-- **Optional chaining** (`a?.b.c`), treat as an implicit nullish check: right side runs only if left is non-null.
-- **Nested branches**: the algorithm walks all the way to the function root, so `if (a) { if (b) { terminal } }` produces two entries, outermost first.
-
-**Why this is pure AST walk:** no symbol table access, no type checking, no framework patterns. This function takes two AST nodes and returns a list of nodes, nothing else. It can be tested with fixture functions that don't even need to compile, and its failure modes are easy to reason about.
-
-## Step 3 (legacy fallback): `collectEarlyReturns`
-
-**Input:** a terminal AST node + the function root
-**Output:** `EarlyReturn[]`
-
-Find all `if (cond) return/throw` statements that appear *before* the terminal's containing statement. Each one contributes an implicit **negative** condition to the terminal, the terminal is only reached if the early return's condition was false.
-
-```
-collectEarlyReturns(terminal, functionRoot):
-    terminalStatement = getContainingStatement(terminal)
-    if terminalStatement is null: return []
-
-    body = functionRoot.getBody()
-    if body is null or not a Block: return []
-
-    statements = body.getStatements()
-    terminalIndex = statements.indexOf(terminalStatement)
-    if terminalIndex === -1: return []  // terminal is nested, handled by ancestors
-
-    earlyReturns = []
-    for i from 0 to terminalIndex - 1:
-        stmt = statements[i]
-        if stmt is IfStatement:
-            thenBlock = stmt.getThenStatement()
-            if blockContainsReturnOrThrow(thenBlock):
-                earlyReturns.push({
-                    condition: stmt.getExpression(),
-                    kind: blockContainsReturn(thenBlock) ? "return" : "throw",
-                    polarity: "negative",
-                })
-    return earlyReturns
-```
-
-**Edge cases (as handled by this legacy fallback — the CFG path engine above handles all four soundly and is primary):**
-
-- **Multiple guards**, `if (!id) throw; if (!user) throw; return user;` contributes two early return conditions (both negative) to the final return. Both conditions must be false for the terminal to be reached. (Same result under the path engine.)
-- **Nested early returns**, `if (a) { if (b) return; }` — the legacy collector records the guard structure conjunctively; the path engine gives later terminals one branch per real path instead.
-- **Early returns in else branches**, `if (a) { ... } else { return; }` — invisible to both legacy collectors for *later* terminals; the path engine gates them on `a`.
-- **Returns inside loops**, `for (...) { if (cond) return; }` — ignored by the legacy collector; the path engine opacifies (an explicit opaque loop condition, never a fabricated one).
-
-**Why this is separate from ancestor branches:** the two answer different questions. Ancestor branches ask "what conditions gate the branch I'm in?" Early returns ask "what conditions gated the flow *before* I got here?" Both apply to the same terminal simultaneously.
+`collectAncestorConditionInfosBelow` (`conditions.ts`) walks from a terminal up to its containing statement and records the expression-level branching in between: ternary arms, `&&`/`||` short-circuits, and conditions inside nested callbacks that the statement-level enumeration doesn't see. The path engine appends these to each path's condition list. Same purity rule as the engine: AST only, no symbol table, no framework knowledge.
 
 ## Step 4a: `parseConditionExpression`
 
@@ -382,56 +291,33 @@ resolveSubject(expr):
 
 ## Step 5: Assembly
 
-Compose the outputs of steps 1-4 into a list of `RawBranch`:
+Compose the outputs of steps 1-4 into a list of `RawBranch` (`assembly.ts`):
 
 ```
-extractRawBranches(func, framework):
-    terminals = findTerminals(func, framework.terminals)
+extractRawBranches(func, pack):
+    terminals = findTerminals(func, pack.terminals)
+    { byTerminal, fallthrough } = computePathConditions(func, terminals)
 
-    return terminals.map(terminal => {
-        ancestors = collectAncestorBranches(terminal.node, func)
-        earlyReturns = collectEarlyReturns(terminal.node, func)
-
-        conditions = []
-
-        // Early returns come first — they gate everything that follows
-        for er in earlyReturns:
-            pred = parseConditionExpression(er.condition)
-            conditions.push({
-                sourceText: er.condition.getText(),
-                structured: pred,  // may be null → assembler wraps as opaque
-                polarity: "negative",
-                source: er.kind === "return" ? "earlyReturn" : "earlyThrow",
+    branches = []
+    for terminal in terminals:
+        // A terminal with no entry path is dead code — no branches.
+        for conditionList in byTerminal.get(terminal.node) ?? []:
+            branches.push({
+                conditions: conditionList.map(conditionInfoToRawCondition),
+                terminal: terminal.data,
+                location: terminal.data.location,
+                isDefault: conditionList is empty
+                    or every condition is source earlyReturn / earlyThrow,
             })
-
-        // Ancestor branches come after
-        for branch in ancestors:
-            if branch.condition is null:  // catch clause
-                conditions.push({
-                    sourceText: "<catch>",
-                    structured: null,
-                    polarity: "positive",
-                    source: "catchBlock",
-                })
-            else:
-                pred = parseConditionExpression(branch.condition)
-                conditions.push({
-                    sourceText: branch.condition.getText(),
-                    structured: pred,
-                    polarity: branch.branch === "then" ? "positive" : "negative",
-                    source: "explicit",
-                })
-
-        return {
-            conditions,
-            terminal: terminal.data,
-            effects: extractEffects(terminal.node, func),
-            location: { start: terminal.node.getStartLineNumber(), end: terminal.node.getEndLineNumber() },
-            isDefault: conditions.length === 0
-                || conditions.every(c => c.source === "earlyReturn" || c.source === "earlyThrow"),
-        }
-    })
+    return branches
 ```
+
+Each `ConditionInfo` carries the condition's source text, polarity, and provenance (`explicit`, `earlyReturn`, `earlyThrow`, `catchBlock`); `conditionInfoToRawCondition` runs Step 4 on it (parse to `Predicate`, resolve subjects) and wraps what won't decompose as opaque.
+
+Two post-passes follow in `assembly.ts`:
+
+- **Fall-through synthesis.** When the pack opted in with a `functionFallthrough` terminal pattern and no existing terminal covers the default path, a synthetic terminal is added whose condition lists are the paths that fall off the body's end (`pathConditions`' `fallthrough` result). Pack opt-in keeps the semantics where they're declared: HTTP packs treat no-response as a gap, React event handlers treat implicit return as normal.
+- **Effect attachment.** Bare expression-statement calls and recognizer-typed effects attach to the default branch — the path every body-top-level call executes on.
 
 The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which handles the opaque-wrapping, gap detection, confidence scoring, and `expectedInput` pass-through. That logic is already implemented and tested, this document covers only the adapter side.
 
@@ -467,8 +353,8 @@ The five steps correspond to five independently testable units:
 | File | Tests |
 |------|-------|
 | `terminals.test.ts` | Fixture handlers in ts-rest / Express / React Router styles; assert the expected terminal nodes are found with correct extracted data. |
-| `branches.test.ts` | Fixture functions with `if`/`else`, `switch`, `try`/`catch`, ternary, `&&`/`||`. Assert the ancestor branch list for each terminal. |
-| `earlyReturns.test.ts` | Fixture functions with sequential guard clauses. Assert each guard is detected with correct polarity. |
+| `paths/pathConditions.test.ts` | Fixture functions with guards, nesting, `switch`, loops, `try`/`catch`, `break`/`continue`, and declined shapes. Assert each terminal's per-path condition lists (and the degraded form for declined shapes). |
+| `conditions.test.ts` | The expression-level walker: ternaries, `&&`/`||`, conditions inside nested callbacks. Assert the recorded `ConditionInfo` list. |
 | `predicates.test.ts` | Individual expression nodes (not full functions). Assert the parsed `Predicate`. One test per AST expression kind. |
 | `subjects.test.ts` | Fixture functions with parameter access, dependency call results, destructuring, property chains. Assert the resolved `ValueRef`. |
 
