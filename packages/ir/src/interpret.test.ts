@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { evalConditions, evalPredicate, evalValueRef } from "./interpret.js";
 
-import type { Predicate, ValueRef } from "@suss/behavioral-ir";
+import type { Predicate, ValueRef } from "./index.js";
 
 const input = (name: string): ValueRef => ({
   type: "input",

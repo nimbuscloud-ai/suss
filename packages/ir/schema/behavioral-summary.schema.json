@@ -1040,6 +1040,24 @@
                 "level": {
                   "type": "string",
                   "enum": ["high", "medium", "low"]
+                },
+                "corroboration": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "type": "string",
+                      "enum": ["observed", "refuted", "untested"]
+                    },
+                    "runs": {
+                      "type": "number"
+                    },
+                    "counterexample": {},
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["outcome", "runs"],
+                  "additionalProperties": false
                 }
               },
               "required": ["source", "level"],
@@ -1109,6 +1127,24 @@
           "level": {
             "type": "string",
             "enum": ["high", "medium", "low"]
+          },
+          "corroboration": {
+            "type": "object",
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": ["observed", "refuted", "untested"]
+              },
+              "runs": {
+                "type": "number"
+              },
+              "counterexample": {},
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": ["outcome", "runs"],
+            "additionalProperties": false
           }
         },
         "required": ["source", "level"],

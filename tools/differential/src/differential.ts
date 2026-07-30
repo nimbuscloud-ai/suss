@@ -17,10 +17,11 @@
 // Abstention is never a finding: transitions with unknown conditions or
 // unknown status can neither falsify nor be falsified.
 
+import { evalConditions, type Tri } from "@suss/behavioral-ir";
+
 import { type DispatchTable, dispatchByType } from "./dispatch.js";
 import { executeHandler } from "./execute.js";
 import { extractHandlerSummary } from "./extract.js";
-import { evalConditions, type Tri } from "./interpret.js";
 import {
   type HandlerProgram,
   renderBodyLines,

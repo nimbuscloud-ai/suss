@@ -10,7 +10,6 @@ export * from "./differential.js";
 export * from "./execute.js";
 export * from "./extract.js";
 export * from "./generators.js";
-export * from "./interpret.js";
 export * from "./jsx/componentDifferential.js";
 export * from "./jsx/componentExecute.js";
 export * from "./jsx/componentGenerators.js";

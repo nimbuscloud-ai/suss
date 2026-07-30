@@ -12,6 +12,7 @@ import type {
   ConfidenceInfoSchema,
   ConfidenceLevelSchema,
   ConfidenceSourceSchema,
+  CorroborationSchema,
   SemanticsSchema,
   SourceLocationSchema,
 } from "./schemas.js";
@@ -21,6 +22,7 @@ export {
   ConfidenceInfoSchema,
   ConfidenceLevelSchema,
   ConfidenceSourceSchema,
+  CorroborationSchema,
   FunctionCallSemanticsSchema,
   GraphqlOperationSemanticsSchema,
   GraphqlResolverSemanticsSchema,
@@ -40,6 +42,7 @@ export {
 export type ConfidenceSource = z.infer<typeof ConfidenceSourceSchema>;
 export type ConfidenceLevel = z.infer<typeof ConfidenceLevelSchema>;
 export type ConfidenceInfo = z.infer<typeof ConfidenceInfoSchema>;
+export type Corroboration = z.infer<typeof CorroborationSchema>;
 export type SourceLocation = z.infer<typeof SourceLocationSchema>;
 export type BoundaryBinding = z.infer<typeof BoundaryBindingSchema>;
 export type Semantics = z.infer<typeof SemanticsSchema>;

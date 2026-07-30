@@ -1,20 +1,33 @@
 // interpret.ts — a three-valued interpreter for the summary IR.
 //
-// Evaluates `Predicate` / `ValueRef` trees against a concrete request
-// environment. The load-bearing rule is abstention: anything the IR
-// marks opaque, and any value the interpreter cannot concretely trace
+// Evaluates `Predicate` / `ValueRef` trees against a concrete
+// environment (a request, a props object, any record keyed by input
+// refs). The load-bearing rule is abstention: anything the IR marks
+// opaque, and any value the interpreter cannot concretely trace
 // (dependency results, unresolved references, method calls), evaluates
 // to `unknown` — never a guess. Predicates compose under Kleene
 // three-valued logic, so one unknown conjunct makes the conjunction
 // unknown rather than silently true or false.
 //
-// This is deliberately a standalone module: the planned `suss corroborate`
-// needs the same interpreter to drive per-transition property tests,
-// and promoting this file into a published package is the planned path.
+// Consumers: the differential fuzzer (tools/differential) uses it to
+// adjudicate extracted claims against executions; `suss corroborate`
+// uses it as the oracle for generating claim-satisfying inputs.
 
-import { type DispatchTable, dispatchByType } from "./dispatch.js";
+import type { ComparisonOp, Predicate, ValueRef } from "./index.js";
 
-import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
+type DispatchTable<T extends { type: string }, R> = {
+  [K in T["type"]]: (variant: Extract<T, { type: K }>) => R;
+};
+
+function dispatchByType<T extends { type: string }, R>(
+  table: DispatchTable<T, R>,
+  value: T,
+): R {
+  const handler = (table as unknown as Record<string, (val: T) => R>)[
+    value.type
+  ];
+  return handler(value);
+}
 
 /** Three-valued truth: definitely true / definitely false / abstain. */
 export type Tri = "true" | "false" | "unknown";

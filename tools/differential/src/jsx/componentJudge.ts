@@ -11,8 +11,9 @@
 // claim contains expression nodes (verbatim source text — decision
 // #38's v0 shape). Abstention can neither falsify nor be falsified.
 
+import { evalConditions, type Tri } from "@suss/behavioral-ir";
+
 import { type DispatchTable, dispatchByType } from "../dispatch.js";
-import { evalConditions, type Tri } from "../interpret.js";
 
 import type {
   BehavioralSummary,
