@@ -25,7 +25,12 @@
 // the FIRST STRING ARGUMENT — the real SQL table name — as the
 // pairing channel. This intentionally differs from the Prisma pack's
 // PascalCase model channel: Drizzle's schema speaks SQL names, so its
-// summaries pair against SQL-flavored contracts. When the declaration
+// summaries pair against SQL-flavored contracts. The two correspond
+// exactly through the schema: a Prisma model's physical table is its
+// model name unless `@@map` renames it, and contract-prisma carries
+// that rename as `storageContract.physicalTable`, which the checker
+// accepts as a pairing alias — both ORMs' accesses land on the same
+// schema provider with no name guessing. When the declaration
 // isn't resolvable, the identifier's own name is used — the honest
 // fallback, never a guess.
 //

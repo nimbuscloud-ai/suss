@@ -16,6 +16,7 @@ function makeProvider(opts: {
   storageSystem?: "postgres" | "mysql" | "sqlite";
   scope?: string;
   columns: Array<{ name: string; type?: string; nullable?: boolean }>;
+  physicalTable?: string;
 }): BehavioralSummary {
   return {
     kind: "library",
@@ -39,7 +40,12 @@ function makeProvider(opts: {
     gaps: [],
     confidence: { source: "declared", level: "high" },
     metadata: {
-      storageContract: { columns: opts.columns },
+      storageContract: {
+        columns: opts.columns,
+        ...(opts.physicalTable !== undefined
+          ? { physicalTable: opts.physicalTable }
+          : {}),
+      },
     },
   };
 }
@@ -222,6 +228,37 @@ describe("checkRelationalStorage", () => {
         (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "read",
       ),
     ).toEqual([]);
+  });
+
+  it("pairs SQL-name accesses against a model with a physicalTable alias", () => {
+    // A Prisma model `User` mapped to the SQL table "users"
+    // (@@map). A Drizzle-style consumer speaks the SQL name. The
+    // alias makes them the same boundary: the undeclared-column
+    // read fires, and `email` counts as read (not unused).
+    const findings = checkRelationalStorage([
+      makeProvider({
+        table: "User",
+        physicalTable: "users",
+        columns: [{ name: "id" }, { name: "email" }],
+      }),
+      makeAccessSummary({
+        name: "listUsers",
+        file: "src/list.ts",
+        accesses: [
+          { table: "users", kind: "read", fields: ["email", "nonExistent"] },
+          { table: "User", kind: "read", fields: ["id"] },
+        ],
+      }),
+    ]);
+    const unknownReads = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "read",
+    );
+    expect(unknownReads).toHaveLength(1);
+    expect(unknownReads[0].description).toContain("nonExistent");
+    // Both channels' reads count toward usage — nothing is unused.
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnused")).toEqual(
+      [],
+    );
   });
 
   it("scopes accesses by (storageSystem, scope, table)", () => {
