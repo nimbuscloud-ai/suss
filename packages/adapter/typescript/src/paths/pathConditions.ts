@@ -66,12 +66,35 @@ const isFunctionBoundary = (node: Node): boolean =>
   Node.isArrowFunction(node) ||
   Node.isMethodDeclaration(node);
 
+/** The nearest enclosing construct a `break` binds to. */
+function breakBindsToLoop(breakStmt: Node): boolean {
+  let current: Node | undefined = breakStmt.getParent();
+  while (current !== undefined) {
+    if (Node.isSwitchStatement(current)) {
+      return false;
+    }
+    if (
+      Node.isForOfStatement(current) ||
+      Node.isForInStatement(current) ||
+      Node.isForStatement(current) ||
+      Node.isWhileStatement(current) ||
+      Node.isDoStatement(current)
+    ) {
+      return true;
+    }
+    current = current.getParent();
+  }
+  return false;
+}
+
 /**
  * True when the unit-level statement flow contains a construct the
- * enumeration doesn't model (switch / try / labels / break /
- * continue). Nested function bodies don't count — their control flow
- * is not the unit's statement flow (a `switch` inside a `.forEach`
- * callback is handled by the expression-level ancestor walker).
+ * enumeration doesn't model (try / labels / continue / loop-bound
+ * breaks). Switch statements and their breaks are modeled by
+ * `stepSwitch`; a break that binds to a *loop* still bails. Nested
+ * function bodies don't count — their control flow is not the unit's
+ * statement flow (a `switch` inside a `.forEach` callback is handled
+ * by the expression-level ancestor walker).
  */
 function containsUnmodeledFlow(body: Node): boolean {
   let found = false;
@@ -81,11 +104,10 @@ function containsUnmodeledFlow(body: Node): boolean {
       return;
     }
     if (
-      Node.isSwitchStatement(node) ||
       Node.isTryStatement(node) ||
       Node.isLabeledStatement(node) ||
-      Node.isBreakStatement(node) ||
-      Node.isContinueStatement(node)
+      Node.isContinueStatement(node) ||
+      (Node.isBreakStatement(node) && breakBindsToLoop(node))
     ) {
       found = true;
       traversal.stop();
@@ -93,6 +115,9 @@ function containsUnmodeledFlow(body: Node): boolean {
   });
   return found;
 }
+
+/** Switch shapes the enumeration declines — the caller falls back to legacy. */
+class UnmodeledFlow extends Error {}
 
 // ---------------------------------------------------------------------------
 // Statement scans (function-boundary aware)
@@ -375,6 +400,15 @@ function stepStatement(
     return out;
   }
 
+  // Switch: model case groups as branch conditions (legacy-identical
+  // synthetic text), trailing-break bodies joining after the switch.
+  if (Node.isSwitchStatement(stmt)) {
+    for (const terminal of headerTerminals) {
+      recordTerminal(state, terminal, stmt, path);
+    }
+    return stepSwitch(state, stmt, path, terminals);
+  }
+
   // Loop: one symbolic iteration for in-body terminals; fall-through
   // carries an opaque completion condition when the body can exit.
   if (isLoop(stmt)) {
@@ -416,6 +450,160 @@ function stepStatement(
     return [];
   }
   return [path];
+}
+
+/**
+ * Every `break` in a clause body must be the clause's final top-level
+ * statement — anything fancier (conditional breaks, breaks after
+ * side-effect tails) declines to legacy. Breaks belonging to a nested
+ * switch are that switch's concern.
+ */
+function validateClauseBreaks(stmts: Statement[]): void {
+  const last = stmts[stmts.length - 1];
+  for (const stmt of stmts) {
+    if (stmt === last && Node.isBreakStatement(stmt)) {
+      continue;
+    }
+    stmt.forEachDescendant((node, traversal) => {
+      if (isFunctionBoundary(node) || Node.isSwitchStatement(node)) {
+        traversal.skip();
+        return;
+      }
+      if (Node.isBreakStatement(node)) {
+        throw new UnmodeledFlow("non-trailing break in switch clause");
+      }
+    });
+    if (Node.isBreakStatement(stmt)) {
+      throw new UnmodeledFlow("non-trailing break in switch clause");
+    }
+  }
+}
+
+/**
+ * Enumerate a switch statement. Case labels group across empty
+ * clauses (classic stacked fallthrough) with the same synthetic
+ * condition text the legacy ancestor collector produced, so in-case
+ * transition IDs are stable. Bodies must end every path with
+ * return/throw or a trailing top-level break; falling through into
+ * another non-empty clause declines to legacy, as does a default
+ * clause anywhere but last.
+ */
+function stepSwitch(
+  state: EnumerationState,
+  stmt: Statement,
+  path: PathCond[],
+  terminals: ReadonlySet<Node>,
+): PathCond[][] {
+  if (!Node.isSwitchStatement(stmt)) {
+    return [path];
+  }
+  const switchText = stmt.getExpression().getText();
+  const clauses = stmt.getClauses();
+  const out: PathCond[][] = [];
+  const negations: PathCond[] = [];
+  let pendingLabels: string[] = [];
+  let sawDefault = false;
+
+  const groupCond = (
+    labels: string[],
+    polarity: "positive" | "negative",
+    source: ConditionInfo["source"],
+  ): PathCond => ({
+    info: {
+      sourceText: labels.map((l) => `${switchText} === ${l}`).join(" || "),
+      polarity,
+      source,
+      // Synthetic condition — no single Expression node (matches the
+      // legacy collector, which also parsed these as opaque).
+      expression: null,
+    },
+    branchStmt: null,
+    oppositeExit: null,
+  });
+
+  // "Fallthrough is safe" = no non-empty clause after this one could
+  // execute on falling off the body's end.
+  const bodiesAfter: boolean[] = [];
+  {
+    let seenBody = false;
+    for (let i = clauses.length - 1; i >= 0; i--) {
+      bodiesAfter[i] = seenBody;
+      if (clauses[i].getStatements().length > 0) {
+        seenBody = true;
+      }
+    }
+  }
+
+  const runBody = (
+    stmts: Statement[],
+    groupPath: PathCond[],
+    fallthroughSafe: boolean,
+  ): void => {
+    validateClauseBreaks(stmts);
+    const last = stmts[stmts.length - 1];
+    const hasTrailingBreak = last !== undefined && Node.isBreakStatement(last);
+    const body = hasTrailingBreak ? stmts.slice(0, -1) : stmts;
+    const conts = enumerate(state, body, groupPath, terminals);
+    if (conts.length === 0) {
+      return; // every path exited the unit
+    }
+    if (!hasTrailingBreak && !fallthroughSafe) {
+      throw new UnmodeledFlow("fallthrough into a non-empty switch clause");
+    }
+    out.push(...conts);
+  };
+
+  let defaultRanBody = false;
+  for (let i = 0; i < clauses.length; i++) {
+    const clause = clauses[i];
+    if (sawDefault) {
+      throw new UnmodeledFlow("default clause is not last");
+    }
+    if (Node.isDefaultClause(clause)) {
+      sawDefault = true;
+      const stmts = clause.getStatements();
+      if (stmts.length === 0) {
+        continue; // empty default — behaves like no default
+      }
+      defaultRanBody = true;
+      runBody(stmts, [...path, ...negations], bodiesAfter[i] === false);
+      continue;
+    }
+    if (!Node.isCaseClause(clause)) {
+      continue;
+    }
+    pendingLabels.push(clause.getExpression().getText());
+    const stmts = clause.getStatements();
+    if (stmts.length === 0) {
+      continue; // stacked label — falls into the next clause's body
+    }
+    const labels = pendingLabels;
+    pendingLabels = [];
+    runBody(
+      stmts,
+      [...path, groupCond(labels, "positive", "explicit")],
+      bodiesAfter[i] === false,
+    );
+    // Passing a group whose body exits the unit is a guard-passing —
+    // same classification as an if-guard, so a trailing catch-all
+    // terminal stays the default transition. Groups that rejoin via
+    // break are ordinary branch decisions.
+    const exit = exitKindOfList(stmts);
+    const negationSource =
+      exit === "throw"
+        ? "earlyThrow"
+        : exit === "return"
+          ? "earlyReturn"
+          : "explicit";
+    negations.push(groupCond(labels, "negative", negationSource));
+  }
+
+  if (!defaultRanBody) {
+    // No default body: values matching no bodied group — including
+    // trailing label-only clauses — fall through the switch unchanged.
+    out.push([...path, ...negations]);
+  }
+  return out;
 }
 
 function exitKindOfList(stmts: Statement[]): ExitKind {
@@ -485,6 +673,11 @@ export function computePathConditions(
       if (isLoop(stmt)) {
         collectVisited(statementsOf(getLoopBody(stmt)));
       }
+      if (Node.isSwitchStatement(stmt)) {
+        for (const clause of stmt.getClauses()) {
+          collectVisited(clause.getStatements());
+        }
+      }
     }
   };
   collectVisited(topStatements);
@@ -518,7 +711,7 @@ export function computePathConditions(
       state.fallthrough.push(classify(path, null));
     }
   } catch (error) {
-    if (error instanceof PathBudgetExceeded) {
+    if (error instanceof PathBudgetExceeded || error instanceof UnmodeledFlow) {
       return null;
     }
     throw error;

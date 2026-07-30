@@ -277,7 +277,6 @@ describe("computePathConditions — shapes the legacy collectors got wrong", () 
 
 describe("computePathConditions — conservative bails", () => {
   const bailSources = [
-    ["switch", "switch (a) { case 1: return { status: 200 }; }"],
     [
       "try",
       "try { return { status: 200 }; } catch { return { status: 500 }; }",
@@ -355,5 +354,105 @@ describe("computePathConditions — conservative bails", () => {
       .filter((c) => c.getExpression().getText() === "term");
     expect(termCalls.length).toBe(18);
     expect(computePathConditions(fn, termCalls)).toBeNull();
+  });
+});
+
+describe("computePathConditions — switch lowering", () => {
+  it("case groups carry the legacy-identical synthetic condition", () => {
+    const fn = getFunction(`
+      export function handler(kind: string) {
+        switch (kind) {
+          case "a":
+            return { status: 200 };
+          case "b":
+          case "c":
+            return { status: 404 };
+        }
+        return { status: 500 };
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(result).not.toBeNull();
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      'positive:explicit:kind === "a"',
+    ]);
+    expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
+      'positive:explicit:kind === "b" || kind === "c"',
+    ]);
+    // After the switch: negations of every bodied group.
+    expect(pathSigs(result?.byTerminal.get(terminals[2]))).toEqual([
+      'negative:earlyReturn:kind === "a" ∧ negative:earlyReturn:kind === "b" || kind === "c"',
+    ]);
+  });
+
+  it("trailing-break bodies join after the switch", () => {
+    const fn = getFunction(`
+      export function handler(kind: string, log: (m: string) => void) {
+        switch (kind) {
+          case "a":
+            log("a");
+            break;
+          default:
+            return { status: 400 };
+        }
+        return { status: 200 };
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    // The 400 in default requires matching no case.
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      'negative:explicit:kind === "a"',
+    ]);
+    // The 200 after the switch is reached only via the break path.
+    expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
+      'positive:explicit:kind === "a"',
+    ]);
+  });
+
+  it("declines fallthrough into a non-empty clause", () => {
+    const fn = getFunction(`
+      export function handler(kind: string, log: (m: string) => void) {
+        switch (kind) {
+          case "a":
+            log("a");
+          case "b":
+            return { status: 200 };
+        }
+        return { status: 500 };
+      }
+    `);
+    expect(computePathConditions(fn, returnTerminals(fn))).toBeNull();
+  });
+
+  it("declines a non-trailing break", () => {
+    const fn = getFunction(`
+      export function handler(kind: string, x: boolean) {
+        switch (kind) {
+          case "a":
+            if (x) {
+              break;
+            }
+            return { status: 200 };
+        }
+        return { status: 500 };
+      }
+    `);
+    expect(computePathConditions(fn, returnTerminals(fn))).toBeNull();
+  });
+
+  it("still declines breaks that bind to loops", () => {
+    const fn = getFunction(`
+      export function handler(items: string[]) {
+        for (const item of items) {
+          if (item === "stop") {
+            break;
+          }
+        }
+        return { status: 200 };
+      }
+    `);
+    expect(computePathConditions(fn, returnTerminals(fn))).toBeNull();
   });
 });
