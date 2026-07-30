@@ -460,6 +460,8 @@ The five steps correspond to five independently testable units:
 
 Each test uses its own small fixture, no end-to-end runs for unit tests. Full extraction integration tests live in three places: the adapter's own integration test (`packages/adapter/typescript/src/*.test.ts` against `fixtures/ts-rest`), each framework pack's integration test (adapter-against-fixtures for its own framework), and the CLI test suite (deep-equal assertions on representative summaries per framework, plus `-o` round-trip).
 
+Beyond fixtures, the correctness principles below are verified *mechanically* by a differential fuzzer (`tools/differential`): generated handler programs are extracted through the real pipeline and executed against request batteries, and any disagreement between the summary's claims and observed behavior is shrunk to a minimal counterexample. Constructs with documented soundness gaps run inverted properties that must keep rediscovering the gap until it's fixed. See [`internal/differential-fuzzing.md`](internal/differential-fuzzing.md).
+
 ## Correctness principles
 
 Three properties must hold for the algorithm to be trusted:
