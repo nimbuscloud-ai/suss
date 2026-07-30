@@ -104,6 +104,7 @@ export default defineConfig({
         text: "Understanding suss",
         collapsed: false,
         items: [
+          { text: "What's new", link: "/whats-new" },
           { text: "Motivation", link: "/motivation" },
           { text: "Glossary", link: "/glossary" },
           { text: "Contracts", link: "/contracts" },
