@@ -33,6 +33,7 @@ import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
+import type { ClosureFacts } from "./boundaryEffects.js";
 
 // ---------------------------------------------------------------------------
 // The "reachable" pack — terminals and input mapping for library functions
@@ -340,6 +341,7 @@ export function expandReachableClosure(
   project: Project,
   options?: ExtractorOptions,
   projectFileSet?: ReadonlySet<string>,
+  facts?: ClosureFacts,
 ): BehavioralSummary[] {
   // One source-file enumeration shared across every seed locate.
   // Without this, each `locateFunctionBySummary` was re-scanning the
@@ -347,7 +349,10 @@ export function expandReachableClosure(
   // walk work.
   const lookup = createSourceFileLookup(project);
 
-  const db = new Database();
+  // When the caller hands in shared facts, the closure's entry/calls
+  // relations persist there for downstream rule passes (boundary
+  // effects); otherwise they live and die locally.
+  const db = facts?.db ?? new Database();
   const functionByKey = new Map<string, ReachableCandidate>();
   const seedKeys = new Set<string>();
   const scanned = new Set<string>();
@@ -358,6 +363,7 @@ export function expandReachableClosure(
       const key = nodeKey(func);
       seedKeys.add(key);
       functionByKey.set(key, { func, name: seed.identity.name });
+      facts?.unitKeyBySummary.set(seed, key);
       db.add("entry", [key]);
     }
   }
@@ -413,7 +419,9 @@ export function expandReachableClosure(
         candidate.func.getSourceFile().getFilePath(),
       );
     }
-    reached.push(extractReachableSummary(candidate, options));
+    const summary = extractReachableSummary(candidate, options);
+    facts?.unitKeyBySummary.set(summary, key);
+    reached.push(summary);
   }
 
   return [...seeds, ...reached];

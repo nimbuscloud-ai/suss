@@ -1407,6 +1407,57 @@ describe("createTypeScriptAdapter — reachable closure", () => {
 // sites and collects those callees' throw-terminal messages into
 // `transition.metadata.rethrow.possibleSources`.
 
+describe("createTypeScriptAdapter — boundary effects closure", () => {
+  it("surfaces transitive effects on the entry summary", async () => {
+    // handler → orchestrate → persist; persist fires the invocation
+    // effect (audit.log). The closure derives it back onto the handler
+    // as metadata.effectsClosure with transitive: true.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      declare const audit: { log: (m: string) => void };
+
+      export function persist(id: string) {
+        audit.log("saved");
+        return { id };
+      }
+
+      export function orchestrate(id: string) {
+        return persist(id);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { orchestrate } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        get: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: orchestrate(params.id) };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const handler = summaries.find((s) => s.kind === "handler");
+    const closure = handler?.metadata?.effectsClosure as
+      | Array<{ kind: string; target: string; transitive: boolean }>
+      | undefined;
+    expect(closure).toBeDefined();
+    const audit = closure?.find((e) => e.target === "audit.log");
+    expect(audit?.kind).toBe("invocation");
+    expect(audit?.transitive).toBe(true);
+  });
+});
+
 describe("createTypeScriptAdapter — rethrow enrichment", () => {
   it("populates rethrow.possibleSources from direct callees' throws", async () => {
     // `wrapper` is reachable via closure and uses a bare rethrow over
