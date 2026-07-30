@@ -1,10 +1,12 @@
 // assembly.ts — Compose Steps 1-4 into RawBranch[] (Task 2.5)
 
 import {
+  type ConditionInfo,
   collectAncestorConditionInfos,
   collectEarlyReturnConditionInfos,
   conditionInfoToRawCondition,
 } from "./conditions.js";
+import { computePathConditions } from "./paths/pathConditions.js";
 import {
   extractInvocationEffects,
   runAccessRecognizers,
@@ -26,6 +28,7 @@ import type {
   RawEffect,
   TerminalPattern,
 } from "@suss/extractor";
+import type { Node } from "ts-morph";
 import type { FunctionRoot } from "./conditions.js";
 
 // ---------------------------------------------------------------------------
@@ -37,12 +40,51 @@ import type { FunctionRoot } from "./conditions.js";
 // ---------------------------------------------------------------------------
 
 /**
+ * Compose the per-terminal condition lists. Primary engine: CFG-path
+ * enumeration (`paths/pathConditions.ts`) — one condition list per
+ * entry→terminal path, which closes the nested-guard and loop-return
+ * soundness gaps and drops dead-code terminals. Falls back to the
+ * legacy early-return + ancestor collectors when the function's
+ * statement flow contains constructs the path engine doesn't model
+ * (switch / try / labels / break / continue), when the path budget is
+ * exceeded, or when `SUSS_PATH_ENGINE=legacy` is set (escape hatch;
+ * see status.md decision #56).
+ */
+function conditionListsPerTerminal(
+  func: FunctionRoot,
+  terminalNodes: readonly Node[],
+): { byTerminal: Map<Node, ConditionInfo[][]>; usedCfg: boolean } {
+  const pathResult =
+    process.env.SUSS_PATH_ENGINE === "legacy"
+      ? null
+      : computePathConditions(func, terminalNodes);
+
+  if (pathResult !== null) {
+    return { byTerminal: pathResult.byTerminal, usedCfg: true };
+  }
+
+  const byTerminal = new Map<Node, ConditionInfo[][]>();
+  for (const node of terminalNodes) {
+    const earlyReturnInfos = collectEarlyReturnConditionInfos(node, func);
+    const ancestorInfos = collectAncestorConditionInfos(node, func);
+    byTerminal.set(node, [[...earlyReturnInfos, ...ancestorInfos]]);
+  }
+  return { byTerminal, usedCfg: false };
+}
+
+const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
+  conditions.length === 0 ||
+  conditions.every(
+    (c) => c.source === "earlyReturn" || c.source === "earlyThrow",
+  );
+
+/**
  * Extract all raw branches from a function, composing:
  *   1. findTerminals — locate terminal nodes
- *   2. collectEarlyReturnConditionInfos — prior guard clauses
- *   3. collectAncestorConditionInfos — enclosing branch conditions
- *   4. parseConditionExpression — Expression → Predicate
- *   5. extractInvocationEffects — bare expression-statement calls
+ *   2. conditionListsPerTerminal — per-path conditions (CFG engine,
+ *      legacy collectors as the conservative fallback)
+ *   3. parseConditionExpression — Expression → Predicate
+ *   4. extractInvocationEffects — bare expression-statement calls
  *      (Phase 1.5b — attaches to the default branch so handler /
  *      useEffect bodies carry their side-effect set)
  *
@@ -63,6 +105,11 @@ export function extractRawBranches(
     ...runAccessRecognizers(func, accessRecognizers, barriers),
   ];
 
+  const { byTerminal } = conditionListsPerTerminal(
+    func,
+    terminals.map(({ node }) => node),
+  );
+
   // Synthesise a fall-through terminal when (a) the pack opted in by
   // including `{ type: "functionFallthrough" }` in its terminals,
   // (b) no existing terminal covers the default-path exit, and
@@ -73,7 +120,7 @@ export function extractRawBranches(
   // pack-specific: HTTP handlers treat no-response as a bug (no
   // synthetic terminal — `no matching terminals` stays empty so
   // downstream gap detection flags the handler); React event
-  // handlers treat implicit return as normal (synthetic default
+  // handlers treat implicit return as normal (synthesised default
   // transition carries the body's side effects). Pack opt-in via
   // the `functionFallthrough` match keeps the decision close to
   // where the semantics are declared.
@@ -81,45 +128,44 @@ export function extractRawBranches(
     (p) => p.match.type === "functionFallthrough",
   );
   if (wantsFallthrough && functionMayFallThrough(func)) {
-    const hasDefaultTerminal = terminals.some(({ node }) => {
-      const earlyReturnInfos = collectEarlyReturnConditionInfos(node, func);
-      const ancestorInfos = collectAncestorConditionInfos(node, func);
-      const allConditions = [...earlyReturnInfos, ...ancestorInfos];
-      return (
-        allConditions.length === 0 ||
-        allConditions.every(
-          (c) => c.source === "earlyReturn" || c.source === "earlyThrow",
-        )
-      );
-    });
+    const hasDefaultTerminal = terminals.some(({ node }) =>
+      (byTerminal.get(node) ?? []).some(isDefaultConditionList),
+    );
     if (!hasDefaultTerminal) {
-      terminals.push(makeFallthroughTerminal(func));
+      const synthetic = makeFallthroughTerminal(func);
+      terminals.push(synthetic);
+      // The synthetic terminal anchors at the body itself; its
+      // condition lists are the paths that fall through the body's
+      // end (already computed by the CFG engine; empty conditions
+      // under legacy — same as before).
+      const pathResult =
+        process.env.SUSS_PATH_ENGINE === "legacy"
+          ? null
+          : computePathConditions(func, [synthetic.node]);
+      byTerminal.set(
+        synthetic.node,
+        pathResult !== null && pathResult.fallthrough.length > 0
+          ? pathResult.fallthrough
+          : [[]],
+      );
     }
   }
 
-  const rawBranches: RawBranch[] = terminals.map(({ node, terminal }) => {
-    const earlyReturnInfos = collectEarlyReturnConditionInfos(node, func);
-    const ancestorInfos = collectAncestorConditionInfos(node, func);
-
-    // Early returns first (they gate everything that follows), then ancestors
-    const conditions: RawCondition[] = [
-      ...earlyReturnInfos.map(conditionInfoToRawCondition),
-      ...ancestorInfos.map(conditionInfoToRawCondition),
-    ];
-
-    const isDefault =
-      conditions.length === 0 ||
-      conditions.every(
-        (c) => c.source === "earlyReturn" || c.source === "earlyThrow",
-      );
-
-    return {
-      conditions,
-      terminal,
-      effects: [] as RawEffect[],
-      location: terminal.location,
-      isDefault,
-    };
+  const rawBranches: RawBranch[] = terminals.flatMap(({ node, terminal }) => {
+    // Dead-code terminals (no entry path reaches them) produce no
+    // branches under the CFG engine — a terminal that cannot fire is
+    // not behavior. Legacy always yields exactly one list.
+    const conditionLists = byTerminal.get(node) ?? [];
+    return conditionLists.map((infos): RawBranch => {
+      const conditions: RawCondition[] = infos.map(conditionInfoToRawCondition);
+      return {
+        conditions,
+        terminal,
+        effects: [] as RawEffect[],
+        location: terminal.location,
+        isDefault: isDefaultConditionList(infos),
+      };
+    });
   });
 
   // Attach invocation effects to the default branch. A default branch

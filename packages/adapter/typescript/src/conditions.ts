@@ -70,12 +70,26 @@ export function collectAncestorConditionInfos(
   terminalNode: Node,
   functionRoot: FunctionRoot,
 ): ConditionInfo[] {
+  return collectAncestorConditionInfosBelow(terminalNode, functionRoot);
+}
+
+/**
+ * The generalized walker: collect branch conditions from `terminalNode`
+ * up to (but not including) `stopNode`. The CFG path engine uses this
+ * with a *statement* stop to pick up expression-level branching
+ * (ternaries, `&&`/`||`, case clauses inside nested callbacks) while
+ * statement-level flow comes from path enumeration.
+ */
+export function collectAncestorConditionInfosBelow(
+  terminalNode: Node,
+  stopNode: Node,
+): ConditionInfo[] {
   const result: ConditionInfo[] = [];
   // Start from the terminal node itself so that a direct parent
   // ConditionalExpression (ternary) is detected on the first iteration.
   let current: Node | undefined = terminalNode;
 
-  while (current !== undefined && current !== functionRoot) {
+  while (current !== undefined && current !== stopNode) {
     const parent = current.getParent();
 
     if (parent !== undefined && Node.isIfStatement(parent)) {
