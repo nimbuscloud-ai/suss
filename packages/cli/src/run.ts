@@ -13,6 +13,7 @@ import { parseArgs } from "node:util";
 
 import { check, checkDir } from "./check.js";
 import { contract } from "./contract.js";
+import { corroborate } from "./corroborateCommand.js";
 import { extract } from "./extract.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
@@ -29,6 +30,7 @@ Usage:
   suss check <provider.json> <consumer.json> [--json] [-o <output>]
   suss check --dir <directory> [--intent <intent-dir>] [--json] [-o <output>]
   suss contract --from <source> <spec> [-o <output.json>]
+  suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
 
 Commands:
   init      Work out which packs this project needs and offer to set them up.
@@ -38,6 +40,9 @@ Commands:
   inspect   Read a summaries file back in a form meant for people
   check     Compare two sides of a boundary and report what disagrees
   contract  Describe boundaries from a schema or deploy template
+  corroborate  Extract, then run each handler against its own claims
+            (experimental). A claim that survives execution is marked
+            observed; one that fails carries a concrete counterexample.
 
 Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
@@ -71,8 +76,19 @@ Options (contract):
                    storybook, appsync, prisma, graphql
   -o, --output     Write JSON to a file instead of stdout
 
+Options (corroborate):
+  --experimental   Required. The command is early: today it runs REST
+                   handlers from the express and fastify packs and only
+                   checks claims with a literal status code.
+  -p, --project    Path to the tsconfig covering the code to read
+  --dir            Directory to read when there is no tsconfig
+  -f, --framework  Which pack to use. Repeatable, same names as extract.
+  --runs           Verdict runs to aim for per claim (default 25)
+  -o, --output     Write the annotated summaries to a file
+
 Exit codes:
   check exits non-zero when it finds anything at error severity.
+  corroborate exits non-zero when a claim is refuted by execution.
 `.trim();
 
 /**
@@ -106,9 +122,12 @@ export async function runCli(args: string[]): Promise<number> {
   if (command === "contract") {
     return await runContract(args.slice(1));
   }
+  if (command === "corroborate") {
+    return await runCorroborate(args.slice(1));
+  }
 
   process.stderr.write(
-    `There is no "${command}" command. suss has init, extract, inspect, check, and contract.\n`,
+    `There is no "${command}" command. suss has init, extract, inspect, check, contract, and corroborate.\n`,
   );
   process.stderr.write(`${USAGE}\n`);
   return 1;
@@ -309,6 +328,71 @@ function runCheck(args: string[]): number {
     ...shared,
   });
   return result.hasErrors ? 1 : 0;
+}
+
+async function runCorroborate(args: string[]): Promise<number> {
+  const { values } = parseArgs({
+    args,
+    options: {
+      experimental: { type: "boolean" },
+      project: { type: "string", short: "p" },
+      dir: { type: "string" },
+      framework: { type: "string", short: "f", multiple: true },
+      output: { type: "string", short: "o" },
+      runs: { type: "string" },
+      attempts: { type: "string" },
+    },
+    allowPositionals: true,
+  });
+
+  if (values.experimental !== true) {
+    process.stderr.write(
+      "corroborate is experimental — its scope and output will change. Pass --experimental to run it anyway.\n",
+    );
+    return 1;
+  }
+
+  const frameworks = values.framework ?? [];
+  if (frameworks.length === 0) {
+    process.stderr.write(
+      "corroborate needs at least one pack, so it knows what to look for. Try: suss corroborate --experimental -f express\n",
+    );
+    return 1;
+  }
+
+  const tsconfig = values.project;
+  if (tsconfig !== undefined && !existsSync(path.resolve(tsconfig))) {
+    process.stderr.write(
+      `No tsconfig at ${path.resolve(tsconfig)}. Leave -p off to read the current directory instead.\n`,
+    );
+    return 1;
+  }
+  if (values.dir !== undefined && !existsSync(path.resolve(values.dir))) {
+    process.stderr.write(`No directory at ${path.resolve(values.dir)}.\n`);
+    return 1;
+  }
+
+  const runs = values.runs !== undefined ? Number(values.runs) : undefined;
+  const attempts =
+    values.attempts !== undefined ? Number(values.attempts) : undefined;
+  if (runs !== undefined && !(Number.isInteger(runs) && runs > 0)) {
+    process.stderr.write("--runs takes a positive whole number.\n");
+    return 1;
+  }
+  if (attempts !== undefined && !(Number.isInteger(attempts) && attempts > 0)) {
+    process.stderr.write("--attempts takes a positive whole number.\n");
+    return 1;
+  }
+
+  const result = await corroborate({
+    ...(tsconfig !== undefined ? { tsconfig } : {}),
+    ...(values.dir !== undefined ? { dir: values.dir } : {}),
+    frameworks,
+    ...(values.output !== undefined ? { output: values.output } : {}),
+    ...(runs !== undefined ? { runs } : {}),
+    ...(attempts !== undefined ? { attempts } : {}),
+  });
+  return result.refuted > 0 ? 1 : 0;
 }
 
 async function runContract(args: string[]): Promise<number> {

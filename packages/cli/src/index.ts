@@ -4,6 +4,11 @@
 export { check, checkDir } from "./check.js";
 export { contract } from "./contract.js";
 export { type CorroborateOptions, corroborateSummary } from "./corroborate.js";
+export {
+  type CorroborateCommandOptions,
+  type CorroborateResult,
+  corroborate,
+} from "./corroborateCommand.js";
 export { extract } from "./extract.js";
 export { inspect, inspectDiff, inspectDir } from "./inspect.js";
 export { runCli, USAGE } from "./run.js";
