@@ -40,6 +40,18 @@ frequently do `registerEndpoints(config)` where `config` is built
 programmatically. Need a pattern for "this factory call spawns N
 routes according to its argument."
 
+### `suss emit --format fast-check` (summaries as generated tests)
+
+A summary already carries what a property test needs: the
+conditions that select a path and the outcome the path claims.
+Emitting runnable fast-check properties (or assertions for
+simulation platforms) turns summaries into a compositional
+output other tools execute — the partnership surface the
+strategy review chose over building simulators ourselves. The
+corroborate engine's input synthesis is the natural starting
+point; the emit target is "tests a human would keep," which is a
+higher bar than sampling.
+
 ## Dogfooding extensions
 
 Primary dogfooding arc shipped (see
