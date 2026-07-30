@@ -36,7 +36,8 @@ property runs against both.
 | `src/differential.ts` | adjudicator: `falseClaim` / `uncovered` |
 | `src/differential.test.ts` | sound-tier properties (all targets) + gap-rediscovery milestones |
 | `src/corpus.test.ts` | permanent shrunk-counterexample corpus |
-| `longrun.mjs` | exploratory random-seed sessions |
+| `src/jsx/*` | the render boundary: component DSL, TSX transpile + stub `createElement` execution, tree-admissibility judge, its own sound tier / milestone / corpus |
+| `longrun.mjs` | exploratory random-seed sessions (`node longrun.mjs jsx 800 3`) |
 
 ## Running
 

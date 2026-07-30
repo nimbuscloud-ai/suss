@@ -7,11 +7,13 @@ import fc from "fast-check";
 
 import {
   ALL_TARGETS,
+  arbComponentProgram,
   arbHandlerProgram,
   arbLoopGuard,
   arbNestedGuard,
   arbProgramWithGapConstruct,
   EXPRESS_TARGET,
+  runComponentDifferential,
   runDifferential,
   SOUND_TIER,
 } from "./dist/index.js";
@@ -25,6 +27,7 @@ const arbs = {
   sound: arbHandlerProgram(SOUND_TIER),
   nested: arbProgramWithGapConstruct(arbNestedGuard),
   loop: arbProgramWithGapConstruct(arbLoopGuard),
+  jsx: arbComponentProgram,
 };
 const arb = arbs[tierName];
 const target = ALL_TARGETS.find((t) => t.name === targetName) ?? EXPRESS_TARGET;
@@ -32,6 +35,10 @@ if (!arb) {
   console.error(`unknown tier ${tierName}`);
   process.exit(1);
 }
+const run = (program) =>
+  tierName === "jsx"
+    ? runComponentDifferential(program)
+    : runDifferential(program, target);
 
 let found = 0;
 for (let round = 0; round < rounds; round++) {
@@ -39,7 +46,7 @@ for (let round = 0; round < rounds; round++) {
   const t0 = performance.now();
   const details = await fc.check(
     fc.asyncProperty(arb, async (program) => {
-      const result = await runDifferential(program, target);
+      const result = await run(program);
       if (result.mismatches.length > 0 || result.harnessFailures.length > 0) {
         throw new Error("counterexample");
       }
@@ -50,7 +57,7 @@ for (let round = 0; round < rounds; round++) {
   if (details.failed) {
     found++;
     const program = details.counterexample[0];
-    const result = await runDifferential(program, target);
+    const result = await run(program);
     console.log(
       `\n=== round ${round} seed ${seed} (${secs}s) SHRUNK COUNTEREXAMPLE ===`,
     );

@@ -151,53 +151,73 @@ What does NOT need per-target work: the DSL, the generators, the
 request battery, the interpreter, the adjudicator, the corpus
 protocol.
 
-## The JSX / render-boundary design
+## The JSX / render boundary (implemented — `src/jsx/`)
 
 React components are the other extraction surface that matters for
 confidence today (`@suss/framework-react`, decisions #33–#45). The
-differential mechanism transfers; two seams change — how "execute"
-and "observe" work at a render boundary:
+differential mechanism transferred with two seams changed — how
+"execute" and "observe" work at a render boundary:
 
-- **Program DSL.** A `ComponentProgram`: destructured props, guards
-  (`if (!user) return <Empty/>`), and a JSX return tree with inline
-  conditionals (`{cond && <X/>}`, `{cond ? <A/> : <B/>}`) — the
-  constructs decisions #38/#42 claim to model. Renderer emits a
-  `.tsx` module with a default-exported function component.
-- **Extraction.** Identical to HTTP: in-memory project + the React
-  pack. The summary's claims live in `render` outputs — the
-  `component` root and the structured `RenderNode` tree (including
-  `conditional` nodes with verbatim condition text).
-- **Execution.** No react dependency needed: transpile the generated
-  TSX with the TypeScript compiler (`ts.transpileModule`, already
-  in-tree via ts-morph) using `jsx: "react"`, and run it in the vm
-  with a stub `React.createElement(type, props, ...children)` that
-  builds a plain tree. Call the component function with a generated
-  props object; the returned stub tree *is* the observation. Event
-  handlers (decision #37's sub-units) execute the same way: invoke
-  the recorded handler prop with a stub event and observe its
-  effects — this needs the invocation-effects work (#42) on the
-  claims side.
-- **Adjudication.** Same two verdicts, different observable:
-  - `falseClaim` — the summary's render tree, *pruned by evaluating
-    its `conditional` nodes against the concrete props*, disagrees
-    with the observed stub tree (element tags/structure mismatch).
-    Conditional nodes whose condition text can't be parsed into a
-    `Predicate` abstain, exactly like opaque predicates. (Decision
-    #38 keeps condition text verbatim for v0 — running
-    `parseConditionExpression` over it is the follow-up that
-    unblocks this; until then the fuzzer can still falsify
-    *unconditional* structure.)
-  - `uncovered` — an observed element with no corresponding node in
-    the summary's tree.
-- **What stays untouched.** The interpreter (props env instead of
-  `req` env — `InterpretEnv` is already just a record keyed by input
-  refs), the tier/corpus protocol, shrinking, the CI story.
+- **Program DSL** (`componentProgram.ts`). A `ComponentProgram`:
+  destructured string props, guards (`return null` / `return <jsx/>`),
+  and a JSX return tree with inline conditionals (`{cond && <X/>}`,
+  `{cond ? <A/> : <B/>}`) — the constructs decisions #38/#42 claim to
+  model. Renders to a `.tsx` module with a default-exported function
+  component.
+- **Extraction.** Identical to HTTP: in-memory project (`jsx` compiler
+  option on) + the React pack. Claims live in the transitions'
+  conditions (real `Predicate`s over props) and their outputs —
+  `return null` claims "renders nothing"; `render` outputs claim a
+  `RenderNode` tree (with `conditional` nodes carrying verbatim
+  condition text, decision #38's v0 shape).
+- **Execution** (`componentExecute.ts`). No react dependency: the TSX
+  is transpiled with the TypeScript compiler (`ts.transpileModule`,
+  classic `React.createElement` emit) and run in the vm with a stub
+  `createElement` that builds a plain tree. The component is called
+  with each props assignment from a deterministic battery; the
+  returned stub tree (or `null`) is the observation.
+- **Adjudication** (`componentJudge.ts`). Same two verdicts, different
+  observable. Transition conditions evaluate through the shared
+  interpreter (props env — enabled by the destructured-parameter fix
+  below). Tree admissibility is conservative by construction: a claim
+  commits to *certain* facts (root tag, element tags and texts outside
+  any conditional) and allows *possible* facts (conditional branches);
+  expression nodes make the observation unexplainable-checks moot.
+  Missing certain structure, inadmissible observed structure, root-tag
+  disagreement, and null-vs-render disagreement are proven mismatches;
+  everything touched by a conditional or expression abstains. Running
+  `parseConditionExpression` over conditional-node text (the #38
+  follow-up) would upgrade those abstentions to real evaluations.
+- **What carried over untouched:** the interpreter, the tier/corpus
+  protocol, shrinking, the CI story.
 
-This is the recommended next increment after the HTTP harness: it
-closes the confidence loop over both extraction surfaces that exist
-today, and its abstention discipline forces the #38 follow-up
-(structured predicates for JSX conditionals) that Phase 3 cross-shape
-checking wants anyway.
+Two findings from bringing it up:
+
+1. **Destructured parameters resolved as `unresolved`** — `function
+   C({ user })` produced conditions over `unresolved("user")` rather
+   than `input("user")`, even though the input mapping lists each prop
+   as an Input. Every prop-gated condition was therefore opaque to
+   downstream consumers (decision #45's checker carried a source-text
+   regex fallback to compensate). Fixed in `subjects.ts`: a binding
+   element whose pattern hangs off a `ParameterDeclaration` is an
+   input. This is what makes JSX adjudication's condition evaluation
+   possible at all.
+2. **The nested-guard gap manifests at the render boundary** — as
+   predicted, since the guard machinery is shared:
+   `if (o) { if (i) { return null; } }` leaves the final render
+   transition claiming unconditional truth while execution returns
+   null. Pinned as the JSX rediscovery milestone
+   (`arbComponentProgramWithNestedGuard`) and a `gap:nested-guard`
+   corpus entry — one extraction fix will flip the HTTP *and* JSX
+   milestones together, which is exactly the cross-boundary
+   confirmation the shared-machinery claim needed.
+
+Not yet covered on the render side (candidates for the next
+increment): event-handler sub-units (invoke recorded handler props
+with a stub event; needs #42's invocation-effects on the claims
+side), `useEffect` sub-units, fragments, custom-component children,
+and `.map()` lists (documented-opaque today — they'd only exercise
+abstention until extraction models them).
 
 ## Other languages
 

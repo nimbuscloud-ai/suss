@@ -57,7 +57,7 @@ function buildRequest(
 }
 
 /** mulberry32 — tiny deterministic PRNG; seeded from the program text. */
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let state = seed;
   return () => {
     state = (state + 0x6d2b79f5) | 0;
@@ -67,7 +67,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function hashText(text: string): number {
+export function hashText(text: string): number {
   let hash = 2166136261;
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i);
