@@ -54,6 +54,7 @@ export type {
   ConfidenceInfo,
   ConfidenceLevel,
   ConfidenceSource,
+  Corroboration,
   FunctionCallSemantics,
   GraphqlOperationSemantics,
   GraphqlResolverSemantics,
