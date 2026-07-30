@@ -153,7 +153,10 @@ describe("reactRouterFramework — integration", () => {
   it("has no gaps when no contract reading is configured", () => {
     for (const s of summaries) {
       expect(s.gaps).toEqual([]);
-      expect(s.metadata).toBeUndefined();
+      // metadata carries only the derived effects closure (when the
+      // unit has effects) — no contract-reading metadata appears.
+      const keys = Object.keys(s.metadata ?? {});
+      expect(keys.filter((k) => k !== "effectsClosure")).toEqual([]);
     }
   });
 });

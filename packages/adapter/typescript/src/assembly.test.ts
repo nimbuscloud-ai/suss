@@ -545,15 +545,36 @@ describe("nested conditions", () => {
     `,
     );
 
+    // Three branches: the nested 200, plus one 403 branch per path that
+    // reaches the fallthrough — [¬authenticated] and
+    // [authenticated, ¬admin]. (The legacy collectors produced a single
+    // over-constrained 403 branch claiming ¬authenticated ∧ ¬admin —
+    // the documented nested-guard soundness gap, closed by the CFG
+    // path engine.)
     const branches = extractRawBranches(fn, tsRestTerminals);
-    expect(branches).toHaveLength(2);
+    expect(branches).toHaveLength(3);
 
-    const secretBranch = branches.find((b) => b.conditions.length === 2);
+    const secretBranch = branches.find(
+      (b) =>
+        b.conditions.length === 2 &&
+        b.conditions.every((c) => c.polarity === "positive"),
+    );
     expect(secretBranch).toBeDefined();
     // Outermost first
     expect(secretBranch?.conditions[0].sourceText).toBe("params.authenticated");
     expect(secretBranch?.conditions[1].sourceText).toBe("params.admin");
     expect(secretBranch?.isDefault).toBe(false);
+
+    const fallthroughPaths = branches
+      .filter((b) => b !== secretBranch)
+      .map((b) =>
+        b.conditions.map((c) => `${c.polarity}:${c.sourceText}`).join(" ∧ "),
+      )
+      .sort();
+    expect(fallthroughPaths).toEqual([
+      "negative:params.authenticated",
+      "positive:params.authenticated ∧ negative:params.admin",
+    ]);
   });
 });
 

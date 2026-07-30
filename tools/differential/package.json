@@ -1,0 +1,42 @@
+{
+  "name": "@suss/differential",
+  "version": "0.0.2",
+  "private": true,
+  "type": "module",
+  "description": "Differential fuzzer for suss extraction fidelity \u2014 generates handler programs, executes them, and checks the extracted summary's predictions against observed behavior. Internal tool; never published.",
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/adapter-typescript": "*",
+    "@suss/behavioral-ir": "*",
+    "@suss/extractor": "*",
+    "@suss/framework-express": "*",
+    "@suss/framework-fastify": "*",
+    "@suss/framework-react": "*",
+    "fast-check": "^3.23.1",
+    "ts-morph": "^23.0.0"
+  },
+  "devDependencies": {
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}

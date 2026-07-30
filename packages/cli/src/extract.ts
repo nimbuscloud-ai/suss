@@ -51,7 +51,7 @@ const BUILTIN_FRAMEWORKS: Record<
   node: () => import("@suss/runtime-node"),
 };
 
-async function resolveFramework(name: string): Promise<PatternPack> {
+export async function resolveFramework(name: string): Promise<PatternPack> {
   const builtin = BUILTIN_FRAMEWORKS[name];
   if (builtin !== undefined) {
     const mod = await builtin();
@@ -114,11 +114,13 @@ export interface ExtractOptions {
  * module resolution and path aliases, so it wins when one exists;
  * otherwise the directory is walked directly.
  */
-type Source =
+export type Source =
   | { kind: "tsconfig"; path: string; root: string }
   | { kind: "directory"; root: string };
 
-function resolveSource(options: ExtractOptions): Source {
+export function resolveSource(
+  options: Pick<ExtractOptions, "tsconfig" | "dir">,
+): Source {
   if (options.tsconfig !== undefined) {
     const resolved = path.resolve(options.tsconfig);
     if (!fs.existsSync(resolved)) {

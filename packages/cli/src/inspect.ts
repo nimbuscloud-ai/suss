@@ -850,6 +850,22 @@ function renderSummary(
     );
   }
 
+  // Effects closure — everything this boundary transitively touches,
+  // stamped by the adapter's boundary-effects pass on entry summaries.
+  // `(via callees)` marks effects inherited from deeper in the call
+  // chain rather than the boundary's own body.
+  const effectsClosure = summary.metadata?.effectsClosure as
+    | Array<{ kind: string; target: string; transitive: boolean }>
+    | undefined;
+  if (effectsClosure !== undefined && effectsClosure.length > 0) {
+    bodyLines.push("");
+    bodyLines.push("  Reaches:");
+    for (const effect of effectsClosure) {
+      const suffix = effect.transitive ? " (via callees)" : "";
+      bodyLines.push(`    ${effect.kind} ${effect.target}${suffix}`);
+    }
+  }
+
   // Gaps
   if (summary.gaps.length > 0) {
     bodyLines.push("");

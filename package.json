@@ -16,7 +16,8 @@
   },
   "workspaces": [
     "packages/*",
-    "packages/*/*"
+    "packages/*/*",
+    "tools/*"
   ],
   "devDependencies": {
     "@biomejs/biome": "2.0.6",

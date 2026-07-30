@@ -26,9 +26,33 @@ export const ConfidenceSourceSchema = z.enum([
 
 export const ConfidenceLevelSchema = z.enum(["high", "medium", "low"]);
 
+/**
+ * The result of corroborating a claim against real execution
+ * (`suss corroborate`): generated inputs satisfying the claim's own
+ * conditions were run through the actual function and the observation
+ * either agreed every time (`observed`), disagreed at least once
+ * (`refuted` — an extractor bug or a genuine surprise; the
+ * counterexample says which input), or never produced a verdict
+ * (`untested` — no satisfying input was found, or every satisfying
+ * run hit a dependency the harness cannot supply).
+ *
+ * Corroboration upgrades a *derivation* with *observations*; it is
+ * additive evidence, never a rewrite of the derived claim.
+ */
+export const CorroborationSchema = z.object({
+  outcome: z.enum(["observed", "refuted", "untested"]),
+  /** Executions that produced a verdict for this claim. */
+  runs: z.number(),
+  /** Present when refuted: the input and observation that disagreed. */
+  counterexample: z.unknown().optional(),
+  /** Present when untested: why no verdict was reachable. */
+  reason: z.string().optional(),
+});
+
 export const ConfidenceInfoSchema = z.object({
   source: ConfidenceSourceSchema,
   level: ConfidenceLevelSchema,
+  corroboration: CorroborationSchema.optional(),
 });
 
 // ---------------------------------------------------------------------------

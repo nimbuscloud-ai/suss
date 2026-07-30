@@ -19,6 +19,7 @@ import {
   packageExportBinding,
   restBinding,
 } from "@suss/behavioral-ir";
+import { Database } from "@suss/datalog";
 import {
   type AccessRecognizer,
   assembleSummary,
@@ -59,6 +60,10 @@ import {
 import { type DiscoveredUnit, discoverUnits } from "./discovery/index.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
+import {
+  type ClosureFacts,
+  deriveBoundaryEffects,
+} from "./resolve/boundaryEffects.js";
 import { expandReachableClosure } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
@@ -1744,6 +1749,14 @@ export function createTypeScriptAdapter(
       // underlying program but leaves them off project.getSourceFiles(),
       // and the rethrow-enrichment lookup (built from that list) silently
       // skips closure-derived summaries.
+      // One fact database per extraction: the closure emits entry and
+      // call-edge facts into it; the boundary-effects pass below joins
+      // against the same store. (See status.md decision #57 — the
+      // fact layer is the language-independent seam.)
+      const closureFacts: ClosureFacts = {
+        db: new Database(),
+        unitKeyBySummary: new Map(),
+      };
       const withClosure =
         config.includeReachable !== false
           ? timer.time("expandReachableClosure", () =>
@@ -1752,6 +1765,7 @@ export function createTypeScriptAdapter(
                 project,
                 config.extractorOptions,
                 projectFileSet,
+                closureFacts,
               ),
             )
           : withSubUnits;
@@ -1763,8 +1777,17 @@ export function createTypeScriptAdapter(
       // throw terminals (including reachable-closure ones) are available
       // to consult.
       const enriched = timer.time("enrichRethrows", () =>
-        enrichRethrows(withClosure, project),
+        enrichRethrows(withClosure, project, closureFacts),
       );
+
+      // Transitive effects per entry point, derived from the shared
+      // fact store — "what this boundary's promise rests on". No-op
+      // when the closure was skipped (no call-graph facts exist).
+      if (config.includeReachable !== false) {
+        timer.time("deriveBoundaryEffects", () =>
+          deriveBoundaryEffects(enriched, closureFacts),
+        );
+      }
 
       // Persist to the coarse-key cache so subsequent runs with
       // identical Project state can short-circuit. Errors during

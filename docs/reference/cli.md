@@ -22,6 +22,11 @@ over it; `check` is a comparator. Anything you can do in `inspect` or
 `check` you can also do by reading the JSON yourself, they're
 conveniences, not parsing layers.
 
+Two more commands sit outside the pipeline: `suss init` works out
+which packs your project needs and offers to set them up, and
+`suss corroborate` (experimental, [below](#suss-corroborate-experimental))
+executes handlers against their own summaries.
+
 ## `suss extract`
 
 Extract behavioral summaries from TypeScript source.
@@ -379,6 +384,50 @@ summary JSON instead.
 
 - `0`: rendered successfully.
 - Non-zero, input file missing or not valid summary JSON.
+
+## `suss corroborate` (experimental)
+
+Extract, then run each handler against its own claims.
+
+**What it does.** Runs a normal extraction, then for every summary in
+scope: generates request inputs that satisfy a transition's own
+extracted conditions, executes the real handler function in a sandbox
+with a stub response object, and compares the observed status with
+the claimed one. Verdicts land on
+`transition.confidence.corroboration`:
+
+- `observed`: every satisfying run produced the claimed status.
+- `refuted`: some run produced a different status. The concrete
+  counterexample (request, observed status, claimed status) is
+  attached and printed. Either the extraction is wrong there or the
+  code surprises its own summary, and both are findings.
+- `untested`: no satisfying input was found, or every run hit a
+  dependency the sandbox cannot supply (a database, another service).
+  The claim keeps its static confidence.
+
+**Scope today** (why the flag is mandatory): `handler` summaries
+recognized by the express or fastify packs, and only claims with a
+literal status code. Everything else is skipped untouched. The scope
+and the report format will change as coverage grows.
+
+```
+suss corroborate --experimental -p TSCONFIG -f express [-o ANNOTATED.json]
+```
+
+| Flag | Description |
+|---|---|
+| `--experimental` | Required. Acknowledges the command is early. |
+| `-p, --project PATH` | tsconfig covering the code to read. Same resolution as `extract`. |
+| `--dir PATH` | Directory to read when there is no tsconfig. |
+| `-f, --framework NAME` | Pack to use. Repeatable, same names as `extract`. |
+| `--runs N` | Verdict-producing executions to aim for per claim (default 25). |
+| `--attempts N` | Sampling attempts per claim before giving up (default 300). |
+| `-o, --output PATH` | Write the annotated summaries to a file. |
+
+### Exit codes
+
+- `0`: every claim that could be tried held up (or nothing was in scope).
+- Non-zero: at least one claim was refuted by execution.
 
 ## Top-level flags
 

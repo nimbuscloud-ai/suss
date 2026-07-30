@@ -104,6 +104,7 @@ export default defineConfig({
         text: "Understanding suss",
         collapsed: false,
         items: [
+          { text: "What's new", link: "/whats-new" },
           { text: "Motivation", link: "/motivation" },
           { text: "Glossary", link: "/glossary" },
           { text: "Contracts", link: "/contracts" },
@@ -131,10 +132,19 @@ export default defineConfig({
         items: [
           { text: "Status & decisions", link: "/internal/status" },
           { text: "Style guide", link: "/internal/style" },
+          { text: "Facts and rules", link: "/internal/facts-and-rules" },
+          {
+            text: "Differential fuzzing",
+            link: "/internal/differential-fuzzing",
+          },
           { text: "Concept design", link: "/internal/concept-design" },
           { text: "Quality", link: "/internal/quality" },
           { text: "Forward-looking backlog", link: "/internal/backlog" },
           { text: "React roadmap", link: "/internal/roadmap-react" },
+          {
+            text: "Second-language roadmap",
+            link: "/internal/roadmap-second-language",
+          },
           { text: "Dogfooding", link: "/internal/dogfooding" },
           { text: "Releasing", link: "/internal/releasing" },
         ],

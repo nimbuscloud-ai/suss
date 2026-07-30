@@ -9,7 +9,7 @@ export {
   createProjectWithoutTsconfig,
   findNearestTsconfig,
 } from "./bootstrap/noTsconfigProject.js";
-export { collectAncestorBranches, collectEarlyReturns } from "./conditions.js";
+export { collectAncestorBranches } from "./conditions.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery/index.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";

@@ -70,12 +70,26 @@ export function collectAncestorConditionInfos(
   terminalNode: Node,
   functionRoot: FunctionRoot,
 ): ConditionInfo[] {
+  return collectAncestorConditionInfosBelow(terminalNode, functionRoot);
+}
+
+/**
+ * The generalized walker: collect branch conditions from `terminalNode`
+ * up to (but not including) `stopNode`. The CFG path engine uses this
+ * with a *statement* stop to pick up expression-level branching
+ * (ternaries, `&&`/`||`, case clauses inside nested callbacks) while
+ * statement-level flow comes from path enumeration.
+ */
+export function collectAncestorConditionInfosBelow(
+  terminalNode: Node,
+  stopNode: Node,
+): ConditionInfo[] {
   const result: ConditionInfo[] = [];
   // Start from the terminal node itself so that a direct parent
   // ConditionalExpression (ternary) is detected on the first iteration.
   let current: Node | undefined = terminalNode;
 
-  while (current !== undefined && current !== functionRoot) {
+  while (current !== undefined && current !== stopNode) {
     const parent = current.getParent();
 
     if (parent !== undefined && Node.isIfStatement(parent)) {
@@ -168,126 +182,6 @@ export function collectAncestorBranches(
   return collectAncestorConditionInfos(terminalNode, functionRoot).map(
     conditionInfoToRaw,
   );
-}
-
-// ---------------------------------------------------------------------------
-// Early return collection (with Expression nodes)
-// ---------------------------------------------------------------------------
-
-/**
- * Find prior sibling statements that are guard clauses (if (...) { return/throw }).
- * Returns ConditionInfo with the Expression node preserved for later parsing.
- */
-export function collectEarlyReturnConditionInfos(
-  terminalNode: Node,
-  functionRoot: FunctionRoot,
-): ConditionInfo[] {
-  const result: ConditionInfo[] = [];
-
-  const body = functionRoot.getBody();
-  if (body === undefined || !Node.isBlock(body)) {
-    return result;
-  }
-
-  const statements = body.getStatements();
-
-  let containerIdx = -1;
-  for (let i = 0; i < statements.length; i++) {
-    if (isAncestorOrSelf(statements[i], terminalNode)) {
-      containerIdx = i;
-      break;
-    }
-  }
-
-  if (containerIdx <= 0) {
-    return result;
-  }
-
-  for (let i = 0; i < containerIdx; i++) {
-    const stmt = statements[i];
-    if (Node.isIfStatement(stmt)) {
-      collectGuardConditionInfos(stmt, result);
-    }
-  }
-
-  return result;
-}
-
-/**
- * Public API — returns RawCondition[] with structured: null.
- * Use collectEarlyReturnConditionInfos when you need the Expression nodes.
- */
-export function collectEarlyReturns(
-  terminalNode: Node,
-  functionRoot: FunctionRoot,
-): RawCondition[] {
-  return collectEarlyReturnConditionInfos(terminalNode, functionRoot).map(
-    conditionInfoToRaw,
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Guard clause helpers
-// ---------------------------------------------------------------------------
-
-function collectGuardConditionInfos(
-  ifStmt: Node,
-  result: ConditionInfo[],
-): boolean {
-  if (!Node.isIfStatement(ifStmt)) {
-    return false;
-  }
-
-  const thenStmt = ifStmt.getThenStatement();
-  const expr = ifStmt.getExpression();
-
-  if (thenBlockReturnsOrThrows(thenStmt)) {
-    const source: RawCondition["source"] = thenBlockThrows(thenStmt)
-      ? "earlyThrow"
-      : "earlyReturn";
-    result.push(makeConditionInfo(expr.getText(), "negative", source, expr));
-
-    if (Node.isBlock(thenStmt)) {
-      for (const inner of thenStmt.getStatements()) {
-        if (Node.isIfStatement(inner)) {
-          collectGuardConditionInfos(inner, result);
-        }
-      }
-    }
-    return true;
-  }
-
-  return false;
-}
-
-/** True if the then-block (directly or nested) contains a return or throw. */
-function thenBlockReturnsOrThrows(node: Node): boolean {
-  if (Node.isReturnStatement(node) || Node.isThrowStatement(node)) {
-    return true;
-  }
-  if (Node.isBlock(node)) {
-    for (const stmt of node.getStatements()) {
-      if (thenBlockReturnsOrThrows(stmt)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-/** True if the then-block contains a throw (as opposed to a return). */
-function thenBlockThrows(node: Node): boolean {
-  if (Node.isThrowStatement(node)) {
-    return true;
-  }
-  if (Node.isBlock(node)) {
-    for (const stmt of node.getStatements()) {
-      if (thenBlockThrows(stmt)) {
-        return true;
-      }
-    }
-  }
-  return false;
 }
 
 /** True if `maybeAncestor` is the same node as `node` or contains `node` as a descendant. */

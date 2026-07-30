@@ -1407,6 +1407,57 @@ describe("createTypeScriptAdapter — reachable closure", () => {
 // sites and collects those callees' throw-terminal messages into
 // `transition.metadata.rethrow.possibleSources`.
 
+describe("createTypeScriptAdapter — boundary effects closure", () => {
+  it("surfaces transitive effects on the entry summary", async () => {
+    // handler → orchestrate → persist; persist fires the invocation
+    // effect (audit.log). The closure derives it back onto the handler
+    // as metadata.effectsClosure with transitive: true.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      declare const audit: { log: (m: string) => void };
+
+      export function persist(id: string) {
+        audit.log("saved");
+        return { id };
+      }
+
+      export function orchestrate(id: string) {
+        return persist(id);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { orchestrate } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        get: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: orchestrate(params.id) };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const handler = summaries.find((s) => s.kind === "handler");
+    const closure = handler?.metadata?.effectsClosure as
+      | Array<{ kind: string; target: string; transitive: boolean }>
+      | undefined;
+    expect(closure).toBeDefined();
+    const audit = closure?.find((e) => e.target === "audit.log");
+    expect(audit?.kind).toBe("invocation");
+    expect(audit?.transitive).toBe(true);
+  });
+});
+
 describe("createTypeScriptAdapter — rethrow enrichment", () => {
   it("populates rethrow.possibleSources from direct callees' throws", async () => {
     // `wrapper` is reachable via closure and uses a bare rethrow over
@@ -1471,6 +1522,74 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     expect(
       rethrowMeta?.possibleSources.every((s) => s.via === "loadUser"),
     ).toBe(true);
+  });
+
+  it("resolves transitive rethrow chains (A → B → C)", async () => {
+    // `outer` re-throws over `middle`, which re-throws over `deepest`.
+    // The rules-based propagation resolves `deepest`'s literal throw
+    // message all the way up to `outer` — the shape the one-hop
+    // implementation explicitly deferred.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function deepest(id: string) {
+        if (!id) throw new Error("deep failure");
+        return { id };
+      }
+
+      export function middle(id: string) {
+        try {
+          return deepest(id);
+        } catch (err) {
+          throw err;
+        }
+      }
+
+      export function outer(id: string) {
+        try {
+          return middle(id);
+        } catch (err) {
+          throw err;
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { outer } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        get: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: outer(params.id) };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const outerSummary = summaries.find((s) => s.identity.name === "outer");
+    const rethrowTransition = outerSummary?.transitions.find(
+      (t) => t.output.type === "throw",
+    );
+    const rethrowMeta = rethrowTransition?.metadata?.rethrow as
+      | { possibleSources: Array<{ via: string; message: string | null }> }
+      | undefined;
+    expect(rethrowMeta).toBeDefined();
+
+    // The deep message surfaces at the outer rethrow, attributed to the
+    // immediate callee it flowed through.
+    const deep = rethrowMeta?.possibleSources.find(
+      (s) => s.message === "deep failure",
+    );
+    expect(deep).toBeDefined();
+    expect(deep?.via).toBe("middle");
   });
 
   it("does NOT enrich throws that already carry a static message", async () => {

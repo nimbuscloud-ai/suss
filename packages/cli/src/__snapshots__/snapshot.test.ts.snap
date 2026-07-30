@@ -192,6 +192,24 @@ src/pages/user.ts
 "
 `;
 
+exports[`inspect output snapshots > renders the effects closure as a Reaches block 1`] = `
+"src/handlers/users.ts
+└─ GET /users/:id  (express handler | line 10)
+       if  !req.params.id
+         -> 400 { error }
+       elif  db.findById() == null
+         -> 404 { error }
+       else
+         -> 200 { id, name, email }
+   
+     Reaches:
+       invocation audit.log (via callees)
+       invocation db.findById
+
+1 summary.
+"
+`;
+
 exports[`inspect output snapshots > renders useEffect deps: mount-only, every-render, and dep list 1`] = `
 "src/Bar.tsx
 ├─ Bar  (react component | line 1)

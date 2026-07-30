@@ -71,7 +71,7 @@ describe("parseConditionExpression — truthinessCheck", () => {
       subject: {
         type: "derived",
         from: { type: "input", inputRef: "arr", path: [] },
-        derivation: { type: "indexAccess", index: "0" },
+        derivation: { type: "indexAccess", index: 0 },
       },
       negated: false,
     });

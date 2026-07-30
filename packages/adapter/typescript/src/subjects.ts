@@ -171,15 +171,29 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
   }
 
   // ElementAccessExpression: obj[key] → derived(resolveSubject(obj), indexAccess(key))
+  // The index must be a *value*, not source text: `obj["role"]` and
+  // `obj[roleVar]` would otherwise both encode as the same string and a
+  // dynamic access would masquerade as a static property read — a
+  // fabricated condition (extraction-algorithm.md, correctness
+  // principle #2). Resolve the index expression; concretize only when
+  // it lands on a string/number literal (directly or through a const
+  // chain), and mark the whole access unresolved otherwise.
   if (Node.isElementAccessExpression(expr)) {
-    return {
-      type: "derived",
-      from: resolveSubject(expr.getExpression(), depth + 1),
-      derivation: {
-        type: "indexAccess",
-        index: expr.getArgumentExpression()?.getText() ?? "?",
-      },
-    };
+    const argExpr = expr.getArgumentExpression();
+    const indexRef =
+      argExpr !== undefined ? resolveSubject(argExpr, depth + 1) : null;
+    if (
+      indexRef !== null &&
+      indexRef.type === "literal" &&
+      (typeof indexRef.value === "string" || typeof indexRef.value === "number")
+    ) {
+      return {
+        type: "derived",
+        from: resolveSubject(expr.getExpression(), depth + 1),
+        derivation: { type: "indexAccess", index: indexRef.value },
+      };
+    }
+    return { type: "unresolved", sourceText };
   }
 
   // Identifier — the core case with symbol resolution
@@ -218,6 +232,17 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
       const bindingName = decl.getName();
       const objectPattern = decl.getParent();
       if (Node.isObjectBindingPattern(objectPattern)) {
+        // Destructured *parameter* (`function C({ user }: Props)`) — the
+        // binding is an input, same as a plain parameter. Input mappings
+        // that destructure (React componentProps, react-router
+        // singleObjectParam) emit one Input per destructured name, so
+        // `input(name)` is the encoding that lines up with the summary's
+        // inputs table; `unresolved` here made every prop-gated condition
+        // opaque to downstream consumers.
+        const patternParent = objectPattern.getParent();
+        if (Node.isParameterDeclaration(patternParent)) {
+          return { type: "input", inputRef: bindingName, path: [] };
+        }
         const varDecl = objectPattern.getParent();
         if (Node.isVariableDeclaration(varDecl)) {
           const init = varDecl.getInitializer();

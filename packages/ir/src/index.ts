@@ -54,6 +54,7 @@ export type {
   ConfidenceInfo,
   ConfidenceLevel,
   ConfidenceSource,
+  Corroboration,
   FunctionCallSemantics,
   GraphqlOperationSemantics,
   GraphqlResolverSemantics,
@@ -197,3 +198,18 @@ export function diffSummaries(
 
   return { addedTransitions, removedTransitions, changedTransitions };
 }
+
+// ---------------------------------------------------------------------------
+// Predicate interpretation
+// ---------------------------------------------------------------------------
+
+export {
+  type EvalValue,
+  evalConditions,
+  evalPredicate,
+  evalValueRef,
+  type InterpretEnv,
+  type Tri,
+  triAnd,
+  triOr,
+} from "./interpret.js";
