@@ -1777,7 +1777,7 @@ export function createTypeScriptAdapter(
       // throw terminals (including reachable-closure ones) are available
       // to consult.
       const enriched = timer.time("enrichRethrows", () =>
-        enrichRethrows(withClosure, project),
+        enrichRethrows(withClosure, project, closureFacts),
       );
 
       // Transitive effects per entry point, derived from the shared

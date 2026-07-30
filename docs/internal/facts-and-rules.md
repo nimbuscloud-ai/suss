@@ -64,7 +64,7 @@ interface ClosureFacts {
 
 The reachable-closure pass populates the store as it expands (it is demand-driven: scan the unscanned reachable frontier for call edges, emit `calls` facts, re-evaluate, repeat — the lazy variant of pure evaluation, so we never parse files nothing reachable calls). Passes after it get the call graph for free.
 
-**Known debt:** re-throw enrichment (`resolve/rethrowEnrichment.ts`) still builds its own database with line-based location keys. Unifying it onto the shared store — one key scheme, one `calls` relation — is the next step on this track.
+Re-throw enrichment writes into the same store and names units with the same keys (falling back to line-based keys only when the closure didn't run, e.g. `includeReachable: false`). Note that its `siteCalls` relation is *not* the closure's `calls`: `calls(u, v)` means "u statically calls v anywhere", while `siteCalls(site, v)` scopes the call to one rethrow site's try block — collapsing them would over-propagate throw sources through calls outside the try.
 
 ## Relations in production
 
@@ -76,12 +76,10 @@ The reachable-closure pass populates the store as it expands (it is demand-drive
 | `unitEffect` | 3 | boundary effects | unit's transitions carry effect (kind, target) |
 | `reachFrom` | 2 | derived (effect rules) | unit is reachable from this specific entry |
 | `boundaryEffect` | 3 | derived (effect rules) | entry transitively reaches effect (kind, target) |
-| `throwsDirect` | 2 | rethrow enrichment* | unit has a throw terminal with this source |
-| `rethrowSite` | 2 | rethrow enrichment* | unit re-throws from a catch at this site |
-| `siteCalls` | 2 | rethrow enrichment* | that try block calls this unit |
+| `throwsDirect` | 2 | rethrow enrichment | unit has a throw terminal with this source |
+| `rethrowSite` | 2 | rethrow enrichment | unit re-throws from a catch at this site |
+| `siteCalls` | 2 | rethrow enrichment | that rethrow site's try block calls this unit |
 | `contributes` | 2 | derived (rethrow rules) | a throw source reaches this unit's re-throw |
-
-\* still on its own database; see "Known debt" above.
 
 Derived results surface to users as:
 

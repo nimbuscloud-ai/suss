@@ -38,6 +38,7 @@ import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "../conditions.js";
+import type { ClosureFacts } from "./boundaryEffects.js";
 
 interface RethrowSource {
   /** Name of the callee inside the try block whose throw we might be propagating. */
@@ -79,6 +80,7 @@ interface RethrowTarget {
 export function enrichRethrows(
   summaries: BehavioralSummary[],
   project: Project,
+  facts?: ClosureFacts,
 ): BehavioralSummary[] {
   // Index summaries by the `file:startLine-endLine` of the function they
   // describe. Callee resolution finds the declaration node; we key its
@@ -90,8 +92,22 @@ export function enrichRethrows(
   // the pass into O(summaries × source files) just for the lookup.
   const lookup = createSourceFileLookup(project);
 
+  // Unit naming: prefer the shared store's offset-based keys, so the
+  // relations this pass emits (`throwsDirect`, `contributes`, …) join
+  // against `entry` / `calls` / `unitEffect` under one identity.
+  // Summaries the closure never registered (or runs without the
+  // closure at all) fall back to the line-based key — every mint goes
+  // through here, so this pass stays internally consistent either way.
+  const keyFor = (summary: BehavioralSummary): string =>
+    facts?.unitKeyBySummary.get(summary) ??
+    locationKey(
+      summary.location.file,
+      summary.location.range.start,
+      summary.location.range.end,
+    );
+
   // ---- Fact emission ------------------------------------------------
-  const db = new Database();
+  const db = facts?.db ?? new Database();
   const sourceById = new Map<
     string,
     { exceptionType: string | null; message: string | null }
@@ -108,11 +124,7 @@ export function enrichRethrows(
     if (!summary.transitions.some((t) => t.output.type === "throw")) {
       continue;
     }
-    const unitKey = locationKey(
-      summary.location.file,
-      summary.location.range.start,
-      summary.location.range.end,
-    );
+    const unitKey = keyFor(summary);
     nameByUnit.set(unitKey, summary.identity.name);
 
     // Every throw terminal contributes what it textually says. Bare
@@ -154,7 +166,7 @@ export function enrichRethrows(
       siteCounter += 1;
       db.add("rethrowSite", [unitKey, siteId]);
       targets.push({ transition, siteId });
-      for (const calleeKey of collectTryBodyCallees(tryStmt, index)) {
+      for (const calleeKey of collectTryBodyCallees(tryStmt, index, keyFor)) {
         db.add("siteCalls", [siteId, calleeKey]);
       }
     }
@@ -348,7 +360,11 @@ function enclosingTry(throwStmt: Node): Node | null {
  * keys — the `siteCalls` fact set for one rethrow site. The rules
  * expand each callee's transitive contributions from here.
  */
-function collectTryBodyCallees(tryStmt: Node, index: SummaryIndex): string[] {
+function collectTryBodyCallees(
+  tryStmt: Node,
+  index: SummaryIndex,
+  keyFor: (summary: BehavioralSummary) => string,
+): string[] {
   if (!Node.isTryStatement(tryStmt)) {
     return [];
   }
@@ -364,11 +380,7 @@ function collectTryBodyCallees(tryStmt: Node, index: SummaryIndex): string[] {
     if (calleeSummary === null) {
       return;
     }
-    const key = locationKey(
-      calleeSummary.location.file,
-      calleeSummary.location.range.start,
-      calleeSummary.location.range.end,
-    );
+    const key = keyFor(calleeSummary);
     if (seen.has(key)) {
       return;
     }
