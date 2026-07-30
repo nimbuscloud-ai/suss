@@ -1,4 +1,4 @@
-// paths/pathConditions.ts — CFG-semantics path conditions (WS-2).
+// paths/pathConditions.ts — CFG-semantics path conditions.
 //
 // Replaces the legacy `collectEarlyReturns` + `collectAncestorBranches`
 // pair with per-path enumeration: every entry→terminal control-flow

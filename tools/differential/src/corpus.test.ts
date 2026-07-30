@@ -4,7 +4,7 @@
 // as a concrete (program, request, verdict) triple:
 //
 // - `gap:*` entries document a KNOWN soundness gap: the test asserts
-//   the mismatch still reproduces. When WS-2's rework closes the gap,
+//   the mismatch still reproduces. When extraction rework closes the gap,
 //   the entry fails — that's the signal to flip its verdict to
 //   "clean", turning the same triple into a regression fixture.
 // - `fixed:*` entries pin a bug that has been fixed: the test asserts

@@ -67,7 +67,7 @@ generators.ts ──▶ program.ts DSL ──▶ renderBodyLines(program, target
   load-bearing: opaque predicates, dependency/state/unresolved refs,
   method-call and awaited derivations all evaluate to `unknown`,
   never a guess. This module is deliberately standalone — it is the
-  planned shared core for `suss corroborate` (WS-3).
+  planned shared core for the planned `suss corroborate`.
 - **`target.ts`** — the only place framework syntax lives. A
   `FuzzTarget` is: a `PatternPack`, a terminal renderer
   (`res.status(N).json(B)` vs `res.code(N).send(B)`), a module

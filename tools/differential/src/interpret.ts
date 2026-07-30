@@ -8,7 +8,7 @@
 // three-valued logic, so one unknown conjunct makes the conjunction
 // unknown rather than silently true or false.
 //
-// This is deliberately a standalone module: `suss corroborate` (WS-3)
+// This is deliberately a standalone module: the planned `suss corroborate`
 // needs the same interpreter to drive per-transition property tests,
 // and promoting this file into a published package is the planned path.
 
