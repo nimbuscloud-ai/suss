@@ -16,12 +16,15 @@
 //     explicit *opaque* condition (quantified-over-iterations facts are
 //     not statically decidable — under-specify, never fabricate).
 //
-// Scope: the enumeration runs on *structured* statement flow only. A
-// function whose unit-level flow contains `switch`, `try`, labels,
-// `break`, or `continue` returns null and the caller falls back to the
-// legacy collectors — behavior-preserving by conservatism. Since every
-// remaining construct is structured, recursive enumeration over the AST
-// is equivalent to a query over the lowered CFG; the explicit cfgEdge
+// Scope: the enumeration models if/else, switch (trailing-break
+// bodies), loops (opaque-quantified), try/catch (opaque catch entry,
+// pure-cleanup finally), break/continue (path enders), and
+// expression-bodied arrows. What still declines to the legacy
+// collectors: labeled statements, `finally` blocks with exits or
+// terminals, switch fallthrough into a non-empty clause, non-trailing
+// switch breaks, and the path-count budget. Since every modeled
+// construct is structured, recursive enumeration over the AST is
+// equivalent to a query over the lowered CFG; the explicit cfgEdge
 // fact materialization arrives with the rules engine (see
 // docs/internal/differential-fuzzing.md and status.md decision #54+).
 //
@@ -66,35 +69,15 @@ const isFunctionBoundary = (node: Node): boolean =>
   Node.isArrowFunction(node) ||
   Node.isMethodDeclaration(node);
 
-/** The nearest enclosing construct a `break` binds to. */
-function breakBindsToLoop(breakStmt: Node): boolean {
-  let current: Node | undefined = breakStmt.getParent();
-  while (current !== undefined) {
-    if (Node.isSwitchStatement(current)) {
-      return false;
-    }
-    if (
-      Node.isForOfStatement(current) ||
-      Node.isForInStatement(current) ||
-      Node.isForStatement(current) ||
-      Node.isWhileStatement(current) ||
-      Node.isDoStatement(current)
-    ) {
-      return true;
-    }
-    current = current.getParent();
-  }
-  return false;
-}
-
 /**
  * True when the unit-level statement flow contains a construct the
- * enumeration doesn't model (try / labels / continue / loop-bound
- * breaks). Switch statements and their breaks are modeled by
- * `stepSwitch`; a break that binds to a *loop* still bails. Nested
- * function bodies don't count — their control flow is not the unit's
- * statement flow (a `switch` inside a `.forEach` callback is handled
- * by the expression-level ancestor walker).
+ * enumeration doesn't model. Only labeled statements remain a blanket
+ * bail: switch and try/catch are modeled by `stepSwitch` / the try
+ * handler (cursed `finally` shapes decline at step time), and break /
+ * continue end their path (a loop break joins after the loop, whose
+ * conditions are opacified anyway; a continue ends the symbolic
+ * iteration). Nested function bodies don't count — their control flow
+ * is not the unit's statement flow.
  */
 function containsUnmodeledFlow(body: Node): boolean {
   let found = false;
@@ -103,12 +86,7 @@ function containsUnmodeledFlow(body: Node): boolean {
       traversal.skip();
       return;
     }
-    if (
-      Node.isTryStatement(node) ||
-      Node.isLabeledStatement(node) ||
-      Node.isContinueStatement(node) ||
-      (Node.isBreakStatement(node) && breakBindsToLoop(node))
-    ) {
+    if (Node.isLabeledStatement(node)) {
       found = true;
       traversal.stop();
     }
@@ -301,7 +279,7 @@ const loopCompletedCond = (header: string, exit: ExitKind): PathCond => ({
   oppositeExit: exit,
 });
 
-const isLoop = (stmt: Statement): boolean =>
+const isLoop = (stmt: Node): boolean =>
   Node.isForOfStatement(stmt) ||
   Node.isForInStatement(stmt) ||
   Node.isForStatement(stmt) ||
@@ -437,6 +415,45 @@ function stepStatement(
     return [path];
   }
 
+  // Try/catch: the try body runs on the incoming path; the catch body
+  // runs under an opaque "catch" condition (which throw fired is not
+  // statically decidable — same abstention the legacy collector used).
+  // A `finally` is allowed only as pure cleanup: one with unit exits
+  // or terminals declines to legacy (returns-from-finally are cursed;
+  // never fabricate their interleavings).
+  if (Node.isTryStatement(stmt)) {
+    for (const terminal of headerTerminals) {
+      recordTerminal(state, terminal, stmt, path);
+    }
+    const finallyBlock = stmt.getFinallyBlock();
+    if (finallyBlock !== undefined) {
+      const finallyStmts = finallyBlock.getStatements();
+      const finallyHasTerminal = finallyStmts.some((s) =>
+        containsTerminal(s, terminals),
+      );
+      if (exitKindOfList(finallyStmts) !== null || finallyHasTerminal) {
+        throw new UnmodeledFlow("finally block with exits or terminals");
+      }
+    }
+    const out: PathCond[][] = [];
+    out.push(
+      ...enumerate(state, stmt.getTryBlock().getStatements(), path, terminals),
+    );
+    const catchClause = stmt.getCatchClause();
+    if (catchClause !== undefined) {
+      const catchPath = [...path, catchEntryCond()];
+      out.push(
+        ...enumerate(
+          state,
+          catchClause.getBlock().getStatements(),
+          catchPath,
+          terminals,
+        ),
+      );
+    }
+    return out;
+  }
+
   // Any statement may carry terminals (return-shape returns, res.*
   // calls in expression statements, throws, ternary arms, terminals
   // inside nested callbacks).
@@ -445,12 +462,33 @@ function stepStatement(
     recordTerminal(state, terminal, stmt, path);
   }
 
-  // Return/throw ends the path.
-  if (Node.isReturnStatement(stmt) || Node.isThrowStatement(stmt)) {
+  // Return/throw ends the path. So do break and continue: a trailing
+  // switch break never reaches here (stepSwitch strips it) and a
+  // non-trailing one declines earlier, so any break here binds a loop
+  // — it jumps to after that loop, whose continuation the loop handler
+  // computes independently; a continue ends the symbolic iteration.
+  if (
+    Node.isReturnStatement(stmt) ||
+    Node.isThrowStatement(stmt) ||
+    Node.isBreakStatement(stmt) ||
+    Node.isContinueStatement(stmt)
+  ) {
     return [];
   }
   return [path];
 }
+
+/** The legacy collector's exact catch condition — IDs stay stable. */
+const catchEntryCond = (): PathCond => ({
+  info: {
+    sourceText: "catch",
+    polarity: "positive",
+    source: "catchBlock",
+    expression: null,
+  },
+  branchStmt: null,
+  oppositeExit: null,
+});
 
 /**
  * Every `break` in a clause body must be the clause's final top-level
@@ -465,7 +503,11 @@ function validateClauseBreaks(stmts: Statement[]): void {
       continue;
     }
     stmt.forEachDescendant((node, traversal) => {
-      if (isFunctionBoundary(node) || Node.isSwitchStatement(node)) {
+      if (
+        isFunctionBoundary(node) ||
+        Node.isSwitchStatement(node) ||
+        isLoop(node)
+      ) {
         traversal.skip();
         return;
       }
@@ -648,8 +690,22 @@ export function computePathConditions(
   terminalNodes: readonly Node[],
 ): PathConditionsResult | null {
   const body = func.getBody();
-  if (body === undefined || !Node.isBlock(body)) {
+  if (body === undefined) {
     return null;
+  }
+  if (!Node.isBlock(body)) {
+    // Expression-bodied arrow: one unconditional path; all branching is
+    // expression-level (ternaries, &&/||) — same as the legacy walk.
+    const byTerminal = new Map<Node, TerminalPaths>();
+    for (const terminal of terminalNodes) {
+      if (terminal === body) {
+        continue;
+      }
+      byTerminal.set(terminal, [
+        collectAncestorConditionInfosBelow(terminal, func),
+      ]);
+    }
+    return { byTerminal, fallthrough: [] };
   }
   if (containsUnmodeledFlow(body)) {
     return null;
@@ -676,6 +732,17 @@ export function computePathConditions(
       if (Node.isSwitchStatement(stmt)) {
         for (const clause of stmt.getClauses()) {
           collectVisited(clause.getStatements());
+        }
+      }
+      if (Node.isTryStatement(stmt)) {
+        collectVisited(stmt.getTryBlock().getStatements());
+        const catchClause = stmt.getCatchClause();
+        if (catchClause !== undefined) {
+          collectVisited(catchClause.getBlock().getStatements());
+        }
+        const finallyBlock = stmt.getFinallyBlock();
+        if (finallyBlock !== undefined) {
+          collectVisited(finallyBlock.getStatements());
         }
       }
     }

@@ -277,13 +277,11 @@ describe("computePathConditions — shapes the legacy collectors got wrong", () 
 
 describe("computePathConditions — conservative bails", () => {
   const bailSources = [
-    [
-      "try",
-      "try { return { status: 200 }; } catch { return { status: 500 }; }",
-    ],
-    ["break", "for (const k of a) { break; }\nreturn { status: 200 };"],
-    ["continue", "for (const k of a) { continue; }\nreturn { status: 200 };"],
     ["labeled", "outer: for (const k of a) { }\nreturn { status: 200 };"],
+    [
+      "finally with a return",
+      "try { f(); } finally { return { status: 200 }; }",
+    ],
   ] as const;
 
   for (const [name, body] of bailSources) {
@@ -442,7 +440,7 @@ describe("computePathConditions — switch lowering", () => {
     expect(computePathConditions(fn, returnTerminals(fn))).toBeNull();
   });
 
-  it("still declines breaks that bind to loops", () => {
+  it("models loop breaks as path enders — the after-loop terminal stays clean", () => {
     const fn = getFunction(`
       export function handler(items: string[]) {
         for (const item of items) {
@@ -453,6 +451,98 @@ describe("computePathConditions — switch lowering", () => {
         return { status: 200 };
       }
     `);
-    expect(computePathConditions(fn, returnTerminals(fn))).toBeNull();
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      "<unconditional>",
+    ]);
+  });
+});
+
+describe("computePathConditions — try/catch", () => {
+  it("catch terminals carry the legacy catch condition; rethrows too", () => {
+    const fn = getFunction(`
+      export function handler(load: () => { status: number }) {
+        try {
+          return { status: 200 };
+        } catch (err) {
+          throw err;
+        }
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      "<unconditional>",
+    ]);
+    const throws = fn.getDescendantsOfKind(SyntaxKind.ThrowStatement);
+    const throwResult = computePathConditions(fn, throws);
+    expect(pathSigs(throwResult?.byTerminal.get(throws[0]))).toEqual([
+      "positive:catchBlock:catch",
+    ]);
+  });
+
+  it("a catch that falls through splits the after-try terminal per route", () => {
+    const fn = getFunction(`
+      export function handler(log: (m: string) => void) {
+        try {
+          log("attempt");
+        } catch (err) {
+          log("recovered");
+        }
+        return { status: 200 };
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      "<unconditional>",
+      "positive:catchBlock:catch",
+    ]);
+  });
+
+  it("guards inside a catch compose with the catch condition", () => {
+    const fn = getFunction(`
+      export function handler(load: () => void, isFatal: (e: unknown) => boolean) {
+        try {
+          load();
+        } catch (err) {
+          if (isFatal(err)) {
+            return { status: 500 };
+          }
+          return { status: 502 };
+        }
+        return { status: 200 };
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      "positive:catchBlock:catch ∧ positive:explicit:isFatal(err)",
+    ]);
+    expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
+      "positive:catchBlock:catch ∧ negative:earlyReturn:isFatal(err)",
+    ]);
+    // After-try only via the non-throwing route (the catch always exits).
+    expect(pathSigs(result?.byTerminal.get(terminals[2]))).toEqual([
+      "<unconditional>",
+    ]);
+  });
+
+  it("allows a pure-cleanup finally as a pass-through", () => {
+    const fn = getFunction(`
+      export function handler(conn: { release: () => void }) {
+        try {
+          return { status: 200 };
+        } finally {
+          conn.release();
+        }
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      "<unconditional>",
+    ]);
   });
 });
