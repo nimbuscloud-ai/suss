@@ -14,6 +14,7 @@
 export const coveragePackages = [
   // Core IR
   ["packages/ir-core", "ir-core"],
+  ["packages/datalog", "datalog"],
   ["packages/ir", "ir"],
   ["packages/intent-ir", "intent-ir"],
   ["packages/extractor", "extractor"],
