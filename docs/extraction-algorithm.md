@@ -53,7 +53,7 @@ Step 4 is where symbol resolution kicks in via ts-morph's type checker. It's the
 
 Each step lives in its own file (`paths/pathConditions.ts` for the path engine, `conditions.ts` for the expression-level walker it composes, `predicates.ts`, `subjects.ts`, `terminals/`). They compose, but they don't call each other directly, composition happens in `assembly.ts`.
 
-This document covers per-function extraction. The whole-program passes that run after it — reachable closure, re-throw enrichment, boundary effects — are rules over a shared fact database, documented in [`internal/facts-and-rules.md`](internal/facts-and-rules.md).
+This document covers per-function extraction. The whole-program passes that run after it (reachable closure, re-throw enrichment, boundary effects) are rules over a shared fact database, documented in [`internal/facts-and-rules.md`](internal/facts-and-rules.md).
 
 ## Step 1: `findTerminals`
 
@@ -105,15 +105,15 @@ Response bodies and return values are extracted into `TypeShape` (see `ir-refere
 
 ## Steps 2+3: CFG path conditions
 
-Steps 2 and 3 are computed by the path engine (`paths/pathConditions.ts`) — the only condition engine. It enumerates every entry→terminal control-flow path over the function's statement flow and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each carrying its true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps (see decisions #56–#59 in `internal/status.md`):
+Steps 2 and 3 are computed by the path engine (`paths/pathConditions.ts`), the only condition engine. It enumerates every entry→terminal control-flow path over the function's statement flow and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each carrying its true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps (see decisions #56 through #59 in `internal/status.md`):
 
-- `if (a) { if (b) return X; } Y` → Y gets the paths `[¬a]` and `[a, ¬b]` — never a fabricated `¬a ∧ ¬b` or an empty list;
+- `if (a) { if (b) return X; } Y` → Y gets the paths `[¬a]` and `[a, ¬b]`, never a fabricated `¬a ∧ ¬b` or an empty list;
 - sibling guards inside a block gate their tails (`if (a) { if (b) return X; T }` → T gets `[a, ¬b]`);
 - `if (a) {…} else { return; } T` → T gets `[a]` (else-exit closure);
-- terminals inside loops carry an opaque "some iteration" condition and post-loop terminals an opaque "loop exited" negation — quantified-over-iterations facts are not statically decidable, so the engine under-specifies rather than fabricates;
+- terminals inside loops carry an opaque "some iteration" condition and post-loop terminals an opaque "loop exited" negation; quantified-over-iterations facts are not statically decidable, so the engine under-specifies rather than fabricates;
 - dead-code terminals (no entry path) produce no transitions.
 
-Expression-level branching *below* a statement (ternaries, `&&`/`||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker in `conditions.ts` — the path engine walks statements, the walker covers the expression tree beneath them.
+Expression-level branching *below* a statement (ternaries, `&&`/`||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker in `conditions.ts`: the path engine walks statements, the walker covers the expression tree beneath them.
 
 The engine's fidelity is verified mechanically by the differential fuzzer (`tools/differential`; see [`internal/differential-fuzzing.md`](internal/differential-fuzzing.md)).
 
@@ -121,12 +121,12 @@ The engine's fidelity is verified mechanically by the differential fuzzer (`tool
 
 The whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), all loop forms, `try`/`catch` (plus `finally` when it's pure cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. Two constructs deliberately abstain rather than claim:
 
-- **Loops.** Whether a condition held *on some iteration* is not statically decidable, so in-loop terminals carry an opaque "some iteration of:" condition and post-loop terminals an opaque "loop exited" negation — under-specified, never fabricated.
+- **Loops.** Whether a condition held *on some iteration* is not statically decidable, so in-loop terminals carry an opaque "some iteration of:" condition and post-loop terminals an opaque "loop exited" negation. Under-specified, never fabricated.
 - **Catch blocks.** Which statement threw is not statically decidable, so catch-body terminals carry a single opaque `catch` condition (`source: "catchBlock"`).
 
 ### Declined shapes degrade, never lie
 
-A few shapes the engine does not model: labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, and functions exceeding the 256-path budget. There is no second engine behind these. They **degrade**: each terminal keeps its enclosure conditions (the ancestor branches it sits inside, which gate it regardless of how the flow weaves) plus one opaque `unmodeled control flow (<reason>)` conjunct, so the transition honestly abstains from claiming a complete condition set. Under-specification over occasionally-wrong claims — correctness principle #2.
+A few shapes the engine does not model: labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, and functions exceeding the 256-path budget. There is no second engine behind these. They **degrade**: each terminal keeps its enclosure conditions (the ancestor branches it sits inside, which gate it regardless of how the flow weaves) plus one opaque `unmodeled control flow (<reason>)` conjunct, so the transition honestly abstains from claiming a complete condition set. Under-specification over occasionally-wrong claims is correctness principle #2.
 
 ### Below statements: the expression-level walker
 
@@ -300,7 +300,7 @@ extractRawBranches(func, pack):
 
     branches = []
     for terminal in terminals:
-        // A terminal with no entry path is dead code — no branches.
+        // A terminal with no entry path is dead code: no branches.
         for conditionList in byTerminal.get(terminal.node) ?? []:
             branches.push({
                 conditions: conditionList.map(conditionInfoToRawCondition),
@@ -317,7 +317,7 @@ Each `ConditionInfo` carries the condition's source text, polarity, and provenan
 Two post-passes follow in `assembly.ts`:
 
 - **Fall-through synthesis.** When the pack opted in with a `functionFallthrough` terminal pattern and no existing terminal covers the default path, a synthetic terminal is added whose condition lists are the paths that fall off the body's end (`pathConditions`' `fallthrough` result). Pack opt-in keeps the semantics where they're declared: HTTP packs treat no-response as a gap, React event handlers treat implicit return as normal.
-- **Effect attachment.** Bare expression-statement calls and recognizer-typed effects attach to the default branch — the path every body-top-level call executes on.
+- **Effect attachment.** Bare expression-statement calls and recognizer-typed effects attach to the default branch, the path every body-top-level call executes on.
 
 The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which handles the opaque-wrapping, gap detection, confidence scoring, and `expectedInput` pass-through. That logic is already implemented and tested, this document covers only the adapter side.
 

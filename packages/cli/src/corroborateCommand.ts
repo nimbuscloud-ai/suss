@@ -114,7 +114,7 @@ function formatReport(reports: SummaryReport[], total: number): string {
     }
     const claims = report.observed + report.refuted + report.untested;
     lines.push(
-      `  ${report.label} — ${claims} claim${claims === 1 ? "" : "s"}: ${
+      `  ${report.label}: ${claims} claim${claims === 1 ? "" : "s"}, ${
         parts.length > 0 ? parts.join(", ") : "none with a literal status"
       }`,
     );
