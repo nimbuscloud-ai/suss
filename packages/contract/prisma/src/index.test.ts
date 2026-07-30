@@ -121,6 +121,44 @@ describe("prismaSchemaToSummaries", () => {
     expect(tableOf(user)).toBe("User");
   });
 
+  it("reads @@map into storageContract.physicalTable", () => {
+    const summaries = prismaSchemaToSummaries(`
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id    Int    @id
+  email String
+
+  @@map("users")
+}
+
+model Post {
+  id Int @id
+}
+`);
+    const user =
+      summaries.find((s) => s.identity.name === "User") ??
+      raise("User summary not found");
+    // The binding channel stays the model name; the SQL name rides
+    // along as the cross-tool alias.
+    expect(tableOf(user)).toBe("User");
+    expect(
+      (user.metadata?.storageContract as { physicalTable?: string })
+        .physicalTable,
+    ).toBe("users");
+    // No @@map → no alias key at all.
+    const post =
+      summaries.find((s) => s.identity.name === "Post") ??
+      raise("Post summary not found");
+    expect(
+      (post.metadata?.storageContract as { physicalTable?: string })
+        .physicalTable,
+    ).toBeUndefined();
+  });
+
   it("captures scalar columns with type, nullable, primary, unique", () => {
     const summaries = prismaSchemaToSummaries(postgresSchema);
     const user =

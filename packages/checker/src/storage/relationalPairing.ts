@@ -46,6 +46,14 @@ interface StorageContractMetadata {
     unique?: boolean;
   }>;
   indexes?: Array<{ fields: string[]; unique: boolean }>;
+  /**
+   * The physical SQL table name when it differs from the binding's
+   * `table` channel — e.g. a Prisma model `User` with
+   * `@@map("users")`. Consumers that speak SQL names directly
+   * (Drizzle, raw SQL) match through this alias, so both ORMs'
+   * accesses land on the same schema provider.
+   */
+  physicalTable?: string;
 }
 
 type StorageAccessRecord = InteractionRecord<"storage-access"> & {
@@ -96,12 +104,21 @@ export function checkRelationalStorage(
       (contract.columns ?? []).map((c) => c.name),
     );
 
-    // In-scope accesses: same storageSystem + scope + table.
+    // In-scope accesses: same storageSystem + scope, and a table
+    // matching either of the provider's names — the binding's own
+    // channel (Prisma model name) or the physical SQL name from the
+    // schema's @@map. Both are declared facts, so matching either is
+    // exact, never a guess.
+    const tableNames = new Set(
+      [semantics.table, contract.physicalTable].filter(
+        (name): name is string => name !== undefined,
+      ),
+    );
     const inScope = accesses.filter(
       (a) =>
         a.semantics.storageSystem === semantics.storageSystem &&
         a.semantics.scope === semantics.scope &&
-        a.semantics.table === semantics.table,
+        tableNames.has(a.semantics.table),
     );
 
     // Track field usage across all in-scope accesses for the

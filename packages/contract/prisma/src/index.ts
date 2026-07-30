@@ -200,6 +200,7 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
     unique?: boolean;
   }> = [];
   const indexes: Array<{ fields: string[]; unique: boolean }> = [];
+  const physicalTable = physicalTableOf(opts.model);
 
   for (const property of opts.model.properties) {
     if ((property as { type: string }).type === "field") {
@@ -242,6 +243,9 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
       storageContract: {
         columns,
         indexes,
+        ...(physicalTable !== null && physicalTable !== opts.model.name
+          ? { physicalTable }
+          : {}),
       },
     },
   };
@@ -301,9 +305,46 @@ function fieldToColumn(
 }
 
 /**
+ * The physical SQL table name from a model's `@@map("...")` block
+ * attribute, or null when the model has none (in which case the
+ * physical table IS the model name — Prisma's default). This is the
+ * cross-tool pairing bridge: code that speaks SQL names directly
+ * (Drizzle's `pgTable("users")`, raw SQL) matches a mapped model
+ * through this channel.
+ */
+function physicalTableOf(model: PrismaModel): string | null {
+  for (const property of model.properties) {
+    if ((property as { type: string }).type !== "attribute") {
+      continue;
+    }
+    const attr = property as PrismaAttribute;
+    if (attr.name !== "map") {
+      continue;
+    }
+    const name = readStringArg(attr);
+    if (name !== null) {
+      return name;
+    }
+  }
+  return null;
+}
+
+function readStringArg(attr: PrismaAttribute): string | null {
+  for (const arg of attr.args ?? []) {
+    const value = arg.value;
+    if (typeof value === "string") {
+      // prisma-ast keeps the quotes on string literals.
+      return value.replace(/^"|"$/g, "");
+    }
+  }
+  return null;
+}
+
+/**
  * Convert a block-level attribute (`@@index([...])`, `@@unique([...])`,
- * `@@id([...])`) into an index entry. Other block attributes (`@@map`,
- * `@@schema`) are ignored.
+ * `@@id([...])`) into an index entry. Other block attributes
+ * (`@@schema`) are ignored; `@@map` is read separately as the
+ * physical table name.
  */
 function blockAttributeToIndex(
   attr: PrismaAttribute,
