@@ -232,6 +232,17 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
       const bindingName = decl.getName();
       const objectPattern = decl.getParent();
       if (Node.isObjectBindingPattern(objectPattern)) {
+        // Destructured *parameter* (`function C({ user }: Props)`) — the
+        // binding is an input, same as a plain parameter. Input mappings
+        // that destructure (React componentProps, react-router
+        // singleObjectParam) emit one Input per destructured name, so
+        // `input(name)` is the encoding that lines up with the summary's
+        // inputs table; `unresolved` here made every prop-gated condition
+        // opaque to downstream consumers.
+        const patternParent = objectPattern.getParent();
+        if (Node.isParameterDeclaration(patternParent)) {
+          return { type: "input", inputRef: bindingName, path: [] };
+        }
         const varDecl = objectPattern.getParent();
         if (Node.isVariableDeclaration(varDecl)) {
           const init = varDecl.getInitializer();
