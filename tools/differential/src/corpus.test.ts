@@ -22,6 +22,10 @@
 //   read and produced false claims. Fixed in
 //   packages/adapter/typescript/src/subjects.ts (dynamic index →
 //   unresolved). Entry pins the fixed behavior.
+// - 2026-07-30: nested-guard and loop-return entries flipped gap:* →
+//   fixed:* — the CFG path engine (adapter paths/pathConditions.ts)
+//   closed both documented soundness gaps; the entries now pin the
+//   sound per-path conditions as regressions.
 
 import { describe, expect, it } from "vitest";
 
@@ -67,12 +71,13 @@ const truthyAuth = {
 
 const CORPUS: CorpusEntry[] = [
   {
-    name: "nested guard: outer if wrapping a guard is invisible to later terminals",
-    tag: "gap:nested-guard",
+    name: "nested guard: later terminals carry per-path conditions",
+    tag: "fixed:nested-guard",
     // if (q) { if (q) { 400; return; } }  res.json(200)
-    // The outer if's then-block has no *direct* return, so the guard
-    // walker never records it — the final 200 claims to be
-    // unconditional while execution 400s.
+    // Under the legacy collectors the outer if's then-block had no
+    // *direct* return, so the guard was never recorded and the final
+    // 200 claimed to be unconditional while execution 400d. The CFG
+    // path engine gives the final one branch per real path.
     program: {
       guards: [
         {
@@ -88,13 +93,13 @@ const CORPUS: CorpusEntry[] = [
       },
     },
     expectations: [
-      { request: { query: { q: "a" } }, verdict: "falseClaim" },
+      { request: { query: { q: "a" } }, verdict: "clean" },
       { request: {}, verdict: "clean" },
     ],
   },
   {
-    name: "block guard: tail terminal misses its sibling guard's negation",
-    tag: "gap:nested-guard",
+    name: "block guard: tail terminal carries its sibling guard's negation",
+    tag: "fixed:nested-guard",
     // if (q) { if (auth) { 401; return; } 200; return; }  404
     program: {
       guards: [
@@ -112,20 +117,19 @@ const CORPUS: CorpusEntry[] = [
       },
     },
     expectations: [
-      // Tail claims [q] but truth is q ∧ ¬auth: 401 observed, tail true.
+      // Tail now claims q ∧ ¬auth (legacy claimed just [q] → falseClaim).
       {
         request: { query: { q: "a" }, headers: { authorization: "a" } },
-        verdict: "falseClaim",
+        verdict: "clean",
       },
-      // Final claims ¬q ∧ ¬auth but truth is just ¬q: 404 observed,
-      // no transition admits it.
-      { request: { headers: { authorization: "a" } }, verdict: "uncovered" },
+      // Final now claims [¬q] per path (legacy claimed ¬q ∧ ¬auth → uncovered).
+      { request: { headers: { authorization: "a" } }, verdict: "clean" },
       { request: { query: { q: "a" } }, verdict: "clean" },
     ],
   },
   {
-    name: "loop guard: terminal after the loop misses the loop-guard negation",
-    tag: "gap:loop-return",
+    name: "loop guard: terminal after the loop abstains via the opaque loop condition",
+    tag: "fixed:loop-return",
     // for (const key of ["q"]) { if (!req.query[key]) { 400; return; } }  201
     program: {
       guards: [
@@ -142,9 +146,10 @@ const CORPUS: CorpusEntry[] = [
       },
     },
     expectations: [
-      // Loop guard fires (q missing) → 400 observed, but the 201
-      // transition still claims unconditional truth.
-      { request: {}, verdict: "falseClaim" },
+      // Loop guard fires (q missing) → 400 observed; the 201 transition
+      // carries the opaque loop-exit negation and abstains (legacy
+      // claimed unconditional truth → falseClaim).
+      { request: {}, verdict: "clean" },
     ],
   },
   {

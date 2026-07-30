@@ -7,10 +7,12 @@
 //
 // Corpus log:
 // - 2026-07-30: nested null-guard captured from the first JSX fuzz
-//   session — the outer `if` wrapping a guard is invisible to the
+//   session — the outer `if` wrapping a guard was invisible to the
 //   final render transition (same adapter machinery as the HTTP
-//   nested-guard entries), so the render claims to be unconditional
-//   while execution returns null.
+//   nested-guard entries), so the render claimed to be unconditional
+//   while execution returned null.
+// - 2026-07-30: flipped gap:* → fixed:* — the CFG path engine closed
+//   the nested-guard gap; the entry now pins per-path conditions.
 
 import { describe, expect, it } from "vitest";
 
@@ -44,8 +46,8 @@ const truthyUser = {
 
 const CORPUS: ComponentCorpusEntry[] = [
   {
-    name: "nested null-guard: outer if wrapping a guard is invisible to the final render",
-    tag: "gap:nested-guard",
+    name: "nested null-guard: the final render carries per-path conditions",
+    tag: "fixed:nested-guard",
     // if (user) { if (user) { return null; } }  return <div/>;
     program: {
       props: ["user"],
@@ -55,9 +57,10 @@ const CORPUS: ComponentCorpusEntry[] = [
       root: { type: "element", tag: "div", children: [] },
     },
     expectations: [
-      // Both guards fire → observed null, but the render transition
-      // claims unconditional truth and cannot admit a null render.
-      { props: { user: "a" }, verdict: "falseClaim" },
+      // Both guards fire → observed null; the render transition now
+      // carries its per-path conditions, which evaluate false here
+      // (legacy claimed unconditional truth → falseClaim).
+      { props: { user: "a" }, verdict: "clean" },
       { props: { user: "" }, verdict: "clean" },
     ],
   },

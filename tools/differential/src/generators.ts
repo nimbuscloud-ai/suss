@@ -1,13 +1,11 @@
 // generators.ts — fast-check arbitraries over the handler-program DSL.
 //
-// Tiers mirror the extraction algorithm's documented soundness
-// boundary. The sound tier emits only constructs extraction claims to
-// model faithfully (top-level guards, compound conditions, final
-// if-else / ternary); its differential property must hold. The gap
-// tiers add the constructs with documented soundness gaps (guards one
-// block deep, guards inside loops); their properties are *expected* to
-// find counterexamples until WS-2 closes the gaps — each gap arm is the
-// mechanical rediscovery of a known limitation.
+// Tiers mirror the extraction algorithm's soundness boundary. The
+// sound tier's differential property must hold. Nested guards and
+// loop guards were gap-tier constructs (documented soundness gaps,
+// rediscovered mechanically by inverted milestone properties) until
+// the CFG path engine closed both — they are now part of the sound
+// tier, and the former milestones assert the constructs stay sound.
 
 import fc from "fast-check";
 
@@ -22,15 +20,13 @@ import type {
 } from "./program.js";
 
 export interface FuzzTier {
-  /** Allow guards nested one block deep (documented nested-guard gap). */
+  /** Allow guards nested one block deep (sound since the CFG path engine). */
   nested: boolean;
-  /** Allow guards inside for-of loops (documented loop-return gap). */
+  /** Allow guards inside for-of loops (sound since the CFG path engine). */
   loops: boolean;
 }
 
-export const SOUND_TIER: FuzzTier = { nested: false, loops: false };
-export const NESTED_TIER: FuzzTier = { nested: true, loops: false };
-export const LOOP_TIER: FuzzTier = { nested: false, loops: true };
+export const SOUND_TIER: FuzzTier = { nested: true, loops: true };
 
 const KEYS_BY_SOURCE: Record<FieldSource, string[]> = {
   params: ["id", "slug"],

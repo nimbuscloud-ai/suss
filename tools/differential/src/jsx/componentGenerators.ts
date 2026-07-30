@@ -166,10 +166,10 @@ export const arbComponentProgram: fc.Arbitrary<ComponentProgram> = fc
   }));
 
 /**
- * Gap tier: at least one nested null-guard — the documented
- * nested-guard soundness gap, manifesting at the render boundary. The
- * rediscovery milestone requires the fuzzer to find a mismatch here
- * until the underlying extraction gap is fixed.
+ * At least one nested null-guard in every component. This was the
+ * render-boundary gap tier until the CFG path engine closed the
+ * nested-guard gap; it now runs as a regular sound property so the
+ * promoted construct stays sound.
  */
 export const arbComponentProgramWithNestedGuard: fc.Arbitrary<ComponentProgram> =
   fc

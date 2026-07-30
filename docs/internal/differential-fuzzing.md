@@ -99,14 +99,19 @@ consume summaries.
   (override: `SUSS_FUZZ_SEED`, `SUSS_FUZZ_RUNS`). A counterexample
   here is an undocumented extraction bug: shrink it, fix it or file
   it, and pin it in `corpus.test.ts`.
-- **Gap tiers** (`arbNestedGuard`, `arbLoopGuard`) — constructs whose
-  unsoundness is *documented*. Their properties are inverted: the
-  fuzzer is **required** to rediscover each gap within a bounded run.
-  This keeps the documentation honest in both directions — the gap
-  can't silently grow (sound tier would catch spillover) and can't
-  silently close (the rediscovery test fails, telling you to promote
-  the construct to the sound tier and flip its corpus entries to
-  `clean`).
+- **Gap tiers** — constructs whose unsoundness is *documented* run
+  inverted properties: the fuzzer is **required** to rediscover each
+  gap within a bounded run. This keeps the documentation honest in
+  both directions — the gap can't silently grow (sound tier would
+  catch spillover) and can't silently close (the rediscovery test
+  fails, telling you to promote the construct to the sound tier and
+  flip its corpus entries to `clean`). The nested-guard and
+  loop-return tiers went through this full lifecycle: rediscovered
+  mechanically, then closed by the CFG path engine (status.md decision
+  #56), at which point both boundaries' milestones flipped together
+  and the constructs joined the sound tier — `arbNestedGuard` /
+  `arbLoopGuard` now run as "promoted constructs stay sound"
+  properties. As of the cutover there are **no open gap tiers**.
 - **Corpus** (`corpus.test.ts`) — every shrunk counterexample pinned
   as a (program, request, verdict) triple. `gap:*` entries assert the
   known gap still reproduces; `fixed:*` entries are the earned
@@ -122,8 +127,10 @@ First session's results, for calibration: the two documented gaps
 6,000 random sound-tier programs ran clean; and the fuzzer surfaced
 one **new** bug — dynamic element-access indexes (`obj[key]`) encoded
 as static reads (`indexAccess("key")`) — fixed the same day in the
-adapter's `subjects.ts` (decision #54 in
-[`status.md`](status.md)).
+adapter's `subjects.ts` (decision #54 in [`status.md`](status.md)).
+One session later the CFG path engine closed both documented gaps
+(decision #56) and the corpus lifecycle completed its first full
+cycle: find → pin as `gap:*` → fix → flip to `fixed:*` regression.
 
 ## Extending to another HTTP pack
 
@@ -202,15 +209,16 @@ Two findings from bringing it up:
    element whose pattern hangs off a `ParameterDeclaration` is an
    input. This is what makes JSX adjudication's condition evaluation
    possible at all.
-2. **The nested-guard gap manifests at the render boundary** — as
+2. **The nested-guard gap manifested at the render boundary** — as
    predicted, since the guard machinery is shared:
-   `if (o) { if (i) { return null; } }` leaves the final render
-   transition claiming unconditional truth while execution returns
+   `if (o) { if (i) { return null; } }` left the final render
+   transition claiming unconditional truth while execution returned
    null. Pinned as the JSX rediscovery milestone
    (`arbComponentProgramWithNestedGuard`) and a `gap:nested-guard`
-   corpus entry — one extraction fix will flip the HTTP *and* JSX
-   milestones together, which is exactly the cross-boundary
-   confirmation the shared-machinery claim needed.
+   corpus entry. When the CFG path engine landed, the HTTP *and* JSX
+   milestones flipped together off that one adapter change — exactly
+   the cross-boundary confirmation the shared-machinery claim needed.
+   Both entries are now `fixed:*` regressions.
 
 Not yet covered on the render side (candidates for the next
 increment): event-handler sub-units (invoke recorded handler props

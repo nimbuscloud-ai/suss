@@ -1,10 +1,10 @@
 // component.test.ts — the render-boundary differential properties.
 //
-// One sound tier (see componentGenerators.ts): every generated
-// construct is one the React pack documents as modeled, so the
-// property must hold. Gap arms get added the way the HTTP side earned
-// them — from fuzz findings or documented deferrals with reproducible
-// mismatch shapes.
+// The sound tier (see componentGenerators.ts) must hold: every
+// generated construct is one the React pack models. The nested
+// null-guard was a gap-tier construct with an inverted rediscovery
+// milestone until the CFG path engine closed the nested-guard gap —
+// its generator now runs as a regular sound property below.
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -248,39 +248,30 @@ describe("component differential — sound tier", () => {
   );
 });
 
-describe("component differential — documented-gap rediscovery milestone", () => {
+describe("component differential — promoted constructs stay sound", () => {
+  // This was the render-boundary documented-gap rediscovery milestone
+  // (an inverted property) before the CFG path engine closed the
+  // nested-guard gap. The same generator now runs as a regular sound
+  // property, forcing a nested null-guard into every component.
   it(
-    "nested null-guards rediscover the nested-guard soundness gap at the render boundary",
+    "components forced to contain a nested null-guard extract soundly",
     { timeout: 300_000 },
     async () => {
-      let lastFailing: ComponentDifferentialResult | null = null;
-      const details = await fc.check(
+      await fc.assert(
         fc.asyncProperty(
           arbComponentProgramWithNestedGuard,
           async (program: ComponentProgram) => {
             const result = await runComponentDifferential(program);
-            if (result.harnessFailures.length > 0) {
-              throw new Error(`harness failure: ${formatFailure(result)}`);
-            }
-            if (result.mismatches.length > 0) {
-              lastFailing = result;
+            if (
+              result.mismatches.length > 0 ||
+              result.harnessFailures.length > 0
+            ) {
               throw new Error(formatFailure(result));
             }
           },
         ),
         { numRuns: 100, seed: SEED },
       );
-      expect(
-        details.failed,
-        "expected the fuzzer to rediscover the documented nested-guard gap — " +
-          "if this fails, the gap may have been fixed: fold nestedGuardNull " +
-          "into the sound tier and flip the corresponding corpus entries",
-      ).toBe(true);
-      if (lastFailing === null) {
-        throw new Error(
-          "property failed without recording a mismatch — harness bug, not a gap rediscovery",
-        );
-      }
     },
   );
 });

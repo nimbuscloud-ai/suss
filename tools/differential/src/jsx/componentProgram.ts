@@ -42,11 +42,10 @@ export type ComponentGuard =
   | { type: "guardNull"; cond: PropCond }
   | { type: "guardJsx"; cond: PropCond; node: JsxElement }
   /**
-   * Gap-tier construct: a guard one block deep —
-   * `if (outer) { if (inner) { return null; } }`. Same documented
-   * nested-guard soundness gap as the HTTP DSL's `nestedGuard`; the
-   * adapter machinery is shared, so the gap manifests at the render
-   * boundary too.
+   * A guard one block deep — `if (outer) { if (inner) { return null; } }`.
+   * Formerly the render-boundary manifestation of the nested-guard
+   * soundness gap (shared adapter machinery with the HTTP DSL's
+   * `nestedGuard`); sound since the CFG path engine landed.
    */
   | { type: "nestedGuardNull"; outer: PropCond; inner: PropCond };
 

@@ -1,16 +1,13 @@
 // differential.test.ts — the differential fuzzer's properties.
 //
-// Tier structure (see generators.ts):
-//
-// - SOUND TIER: constructs extraction claims to model faithfully. The
-//   differential property must hold — any counterexample here is an
-//   undocumented extraction bug. Shrink output lands in corpus.test.ts.
-// - GAP TIERS (nested / loop): constructs with *documented* soundness
-//   gaps. The properties are inverted: the fuzzer is REQUIRED to find a
-//   counterexample quickly. These are the mechanical rediscovery
-//   milestones — when WS-2's facts-first rework closes a gap, the
-//   corresponding test fails, which is the signal to promote that
-//   construct into the sound tier.
+// The sound tier (see generators.ts) must hold: any counterexample is
+// an undocumented extraction bug; shrink output lands in
+// corpus.test.ts. Nested guards and loop guards were gap-tier
+// constructs with *inverted* milestone properties (the fuzzer was
+// required to keep rediscovering each documented gap) until the CFG
+// path engine closed both — the former milestones below now assert
+// the promoted constructs stay sound, with generators that force the
+// once-broken shapes into every program.
 //
 // Knobs: SUSS_FUZZ_RUNS (sound-tier run count, default 60),
 // SUSS_FUZZ_SEED (fast-check seed, default fixed for CI determinism).
@@ -111,66 +108,45 @@ for (const target of ALL_TARGETS) {
 }
 
 /**
- * Run a gap-tier arbitrary and require the fuzzer to find a genuine
- * mismatch (not a harness failure) within `numRuns` programs.
+ * Assert a construct-forcing arbitrary stays sound: no mismatch and no
+ * harness failure across the run budget.
  */
-async function rediscoverGap(
+async function assertConstructSound(
   arb: fc.Arbitrary<HandlerProgram>,
   numRuns: number,
-): Promise<DifferentialResult> {
-  let lastFailing: DifferentialResult | null = null;
-  const details = await fc.check(
+): Promise<void> {
+  await fc.assert(
     fc.asyncProperty(arb, async (program: HandlerProgram) => {
       const result = await runDifferential(program);
-      if (result.harnessFailures.length > 0) {
-        throw new Error(`harness failure: ${formatFailure(result)}`);
-      }
-      if (result.mismatches.length > 0) {
-        lastFailing = result;
+      if (result.mismatches.length > 0 || result.harnessFailures.length > 0) {
         throw new Error(formatFailure(result));
       }
     }),
     { numRuns, seed: SEED },
   );
-  expect(
-    details.failed,
-    "expected the fuzzer to rediscover the documented gap — if this fails, " +
-      "the gap may have been fixed: promote the construct to the sound tier " +
-      "and flip the corresponding corpus entries to expect clean runs",
-  ).toBe(true);
-  if (lastFailing === null) {
-    throw new Error(
-      "property failed without recording a mismatch — harness bug, not a gap rediscovery",
-    );
-  }
-  return lastFailing;
 }
 
-describe("differential fuzzer — documented-gap rediscovery milestones", () => {
+describe("differential fuzzer — promoted constructs stay sound", () => {
+  // These were the documented-gap rediscovery milestones (inverted
+  // properties) before the CFG path engine closed the nested-guard and
+  // loop-return gaps. The same generators now run as regular sound
+  // properties, forcing the once-broken construct into every program.
   it(
-    "nested-guard arm mechanically rediscovers the nested-guard soundness gap",
+    "programs forced to contain a nested guard extract soundly",
     { timeout: 300_000 },
     async () => {
-      const failing = await rediscoverGap(
+      await assertConstructSound(
         arbProgramWithGapConstruct(arbNestedGuard),
         100,
       );
-      // The documented shape: derivation promises one status, execution
-      // produces another (falseClaim), or the observed path is entirely
-      // unaccounted for (uncovered).
-      expect(failing.mismatches.length).toBeGreaterThan(0);
     },
   );
 
   it(
-    "loop-guard arm mechanically rediscovers the loop-return soundness gap",
+    "programs forced to contain a loop guard extract soundly",
     { timeout: 300_000 },
     async () => {
-      const failing = await rediscoverGap(
-        arbProgramWithGapConstruct(arbLoopGuard),
-        100,
-      );
-      expect(failing.mismatches.length).toBeGreaterThan(0);
+      await assertConstructSound(arbProgramWithGapConstruct(arbLoopGuard), 100);
     },
   );
 });

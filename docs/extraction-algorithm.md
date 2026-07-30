@@ -101,7 +101,21 @@ Response bodies and return values are extracted into `TypeShape` (see `ir-refere
 
 **Recursion and cycles.** Both the type-checker walk and the AST walker bound recursion: the type walker caps at depth 6 and tracks already-expanded type identities; the AST walker caps at 8 hops and tracks node identities. Cyclic `const a = a` (and deeper variants) terminate at a `ref`.
 
-## Step 2: `collectAncestorBranches`
+## Steps 2+3, primary engine: CFG path conditions
+
+Steps 2 and 3 are computed by the CFG path engine (`paths/pathConditions.ts`) whenever the function's unit-level statement flow is *structured* — no `switch`, `try`, labels, `break`, or `continue` (nested-callback internals don't count; they're covered by the expression-level walk). The engine enumerates every entry→terminal control-flow path and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each carrying its true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps (see decision #56 in `internal/status.md`):
+
+- `if (a) { if (b) return X; } Y` → Y gets the paths `[¬a]` and `[a, ¬b]` — never a fabricated `¬a ∧ ¬b` or an empty list;
+- sibling guards inside a block gate their tails (`if (a) { if (b) return X; T }` → T gets `[a, ¬b]`);
+- `if (a) {…} else { return; } T` → T gets `[a]` (else-exit closure);
+- terminals inside loops carry an opaque "some iteration" condition and post-loop terminals an opaque "loop exited" negation — quantified-over-iterations facts are not statically decidable, so the engine under-specifies rather than fabricates;
+- dead-code terminals (no entry path) produce no transitions.
+
+Expression-level branching *below* a statement (ternaries, `&&`/`||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker, preserving the legacy composition order — on shapes the legacy collectors handled soundly, condition lists (and transition IDs) are byte-identical.
+
+Functions with unstructured flow, and functions exceeding the path budget, fall back to the legacy collectors below. `SUSS_PATH_ENGINE=legacy` forces the fallback everywhere (escape hatch). The engine's fidelity is verified mechanically by the differential fuzzer (`tools/differential`; see [`internal/differential-fuzzing.md`](internal/differential-fuzzing.md)).
+
+## Step 2 (legacy fallback): `collectAncestorBranches`
 
 **Input:** a terminal AST node + the function root
 **Output:** `AncestorBranch[]`, ordered outermost to innermost
@@ -167,7 +181,7 @@ collectAncestorBranches(terminal, functionRoot):
 
 **Why this is pure AST walk:** no symbol table access, no type checking, no framework patterns. This function takes two AST nodes and returns a list of nodes, nothing else. It can be tested with fixture functions that don't even need to compile, and its failure modes are easy to reason about.
 
-## Step 3: `collectEarlyReturns`
+## Step 3 (legacy fallback): `collectEarlyReturns`
 
 **Input:** a terminal AST node + the function root
 **Output:** `EarlyReturn[]`
@@ -200,12 +214,12 @@ collectEarlyReturns(terminal, functionRoot):
     return earlyReturns
 ```
 
-**Edge cases:**
+**Edge cases (as handled by this legacy fallback — the CFG path engine above handles all four soundly and is primary):**
 
-- **Multiple guards**, `if (!id) throw; if (!user) throw; return user;` contributes two early return conditions (both negative) to the final return. Both conditions must be false for the terminal to be reached.
-- **Nested early returns**, `if (a) { if (b) return; }`, for v0, treat the outer `if` as a single early return and record only `a`. The inner structure is a v1 refinement.
-- **Early returns in else branches**, `if (a) { ... } else { return; }` is structurally a control-flow split, not an "early return" in the flat sibling sense. It's handled by `collectAncestorBranches` instead.
-- **Returns inside blocks that are not if-statements**: e.g., `for (...) { if (cond) return; }`, for v0, these are ignored. The loop iteration semantics are too complex to capture correctly.
+- **Multiple guards**, `if (!id) throw; if (!user) throw; return user;` contributes two early return conditions (both negative) to the final return. Both conditions must be false for the terminal to be reached. (Same result under the path engine.)
+- **Nested early returns**, `if (a) { if (b) return; }` — the legacy collector records the guard structure conjunctively; the path engine gives later terminals one branch per real path instead.
+- **Early returns in else branches**, `if (a) { ... } else { return; }` — invisible to both legacy collectors for *later* terminals; the path engine gates them on `a`.
+- **Returns inside loops**, `for (...) { if (cond) return; }` — ignored by the legacy collector; the path engine opacifies (an explicit opaque loop condition, never a fabricated one).
 
 **Why this is separate from ancestor branches:** the two answer different questions. Ancestor branches ask "what conditions gate the branch I'm in?" Early returns ask "what conditions gated the flow *before* I got here?" Both apply to the same terminal simultaneously.
 
