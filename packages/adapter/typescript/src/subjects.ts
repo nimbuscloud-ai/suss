@@ -171,15 +171,29 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
   }
 
   // ElementAccessExpression: obj[key] → derived(resolveSubject(obj), indexAccess(key))
+  // The index must be a *value*, not source text: `obj["role"]` and
+  // `obj[roleVar]` would otherwise both encode as the same string and a
+  // dynamic access would masquerade as a static property read — a
+  // fabricated condition (extraction-algorithm.md, correctness
+  // principle #2). Resolve the index expression; concretize only when
+  // it lands on a string/number literal (directly or through a const
+  // chain), and mark the whole access unresolved otherwise.
   if (Node.isElementAccessExpression(expr)) {
-    return {
-      type: "derived",
-      from: resolveSubject(expr.getExpression(), depth + 1),
-      derivation: {
-        type: "indexAccess",
-        index: expr.getArgumentExpression()?.getText() ?? "?",
-      },
-    };
+    const argExpr = expr.getArgumentExpression();
+    const indexRef =
+      argExpr !== undefined ? resolveSubject(argExpr, depth + 1) : null;
+    if (
+      indexRef !== null &&
+      indexRef.type === "literal" &&
+      (typeof indexRef.value === "string" || typeof indexRef.value === "number")
+    ) {
+      return {
+        type: "derived",
+        from: resolveSubject(expr.getExpression(), depth + 1),
+        derivation: { type: "indexAccess", index: indexRef.value },
+      };
+    }
+    return { type: "unresolved", sourceText };
   }
 
   // Identifier — the core case with symbol resolution

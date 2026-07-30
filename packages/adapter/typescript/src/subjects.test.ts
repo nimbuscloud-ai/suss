@@ -133,13 +133,35 @@ describe("resolveSubject — destructured binding", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveSubject — element access", () => {
-  it("arr[0] → derived(input, indexAccess('0'))", () => {
+  it("arr[0] → derived(input, indexAccess(0)) with a numeric index value", () => {
     const cond = getFirstIfCondition(sourceFile, "elementAccess");
     const result = resolveSubject(cond);
     expect(result).toEqual({
       type: "derived",
       from: { type: "input", inputRef: "arr", path: [] },
-      derivation: { type: "indexAccess", index: "0" },
+      derivation: { type: "indexAccess", index: 0 },
+    });
+  });
+
+  it('obj["role"] → indexAccess("role") — literal value, not quoted source text', () => {
+    const cond = getFirstIfCondition(sourceFile, "elementAccessStringLiteral");
+    const result = resolveSubject(cond);
+    expect(result).toEqual({
+      type: "derived",
+      from: { type: "input", inputRef: "obj", path: [] },
+      derivation: { type: "indexAccess", index: "role" },
+    });
+  });
+
+  it("obj[key] with a variable index → unresolved, never a fabricated static index", () => {
+    // A dynamic index is not a static property read; encoding the
+    // identifier text as the index would make `obj[key]` claim to be
+    // `obj["key"]` — a false condition downstream.
+    const cond = getFirstIfCondition(sourceFile, "elementAccessDynamic");
+    const result = resolveSubject(cond);
+    expect(result).toEqual({
+      type: "unresolved",
+      sourceText: "obj[key]",
     });
   });
 });

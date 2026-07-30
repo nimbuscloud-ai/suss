@@ -42,6 +42,18 @@ export function elementAccess(arr: string[]) {
   return null;
 }
 
+// Element access with a literal string index: obj["role"]
+export function elementAccessStringLiteral(obj: Record<string, string>) {
+  if (obj["role"]) return obj["role"];
+  return null;
+}
+
+// Element access with a variable index: obj[key]
+export function elementAccessDynamic(obj: Record<string, string>, key: string) {
+  if (obj[key]) return obj[key];
+  return null;
+}
+
 // Numeric literal used in comparison
 export function numericLiteral(x: number) {
   if (x > 5) return "big";
