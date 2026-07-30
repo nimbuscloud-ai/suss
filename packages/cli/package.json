@@ -75,6 +75,7 @@
     "@suss/framework-aws-eventbridge": "0.0.2",
     "@suss/framework-aws-lambda": "0.0.2",
     "@suss/framework-aws-sqs": "0.0.2",
+    "@suss/framework-drizzle": "0.0.2",
     "@suss/framework-express": "0.0.2",
     "@suss/framework-fastify": "0.0.2",
     "@suss/framework-hono": "0.0.2",

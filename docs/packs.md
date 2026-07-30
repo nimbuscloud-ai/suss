@@ -50,7 +50,7 @@ Packs come in two structural shapes, distinguished by whether they discover unit
 
 **Discovery-driven packs** populate `discovery`, `terminals`, and `inputMapping`. They tell the adapter "here's how to find handlers, here's how their outputs look, here's how their inputs are shaped." Most framework packs (ts-rest, Express, React) and all client packs (web, axios, apollo) are this shape. They may also declare recognizers and sub-units, but those are secondary.
 
-**Recognizer-only packs** leave `discovery: []` and `terminals: []`. They populate `invocationRecognizers` / `accessRecognizers` / `subUnits` plus `requiresImport` if scoped to a specific library. Their job is to fire on calls and property accesses inside whatever units other packs discovered. Runtime packs (runtime-node) and library-specific framework packs (aws-sqs, prisma) are this shape.
+**Recognizer-only packs** leave `discovery: []` and `terminals: []`. They populate `invocationRecognizers` / `accessRecognizers` / `subUnits` plus `requiresImport` if scoped to a specific library. Their job is to fire on calls and property accesses inside whatever units other packs discovered. Runtime packs (runtime-node) and library-specific framework packs (aws-sqs, prisma, drizzle) are this shape.
 
 The distinction matters because the two shapes serve different needs:
 

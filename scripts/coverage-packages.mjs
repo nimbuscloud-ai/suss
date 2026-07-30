@@ -32,6 +32,7 @@ export const coveragePackages = [
   ["packages/framework/nestjs-rest", "nestjs-rest"],
   ["packages/framework/nestjs-graphql", "nestjs-graphql"],
   ["packages/framework/prisma", "prisma"],
+  ["packages/framework/drizzle", "drizzle"],
   ["packages/framework/aws-sqs", "aws-sqs"],
   // Clients
   ["packages/client/web", "web"],

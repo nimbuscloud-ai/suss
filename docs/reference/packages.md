@@ -16,7 +16,8 @@ Common combinations:
 | Express + fetch | `@suss/framework-express @suss/client-web` |
 | React + GraphQL | `@suss/framework-react @suss/client-apollo` |
 | Lambda + SQS | `@suss/framework-aws-sqs @suss/contract-cloudformation @suss/runtime-node` |
-| App backed by Postgres | add `@suss/framework-prisma @suss/contract-prisma` to any of the above |
+| App backed by Postgres (Prisma) | add `@suss/framework-prisma @suss/contract-prisma` to any of the above |
+| App backed by Postgres (Drizzle) | add `@suss/framework-drizzle` to any of the above |
 
 The [add-to-project guide](/guides/add-to-project) walks the integration end-to-end.
 
@@ -48,6 +49,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-nestjs-rest`](../../packages/framework/nestjs-rest) | NestJS REST controllers. | ![](../../.github/badges/coverage-nestjs-rest.svg) |
 | [`@suss/framework-nestjs-graphql`](../../packages/framework/nestjs-graphql) | NestJS GraphQL resolvers. | ![](../../.github/badges/coverage-nestjs-graphql.svg) |
 | [`@suss/framework-prisma`](../../packages/framework/prisma) | Prisma client calls, emits storage-access interactions per read / write. | ![](../../.github/badges/coverage-prisma.svg) |
+| [`@suss/framework-drizzle`](../../packages/framework/drizzle) | Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names. | ![](../../.github/badges/coverage-drizzle.svg) |
 | [`@suss/framework-aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls, emits message-send interactions. | ![](../../.github/badges/coverage-aws-sqs.svg) |
 | [`@suss/framework-aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. |, |
 | [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. |, |

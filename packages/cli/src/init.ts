@@ -122,6 +122,12 @@ const BY_DEPENDENCY: Array<{
     kind: "framework",
   },
   {
+    dependency: "drizzle-orm",
+    name: "drizzle",
+    packageName: "@suss/framework-drizzle",
+    kind: "framework",
+  },
+  {
     dependency: "@aws-sdk/client-sqs",
     name: "aws-sqs",
     packageName: "@suss/framework-aws-sqs",
