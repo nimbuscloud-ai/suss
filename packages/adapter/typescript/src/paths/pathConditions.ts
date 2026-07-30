@@ -19,14 +19,19 @@
 // Scope: the enumeration models if/else, switch (trailing-break
 // bodies), loops (opaque-quantified), try/catch (opaque catch entry,
 // pure-cleanup finally), break/continue (path enders), and
-// expression-bodied arrows. What still declines to the legacy
-// collectors: labeled statements, `finally` blocks with exits or
-// terminals, switch fallthrough into a non-empty clause, non-trailing
-// switch breaks, and the path-count budget. Since every modeled
-// construct is structured, recursive enumeration over the AST is
-// equivalent to a query over the lowered CFG; the explicit cfgEdge
-// fact materialization arrives with the rules engine (see
-// docs/internal/differential-fuzzing.md and status.md decision #54+).
+// expression-bodied arrows. Shapes it declines — labeled statements,
+// `finally` blocks with exits or terminals, switch fallthrough into a
+// non-empty clause, non-trailing switch breaks, and the path-count
+// budget — DEGRADE instead of falling back to the (unsound) legacy
+// collectors: every terminal gets its enclosure conditions (ancestor
+// branches are true gating facts regardless of flow weirdness) plus
+// one opaque "unmodeled control flow" conjunct, so the transition
+// abstains rather than over- or under-claiming. Under-specify freely;
+// never fabricate. Since every modeled construct is structured,
+// recursive enumeration over the AST is equivalent to a query over
+// the lowered CFG; the explicit cfgEdge fact materialization arrives
+// with the rules engine (see docs/internal/differential-fuzzing.md
+// and status.md decision #54+).
 //
 // Expression-level branching below a statement (ternaries, `&&`/`||`,
 // case clauses inside nested callbacks) still comes from the scoped
@@ -681,17 +686,18 @@ function getLoopBody(stmt: Statement): Statement | undefined {
 
 /**
  * Compute per-path conditions for every terminal in `terminalNodes`.
- * Returns null when the function's statement flow contains constructs
- * the enumeration doesn't model (the caller falls back to the legacy
- * collectors), or when the path budget is exceeded.
+ * Total: shapes the enumeration declines (and budget blowouts) come
+ * back as the degraded result — enclosure conditions plus an opaque
+ * "unmodeled control flow" conjunct — never as an absence.
  */
 export function computePathConditions(
   func: FunctionRoot,
   terminalNodes: readonly Node[],
-): PathConditionsResult | null {
+): PathConditionsResult {
   const body = func.getBody();
   if (body === undefined) {
-    return null;
+    // Ambient declaration — nothing to enumerate, nothing terminates.
+    return { byTerminal: new Map(), fallthrough: [] };
   }
   if (!Node.isBlock(body)) {
     // Expression-bodied arrow: one unconditional path; all branching is
@@ -708,7 +714,7 @@ export function computePathConditions(
     return { byTerminal, fallthrough: [] };
   }
   if (containsUnmodeledFlow(body)) {
-    return null;
+    return degradedResult(func, terminalNodes, "labeled statement");
   }
 
   const topStatements = body.getStatements();
@@ -757,7 +763,11 @@ export function computePathConditions(
     }
     const stmt = enclosingVisitedStatement(terminal, body, visited);
     if (stmt === null) {
-      return null; // terminal outside the body's statement flow
+      return degradedResult(
+        func,
+        terminalNodes,
+        "terminal outside the statement flow",
+      );
     }
     const list = terminalsByStmt.get(stmt) ?? [];
     list.push(terminal);
@@ -778,8 +788,11 @@ export function computePathConditions(
       state.fallthrough.push(classify(path, null));
     }
   } catch (error) {
-    if (error instanceof PathBudgetExceeded || error instanceof UnmodeledFlow) {
-      return null;
+    if (error instanceof PathBudgetExceeded) {
+      return degradedResult(func, terminalNodes, "path budget exceeded");
+    }
+    if (error instanceof UnmodeledFlow) {
+      return degradedResult(func, terminalNodes, error.message);
     }
     throw error;
   }
@@ -788,6 +801,43 @@ export function computePathConditions(
     byTerminal: state.byTerminal,
     fallthrough: state.fallthrough,
   };
+}
+
+/**
+ * Sound degradation for shapes the enumeration declines. Enclosure
+ * conditions (the ancestor walk: if-arms, catch clauses, ternary and
+ * logical operands, case clauses) are true gating facts no matter how
+ * exotic the surrounding flow is — a terminal inside `if (a)` really
+ * is gated on `a`. What the walk cannot see (guards passed on the
+ * way, labeled jumps, budget-truncated paths) is covered by one
+ * opaque conjunct, so the transition abstains instead of claiming a
+ * complete condition set. This replaced the legacy collectors as the
+ * decline behavior: they produced *claims* on these shapes (missing
+ * or over-conjoined guard negations) — degradation trades that
+ * unsoundness for honest under-specification.
+ */
+function degradedResult(
+  func: FunctionRoot,
+  terminalNodes: readonly Node[],
+  reason: string,
+): PathConditionsResult {
+  const marker: ConditionInfo = {
+    sourceText: `unmodeled control flow (${reason})`,
+    polarity: "positive",
+    source: "explicit",
+    expression: null,
+  };
+  const body = func.getBody();
+  const byTerminal = new Map<Node, TerminalPaths>();
+  for (const terminal of terminalNodes) {
+    if (body !== undefined && terminal === body) {
+      continue; // synthetic fallthrough terminal
+    }
+    byTerminal.set(terminal, [
+      [...collectAncestorConditionInfosBelow(terminal, func), marker],
+    ]);
+  }
+  return { byTerminal, fallthrough: [[marker]] };
 }
 
 /**

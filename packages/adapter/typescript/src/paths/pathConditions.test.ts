@@ -1,18 +1,15 @@
 // pathConditions.test.ts — direct coverage of the CFG path engine.
 //
-// The shadow evidence for the cutover: legacy-sound shapes must yield
-// byte-identical condition lists to the legacy collectors; the shapes
-// the legacy collectors got wrong (nested guards, sibling guards in a
-// block, else-exits, loop exits) must yield the sound per-path lists;
-// unmodeled constructs must bail to legacy (null).
+// Pins the engine's semantics directly: sound shapes keep the exact
+// condition lists the legacy collectors produced before their
+// deletion (transition-ID stability), the shapes those collectors got
+// wrong (nested guards, sibling guards in a block, else-exits, loop
+// exits) yield the sound per-path lists, and declined shapes degrade
+// to enclosure conditions plus an opaque unmodeled-flow conjunct.
 
 import { Node, Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import {
-  collectAncestorConditionInfos,
-  collectEarlyReturnConditionInfos,
-} from "../conditions.js";
 import { computePathConditions } from "./pathConditions.js";
 
 import type { ConditionInfo, FunctionRoot } from "../conditions.js";
@@ -39,8 +36,8 @@ const sig = (infos: ConditionInfo[]): string =>
 const pathSigs = (paths: ConditionInfo[][] | undefined): string[] =>
   (paths ?? []).map(sig).sort();
 
-describe("computePathConditions — parity with legacy on sound shapes", () => {
-  it("guard chain: identical conditions to the legacy collectors", () => {
+describe("computePathConditions — stable conditions on sound shapes", () => {
+  it("guard chain: guards accumulate as negated early returns", () => {
     const fn = getFunction(`
       export function handler(a: any, b: any) {
         if (!a) {
@@ -54,18 +51,18 @@ describe("computePathConditions — parity with legacy on sound shapes", () => {
     `);
     const terminals = returnTerminals(fn);
     const result = computePathConditions(fn, terminals);
-    expect(result).not.toBeNull();
-
-    for (const terminal of terminals) {
-      const legacy = [
-        ...collectEarlyReturnConditionInfos(terminal, fn),
-        ...collectAncestorConditionInfos(terminal, fn),
-      ];
-      expect(pathSigs(result?.byTerminal.get(terminal))).toEqual([sig(legacy)]);
-    }
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      "positive:explicit:!a",
+    ]);
+    expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
+      "negative:earlyReturn:!a ∧ positive:explicit:!b",
+    ]);
+    expect(pathSigs(result?.byTerminal.get(terminals[2]))).toEqual([
+      "negative:earlyReturn:!a ∧ negative:earlyReturn:!b",
+    ]);
   });
 
-  it("final if/else after guards: identical conditions to legacy", () => {
+  it("final if/else after guards: both arms carry the passed guard", () => {
     const fn = getFunction(`
       export function handler(a: any, b: any) {
         if (!a) {
@@ -80,13 +77,12 @@ describe("computePathConditions — parity with legacy on sound shapes", () => {
     `);
     const terminals = returnTerminals(fn);
     const result = computePathConditions(fn, terminals);
-    for (const terminal of terminals) {
-      const legacy = [
-        ...collectEarlyReturnConditionInfos(terminal, fn),
-        ...collectAncestorConditionInfos(terminal, fn),
-      ];
-      expect(pathSigs(result?.byTerminal.get(terminal))).toEqual([sig(legacy)]);
-    }
+    expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
+      'negative:earlyReturn:!a ∧ positive:explicit:b === "x"',
+    ]);
+    expect(pathSigs(result?.byTerminal.get(terminals[2]))).toEqual([
+      'negative:earlyReturn:!a ∧ negative:explicit:b === "x"',
+    ]);
   });
 
   it("non-exit non-terminal ifs collapse — no path split, legacy parity", () => {
@@ -275,8 +271,8 @@ describe("computePathConditions — shapes the legacy collectors got wrong", () 
   });
 });
 
-describe("computePathConditions — conservative bails", () => {
-  const bailSources = [
+describe("computePathConditions — sound degradation on declined shapes", () => {
+  const declinedSources = [
     ["labeled", "outer: for (const k of a) { }\nreturn { status: 200 };"],
     [
       "finally with a return",
@@ -284,14 +280,20 @@ describe("computePathConditions — conservative bails", () => {
     ],
   ] as const;
 
-  for (const [name, body] of bailSources) {
-    it(`bails to legacy on ${name}`, () => {
+  for (const [name, body] of declinedSources) {
+    it(`degrades to an opaque unmodeled-flow conjunct on ${name}`, () => {
       const fn = getFunction(`
-        export function handler(a: any) {
+        export function handler(a: any, f: () => void) {
           ${body}
         }
       `);
-      expect(computePathConditions(fn, returnTerminals(fn))).toBeNull();
+      const terminals = returnTerminals(fn);
+      const result = computePathConditions(fn, terminals);
+      const paths = result.byTerminal.get(terminals[0]) ?? [];
+      expect(paths).toHaveLength(1);
+      const marker = paths[0][paths[0].length - 1];
+      expect(marker.sourceText).toContain("unmodeled control flow");
+      expect(marker.expression).toBeNull();
     });
   }
 
@@ -334,7 +336,7 @@ describe("computePathConditions — conservative bails", () => {
     ]);
   });
 
-  it("bails when the path budget is exceeded", () => {
+  it("degrades when the path budget is exceeded", () => {
     // 9 sequential ifs whose arms both hold a (non-exit) terminal call
     // double the frontier each: 2^9 = 512 > 256.
     const branchy = Array.from(
@@ -351,7 +353,11 @@ describe("computePathConditions — conservative bails", () => {
       .getDescendantsOfKind(SyntaxKind.CallExpression)
       .filter((c) => c.getExpression().getText() === "term");
     expect(termCalls.length).toBe(18);
-    expect(computePathConditions(fn, termCalls)).toBeNull();
+    const result = computePathConditions(fn, termCalls);
+    const [only] = result.byTerminal.get(termCalls[0]) ?? [];
+    expect(only?.[only.length - 1]?.sourceText).toContain(
+      "path budget exceeded",
+    );
   });
 });
 
@@ -409,7 +415,7 @@ describe("computePathConditions — switch lowering", () => {
     ]);
   });
 
-  it("declines fallthrough into a non-empty clause", () => {
+  it("degrades on fallthrough into a non-empty clause", () => {
     const fn = getFunction(`
       export function handler(kind: string, log: (m: string) => void) {
         switch (kind) {
@@ -421,10 +427,15 @@ describe("computePathConditions — switch lowering", () => {
         return { status: 500 };
       }
     `);
-    expect(computePathConditions(fn, returnTerminals(fn))).toBeNull();
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    const [only] = result.byTerminal.get(terminals[1]) ?? [];
+    expect(only?.[only.length - 1]?.sourceText).toContain(
+      "unmodeled control flow",
+    );
   });
 
-  it("declines a non-trailing break", () => {
+  it("degrades on a non-trailing break", () => {
     const fn = getFunction(`
       export function handler(kind: string, x: boolean) {
         switch (kind) {
@@ -437,7 +448,12 @@ describe("computePathConditions — switch lowering", () => {
         return { status: 500 };
       }
     `);
-    expect(computePathConditions(fn, returnTerminals(fn))).toBeNull();
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    const [only] = result.byTerminal.get(terminals[1]) ?? [];
+    expect(only?.[only.length - 1]?.sourceText).toContain(
+      "unmodeled control flow",
+    );
   });
 
   it("models loop breaks as path enders — the after-loop terminal stays clean", () => {

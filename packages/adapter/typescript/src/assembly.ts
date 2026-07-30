@@ -2,8 +2,6 @@
 
 import {
   type ConditionInfo,
-  collectAncestorConditionInfos,
-  collectEarlyReturnConditionInfos,
   conditionInfoToRawCondition,
 } from "./conditions.js";
 import { computePathConditions } from "./paths/pathConditions.js";
@@ -28,7 +26,6 @@ import type {
   RawEffect,
   TerminalPattern,
 } from "@suss/extractor";
-import type { Node } from "ts-morph";
 import type { FunctionRoot } from "./conditions.js";
 
 // ---------------------------------------------------------------------------
@@ -39,39 +36,6 @@ import type { FunctionRoot } from "./conditions.js";
 // Main exported function
 // ---------------------------------------------------------------------------
 
-/**
- * Compose the per-terminal condition lists. Primary engine: CFG-path
- * enumeration (`paths/pathConditions.ts`) — one condition list per
- * entry→terminal path, which closes the nested-guard and loop-return
- * soundness gaps and drops dead-code terminals. Falls back to the
- * legacy early-return + ancestor collectors when the function's
- * statement flow contains constructs the path engine doesn't model
- * (switch / try / labels / break / continue), when the path budget is
- * exceeded, or when `SUSS_PATH_ENGINE=legacy` is set (escape hatch;
- * see status.md decision #56).
- */
-function conditionListsPerTerminal(
-  func: FunctionRoot,
-  terminalNodes: readonly Node[],
-): { byTerminal: Map<Node, ConditionInfo[][]>; usedCfg: boolean } {
-  const pathResult =
-    process.env.SUSS_PATH_ENGINE === "legacy"
-      ? null
-      : computePathConditions(func, terminalNodes);
-
-  if (pathResult !== null) {
-    return { byTerminal: pathResult.byTerminal, usedCfg: true };
-  }
-
-  const byTerminal = new Map<Node, ConditionInfo[][]>();
-  for (const node of terminalNodes) {
-    const earlyReturnInfos = collectEarlyReturnConditionInfos(node, func);
-    const ancestorInfos = collectAncestorConditionInfos(node, func);
-    byTerminal.set(node, [[...earlyReturnInfos, ...ancestorInfos]]);
-  }
-  return { byTerminal, usedCfg: false };
-}
-
 const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
   conditions.length === 0 ||
   conditions.every(
@@ -81,8 +45,8 @@ const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
 /**
  * Extract all raw branches from a function, composing:
  *   1. findTerminals — locate terminal nodes
- *   2. conditionListsPerTerminal — per-path conditions (CFG engine,
- *      legacy collectors as the conservative fallback)
+ *   2. computePathConditions — per-path conditions (CFG enumeration;
+ *      declined shapes degrade to sound under-specification)
  *   3. parseConditionExpression — Expression → Predicate
  *   4. extractInvocationEffects — bare expression-statement calls
  *      (Phase 1.5b — attaches to the default branch so handler /
@@ -105,7 +69,11 @@ export function extractRawBranches(
     ...runAccessRecognizers(func, accessRecognizers, barriers),
   ];
 
-  const { byTerminal } = conditionListsPerTerminal(
+  // One engine: CFG-path enumeration (`paths/pathConditions.ts`),
+  // one condition list per entry→terminal path. Shapes it declines
+  // degrade inside the engine to enclosure conditions plus an opaque
+  // conjunct — sound under-specification, no second code path.
+  const { byTerminal } = computePathConditions(
     func,
     terminals.map(({ node }) => node),
   );
@@ -135,26 +103,18 @@ export function extractRawBranches(
       const synthetic = makeFallthroughTerminal(func);
       terminals.push(synthetic);
       // The synthetic terminal anchors at the body itself; its
-      // condition lists are the paths that fall through the body's
-      // end (already computed by the CFG engine; empty conditions
-      // under legacy — same as before).
-      const pathResult =
-        process.env.SUSS_PATH_ENGINE === "legacy"
-          ? null
-          : computePathConditions(func, [synthetic.node]);
+      // condition lists are the paths that fall through the body's end.
+      const pathResult = computePathConditions(func, [synthetic.node]);
       byTerminal.set(
         synthetic.node,
-        pathResult !== null && pathResult.fallthrough.length > 0
-          ? pathResult.fallthrough
-          : [[]],
+        pathResult.fallthrough.length > 0 ? pathResult.fallthrough : [[]],
       );
     }
   }
 
   const rawBranches: RawBranch[] = terminals.flatMap(({ node, terminal }) => {
     // Dead-code terminals (no entry path reaches them) produce no
-    // branches under the CFG engine — a terminal that cannot fire is
-    // not behavior. Legacy always yields exactly one list.
+    // branches — a terminal that cannot fire is not behavior.
     const conditionLists = byTerminal.get(node) ?? [];
     return conditionLists.map((infos): RawBranch => {
       const conditions: RawCondition[] = infos.map(conditionInfoToRawCondition);

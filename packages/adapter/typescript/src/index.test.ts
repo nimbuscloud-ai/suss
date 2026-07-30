@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   collectAncestorBranches,
-  collectEarlyReturns,
   createTypeScriptAdapter,
   discoverUnits,
   extractCodeStructure,
@@ -19,7 +18,6 @@ describe("@suss/adapter-typescript barrel", () => {
     expect(typeof extractCodeStructure).toBe("function");
     expect(typeof extractRawBranches).toBe("function");
     expect(typeof collectAncestorBranches).toBe("function");
-    expect(typeof collectEarlyReturns).toBe("function");
     expect(typeof discoverUnits).toBe("function");
     expect(typeof parseConditionExpression).toBe("function");
     expect(typeof resolveSubject).toBe("function");

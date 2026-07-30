@@ -3,7 +3,8 @@ import path from "node:path";
 import { Node, Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { collectAncestorBranches, collectEarlyReturns } from "./conditions.js";
+import { collectAncestorBranches } from "./conditions.js";
+import { computePathConditions } from "./paths/pathConditions.js";
 
 import type { FunctionRoot } from "./conditions.js";
 
@@ -82,19 +83,13 @@ describe("fixture-if-else.ts — collectAncestorBranches", () => {
     expect(conditions[0].polarity).toBe("negative");
     expect(conditions[0].source).toBe("explicit");
   });
-
-  it("collectEarlyReturns returns nothing for if-else (no prior guard)", () => {
-    const [thenReturn] = returns;
-    const early = collectEarlyReturns(thenReturn, func);
-    expect(early).toHaveLength(0);
-  });
 });
 
 // ---------------------------------------------------------------------------
 // fixture-early-returns.ts
 // ---------------------------------------------------------------------------
 
-describe("fixture-early-returns.ts — collectEarlyReturns", () => {
+describe("fixture-early-returns.ts — guard chains via the path engine", () => {
   const sourceFile = loadFixture("fixture-early-returns.ts");
   const func = getFunction(sourceFile, "guardedHandler");
   const returns = getReturnNodes(func);
@@ -103,42 +98,25 @@ describe("fixture-early-returns.ts — collectEarlyReturns", () => {
     expect(returns).toHaveLength(4);
   });
 
-  it("first return (missing-id): no ancestor conditions, no early returns", () => {
-    const [r0] = returns;
-    expect(collectAncestorBranches(r0, func)).toHaveLength(1); // inside if (!id)
-    expect(collectEarlyReturns(r0, func)).toHaveLength(0);
-  });
-
-  it("second return (missing-user): 1 early return for !id", () => {
-    const r1 = returns[1];
-    const early = collectEarlyReturns(r1, func);
-    expect(early).toHaveLength(1);
-    expect(early[0].sourceText).toBe("!id");
-    expect(early[0].polarity).toBe("negative");
-    expect(early[0].source).toBe("earlyReturn");
-  });
-
-  it("third return (inactive): 2 early returns for !id and !user", () => {
-    const r2 = returns[2];
-    const early = collectEarlyReturns(r2, func);
-    expect(early).toHaveLength(2);
-    expect(early[0].sourceText).toBe("!id");
-    expect(early[1].sourceText).toBe("!user");
-  });
-
-  it("fourth return (success): 3 early returns", () => {
-    const r3 = returns[3];
-    const early = collectEarlyReturns(r3, func);
-    expect(early).toHaveLength(3);
-    expect(early[0].sourceText).toBe("!id");
-    expect(early[1].sourceText).toBe("!user");
-    expect(early[2].sourceText).toBe("!user.isActive");
-    // All are earlyReturn polarity negative
-    for (const c of early) {
-      expect(c.polarity).toBe("negative");
-      expect(c.source).toBe("earlyReturn");
-      expect(c.structured).toBeNull();
-    }
+  it("each return carries exactly the guards passed before it", () => {
+    const result = computePathConditions(func, returns);
+    const sigs = returns.map((r) =>
+      (result.byTerminal.get(r) ?? []).map((path) =>
+        path
+          .map((c) => `${c.polarity}:${c.source}:${c.sourceText}`)
+          .join(" ∧ "),
+      ),
+    );
+    expect(sigs).toEqual([
+      ["positive:explicit:!id"],
+      ["negative:earlyReturn:!id ∧ positive:explicit:!user"],
+      [
+        "negative:earlyReturn:!id ∧ negative:earlyReturn:!user ∧ positive:explicit:!user.isActive",
+      ],
+      [
+        "negative:earlyReturn:!id ∧ negative:earlyReturn:!user ∧ negative:earlyReturn:!user.isActive",
+      ],
+    ]);
   });
 });
 
@@ -288,12 +266,6 @@ describe("fixture-nested.ts — ancestor walk + early returns combined", () => {
     expect(conditions[1].polarity).toBe("positive");
   });
 
-  it("'both' return: no early returns (no prior sibling guards at top level)", () => {
-    const bothReturn = returns[0];
-    const early = collectEarlyReturns(bothReturn, func);
-    expect(early).toHaveLength(0);
-  });
-
   it("'just-a' return: ancestor condition is [a (positive)]", () => {
     // return "just-a" is inside if(a) { ...; return "just-a"; }
     const justAReturn = returns[1];
@@ -303,18 +275,15 @@ describe("fixture-nested.ts — ancestor walk + early returns combined", () => {
     expect(conditions[0].polarity).toBe("positive");
   });
 
-  it("'just-a' return: early returns contain nested guard 'b'", () => {
-    // Inside if(a), if(b) return "both" is a prior sibling guard
+  it("'just-a' return: the path engine carries the sibling guard 'b'", () => {
+    // Inside if(a), `if (b) return "both"` is a prior sibling guard —
+    // invisible to the deleted legacy collector, carried per-path now.
     const justAReturn = returns[1];
-    const early = collectEarlyReturns(justAReturn, func);
-    // The early returns search is on the top-level function body.
-    // "just-a" is inside if(a), so the top-level container is the if(a) block.
-    // No top-level prior sibling guards before if(a).
-    // The nested guard (if b) is inside if(a)'s body — this is not found by
-    // collectEarlyReturns which only scans top-level siblings.
-    // (Nested early-return scanning within an outer branch is the responsibility
-    // of the caller who combines ancestor conditions with early returns.)
-    expect(early).toHaveLength(0);
+    const result = computePathConditions(func, [justAReturn]);
+    const sigs = (result.byTerminal.get(justAReturn) ?? []).map((path) =>
+      path.map((c) => `${c.polarity}:${c.sourceText}`).join(" ∧ "),
+    );
+    expect(sigs).toEqual(["positive:a ∧ negative:b"]);
   });
 
   it("'neither' return: no ancestor conditions", () => {
@@ -323,18 +292,16 @@ describe("fixture-nested.ts — ancestor walk + early returns combined", () => {
     expect(conditions).toHaveLength(0);
   });
 
-  it("'neither' return: early returns record outer guard [a]", () => {
-    // Before "return neither" at the top level, there is if(a) { ... if(b) return; ... return "just-a"; }
-    // The outer if(a) block contains a return so it's a guard → condition 'a' with negative polarity.
-    // Additionally, the nested if(b) inside if(a) also returns, so 'b' appears too.
+  it("'neither' return: the path engine records exactly [¬a]", () => {
+    // The if(a) block always returns ("both" or "just-a"), so reaching
+    // "neither" requires only ¬a. The deleted legacy collector recorded
+    // the over-conjoined ¬a ∧ ¬b here — the unsoundness that motivated
+    // the per-path engine.
     const neitherReturn = returns[2];
-    const early = collectEarlyReturns(neitherReturn, func);
-    expect(early).toHaveLength(2);
-    expect(early[0].sourceText).toBe("a");
-    expect(early[0].polarity).toBe("negative");
-    expect(early[0].source).toBe("earlyReturn");
-    expect(early[1].sourceText).toBe("b");
-    expect(early[1].polarity).toBe("negative");
-    expect(early[1].source).toBe("earlyReturn");
+    const result = computePathConditions(func, [neitherReturn]);
+    const sigs = (result.byTerminal.get(neitherReturn) ?? []).map((path) =>
+      path.map((c) => `${c.polarity}:${c.sourceText}`).join(" ∧ "),
+    );
+    expect(sigs).toEqual(["negative:a"]);
   });
 });
