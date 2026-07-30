@@ -238,6 +238,25 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
+  it("renders the effects closure as a Reaches block", () => {
+    const withClosure: BehavioralSummary = {
+      ...handlerSummary,
+      metadata: {
+        effectsClosure: [
+          { kind: "invocation", target: "audit.log", transitive: true },
+          { kind: "invocation", target: "db.findById", transitive: false },
+        ],
+      },
+    };
+    const filePath = writeTempJson([withClosure]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toContain("Reaches:");
+    expect(output).toContain("invocation audit.log (via callees)");
+    expect(output).toContain("invocation db.findById");
+    expect(output).toMatchSnapshot();
+  });
+
   it("renders multiple summaries", () => {
     const filePath = writeTempJson([handlerSummary, clientSummary]);
     const output = captureStdout(() => inspect({ file: filePath }));
