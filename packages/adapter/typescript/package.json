@@ -2,7 +2,7 @@
   "name": "@suss/adapter-typescript",
   "version": "0.0.2",
   "type": "module",
-  "description": "TypeScript adapter for suss — walks source files with ts-morph and emits raw extractions for the suss pipeline.",
+  "description": "TypeScript adapter for suss \u2014 walks source files with ts-morph and emits raw extractions for the suss pipeline.",
   "keywords": [
     "suss",
     "behavioral-summary",
@@ -47,6 +47,7 @@
   },
   "dependencies": {
     "@suss/behavioral-ir": "0.0.2",
+    "@suss/datalog": "0.0.2",
     "@suss/extractor": "0.0.2",
     "graphql": "^16.8.0",
     "ts-morph": "^23.0.0"

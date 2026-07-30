@@ -22,6 +22,7 @@
 import { Node, type Project, type SourceFile } from "ts-morph";
 
 import { functionCallBinding } from "@suss/behavioral-ir";
+import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
 import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 
 import { extractCodeStructure } from "../adapter.js";
@@ -304,12 +305,35 @@ function extractReachableSummary(
 // Public entry point
 // ---------------------------------------------------------------------------
 
+// The closure semantics, as rules: a function is reachable when it is
+// an entry point (a pack-discovered seed) or when a reachable function
+// calls it. Termination and the fixpoint are the engine's job; this
+// file's job shrinks to *fact emission* — saying which call edges
+// exist, one frontier function at a time.
+const REACHABLE_RULES = [
+  rule("reachable", [variable("f")], [lit("entry", variable("f"))]),
+  rule(
+    "reachable",
+    [variable("g")],
+    [
+      lit("reachable", variable("f")),
+      lit("calls", variable("f"), variable("g")),
+    ],
+  ),
+];
+
 /**
  * Expand the seed summaries into a superset that includes every
  * library function transitively reachable through static call edges.
  * Returns `seeds` concatenated with the new library summaries. Seeds
  * already in the set (either by pack discovery or by earlier closure
  * iterations) are never re-emitted.
+ *
+ * Structure: `entry` and `calls` facts go into a datalog database and
+ * `REACHABLE_RULES` derive `reachable`. Because call edges are only
+ * discoverable by scanning a function's body, emission is demand-driven:
+ * scan the unscanned reachable frontier, add its edges, re-evaluate,
+ * repeat until the reachable set stops growing.
  */
 export function expandReachableClosure(
   seeds: BehavioralSummary[],
@@ -317,54 +341,79 @@ export function expandReachableClosure(
   options?: ExtractorOptions,
   projectFileSet?: ReadonlySet<string>,
 ): BehavioralSummary[] {
-  const covered = new Set<string>();
-  const worklist: FunctionRoot[] = [];
-
   // One source-file enumeration shared across every seed locate.
   // Without this, each `locateFunctionBySummary` was re-scanning the
   // project's full file list — N seeds × M source files of redundant
   // walk work.
   const lookup = createSourceFileLookup(project);
 
-  // Seed the covered set with every already-summarized function so the
-  // closure doesn't re-emit pack units as library duplicates.
+  const db = new Database();
+  const functionByKey = new Map<string, ReachableCandidate>();
+  const seedKeys = new Set<string>();
+  const scanned = new Set<string>();
+
   for (const seed of seeds) {
     const func = locateFunctionBySummary(seed, lookup);
     if (func !== null) {
-      covered.add(nodeKey(func));
-      worklist.push(func);
+      const key = nodeKey(func);
+      seedKeys.add(key);
+      functionByKey.set(key, { func, name: seed.identity.name });
+      db.add("entry", [key]);
     }
   }
 
-  const reached: BehavioralSummary[] = [];
-  while (worklist.length > 0) {
-    const func = worklist.shift();
-    if (func === undefined) {
+  for (;;) {
+    evaluate(db, REACHABLE_RULES);
+    const frontier = db
+      .facts("reachable")
+      .map(([key]) => String(key))
+      .filter((key) => !scanned.has(key));
+    if (frontier.length === 0) {
       break;
     }
-    for (const candidate of collectReachable(func)) {
-      const key = nodeKey(candidate.func);
-      if (covered.has(key)) {
+    for (const key of frontier) {
+      scanned.add(key);
+      const source = functionByKey.get(key);
+      if (source === undefined) {
         continue;
       }
-      covered.add(key);
-      // Lazy-add: ts-morph's symbol resolution loaded the candidate's
-      // source file into the underlying program but didn't register it
-      // with the project's source-file tracker. Without an explicit
-      // add, downstream passes (rethrow enrichment, partial-hit
-      // closure dedup) can't find the file via project.getSourceFiles().
-      // Guarded by projectFileSet so we never pollute the project with
-      // paths outside the tsconfig include.
-      if (projectFileSet !== undefined) {
-        lazyAddSourceFile(
-          project,
-          projectFileSet,
-          candidate.func.getSourceFile().getFilePath(),
-        );
+      for (const candidate of collectReachable(source.func)) {
+        const calleeKey = nodeKey(candidate.func);
+        if (!functionByKey.has(calleeKey)) {
+          functionByKey.set(calleeKey, candidate);
+        }
+        db.add("calls", [key, calleeKey]);
       }
-      reached.push(extractReachableSummary(candidate, options));
-      worklist.push(candidate.func);
     }
+  }
+
+  // Emit library summaries in derivation order (the engine appends
+  // facts as it derives them, so this tracks the old BFS order).
+  const reached: BehavioralSummary[] = [];
+  for (const [keyAtom] of db.facts("reachable")) {
+    const key = String(keyAtom);
+    if (seedKeys.has(key)) {
+      continue;
+    }
+    const candidate = functionByKey.get(key);
+    if (candidate === undefined) {
+      continue;
+    }
+    // Lazy-add: ts-morph's symbol resolution loaded the candidate's
+    // source file into the underlying program but didn't register it
+    // with the project's source-file tracker. Without an explicit
+    // add, downstream passes (rethrow enrichment, partial-hit
+    // closure dedup) can't find the file via project.getSourceFiles().
+    // Guarded by projectFileSet so we never pollute the project with
+    // paths outside the tsconfig include.
+    if (projectFileSet !== undefined) {
+      lazyAddSourceFile(
+        project,
+        projectFileSet,
+        candidate.func.getSourceFile().getFilePath(),
+      );
+    }
+    reached.push(extractReachableSummary(candidate, options));
   }
 
   return [...seeds, ...reached];
