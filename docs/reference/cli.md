@@ -396,12 +396,12 @@ with a stub response object, and compares the observed status with
 the claimed one. Verdicts land on
 `transition.confidence.corroboration`:
 
-- `observed` — every satisfying run produced the claimed status.
-- `refuted` — some run produced a different status; the concrete
+- `observed`: every satisfying run produced the claimed status.
+- `refuted`: some run produced a different status. The concrete
   counterexample (request, observed status, claimed status) is
   attached and printed. Either the extraction is wrong there or the
-  code surprises its own summary — both are findings.
-- `untested` — no satisfying input was found, or every run hit a
+  code surprises its own summary, and both are findings.
+- `untested`: no satisfying input was found, or every run hit a
   dependency the sandbox cannot supply (a database, another service).
   The claim keeps its static confidence.
 

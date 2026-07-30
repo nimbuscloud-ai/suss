@@ -347,7 +347,7 @@ async function runCorroborate(args: string[]): Promise<number> {
 
   if (values.experimental !== true) {
     process.stderr.write(
-      "corroborate is experimental — its scope and output will change. Pass --experimental to run it anyway.\n",
+      "corroborate is experimental, and its scope and output will change. Pass --experimental to run it anyway.\n",
     );
     return 1;
   }
