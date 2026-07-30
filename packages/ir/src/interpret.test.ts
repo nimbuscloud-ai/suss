@@ -226,3 +226,170 @@ describe("evalConditions", () => {
     expect(evalConditions([truePred, unknown], env({}))).toBe("unknown");
   });
 });
+
+describe("evalPredicate — operator and type-check coverage", () => {
+  const cmp = (
+    op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte",
+    left: ValueRef,
+    right: ValueRef,
+  ): Predicate => ({ type: "comparison", op, left, right });
+
+  it("evaluates every ordered comparator on numbers", () => {
+    expect(evalPredicate(cmp("gt", lit(3), lit(2)), env({}))).toBe("true");
+    expect(evalPredicate(cmp("gte", lit(2), lit(2)), env({}))).toBe("true");
+    expect(evalPredicate(cmp("lt", lit(3), lit(2)), env({}))).toBe("false");
+    expect(evalPredicate(cmp("lte", lit(2), lit(3)), env({}))).toBe("true");
+  });
+
+  it("evaluates ordered comparators on strings and neq on both", () => {
+    expect(evalPredicate(cmp("gt", lit("b"), lit("a")), env({}))).toBe("true");
+    expect(evalPredicate(cmp("lt", lit("b"), lit("a")), env({}))).toBe("false");
+    expect(evalPredicate(cmp("neq", lit("a"), lit("b")), env({}))).toBe("true");
+    expect(evalPredicate(cmp("neq", lit(1), lit(1)), env({}))).toBe("false");
+  });
+
+  it("abstains when either comparison side is unknown", () => {
+    const dep: ValueRef = { type: "dependency", name: "db", accessChain: [] };
+    expect(evalPredicate(cmp("eq", dep, lit(1)), env({}))).toBe("unknown");
+    expect(evalPredicate(cmp("gt", lit(1), dep), env({}))).toBe("unknown");
+  });
+
+  it("evaluates typeof checks and abstains on class-name checks", () => {
+    const typeCheck = (subject: ValueRef, expectedType: string): Predicate => ({
+      type: "typeCheck",
+      subject,
+      expectedType,
+    });
+    expect(evalPredicate(typeCheck(lit("x"), "string"), env({}))).toBe("true");
+    expect(evalPredicate(typeCheck(lit(1), "string"), env({}))).toBe("false");
+    // instanceof-style: the env can't witness prototype chains.
+    expect(evalPredicate(typeCheck(lit("x"), "Date"), env({}))).toBe("unknown");
+    // Unknown subject abstains even for a typeof-style check.
+    expect(
+      evalPredicate(
+        typeCheck({ type: "unresolved", sourceText: "v" }, "string"),
+        env({}),
+      ),
+    ).toBe("unknown");
+  });
+
+  it("evaluates nullCheck on null, undefined, and values, with negation", () => {
+    const nullCheck = (subject: ValueRef, negated: boolean): Predicate => ({
+      type: "nullCheck",
+      subject,
+      negated,
+    });
+    expect(evalPredicate(nullCheck(lit(null), false), env({}))).toBe("true");
+    expect(
+      evalPredicate(
+        nullCheck(reqField("query", "id"), false),
+        env({ query: {} }),
+      ),
+    ).toBe("true");
+    expect(evalPredicate(nullCheck(lit("x"), false), env({}))).toBe("false");
+    expect(evalPredicate(nullCheck(lit("x"), true), env({}))).toBe("true");
+    expect(
+      evalPredicate(
+        nullCheck({ type: "state", name: "cache" }, false),
+        env({}),
+      ),
+    ).toBe("unknown");
+  });
+
+  it("propertyExists abstains on primitives and honors negation", () => {
+    const exists = (
+      subject: ValueRef,
+      property: string,
+      negated: boolean,
+    ): Predicate => ({ type: "propertyExists", subject, property, negated });
+    expect(evalPredicate(exists(lit("s"), "length", false), env({}))).toBe(
+      "unknown",
+    );
+    const req = env({ body: { email: "a" } });
+    expect(
+      evalPredicate(exists(prop(input("req"), "body"), "email", false), req),
+    ).toBe("true");
+    expect(
+      evalPredicate(exists(prop(input("req"), "body"), "email", true), req),
+    ).toBe("false");
+  });
+
+  it("returns unknown for absent input roots", () => {
+    expect(evalValueRef(input("ctx"), env({}))).toEqual({ type: "unknown" });
+  });
+});
+
+describe("interpreter — exhaustive abstention edges", () => {
+  it("propagates unknown through chained property reads", () => {
+    // First read is off a primitive (unknown); the second read must
+    // short-circuit on the already-unknown base.
+    const chained = prop(prop(input("req"), "id"), "length");
+    expect(evalValueRef(chained, env({ id: 7 }))).toEqual({ type: "unknown" });
+    // A read whose base is ALREADY unknown (dependency) short-circuits.
+    const offDependency = prop(
+      { type: "dependency", name: "db", accessChain: [] },
+      "rows",
+    );
+    expect(evalValueRef(offDependency, env({}))).toEqual({ type: "unknown" });
+  });
+
+  it("resolves destructured and index-access derivations", () => {
+    const destructured: ValueRef = {
+      type: "derived",
+      from: input("req"),
+      derivation: { type: "destructured", field: "body" },
+    };
+    expect(evalValueRef(destructured, env({ body: 1 }))).toEqual({
+      type: "known",
+      value: 1,
+    });
+    const indexed: ValueRef = {
+      type: "derived",
+      from: input("req"),
+      derivation: { type: "indexAccess", index: 0 },
+    };
+    expect(evalValueRef(indexed, { req: ["first"] })).toEqual({
+      type: "known",
+      value: "first",
+    });
+  });
+
+  it("abstains on a direct awaited derivation", () => {
+    const awaited: ValueRef = {
+      type: "derived",
+      from: input("req"),
+      derivation: { type: "awaited" },
+    };
+    expect(evalValueRef(awaited, env({}))).toEqual({ type: "unknown" });
+  });
+
+  it("resolves or-compounds to false when every arm is false", () => {
+    const falsePred: Predicate = {
+      type: "truthinessCheck",
+      subject: lit(""),
+      negated: false,
+    };
+    expect(
+      evalPredicate(
+        { type: "compound", op: "or", operands: [falsePred, falsePred] },
+        env({}),
+      ),
+    ).toBe("false");
+  });
+
+  it("truthiness and propertyExists abstain on unknown subjects", () => {
+    const dep: ValueRef = { type: "dependency", name: "db", accessChain: [] };
+    expect(
+      evalPredicate(
+        { type: "truthinessCheck", subject: dep, negated: false },
+        env({}),
+      ),
+    ).toBe("unknown");
+    expect(
+      evalPredicate(
+        { type: "propertyExists", subject: dep, property: "x", negated: false },
+        env({}),
+      ),
+    ).toBe("unknown");
+  });
+});

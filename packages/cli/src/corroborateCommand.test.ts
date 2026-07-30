@@ -166,3 +166,55 @@ export async function loadPet(id: string) {
     expect(io.stdout).toContain("in scope");
   });
 });
+
+describe("runCli — corroborate flag validation", () => {
+  it("rejects a --project path that does not exist", async () => {
+    const { exit, io } = await capture(() =>
+      runCli([
+        "corroborate",
+        "--experimental",
+        "-f",
+        "express",
+        "-p",
+        "/nope/tsconfig.json",
+      ]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("tsconfig");
+  });
+
+  it("rejects a --dir path that does not exist", async () => {
+    const { exit, io } = await capture(() =>
+      runCli([
+        "corroborate",
+        "--experimental",
+        "-f",
+        "express",
+        "--dir",
+        "/nope/dir",
+      ]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("No directory");
+  });
+
+  it("rejects non-positive --runs and --attempts", async () => {
+    const bad = await capture(() =>
+      runCli(["corroborate", "--experimental", "-f", "express", "--runs", "0"]),
+    );
+    expect(bad.exit).toBe(1);
+    expect(bad.io.stderr).toContain("--runs");
+
+    const worse = await capture(() =>
+      runCli([
+        "corroborate",
+        "--experimental",
+        "-f",
+        "express",
+        "--attempts=-3",
+      ]),
+    );
+    expect(worse.exit).toBe(1);
+    expect(worse.io.stderr).toContain("--attempts");
+  });
+});
