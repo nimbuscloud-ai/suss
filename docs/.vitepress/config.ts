@@ -141,6 +141,10 @@ export default defineConfig({
           { text: "Quality", link: "/internal/quality" },
           { text: "Forward-looking backlog", link: "/internal/backlog" },
           { text: "React roadmap", link: "/internal/roadmap-react" },
+          {
+            text: "Second-language roadmap",
+            link: "/internal/roadmap-second-language",
+          },
           { text: "Dogfooding", link: "/internal/dogfooding" },
           { text: "Releasing", link: "/internal/releasing" },
         ],
