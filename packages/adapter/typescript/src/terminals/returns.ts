@@ -104,21 +104,25 @@ function unwrapMethodChain(
  * value — direct return, arrow expression body, or branch of a ternary that
  * itself is returned.
  */
-function isInReturnPosition(ole: Node): boolean {
+/**
+ * The return a value sits in, or null when it does not sit in one. A
+ * concise arrow answers with its body, since that is what it returns.
+ */
+function returnPositionOf(ole: Node): Node | null {
   let current: Node | undefined = ole.getParent();
   // Direct child of ReturnStatement is already handled by the ReturnStatement
   // case in tryMatchReturnShape — skip to avoid duplicate terminals.
   if (current !== undefined && Node.isReturnStatement(current)) {
-    return false;
+    return null;
   }
   while (current !== undefined) {
     if (Node.isReturnStatement(current)) {
-      return true;
+      return current;
     }
     if (Node.isArrowFunction(current)) {
       // Only match expression bodies, not OLEs inside a block body
       const body = current.getBody();
-      return body !== undefined && !Node.isBlock(body);
+      return body !== undefined && !Node.isBlock(body) ? body : null;
     }
     // Walk through ternary branches and parens
     if (
@@ -128,9 +132,9 @@ function isInReturnPosition(ole: Node): boolean {
       current = current.getParent();
       continue;
     }
-    return false;
+    return null;
   }
-  return false;
+  return null;
 }
 
 /**
@@ -147,11 +151,12 @@ export function tryMatchReturnShape(
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
 ): FoundTerminal[] {
   if (Node.isObjectLiteralExpression(node)) {
-    if (!isInReturnPosition(node)) {
+    const source = returnPositionOf(node);
+    if (source === null) {
       return [];
     }
     const terminal = terminalFromReturnedObject(node, node, pattern, match);
-    return terminal === null ? [] : [terminal];
+    return terminal === null ? [] : [{ ...terminal, source }];
   }
 
   if (!Node.isReturnStatement(node)) {
