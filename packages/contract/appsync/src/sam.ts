@@ -32,8 +32,6 @@ import type {
   RawSchemaSource,
 } from "./cfn.js";
 
-const RESOLVER_ROOT_TYPES = ["Query", "Mutation", "Subscription"];
-
 /** Map SAM `DataSources` category keys to normalized data-source types. */
 const DATA_SOURCE_CATEGORIES: Record<string, string> = {
   Lambda: "lambda",
@@ -157,7 +155,10 @@ function readResolvers(apiLogicalId: string, raw: unknown): AppSyncResolver[] {
     return [];
   }
   const out: AppSyncResolver[] = [];
-  for (const typeName of RESOLVER_ROOT_TYPES) {
+  // Every type, not only the three roots. A field on an ordinary type
+  // is an ordinary GraphQL resolver, and skipping those left the code
+  // serving them looking like it answered a field nobody declared.
+  for (const typeName of Object.keys(byType)) {
     const fields = asRecord(byType[typeName]);
     if (fields === null) {
       continue;
