@@ -176,6 +176,41 @@ export class Database {
     return index.get(atomKey(value)) ?? [];
   }
 
+  /**
+   * Remove facts from a relation. Returns how many were actually there.
+   *
+   * Evaluation uses this to take back what it derived last time when a
+   * rule set uses negation, where a new fact can invalidate an old
+   * conclusion. Callers rarely need it.
+   */
+  retract(relationName: string, tuples: Iterable<Tuple>): number {
+    const relation = this.store.get(relationName);
+    if (relation === undefined) {
+      return 0;
+    }
+    const going = new Set<string>();
+    for (const tuple of tuples) {
+      const key = keyOf(tuple);
+      if (relation.keys.has(key)) {
+        going.add(key);
+      }
+    }
+    if (going.size === 0) {
+      return 0;
+    }
+    for (const key of going) {
+      relation.keys.delete(key);
+    }
+    relation.tuples = relation.tuples.filter(
+      (tuple) => !going.has(keyOf(tuple)),
+    );
+    // Cheaper to drop the indexes and let the next lookup rebuild them
+    // than to hunt through every bucket for the tuples that went.
+    relation.indexes.clear();
+    forgetEvaluation(this);
+    return going.size;
+  }
+
   size(relationName: string): number {
     return this.store.get(relationName)?.tuples.length ?? 0;
   }
@@ -386,23 +421,39 @@ interface EvaluationState {
   signature: string;
   /** How many facts each relation held when evaluation last finished. */
   marks: Map<string, number>;
+  /**
+   * Every fact evaluation itself put in, per relation. A tuple the
+   * caller had already added is not in here: `add` reported it as
+   * nothing new, so evaluation never claimed it.
+   */
+  derived: Map<string, Tuple[]>;
 }
 
 const evaluated = new WeakMap<Database, EvaluationState>();
 
+/** Forget the last fixpoint, so the next evaluate() starts over. */
+function forgetEvaluation(db: Database): void {
+  evaluated.delete(db);
+}
+
+const usesNegation = (rules: Rule[]): boolean =>
+  rules.some((r) => r.body.some((l) => l.negated));
+
 /**
- * Whether the last fixpoint can be built on. Negation is the reason
- * this is not always true: adding a fact can make a negated literal
- * stop matching, which retracts a conclusion, and a delta pass only
- * ever adds. Positive rules are monotone, so new facts can only bring
- * new conclusions and the old ones all still hold.
+ * Whether the last fixpoint can be built on. Positive rules are
+ * monotone: new facts can only bring new conclusions, and everything
+ * derived before still holds, so a delta pass finishes the job.
+ *
+ * Negation is not monotone. A new fact can make a negated literal stop
+ * matching, which takes an old conclusion away, and a pass that only
+ * adds can never do that. Those runs clear the board first instead.
  */
 function canResume(
   db: Database,
   rules: Rule[],
   signature: string,
 ): EvaluationState | null {
-  if (rules.some((r) => r.body.some((l) => l.negated))) {
+  if (usesNegation(rules)) {
     return null;
   }
   const state = evaluated.get(db);
@@ -441,6 +492,22 @@ function currentMarks(db: Database): Map<string, number> {
  */
 export function evaluate(db: Database, rules: Rule[]): Database {
   const signature = JSON.stringify(rules);
+  const previous = evaluated.get(db);
+
+  // A rule set with negation has one right answer for the facts the
+  // caller has now, and an earlier pass may have concluded things that
+  // answer does not include. Take back what that pass derived and work
+  // it out again from the base facts.
+  // Tracking carries across rule changes, so a later negated run knows
+  // about everything any earlier pass concluded, not only the last one.
+  const derived = previous?.derived ?? new Map<string, Tuple[]>();
+  if (previous !== undefined && usesNegation(rules)) {
+    for (const [relation, tuples] of derived) {
+      db.retract(relation, tuples);
+    }
+    derived.clear();
+  }
+
   const resume = canResume(db, rules, signature);
   // Taken before any stratum runs, so a later stratum's seed picks up
   // what the strata below it just derived.
@@ -452,12 +519,8 @@ export function evaluate(db: Database, rules: Rule[]): Database {
 
     const record = (relation: string, tuple: Tuple): void => {
       if (db.add(relation, tuple)) {
-        const bucket = delta.get(relation);
-        if (bucket === undefined) {
-          delta.set(relation, [tuple]);
-        } else {
-          bucket.push(tuple);
-        }
+        addTo(delta, relation, tuple);
+        addTo(derived, relation, tuple);
       }
     };
 
@@ -512,6 +575,19 @@ export function evaluate(db: Database, rules: Rule[]): Database {
     }
   }
 
-  evaluated.set(db, { signature, marks: currentMarks(db) });
+  evaluated.set(db, { signature, marks: currentMarks(db), derived });
   return db;
+}
+
+function addTo(
+  buckets: Map<string, Tuple[]>,
+  relation: string,
+  tuple: Tuple,
+): void {
+  const bucket = buckets.get(relation);
+  if (bucket === undefined) {
+    buckets.set(relation, [tuple]);
+  } else {
+    bucket.push(tuple);
+  }
 }

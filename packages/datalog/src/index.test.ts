@@ -335,23 +335,109 @@ describe("evaluate — resuming a previous fixpoint", () => {
     expect(sorted(db.facts("backward"))).toEqual(["b,a", "c,b"]);
   });
 
-  it("re-runs in full when a rule set uses negation", () => {
+  const SINKS = [
+    rule("node", [V("x")], [lit("edge", V("x"), V("y"))]),
+    rule("node", [V("y")], [lit("edge", V("x"), V("y"))]),
+    rule("hasOut", [V("x")], [lit("edge", V("x"), V("y"))]),
+    rule("sink", [V("x")], [lit("node", V("x")), notLit("hasOut", V("x"))]),
+  ];
+
+  it("takes back a conclusion a new fact invalidates", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    evaluate(db, SINKS);
+    expect(sorted(db.facts("sink"))).toEqual(["b"]);
+
+    // "b" has an edge out of it now, so it is no longer a sink. A pass
+    // that only ever added facts would leave the old answer standing.
+    db.add("edge", ["b", "c"]);
+    evaluate(db, SINKS);
+
+    expect(sorted(db.facts("node"))).toEqual(["a", "b", "c"]);
+    expect(sorted(db.facts("sink"))).toEqual(["c"]);
+  });
+
+  it("matches a fresh database on the same facts", () => {
+    const incremental = new Database();
+    incremental.add("edge", ["a", "b"]);
+    evaluate(incremental, SINKS);
+    incremental.add("edge", ["b", "c"]);
+    incremental.add("edge", ["c", "a"]);
+    evaluate(incremental, SINKS);
+
+    const fresh = new Database();
+    for (const edge of [
+      ["a", "b"],
+      ["b", "c"],
+      ["c", "a"],
+    ]) {
+      fresh.add("edge", edge);
+    }
+    evaluate(fresh, SINKS);
+
+    expect(sorted(incremental.facts("sink"))).toEqual(
+      sorted(fresh.facts("sink")),
+    );
+    expect(sorted(incremental.facts("node"))).toEqual(
+      sorted(fresh.facts("node")),
+    );
+  });
+
+  it("leaves the caller's own facts alone when it takes conclusions back", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    evaluate(db, SINKS);
+
+    db.add("edge", ["b", "c"]);
+    evaluate(db, SINKS);
+
+    expect(sorted(db.facts("edge"))).toEqual(["a,b", "b,c"]);
+  });
+});
+
+describe("Database.retract", () => {
+  it("removes facts and reports how many were there", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+
+    expect(
+      db.retract("edge", [
+        ["a", "b"],
+        ["x", "y"],
+      ]),
+    ).toBe(1);
+    expect(sorted(db.facts("edge"))).toEqual(["b,c"]);
+    expect(db.has("edge", ["a", "b"])).toBe(false);
+    expect(db.retract("absent", [["a"]])).toBe(0);
+    expect(db.retract("edge", [])).toBe(0);
+  });
+
+  it("keeps lookups correct afterwards", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["a", "c"]);
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,b", "a,c"]);
+
+    db.retract("edge", [["a", "b"]]);
+
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,c"]);
+  });
+
+  it("makes the next evaluate start over", () => {
     const rules = [
-      rule("node", [V("x")], [lit("edge", V("x"), V("y"))]),
-      rule("node", [V("y")], [lit("edge", V("x"), V("y"))]),
-      rule("hasOut", [V("x")], [lit("edge", V("x"), V("y"))]),
-      rule("sink", [V("x")], [lit("node", V("x")), notLit("hasOut", V("x"))]),
+      rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),
     ];
     const db = new Database();
     db.add("edge", ["a", "b"]);
-    evaluate(db, rules);
-
     db.add("edge", ["b", "c"]);
     evaluate(db, rules);
 
-    // "b" was a sink before the edge out of it arrived. Negation is not
-    // monotone, so that earlier conclusion stays in the database. What
-    // matters here is that the pass still sees every node.
-    expect(sorted(db.facts("node"))).toEqual(["a", "b", "c"]);
+    // Retracting a derived fact behind evaluation's back would stay
+    // missing if the next call resumed from the old fixpoint.
+    db.retract("path", [["a", "b"]]);
+    evaluate(db, rules);
+
+    expect(sorted(db.facts("path"))).toEqual(["a,b", "b,c"]);
   });
 });

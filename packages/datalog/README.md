@@ -66,10 +66,20 @@ after that, so a relation nobody joins on that way carries no index.
 `evaluate` picks up where it left off. Call it again with the same rules
 after adding facts and it seeds from the facts you added rather than
 starting the fixpoint over. Callers that interleave "add some facts, ask
-a question" get this without doing anything. Negation turns it off:
-adding a fact can make a negated literal stop matching, which retracts a
-conclusion, and a delta pass only ever adds. Positive rules are monotone,
+a question" get this without doing anything. Positive rules are monotone,
 so everything derived before still holds.
+
+Negation gets the other treatment. A new fact can make a negated literal
+stop matching, and the conclusion that rested on it has to go. So a
+re-run with negated rules takes back what the previous pass derived and
+works the answer out again from the base facts. Either way you get the
+answer for the facts the database holds now, not a record of what was
+concluded along the way.
+
+One thing to keep straight: a relation that rules derive should not also
+receive facts you add yourself. Taking a conclusion back cannot tell your
+fact from the one it derived, and the two get mixed up in every other
+part of Datalog as well.
 
 Extraction-scale fact sets are thousands of tuples. If that changes, the
 rule data model is the stable seam and this evaluator is the replaceable
