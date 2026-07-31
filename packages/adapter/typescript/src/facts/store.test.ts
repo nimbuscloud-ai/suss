@@ -15,6 +15,10 @@ function projectOf(files: Record<string, string>): Project {
     // node_modules and have imports of it actually resolve there.
     compilerOptions: { allowJs: true, moduleResolution: 100 },
   });
+  // The compiler enumerates the @types root when resolving a package
+  // that ships its declarations separately, and an in-memory directory
+  // only exists once something makes it.
+  project.getFileSystem().mkdirSync("/node_modules/@types");
   for (const [path, contents] of Object.entries(files)) {
     project.createSourceFile(path, contents);
   }
@@ -337,6 +341,105 @@ describe("resolveCallable", () => {
     expect(
       store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
     ).toBeNull();
+  });
+
+  it("ignores a local object annotated with the library's own type", () => {
+    const project = projectOf({
+      "/node_modules/@sentry/aws-serverless/package.json": JSON.stringify({
+        name: "@sentry/aws-serverless",
+        version: "1.0.0",
+        types: "index.d.ts",
+      }),
+      "/node_modules/@sentry/aws-serverless/index.d.ts": `
+        export interface Wrapper {
+          wrapHandler(fn: unknown): unknown;
+        }
+      `,
+      "/local.ts": `
+        import type { Wrapper } from "@sentry/aws-serverless";
+        export const Sentry: Wrapper = {
+          wrapHandler: (fn: unknown) => async () => "local",
+        };
+      `,
+      "/mod.ts": `
+        import { Sentry } from "./local";
+        export const handler = Sentry.wrapHandler(async () => "inner");
+      `,
+    });
+    const store = new ResolutionStore([
+      {
+        callee: "Sentry.wrapHandler",
+        argument: 0,
+        module: "@sentry/aws-serverless",
+      },
+    ]);
+
+    // The type comes from the library and the function does not.
+    expect(
+      store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
+    ).toBeNull();
+  });
+
+  it("takes a wrapper whose types ship separately, through a barrel", () => {
+    const project = projectOf({
+      "/node_modules/sentry-js/package.json": JSON.stringify({
+        name: "sentry-js",
+        version: "1.0.0",
+      }),
+      "/node_modules/@types/sentry-js/package.json": JSON.stringify({
+        name: "@types/sentry-js",
+        version: "1.0.0",
+        types: "index.d.ts",
+      }),
+      "/node_modules/@types/sentry-js/index.d.ts": `
+        export function wrapHandler<T>(handler: T): T;
+      `,
+      "/barrel.ts": `export * from "sentry-js";`,
+      "/mod.ts": `
+        import { wrapHandler } from "./barrel";
+        export const handler = wrapHandler(async () => "typed elsewhere");
+      `,
+    });
+    const store = new ResolutionStore([
+      { callee: "wrapHandler", argument: 0, module: "sentry-js" },
+    ]);
+
+    // The declaration lives in @types/sentry-js, and a pack names the
+    // package people import.
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+    ).toContain("typed elsewhere");
+  });
+
+  it("takes a wrapper a package declares as a global", () => {
+    const project = projectOf({
+      "/node_modules/@sentry/aws-serverless/package.json": JSON.stringify({
+        name: "@sentry/aws-serverless",
+        version: "1.0.0",
+        types: "index.d.ts",
+      }),
+      "/node_modules/@sentry/aws-serverless/index.d.ts": `
+        declare global {
+          function wrapHandler<T>(handler: T): T;
+        }
+        export {};
+      `,
+      "/mod.ts": `
+        import "@sentry/aws-serverless";
+        export const handler = wrapHandler(async () => "global wrapper");
+      `,
+    });
+    const store = new ResolutionStore([
+      {
+        callee: "wrapHandler",
+        argument: 0,
+        module: "@sentry/aws-serverless",
+      },
+    ]);
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+    ).toContain("global wrapper");
   });
 
   it("follows .bind to the bound method", () => {

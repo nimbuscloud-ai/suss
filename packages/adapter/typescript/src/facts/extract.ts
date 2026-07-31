@@ -84,25 +84,14 @@ function importOriginsOf(callee: Node): string[] {
   }
 
   const origins = new Set<string>();
-  let imported = false;
   for (const declaration of symbol.getDeclarations()) {
     const specifier = importSpecifierOf(declaration);
-    if (specifier === null) {
-      continue;
-    }
-    imported = true;
     // A relative specifier names a file, not a package, so only the
-    // package the symbol turns out to live in can speak for it.
-    if (!specifier.startsWith(".")) {
+    // package the callee turns out to live in can speak for it.
+    if (specifier !== null && !specifier.startsWith(".")) {
       origins.add(specifier);
       origins.add(packagePartOf(specifier));
     }
-  }
-  if (!imported) {
-    // Not imported at all, so nothing can vouch for where it came from.
-    // Skipping here also keeps globals out: every JSON.parse would
-    // otherwise report the package holding TypeScript's lib files.
-    return [];
   }
 
   // Where the callee turns out to live, which is what a barrel or a
@@ -117,10 +106,12 @@ function importOriginsOf(callee: Node): string[] {
   for (const candidate of [named ?? symbol, symbol]) {
     const aliased = candidate.getAliasedSymbol() ?? candidate;
     for (const declaration of aliased.getDeclarations()) {
-      const owner = declaringPackageOf(
+      if (!declaresAValue(declaration)) {
+        continue;
+      }
+      for (const owner of packagesDeclaring(
         declaration.getSourceFile().getFilePath(),
-      );
-      if (owner !== null) {
+      )) {
         origins.add(owner);
       }
     }
@@ -158,15 +149,51 @@ function packagePartOf(specifier: string): string {
   return parts.slice(0, take).join("/");
 }
 
-/** The package a file inside node_modules belongs to. */
-function declaringPackageOf(filePath: string): string | null {
+/**
+ * A member reached through a type annotation is not evidence of where
+ * the value came from. An object written locally and annotated with a
+ * library's interface resolves its members to that interface, and
+ * taking those at face value hands a local function the library's name.
+ * So only a declaration that introduces a value counts.
+ */
+function declaresAValue(declaration: Node): boolean {
+  return (
+    !Node.isPropertySignature(declaration) &&
+    !Node.isMethodSignature(declaration)
+  );
+}
+
+/**
+ * The packages a file inside node_modules speaks for. Usually one.
+ * Types published separately are the exception: a declaration in
+ * `@types/foo` is how `foo` describes itself, and a pack names the
+ * package people import, so both answer.
+ */
+function packagesDeclaring(filePath: string): string[] {
   const marker = "/node_modules/";
   const at = filePath.lastIndexOf(marker);
   if (at === -1) {
-    return null;
+    return [];
   }
   const rest = filePath.slice(at + marker.length);
-  return packagePartOf(rest);
+  // TypeScript's own lib files declare every global there is, and a
+  // call to one of those says nothing about anybody's dependency.
+  if (rest.startsWith("typescript/lib/")) {
+    return [];
+  }
+  const owner = packagePartOf(rest);
+  const described = packageDescribedByTypes(owner);
+  return described === null ? [owner] : [owner, described];
+}
+
+/** "@types/foo" describes "foo"; "@types/scope__name" describes "@scope/name". */
+function packageDescribedByTypes(owner: string): string | null {
+  if (!owner.startsWith("@types/")) {
+    return null;
+  }
+  const name = owner.slice("@types/".length);
+  const scoped = name.split("__");
+  return scoped.length === 2 ? `@${scoped[0]}/${scoped[1]}` : name;
 }
 
 /** Peel await, parentheses, satisfies, and as-casts. */
