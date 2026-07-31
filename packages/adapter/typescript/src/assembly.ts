@@ -72,43 +72,71 @@ export function countUnmatchedReturns(
   terminalPatterns: TerminalPattern[],
   barriers: DescentBarriers = NO_BARRIERS,
 ): number {
-  const claimed = new Set(
-    findTerminals(func, terminalPatterns, barriers).map(({ node }) => node),
-  );
-  let unmatched = 0;
   const body = func.getBody?.();
   if (body === undefined) {
     return 0;
   }
-  // A concise arrow produces its value with no return statement, so
-  // the body itself is the thing a terminal either claimed or did not.
-  if (Node.isArrowFunction(func) && Node.isExpression(body)) {
-    return claimed.has(body as never) ? 0 : 1;
+
+  // A terminal is anchored wherever its matcher found the value, which
+  // is a different node for each kind: the object literal inside a
+  // ternary, the call inside an await, the arrow itself for a component
+  // that returns JSX. Walking up to the return that encloses it puts
+  // them all on the same footing.
+  const claimed = new Set<Node>();
+  for (const { node } of findTerminals(func, terminalPatterns, barriers)) {
+    if (node === (func as unknown as Node)) {
+      // The whole function is the terminal, so nothing in it is unread.
+      return 0;
+    }
+    const enclosing = Node.isReturnStatement(node)
+      ? node
+      : node.getFirstAncestor(
+          (ancestor) => Node.isReturnStatement(ancestor) || ancestor === body,
+        );
+    claimed.add(enclosing ?? node);
   }
+
+  // A concise arrow produces its value with no return statement, so the
+  // body itself is the thing a terminal either claimed or did not.
+  if (Node.isArrowFunction(func) && Node.isExpression(body)) {
+    return claimed.has(body) ? 0 : 1;
+  }
+
+  let unmatched = 0;
   body.forEachDescendant((node, traversal) => {
     if (isDescentStop(node, func, barriers)) {
       traversal.skip();
       return;
     }
-    // A nested function returns for itself, and it gets its own
-    // summary if anything discovers it.
-    if (node !== func && isFunctionRoot(node)) {
+    // A nested function returns for itself, and it gets its own summary
+    // if anything discovers it. Accessors and constructors declared in
+    // the body are somebody else s returns too.
+    if (node !== func && (isFunctionRoot(node) || isNestedBodyOwner(node))) {
       traversal.skip();
       return;
     }
     if (!Node.isReturnStatement(node)) {
       return;
     }
-    // A bare `return;` leaves by the same door as falling off the end,
-    // which the fall-through terminal already speaks for.
+    // A bare return leaves by the same door as falling off the end.
     if (node.getExpression() === undefined) {
       return;
     }
-    if (!claimed.has(node) && !claimed.has(node.getExpression() as never)) {
+    if (!claimed.has(node)) {
       unmatched++;
     }
   });
   return unmatched;
+}
+
+/** Accessors and constructors hold returns that answer for themselves. */
+function isNestedBodyOwner(node: Node): boolean {
+  return (
+    Node.isGetAccessorDeclaration(node) ||
+    Node.isSetAccessorDeclaration(node) ||
+    Node.isConstructorDeclaration(node) ||
+    Node.isFunctionDeclaration(node)
+  );
 }
 
 export function extractRawBranches(

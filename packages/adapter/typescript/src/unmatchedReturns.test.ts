@@ -64,6 +64,55 @@ describe("countUnmatchedReturns", () => {
     ).toBe(2);
   });
 
+  it("sees a ternary return as one return, claimed once", () => {
+    expect(
+      countIn(
+        `export const handler = async (flag: boolean) => {
+           return flag
+             ? { statusCode: 200, body: "" }
+             : { statusCode: 404, body: "" };
+         };`,
+        "handler",
+      ),
+    ).toBe(0);
+  });
+
+  it("sees through the parentheses a concise arrow needs", () => {
+    expect(
+      countIn(
+        `export const handler = async () => ({ statusCode: 200, body: "" });`,
+        "handler",
+      ),
+    ).toBe(0);
+  });
+
+  it("sees through parentheses around a returned value", () => {
+    expect(
+      countIn(
+        `export const handler = async () => {
+           return ({ statusCode: 200, body: "" });
+         };`,
+        "handler",
+      ),
+    ).toBe(0);
+  });
+
+  it("does not blame a return inside a getter on the function around it", () => {
+    expect(
+      countIn(
+        `export const handler = async () => {
+           return {
+             statusCode: 200,
+             get body() {
+               return { somethingElse: true };
+             },
+           };
+         };`,
+        "handler",
+      ),
+    ).toBe(0);
+  });
+
   it("leaves a bare return alone, since falling off the end covers it", () => {
     expect(
       countIn(
@@ -89,5 +138,53 @@ describe("countUnmatchedReturns", () => {
         "handler",
       ),
     ).toBe(0);
+  });
+});
+
+describe("countUnmatchedReturns across terminal shapes", () => {
+  it("sees through an await around a returned call", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const file = project.createSourceFile(
+      "/mod.ts",
+      `declare function json(body: unknown): { statusCode: number };
+       export const handler = async () => {
+         return await json({ a: 1 });
+       };`,
+    );
+    const func = file
+      .getVariableDeclarationOrThrow("handler")
+      .getInitializerOrThrow() as unknown as FunctionRoot;
+
+    const terminals: TerminalPattern[] = [
+      {
+        kind: "response",
+        match: { type: "functionCall", functionName: "json" },
+        extraction: {},
+      },
+    ];
+
+    expect(countUnmatchedReturns(func, terminals)).toBe(0);
+  });
+
+  it("says nothing is unread when the whole function is the terminal", () => {
+    const project = new Project({
+      useInMemoryFileSystem: true,
+      compilerOptions: { jsx: 2 },
+    });
+    const file = project.createSourceFile(
+      "/mod.tsx",
+      "export const Card = () => <div />;",
+    );
+    const func = file
+      .getVariableDeclarationOrThrow("Card")
+      .getInitializerOrThrow() as unknown as FunctionRoot;
+
+    const terminals: TerminalPattern[] = [
+      { kind: "render", match: { type: "jsxReturn" }, extraction: {} },
+    ];
+
+    // A component that returns JSX with no return statement: the
+    // terminal is anchored on the function itself.
+    expect(countUnmatchedReturns(func, terminals)).toBe(0);
   });
 });
