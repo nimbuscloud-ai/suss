@@ -8,7 +8,8 @@
       "!**/build/**",
       "!**/dist/**",
       "!fixtures/**",
-      "!**/coverage/**"
+      "!**/coverage/**",
+      "!**/.suss/**"
     ]
   },
   "vcs": {
