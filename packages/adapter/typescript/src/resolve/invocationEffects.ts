@@ -106,6 +106,65 @@ export interface TsInvocationRecognizerContext {
    * field-level shape (e.g. Prisma's `select: { id: true }`).
    */
   extractArgs(): EffectArg[];
+  /**
+   * Whether `identifier` was introduced by an import of
+   * `expectedModule`. Recognizers use this to tell a library's export
+   * apart from a local class that happens to share its name.
+   *
+   * Named, default, and namespace imports all match. So does an import
+   * through a project-local barrel that re-exports the module: the
+   * aliased symbol still sits in the package that declared it.
+   */
+  isImportedFrom(identifier: Node, expectedModule: string): boolean;
+}
+
+export function isImportedFrom(
+  identifier: Node,
+  expectedModule: string,
+): boolean {
+  if (!Node.isIdentifier(identifier)) {
+    return false;
+  }
+  const symbol = identifier.getSymbol();
+  if (symbol === undefined) {
+    return false;
+  }
+
+  for (const decl of symbol.getDeclarations()) {
+    if (importSpecifierMatches(decl, expectedModule)) {
+      return true;
+    }
+  }
+
+  const aliased = symbol.getAliasedSymbol() ?? symbol;
+  return aliased
+    .getDeclarations()
+    .some((decl) =>
+      decl
+        .getSourceFile()
+        .getFilePath()
+        .includes(`/node_modules/${expectedModule}/`),
+    );
+}
+
+/** Whether an import-shaped declaration names `expectedModule`. */
+function importSpecifierMatches(decl: Node, expectedModule: string): boolean {
+  if (Node.isImportSpecifier(decl)) {
+    return (
+      decl.getImportDeclaration().getModuleSpecifierValue() === expectedModule
+    );
+  }
+  // An ImportClause's parent is the declaration; a NamespaceImport sits
+  // one level deeper, under the clause.
+  const owner = Node.isNamespaceImport(decl) ? decl.getParent() : decl;
+  if (!Node.isImportClause(owner)) {
+    return false;
+  }
+  const importDecl = owner.getParent();
+  return (
+    Node.isImportDeclaration(importDecl) &&
+    importDecl.getModuleSpecifierValue() === expectedModule
+  );
 }
 
 export function extractInvocationEffects(
@@ -244,6 +303,7 @@ export function runInvocationRecognizers(
       call: node,
       sourceFile,
       extractArgs: () => extractArgs(node),
+      isImportedFrom,
     };
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {

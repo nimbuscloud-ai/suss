@@ -14,6 +14,7 @@ export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery/index.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
 export { parseConditionExpression } from "./predicates.js";
+export { isImportedFrom } from "./resolve/invocationEffects.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";

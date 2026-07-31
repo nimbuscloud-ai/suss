@@ -7,6 +7,8 @@ import {
 } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { isImportedFrom } from "@suss/adapter-typescript";
+
 import { sqsFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -90,6 +92,7 @@ function recognizeAll(sourceFile: SourceFile): Effect[] {
       call: node as CallExpression,
       sourceFile,
       extractArgs: (): EffectArg[] => extractArgsForTest(node),
+      isImportedFrom,
     };
     for (const recognizer of recognizers) {
       const emitted = recognizer(node, ctx);

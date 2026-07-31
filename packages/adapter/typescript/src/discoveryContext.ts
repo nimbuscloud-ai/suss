@@ -13,20 +13,10 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { toFunctionRoot } from "./discovery/shared.js";
+
 import type { FunctionRoot } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
-
-function toFunctionRootLocal(node: Node): FunctionRoot | null {
-  if (
-    Node.isFunctionDeclaration(node) ||
-    Node.isFunctionExpression(node) ||
-    Node.isArrowFunction(node) ||
-    Node.isMethodDeclaration(node)
-  ) {
-    return node as FunctionRoot;
-  }
-  return null;
-}
 
 export interface TsDiscoveryContext {
   /** Full filesystem path of the source file. Useful for excluding
@@ -98,8 +88,10 @@ function exportedFunctions(
         const value = Node.isVariableDeclaration(decl)
           ? (decl.getInitializer() ?? decl)
           : decl;
-        const resolved = resolution.resolveCallable(value);
-        fn = resolved === null ? null : toFunctionRootLocal(resolved);
+        if (couldResolveToFunction(value)) {
+          const resolved = resolution.resolveCallable(value);
+          fn = resolved === null ? null : toFunctionRoot(resolved);
+        }
       }
       if (fn === null) {
         continue;
@@ -110,6 +102,23 @@ function exportedFunctions(
     }
   }
   return out;
+}
+
+/**
+ * Whether a value is shaped like something that could name a function.
+ * Most exports are object literals, string constants, or schemas, and
+ * asking the fact layer about those pulls in their import closure for
+ * an answer that is always null.
+ */
+function couldResolveToFunction(value: Node): boolean {
+  return (
+    Node.isCallExpression(value) ||
+    Node.isIdentifier(value) ||
+    Node.isPropertyAccessExpression(value) ||
+    Node.isExportSpecifier(value) ||
+    Node.isImportSpecifier(value) ||
+    Node.isImportClause(value)
+  );
 }
 
 function resolveDeclarationToFunction(decl: Node): FunctionRoot | null {

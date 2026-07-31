@@ -13,16 +13,17 @@
 // edges a query follows, so cost tracks the indirection present, not
 // project size.
 
-import { Node, type SourceFile } from "ts-morph";
+import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 
-import { atom, FactDb, rule, v } from "./engine.js";
+import { isFunctionRoot } from "../discovery/shared.js";
 import {
   createNodeTable,
   extractFileFacts,
-  extractModuleFacts,
   type NodeTable,
   nodeId,
 } from "./extract.js";
+
+import type { Node, SourceFile } from "ts-morph";
 
 /** A library wrapper a pack declares as transparent. */
 export interface TransparentWrapper {
@@ -34,70 +35,83 @@ export interface TransparentWrapper {
 
 const RESOLUTION_RULES = [
   // A function resolves to itself; every chain ends here.
-  rule(atom("resolves", v("f"), v("f")), atom("func", v("f"))),
+  rule("resolves", [v("f"), v("f")], [lit("func", v("f"))]),
 
   // Aliasing: const x = y, or an identifier referencing a declaration.
   rule(
-    atom("resolves", v("x"), v("z")),
-    atom("binds", v("x"), v("y")),
-    atom("resolves", v("y"), v("z")),
+    "resolves",
+    [v("x"), v("z")],
+    [lit("binds", v("x"), v("y")), lit("resolves", v("y"), v("z"))],
   ),
 
   // An import resolves to what the module exports under that name.
   rule(
-    atom("resolves", v("x"), v("z")),
-    atom("imports", v("x"), v("m"), v("n")),
-    atom("moduleExport", v("m"), v("n"), v("value")),
-    atom("resolves", v("value"), v("z")),
+    "resolves",
+    [v("x"), v("z")],
+    [
+      lit("imports", v("x"), v("m"), v("n")),
+      lit("moduleExport", v("m"), v("n"), v("value")),
+      lit("resolves", v("value"), v("z")),
+    ],
   ),
 
   // What a module exports: directly, or through re-export chains.
   rule(
-    atom("moduleExport", v("m"), v("n"), v("value")),
-    atom("exportsAs", v("m"), v("n"), v("value")),
+    "moduleExport",
+    [v("m"), v("n"), v("value")],
+    [lit("exportsAs", v("m"), v("n"), v("value"))],
   ),
   rule(
-    atom("moduleExport", v("m"), v("n"), v("value")),
-    atom("reExports", v("m"), v("n"), v("m2"), v("n2")),
-    atom("moduleExport", v("m2"), v("n2"), v("value")),
+    "moduleExport",
+    [v("m"), v("n"), v("value")],
+    [
+      lit("reExports", v("m"), v("n"), v("m2"), v("n2")),
+      lit("moduleExport", v("m2"), v("n2"), v("value")),
+    ],
   ),
   rule(
-    atom("moduleExport", v("m"), v("n"), v("value")),
-    atom("reExportsAll", v("m"), v("m2")),
-    atom("moduleExport", v("m2"), v("n"), v("value")),
+    "moduleExport",
+    [v("m"), v("n"), v("value")],
+    [
+      lit("reExportsAll", v("m"), v("m2")),
+      lit("moduleExport", v("m2"), v("n"), v("value")),
+    ],
   ),
 
   // f.bind(...) resolves to whatever f resolves to.
   rule(
-    atom("resolves", v("r"), v("h")),
-    atom("bindCall", v("r"), v("t")),
-    atom("resolves", v("t"), v("h")),
+    "resolves",
+    [v("r"), v("h")],
+    [lit("bindCall", v("r"), v("t")), lit("resolves", v("t"), v("h"))],
   ),
 
   // Wrapper transparency, derived: calling a factory that returns a
   // function which calls its parameter k resolves to argument k.
   rule(
-    atom("returnsFunc", v("f"), v("g")),
-    atom("returnsValue", v("f"), v("value")),
-    atom("resolves", v("value"), v("g")),
+    "returnsFunc",
+    [v("f"), v("g")],
+    [
+      lit("returnsValue", v("f"), v("value")),
+      lit("resolves", v("value"), v("g")),
+    ],
   ),
   // A call made by a nested closure counts as made by the function
   // that declares it; the closure runs as part of that function.
+  rule("bodyCallsDeep", [v("f"), v("c")], [lit("bodyCalls", v("f"), v("c"))]),
   rule(
-    atom("bodyCallsDeep", v("f"), v("c")),
-    atom("bodyCalls", v("f"), v("c")),
+    "bodyCallsDeep",
+    [v("f"), v("c")],
+    [lit("containsFn", v("f"), v("g")), lit("bodyCallsDeep", v("g"), v("c"))],
   ),
   rule(
-    atom("bodyCallsDeep", v("f"), v("c")),
-    atom("containsFn", v("f"), v("g")),
-    atom("bodyCallsDeep", v("g"), v("c")),
-  ),
-  rule(
-    atom("unwraps", v("f"), v("k")),
-    atom("returnsFunc", v("f"), v("g")),
-    atom("bodyCallsDeep", v("g"), v("c")),
-    atom("binds", v("c"), v("p")),
-    atom("paramOf", v("f"), v("k"), v("p")),
+    "unwraps",
+    [v("f"), v("k")],
+    [
+      lit("returnsFunc", v("f"), v("g")),
+      lit("bodyCallsDeep", v("g"), v("c")),
+      lit("binds", v("c"), v("p")),
+      lit("paramOf", v("f"), v("k"), v("p")),
+    ],
   ),
 
   // Argument flow: which parameter a value traces back to. Directly
@@ -106,54 +120,56 @@ const RESOLUTION_RULES = [
   // `createProtected(h) { return service.withAuth(h); }` unwrap:
   // the returned call passes h through withAuth, which unwraps.
   rule(
-    atom("flowsToParam", v("x"), v("p")),
-    atom("binds", v("x"), v("p")),
-    atom("paramOf", v("anyF"), v("anyK"), v("p")),
+    "flowsToParam",
+    [v("x"), v("p")],
+    [
+      lit("binds", v("x"), v("p")),
+      lit("paramOf", v("anyF"), v("anyK"), v("p")),
+    ],
   ),
   rule(
-    atom("flowsToParam", v("r"), v("p")),
-    atom("call", v("r"), v("c")),
-    atom("resolves", v("c"), v("f")),
-    atom("unwraps", v("f"), v("k")),
-    atom("callArg", v("r"), v("k"), v("a")),
-    atom("flowsToParam", v("a"), v("p")),
+    "flowsToParam",
+    [v("r"), v("p")],
+    [
+      lit("call", v("r"), v("c")),
+      lit("resolves", v("c"), v("f")),
+      lit("unwraps", v("f"), v("k")),
+      lit("callArg", v("r"), v("k"), v("a")),
+      lit("flowsToParam", v("a"), v("p")),
+    ],
   ),
   rule(
-    atom("unwraps", v("f"), v("k")),
-    atom("returnsValue", v("f"), v("value")),
-    atom("flowsToParam", v("value"), v("p")),
-    atom("paramOf", v("f"), v("k"), v("p")),
+    "unwraps",
+    [v("f"), v("k")],
+    [
+      lit("returnsValue", v("f"), v("value")),
+      lit("flowsToParam", v("value"), v("p")),
+      lit("paramOf", v("f"), v("k"), v("p")),
+    ],
   ),
   rule(
-    atom("resolves", v("r"), v("h")),
-    atom("call", v("r"), v("c")),
-    atom("resolves", v("c"), v("f")),
-    atom("unwraps", v("f"), v("k")),
-    atom("callArg", v("r"), v("k"), v("a")),
-    atom("resolves", v("a"), v("h")),
+    "resolves",
+    [v("r"), v("h")],
+    [
+      lit("call", v("r"), v("c")),
+      lit("resolves", v("c"), v("f")),
+      lit("unwraps", v("f"), v("k")),
+      lit("callArg", v("r"), v("k"), v("a")),
+      lit("resolves", v("a"), v("h")),
+    ],
   ),
 
   // Wrapper transparency, declared: a pack says this callee wraps
   // argument k, no matter what its implementation looks like.
   rule(
-    atom("resolves", v("r"), v("h")),
-    atom("calleeName", v("r"), v("n")),
-    atom("unwrapsByName", v("n"), v("k")),
-    atom("callArg", v("r"), v("k"), v("a")),
-    atom("resolves", v("a"), v("h")),
-  ),
-
-  // Which packages a file reaches through its imports. Chains pass
-  // through project files (they have importsModule facts of their
-  // own); a package name terminates the chain.
-  rule(
-    atom("reachesModule", v("file"), v("m")),
-    atom("importsModule", v("file"), v("m")),
-  ),
-  rule(
-    atom("reachesModule", v("file"), v("m")),
-    atom("importsModule", v("file"), v("via")),
-    atom("reachesModule", v("via"), v("m")),
+    "resolves",
+    [v("r"), v("h")],
+    [
+      lit("calleeName", v("r"), v("n")),
+      lit("unwrapsByName", v("n"), v("k")),
+      lit("callArg", v("r"), v("k"), v("a")),
+      lit("resolves", v("a"), v("h")),
+    ],
   ),
 ];
 
@@ -165,15 +181,17 @@ const RESOLUTION_RULES = [
 const MAX_MODULE_HOPS = 6;
 
 export class ResolutionStore {
-  private readonly db = new FactDb();
+  private readonly db = new Database();
   private readonly table: NodeTable = createNodeTable();
   private readonly fullyExtracted = new Set<string>();
-  private readonly moduleExtracted = new Set<string>();
+  private readonly gateAnswers = new Map<string, Map<string, boolean>>();
+
+  private resolvedBySource = new Map<string, string[]>();
+  private stale = true;
 
   constructor(wrappers: TransparentWrapper[] = []) {
-    this.db.setRules(RESOLUTION_RULES);
     for (const wrapper of wrappers) {
-      this.db.add("unwrapsByName", wrapper.callee, String(wrapper.argument));
+      this.db.add("unwrapsByName", [wrapper.callee, String(wrapper.argument)]);
     }
   }
 
@@ -181,93 +199,152 @@ export class ResolutionStore {
    * The function `value` resolves to, or null when no chain reaches
    * one. The result is a ts-morph node in whatever file the function
    * actually lives.
+   *
+   * Facts come in waves: extract the file the value lives in, ask, and
+   * only widen to the files it imports when the answer is still
+   * missing. A value that resolves without leaving its own file costs
+   * one file of extraction, not the whole import closure.
    */
   resolveCallable(value: Node): Node | null {
-    this.ensureFile(value.getSourceFile());
+    let frontier = [value.getSourceFile()];
+    for (let hop = 0; hop <= MAX_MODULE_HOPS; hop++) {
+      const next: SourceFile[] = [];
+      for (const sourceFile of frontier) {
+        next.push(...this.extractFile(sourceFile));
+      }
+      const found = this.lookup(value);
+      if (found !== null) {
+        return found;
+      }
+      if (next.length === 0) {
+        return null;
+      }
+      frontier = next;
+    }
+    return null;
+  }
 
-    const results = this.db.query("resolves", [nodeId(value), null]);
-    for (const tuple of results) {
-      const resolved = this.table.byId.get(tuple[1] as string);
+  /**
+   * Whether `file` reaches any of `packages` through its imports,
+   * following project-local re-export chains.
+   *
+   * A walk rather than a rule: the answer is one boolean per file, and
+   * deriving the full reachable-module relation for every file in a
+   * large repo costs far more than the question is worth.
+   */
+  importsTransitively(sourceFile: SourceFile, packages: string[]): boolean {
+    const gateKey = JSON.stringify(packages);
+    let answers = this.gateAnswers.get(gateKey);
+    if (answers === undefined) {
+      answers = new Map();
+      this.gateAnswers.set(gateKey, answers);
+    }
+
+    const cached = answers.get(sourceFile.getFilePath());
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const visited = new Set<string>();
+    const queue = [sourceFile];
+    while (queue.length > 0) {
+      const current = queue.pop() as SourceFile;
+      const currentPath = current.getFilePath();
+      if (visited.has(currentPath)) {
+        continue;
+      }
+      visited.add(currentPath);
+
+      if (answers.get(currentPath) === true) {
+        answers.set(sourceFile.getFilePath(), true);
+        return true;
+      }
+      if (matchesAnyGate(moduleSpecifiers(current), packages)) {
+        answers.set(currentPath, true);
+        answers.set(sourceFile.getFilePath(), true);
+        return true;
+      }
+      queue.push(...referencedProjectFiles(current));
+    }
+
+    // Nothing in the closure reaches a gate, so every file walked has
+    // the same answer: its own reachable set is a subset of this one.
+    for (const walked of visited) {
+      answers.set(walked, false);
+    }
+    return false;
+  }
+
+  private lookup(value: Node): Node | null {
+    this.derive();
+    for (const target of this.resolvedBySource.get(nodeId(value)) ?? []) {
+      const resolved = this.table.byId.get(target);
       if (resolved !== undefined && resolved !== value) {
         return resolved;
       }
-      if (resolved === value && isFunction(value)) {
+      if (resolved === value && isFunctionRoot(value)) {
         return value;
       }
     }
     return null;
   }
 
-  /** Whether `file` reaches any of `packages` through its imports. */
-  importsTransitively(sourceFile: SourceFile, packages: string[]): boolean {
-    this.ensureModuleFacts(sourceFile, 0);
-    const filePath = sourceFile.getFilePath();
-    return packages.some(
-      (packageName) =>
-        this.db.has("reachesModule", [filePath, packageName]) ||
-        this.reachesSubpath(filePath, packageName),
-    );
-  }
-
-  /** "@workweek/aws/sqs" reaches "@aws-sdk/client-sqs/submodule" too. */
-  private reachesSubpath(filePath: string, packageName: string): boolean {
-    const prefix = `${packageName}/`;
-    return this.db
-      .query("reachesModule", [filePath, null])
-      .some((tuple) => (tuple[1] as string).startsWith(prefix));
-  }
-
   /**
-   * Extract full facts for a file and, transitively, for the project
-   * files its imports and re-exports point at. Resolution chains can
-   * only follow edges into files whose facts exist.
+   * Run the rules to fixpoint and index `resolves` by its source, so
+   * a lookup is a map hit rather than a scan of every derived tuple.
    */
-  private ensureFile(sourceFile: SourceFile, depth = 0): void {
+  private derive(): void {
+    if (!this.stale) {
+      return;
+    }
+    this.stale = false;
+    evaluate(this.db, RESOLUTION_RULES);
+
+    this.resolvedBySource = new Map();
+    for (const tuple of this.db.facts("resolves")) {
+      const source = String(tuple[0]);
+      const targets = this.resolvedBySource.get(source);
+      if (targets === undefined) {
+        this.resolvedBySource.set(source, [String(tuple[1])]);
+      } else {
+        targets.push(String(tuple[1]));
+      }
+    }
+  }
+
+  /** Extract a file if new, and report the project files it points at. */
+  private extractFile(sourceFile: SourceFile): SourceFile[] {
     const filePath = sourceFile.getFilePath();
     if (this.fullyExtracted.has(filePath)) {
-      return;
+      return [];
     }
     this.fullyExtracted.add(filePath);
-    this.moduleExtracted.add(filePath);
-
+    this.stale = true;
     extractFileFacts(this.db, this.table, sourceFile);
-
-    if (depth >= MAX_MODULE_HOPS) {
-      return;
-    }
-    for (const referenced of referencedProjectFiles(sourceFile)) {
-      this.ensureFile(referenced, depth + 1);
-    }
-  }
-
-  /** The light tier: import and re-export facts only. */
-  private ensureModuleFacts(sourceFile: SourceFile, depth: number): void {
-    const filePath = sourceFile.getFilePath();
-    if (
-      this.moduleExtracted.has(filePath) ||
-      this.fullyExtracted.has(filePath)
-    ) {
-      return;
-    }
-    this.moduleExtracted.add(filePath);
-
-    extractModuleFacts(this.db, sourceFile);
-
-    if (depth >= MAX_MODULE_HOPS) {
-      return;
-    }
-    for (const referenced of referencedProjectFiles(sourceFile)) {
-      this.ensureModuleFacts(referenced, depth + 1);
-    }
+    return referencedProjectFiles(sourceFile);
   }
 }
 
-function isFunction(node: Node): boolean {
-  return (
-    Node.isFunctionDeclaration(node) ||
-    Node.isFunctionExpression(node) ||
-    Node.isArrowFunction(node) ||
-    Node.isMethodDeclaration(node)
+function moduleSpecifiers(sourceFile: SourceFile): string[] {
+  const specifiers: string[] = [];
+  for (const importDecl of sourceFile.getImportDeclarations()) {
+    specifiers.push(importDecl.getModuleSpecifierValue());
+  }
+  for (const exportDecl of sourceFile.getExportDeclarations()) {
+    const specifier = exportDecl.getModuleSpecifierValue();
+    if (specifier !== undefined) {
+      specifiers.push(specifier);
+    }
+  }
+  return specifiers;
+}
+
+/** A gate matches the package itself and any of its subpaths. */
+function matchesAnyGate(specifiers: string[], gates: string[]): boolean {
+  return specifiers.some((specifier) =>
+    gates.some(
+      (gate) => specifier === gate || specifier.startsWith(`${gate}/`),
+    ),
   );
 }
 

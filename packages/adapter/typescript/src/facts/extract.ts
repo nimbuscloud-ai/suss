@@ -3,15 +3,23 @@
 // No resolution happens here. This pass records what the file
 // syntactically contains: functions, what variables are declared as,
 // what is imported and exported, which calls wrap which arguments.
-// The rules in rules.ts do the connecting.
+// The resolution store holds the rules that connect them.
 //
-// Node identity is `absolutePath:startOffset`. The extractor fills a
-// side table from id back to ts-morph Node so a resolved answer comes
-// back as a Node the rest of the adapter can use.
+// Node identity is `absolutePath:start-end`. Start alone collides a
+// call with its callee. The extractor fills a side table from id back
+// to ts-morph Node so a resolved answer comes back as a Node the rest
+// of the adapter can use.
 
 import { type Expression, Node, type SourceFile, SyntaxKind } from "ts-morph";
 
-import type { FactDb } from "./engine.js";
+import { isFunctionRoot } from "../discovery/shared.js";
+
+import type { Database } from "@suss/datalog";
+
+/** Arity sugar over `Database.add`, which takes a tuple array. */
+function fact(db: Database, relation: string, ...tuple: string[]): void {
+  db.add(relation, tuple);
+}
 
 export interface NodeTable {
   byId: Map<string, Node>;
@@ -69,27 +77,18 @@ function unwrapExpression(expression: Expression): Expression {
   }
 }
 
-function isFunctionNode(node: Node): boolean {
-  return (
-    Node.isFunctionDeclaration(node) ||
-    Node.isFunctionExpression(node) ||
-    Node.isArrowFunction(node) ||
-    Node.isMethodDeclaration(node)
-  );
-}
-
 /**
  * Record that `value` is a value of interest and emit the facts that
  * let the rules resolve it: its own identity, and a binds edge when it
  * is an identifier or property access referencing a declaration.
  */
-function emitValue(db: FactDb, table: NodeTable, value: Expression): string {
+function emitValue(db: Database, table: NodeTable, value: Expression): string {
   const expression = unwrapExpression(value);
   const id = nodeId(expression);
   table.byId.set(id, expression);
 
-  if (isFunctionNode(expression)) {
-    db.add("func", id);
+  if (isFunctionRoot(expression)) {
+    fact(db, "func", id);
     emitFunctionFacts(db, table, expression);
     return id;
   }
@@ -116,7 +115,7 @@ function emitValue(db: FactDb, table: NodeTable, value: Expression): string {
  * the imports relation), a variable declaration, or a function.
  */
 function emitReferenceFacts(
-  db: FactDb,
+  db: Database,
   table: NodeTable,
   reference: Expression,
 ): void {
@@ -140,8 +139,8 @@ function emitReferenceFacts(
       const importDecl = declaration.getImportDeclaration();
       const moduleKey = moduleKeyOf(importDecl);
       if (moduleKey !== null) {
-        db.add("binds", referenceId, declarationId);
-        db.add("imports", declarationId, moduleKey, declaration.getName());
+        fact(db, "binds", referenceId, declarationId);
+        fact(db, "imports", declarationId, moduleKey, declaration.getName());
       }
       continue;
     }
@@ -154,37 +153,37 @@ function emitReferenceFacts(
       if (importDecl !== undefined) {
         const moduleKey = moduleKeyOf(importDecl);
         if (moduleKey !== null) {
-          db.add("binds", referenceId, declarationId);
-          db.add("imports", declarationId, moduleKey, "default");
+          fact(db, "binds", referenceId, declarationId);
+          fact(db, "imports", declarationId, moduleKey, "default");
         }
       }
       continue;
     }
 
     if (Node.isVariableDeclaration(declaration)) {
-      db.add("binds", referenceId, declarationId);
+      fact(db, "binds", referenceId, declarationId);
       const initializer = declaration.getInitializer();
       if (initializer !== undefined) {
-        db.add("binds", declarationId, emitValue(db, table, initializer));
+        fact(db, "binds", declarationId, emitValue(db, table, initializer));
       }
       continue;
     }
 
     if (Node.isParameterDeclaration(declaration)) {
-      db.add("binds", referenceId, declarationId);
+      fact(db, "binds", referenceId, declarationId);
       continue;
     }
 
-    if (isFunctionNode(declaration)) {
-      db.add("binds", referenceId, declarationId);
-      db.add("func", declarationId);
+    if (isFunctionRoot(declaration)) {
+      fact(db, "binds", referenceId, declarationId);
+      fact(db, "func", declarationId);
       emitFunctionFacts(db, table, declaration);
     }
   }
 }
 
 function emitCallFacts(
-  db: FactDb,
+  db: Database,
   table: NodeTable,
   call: Node & {
     getExpression(): Expression;
@@ -199,12 +198,12 @@ function emitCallFacts(
   // f.bind(receiver): the call resolves to whatever f resolves to.
   if (Node.isPropertyAccessExpression(callee) && callee.getName() === "bind") {
     const target = unwrapExpression(callee.getExpression());
-    db.add("bindCall", callId, emitValue(db, table, target));
+    fact(db, "bindCall", callId, emitValue(db, table, target));
     return;
   }
 
-  db.add("call", callId, emitValue(db, table, callee));
-  db.add("calleeName", callId, callee.getText());
+  fact(db, "call", callId, emitValue(db, table, callee));
+  fact(db, "calleeName", callId, callee.getText());
 
   const args = call.getArguments();
   for (let position = 0; position < args.length; position++) {
@@ -212,7 +211,13 @@ function emitCallFacts(
     if (!Node.isExpression(argument)) {
       continue;
     }
-    db.add("callArg", callId, String(position), emitValue(db, table, argument));
+    fact(
+      db,
+      "callArg",
+      callId,
+      String(position),
+      emitValue(db, table, argument),
+    );
   }
 }
 
@@ -221,7 +226,7 @@ function emitCallFacts(
  * calls are what the unwraps rule needs: an inner function that calls
  * a parameter of its enclosing factory.
  */
-function emitFunctionFacts(db: FactDb, table: NodeTable, fn: Node): void {
+function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
   if (table.seenFunctions.has(fn)) {
     return;
   }
@@ -244,7 +249,7 @@ function emitFunctionFacts(db: FactDb, table: NodeTable, fn: Node): void {
       }
       const parameterId = nodeId(parameter);
       table.byId.set(parameterId, parameter);
-      db.add("paramOf", fnId, String(position), parameterId);
+      fact(db, "paramOf", fnId, String(position), parameterId);
     }
 
     // Arrow shorthand body is itself the returned value, and when it
@@ -252,12 +257,12 @@ function emitFunctionFacts(db: FactDb, table: NodeTable, fn: Node): void {
     if (Node.isArrowFunction(fn)) {
       const body = fn.getBody();
       if (Node.isExpression(body)) {
-        db.add("returnsValue", fnId, emitValue(db, table, body));
+        fact(db, "returnsValue", fnId, emitValue(db, table, body));
         const unwrapped = unwrapExpression(body);
         if (Node.isCallExpression(unwrapped)) {
           const callee = unwrapExpression(unwrapped.getExpression());
           if (Node.isIdentifier(callee)) {
-            db.add("bodyCalls", fnId, emitValue(db, table, callee));
+            fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
           }
         }
       }
@@ -271,9 +276,10 @@ function emitFunctionFacts(db: FactDb, table: NodeTable, fn: Node): void {
         // closure declared here runs as part of this function, so a
         // wrapper that delegates to its parameter inside one still
         // delegates. containsFn is what makes bodyCalls transitive.
-        if (isFunctionNode(descendant)) {
+        if (isFunctionRoot(descendant)) {
           if (descendantIsReturned(descendant)) {
-            db.add(
+            fact(
+              db,
               "returnsValue",
               fnId,
               emitValue(db, table, descendant as Expression),
@@ -281,7 +287,7 @@ function emitFunctionFacts(db: FactDb, table: NodeTable, fn: Node): void {
           } else {
             emitValue(db, table, descendant as Expression);
           }
-          db.add("containsFn", fnId, nodeId(descendant));
+          fact(db, "containsFn", fnId, nodeId(descendant));
           traversal.skip();
           return;
         }
@@ -289,7 +295,7 @@ function emitFunctionFacts(db: FactDb, table: NodeTable, fn: Node): void {
         if (Node.isReturnStatement(descendant)) {
           const returned = descendant.getExpression();
           if (returned !== undefined) {
-            db.add("returnsValue", fnId, emitValue(db, table, returned));
+            fact(db, "returnsValue", fnId, emitValue(db, table, returned));
           }
           return;
         }
@@ -298,7 +304,7 @@ function emitFunctionFacts(db: FactDb, table: NodeTable, fn: Node): void {
           const callee = unwrapExpression(descendant.getExpression());
           if (Node.isIdentifier(callee)) {
             const calleeId = emitValue(db, table, callee);
-            db.add("bodyCalls", fnId, calleeId);
+            fact(db, "bodyCalls", fnId, calleeId);
           }
         }
       });
@@ -331,7 +337,7 @@ function descendantIsReturned(fn: Node): boolean {
  * exports under which name, and what it re-exports from elsewhere.
  * This is the light tier; the gate query needs nothing else.
  */
-export function extractModuleFacts(db: FactDb, sourceFile: SourceFile): void {
+export function extractModuleFacts(db: Database, sourceFile: SourceFile): void {
   const filePath = sourceFile.getFilePath();
 
   for (const importDecl of sourceFile.getImportDeclarations()) {
@@ -339,7 +345,7 @@ export function extractModuleFacts(db: FactDb, sourceFile: SourceFile): void {
     if (moduleKey === null) {
       continue;
     }
-    db.add("importsModule", filePath, moduleKey);
+    fact(db, "importsModule", filePath, moduleKey);
   }
 
   for (const exportDecl of sourceFile.getExportDeclarations()) {
@@ -349,15 +355,15 @@ export function extractModuleFacts(db: FactDb, sourceFile: SourceFile): void {
       // tier through exported declarations.
       continue;
     }
-    db.add("importsModule", filePath, moduleKey);
+    fact(db, "importsModule", filePath, moduleKey);
 
     if (exportDecl.isNamespaceExport()) {
-      db.add("reExportsAll", filePath, moduleKey);
+      fact(db, "reExportsAll", filePath, moduleKey);
       continue;
     }
     for (const named of exportDecl.getNamedExports()) {
       const exportedName = named.getAliasNode()?.getText() ?? named.getName();
-      db.add("reExports", filePath, exportedName, moduleKey, named.getName());
+      fact(db, "reExports", filePath, exportedName, moduleKey, named.getName());
     }
   }
 }
@@ -367,7 +373,7 @@ export function extractModuleFacts(db: FactDb, sourceFile: SourceFile): void {
  * so resolution can start from any export.
  */
 export function extractFileFacts(
-  db: FactDb,
+  db: Database,
   table: NodeTable,
   sourceFile: SourceFile,
 ): void {
@@ -376,29 +382,35 @@ export function extractFileFacts(
 
   for (const [name, declarations] of sourceFile.getExportedDeclarations()) {
     for (const declaration of declarations) {
-      if (isFunctionNode(declaration)) {
+      if (isFunctionRoot(declaration)) {
         const id = nodeId(declaration);
         table.byId.set(id, declaration);
-        db.add("func", id);
+        fact(db, "func", id);
         emitFunctionFacts(db, table, declaration);
-        db.add("exportsAs", filePath, name, id);
+        fact(db, "exportsAs", filePath, name, id);
         continue;
       }
 
       if (Node.isVariableDeclaration(declaration)) {
         const declarationId = nodeId(declaration);
         table.byId.set(declarationId, declaration);
-        db.add("exportsAs", filePath, name, declarationId);
+        fact(db, "exportsAs", filePath, name, declarationId);
         const initializer = declaration.getInitializer();
         if (initializer !== undefined) {
-          db.add("binds", declarationId, emitValue(db, table, initializer));
+          fact(db, "binds", declarationId, emitValue(db, table, initializer));
         }
         continue;
       }
 
       if (Node.isExpression(declaration)) {
         // `export default <expression>`.
-        db.add("exportsAs", filePath, name, emitValue(db, table, declaration));
+        fact(
+          db,
+          "exportsAs",
+          filePath,
+          name,
+          emitValue(db, table, declaration),
+        );
       }
     }
   }

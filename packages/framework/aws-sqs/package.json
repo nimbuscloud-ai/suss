@@ -53,6 +53,7 @@
     "@suss/extractor": "0.0.2"
   },
   "devDependencies": {
+    "@suss/adapter-typescript": "0.0.2",
     "ts-morph": "*",
     "tsup": "*",
     "typescript": "*",
