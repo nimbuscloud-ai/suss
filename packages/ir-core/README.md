@@ -6,7 +6,7 @@ Primitives shared across suss's intermediate representations: the shapes every I
 
 The types that any suss IR is built from:
 
-- `TypeShape` — the structural shape of a value, for body / payload / field comparison.
+- `TypeShape`: the structural shape of a value, for body / payload / field comparison.
 - `BoundaryBinding` + the `Semantics` variants (rest, function-call, graphql-resolver, graphql-operation, runtime-config, storage-relational, message-bus), plus the eight blessed binding constructors (`restBinding`, `functionCallBinding`, …).
 - `SourceLocation` and `Confidence` (`source` + `level`).
 
@@ -25,7 +25,7 @@ Schemas are the single source of truth (`@suss/ir-core/schemas`); the types are 
 
 ## Where it sits in suss
 
-The base both `@suss/behavioral-ir` (what code does) and `@suss/intent-ir` (what the team meant) build on, so neither IR depends on the other — they describe boundaries in the same vocabulary and are compared, not merged. `@suss/behavioral-ir` re-exports these primitives, so existing consumers keep importing them from there unchanged.
+The base both `@suss/behavioral-ir` (what code does) and `@suss/intent-ir` (what the team meant) build on, so neither IR depends on the other. They describe boundaries in the same vocabulary and are compared rather than merged. `@suss/behavioral-ir` re-exports these primitives, so existing consumers keep importing them from there unchanged.
 
 ## Status
 

@@ -6,8 +6,8 @@ The team-authored side of the loop: what the code was *meant* to do, in shapes t
 
 Two citizens, discriminated by `kind`, both built on `@suss/ir-core` so intent and behaviour describe boundaries the same way:
 
-- **System intent** (`kind: boundary`) — what one boundary should do, as named outcomes. The boundary is REST **or** function-call; each outcome is a `response` (status + body), a `returns` (a function/handler return value), or a `throws` (an error). The function-call form is what lets suss check its own non-HTTP surface.
-- **Outcome intent** (`kind: prd`) — human `when` / `expect` scenarios, each with an optional `link` to a system-intent outcome (`<intent-name>.<outcome-id>`). A scenario with no `link` is a valid pending-link state: fully readable, not yet machine-linked.
+- **System intent** (`kind: boundary`): what one boundary should do, as named outcomes. The boundary is REST **or** function-call; each outcome is a `response` (status + body), a `returns` (a function/handler return value), or a `throws` (an error). The function-call form is what lets suss check its own non-HTTP surface.
+- **Outcome intent** (`kind: prd`): human `when` / `expect` scenarios, each with an optional `link` to a system-intent outcome (`<intent-name>.<outcome-id>`). A scenario with no `link` is a valid pending-link state: fully readable, not yet machine-linked.
 
 ```ts
 import { IntentDocSchema, intentDocToSummary } from "@suss/intent-ir";
@@ -16,7 +16,7 @@ const doc = IntentDocSchema.parse(/* parsed YAML / JSON */);
 const summary = intentDocToSummary(doc); // normalised, checker-ready
 ```
 
-`schema.ts` is the authoring surface (friendly to write); `summary.ts` is the normalised shape the checker consumes — boundaries as `ir-core` `BoundaryBinding`s, bodies as `TypeShape`s, one flat outcome list — plus the transform between them. `source` provenance (`author` / `inferred` / `inferred, curated`) rides along for the inference path.
+`schema.ts` is the authoring surface (friendly to write); `summary.ts` is the normalized shape the checker consumes (boundaries as `ir-core` `BoundaryBinding`s, bodies as `TypeShape`s, one flat outcome list) plus the transform between them. `source` provenance (`author` / `inferred` / `inferred, curated`) rides along for the inference path.
 
 The design is documented in [`docs/internal/proposals/intent-specs.md`](../../docs/internal/proposals/intent-specs.md).
 

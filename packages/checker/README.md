@@ -1,6 +1,6 @@
 # @suss/checker
 
-Pairwise cross-boundary checker. Given two `BehavioralSummary` objects — one provider, one consumer — produces a list of `Finding`s describing mismatches.
+Pairwise cross-boundary checker. Given two `BehavioralSummary` objects (one provider, one consumer) produces a list of `Finding`s describing mismatches.
 
 ## What this package is
 
@@ -17,11 +17,11 @@ const result = checkAll(summaries);
 // result.findings, result.pairs, result.unmatched
 ```
 
-No I/O, no persistence, no opinions about where the summaries came from. Hand-authored JSON, extractor output, or pinned baselines — they're all the same shape.
+No I/O, no persistence, no opinions about where the summaries came from. Hand-authored JSON, extractor output, or pinned baselines: they're all the same shape.
 
 ## Where it sits in suss
 
-Depends only on `@suss/behavioral-ir`. The extractor, adapters, and framework packs produce the summaries it consumes, but the checker has no runtime dependency on them — it operates on the serialized IR, not on AST or compiler state. See [`docs/architecture.md`](../../docs/architecture.md).
+Depends only on `@suss/behavioral-ir`. The extractor, adapters, and framework packs produce the summaries it consumes, but the checker has no runtime dependency on them; it operates on the serialized IR rather than AST or compiler state. See [`docs/architecture.md`](../../docs/architecture.md).
 
 ## Status
 

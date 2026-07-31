@@ -37,12 +37,12 @@ db.facts("reachable"); // [["main"], ["helper"], ["util"]]
 
 Termination and soundness are the engine's job, proven once. Negation
 (`notLit`) is *stratified*: a rule set with a negation cycle is a hard
-error at evaluation time, never a silently wrong answer — the property
+error at evaluation time, never a silently wrong answer, the property
 that makes rules safe to audit independently of any engine.
 
 Because rules are plain data (no DSL strings, no embedded code), the
-same rule set can later run on a faster external engine, and — the
-longer game — analyses written against fact shapes (`calls`, `throws`,
+same rule set can later run on a faster external engine, and (the
+longer game) analyses written against fact shapes (`calls`, `throws`,
 `handles`, …) are language-independent: a second language adapter only
 has to emit the same facts.
 
@@ -57,6 +57,6 @@ has to emit the same facts.
 
 Joins are nested-loop over hash-deduplicated tuple sets; semi-naïve
 iteration keeps per-round work proportional to newly derived facts.
-Extraction-scale fact sets are thousands of tuples — if that changes,
+Extraction-scale fact sets are thousands of tuples; if that changes,
 the rule data model is the stable seam and this evaluator is the
 replaceable part.

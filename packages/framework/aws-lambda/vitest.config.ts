@@ -3,6 +3,12 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
+    // Discovery tests build real ts-morph projects with on-disk
+    // template fixtures and take 1.5-3s each on an idle machine. The
+    // default 5s ceiling flakes when the full workspace suite runs in
+    // parallel on a loaded CI runner; the margin covers contention,
+    // not slower code.
+    testTimeout: 20000,
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],

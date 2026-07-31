@@ -12,7 +12,7 @@ directory discovery plus YAML / JSON parsing; the schema and the
 normalisation to `IntentSummary` live in [`@suss/intent-ir`](../../intent-ir).
 
 Unlike the other contract readers, intent does **not** produce
-`BehavioralSummary` — it's a separate citizen with its own type and its
+`BehavioralSummary`; it's a separate citizen with its own type and its
 own checker. The full design is in
 [`docs/internal/proposals/intent-specs.md`](../../../docs/internal/proposals/intent-specs.md).
 
@@ -64,7 +64,7 @@ transitions:
           fullName: { type: string }
 ```
 
-Each transition declares exactly one outcome — `response` (REST status +
+Each transition declares exactly one outcome: `response` (REST status +
 body), `returns` (a function/handler return value), or `throws` (an
 error). PRD docs (`kind: prd`) carry `when` / `expect` scenarios that
 optionally `link` to a system-intent outcome by `<name>.<id>`.

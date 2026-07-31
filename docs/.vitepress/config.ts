@@ -123,6 +123,11 @@ export default defineConfig({
           { text: "Boundary semantics", link: "/boundary-semantics" },
           { text: "Pipelines", link: "/pipelines" },
           { text: "Extraction algorithm", link: "/extraction-algorithm" },
+          { text: "Facts and rules", link: "/internal/facts-and-rules" },
+          {
+            text: "Differential fuzzing",
+            link: "/internal/differential-fuzzing",
+          },
           { text: "Contract sources", link: "/contract-sources" },
         ],
       },
@@ -132,11 +137,6 @@ export default defineConfig({
         items: [
           { text: "Status & decisions", link: "/internal/status" },
           { text: "Style guide", link: "/internal/style" },
-          { text: "Facts and rules", link: "/internal/facts-and-rules" },
-          {
-            text: "Differential fuzzing",
-            link: "/internal/differential-fuzzing",
-          },
           { text: "Concept design", link: "/internal/concept-design" },
           { text: "Quality", link: "/internal/quality" },
           { text: "Forward-looking backlog", link: "/internal/backlog" },

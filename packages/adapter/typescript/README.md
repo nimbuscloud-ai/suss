@@ -1,6 +1,6 @@
 # @suss/adapter-typescript
 
-TypeScript language adapter for suss — extracts behavioral structure from TypeScript source using ts-morph.
+TypeScript language adapter for suss. It extracts behavioral structure from TypeScript source using ts-morph.
 
 ## What this package is
 

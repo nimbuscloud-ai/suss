@@ -6,9 +6,9 @@ fails to satisfy what the team declared.
 ## What this package is
 
 The intent half of suss's checking, separate from `@suss/checker` (the
-behavioural peer checker) by design. The inputs differ — `IntentSummary`
+behavioral peer checker) by design. The inputs differ (`IntentSummary`
 (from `@suss/contract-intent`) on one side, `BehavioralSummary` on the
-other — and so does the output: an `IntentFinding` is one-sided coverage
+other), and so does the output: an `IntentFinding` is one-sided coverage
 ("the team declared X; does the code do it?"), not a symmetric
 provider↔consumer mismatch.
 
@@ -21,20 +21,20 @@ const findings = checkIntentAgreement(intentSummaries, codeSummaries);
 For each boundary intent, it pairs against the code summaries sharing the
 same boundary key and emits:
 
-- `unimplementedBoundary` — the intent declares a boundary no code produces.
-- `uncoveredOutcome` — a declared outcome (response / return / throw) the code never produces.
-- `outcomeShapeMismatch` — a matched outcome whose body shape disagrees with intent.
-- `undeclaredOutcome` — code produces a REST status the intent doesn't declare (info; intent under-specifies).
+- `unimplementedBoundary`: the intent declares a boundary no code produces.
+- `uncoveredOutcome`: a declared outcome (response / return / throw) the code never produces.
+- `outcomeShapeMismatch`: a matched outcome whose body shape disagrees with intent.
+- `undeclaredOutcome`: code produces a REST status the intent doesn't declare (info; intent under-specifies).
 
 v0 checks system intent (`kind: boundary`). PRD outcome intent
-(`kind: prd`) — scenario / link coverage — is a separate pass.
+(`kind: prd`), scenario and link coverage, is a separate pass.
 
 ## Where it sits in suss
 
 Depends on `@suss/intent-ir` (intent shapes + `IntentFinding`),
 `@suss/behavioral-ir` (code summaries), and `@suss/ir-core` for the
 shared comparison primitives (`boundaryKey`, `bodyShapesMatch`) it must
-agree on with the behavioural checker. It does **not** depend on
+agree on with the behavioral checker. It does **not** depend on
 `@suss/checker`. The full design is in
 [`docs/internal/proposals/intent-specs.md`](../../docs/internal/proposals/intent-specs.md).
 
