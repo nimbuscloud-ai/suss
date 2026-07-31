@@ -54,16 +54,43 @@ function httpRouteUnits(
 }
 
 /**
- * AppSync does not register a resolver in code. The template routes a
- * GraphQL field to this Lambda, so the field is the boundary the code
- * serves, and `resolverInfo` makes the adapter build a graphql-resolver
- * binding that pairs with the operations a client sends.
+ * The three root types are the operations a client can send, so a
+ * handler behind one of their fields sits on a boundary, and
+ * `resolverInfo` makes the adapter build the graphql-resolver binding
+ * that pairs with those operations.
+ *
+ * Every field has a resolver, per the GraphQL execution spec, and a
+ * server usually runs them all in one process. AppSync is the odd one:
+ * it lets each field be its own deployed Lambda. So a handler behind a
+ * field on some other type is a deployment fact rather than an API
+ * surface. No client can address it, the checker only pairs root
+ * selections, and the handler keeps whatever binding it would otherwise
+ * have with the fields it backs recorded on it.
  */
+const OPERATION_ROOT_TYPES = ["Query", "Mutation", "Subscription"];
+
+function operationFields(
+  entry: HandlerEntry,
+): Array<{ typeName: string; fieldName: string }> {
+  return entry.graphqlFields.filter((f) =>
+    OPERATION_ROOT_TYPES.includes(f.typeName),
+  );
+}
+
+function typeFields(
+  entry: HandlerEntry,
+): Array<{ typeName: string; fieldName: string }> {
+  return entry.graphqlFields.filter(
+    (f) => !OPERATION_ROOT_TYPES.includes(f.typeName),
+  );
+}
+
+/** One unit per operation field this handler is routed to. */
 function graphqlResolverUnits(
   entry: HandlerEntry,
   func: FunctionRoot,
 ): DiscoveredCustomUnit[] {
-  return entry.graphqlFields.map((field) => ({
+  return operationFields(entry).map((field) => ({
     func,
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
@@ -90,6 +117,7 @@ function accountingUnit(
   func: FunctionRoot,
 ): DiscoveredCustomUnit {
   const eventTypes = accountedEventTypes(entry);
+  const backs = typeFields(entry);
   return {
     func,
     kind: "handler",
@@ -100,6 +128,7 @@ function accountingUnit(
         handler: entry.handler,
         recognition: "recognized-not-http",
         eventTypes,
+        ...(backs.length > 0 ? { graphqlTypeFields: backs } : {}),
       },
     },
   };
@@ -162,7 +191,7 @@ export const awsLambdaDiscovery: NonNullable<PatternPack["discoverUnits"]> = (
     const unaccountedEvents = accountedEventTypes(entry);
     if (
       !hasBindableRoute(entry) &&
-      (entry.graphqlFields.length === 0 || unaccountedEvents.length > 0)
+      (operationFields(entry).length === 0 || unaccountedEvents.length > 0)
     ) {
       units.push(accountingUnit(entry, func));
     }

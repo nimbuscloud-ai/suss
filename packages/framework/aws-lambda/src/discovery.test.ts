@@ -104,6 +104,13 @@ Resources:
         InvokeQueued:
           DataSource: Queued
       Resolvers:
+        User:
+          profileState:
+            Runtime:
+              Name: APPSYNC_JS
+              Version: "1.0.0"
+            Pipeline:
+              - InvokeQueued
         Query:
           posts:
             Pipeline:
@@ -310,5 +317,38 @@ describe("awsLambdaDiscovery — a handler on two boundaries", () => {
     // resolver, and it has to keep being reported.
     expect(kinds).toContain("graphql-resolver");
     expect(kinds).toContain("function-call");
+  });
+});
+
+describe("awsLambdaDiscovery — fields on a non-root type", () => {
+  it("does not treat a type field as an operation a client can call", async () => {
+    const summaries = await run();
+    const queued = summaries.filter((s) =>
+      s.identity.name.startsWith("QueueFn."),
+    );
+    const fields = queued
+      .map((s) => s.identity.boundaryBinding?.semantics)
+      .filter((sem) => sem?.name === "graphql-resolver")
+      .map((sem) => (sem as { typeName: string }).typeName);
+
+    // Query.queued is an operation. User.profileState is a field that
+    // resolves while a parent does, and no operation names it.
+    expect(fields).toEqual(["Query"]);
+  });
+
+  it("records the type field the handler backs", async () => {
+    const summaries = await run();
+    const accounting = summaries.find(
+      (s) =>
+        s.identity.name.startsWith("QueueFn.") &&
+        s.identity.boundaryBinding?.semantics.name === "function-call",
+    );
+    const meta = accounting?.metadata?.awsLambda as
+      | { graphqlTypeFields?: Array<{ typeName: string; fieldName: string }> }
+      | undefined;
+
+    expect(meta?.graphqlTypeFields).toEqual([
+      { typeName: "User", fieldName: "profileState" },
+    ]);
   });
 });
