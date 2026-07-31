@@ -1,0 +1,114 @@
+import { describe, expect, it } from "vitest";
+
+import { routePathFromFile } from "./filenameRoute.js";
+
+import type { BindingExtraction } from "@suss/extractor";
+
+type Convention = Extract<BindingExtraction["path"], { type: "fromFilename" }>;
+
+const nextApp: Convention = {
+  type: "fromFilename",
+  root: "app",
+  dropBasenames: ["route", "page"],
+  dynamic: "brackets",
+  dropParenthesized: true,
+};
+
+const nextPages: Convention = {
+  type: "fromFilename",
+  root: "pages",
+  dropBasenames: ["index"],
+  dynamic: "brackets",
+};
+
+const remixFlat: Convention = {
+  type: "fromFilename",
+  root: "app/routes",
+  dropBasenames: ["_index", "route"],
+  dynamic: "dollarPrefix",
+  flat: true,
+};
+
+describe("routePathFromFile — Next.js app directory", () => {
+  it("reads the directories below the root as the path", () => {
+    expect(routePathFromFile("/src/app/api/orders/route.ts", nextApp)).toBe(
+      "/api/orders",
+    );
+  });
+
+  it("turns a bracketed directory into a placeholder", () => {
+    expect(
+      routePathFromFile("/src/app/api/orders/[id]/route.ts", nextApp),
+    ).toBe("/api/orders/{id}");
+  });
+
+  it("drops a directory that only groups files", () => {
+    expect(routePathFromFile("/src/app/(shop)/orders/page.tsx", nextApp)).toBe(
+      "/orders",
+    );
+  });
+
+  it("reads the root itself as the site root", () => {
+    expect(routePathFromFile("/src/app/page.tsx", nextApp)).toBe("/");
+  });
+
+  it("names a catch-all after its parameter", () => {
+    expect(routePathFromFile("/src/app/docs/[...slug]/page.tsx", nextApp)).toBe(
+      "/docs/{slug}",
+    );
+  });
+
+  it("names an optional catch-all the same way", () => {
+    expect(
+      routePathFromFile("/src/app/docs/[[...slug]]/page.tsx", nextApp),
+    ).toBe("/docs/{slug}");
+  });
+
+  it("resolves against the innermost root when a path repeats it", () => {
+    expect(
+      routePathFromFile("/repo/app/apps/web/app/api/ping/route.ts", nextApp),
+    ).toBe("/api/ping");
+  });
+
+  it("returns null for a file outside the root", () => {
+    expect(routePathFromFile("/src/lib/db.ts", nextApp)).toBeNull();
+  });
+});
+
+describe("routePathFromFile — Next.js pages directory", () => {
+  it("reads the filename as the last segment", () => {
+    expect(routePathFromFile("/src/pages/api/orders.ts", nextPages)).toBe(
+      "/api/orders",
+    );
+  });
+
+  it("drops an index filename", () => {
+    expect(routePathFromFile("/src/pages/api/index.ts", nextPages)).toBe(
+      "/api",
+    );
+  });
+
+  it("turns a bracketed filename into a placeholder", () => {
+    expect(routePathFromFile("/src/pages/api/orders/[id].ts", nextPages)).toBe(
+      "/api/orders/{id}",
+    );
+  });
+});
+
+describe("routePathFromFile — flat routes", () => {
+  it("splits one filename into its segments", () => {
+    expect(
+      routePathFromFile("/app/routes/orders.$id.edit.tsx", remixFlat),
+    ).toBe("/orders/{id}/edit");
+  });
+
+  it("reads a folder holding a route file", () => {
+    expect(
+      routePathFromFile("/app/routes/orders.$id/route.tsx", remixFlat),
+    ).toBe("/orders/{id}");
+  });
+
+  it("reads the index route as the root", () => {
+    expect(routePathFromFile("/app/routes/_index.tsx", remixFlat)).toBe("/");
+  });
+});

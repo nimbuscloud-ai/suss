@@ -1,4 +1,5 @@
-// fixtures/react-router/route.users.$id.ts — React Router loader + action
+// React Router loader and action, sitting where the router looks
+// for them so the route path comes out of the filename.
 // Exercises: early return guard, dependency call, nested condition, throw
 
 declare const db: {

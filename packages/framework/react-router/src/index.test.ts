@@ -29,7 +29,7 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
       skipLibCheck: true,
     },
   });
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
+  project.addSourceFilesAtPaths(path.join(fixturesDir, "app/routes/*.ts"));
 
   const adapter = createTypeScriptAdapter({
     project,
@@ -74,13 +74,24 @@ describe("reactRouterFramework — integration", () => {
     expect(summaries).toHaveLength(2);
     const kinds = summaries.map((s) => s.kind).sort();
     expect(kinds).toEqual(["action", "loader"]);
-    for (const s of summaries) {
-      expect(s.identity.boundaryBinding).toEqual({
-        transport: "http",
-        semantics: { name: "function-call" },
-        recognition: "react-router",
-      });
-    }
+  });
+
+  it("reads the route out of the file the loader sits in", () => {
+    const loader = summaries.find((s) => s.kind === "loader");
+    expect(loader?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "react-router",
+    });
+  });
+
+  it("gives the action the same route with the method it answers", () => {
+    const action = summaries.find((s) => s.kind === "action");
+    expect(action?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "POST", path: "/users/{id}" },
+      recognition: "react-router",
+    });
   });
 
   it("loader assembles three response transitions from the json/redirect helpers", () => {

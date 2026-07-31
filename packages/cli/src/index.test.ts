@@ -435,10 +435,16 @@ describe("extract — react-router", () => {
   it("extracts exactly the loader and action from the fixture route", () => {
     expect(summaries).toHaveLength(2);
     expect(summaries.map((s) => s.kind).sort()).toEqual(["action", "loader"]);
+    // The fixture sits at app/routes/users.$id.ts, so both units answer
+    // the same route and differ by the method they take.
     for (const s of summaries) {
       expect(s.identity.boundaryBinding).toEqual({
         transport: "http",
-        semantics: { name: "function-call" },
+        semantics: {
+          name: "rest",
+          method: s.kind === "loader" ? "GET" : "POST",
+          path: "/users/{id}",
+        },
         recognition: "react-router",
       });
       expect(s.gaps).toEqual([]);
