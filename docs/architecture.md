@@ -118,7 +118,10 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
     ├─ @suss/extractor       assembly engine + PatternPack interface.
     │     │                  No AST access.
     │     │
-    │     ├─ @suss/adapter-typescript    ts-morph-based extraction
+    │     ├─ @suss/adapter-typescript    ts-morph-based extraction; runs
+    │     │        │                     whole-program passes as rules
+    │     │        └─ @suss/datalog      small Datalog evaluator (facts,
+    │     │                              rules, stratified negation)
     │     │
     │     ├─ Framework packs             discover handlers, define terminals
     │     │     @suss/framework-ts-rest          and inputs for a framework
@@ -132,6 +135,7 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
     │     │     @suss/framework-aws-sqs
     │     │     @suss/framework-aws-eventbridge
     │     │     @suss/framework-prisma
+    │     │     @suss/framework-drizzle
     │     │
     │     ├─ Client packs                consumer-side discovery
     │     │     @suss/client-web         (fetch)
@@ -166,7 +170,8 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
 - `@suss/contract-intent`: reader for `*.intent` / `*.prd` files. Unlike the other `contract-*` readers it produces `IntentSummary`, not `BehavioralSummary`: intent is a separate artifact stream that gets *compared against* behavior, not folded into it.
 - `@suss/checker-intent`: depends on both IRs (it compares them) and `ir-core`. Pure function `checkIntentAgreement(intents, code)` → findings + checked / unchecked accounting. Peer of `@suss/checker`, not a dependency of it.
 - `@suss/extractor`: depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
-- `@suss/adapter-typescript`: depends on IR, extractor, ts-morph. The heavyweight package.
+- `@suss/adapter-typescript`: depends on IR, extractor, ts-morph, and `@suss/datalog` for its whole-program passes. The heavyweight package.
+- `@suss/datalog`: zero dependencies. A small semi-naive Datalog evaluator with stratified negation; rules are plain data. Knows nothing about the IR or the AST, which is the point: analyses written against fact shapes stay language-independent.
 - **All pack kinds** (framework, client, runtime), depend only on `@suss/extractor` for the `PatternPack` type, plus `@suss/manifest-*` packages where discovery is manifest-driven. They're data, not logic.
 - `@suss/manifest-*` packages, parse deploy manifests (SAM/CFN templates) into plain data. No IR, no `@suss` dependencies. Both contract readers (manifest as specification) and framework packs (manifest as discovery index) read through them; the parse lives once, and neither witness depends on the other.
 - `@suss/contract-*` packages, depend only on the IR, plus on each other where they compose (`cloudformation` delegates to `openapi` + `aws-apigateway`). Produce `BehavioralSummary[]` from specs, manifests, schemas; carry `confidence.source: "derived"`. See [`contract-sources.md`](contract-sources.md).
@@ -196,16 +201,30 @@ This isn't worth refactoring while there are three client packs (web, axios, apo
 For each code unit, the adapter runs four independently testable steps, then assembles them:
 
 1. **Terminal discovery**, use pack patterns to find all AST nodes that produce observable output.
-2. **Ancestor branch collection**, walk upward from each terminal to the function root, recording branching constructs (`if`, `switch`, `try/catch`, ternary, `&&` / `||`).
-3. **Early return detection**, scan sibling statements before the terminal; any `if (cond) return` contributes an implicit negative predicate to the terminal.
+2. **Path enumeration**, the path engine enumerates every entry-to-terminal control-flow path over the function's structured statements (`if`/`else`, `switch`, loops, `try`/`catch`, `break`/`continue`) and produces one condition list per path. Facts that aren't statically decidable (which loop iteration, which statement threw) become opaque conditions, and the few shapes the engine declines degrade to enclosure conditions plus an explicit unmodeled-control-flow marker.
+3. **Expression-level condition collection**, ternaries, `&&` / `||` short-circuits, and conditions inside nested callbacks are read below the statement level and appended to each path's list.
 4. **Condition expression parsing**, decompose each condition AST node into a structured `Predicate`, resolving subjects via the symbol table. Fall back to `opaque` when decomposition fails.
 
-The four functions compose in step 5 (**assembly**): for each terminal, concatenate its early-return conditions + ancestor-branch conditions, pair with the terminal's output data, and produce a `Transition`.
+The four functions compose in step 5 (**assembly**): each entry-to-terminal path becomes one `Transition`, pairing that path's conditions with the terminal's output data. [`extraction-algorithm.md`](extraction-algorithm.md) walks each step in detail.
 
 Two parallel mechanisms feed effects and sub-units into this pipeline:
 
 - **Recognizers** fire when the walker encounters a specific call or property access inside a code unit. The runtime-node pack's `schedulingRecognizer` fires on `setTimeout(...)` and attaches a scheduling effect to the surrounding unit; its env-var recognizer fires on `process.env.X` reads and attaches a config-read effect.
 - **Sub-units** synthesize new code units inside an existing one, typically a callback passed to a host function (`setTimeout(callback)`, `array.forEach(callback)`, a Promise executor). The walker descends into the sub-unit and runs recognizer dispatch there, so effects in nested function bodies aren't missed.
+
+## Whole-program passes: facts and rules
+
+Per-function extraction answers "what does this function do". Three passes answer whole-program questions afterward, and all three are Datalog rules (`@suss/datalog`) over one shared fact database per extraction:
+
+- **Reachable closure**: every function statically reachable from a pack-discovered entry point becomes its own `library` summary.
+- **Re-throw enrichment**: a bare `throw err` in a catch block learns the throw sources its try block's callees can raise, transitively.
+- **Boundary effects**: every effect statically reachable behind an entry point lands on that entry's summary as `metadata.effectsClosure`.
+
+The layering is strict: extraction emits facts, rules derive new facts, assembly stamps derived results onto summaries as additive metadata. Rules never touch the AST, so the analyses are language-independent by construction. [`internal/facts-and-rules.md`](internal/facts-and-rules.md) is the working reference, including the relation table and the checklist for adding an analysis.
+
+## Verification: the differential fuzzer
+
+Extraction's correctness principles are checked mechanically, not by review alone. A differential fuzzer (`tools/differential`, never published) generates handler programs and React components, extracts them through the real pipeline, executes the same code, and fails the build if a summary claims something execution disproves. Shrunk counterexamples are pinned in a permanent corpus, and fixed gaps become regression tests. [`internal/differential-fuzzing.md`](internal/differential-fuzzing.md) has the protocol.
 
 ## Why `RawCodeStructure` exists
 

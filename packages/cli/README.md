@@ -37,21 +37,21 @@ suss contract --from intent intents/ [-o intent.json]
 ### Options
 
 **`extract`**
-- `-p, --project` — path to `tsconfig.json` (required)
-- `-f, --framework` — pattern pack name (repeatable)
-- `-o, --output` — write JSON to file instead of stdout
-- `--files` — limit extraction to specific source files
-- `--gaps` — gap handling: `strict` (default), `permissive`, or `silent`
+- `-p, --project`: path to `tsconfig.json` (required)
+- `-f, --framework`: pattern pack name (repeatable)
+- `-o, --output`: write JSON to file instead of stdout
+- `--files`: limit extraction to specific source files
+- `--gaps`: gap handling: `strict` (default), `permissive`, or `silent`
 
 **`check`**
-- `--dir` — directory of summary JSON files; auto-pairs by `(method, normalizedPath)`
-- `--json` — emit findings as JSON
-- `-o, --output` — write findings to file instead of stdout
-- `--fail-on` — exit-code threshold: `error` (default), `warning`, `info`, or `none`
+- `--dir`: directory of summary JSON files; auto-pairs by `(method, normalizedPath)`
+- `--json`: emit findings as JSON
+- `-o, --output`: write findings to file instead of stdout
+- `--fail-on`: exit-code threshold: `error` (default), `warning`, `info`, or `none`
 
 **`stub`**
-- `--from` — stub source kind: `openapi` or `cloudformation`
-- `-o, --output` — write JSON to file instead of stdout
+- `--from`: stub source kind: `openapi` or `cloudformation`
+- `-o, --output`: write JSON to file instead of stdout
 - Positional argument: path to the spec file
 
 ### Built-in framework resolution

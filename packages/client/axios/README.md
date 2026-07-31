@@ -11,12 +11,12 @@ Client pack for the [axios](https://axios-http.com/) HTTP client. Discovers `axi
 - **Terminals**: `returnStatement` and `throwExpression`
 - **Response semantics**: `response.data` → body, `response.status` → status code, `response.headers` → headers
 
-This is a "client pack" — axios is a third-party HTTP client used at consumer call sites, the same role as `@suss/client-web` for native `fetch`.
+This is a "client pack": axios is a third-party HTTP client used at consumer call sites, the same role as `@suss/client-web` for native `fetch`.
 
 ### Limitations (v0)
 
-- **Bare-call form not supported.** `axios({ url, method })` and `axios.request(config)` aren't matched — only the per-verb method calls are.
-- **Aliased default imports** (`import myAxios from "axios"`) are not recognized — the pack matches the conventional `import axios from "axios"`.
+- **Bare-call form not supported.** `axios({ url, method })` and `axios.request(config)` aren't matched; only the per-verb method calls are.
+- **Aliased default imports** (`import myAxios from "axios"`) are not recognized; the pack matches the conventional `import axios from "axios"`.
 
 ## Where it sits in suss
 
