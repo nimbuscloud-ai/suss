@@ -1,9 +1,12 @@
 // assembly.ts — Compose Steps 1-4 into RawBranch[] (Task 2.5)
 
+import { Node } from "ts-morph";
+
 import {
   type ConditionInfo,
   conditionInfoToRawCondition,
 } from "./conditions.js";
+import { isFunctionRoot } from "./discovery/shared.js";
 import { computePathConditions } from "./paths/pathConditions.js";
 import {
   extractInvocationEffects,
@@ -15,7 +18,11 @@ import {
   functionMayFallThrough,
   makeFallthroughTerminal,
 } from "./terminals/index.js";
-import { type DescentBarriers, NO_BARRIERS } from "./walk/descent.js";
+import {
+  type DescentBarriers,
+  isDescentStop,
+  NO_BARRIERS,
+} from "./walk/descent.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -55,6 +62,55 @@ const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
  * `isDefault` is true when the branch has no conditions, or all
  * conditions come from early returns/throws.
  */
+/**
+ * Return statements the terminal patterns did not claim. Nested
+ * functions are somebody else's returns, so the same descent rules the
+ * terminal search uses apply here.
+ */
+export function countUnmatchedReturns(
+  func: FunctionRoot,
+  terminalPatterns: TerminalPattern[],
+  barriers: DescentBarriers = NO_BARRIERS,
+): number {
+  const claimed = new Set(
+    findTerminals(func, terminalPatterns, barriers).map(({ node }) => node),
+  );
+  let unmatched = 0;
+  const body = func.getBody?.();
+  if (body === undefined) {
+    return 0;
+  }
+  // A concise arrow produces its value with no return statement, so
+  // the body itself is the thing a terminal either claimed or did not.
+  if (Node.isArrowFunction(func) && Node.isExpression(body)) {
+    return claimed.has(body as never) ? 0 : 1;
+  }
+  body.forEachDescendant((node, traversal) => {
+    if (isDescentStop(node, func, barriers)) {
+      traversal.skip();
+      return;
+    }
+    // A nested function returns for itself, and it gets its own
+    // summary if anything discovers it.
+    if (node !== func && isFunctionRoot(node)) {
+      traversal.skip();
+      return;
+    }
+    if (!Node.isReturnStatement(node)) {
+      return;
+    }
+    // A bare `return;` leaves by the same door as falling off the end,
+    // which the fall-through terminal already speaks for.
+    if (node.getExpression() === undefined) {
+      return;
+    }
+    if (!claimed.has(node) && !claimed.has(node.getExpression() as never)) {
+      unmatched++;
+    }
+  });
+  return unmatched;
+}
+
 export function extractRawBranches(
   func: FunctionRoot,
   terminalPatterns: TerminalPattern[],
