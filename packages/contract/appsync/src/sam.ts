@@ -36,6 +36,7 @@ const RESOLVER_ROOT_TYPES = ["Query", "Mutation", "Subscription"];
 
 /** Map SAM `DataSources` category keys to normalized data-source types. */
 const DATA_SOURCE_CATEGORIES: Record<string, string> = {
+  Lambda: "lambda",
   Lambdas: "lambda",
   DynamoDb: "dynamodb",
   DynamoDBs: "dynamodb",
