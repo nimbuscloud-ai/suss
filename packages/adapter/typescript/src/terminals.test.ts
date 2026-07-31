@@ -1217,6 +1217,129 @@ describe("returnShape — ternary return branches", () => {
 // functionCall — matching
 // ---------------------------------------------------------------------------
 
+describe("functionCall on an imported object", () => {
+  const dotted: TerminalPattern = {
+    kind: "response",
+    match: { type: "functionCall", functionName: "NextResponse.json" },
+    extraction: {
+      body: { from: "argument", position: 0 },
+      statusCode: { from: "argumentProperty", position: 1, name: "status" },
+      defaultStatusCode: 200,
+    },
+  };
+
+  it("matches the dotted name and takes the status off the init object", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `function GET() {
+         return NextResponse.json({ ok: true }, { status: 201 });
+       }`,
+    );
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [dotted]);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 201,
+    });
+  });
+
+  it("falls back to the pack default when the init object has no status", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `function GET() {
+         return NextResponse.json({ ok: true }, { headers: {} });
+       }`,
+    );
+    const func = file.getFunctions()[0] as FunctionRoot;
+    expect(findTerminals(func, [dotted])[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
+  });
+
+  it("reports a computed status as the text that produced it", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `declare const code: number;
+       function GET() {
+         return NextResponse.json({ ok: true }, { status: code });
+       }`,
+    );
+    const func = file.getFunctions()[0] as FunctionRoot;
+    expect(findTerminals(func, [dotted])[0].terminal.statusCode).toEqual({
+      type: "dynamic",
+      sourceText: "code",
+    });
+  });
+
+  it("takes the default when the second argument is not an object", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `declare const init: ResponseInit;
+       function GET() {
+         return NextResponse.json({ ok: true }, init);
+       }`,
+    );
+    const func = file.getFunctions()[0] as FunctionRoot;
+    expect(findTerminals(func, [dotted])[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 200,
+    });
+  });
+
+  it("does not match a call on something an expression built", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `declare function pick(): { json(body: unknown): Response };
+       function GET() {
+         return pick().json({ ok: true });
+       }`,
+    );
+    const func = file.getFunctions()[0] as FunctionRoot;
+    expect(
+      findTerminals(func, [
+        {
+          kind: "response",
+          match: { type: "functionCall", functionName: "pick().json" },
+          extraction: {},
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("matches a response the handler constructs", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `function GET() {
+         return new Response("nope", { status: 404 });
+       }`,
+    );
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [
+      {
+        kind: "response",
+        match: { type: "functionCall", functionName: "Response" },
+        extraction: {
+          statusCode: { from: "argumentProperty", position: 1, name: "status" },
+        },
+      },
+    ]);
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].terminal.statusCode).toEqual({
+      type: "literal",
+      value: 404,
+    });
+  });
+});
+
 describe("functionCall — matching", () => {
   it("matches json(data) call and extracts body", () => {
     const project = createProject();

@@ -73,6 +73,18 @@ describe("routePathFromFile — Next.js app directory", () => {
   it("returns null for a file outside the root", () => {
     expect(routePathFromFile("/src/lib/db.ts", nextApp)).toBeNull();
   });
+
+  it("returns null when the root is the last thing in the path", () => {
+    // A directory named `app` with the file itself missing means there
+    // is no route here, only the place routes would go.
+    expect(routePathFromFile("/src/app", nextApp)).toBeNull();
+  });
+
+  it("ignores an empty segment a doubled separator leaves behind", () => {
+    expect(routePathFromFile("/src/app//orders//page.tsx", nextApp)).toBe(
+      "/orders",
+    );
+  });
 });
 
 describe("routePathFromFile — Next.js pages directory", () => {
@@ -110,5 +122,21 @@ describe("routePathFromFile — flat routes", () => {
 
   it("reads the index route as the root", () => {
     expect(routePathFromFile("/app/routes/_index.tsx", remixFlat)).toBe("/");
+  });
+
+  it("ignores an empty piece a doubled dot leaves behind", () => {
+    expect(routePathFromFile("/app/routes/orders..$id.tsx", remixFlat)).toBe(
+      "/orders/{id}",
+    );
+  });
+
+  it("leaves a segment alone when the convention names no parameter style", () => {
+    expect(
+      routePathFromFile("/app/routes/orders.$id.tsx", {
+        type: "fromFilename",
+        root: "app/routes",
+        flat: true,
+      }),
+    ).toBe("/orders/$id");
   });
 });

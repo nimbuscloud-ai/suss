@@ -35,6 +35,11 @@ describe("inspectProject", () => {
     expect(names(dir)).toEqual(["hono"]);
   });
 
+  it("suggests the Next.js pack for a Next.js project", () => {
+    writeManifest({ dependencies: { next: "^15.0.0" } });
+    expect(names(dir)).toEqual(["nextjs"]);
+  });
+
   it("reads devDependencies too, which is where the Lambda types live", () => {
     writeManifest({ devDependencies: { "@types/aws-lambda": "^8.10.0" } });
     expect(names(dir)).toEqual(["aws-lambda"]);
