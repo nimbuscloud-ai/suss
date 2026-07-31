@@ -18,18 +18,27 @@ import type {
   CloudFormationTemplate,
 } from "./templateLoader.js";
 
-/** One GraphQL field and the Lambda behind it. */
+/** One GraphQL field and the Lambdas behind it. */
 export interface AppSyncResolverBinding {
   typeName: string;
   fieldName: string;
-  /** Null when the field is served by something other than a Lambda. */
-  lambdaFunctionLogicalId: string | null;
+  /**
+   * Every Lambda a request for this field runs, in pipeline order.
+   * Usually one. A pipeline can chain several, and nothing in the
+   * template says which of them is the one that produces the value:
+   * the first is as often an auth step as it is the resolver, and the
+   * last is as often a formatter. So all of them are reported, and a
+   * reader that needs to pick says so itself.
+   *
+   * Empty when the field is served by something other than a Lambda.
+   */
+  lambdaFunctionLogicalIds: string[];
 }
 
 /**
  * SAM groups a GraphQLApi's data sources by category. It accepts the
- * singular and the plural for each, so both spellings appear in real
- * templates.
+ * singular and the plural for each, so both spellings turn up in
+ * templates people write.
  */
 const LAMBDA_CATEGORIES = ["Lambda", "Lambdas"];
 
@@ -63,13 +72,12 @@ function fromServerlessShorthand(
     for (const [typeName, fields] of entriesOf(props.Resolvers)) {
       for (const [fieldName, config] of entriesOf(fields)) {
         const dataSources = dataSourcesReached(config, dataSourceByFunction);
-        const lambda = dataSources
-          .map((name) => lambdaByDataSource.get(name) ?? null)
-          .find((id) => id !== null);
         bindings.push({
           typeName,
           fieldName,
-          lambdaFunctionLogicalId: lambda ?? null,
+          lambdaFunctionLogicalIds: dataSources
+            .map((name) => lambdaByDataSource.get(name) ?? null)
+            .filter((id): id is string => id !== null),
         });
       }
     }
@@ -134,17 +142,46 @@ function dataSourcesReached(
 function fromRawResources(
   resources: Record<string, CloudFormationResource | undefined>,
 ): AppSyncResolverBinding[] {
-  const lambdaByDataSource = new Map<string, string | null>();
+  // A resolver names a data source by logical id or by the Name
+  // property, and the two need not match, so both are keys here.
+  const lambdaByDataSource = new Map<string, string>();
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource?.Type !== "AWS::AppSync::DataSource") {
       continue;
     }
     const props = asRecord(resource.Properties) ?? {};
     const lambdaConfig = asRecord(props.LambdaConfig);
-    lambdaByDataSource.set(
-      logicalId,
-      lambdaConfig === null ? null : refTarget(lambdaConfig.LambdaFunctionArn),
-    );
+    const lambda =
+      lambdaConfig === null ? null : refTarget(lambdaConfig.LambdaFunctionArn);
+    if (lambda === null) {
+      continue;
+    }
+    lambdaByDataSource.set(logicalId, lambda);
+    const name = stringOf(props.Name);
+    if (name !== null) {
+      lambdaByDataSource.set(name, lambda);
+    }
+  }
+
+  // A pipeline resolver names functions, and each function names the
+  // data source. This is also the shape the SAM transform expands the
+  // shorthand into, so it has to be read whichever way the template
+  // was authored.
+  const dataSourceByFunction = new Map<string, string>();
+  for (const [logicalId, resource] of Object.entries(resources)) {
+    if (resource?.Type !== "AWS::AppSync::FunctionConfiguration") {
+      continue;
+    }
+    const props = asRecord(resource.Properties) ?? {};
+    const dataSource = refTarget(props.DataSourceName);
+    if (dataSource === null) {
+      continue;
+    }
+    dataSourceByFunction.set(logicalId, dataSource);
+    const name = stringOf(props.Name);
+    if (name !== null) {
+      dataSourceByFunction.set(name, dataSource);
+    }
   }
 
   const bindings: AppSyncResolverBinding[] = [];
@@ -158,17 +195,41 @@ function fromRawResources(
     if (typeName === null || fieldName === null) {
       continue;
     }
-    const dataSource = refTarget(props.DataSourceName);
     bindings.push({
       typeName,
       fieldName,
-      lambdaFunctionLogicalId:
-        dataSource === null
-          ? null
-          : (lambdaByDataSource.get(dataSource) ?? null),
+      lambdaFunctionLogicalIds: rawDataSourcesReached(
+        props,
+        dataSourceByFunction,
+      )
+        .map((name) => lambdaByDataSource.get(name) ?? null)
+        .filter((id): id is string => id !== null),
     });
   }
   return bindings;
+}
+
+/** The data sources a raw resolver reads, unit or pipeline. */
+function rawDataSourcesReached(
+  props: Record<string, unknown>,
+  dataSourceByFunction: Map<string, string>,
+): string[] {
+  const direct = refTarget(props.DataSourceName);
+  if (direct !== null) {
+    return [direct];
+  }
+  const pipeline = asRecord(props.PipelineConfig);
+  const functions = Array.isArray(pipeline?.Functions)
+    ? pipeline.Functions
+    : [];
+  return functions
+    .map((fn) => {
+      const reference = refTarget(fn);
+      return reference === null
+        ? undefined
+        : dataSourceByFunction.get(reference);
+    })
+    .filter((name): name is string => name !== undefined);
 }
 
 // ---------------------------------------------------------------------------

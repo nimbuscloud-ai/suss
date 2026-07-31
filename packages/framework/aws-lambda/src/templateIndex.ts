@@ -155,18 +155,20 @@ function toModulePath(filePath: string): string {
  * is by resolved module path (CodeUri + Handler module vs. the file's
  * path without extension).
  */
-/** A Lambda can back more than one field, so collect them per function. */
+/**
+ * A Lambda can back more than one field, and a field can run more than
+ * one Lambda, so this is many to many in both directions.
+ */
 function groupFieldsByFunction(
   bindings: AppSyncResolverBinding[],
 ): Map<string, Array<{ typeName: string; fieldName: string }>> {
   const out = new Map<string, Array<{ typeName: string; fieldName: string }>>();
   for (const binding of bindings) {
-    if (binding.lambdaFunctionLogicalId === null) {
-      continue;
+    for (const logicalId of binding.lambdaFunctionLogicalIds) {
+      const fields = out.get(logicalId) ?? [];
+      fields.push({ typeName: binding.typeName, fieldName: binding.fieldName });
+      out.set(logicalId, fields);
     }
-    const fields = out.get(binding.lambdaFunctionLogicalId) ?? [];
-    fields.push({ typeName: binding.typeName, fieldName: binding.fieldName });
-    out.set(binding.lambdaFunctionLogicalId, fields);
   }
   return out;
 }

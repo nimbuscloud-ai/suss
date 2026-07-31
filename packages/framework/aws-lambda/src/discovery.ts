@@ -89,12 +89,7 @@ function accountingUnit(
   entry: HandlerEntry,
   func: FunctionRoot,
 ): DiscoveredCustomUnit {
-  const eventTypes = [
-    ...entry.nonHttpEvents.map((e) => e.eventType),
-    ...entry.httpRoutes
-      .filter((r) => r.method === "ANY")
-      .map((r) => r.eventType),
-  ];
+  const eventTypes = accountedEventTypes(entry);
   return {
     func,
     kind: "handler",
@@ -108,6 +103,16 @@ function accountingUnit(
       },
     },
   };
+}
+
+/** Events that reach a handler but do not bind to a route of their own. */
+function accountedEventTypes(entry: HandlerEntry): string[] {
+  return [
+    ...entry.nonHttpEvents.map((e) => e.eventType),
+    ...entry.httpRoutes
+      .filter((r) => r.method === "ANY")
+      .map((r) => r.eventType),
+  ];
 }
 
 /**
@@ -146,11 +151,19 @@ export const awsLambdaDiscovery: NonNullable<PatternPack["discoverUnits"]> = (
       // declared route still exists on the contract side.
       continue;
     }
-    if (hasBindableRoute(entry)) {
-      units.push(...httpRouteUnits(entry, func));
-    } else if (entry.graphqlFields.length > 0) {
-      units.push(...graphqlResolverUnits(entry, func));
-    } else {
+    // A route and a GraphQL field are independent boundaries, and one
+    // handler can serve both.
+    units.push(...httpRouteUnits(entry, func));
+    units.push(...graphqlResolverUnits(entry, func));
+    // The accounting unit covers a handler that bound to nothing, and
+    // also the events that reach a bound handler without a boundary of
+    // their own. A queue that feeds a resolver was reported before the
+    // resolver binding existed, and has to keep being reported.
+    const unaccountedEvents = accountedEventTypes(entry);
+    if (
+      !hasBindableRoute(entry) &&
+      (entry.graphqlFields.length === 0 || unaccountedEvents.length > 0)
+    ) {
       units.push(accountingUnit(entry, func));
     }
   }

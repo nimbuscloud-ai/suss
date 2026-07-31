@@ -67,6 +67,22 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/posts.handler
+  BothFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/both.handler
+      Events:
+        Get:
+          Type: HttpApi
+          Properties: { Method: GET, Path: /both }
+  QueueFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/queued.handler
+      Events:
+        Queue:
+          Type: SQS
+          Properties: { Queue: arn:aws:sqs:us-east-1:1:q }
   Api:
     Type: AWS::Serverless::GraphQLApi
     Properties:
@@ -76,14 +92,28 @@ Resources:
         Lambda:
           Posts:
             FunctionArn: !GetAtt PostsFn.Arn
+          Both:
+            FunctionArn: !GetAtt BothFn.Arn
+          Queued:
+            FunctionArn: !GetAtt QueueFn.Arn
       Functions:
         InvokePosts:
           DataSource: Posts
+        InvokeBoth:
+          DataSource: Both
+        InvokeQueued:
+          DataSource: Queued
       Resolvers:
         Query:
           posts:
             Pipeline:
               - InvokePosts
+          both:
+            Pipeline:
+              - InvokeBoth
+          queued:
+            Pipeline:
+              - InvokeQueued
 `,
   );
   write(
@@ -100,6 +130,11 @@ Resources:
        return { statusCode: 200, body: "" };
      };`,
   );
+  write(
+    "src/both.ts",
+    `export const handler = async () => ({ statusCode: 200, body: "" });`,
+  );
+  write("src/queued.ts", "export const handler = async () => ({ ok: true });");
   write(
     "src/posts.ts",
     `export const handler = async (event: { arguments?: { id?: string } }) => {
@@ -250,5 +285,30 @@ describe("awsLambdaDiscovery — AppSync resolvers", () => {
     expect(anyOnly?.identity.boundaryBinding?.semantics.name).toBe(
       "function-call",
     );
+  });
+});
+
+describe("awsLambdaDiscovery — a handler on two boundaries", () => {
+  it("keeps both the route and the field when a handler serves both", async () => {
+    const summaries = await run();
+    const both = summaries.filter((s) => s.identity.name.startsWith("BothFn."));
+    const names = both
+      .map((s) => s.identity.boundaryBinding?.semantics.name)
+      .sort();
+
+    expect(names).toEqual(["graphql-resolver", "rest"]);
+  });
+
+  it("still reports the queue a resolver-backed handler also consumes", async () => {
+    const summaries = await run();
+    const queued = summaries.filter((s) =>
+      s.identity.name.startsWith("QueueFn."),
+    );
+    const kinds = queued.map((s) => s.identity.boundaryBinding?.semantics.name);
+
+    // The SQS event was reported before this handler also became a
+    // resolver, and it has to keep being reported.
+    expect(kinds).toContain("graphql-resolver");
+    expect(kinds).toContain("function-call");
   });
 });

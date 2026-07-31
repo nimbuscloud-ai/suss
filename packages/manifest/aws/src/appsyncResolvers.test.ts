@@ -44,7 +44,7 @@ describe("readAppSyncResolvers", () => {
     expect(bindings).toContainEqual({
       typeName: "Query",
       fieldName: "posts",
-      lambdaFunctionLogicalId: "PostsFunction",
+      lambdaFunctionLogicalIds: ["PostsFunction"],
     });
   });
 
@@ -54,12 +54,12 @@ describe("readAppSyncResolvers", () => {
     expect(bindings).toContainEqual({
       typeName: "Mutation",
       fieldName: "addPost",
-      lambdaFunctionLogicalId: "PostsFunction",
+      lambdaFunctionLogicalIds: ["PostsFunction"],
     });
   });
 
   it("reads the plural category spelling too", () => {
-    // SAM takes Lambda and Lambdas, and real templates use both.
+    // SAM takes Lambda and Lambdas, and both turn up in practice.
     expect(readAppSyncResolvers(samTemplate("Lambdas"))).toEqual(
       readAppSyncResolvers(samTemplate("Lambda")),
     );
@@ -69,7 +69,7 @@ describe("readAppSyncResolvers", () => {
     const bindings = readAppSyncResolvers(samTemplate("Lambda"));
     const comments = bindings.find((b) => b.fieldName === "comments");
 
-    expect(comments?.lambdaFunctionLogicalId).toBeNull();
+    expect(comments?.lambdaFunctionLogicalIds).toEqual([]);
   });
 
   it("reads raw AppSync resources", () => {
@@ -99,9 +99,115 @@ describe("readAppSyncResolvers", () => {
       {
         typeName: "Query",
         fieldName: "posts",
-        lambdaFunctionLogicalId: "PostsFunction",
+        lambdaFunctionLogicalIds: ["PostsFunction"],
       },
     ]);
+  });
+
+  it("reports every Lambda a pipeline runs, in order", () => {
+    // An auth step ahead of the one that loads the data is the common
+    // shape, and nothing in the template says which is which.
+    const bindings = readAppSyncResolvers({
+      Resources: {
+        Api: {
+          Type: "AWS::Serverless::GraphQLApi",
+          Properties: {
+            DataSources: {
+              Lambda: {
+                CheckAuth: {
+                  FunctionArn: { "Fn::GetAtt": ["AuthFn", "Arn"] },
+                },
+                LoadPosts: {
+                  FunctionArn: { "Fn::GetAtt": ["PostsFn", "Arn"] },
+                },
+              },
+            },
+            Functions: {
+              Auth: { DataSource: "CheckAuth" },
+              Load: { DataSource: "LoadPosts" },
+            },
+            Resolvers: {
+              Query: { posts: { Pipeline: ["Auth", "Load"] } },
+            },
+          },
+        },
+      },
+    });
+
+    expect(bindings).toEqual([
+      {
+        typeName: "Query",
+        fieldName: "posts",
+        lambdaFunctionLogicalIds: ["AuthFn", "PostsFn"],
+      },
+    ]);
+  });
+
+  it("follows a raw pipeline resolver through its function configurations", () => {
+    // This is also what the SAM transform expands the shorthand into.
+    const bindings = readAppSyncResolvers({
+      Resources: {
+        PostsDS: {
+          Type: "AWS::AppSync::DataSource",
+          Properties: {
+            Type: "AWS_LAMBDA",
+            LambdaConfig: {
+              LambdaFunctionArn: { "Fn::GetAtt": ["PostsFn", "Arn"] },
+            },
+          },
+        },
+        InvokePosts: {
+          Type: "AWS::AppSync::FunctionConfiguration",
+          Properties: { DataSourceName: { "Fn::GetAtt": ["PostsDS", "Name"] } },
+        },
+        PostsResolver: {
+          Type: "AWS::AppSync::Resolver",
+          Properties: {
+            TypeName: "Query",
+            FieldName: "posts",
+            Kind: "PIPELINE",
+            PipelineConfig: {
+              Functions: [{ "Fn::GetAtt": ["InvokePosts", "FunctionId"] }],
+            },
+          },
+        },
+      },
+    });
+
+    expect(bindings).toEqual([
+      {
+        typeName: "Query",
+        fieldName: "posts",
+        lambdaFunctionLogicalIds: ["PostsFn"],
+      },
+    ]);
+  });
+
+  it("finds a data source named by its Name rather than its logical id", () => {
+    const bindings = readAppSyncResolvers({
+      Resources: {
+        PostsDataSource: {
+          Type: "AWS::AppSync::DataSource",
+          Properties: {
+            Type: "AWS_LAMBDA",
+            Name: "posts_lambda",
+            LambdaConfig: {
+              LambdaFunctionArn: { "Fn::GetAtt": ["PostsFn", "Arn"] },
+            },
+          },
+        },
+        PostsResolver: {
+          Type: "AWS::AppSync::Resolver",
+          Properties: {
+            TypeName: "Query",
+            FieldName: "posts",
+            DataSourceName: "posts_lambda",
+          },
+        },
+      },
+    });
+
+    expect(bindings[0]?.lambdaFunctionLogicalIds).toEqual(["PostsFn"]);
   });
 
   it("says nothing about a template with no AppSync in it", () => {
