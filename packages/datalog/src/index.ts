@@ -127,10 +127,13 @@ export class Database {
     const relation = this.relation(relationName);
     const key = keyOf(tuple);
     if (relation.keys.has(key)) {
-      // The caller is asserting a fact evaluation had already worked
-      // out. It belongs to them from here, so taking conclusions back
-      // later must not take this one.
-      claimFact(this, relationName, key);
+      // A caller asserting a fact evaluation had already worked out
+      // takes ownership of it, so taking conclusions back later must
+      // not take this one. Evaluation reaching the same fact by a
+      // second derivation is a different thing and changes nothing.
+      if (!deriving.has(this)) {
+        claimFact(this, relationName, key);
+      }
       return false;
     }
     relation.keys.add(key);
@@ -444,6 +447,12 @@ interface RuleSetState {
 
 const evaluated = new WeakMap<Database, Map<string, RuleSetState>>();
 
+/**
+ * Databases part-way through evaluate(). A repeat add from a rule is
+ * a second derivation of the same fact, not the caller claiming it.
+ */
+const deriving = new WeakSet<Database>();
+
 function statesFor(db: Database): Map<string, RuleSetState> {
   let states = evaluated.get(db);
   if (states === undefined) {
@@ -532,6 +541,15 @@ function currentMarks(db: Database): Map<string, number> {
  * proportional to new facts, not all facts.
  */
 export function evaluate(db: Database, rules: Rule[]): Database {
+  deriving.add(db);
+  try {
+    return runRules(db, rules);
+  } finally {
+    deriving.delete(db);
+  }
+}
+
+function runRules(db: Database, rules: Rule[]): Database {
   const signature = JSON.stringify(rules);
   const states = statesFor(db);
   const state: RuleSetState = states.get(signature) ?? {

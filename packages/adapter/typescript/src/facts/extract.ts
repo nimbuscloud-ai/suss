@@ -58,41 +58,164 @@ function moduleKeyOf(
 }
 
 /**
- * The module a callee was imported from, or null when it was not
- * imported. `Sentry.wrapHandler` reports the module behind `Sentry`.
+ * Every module name a callee's package answers to, or an empty list
+ * when it was not imported. `Sentry.wrapHandler` reports the package
+ * behind `Sentry`.
  *
- * A pack that declares a wrapper transparent names the library it
- * comes from, and this is what checks the claim. Without it, a local
- * object that happens to spell its method the same way would be taken
- * for the library's.
+ * A pack that declares a wrapper transparent names the library it comes
+ * from, and this is what checks the claim. Matching the import
+ * specifier verbatim is not enough: the same package arrives as a
+ * subpath (`pkg/esm`), through a barrel in the project that re-exports
+ * it, or through `import x = require(...)`. So the specifier, the
+ * package part of it, and the package the symbol was really declared in
+ * all count.
  */
-function importOriginOf(callee: Node): string | null {
+function importOriginsOf(callee: Node): string[] {
   let root: Node = callee;
   while (Node.isPropertyAccessExpression(root)) {
     root = root.getExpression();
   }
   if (!Node.isIdentifier(root)) {
-    return null;
+    return [];
   }
   const symbol = root.getSymbol();
   if (symbol === undefined) {
-    return null;
+    return [];
   }
+
+  const origins = new Set<string>();
   for (const declaration of symbol.getDeclarations()) {
-    if (Node.isImportSpecifier(declaration)) {
-      return declaration.getImportDeclaration().getModuleSpecifierValue();
+    const specifier = importSpecifierOf(declaration);
+    if (specifier === null) {
+      continue;
     }
-    const owner = Node.isNamespaceImport(declaration)
-      ? declaration.getParent()
-      : declaration;
-    if (Node.isImportClause(owner)) {
-      const importDecl = owner.getParent();
-      if (Node.isImportDeclaration(importDecl)) {
-        return importDecl.getModuleSpecifierValue();
-      }
+    origins.add(specifier);
+    origins.add(packagePartOf(specifier));
+    for (const forwarded of packagesForwardedBy(declaration, specifier)) {
+      origins.add(forwarded);
+    }
+  }
+
+  // Where the symbol actually came from, which is what a barrel or a
+  // subpath hides. The aliased symbol sits in the package that
+  // declared it.
+  const aliased = symbol.getAliasedSymbol() ?? symbol;
+  for (const declaration of aliased.getDeclarations()) {
+    const owner = declaringPackageOf(declaration.getSourceFile().getFilePath());
+    if (owner !== null) {
+      origins.add(owner);
+    }
+  }
+  return [...origins];
+}
+
+/** The module specifier an import-shaped declaration names. */
+function importSpecifierOf(declaration: Node): string | null {
+  if (Node.isImportSpecifier(declaration)) {
+    return declaration.getImportDeclaration().getModuleSpecifierValue();
+  }
+  if (Node.isImportEqualsDeclaration(declaration)) {
+    const reference = declaration.getModuleReference();
+    return Node.isExternalModuleReference(reference)
+      ? (reference.getExpression()?.getText().slice(1, -1) ?? null)
+      : null;
+  }
+  const owner = Node.isNamespaceImport(declaration)
+    ? declaration.getParent()
+    : declaration;
+  if (Node.isImportClause(owner)) {
+    const importDecl = owner.getParent();
+    if (Node.isImportDeclaration(importDecl)) {
+      return importDecl.getModuleSpecifierValue();
     }
   }
   return null;
+}
+
+/**
+ * When the specifier points at a file in the project, the packages
+ * that file passes along. A barrel that re-exports a library is how
+ * the library reaches the call site, so it counts as its origin.
+ */
+function packagesForwardedBy(
+  declaration: Node,
+  specifier: string,
+  depth = 0,
+): string[] {
+  if (depth >= MAX_FORWARDING_HOPS || !specifier.startsWith(".")) {
+    return [];
+  }
+  const importDecl = declaration.getFirstAncestor(
+    (a) => Node.isImportDeclaration(a) || Node.isImportEqualsDeclaration(a),
+  );
+  const barrel =
+    importDecl !== undefined && Node.isImportDeclaration(importDecl)
+      ? importDecl.getModuleSpecifierSourceFile()
+      : undefined;
+  if (barrel === undefined) {
+    return [];
+  }
+
+  const forwarded: string[] = [];
+  for (const exportDecl of barrel.getExportDeclarations()) {
+    const onward = exportDecl.getModuleSpecifierValue();
+    if (onward === undefined) {
+      continue;
+    }
+    if (onward.startsWith(".")) {
+      const nested = exportDecl.getModuleSpecifierSourceFile();
+      if (nested !== undefined) {
+        forwarded.push(...packagesForwardedByFile(nested, depth + 1));
+      }
+      continue;
+    }
+    forwarded.push(onward, packagePartOf(onward));
+  }
+  return forwarded;
+}
+
+/** The same question asked of a file rather than an import. */
+function packagesForwardedByFile(barrel: SourceFile, depth: number): string[] {
+  if (depth >= MAX_FORWARDING_HOPS) {
+    return [];
+  }
+  const forwarded: string[] = [];
+  for (const exportDecl of barrel.getExportDeclarations()) {
+    const onward = exportDecl.getModuleSpecifierValue();
+    if (onward === undefined) {
+      continue;
+    }
+    if (onward.startsWith(".")) {
+      const nested = exportDecl.getModuleSpecifierSourceFile();
+      if (nested !== undefined) {
+        forwarded.push(...packagesForwardedByFile(nested, depth + 1));
+      }
+      continue;
+    }
+    forwarded.push(onward, packagePartOf(onward));
+  }
+  return forwarded;
+}
+
+/** Barrels of barrels happen; barrels six deep do not. */
+const MAX_FORWARDING_HOPS = 4;
+
+/** "@scope/pkg/sub" and "pkg/sub" both name their package. */
+function packagePartOf(specifier: string): string {
+  const parts = specifier.split("/");
+  const take = specifier.startsWith("@") ? 2 : 1;
+  return parts.slice(0, take).join("/");
+}
+
+/** The package a file inside node_modules belongs to. */
+function declaringPackageOf(filePath: string): string | null {
+  const marker = "/node_modules/";
+  const at = filePath.lastIndexOf(marker);
+  if (at === -1) {
+    return null;
+  }
+  const rest = filePath.slice(at + marker.length);
+  return packagePartOf(rest);
 }
 
 /** Peel await, parentheses, satisfies, and as-casts. */
@@ -243,8 +366,7 @@ function emitCallFacts(
   fact(db, "call", callId, emitValue(db, table, callee));
   fact(db, "calleeName", callId, callee.getText());
 
-  const origin = importOriginOf(callee);
-  if (origin !== null) {
+  for (const origin of importOriginsOf(callee)) {
     fact(db, "calleeOrigin", callId, origin);
   }
 

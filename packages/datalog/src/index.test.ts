@@ -476,6 +476,56 @@ describe("evaluate — taking conclusions back", () => {
     expect(sorted(db.facts("q"))).toEqual(["1"]);
   });
 
+  it("still owns a fact two of its own rules derived", () => {
+    // Two rules with the same head reach q(1). The second derivation
+    // reports nothing new, which must not read as the caller claiming
+    // the fact, or nothing can take it back afterwards.
+    const rules = [
+      rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
+      rule("q", [V("x")], [lit("s", V("x")), notLit("blocked", V("x"))]),
+    ];
+    const db = new Database();
+    db.add("p", ["1"]);
+    db.add("s", ["1"]);
+    evaluate(db, rules);
+    expect(sorted(db.facts("q"))).toEqual(["1"]);
+
+    db.add("blocked", ["1"]);
+    evaluate(db, rules);
+
+    expect(sorted(db.facts("q"))).toEqual([]);
+  });
+
+  it("still owns a fact a recursive rule reached twice", () => {
+    const rules = [
+      rule(
+        "reach",
+        [V("x"), V("y")],
+        [lit("edge", V("x"), V("y")), notLit("off", V("x"), V("y"))],
+      ),
+      rule(
+        "reach",
+        [V("x"), V("z")],
+        [lit("reach", V("x"), V("y")), lit("edge", V("y"), V("z"))],
+      ),
+    ];
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "a"]);
+    evaluate(db, rules);
+
+    db.add("off", ["a", "b"]);
+    evaluate(db, rules);
+
+    const fresh = new Database();
+    fresh.add("edge", ["a", "b"]);
+    fresh.add("edge", ["b", "a"]);
+    fresh.add("off", ["a", "b"]);
+    evaluate(fresh, rules);
+
+    expect(sorted(db.facts("reach"))).toEqual(sorted(fresh.facts("reach")));
+  });
+
   it("takes back only what its own rules concluded", () => {
     const positive = [rule("r", [V("x")], [lit("p", V("x"))])];
     const db = new Database();

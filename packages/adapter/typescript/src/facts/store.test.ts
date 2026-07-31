@@ -228,6 +228,67 @@ describe("resolveCallable", () => {
     ).toBeNull();
   });
 
+  it("takes a declared wrapper imported by subpath", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        import * as Sentry from "@sentry/aws-serverless/esm";
+        export const handler = Sentry.wrapHandler(async () => "subpath");
+      `,
+    });
+    const store = new ResolutionStore([
+      {
+        callee: "Sentry.wrapHandler",
+        argument: 0,
+        module: "@sentry/aws-serverless",
+      },
+    ]);
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+    ).toContain("subpath");
+  });
+
+  it("takes a declared wrapper re-exported through a project barrel", () => {
+    const project = projectOf({
+      "/sentry.ts": `export * from "@sentry/aws-serverless";`,
+      "/mod.ts": `
+        import * as Sentry from "./sentry";
+        export const handler = Sentry.wrapHandler(async () => "via barrel");
+      `,
+    });
+    const store = new ResolutionStore([
+      {
+        callee: "Sentry.wrapHandler",
+        argument: 0,
+        module: "@sentry/aws-serverless",
+      },
+    ]);
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+    ).toContain("via barrel");
+  });
+
+  it("takes a declared wrapper brought in with import equals", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        import Sentry = require("@sentry/aws-serverless");
+        export const handler = Sentry.wrapHandler(async () => "import equals");
+      `,
+    });
+    const store = new ResolutionStore([
+      {
+        callee: "Sentry.wrapHandler",
+        argument: 0,
+        module: "@sentry/aws-serverless",
+      },
+    ]);
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+    ).toContain("import equals");
+  });
+
   it("follows .bind to the bound method", () => {
     const project = projectOf({
       "/mod.ts": `
