@@ -128,7 +128,15 @@ export function discoverUnits(
       unit.routeInfo !== undefined
         ? `-${unit.routeInfo.method} ${unit.routeInfo.path}`
         : "";
-    const key = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}`;
+    // The same for GraphQL fields. One resolver object shared by two
+    // types is how several types get the same id or createdAt
+    // resolver, and both fields are boundaries a client can select.
+    // Mirrors the claim dedup the adapter runs later.
+    const resolverSuffix =
+      unit.resolverInfo !== undefined
+        ? `-${unit.resolverInfo.typeName}.${unit.resolverInfo.fieldName}`
+        : "";
+    const key = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}${resolverSuffix}`;
     if (!seen.has(key)) {
       seen.add(key);
       deduped.push(unit);

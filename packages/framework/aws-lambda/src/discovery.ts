@@ -54,6 +54,58 @@ function httpRouteUnits(
 }
 
 /**
+ * The three root types are the operations a client can send, so a
+ * handler behind one of their fields sits on a boundary, and
+ * `resolverInfo` makes the adapter build the graphql-resolver binding
+ * that pairs with those operations.
+ *
+ * Every field has a resolver, per the GraphQL execution spec, and a
+ * server usually runs them all in one process. AppSync is the odd one:
+ * it lets each field be its own deployed Lambda. So a handler behind a
+ * field on some other type is a deployment fact rather than an API
+ * surface. No client can address it, the checker only pairs root
+ * selections, and the handler keeps whatever binding it would otherwise
+ * have with the fields it backs recorded on it.
+ */
+const OPERATION_ROOT_TYPES = ["Query", "Mutation", "Subscription"];
+
+function operationFields(
+  entry: HandlerEntry,
+): Array<{ typeName: string; fieldName: string }> {
+  return entry.graphqlFields.filter((f) =>
+    OPERATION_ROOT_TYPES.includes(f.typeName),
+  );
+}
+
+function typeFields(
+  entry: HandlerEntry,
+): Array<{ typeName: string; fieldName: string }> {
+  return entry.graphqlFields.filter(
+    (f) => !OPERATION_ROOT_TYPES.includes(f.typeName),
+  );
+}
+
+/** One unit per operation field this handler is routed to. */
+function graphqlResolverUnits(
+  entry: HandlerEntry,
+  func: FunctionRoot,
+): DiscoveredCustomUnit[] {
+  return operationFields(entry).map((field) => ({
+    func,
+    kind: "handler",
+    name: `${entry.functionLogicalId}.${entry.exportName}`,
+    resolverInfo: { typeName: field.typeName, fieldName: field.fieldName },
+    metadata: {
+      [METADATA_NAMESPACE]: {
+        functionLogicalId: entry.functionLogicalId,
+        handler: entry.handler,
+        recognition: "appsync-resolver",
+      },
+    },
+  }));
+}
+
+/**
  * A handler with no bindable HTTP route (a dedicated SQS/Schedule/SNS
  * consumer, or one whose only route is ANY) still gets one accounting
  * unit — no `routeInfo`, so it falls back to a function-call binding and
@@ -64,12 +116,8 @@ function accountingUnit(
   entry: HandlerEntry,
   func: FunctionRoot,
 ): DiscoveredCustomUnit {
-  const eventTypes = [
-    ...entry.nonHttpEvents.map((e) => e.eventType),
-    ...entry.httpRoutes
-      .filter((r) => r.method === "ANY")
-      .map((r) => r.eventType),
-  ];
+  const eventTypes = accountedEventTypes(entry);
+  const backs = typeFields(entry);
   return {
     func,
     kind: "handler",
@@ -80,9 +128,20 @@ function accountingUnit(
         handler: entry.handler,
         recognition: "recognized-not-http",
         eventTypes,
+        ...(backs.length > 0 ? { graphqlTypeFields: backs } : {}),
       },
     },
   };
+}
+
+/** Events that reach a handler but do not bind to a route of their own. */
+function accountedEventTypes(entry: HandlerEntry): string[] {
+  return [
+    ...entry.nonHttpEvents.map((e) => e.eventType),
+    ...entry.httpRoutes
+      .filter((r) => r.method === "ANY")
+      .map((r) => r.eventType),
+  ];
 }
 
 /**
@@ -121,9 +180,22 @@ export const awsLambdaDiscovery: NonNullable<PatternPack["discoverUnits"]> = (
       // declared route still exists on the contract side.
       continue;
     }
-    if (hasBindableRoute(entry)) {
-      units.push(...httpRouteUnits(entry, func));
-    } else {
+    // A route and a GraphQL field are independent boundaries, and one
+    // handler can serve both.
+    units.push(...httpRouteUnits(entry, func));
+    units.push(...graphqlResolverUnits(entry, func));
+    // The accounting unit covers a handler that bound to nothing, and
+    // also the events that reach a bound handler without a boundary of
+    // their own. A queue that feeds a resolver was reported before the
+    // resolver binding existed, and has to keep being reported.
+    // Events that reach a handler without a boundary of their own get
+    // reported whatever else that handler bound to, so a queue feeding
+    // a route or an operation stays visible. A handler that bound to
+    // nothing at all gets one too, so nothing recognized is dropped.
+    const unaccountedEvents = accountedEventTypes(entry);
+    const boundToNothing =
+      !hasBindableRoute(entry) && operationFields(entry).length === 0;
+    if (unaccountedEvents.length > 0 || boundToNothing) {
       units.push(accountingUnit(entry, func));
     }
   }

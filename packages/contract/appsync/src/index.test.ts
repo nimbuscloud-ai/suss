@@ -788,6 +788,38 @@ describe("appsyncToSummaries — SAM shape edge cases", () => {
     expect(appsyncMeta(summaries[0]).schemaMatched).toBe(false);
   });
 
+  it("reads the singular DataSources.Lambda category too", () => {
+    // AWS SAM accepts `Lambda` as well as `Lambdas`, the way it does
+    // for the DynamoDb and RelationalDatabase categories. A template
+    // using the singular used to lose its Lambda attribution.
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::Serverless::GraphQLApi",
+          Properties: {
+            Name: "Singular",
+            SchemaInline: "type Query { ping: String }",
+            DataSources: {
+              Lambda: {
+                PingDS: {
+                  FunctionArn: { "Fn::GetAtt": ["PingFunction", "Arn"] },
+                },
+              },
+            },
+            Resolvers: {
+              Query: { ping: { DataSource: "PingDS" } },
+            },
+          },
+        },
+      },
+    });
+
+    expect(summaries.map((s) => s.identity.name)).toEqual(["Query.ping"]);
+    expect(appsyncMeta(summaries[0]).lambdaFunctionLogicalId).toBe(
+      "PingFunction",
+    );
+  });
+
   it("skips malformed DataSources categories and Resolvers blocks", () => {
     const summaries = appsyncToSummaries({
       Resources: {
