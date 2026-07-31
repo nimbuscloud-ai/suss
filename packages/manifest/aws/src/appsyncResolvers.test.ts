@@ -210,10 +210,10 @@ describe("readAppSyncResolvers", () => {
     expect(bindings[0]?.lambdaFunctionLogicalIds).toEqual(["PostsFn"]);
   });
 
-  it("refuses a data source name two APIs both claim", () => {
+  it("keeps two APIs apart when both name a data source the same", () => {
     // Names are unique per API, not per template, so a public and an
-    // admin API can each have one called posts. Answering with
-    // whichever was read last hands one API the other one is Lambda.
+    // admin API can each have one called posts. The template says which
+    // API each resource belongs to, so both resolve.
     const bindings = readAppSyncResolvers({
       Resources: {
         PublicPostsDS: {
@@ -247,11 +247,84 @@ describe("readAppSyncResolvers", () => {
             DataSourceName: "posts",
           },
         },
+        AdminPostsResolver: {
+          Type: "AWS::AppSync::Resolver",
+          Properties: {
+            ApiId: { Ref: "AdminApi" },
+            TypeName: "Query",
+            FieldName: "allPosts",
+            DataSourceName: "posts",
+          },
+        },
       },
     });
 
-    // No answer beats the wrong one.
-    expect(bindings[0]?.lambdaFunctionLogicalIds).toEqual([]);
+    expect(bindings).toEqual([
+      {
+        typeName: "Query",
+        fieldName: "posts",
+        lambdaFunctionLogicalIds: ["PublicPostsFn"],
+      },
+      {
+        typeName: "Query",
+        fieldName: "allPosts",
+        lambdaFunctionLogicalIds: ["AdminPostsFn"],
+      },
+    ]);
+  });
+
+  it("keeps two APIs apart when both name a pipeline function the same", () => {
+    const bindings = readAppSyncResolvers({
+      Resources: {
+        PublicDS: {
+          Type: "AWS::AppSync::DataSource",
+          Properties: {
+            ApiId: { Ref: "PublicApi" },
+            Type: "AWS_LAMBDA",
+            LambdaConfig: {
+              LambdaFunctionArn: { "Fn::GetAtt": ["PublicFn", "Arn"] },
+            },
+          },
+        },
+        AdminDS: {
+          Type: "AWS::AppSync::DataSource",
+          Properties: {
+            ApiId: { Ref: "AdminApi" },
+            Type: "AWS_LAMBDA",
+            LambdaConfig: {
+              LambdaFunctionArn: { "Fn::GetAtt": ["AdminFn", "Arn"] },
+            },
+          },
+        },
+        PublicInvoke: {
+          Type: "AWS::AppSync::FunctionConfiguration",
+          Properties: {
+            ApiId: { Ref: "PublicApi" },
+            Name: "invoke",
+            DataSourceName: { Ref: "PublicDS" },
+          },
+        },
+        AdminInvoke: {
+          Type: "AWS::AppSync::FunctionConfiguration",
+          Properties: {
+            ApiId: { Ref: "AdminApi" },
+            Name: "invoke",
+            DataSourceName: { Ref: "AdminDS" },
+          },
+        },
+        PublicResolver: {
+          Type: "AWS::AppSync::Resolver",
+          Properties: {
+            ApiId: { Ref: "PublicApi" },
+            TypeName: "Query",
+            FieldName: "posts",
+            PipelineConfig: { Functions: ["invoke"] },
+          },
+        },
+      },
+    });
+
+    expect(bindings[0]?.lambdaFunctionLogicalIds).toEqual(["PublicFn"]);
   });
 
   it("prefers a logical id over a name another data source uses", () => {

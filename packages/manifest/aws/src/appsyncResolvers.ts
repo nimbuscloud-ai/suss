@@ -144,11 +144,12 @@ function fromRawResources(
 ): AppSyncResolverBinding[] {
   // A resolver names a data source by logical id or by the Name
   // property, and the two need not match. Logical ids are unique across
-  // a template while names are only unique per API, so these are two
-  // lookups and a name that two data sources claim answers for neither.
+  // a template, names only within one API, and every one of these
+  // resources says which API it belongs to. So a name is looked up
+  // against the resolver's own API, and two APIs are free to use the
+  // same one.
   const lambdaByLogicalId = new Map<string, string>();
-  const lambdaByName = new Map<string, string>();
-  const contestedNames = new Set<string>();
+  const lambdaByApiAndName = new Map<string, string>();
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource?.Type !== "AWS::AppSync::DataSource") {
       continue;
@@ -162,24 +163,21 @@ function fromRawResources(
     }
     lambdaByLogicalId.set(logicalId, lambda);
     const name = stringOf(props.Name);
-    if (name === null) {
-      continue;
+    if (name !== null) {
+      lambdaByApiAndName.set(
+        apiScopedKey(refTarget(props.ApiId), name),
+        lambda,
+      );
     }
-    if (lambdaByName.has(name) && lambdaByName.get(name) !== lambda) {
-      contestedNames.add(name);
-      continue;
-    }
-    lambdaByName.set(name, lambda);
   }
-  const lambdaFor = (reference: string): string | undefined =>
-    lambdaByLogicalId.get(reference) ??
-    (contestedNames.has(reference) ? undefined : lambdaByName.get(reference));
 
   // A pipeline resolver names functions, and each function names the
   // data source. This is also the shape the SAM transform expands the
-  // shorthand into, so it has to be read whichever way the template
-  // was authored.
-  const dataSourceByFunction = new Map<string, string>();
+  // shorthand into, so it has to be read whichever way the template was
+  // authored. Function names are scoped the same way data-source names
+  // are.
+  const dataSourceByLogicalId = new Map<string, string>();
+  const dataSourceByApiAndName = new Map<string, string>();
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource?.Type !== "AWS::AppSync::FunctionConfiguration") {
       continue;
@@ -189,10 +187,13 @@ function fromRawResources(
     if (dataSource === null) {
       continue;
     }
-    dataSourceByFunction.set(logicalId, dataSource);
+    dataSourceByLogicalId.set(logicalId, dataSource);
     const name = stringOf(props.Name);
     if (name !== null) {
-      dataSourceByFunction.set(name, dataSource);
+      dataSourceByApiAndName.set(
+        apiScopedKey(refTarget(props.ApiId), name),
+        dataSource,
+      );
     }
   }
 
@@ -207,24 +208,36 @@ function fromRawResources(
     if (typeName === null || fieldName === null) {
       continue;
     }
+    const apiId = refTarget(props.ApiId);
+    const lookup =
+      (byLogicalId: Map<string, string>, byName: Map<string, string>) =>
+      (reference: string): string | undefined =>
+        byLogicalId.get(reference) ??
+        byName.get(apiScopedKey(apiId, reference));
+
     bindings.push({
       typeName,
       fieldName,
       lambdaFunctionLogicalIds: rawDataSourcesReached(
         props,
-        dataSourceByFunction,
+        lookup(dataSourceByLogicalId, dataSourceByApiAndName),
       )
-        .map((reference) => lambdaFor(reference))
+        .map(lookup(lambdaByLogicalId, lambdaByApiAndName))
         .filter((id): id is string => id !== undefined),
     });
   }
   return bindings;
 }
 
+/** A name only means something next to the API it was declared in. */
+function apiScopedKey(apiId: string | null, name: string): string {
+  return `${apiId ?? ""}::${name}`;
+}
+
 /** The data sources a raw resolver reads, unit or pipeline. */
 function rawDataSourcesReached(
   props: Record<string, unknown>,
-  dataSourceByFunction: Map<string, string>,
+  dataSourceOf: (reference: string) => string | undefined,
 ): string[] {
   const direct = refTarget(props.DataSourceName);
   if (direct !== null) {
@@ -237,9 +250,7 @@ function rawDataSourcesReached(
   return functions
     .map((fn) => {
       const reference = refTarget(fn);
-      return reference === null
-        ? undefined
-        : dataSourceByFunction.get(reference);
+      return reference === null ? undefined : dataSourceOf(reference);
     })
     .filter((name): name is string => name !== undefined);
 }
