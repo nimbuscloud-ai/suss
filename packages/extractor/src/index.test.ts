@@ -1067,6 +1067,50 @@ describe("detectGaps", () => {
     expect(gaps).toEqual([]);
   });
 
+  it("says so when one return matched none of the terminals", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      unmatchedReturns: 1,
+    };
+    const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.description).toContain("One return");
+    expect(gaps[0]?.consequence).toBe("unknown");
+  });
+
+  it("counts them when several returns matched nothing", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      unmatchedReturns: 3,
+    };
+    const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
+
+    expect(gaps[0]?.description).toContain("3 returns");
+  });
+
+  it("stays quiet when every return matched", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      unmatchedReturns: 0,
+    };
+
+    expect(detectGaps(raw, [], { gapHandling: "permissive" })).toEqual([]);
+  });
+
+  it("says nothing at all when gaps are silenced", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      unmatchedReturns: 2,
+    };
+
+    expect(detectGaps(raw, [], { gapHandling: "silent" })).toEqual([]);
+  });
+
   it("ignores dynamic status codes when matching declared responses", () => {
     // Handler produces only a dynamic status code — none of the declared
     // statuses are 'produced', so every declared response is reported as a gap.
