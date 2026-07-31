@@ -176,24 +176,30 @@ function packagesDeclaring(filePath: string): string[] {
     return [];
   }
   const rest = filePath.slice(at + marker.length);
-  // TypeScript's own lib files declare every global there is, and a
-  // call to one of those says nothing about anybody's dependency.
-  if (rest.startsWith("typescript/lib/")) {
+  // TypeScript ships its own lib files, which declare every global
+  // there is, and a call to one of those says nothing about anybody's
+  // dependency. The compiler API sits in that same directory, so this
+  // names the lib files rather than the directory holding them.
+  if (rest.startsWith("typescript/lib/lib.") && rest.endsWith(".d.ts")) {
     return [];
   }
   const owner = packagePartOf(rest);
-  const described = packageDescribedByTypes(owner);
-  return described === null ? [owner] : [owner, described];
+  return [owner, ...packagesDescribedByTypes(owner)];
 }
 
-/** "@types/foo" describes "foo"; "@types/scope__name" describes "@scope/name". */
-function packageDescribedByTypes(owner: string): string | null {
+/**
+ * "@types/foo" describes "foo", and "@types/scope__name" describes
+ * "@scope/name". A double underscore is how a scope is spelled here and
+ * also a legal character in a plain name, so both readings answer and
+ * whichever a pack named will match.
+ */
+function packagesDescribedByTypes(owner: string): string[] {
   if (!owner.startsWith("@types/")) {
-    return null;
+    return [];
   }
   const name = owner.slice("@types/".length);
   const scoped = name.split("__");
-  return scoped.length === 2 ? `@${scoped[0]}/${scoped[1]}` : name;
+  return scoped.length === 2 ? [name, `@${scoped[0]}/${scoped[1]}`] : [name];
 }
 
 /** Peel await, parentheses, satisfies, and as-casts. */
