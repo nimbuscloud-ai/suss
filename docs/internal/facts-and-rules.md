@@ -1,15 +1,13 @@
 # Facts and Rules
 
-How extraction's whole-program analyses are structured, for anyone adding or changing one. The short version: passes that used to be hand-written worklist loops are now Datalog rules over a shared fact database, and a strict three-layer boundary keeps them auditable.
+How extraction's whole-program analyses are structured, for anyone adding or changing one. The short version: they are Datalog rules over a shared fact database, and a strict three-layer boundary keeps them auditable.
 
-## Why rules instead of loops
+## Why rules
 
-Every whole-program analysis in extraction is the same shape underneath: start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability, re-throw resolution, and effect propagation are all that shape. Hand-written, each one re-proves termination and correctness on its own, and each bug hides inside its own loop.
-
-Written as rules, the shape is stated once:
+Every whole-program analysis in extraction is the same shape underneath: start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability, re-throw resolution, and effect propagation are all that shape. Rules state it once, and four properties come with that:
 
 - **Termination is the engine's property.** The evaluator (`@suss/datalog`) runs semi-naive fixpoint iteration. Every analysis written in it terminates by construction, because the fact universe is finite and rules only add.
-- **Negation can't silently lie.** Rules are stratified before evaluation. A cycle through negation is a hard error at evaluation time instead of a wrong answer at read time.
+- **Negation is sound.** Rules are stratified before evaluation, and a cycle through negation is a hard error at evaluation time.
 - **The logic is data.** A rule is a plain object you can print, test, and review in isolation. The audit surface is the facts a pass emits and the rules it runs.
 - **The analyses become language-independent.** A rule joins fact shapes (`calls`, `entry`, `unitEffect`, and so on), never AST nodes. A second language adapter that emits the same facts gets every analysis for free. This is the concrete mechanism behind "the IR is the product": the facts are a second, lower-level IR.
 
