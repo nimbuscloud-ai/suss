@@ -382,4 +382,72 @@ describe("importsTransitively", () => {
       ]),
     ).toBe(false);
   });
+
+  it("answers the same file twice from the cache", () => {
+    const project = projectOf({
+      "/aws/sqs.ts": `export { SendMessageCommand } from "@aws-sdk/client-sqs";`,
+      "/service.ts": `import { SendMessageCommand } from "./aws/sqs";`,
+    });
+    const store = new ResolutionStore();
+    const file = project.getSourceFileOrThrow("/service.ts");
+
+    expect(store.importsTransitively(file, ["@aws-sdk/client-sqs"])).toBe(true);
+    expect(store.importsTransitively(file, ["@aws-sdk/client-sqs"])).toBe(true);
+  });
+
+  it("reuses a yes it learned about a file deeper in the graph", () => {
+    const project = projectOf({
+      "/aws/sqs.ts": `export { SendMessageCommand } from "@aws-sdk/client-sqs";`,
+      "/mid.ts": `export { SendMessageCommand } from "./aws/sqs";`,
+      "/service.ts": `import { SendMessageCommand } from "./mid";`,
+    });
+    const store = new ResolutionStore();
+    const gates = ["@aws-sdk/client-sqs"];
+
+    // Walking from /mid.ts records the answer for /mid.ts itself, which
+    // the walk from /service.ts then hits instead of walking further.
+    expect(
+      store.importsTransitively(project.getSourceFileOrThrow("/mid.ts"), gates),
+    ).toBe(true);
+    expect(
+      store.importsTransitively(
+        project.getSourceFileOrThrow("/service.ts"),
+        gates,
+      ),
+    ).toBe(true);
+  });
+
+  it("caches a no for every file the walk covered", () => {
+    const project = projectOf({
+      "/leaf.ts": "export const x = 1;",
+      "/mid.ts": `export { x } from "./leaf";`,
+      "/service.ts": `import { x } from "./mid";`,
+    });
+    const store = new ResolutionStore();
+    const gates = ["@aws-sdk/client-sqs"];
+
+    expect(
+      store.importsTransitively(
+        project.getSourceFileOrThrow("/service.ts"),
+        gates,
+      ),
+    ).toBe(false);
+    expect(
+      store.importsTransitively(project.getSourceFileOrThrow("/mid.ts"), gates),
+    ).toBe(false);
+  });
+
+  it("walks a cycle without looping", () => {
+    const project = projectOf({
+      "/a.ts": `import { b } from "./b"; export const a = b;`,
+      "/b.ts": `import { a } from "./a"; export const b = a;`,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      store.importsTransitively(project.getSourceFileOrThrow("/a.ts"), [
+        "@aws-sdk/client-sqs",
+      ]),
+    ).toBe(false);
+  });
 });
