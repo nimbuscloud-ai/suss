@@ -531,7 +531,10 @@ export function tryMatchFunctionCall(
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "functionCall" }>,
 ): FoundTerminal | null {
-  if (!Node.isCallExpression(node)) {
+  // `new Response(body, init)` builds a response the same way
+  // `Response.json(body, init)` does, and a pack naming `Response`
+  // means the same thing either way.
+  if (!Node.isCallExpression(node) && !Node.isNewExpression(node)) {
     return null;
   }
 

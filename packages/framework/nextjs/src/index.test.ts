@@ -77,7 +77,15 @@ describe("nextjsFramework — extraction", () => {
       "DELETE /api/orders/{id}",
       "GET /api/orders",
       "GET /api/orders/{id}",
+      "POST /api/orders",
     ]);
+  });
+
+  it("reads a response the handler constructs", () => {
+    const post = summaries.find(
+      (s) => routeOf(s) === "POST /api/orders",
+    ) as BehavioralSummary;
+    expect(statusesOf(post)).toEqual([201, 400]);
   });
 
   it("reads the statuses a handler answers with", () => {

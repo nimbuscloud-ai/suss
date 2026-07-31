@@ -133,6 +133,17 @@ export function nextjsFramework(): PatternPack {
         },
       },
       {
+        // new Response(body, { status }), which a handler returns for
+        // anything that is not JSON: a redirect, a stream, plain text.
+        kind: "response",
+        match: { type: "functionCall", functionName: "Response" },
+        extraction: {
+          body: { from: "argument", position: 0 },
+          statusCode: { from: "argumentProperty", position: 1, name: "status" },
+          defaultStatusCode: 200,
+        },
+      },
+      {
         // NextResponse.redirect(url) sends a 307 unless the caller says
         // otherwise, and the alternative is written as an init object
         // this pack does not read yet.

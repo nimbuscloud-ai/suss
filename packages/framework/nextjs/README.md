@@ -33,6 +33,10 @@ provider in another framework serving it, since `/api/orders/{id}` and
   method and switches on `req.method` inside, so the pack reports the
   path and leaves the method blank rather than guessing one.
 - **Page components.** `@suss/framework-react` already reads those.
+- **A route a library serves.** NextAuth's route file is
+  `export { GET, POST } from "@/auth"`, where those names come out of
+  destructuring the library's own return. No function in the project
+  answers that route, so nothing is reported for it.
 
 ## Where it sits in suss
 
