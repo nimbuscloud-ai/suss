@@ -7,6 +7,7 @@ import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { countUnmatchedReturns } from "./assembly.js";
+import { findTerminals } from "./terminals/index.js";
 
 import type { TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
@@ -24,7 +25,7 @@ function countIn(source: string, name: string): number {
   const file = project.createSourceFile("/mod.ts", source);
   const decl = file.getVariableDeclarationOrThrow(name);
   const func = decl.getInitializerOrThrow() as unknown as FunctionRoot;
-  return countUnmatchedReturns(func, HTTP_TERMINALS);
+  return countUnmatchedReturns(func, findTerminals(func, HTTP_TERMINALS));
 }
 
 describe("countUnmatchedReturns", () => {
@@ -163,7 +164,7 @@ describe("countUnmatchedReturns across terminal shapes", () => {
       },
     ];
 
-    expect(countUnmatchedReturns(func, terminals)).toBe(0);
+    expect(countUnmatchedReturns(func, findTerminals(func, terminals))).toBe(0);
   });
 
   it("says nothing is unread when the whole function is the terminal", () => {
@@ -185,6 +186,6 @@ describe("countUnmatchedReturns across terminal shapes", () => {
 
     // A component that returns JSX with no return statement: the
     // terminal is anchored on the function itself.
-    expect(countUnmatchedReturns(func, terminals)).toBe(0);
+    expect(countUnmatchedReturns(func, findTerminals(func, terminals))).toBe(0);
   });
 });

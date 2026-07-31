@@ -14,6 +14,7 @@ import {
   runInvocationRecognizers,
 } from "./resolve/invocationEffects.js";
 import {
+  type FoundTerminal,
   findTerminals,
   functionMayFallThrough,
   makeFallthroughTerminal,
@@ -69,7 +70,7 @@ const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
  */
 export function countUnmatchedReturns(
   func: FunctionRoot,
-  terminalPatterns: TerminalPattern[],
+  terminals: FoundTerminal[],
   barriers: DescentBarriers = NO_BARRIERS,
 ): number {
   const body = func.getBody?.();
@@ -77,23 +78,11 @@ export function countUnmatchedReturns(
     return 0;
   }
 
-  // A terminal is anchored wherever its matcher found the value, which
-  // is a different node for each kind: the object literal inside a
-  // ternary, the call inside an await, the arrow itself for a component
-  // that returns JSX. Walking up to the return that encloses it puts
-  // them all on the same footing.
   const claimed = new Set<Node>();
-  for (const { node } of findTerminals(func, terminalPatterns, barriers)) {
-    if (node === (func as unknown as Node)) {
-      // The whole function is the terminal, so nothing in it is unread.
-      return 0;
+  for (const { source } of terminals) {
+    if (source !== undefined) {
+      claimed.add(source);
     }
-    const enclosing = Node.isReturnStatement(node)
-      ? node
-      : node.getFirstAncestor(
-          (ancestor) => Node.isReturnStatement(ancestor) || ancestor === body,
-        );
-    claimed.add(enclosing ?? node);
   }
 
   // A concise arrow produces its value with no return statement, so the
@@ -139,13 +128,24 @@ function isNestedBodyOwner(node: Node): boolean {
   );
 }
 
+/**
+ * The branches a function produces, alongside the terminals they came
+ * from. A caller that wants to know which returns went unclaimed needs
+ * the terminals, and searching for them a second time costs about as
+ * much as this whole pass.
+ */
+export interface RawBranchResult {
+  branches: RawBranch[];
+  terminals: FoundTerminal[];
+}
+
 export function extractRawBranches(
   func: FunctionRoot,
   terminalPatterns: TerminalPattern[],
   invocationRecognizers: InvocationRecognizer[] = [],
   accessRecognizers: AccessRecognizer[] = [],
   barriers: DescentBarriers = NO_BARRIERS,
-): RawBranch[] {
+): RawBranchResult {
   const terminals = findTerminals(func, terminalPatterns, barriers);
   const invocations = extractInvocationEffects(func, barriers);
   const recognized = [
@@ -257,5 +257,5 @@ export function extractRawBranches(
     }
   }
 
-  return rawBranches;
+  return { branches: rawBranches, terminals };
 }

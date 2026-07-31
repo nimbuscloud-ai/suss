@@ -477,16 +477,17 @@ export function extractCodeStructure(
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   const params = extractParameters(func, pack.inputMapping);
-  let branches = extractRawBranches(
+  const extracted = extractRawBranches(
     func,
     pack.terminals,
     invocationRecognizers,
     accessRecognizers,
     barriers,
   );
+  let branches = extracted.branches;
   const unmatchedReturns = countUnmatchedReturns(
     func,
-    pack.terminals,
+    extracted.terminals,
     barriers,
   );
   const depCalls = extractDependencyCalls(func);
