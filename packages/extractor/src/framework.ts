@@ -965,6 +965,15 @@ export interface DiscoveredCustomUnit {
    */
   routeInfo?: { method: string; path: string };
   /**
+   * GraphQL field identity for units a callback discovers against an
+   * external manifest rather than an in-code resolver map. AppSync
+   * routes a field to a Lambda in the deploy template, so the field is
+   * the boundary that code serves. When set, the adapter builds a
+   * `graphql-resolver` binding from `(typeName, fieldName)`, which
+   * pairs with the operations a client sends.
+   */
+  resolverInfo?: { typeName: string; fieldName: string };
+  /**
    * Metadata merged onto the resulting summary's `metadata` field.
    */
   metadata?: Record<string, unknown>;

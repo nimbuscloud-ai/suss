@@ -839,6 +839,9 @@ function extractFromSourceFile(
             // Events) attaches `routeInfo`; the downstream REST binding
             // path (see below) picks it up exactly as decoratedRoute does.
             ...(cu.routeInfo !== undefined ? { routeInfo: cu.routeInfo } : {}),
+            ...(cu.resolverInfo !== undefined
+              ? { resolverInfo: cu.resolverInfo }
+              : {}),
             ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
           } as (typeof units)[number]);
         }
@@ -867,7 +870,14 @@ function extractFromSourceFile(
         unit.routeInfo !== undefined
           ? `-${unit.routeInfo.method} ${unit.routeInfo.path}`
           : "";
-      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}`;
+      // The same for GraphQL fields: one Lambda often serves a field and
+      // its singular sibling (`leads` and `lead`), and both are
+      // boundaries a client can call.
+      const resolverSuffix =
+        unit.resolverInfo !== undefined
+          ? `-${unit.resolverInfo.typeName}.${unit.resolverInfo.fieldName}`
+          : "";
+      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}${resolverSuffix}`;
       if (claimed.has(claimKey)) {
         continue;
       }

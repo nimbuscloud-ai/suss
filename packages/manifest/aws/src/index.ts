@@ -12,6 +12,10 @@
 // and must not depend on any @suss package.
 
 export {
+  type AppSyncResolverBinding,
+  readAppSyncResolvers,
+} from "./appsyncResolvers.js";
+export {
   type ParsedHandler,
   parseHandler,
   readServerlessFunctions,

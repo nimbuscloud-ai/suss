@@ -63,6 +63,27 @@ Resources:
         Get:
           Type: HttpApi
           Properties: { Method: GET, Path: /ghost }
+  PostsFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/posts.handler
+  Api:
+    Type: AWS::Serverless::GraphQLApi
+    Properties:
+      SchemaInline: |
+        type Query { posts: String }
+      DataSources:
+        Lambda:
+          Posts:
+            FunctionArn: !GetAtt PostsFn.Arn
+      Functions:
+        InvokePosts:
+          DataSource: Posts
+      Resolvers:
+        Query:
+          posts:
+            Pipeline:
+              - InvokePosts
 `,
   );
   write(
@@ -77,6 +98,15 @@ Resources:
     `import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
      export const handler: APIGatewayProxyHandlerV2 = async () => {
        return { statusCode: 200, body: "" };
+     };`,
+  );
+  write(
+    "src/posts.ts",
+    `export const handler = async (event: { arguments?: { id?: string } }) => {
+       if (!event.arguments?.id) {
+         throw new Error("id is required");
+       }
+       return { id: event.arguments.id };
      };`,
   );
   // The template names `handler`, but this file exports something else.
@@ -184,5 +214,41 @@ describe("handlersForFile — no reachable template", () => {
     } finally {
       fs.rmSync(badRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("awsLambdaDiscovery — AppSync resolvers", () => {
+  it("binds a handler to the GraphQL field the template routes to it", async () => {
+    const summaries = await run();
+    const posts = summaries.find((s) => s.identity.name.startsWith("PostsFn."));
+
+    // The semantics are what pair: boundaryKey reads a
+    // graphql-resolver binding as gql:Type.field and ignores transport,
+    // so this matches the same field read from an AppSync template.
+    expect(posts?.identity.boundaryBinding?.semantics).toEqual({
+      name: "graphql-resolver",
+      typeName: "Query",
+      fieldName: "posts",
+    });
+    expect(posts?.identity.boundaryBinding?.recognition).toBe("aws-lambda");
+  });
+
+  it("reads the resolver's behavior, not only its identity", async () => {
+    const summaries = await run();
+    const posts = summaries.find((s) => s.identity.name.startsWith("PostsFn."));
+
+    const outputs = (posts?.transitions ?? []).map((t) => t.output.type);
+    expect(outputs).toContain("throw");
+  });
+
+  it("leaves a handler no resolver points at unbound", async () => {
+    const summaries = await run();
+    const anyOnly = summaries.find((s) =>
+      s.identity.name.startsWith("AnyOnlyFn."),
+    );
+
+    expect(anyOnly?.identity.boundaryBinding?.semantics.name).toBe(
+      "function-call",
+    );
   });
 });

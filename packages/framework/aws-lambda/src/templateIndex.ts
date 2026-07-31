@@ -13,7 +13,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  type AppSyncResolverBinding,
   loadCloudFormationTemplate,
+  readAppSyncResolvers,
   readServerlessFunctions,
   type ServerlessHttpRoute,
   type ServerlessNonHttpEvent,
@@ -22,6 +24,12 @@ import {
 /** One Serverless::Function's handler + the Events that reach it. */
 export interface HandlerEntry {
   functionLogicalId: string;
+  /**
+   * GraphQL fields this handler serves, when the same template declares
+   * an AppSync API that routes them here. Empty for a handler nothing
+   * in the graph points at.
+   */
+  graphqlFields: Array<{ typeName: string; fieldName: string }>;
   handler: string;
   exportName: string;
   httpRoutes: ServerlessHttpRoute[];
@@ -102,6 +110,9 @@ function indexForTemplate(templatePath: string): HandlerIndex {
   try {
     const template = loadCloudFormationTemplate(templatePath);
     const templateDir = path.dirname(templatePath);
+    const fieldsByFunction = groupFieldsByFunction(
+      readAppSyncResolvers(template),
+    );
     for (const fn of readServerlessFunctions(template)) {
       const resolvedModule = path.resolve(
         templateDir,
@@ -111,6 +122,7 @@ function indexForTemplate(templatePath: string): HandlerIndex {
       const list = index.get(resolvedModule) ?? [];
       list.push({
         functionLogicalId: fn.logicalId,
+        graphqlFields: fieldsByFunction.get(fn.logicalId) ?? [],
         handler: fn.handler,
         exportName: fn.exportName,
         httpRoutes: fn.httpRoutes,
@@ -143,6 +155,22 @@ function toModulePath(filePath: string): string {
  * is by resolved module path (CodeUri + Handler module vs. the file's
  * path without extension).
  */
+/** A Lambda can back more than one field, so collect them per function. */
+function groupFieldsByFunction(
+  bindings: AppSyncResolverBinding[],
+): Map<string, Array<{ typeName: string; fieldName: string }>> {
+  const out = new Map<string, Array<{ typeName: string; fieldName: string }>>();
+  for (const binding of bindings) {
+    if (binding.lambdaFunctionLogicalId === null) {
+      continue;
+    }
+    const fields = out.get(binding.lambdaFunctionLogicalId) ?? [];
+    fields.push({ typeName: binding.typeName, fieldName: binding.fieldName });
+    out.set(binding.lambdaFunctionLogicalId, fields);
+  }
+  return out;
+}
+
 export function handlersForFile(filePath: string): HandlerEntry[] {
   const templatePath = findTemplate(path.dirname(path.resolve(filePath)));
   if (templatePath === null) {

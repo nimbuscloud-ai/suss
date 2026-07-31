@@ -54,6 +54,31 @@ function httpRouteUnits(
 }
 
 /**
+ * AppSync does not register a resolver in code. The template routes a
+ * GraphQL field to this Lambda, so the field is the boundary the code
+ * serves, and `resolverInfo` makes the adapter build a graphql-resolver
+ * binding that pairs with the operations a client sends.
+ */
+function graphqlResolverUnits(
+  entry: HandlerEntry,
+  func: FunctionRoot,
+): DiscoveredCustomUnit[] {
+  return entry.graphqlFields.map((field) => ({
+    func,
+    kind: "handler",
+    name: `${entry.functionLogicalId}.${entry.exportName}`,
+    resolverInfo: { typeName: field.typeName, fieldName: field.fieldName },
+    metadata: {
+      [METADATA_NAMESPACE]: {
+        functionLogicalId: entry.functionLogicalId,
+        handler: entry.handler,
+        recognition: "appsync-resolver",
+      },
+    },
+  }));
+}
+
+/**
  * A handler with no bindable HTTP route (a dedicated SQS/Schedule/SNS
  * consumer, or one whose only route is ANY) still gets one accounting
  * unit — no `routeInfo`, so it falls back to a function-call binding and
@@ -123,6 +148,8 @@ export const awsLambdaDiscovery: NonNullable<PatternPack["discoverUnits"]> = (
     }
     if (hasBindableRoute(entry)) {
       units.push(...httpRouteUnits(entry, func));
+    } else if (entry.graphqlFields.length > 0) {
+      units.push(...graphqlResolverUnits(entry, func));
     } else {
       units.push(accountingUnit(entry, func));
     }
