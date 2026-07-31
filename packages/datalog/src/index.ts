@@ -127,6 +127,10 @@ export class Database {
     const relation = this.relation(relationName);
     const key = keyOf(tuple);
     if (relation.keys.has(key)) {
+      // The caller is asserting a fact evaluation had already worked
+      // out. It belongs to them from here, so taking conclusions back
+      // later must not take this one.
+      claimFact(this, relationName, key);
       return false;
     }
     relation.keys.add(key);
@@ -207,7 +211,7 @@ export class Database {
     // Cheaper to drop the indexes and let the next lookup rebuild them
     // than to hunt through every bucket for the tuples that went.
     relation.indexes.clear();
-    forgetEvaluation(this);
+    forgetFacts(this, relationName, going);
     return going.size;
   }
 
@@ -417,23 +421,68 @@ function boundSource(
  * rules can carry on from there instead of starting over. Held to the
  * side rather than on Database, which stays a plain fact store.
  */
-interface EvaluationState {
-  signature: string;
-  /** How many facts each relation held when evaluation last finished. */
-  marks: Map<string, number>;
+/**
+ * What one rule set has worked out about a database. Kept per rule
+ * set: two rule sets sharing a database each answer for their own
+ * conclusions, and neither takes the other's away.
+ */
+interface RuleSetState {
   /**
-   * Every fact evaluation itself put in, per relation. A tuple the
-   * caller had already added is not in here: `add` reported it as
+   * How many facts each relation held when this rule set last
+   * finished, or null when facts have gone missing since and the next
+   * run has to start over.
+   */
+  marks: Map<string, number> | null;
+  /**
+   * Every fact this rule set derived, per relation, keyed so a caller
+   * asserting the same fact can take it off the list. A tuple the
+   * caller had already added is never in here: `add` reported it as
    * nothing new, so evaluation never claimed it.
    */
-  derived: Map<string, Tuple[]>;
+  derived: Map<string, Map<string, Tuple>>;
 }
 
-const evaluated = new WeakMap<Database, EvaluationState>();
+const evaluated = new WeakMap<Database, Map<string, RuleSetState>>();
 
-/** Forget the last fixpoint, so the next evaluate() starts over. */
-function forgetEvaluation(db: Database): void {
-  evaluated.delete(db);
+function statesFor(db: Database): Map<string, RuleSetState> {
+  let states = evaluated.get(db);
+  if (states === undefined) {
+    states = new Map();
+    evaluated.set(db, states);
+  }
+  return states;
+}
+
+/** The caller now owns this fact, so no rule set may take it back. */
+function claimFact(db: Database, relation: string, key: string): void {
+  const states = evaluated.get(db);
+  if (states === undefined) {
+    return;
+  }
+  for (const state of states.values()) {
+    state.derived.get(relation)?.delete(key);
+  }
+}
+
+/**
+ * Facts left the database, so no rule set can resume from its old
+ * fixpoint. The ledger of what each derived survives, since a later
+ * negated run still has to be able to take those facts back.
+ */
+function forgetFacts(db: Database, relation: string, keys: Set<string>): void {
+  const states = evaluated.get(db);
+  if (states === undefined) {
+    return;
+  }
+  for (const state of states.values()) {
+    state.marks = null;
+    const ledger = state.derived.get(relation);
+    if (ledger !== undefined) {
+      for (const key of keys) {
+        ledger.delete(key);
+      }
+    }
+  }
 }
 
 const usesNegation = (rules: Rule[]): boolean =>
@@ -448,16 +497,8 @@ const usesNegation = (rules: Rule[]): boolean =>
  * matching, which takes an old conclusion away, and a pass that only
  * adds can never do that. Those runs clear the board first instead.
  */
-function canResume(
-  db: Database,
-  rules: Rule[],
-  signature: string,
-): EvaluationState | null {
-  if (usesNegation(rules)) {
-    return null;
-  }
-  const state = evaluated.get(db);
-  return state !== undefined && state.signature === signature ? state : null;
+function canResume(rules: Rule[], state: RuleSetState): boolean {
+  return !usesNegation(rules) && state.marks !== null;
 }
 
 /** The facts added to each relation since the marks were taken. */
@@ -492,26 +533,28 @@ function currentMarks(db: Database): Map<string, number> {
  */
 export function evaluate(db: Database, rules: Rule[]): Database {
   const signature = JSON.stringify(rules);
-  const previous = evaluated.get(db);
+  const states = statesFor(db);
+  const state: RuleSetState = states.get(signature) ?? {
+    marks: null,
+    derived: new Map(),
+  };
+  states.set(signature, state);
 
   // A rule set with negation has one right answer for the facts the
-  // caller has now, and an earlier pass may have concluded things that
-  // answer does not include. Take back what that pass derived and work
-  // it out again from the base facts.
-  // Tracking carries across rule changes, so a later negated run knows
-  // about everything any earlier pass concluded, not only the last one.
-  const derived = previous?.derived ?? new Map<string, Tuple[]>();
-  if (previous !== undefined && usesNegation(rules)) {
-    for (const [relation, tuples] of derived) {
-      db.retract(relation, tuples);
+  // database holds now, and an earlier run of these rules may have
+  // concluded things that answer does not include. Take those back and
+  // work it out again from the base facts.
+  if (usesNegation(rules)) {
+    for (const [relation, ledger] of state.derived) {
+      db.retract(relation, ledger.values());
     }
-    derived.clear();
+    state.derived.clear();
   }
 
-  const resume = canResume(db, rules, signature);
+  const derived = state.derived;
   // Taken before any stratum runs, so a later stratum's seed picks up
   // what the strata below it just derived.
-  const marks = resume?.marks;
+  const marks = canResume(rules, state) ? state.marks : undefined;
 
   for (const stratum of stratify(rules)) {
     let delta = new Map<string, Tuple[]>();
@@ -520,7 +563,12 @@ export function evaluate(db: Database, rules: Rule[]): Database {
     const record = (relation: string, tuple: Tuple): void => {
       if (db.add(relation, tuple)) {
         addTo(delta, relation, tuple);
-        addTo(derived, relation, tuple);
+        let ledger = derived.get(relation);
+        if (ledger === undefined) {
+          ledger = new Map();
+          derived.set(relation, ledger);
+        }
+        ledger.set(keyOf(tuple), tuple);
       }
     };
 
@@ -549,7 +597,7 @@ export function evaluate(db: Database, rules: Rule[]): Database {
       }
     };
 
-    if (marks === undefined) {
+    if (marks === undefined || marks === null) {
       // Seed round: naive evaluation with every positive literal drawn
       // from the full database.
       for (const r of stratum) {
@@ -575,7 +623,7 @@ export function evaluate(db: Database, rules: Rule[]): Database {
     }
   }
 
-  evaluated.set(db, { signature, marks: currentMarks(db), derived });
+  state.marks = currentMarks(db);
   return db;
 }
 

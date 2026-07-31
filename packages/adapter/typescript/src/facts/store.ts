@@ -153,13 +153,17 @@ const RESOLUTION_RULES = [
   ),
 
   // Wrapper transparency, declared: a pack says this callee wraps
-  // argument k, no matter what its implementation looks like.
+  // argument k, whatever its implementation looks like. The callee has
+  // to have been imported from the library the pack named, so a local
+  // object spelled the same way is not mistaken for it.
   rule(
     "resolves",
     [v("r"), v("h")],
     [
       lit("calleeName", v("r"), v("n")),
       lit("unwrapsByName", v("n"), v("k")),
+      lit("wrapperModule", v("n"), v("m")),
+      lit("calleeOrigin", v("r"), v("m")),
       lit("callArg", v("r"), v("k"), v("a")),
       lit("resolves", v("a"), v("h")),
     ],
@@ -185,6 +189,7 @@ export class ResolutionStore {
   constructor(wrappers: TransparentWrapper[] = []) {
     for (const wrapper of wrappers) {
       this.db.add("unwrapsByName", [wrapper.callee, String(wrapper.argument)]);
+      this.db.add("wrapperModule", [wrapper.callee, wrapper.module]);
     }
   }
 
@@ -199,11 +204,22 @@ export class ResolutionStore {
    * one file of extraction, not the whole import closure.
    */
   resolveCallable(value: Node): Node | null {
+    // Where the walk has been on this query, which is separate from
+    // which files already have facts. A file extracted by an earlier
+    // query still has to be walked through, or the frontier collapses
+    // and later queries into the same file answer null.
+    const walked = new Set<string>();
     let frontier = [value.getSourceFile()];
+
     for (let hop = 0; hop <= MAX_MODULE_HOPS; hop++) {
       const next: SourceFile[] = [];
       for (const sourceFile of frontier) {
-        next.push(...this.extractFile(sourceFile));
+        if (walked.has(sourceFile.getFilePath())) {
+          continue;
+        }
+        walked.add(sourceFile.getFilePath());
+        this.extractFile(sourceFile);
+        next.push(...referencedProjectFiles(sourceFile));
       }
       const found = this.lookup(value);
       if (found !== null) {
@@ -268,18 +284,31 @@ export class ResolutionStore {
     return false;
   }
 
+  /**
+   * The one function this value resolves to. Several rules can reach
+   * the same answer, which is fine, but reaching two different
+   * functions means the rules cannot tell which one the value is, and
+   * picking whichever landed in the relation first would make the
+   * answer depend on the order facts arrived in. Ambiguity is nothing.
+   */
   private lookup(value: Node): Node | null {
     this.derive();
+
+    const candidates = new Set<Node>();
     for (const target of this.resolvedBySource.get(nodeId(value)) ?? []) {
       const resolved = this.table.byId.get(target);
-      if (resolved !== undefined && resolved !== value) {
-        return resolved;
+      if (resolved === undefined) {
+        continue;
       }
-      if (resolved === value && isFunctionRoot(value)) {
-        return value;
+      if (resolved !== value || isFunctionRoot(value)) {
+        candidates.add(resolved);
       }
     }
-    return null;
+
+    if (candidates.size !== 1) {
+      return null;
+    }
+    return [...candidates][0] as Node;
   }
 
   /**
@@ -305,16 +334,15 @@ export class ResolutionStore {
     }
   }
 
-  /** Extract a file if new, and report the project files it points at. */
-  private extractFile(sourceFile: SourceFile): SourceFile[] {
+  /** Emit a file's facts, unless some earlier query already did. */
+  private extractFile(sourceFile: SourceFile): void {
     const filePath = sourceFile.getFilePath();
     if (this.fullyExtracted.has(filePath)) {
-      return [];
+      return;
     }
     this.fullyExtracted.add(filePath);
     this.stale = true;
     extractFileFacts(this.db, this.table, sourceFile);
-    return referencedProjectFiles(sourceFile);
   }
 }
 

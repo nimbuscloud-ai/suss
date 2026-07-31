@@ -195,12 +195,37 @@ describe("resolveCallable", () => {
       `,
     });
     const store = new ResolutionStore([
-      { callee: "Sentry.wrapHandler", argument: 0 },
+      {
+        callee: "Sentry.wrapHandler",
+        argument: 0,
+        module: "@sentry/aws-serverless",
+      },
     ]);
 
     expect(
       resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
     ).toContain("sentry wrapped");
+  });
+
+  it("ignores a local object spelled like a declared wrapper", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        const Sentry = { wrapHandler: (fn: unknown) => "not a function" };
+        export const handler = Sentry.wrapHandler(async () => "local shape");
+      `,
+    });
+    const store = new ResolutionStore([
+      {
+        callee: "Sentry.wrapHandler",
+        argument: 0,
+        module: "@sentry/aws-serverless",
+      },
+    ]);
+
+    // Nothing imported the library, so the declaration does not apply.
+    expect(
+      store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
+    ).toBeNull();
   });
 
   it("follows .bind to the bound method", () => {
@@ -281,6 +306,56 @@ describe("resolveCallable", () => {
     expect(
       resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
     ).toContain("re-exported wrap");
+  });
+
+  it("resolves a second export in a file it already extracted", () => {
+    const project = projectOf({
+      "/impl.ts": `export const realHandler = async () => "from impl";`,
+      "/mod.ts": `
+        import { realHandler } from "./impl";
+        export const local = async () => "local";
+        export const imported = realHandler;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    // The first query extracts /mod.ts and answers without leaving it.
+    // The second has to walk into /impl.ts, which it can only do if the
+    // frontier comes from the module graph rather than from what is
+    // left to extract.
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "local")),
+    ).toContain("local");
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "imported")),
+    ).toContain("from impl");
+  });
+
+  it("gives no answer when a factory calls two of its parameters", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        function compose(
+          outer: (event: unknown) => Promise<unknown>,
+          inner: (event: unknown) => Promise<unknown>,
+        ) {
+          return async (event: unknown) => {
+            await outer(event);
+            return inner(event);
+          };
+        }
+        export const handler = compose(
+          async () => "outer body",
+          async () => "inner body",
+        );
+      `,
+    });
+    const store = new ResolutionStore();
+
+    // Both arguments qualify, so the rules cannot say which function
+    // this is. Picking one would depend on the order facts arrived in.
+    expect(
+      store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
+    ).toBeNull();
   });
 
   it("returns null for a value that is not a function", () => {

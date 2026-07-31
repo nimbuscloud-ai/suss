@@ -671,6 +671,11 @@ export interface TransparentWrapper {
   callee: string;
   /** Which argument holds the wrapped function. */
   argument: number;
+  /**
+   * The module the callee has to have been imported from. Without it a
+   * local object spelled the same way would be taken for the library.
+   */
+  module: string;
 }
 
 export interface PatternPack {

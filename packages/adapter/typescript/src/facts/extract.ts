@@ -57,6 +57,44 @@ function moduleKeyOf(
   return declaration.getModuleSpecifierValue() ?? null;
 }
 
+/**
+ * The module a callee was imported from, or null when it was not
+ * imported. `Sentry.wrapHandler` reports the module behind `Sentry`.
+ *
+ * A pack that declares a wrapper transparent names the library it
+ * comes from, and this is what checks the claim. Without it, a local
+ * object that happens to spell its method the same way would be taken
+ * for the library's.
+ */
+function importOriginOf(callee: Node): string | null {
+  let root: Node = callee;
+  while (Node.isPropertyAccessExpression(root)) {
+    root = root.getExpression();
+  }
+  if (!Node.isIdentifier(root)) {
+    return null;
+  }
+  const symbol = root.getSymbol();
+  if (symbol === undefined) {
+    return null;
+  }
+  for (const declaration of symbol.getDeclarations()) {
+    if (Node.isImportSpecifier(declaration)) {
+      return declaration.getImportDeclaration().getModuleSpecifierValue();
+    }
+    const owner = Node.isNamespaceImport(declaration)
+      ? declaration.getParent()
+      : declaration;
+    if (Node.isImportClause(owner)) {
+      const importDecl = owner.getParent();
+      if (Node.isImportDeclaration(importDecl)) {
+        return importDecl.getModuleSpecifierValue();
+      }
+    }
+  }
+  return null;
+}
+
 /** Peel await, parentheses, satisfies, and as-casts. */
 function unwrapExpression(expression: Expression): Expression {
   let current = expression;
@@ -204,6 +242,11 @@ function emitCallFacts(
 
   fact(db, "call", callId, emitValue(db, table, callee));
   fact(db, "calleeName", callId, callee.getText());
+
+  const origin = importOriginOf(callee);
+  if (origin !== null) {
+    fact(db, "calleeOrigin", callId, origin);
+  }
 
   const args = call.getArguments();
   for (let position = 0; position < args.length; position++) {

@@ -441,3 +441,53 @@ describe("Database.retract", () => {
     expect(sorted(db.facts("path"))).toEqual(["a,b", "b,c"]);
   });
 });
+
+describe("evaluate — taking conclusions back", () => {
+  const BLOCKABLE = [
+    rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
+  ];
+
+  it("drops a conclusion whose support the caller retracted", () => {
+    const db = new Database();
+    db.add("p", ["1"]);
+    db.add("p", ["2"]);
+    evaluate(db, BLOCKABLE);
+    expect(sorted(db.facts("q"))).toEqual(["1", "2"]);
+
+    db.retract("p", [["1"]]);
+    evaluate(db, BLOCKABLE);
+
+    // q(1) has nothing holding it up now.
+    expect(sorted(db.facts("q"))).toEqual(["2"]);
+  });
+
+  it("leaves alone a fact the caller asserted after it was derived", () => {
+    const db = new Database();
+    db.add("p", ["1"]);
+    evaluate(db, BLOCKABLE);
+    expect(sorted(db.facts("q"))).toEqual(["1"]);
+
+    // The caller now states q(1) themselves. Blocking p(1) afterwards
+    // takes the derivation away, but not the caller's own fact.
+    db.add("q", ["1"]);
+    db.add("blocked", ["1"]);
+    evaluate(db, BLOCKABLE);
+
+    expect(sorted(db.facts("q"))).toEqual(["1"]);
+  });
+
+  it("takes back only what its own rules concluded", () => {
+    const positive = [rule("r", [V("x")], [lit("p", V("x"))])];
+    const db = new Database();
+    db.add("p", ["1"]);
+    evaluate(db, positive);
+    expect(sorted(db.facts("r"))).toEqual(["1"]);
+
+    // A negated rule set running on the same database has no business
+    // touching what the positive one worked out.
+    evaluate(db, BLOCKABLE);
+
+    expect(sorted(db.facts("r"))).toEqual(["1"]);
+    expect(sorted(db.facts("q"))).toEqual(["1"]);
+  });
+});

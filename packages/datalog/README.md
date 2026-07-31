@@ -69,17 +69,15 @@ starting the fixpoint over. Callers that interleave "add some facts, ask
 a question" get this without doing anything. Positive rules are monotone,
 so everything derived before still holds.
 
-Negation gets the other treatment. A new fact can make a negated literal
+Negated rules work differently. A new fact can make a negated literal
 stop matching, and the conclusion that rested on it has to go. So a
 re-run with negated rules takes back what the previous pass derived and
-works the answer out again from the base facts. Either way you get the
-answer for the facts the database holds now, not a record of what was
-concluded along the way.
+works the answer out again from the base facts. Both paths leave the
+database holding the answer for the facts it has now.
 
-One thing to keep straight: a relation that rules derive should not also
-receive facts you add yourself. Taking a conclusion back cannot tell your
-fact from the one it derived, and the two get mixed up in every other
-part of Datalog as well.
+Keep the facts you add and the facts rules derive in separate relations.
+Taking a conclusion back cannot tell one from the other, and the
+separation is how Datalog is normally written anyway.
 
 Extraction-scale fact sets are thousands of tuples. If that changes, the
 rule data model is the stable seam and this evaluator is the replaceable

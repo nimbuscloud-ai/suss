@@ -41,7 +41,13 @@ export function awsLambdaFramework(): PatternPack {
     // read, so the pack states the judgment: the handler is argument 0.
     // Project-local wrappers need no declaration; the adapter derives
     // those by reading the factory body.
-    transparentWrappers: [{ callee: "Sentry.wrapHandler", argument: 0 }],
+    transparentWrappers: [
+      {
+        callee: "Sentry.wrapHandler",
+        argument: 0,
+        module: "@sentry/aws-serverless",
+      },
+    ],
     languages: ["typescript", "javascript"],
 
     // No data-driven discovery: routing lives in the SAM/CFN template,

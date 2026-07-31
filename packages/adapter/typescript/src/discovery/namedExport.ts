@@ -103,10 +103,9 @@ export function discoverNamedExports(
       continue;
     }
 
-    // export const handler = withAuth(inner), = imported, = f.bind(x):
-    // resolve the value through the fact layer to the function it
-    // ultimately names. The unit's identity stays at this export; only
-    // the body being read lives elsewhere.
+    // The export is a wrapper call, an imported name, or a .bind, so
+    // ask the fact layer which function it comes down to. The unit is
+    // still this export; only the body being read lives elsewhere.
     if (resolution !== undefined) {
       const resolved = resolution.resolveCallable(init);
       const fn = resolved === null ? null : toFunctionRoot(resolved);
