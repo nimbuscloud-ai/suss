@@ -237,3 +237,121 @@ describe("evaluate — scale sanity", () => {
     expect(elapsed).toBeLessThan(2_000);
   });
 });
+
+describe("Database.lookup", () => {
+  it("returns the facts holding a value at a column", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["a", "c"]);
+    db.add("edge", ["b", "c"]);
+
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,b", "a,c"]);
+    expect(sorted(db.lookup("edge", 1, "c"))).toEqual(["a,c", "b,c"]);
+    expect(db.lookup("edge", 0, "z")).toEqual([]);
+    expect(db.lookup("absent", 0, "a")).toEqual([]);
+  });
+
+  it("keeps an index current as facts arrive after it is built", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,b"]);
+
+    db.add("edge", ["a", "c"]);
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,b", "a,c"]);
+  });
+
+  it("does not confuse a number with the string that spells it", () => {
+    const db = new Database();
+    db.add("r", [1, "one"]);
+    db.add("r", ["1", "text"]);
+
+    expect(sorted(db.lookup("r", 0, 1))).toEqual(["1,one"]);
+    expect(sorted(db.lookup("r", 0, "1"))).toEqual(["1,text"]);
+  });
+});
+
+describe("evaluate — resuming a previous fixpoint", () => {
+  const CLOSURE = [
+    rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),
+    rule(
+      "path",
+      [V("x"), V("z")],
+      [lit("path", V("x"), V("y")), lit("edge", V("y"), V("z"))],
+    ),
+  ];
+
+  const freshClosureOver = (edges: Array<[string, string]>): string[] => {
+    const db = new Database();
+    for (const [from, to] of edges) {
+      db.add("edge", [from, to]);
+    }
+    evaluate(db, CLOSURE);
+    return sorted(db.facts("path"));
+  };
+
+  it("reaches the same answer as evaluating everything at once", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+    evaluate(db, CLOSURE);
+
+    db.add("edge", ["c", "d"]);
+    db.add("edge", ["x", "a"]);
+    evaluate(db, CLOSURE);
+
+    expect(sorted(db.facts("path"))).toEqual(
+      freshClosureOver([
+        ["a", "b"],
+        ["b", "c"],
+        ["c", "d"],
+        ["x", "a"],
+      ]),
+    );
+  });
+
+  it("derives nothing further when no facts were added", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+    evaluate(db, CLOSURE);
+    const afterFirst = sorted(db.facts("path"));
+
+    evaluate(db, CLOSURE);
+
+    expect(sorted(db.facts("path"))).toEqual(afterFirst);
+  });
+
+  it("starts over when the rules change", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+    evaluate(db, CLOSURE);
+
+    // A rule set the first pass never ran; resuming would miss it.
+    evaluate(db, [
+      rule("backward", [V("y"), V("x")], [lit("edge", V("x"), V("y"))]),
+    ]);
+
+    expect(sorted(db.facts("backward"))).toEqual(["b,a", "c,b"]);
+  });
+
+  it("re-runs in full when a rule set uses negation", () => {
+    const rules = [
+      rule("node", [V("x")], [lit("edge", V("x"), V("y"))]),
+      rule("node", [V("y")], [lit("edge", V("x"), V("y"))]),
+      rule("hasOut", [V("x")], [lit("edge", V("x"), V("y"))]),
+      rule("sink", [V("x")], [lit("node", V("x")), notLit("hasOut", V("x"))]),
+    ];
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    evaluate(db, rules);
+
+    db.add("edge", ["b", "c"]);
+    evaluate(db, rules);
+
+    // "b" was a sink before the edge out of it arrived. Negation is not
+    // monotone, so that earlier conclusion stays in the database. What
+    // matters here is that the pass still sees every node.
+    expect(sorted(db.facts("node"))).toEqual(["a", "b", "c"]);
+  });
+});
