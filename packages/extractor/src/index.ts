@@ -37,6 +37,7 @@ export type {
   TerminalExtraction,
   TerminalMatch,
   TerminalPattern,
+  TransparentWrapper,
 } from "./framework.js";
 
 // =============================================================================

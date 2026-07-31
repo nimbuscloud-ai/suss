@@ -111,18 +111,19 @@ export interface DiscoveredUnit {
   metadata?: Record<string, unknown>;
 }
 
-/** Extract FunctionRoot from something that might be a function or wrap one. */
-export function toFunctionRoot(node: Node): FunctionRoot | null {
-  if (
+/** Whether a node is one of the four function-shaped declarations. */
+export function isFunctionRoot(node: Node): boolean {
+  return (
     Node.isFunctionDeclaration(node) ||
     Node.isFunctionExpression(node) ||
     Node.isArrowFunction(node) ||
     Node.isMethodDeclaration(node)
-  ) {
-    return node as FunctionRoot;
-  }
+  );
+}
 
-  return null;
+/** Extract FunctionRoot from something that might be a function or wrap one. */
+export function toFunctionRoot(node: Node): FunctionRoot | null {
+  return isFunctionRoot(node) ? (node as FunctionRoot) : null;
 }
 
 /** Walk to the nearest enclosing function-shaped node, or null if none. */

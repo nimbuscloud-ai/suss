@@ -237,3 +237,307 @@ describe("evaluate — scale sanity", () => {
     expect(elapsed).toBeLessThan(2_000);
   });
 });
+
+describe("Database.lookup", () => {
+  it("returns the facts holding a value at a column", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["a", "c"]);
+    db.add("edge", ["b", "c"]);
+
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,b", "a,c"]);
+    expect(sorted(db.lookup("edge", 1, "c"))).toEqual(["a,c", "b,c"]);
+    expect(db.lookup("edge", 0, "z")).toEqual([]);
+    expect(db.lookup("absent", 0, "a")).toEqual([]);
+  });
+
+  it("keeps an index current as facts arrive after it is built", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,b"]);
+
+    db.add("edge", ["a", "c"]);
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,b", "a,c"]);
+  });
+
+  it("does not confuse a number with the string that spells it", () => {
+    const db = new Database();
+    db.add("r", [1, "one"]);
+    db.add("r", ["1", "text"]);
+
+    expect(sorted(db.lookup("r", 0, 1))).toEqual(["1,one"]);
+    expect(sorted(db.lookup("r", 0, "1"))).toEqual(["1,text"]);
+  });
+});
+
+describe("evaluate — resuming a previous fixpoint", () => {
+  const CLOSURE = [
+    rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),
+    rule(
+      "path",
+      [V("x"), V("z")],
+      [lit("path", V("x"), V("y")), lit("edge", V("y"), V("z"))],
+    ),
+  ];
+
+  const freshClosureOver = (edges: Array<[string, string]>): string[] => {
+    const db = new Database();
+    for (const [from, to] of edges) {
+      db.add("edge", [from, to]);
+    }
+    evaluate(db, CLOSURE);
+    return sorted(db.facts("path"));
+  };
+
+  it("reaches the same answer as evaluating everything at once", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+    evaluate(db, CLOSURE);
+
+    db.add("edge", ["c", "d"]);
+    db.add("edge", ["x", "a"]);
+    evaluate(db, CLOSURE);
+
+    expect(sorted(db.facts("path"))).toEqual(
+      freshClosureOver([
+        ["a", "b"],
+        ["b", "c"],
+        ["c", "d"],
+        ["x", "a"],
+      ]),
+    );
+  });
+
+  it("derives nothing further when no facts were added", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+    evaluate(db, CLOSURE);
+    const afterFirst = sorted(db.facts("path"));
+
+    evaluate(db, CLOSURE);
+
+    expect(sorted(db.facts("path"))).toEqual(afterFirst);
+  });
+
+  it("starts over when the rules change", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+    evaluate(db, CLOSURE);
+
+    // A rule set the first pass never ran; resuming would miss it.
+    evaluate(db, [
+      rule("backward", [V("y"), V("x")], [lit("edge", V("x"), V("y"))]),
+    ]);
+
+    expect(sorted(db.facts("backward"))).toEqual(["b,a", "c,b"]);
+  });
+
+  const SINKS = [
+    rule("node", [V("x")], [lit("edge", V("x"), V("y"))]),
+    rule("node", [V("y")], [lit("edge", V("x"), V("y"))]),
+    rule("hasOut", [V("x")], [lit("edge", V("x"), V("y"))]),
+    rule("sink", [V("x")], [lit("node", V("x")), notLit("hasOut", V("x"))]),
+  ];
+
+  it("takes back a conclusion a new fact invalidates", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    evaluate(db, SINKS);
+    expect(sorted(db.facts("sink"))).toEqual(["b"]);
+
+    // "b" has an edge out of it now, so it is no longer a sink. A pass
+    // that only ever added facts would leave the old answer standing.
+    db.add("edge", ["b", "c"]);
+    evaluate(db, SINKS);
+
+    expect(sorted(db.facts("node"))).toEqual(["a", "b", "c"]);
+    expect(sorted(db.facts("sink"))).toEqual(["c"]);
+  });
+
+  it("matches a fresh database on the same facts", () => {
+    const incremental = new Database();
+    incremental.add("edge", ["a", "b"]);
+    evaluate(incremental, SINKS);
+    incremental.add("edge", ["b", "c"]);
+    incremental.add("edge", ["c", "a"]);
+    evaluate(incremental, SINKS);
+
+    const fresh = new Database();
+    for (const edge of [
+      ["a", "b"],
+      ["b", "c"],
+      ["c", "a"],
+    ]) {
+      fresh.add("edge", edge);
+    }
+    evaluate(fresh, SINKS);
+
+    expect(sorted(incremental.facts("sink"))).toEqual(
+      sorted(fresh.facts("sink")),
+    );
+    expect(sorted(incremental.facts("node"))).toEqual(
+      sorted(fresh.facts("node")),
+    );
+  });
+
+  it("leaves the caller's own facts alone when it takes conclusions back", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    evaluate(db, SINKS);
+
+    db.add("edge", ["b", "c"]);
+    evaluate(db, SINKS);
+
+    expect(sorted(db.facts("edge"))).toEqual(["a,b", "b,c"]);
+  });
+});
+
+describe("Database.retract", () => {
+  it("removes facts and reports how many were there", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+
+    expect(
+      db.retract("edge", [
+        ["a", "b"],
+        ["x", "y"],
+      ]),
+    ).toBe(1);
+    expect(sorted(db.facts("edge"))).toEqual(["b,c"]);
+    expect(db.has("edge", ["a", "b"])).toBe(false);
+    expect(db.retract("absent", [["a"]])).toBe(0);
+    expect(db.retract("edge", [])).toBe(0);
+  });
+
+  it("keeps lookups correct afterwards", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["a", "c"]);
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,b", "a,c"]);
+
+    db.retract("edge", [["a", "b"]]);
+
+    expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,c"]);
+  });
+
+  it("makes the next evaluate start over", () => {
+    const rules = [
+      rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),
+    ];
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+    evaluate(db, rules);
+
+    // Retracting a derived fact behind evaluation's back would stay
+    // missing if the next call resumed from the old fixpoint.
+    db.retract("path", [["a", "b"]]);
+    evaluate(db, rules);
+
+    expect(sorted(db.facts("path"))).toEqual(["a,b", "b,c"]);
+  });
+});
+
+describe("evaluate — taking conclusions back", () => {
+  const BLOCKABLE = [
+    rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
+  ];
+
+  it("drops a conclusion whose support the caller retracted", () => {
+    const db = new Database();
+    db.add("p", ["1"]);
+    db.add("p", ["2"]);
+    evaluate(db, BLOCKABLE);
+    expect(sorted(db.facts("q"))).toEqual(["1", "2"]);
+
+    db.retract("p", [["1"]]);
+    evaluate(db, BLOCKABLE);
+
+    // q(1) has nothing holding it up now.
+    expect(sorted(db.facts("q"))).toEqual(["2"]);
+  });
+
+  it("leaves alone a fact the caller asserted after it was derived", () => {
+    const db = new Database();
+    db.add("p", ["1"]);
+    evaluate(db, BLOCKABLE);
+    expect(sorted(db.facts("q"))).toEqual(["1"]);
+
+    // The caller now states q(1) themselves. Blocking p(1) afterwards
+    // takes the derivation away, but not the caller's own fact.
+    db.add("q", ["1"]);
+    db.add("blocked", ["1"]);
+    evaluate(db, BLOCKABLE);
+
+    expect(sorted(db.facts("q"))).toEqual(["1"]);
+  });
+
+  it("still owns a fact two of its own rules derived", () => {
+    // Two rules with the same head reach q(1). The second derivation
+    // reports nothing new, which must not read as the caller claiming
+    // the fact, or nothing can take it back afterwards.
+    const rules = [
+      rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
+      rule("q", [V("x")], [lit("s", V("x")), notLit("blocked", V("x"))]),
+    ];
+    const db = new Database();
+    db.add("p", ["1"]);
+    db.add("s", ["1"]);
+    evaluate(db, rules);
+    expect(sorted(db.facts("q"))).toEqual(["1"]);
+
+    db.add("blocked", ["1"]);
+    evaluate(db, rules);
+
+    expect(sorted(db.facts("q"))).toEqual([]);
+  });
+
+  it("still owns a fact a recursive rule reached twice", () => {
+    const rules = [
+      rule(
+        "reach",
+        [V("x"), V("y")],
+        [lit("edge", V("x"), V("y")), notLit("off", V("x"), V("y"))],
+      ),
+      rule(
+        "reach",
+        [V("x"), V("z")],
+        [lit("reach", V("x"), V("y")), lit("edge", V("y"), V("z"))],
+      ),
+    ];
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "a"]);
+    evaluate(db, rules);
+
+    db.add("off", ["a", "b"]);
+    evaluate(db, rules);
+
+    const fresh = new Database();
+    fresh.add("edge", ["a", "b"]);
+    fresh.add("edge", ["b", "a"]);
+    fresh.add("off", ["a", "b"]);
+    evaluate(fresh, rules);
+
+    expect(sorted(db.facts("reach"))).toEqual(sorted(fresh.facts("reach")));
+  });
+
+  it("takes back only what its own rules concluded", () => {
+    const positive = [rule("r", [V("x")], [lit("p", V("x"))])];
+    const db = new Database();
+    db.add("p", ["1"]);
+    evaluate(db, positive);
+    expect(sorted(db.facts("r"))).toEqual(["1"]);
+
+    // A negated rule set running on the same database has no business
+    // touching what the positive one worked out.
+    evaluate(db, BLOCKABLE);
+
+    expect(sorted(db.facts("r"))).toEqual(["1"]);
+    expect(sorted(db.facts("q"))).toEqual(["1"]);
+  });
+});

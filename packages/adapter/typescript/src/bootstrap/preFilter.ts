@@ -16,6 +16,7 @@
 
 import type { PatternPack } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
+import type { ResolutionStore } from "../facts/store.js";
 
 /**
  * For each source file, compute the subset of packs that have at
@@ -29,6 +30,7 @@ import type { SourceFile } from "ts-morph";
 export function computePackApplicability(
   sourceFiles: ReadonlyArray<SourceFile>,
   packs: ReadonlyArray<PatternPack>,
+  resolution?: ResolutionStore,
 ): Map<SourceFile, PatternPack[]> {
   // Pre-classify each pack as either ungated (matches every file)
   // or gated (needs an import match). Lets the per-file inner loop
@@ -52,6 +54,13 @@ export function computePackApplicability(
         .map((d) => d.getModuleSpecifierValue());
       for (const { pack, gates } of gatedPacks) {
         if (anyImportMatchesGate(importedModules, gates)) {
+          applicable.push(pack);
+          continue;
+        }
+        // The direct scan misses a project-local barrel that
+        // re-exports the gated package. The fact layer follows
+        // re-export chains, so ask it before ruling the pack out.
+        if (resolution?.importsTransitively(sf, gates) === true) {
           applicable.push(pack);
         }
       }

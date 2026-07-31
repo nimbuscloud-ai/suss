@@ -62,6 +62,7 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   const recognizerCtx = ctx as {
     sourceFile: SourceFile;
     extractArgs: () => EffectArg[];
+    isImportedFrom: (identifier: Node, expectedModule: string) => boolean;
   };
 
   // Shape gate: callee must be PropertyAccess `<receiver>.send`.
@@ -110,11 +111,7 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
     : ctorExpr;
   if (
     importCheckTarget === null ||
-    !isImportedFrom(
-      importCheckTarget,
-      "@aws-sdk/client-sqs",
-      recognizerCtx.sourceFile,
-    )
+    !recognizerCtx.isImportedFrom(importCheckTarget, "@aws-sdk/client-sqs")
   ) {
     return null;
   }
@@ -180,67 +177,6 @@ function rootIdentifier(node: Node): Node | null {
     current = current.getExpression();
   }
   return N.isIdentifier(current) ? current : null;
-}
-
-/**
- * Walk back from an identifier reference to the import declaration
- * that introduced it. Returns true when the import's module specifier
- * matches `expectedModule`.
- *
- * Handles three import shapes:
- *   - Named: `import { Foo } from "mod"` → ImportSpecifier
- *   - Default: `import Foo from "mod"` → ImportClause
- *   - Namespace: `import * as foo from "mod"` → NamespaceImport
- *
- * Type-only imports work too (the symbol's declarations still include
- * the appropriate specifier shape), though in practice recognizers
- * care about runtime references not type-only ones.
- */
-function isImportedFrom(
-  identifierExpr: Node,
-  expectedModule: string,
-  sourceFile: SourceFile,
-): boolean {
-  if (!N.isIdentifier(identifierExpr)) {
-    return false;
-  }
-  const symbol = identifierExpr.getSymbol();
-  if (symbol === undefined) {
-    return false;
-  }
-  for (const decl of symbol.getDeclarations()) {
-    if (N.isImportSpecifier(decl)) {
-      const importDecl = decl.getImportDeclaration();
-      if (importDecl.getModuleSpecifierValue() === expectedModule) {
-        return true;
-      }
-    }
-    if (N.isImportClause(decl)) {
-      const importDecl = decl.getParent();
-      if (
-        N.isImportDeclaration(importDecl) &&
-        importDecl.getModuleSpecifierValue() === expectedModule
-      ) {
-        return true;
-      }
-    }
-    if (N.isNamespaceImport(decl)) {
-      // NamespaceImport's parent is ImportClause, whose parent is
-      // ImportDeclaration. Walk up two levels.
-      const importClause = decl.getParent();
-      if (N.isImportClause(importClause)) {
-        const importDecl = importClause.getParent();
-        if (
-          N.isImportDeclaration(importDecl) &&
-          importDecl.getModuleSpecifierValue() === expectedModule
-        ) {
-          return true;
-        }
-      }
-    }
-  }
-  void sourceFile;
-  return false;
 }
 
 /**

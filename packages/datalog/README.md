@@ -52,8 +52,33 @@ has to emit the same facts.
 3. **Sound negation only.** Stratification is checked; negated literals
    must ground all variables from earlier positive literals.
 
-Joins are nested-loop over hash-deduplicated tuple sets; semi-naïve
-iteration keeps per-round work proportional to newly derived facts.
-Extraction-scale fact sets are thousands of tuples; if that changes,
-the rule data model is the stable seam and this evaluator is the
-replaceable part.
+## What it does to stay quick
+
+Semi-naïve iteration keeps per-round work proportional to newly derived
+facts rather than to everything known.
+
+Joins narrow before they scan. Once a literal has any term fixed, either
+written as a constant or bound by an earlier literal, the join looks the
+value up in a per-column index instead of walking the relation. A column
+gets indexed the first time something asks for it and stays current
+after that, so a relation nobody joins on that way carries no index.
+
+`evaluate` picks up where it left off. Call it again with the same rules
+after adding facts and it seeds from the facts you added rather than
+starting the fixpoint over. Callers that interleave "add some facts, ask
+a question" get this without doing anything. Positive rules are monotone,
+so everything derived before still holds.
+
+Negated rules work differently. A new fact can make a negated literal
+stop matching, and the conclusion that rested on it has to go. So a
+re-run with negated rules takes back what the previous pass derived and
+works the answer out again from the base facts. Both paths leave the
+database holding the answer for the facts it has now.
+
+Keep the facts you add and the facts rules derive in separate relations.
+Taking a conclusion back cannot tell one from the other, and the
+separation is how Datalog is normally written anyway.
+
+Extraction-scale fact sets are thousands of tuples. If that changes, the
+rule data model is the stable seam and this evaluator is the replaceable
+part.

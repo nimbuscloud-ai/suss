@@ -52,6 +52,52 @@ corroborate engine's input synthesis is the natural starting
 point; the emit target is "tests a human would keep," which is a
 higher bar than sampling.
 
+### Why a fact is in the database {#datalog-provenance}
+
+The engine records that evaluation derived a fact, not what
+derived it. So when a resolution comes out wrong, and `unwraps`
+over-approximates on purpose so some will, nobody can ask why
+suss believes an export is a particular function. The rules are
+readable and the fact base is not, which is the wrong way round
+for a tool whose product is explaining behaviour.
+
+Full provenance is the version that also buys incremental view
+maintenance under negation: knowing what supports a fact is what
+lets DRed or a counting algorithm retract precisely instead of
+recomputing, which is what `evaluate` does today. The cheap
+version is a debug-mode derivation trace, which answers the
+diagnostic question without carrying support for every tuple.
+
+The trigger is people running suss on code we have not seen and
+reporting a wrong resolution we cannot explain.
+
+### Goal-directed evaluation {#datalog-magic-sets}
+
+Magic sets rewrite a rule set so only facts relevant to a query
+get derived. The resolution store solves the same problem one
+layer down, by extracting facts in waves and widening only when
+an answer is still missing, which works and is measured but is
+bespoke to that one consumer.
+
+The trigger is a second consumer wanting demand-driven
+evaluation, or a fact base large enough that deriving the whole
+model for one question stops being cheap. Neither holds now: the
+reachable-closure and rethrow passes derive everything by
+design, and extraction-scale fact sets are thousands of tuples.
+
+### Two rule sets sharing one database {#datalog-shared-database}
+
+`evaluate` keeps what each rule set derived so a negated re-run
+can take its own conclusions back. A fact two rule sets both
+derive belongs to whichever got there first, so when that owner
+retracts during a negated run, the other rule set's still-valid
+conclusion disappears until it runs again.
+
+Unreachable today, since no rule set in the adapter uses
+negation and the databases shared between passes are purely
+positive. The trigger is the first negated rule set that shares
+a database with another.
+
 ## Dogfooding extensions
 
 Primary dogfooding arc shipped (see

@@ -13,7 +13,10 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { toFunctionRoot } from "./discovery/shared.js";
+
 import type { FunctionRoot } from "./conditions.js";
+import type { ResolutionStore } from "./facts/store.js";
 
 export interface TsDiscoveryContext {
   /** Full filesystem path of the source file. Useful for excluding
@@ -49,10 +52,13 @@ export interface TsDiscoveryContext {
   hasJsxReturn(func: FunctionRoot): boolean;
 }
 
-export function createTsDiscoveryContext(): TsDiscoveryContext {
+export function createTsDiscoveryContext(
+  resolution?: ResolutionStore,
+): TsDiscoveryContext {
   return {
     getFilePath,
-    exportedFunctions,
+    exportedFunctions: (sourceFile) =>
+      exportedFunctions(sourceFile, resolution),
     hasJsxReturn,
   };
 }
@@ -63,6 +69,7 @@ function getFilePath(sourceFile: SourceFile): string {
 
 function exportedFunctions(
   sourceFile: SourceFile,
+  resolution?: ResolutionStore,
 ): Array<{ name: string; func: FunctionRoot; isDefault: boolean }> {
   const out: Array<{ name: string; func: FunctionRoot; isDefault: boolean }> =
     [];
@@ -73,7 +80,19 @@ function exportedFunctions(
       continue;
     }
     for (const decl of declarations) {
-      const fn = resolveDeclarationToFunction(decl);
+      let fn = resolveDeclarationToFunction(decl);
+      if (fn === null && resolution !== undefined) {
+        // The export is a wrapper call, an alias, or a .bind rather
+        // than a function. The fact layer follows those to the
+        // function they resolve to.
+        const value = Node.isVariableDeclaration(decl)
+          ? (decl.getInitializer() ?? decl)
+          : decl;
+        if (couldResolveToFunction(value)) {
+          const resolved = resolution.resolveCallable(value);
+          fn = resolved === null ? null : toFunctionRoot(resolved);
+        }
+      }
       if (fn === null) {
         continue;
       }
@@ -83,6 +102,23 @@ function exportedFunctions(
     }
   }
   return out;
+}
+
+/**
+ * Whether a value is shaped like something that could name a function.
+ * Most exports are object literals, string constants, or schemas, and
+ * asking the fact layer about those pulls in their import closure for
+ * an answer that is always null.
+ */
+function couldResolveToFunction(value: Node): boolean {
+  return (
+    Node.isCallExpression(value) ||
+    Node.isIdentifier(value) ||
+    Node.isPropertyAccessExpression(value) ||
+    Node.isExportSpecifier(value) ||
+    Node.isImportSpecifier(value) ||
+    Node.isImportClause(value)
+  );
 }
 
 function resolveDeclarationToFunction(decl: Node): FunctionRoot | null {

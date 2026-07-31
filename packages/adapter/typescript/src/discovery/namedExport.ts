@@ -15,6 +15,7 @@ import { type DiscoveredUnit, toFunctionRoot } from "./shared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
+import type { ResolutionStore } from "../facts/store.js";
 
 /**
  * Name a code unit discovered via `export default`. Prefers the
@@ -52,6 +53,7 @@ export function discoverNamedExports(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "namedExport" }>,
   kind: string,
+  resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
   const names = new Set(match.names);
@@ -98,6 +100,18 @@ export function discoverNamedExports(
         kind,
         name,
       });
+      continue;
+    }
+
+    // The export is a wrapper call, an imported name, or a .bind, so
+    // ask the fact layer which function it comes down to. The unit is
+    // still this export; only the body being read lives elsewhere.
+    if (resolution !== undefined) {
+      const resolved = resolution.resolveCallable(init);
+      const fn = resolved === null ? null : toFunctionRoot(resolved);
+      if (fn !== null) {
+        results.push({ func: fn, kind, name });
+      }
     }
   }
 

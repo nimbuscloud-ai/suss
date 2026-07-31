@@ -660,6 +660,24 @@ export interface ResponsePropertyMapping {
 // PatternPack
 // =============================================================================
 
+/**
+ * A library wrapper whose result is the function it was handed. The
+ * adapter works this out on its own for factories declared in the
+ * project by reading their bodies. A library's body is not readable,
+ * so the pack states it.
+ */
+export interface TransparentWrapper {
+  /** Callee text as written, e.g. "Sentry.wrapHandler". */
+  callee: string;
+  /** Which argument holds the wrapped function. */
+  argument: number;
+  /**
+   * The module the callee has to have been imported from. Without it a
+   * local object spelled the same way would be taken for the library.
+   */
+  module: string;
+}
+
 export interface PatternPack {
   name: string;
   /**
@@ -836,6 +854,17 @@ export interface PatternPack {
    * available without an import).
    */
   requiresImport?: string[];
+  /**
+   * Library wrappers whose result is the wrapped function. The adapter
+   * derives this automatically for project-local factories by reading
+   * their bodies; a library wrapper's body is not readable, so the
+   * pack states the judgment: a call to `callee` resolves to its
+   * `argument`-th argument.
+   *
+   * `callee` matches the call expression text as written, e.g.
+   * `"Sentry.wrapHandler"`.
+   */
+  transparentWrappers?: TransparentWrapper[];
   /**
    * Per-property-access recognizers — sister to
    * `invocationRecognizers` but firing on `PropertyAccessExpression`

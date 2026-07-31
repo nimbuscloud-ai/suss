@@ -96,6 +96,7 @@ function eventBridgeRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   const recognizerCtx = ctx as {
     sourceFile: SourceFile;
     extractArgs: () => EffectArg[];
+    isImportedFrom: (identifier: Node, expectedModule: string) => boolean;
   };
 
   // Shape gate: callee must be PropertyAccess `<receiver>.send`.
@@ -137,10 +138,9 @@ function eventBridgeRecognizer(call: unknown, ctx: unknown): Effect[] | null {
     : ctorExpr;
   if (
     importCheckTarget === null ||
-    !isImportedFrom(
+    !recognizerCtx.isImportedFrom(
       importCheckTarget,
       "@aws-sdk/client-eventbridge",
-      recognizerCtx.sourceFile,
     )
   ) {
     return null;
@@ -315,57 +315,6 @@ function rootIdentifier(node: Node): Node | null {
     current = current.getExpression();
   }
   return N.isIdentifier(current) ? current : null;
-}
-
-/**
- * Walk back from an identifier reference to the import declaration that
- * introduced it. Returns true when the import's module specifier matches
- * `expectedModule`. Handles named, default, and namespace import shapes.
- */
-function isImportedFrom(
-  identifierExpr: Node,
-  expectedModule: string,
-  sourceFile: SourceFile,
-): boolean {
-  if (!N.isIdentifier(identifierExpr)) {
-    return false;
-  }
-  const symbol = identifierExpr.getSymbol();
-  if (symbol === undefined) {
-    return false;
-  }
-  for (const decl of symbol.getDeclarations()) {
-    if (N.isImportSpecifier(decl)) {
-      const importDecl = decl.getImportDeclaration();
-      if (importDecl.getModuleSpecifierValue() === expectedModule) {
-        return true;
-      }
-    }
-    if (N.isImportClause(decl)) {
-      const importDecl = decl.getParent();
-      if (
-        N.isImportDeclaration(importDecl) &&
-        importDecl.getModuleSpecifierValue() === expectedModule
-      ) {
-        return true;
-      }
-    }
-    if (N.isNamespaceImport(decl)) {
-      // NamespaceImport → ImportClause → ImportDeclaration. Walk up two.
-      const importClause = decl.getParent();
-      if (N.isImportClause(importClause)) {
-        const importDecl = importClause.getParent();
-        if (
-          N.isImportDeclaration(importDecl) &&
-          importDecl.getModuleSpecifierValue() === expectedModule
-        ) {
-          return true;
-        }
-      }
-    }
-  }
-  void sourceFile;
-  return false;
 }
 
 /**

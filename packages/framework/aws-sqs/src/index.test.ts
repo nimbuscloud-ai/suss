@@ -7,6 +7,8 @@ import {
 } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { isImportedFrom } from "@suss/adapter-typescript";
+
 import { sqsFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -90,6 +92,7 @@ function recognizeAll(sourceFile: SourceFile): Effect[] {
       call: node as CallExpression,
       sourceFile,
       extractArgs: (): EffectArg[] => extractArgsForTest(node),
+      isImportedFrom,
     };
     for (const recognizer of recognizers) {
       const emitted = recognizer(node, ctx);
@@ -156,6 +159,53 @@ function messageSendEffectsOf(
       e.type === "interaction" && e.interaction.class === "message-send",
   );
 }
+
+describe("sqs recognizer, through a project-local barrel", () => {
+  it("recognizes a send whose import goes through a re-export barrel", () => {
+    const project = new Project({
+      compilerOptions: {
+        target: ScriptTarget.ES2022,
+        strict: true,
+        moduleResolution: 100,
+      },
+      useInMemoryFileSystem: true,
+    });
+    project.createSourceFile(
+      "node_modules/@aws-sdk/client-sqs/index.d.ts",
+      `
+export class SQSClient {
+  constructor(config?: unknown);
+  send(command: unknown): Promise<unknown>;
+}
+export class SendMessageCommand {
+  constructor(input: { QueueUrl?: string; MessageBody?: string });
+}
+`,
+    );
+    // The barrel: an internal package re-exporting the SDK, which is
+    // how shared aws helpers are packaged in production monorepos.
+    project.createSourceFile(
+      "aws/sqs.ts",
+      `export { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";`,
+    );
+    const file = project.createSourceFile(
+      "producer.ts",
+      `
+      import { SQSClient, SendMessageCommand } from "./aws/sqs";
+      const client = new SQSClient({});
+      async function enqueue(order: { id: string }) {
+        await client.send(new SendMessageCommand({
+          QueueUrl: process.env.ORDERS_QUEUE_URL,
+          MessageBody: JSON.stringify(order),
+        }));
+      }
+    `,
+    );
+
+    const sends = messageSendEffectsOf(recognizeAll(file));
+    expect(sends).toHaveLength(1);
+  });
+});
 
 describe("sqs recognizer — happy path", () => {
   it("emits one message-send interaction for client.send(new SendMessageCommand({...}))", () => {
