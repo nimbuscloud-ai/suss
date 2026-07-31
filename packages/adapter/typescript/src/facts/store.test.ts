@@ -11,7 +11,9 @@ import { ResolutionStore } from "./store.js";
 function projectOf(files: Record<string, string>): Project {
   const project = new Project({
     useInMemoryFileSystem: true,
-    compilerOptions: { allowJs: true },
+    // moduleResolution node so a fixture can put a package under
+    // node_modules and have imports of it actually resolve there.
+    compilerOptions: { allowJs: true, moduleResolution: 100 },
   });
   for (const [path, contents] of Object.entries(files)) {
     project.createSourceFile(path, contents);
@@ -250,6 +252,17 @@ describe("resolveCallable", () => {
 
   it("takes a declared wrapper re-exported through a project barrel", () => {
     const project = projectOf({
+      // The package has to be on disk for this to mean anything: the
+      // barrel forwards the symbol, and the only thing that can say
+      // where it came from is where it turns out to live.
+      "/node_modules/@sentry/aws-serverless/package.json": JSON.stringify({
+        name: "@sentry/aws-serverless",
+        version: "1.0.0",
+        types: "index.d.ts",
+      }),
+      "/node_modules/@sentry/aws-serverless/index.d.ts": `
+        export function wrapHandler<T>(handler: T): T;
+      `,
       "/sentry.ts": `export * from "@sentry/aws-serverless";`,
       "/mod.ts": `
         import * as Sentry from "./sentry";
@@ -287,6 +300,43 @@ describe("resolveCallable", () => {
     expect(
       resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
     ).toContain("import equals");
+  });
+
+  it("ignores a local function a barrel re-exports beside the library", () => {
+    const project = projectOf({
+      "/node_modules/@sentry/aws-serverless/package.json": JSON.stringify({
+        name: "@sentry/aws-serverless",
+        version: "1.0.0",
+        types: "index.d.ts",
+      }),
+      "/node_modules/@sentry/aws-serverless/index.d.ts": `
+        export function somethingElse<T>(handler: T): T;
+      `,
+      "/local.ts": `
+        export const wrapHandler = (fn: unknown) => async () => "local";
+      `,
+      "/barrel.ts": `
+        export * from "@sentry/aws-serverless";
+        export * from "./local";
+      `,
+      "/mod.ts": `
+        import { wrapHandler } from "./barrel";
+        export const handler = wrapHandler(async () => "inner");
+      `,
+    });
+    const store = new ResolutionStore([
+      {
+        callee: "wrapHandler",
+        argument: 0,
+        module: "@sentry/aws-serverless",
+      },
+    ]);
+
+    // The barrel forwards the library too, but this wrapHandler is the
+    // local one, and the local one is not transparent.
+    expect(
+      store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
+    ).toBeNull();
   });
 
   it("follows .bind to the bound method", () => {

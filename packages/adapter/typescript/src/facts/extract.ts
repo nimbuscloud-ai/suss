@@ -67,7 +67,7 @@ function moduleKeyOf(
  * specifier verbatim is not enough: the same package arrives as a
  * subpath (`pkg/esm`), through a barrel in the project that re-exports
  * it, or through `import x = require(...)`. So the specifier, the
- * package part of it, and the package the symbol was really declared in
+ * package part of it, and the package the symbol turns out to live in
  * all count.
  */
 function importOriginsOf(callee: Node): string[] {
@@ -84,26 +84,45 @@ function importOriginsOf(callee: Node): string[] {
   }
 
   const origins = new Set<string>();
+  let imported = false;
   for (const declaration of symbol.getDeclarations()) {
     const specifier = importSpecifierOf(declaration);
     if (specifier === null) {
       continue;
     }
-    origins.add(specifier);
-    origins.add(packagePartOf(specifier));
-    for (const forwarded of packagesForwardedBy(declaration, specifier)) {
-      origins.add(forwarded);
+    imported = true;
+    // A relative specifier names a file, not a package, so only the
+    // package the symbol turns out to live in can speak for it.
+    if (!specifier.startsWith(".")) {
+      origins.add(specifier);
+      origins.add(packagePartOf(specifier));
     }
   }
+  if (!imported) {
+    // Not imported at all, so nothing can vouch for where it came from.
+    // Skipping here also keeps globals out: every JSON.parse would
+    // otherwise report the package holding TypeScript's lib files.
+    return [];
+  }
 
-  // Where the symbol actually came from, which is what a barrel or a
-  // subpath hides. The aliased symbol sits in the package that
-  // declared it.
-  const aliased = symbol.getAliasedSymbol() ?? symbol;
-  for (const declaration of aliased.getDeclarations()) {
-    const owner = declaringPackageOf(declaration.getSourceFile().getFilePath());
-    if (owner !== null) {
-      origins.add(owner);
+  // Where the callee turns out to live, which is what a barrel or a
+  // subpath hides. For `Sentry.wrapHandler` the question is about
+  // wrapHandler, not about Sentry: a namespace import of a barrel
+  // resolves to the barrel, while the member resolves into the package
+  // that declared it. Asking about the member is what keeps everything
+  // else the barrel re-exports out of the answer.
+  const named = Node.isPropertyAccessExpression(callee)
+    ? callee.getNameNode().getSymbol()
+    : undefined;
+  for (const candidate of [named ?? symbol, symbol]) {
+    const aliased = candidate.getAliasedSymbol() ?? candidate;
+    for (const declaration of aliased.getDeclarations()) {
+      const owner = declaringPackageOf(
+        declaration.getSourceFile().getFilePath(),
+      );
+      if (owner !== null) {
+        origins.add(owner);
+      }
     }
   }
   return [...origins];
@@ -131,74 +150,6 @@ function importSpecifierOf(declaration: Node): string | null {
   }
   return null;
 }
-
-/**
- * When the specifier points at a file in the project, the packages
- * that file passes along. A barrel that re-exports a library is how
- * the library reaches the call site, so it counts as its origin.
- */
-function packagesForwardedBy(
-  declaration: Node,
-  specifier: string,
-  depth = 0,
-): string[] {
-  if (depth >= MAX_FORWARDING_HOPS || !specifier.startsWith(".")) {
-    return [];
-  }
-  const importDecl = declaration.getFirstAncestor(
-    (a) => Node.isImportDeclaration(a) || Node.isImportEqualsDeclaration(a),
-  );
-  const barrel =
-    importDecl !== undefined && Node.isImportDeclaration(importDecl)
-      ? importDecl.getModuleSpecifierSourceFile()
-      : undefined;
-  if (barrel === undefined) {
-    return [];
-  }
-
-  const forwarded: string[] = [];
-  for (const exportDecl of barrel.getExportDeclarations()) {
-    const onward = exportDecl.getModuleSpecifierValue();
-    if (onward === undefined) {
-      continue;
-    }
-    if (onward.startsWith(".")) {
-      const nested = exportDecl.getModuleSpecifierSourceFile();
-      if (nested !== undefined) {
-        forwarded.push(...packagesForwardedByFile(nested, depth + 1));
-      }
-      continue;
-    }
-    forwarded.push(onward, packagePartOf(onward));
-  }
-  return forwarded;
-}
-
-/** The same question asked of a file rather than an import. */
-function packagesForwardedByFile(barrel: SourceFile, depth: number): string[] {
-  if (depth >= MAX_FORWARDING_HOPS) {
-    return [];
-  }
-  const forwarded: string[] = [];
-  for (const exportDecl of barrel.getExportDeclarations()) {
-    const onward = exportDecl.getModuleSpecifierValue();
-    if (onward === undefined) {
-      continue;
-    }
-    if (onward.startsWith(".")) {
-      const nested = exportDecl.getModuleSpecifierSourceFile();
-      if (nested !== undefined) {
-        forwarded.push(...packagesForwardedByFile(nested, depth + 1));
-      }
-      continue;
-    }
-    forwarded.push(onward, packagePartOf(onward));
-  }
-  return forwarded;
-}
-
-/** Barrels of barrels happen; barrels six deep do not. */
-const MAX_FORWARDING_HOPS = 4;
 
 /** "@scope/pkg/sub" and "pkg/sub" both name their package. */
 function packagePartOf(specifier: string): string {

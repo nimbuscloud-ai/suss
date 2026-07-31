@@ -131,7 +131,7 @@ export class Database {
       // takes ownership of it, so taking conclusions back later must
       // not take this one. Evaluation reaching the same fact by a
       // second derivation is a different thing and changes nothing.
-      if (!deriving.has(this)) {
+      if (!isDeriving(this)) {
         claimFact(this, relationName, key);
       }
       return false;
@@ -448,10 +448,20 @@ interface RuleSetState {
 const evaluated = new WeakMap<Database, Map<string, RuleSetState>>();
 
 /**
- * Databases part-way through evaluate(). A repeat add from a rule is
- * a second derivation of the same fact, not the caller claiming it.
+ * How many evaluate() calls a database is part-way through. A repeat
+ * add from a rule is a second derivation of the same fact, not the
+ * caller claiming it.
+ *
+ * A count rather than a flag: rules are data and evaluate() calls no
+ * caller code, so a nested run is unreachable today, but if one ever
+ * appeared a flag would be cleared by the inner call and leave the
+ * outer one treating its own derivations as caller facts.
  */
-const deriving = new WeakSet<Database>();
+const deriving = new Map<Database, number>();
+
+function isDeriving(db: Database): boolean {
+  return (deriving.get(db) ?? 0) > 0;
+}
 
 function statesFor(db: Database): Map<string, RuleSetState> {
   let states = evaluated.get(db);
@@ -541,11 +551,16 @@ function currentMarks(db: Database): Map<string, number> {
  * proportional to new facts, not all facts.
  */
 export function evaluate(db: Database, rules: Rule[]): Database {
-  deriving.add(db);
+  deriving.set(db, (deriving.get(db) ?? 0) + 1);
   try {
     return runRules(db, rules);
   } finally {
-    deriving.delete(db);
+    const depth = (deriving.get(db) ?? 1) - 1;
+    if (depth === 0) {
+      deriving.delete(db);
+    } else {
+      deriving.set(db, depth);
+    }
   }
 }
 
