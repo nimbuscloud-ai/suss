@@ -40,6 +40,37 @@ frequently do `registerEndpoints(config)` where `config` is built
 programmatically. Need a pattern for "this factory call spawns N
 routes according to its argument."
 
+### A route somebody else's code serves {#library-served-routes}
+
+NextAuth's route file is `export { GET, POST } from "@/auth"`,
+where those names come from destructuring what the library
+returned. The route exists and answers requests, and no function
+in the project implements it, so suss reports nothing for it.
+
+A reader looking at the summaries sees a hole where a route
+should be and cannot tell whether discovery missed it or nothing
+is there. What is missing is a way to say "this boundary exists
+and a library we cannot read serves it", which is a different
+statement from both silence and a behaviour description.
+
+The same shape shows up wherever a library hands back a handler:
+tRPC's adapter export, an OpenAPI router mounted from generated
+code.
+
+### A response type a library defines {#library-response-types}
+
+A Next.js handler that ends in `new ImageResponse(...)` from
+`next/og`, or `new StreamingTextResponse(stream)` from `ai`,
+matches no terminal the framework pack describes. The unread
+return is reported, which is the correct floor, and the handler
+still says nothing about what it produces.
+
+Both are Response subclasses, so the shape is knowable. The
+question is who declares it: a per-library pack, a rule that a
+constructed subclass of Response is a response, or letting a
+library ship its own summaries the way the package-exports work
+points at.
+
 ### `suss emit --format fast-check` (summaries as generated tests)
 
 A summary already carries what a property test needs: the
