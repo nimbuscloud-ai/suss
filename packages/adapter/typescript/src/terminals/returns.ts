@@ -18,6 +18,7 @@ import {
   extractStatusCode,
 } from "./extract.js";
 import { resolveHelperReturn } from "./helperResolution.js";
+import { returnPositionOf } from "./shared.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -100,44 +101,6 @@ function unwrapMethodChain(
 }
 
 /**
- * Check if an ObjectLiteralExpression is in a position that makes it a return
- * value — direct return, arrow expression body, or branch of a ternary that
- * itself is returned.
- */
-/**
- * The return a value sits in, or null when it does not sit in one. A
- * concise arrow answers with its body, since that is what it returns.
- */
-function returnPositionOf(ole: Node): Node | null {
-  let current: Node | undefined = ole.getParent();
-  // Direct child of ReturnStatement is already handled by the ReturnStatement
-  // case in tryMatchReturnShape — skip to avoid duplicate terminals.
-  if (current !== undefined && Node.isReturnStatement(current)) {
-    return null;
-  }
-  while (current !== undefined) {
-    if (Node.isReturnStatement(current)) {
-      return current;
-    }
-    if (Node.isArrowFunction(current)) {
-      // Only match expression bodies, not OLEs inside a block body
-      const body = current.getBody();
-      return body !== undefined && !Node.isBlock(body) ? body : null;
-    }
-    // Walk through ternary branches and parens
-    if (
-      Node.isParenthesizedExpression(current) ||
-      Node.isConditionalExpression(current)
-    ) {
-      current = current.getParent();
-      continue;
-    }
-    return null;
-  }
-  return null;
-}
-
-/**
  * Match a returned object against a `returnShape` pattern.
  *
  * Returns a list because a return can produce more than one outcome. A
@@ -151,6 +114,12 @@ export function tryMatchReturnShape(
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
 ): FoundTerminal[] {
   if (Node.isObjectLiteralExpression(node)) {
+    // A direct child of a return statement is handled by the
+    // ReturnStatement case below, and matching here as well would
+    // report the same return twice.
+    if (Node.isReturnStatement(node.getParent())) {
+      return [];
+    }
     const source = returnPositionOf(node);
     if (source === null) {
       return [];
@@ -308,6 +277,10 @@ export function tryMatchParameterMethodCall(
 
   const { calls } = result;
 
+  // `res.json(body)` writes to the response and often stands alone as a
+  // statement, so it only claims a return when it sits in one.
+  const source = returnPositionOf(node);
+
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
     calls,
@@ -331,7 +304,7 @@ export function tryMatchParameterMethodCall(
     },
   };
 
-  return { node, terminal };
+  return { node, ...(source !== null ? { source } : {}), terminal };
 }
 
 /**
@@ -478,7 +451,10 @@ function buildReturnTerminal(
       end: locationNode.getEndLineNumber(),
     },
   };
-  return { node: locationNode, terminal };
+  // The caller passes either the return statement or the body of a
+  // concise arrow, so the node this terminal sits on is also the return
+  // it came from.
+  return { node: locationNode, source: locationNode, terminal };
 }
 
 /**
@@ -598,5 +574,8 @@ export function tryMatchFunctionCall(
     },
   };
 
-  return { node, terminal };
+  // `json(...)` builds a response, and a handler nearly always returns
+  // the call, but it can be assigned first and returned later.
+  const source = returnPositionOf(node);
+  return { node, ...(source !== null ? { source } : {}), terminal };
 }

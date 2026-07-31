@@ -20,16 +20,21 @@ export function tryMatchJsxReturn(
 ): FoundTerminal | null {
   // Normal `return <X />` — returns JSX from a block-body function.
   // Expression-body arrow `() => <X />` — the body expression IS JSX.
+  // Either shape returns the JSX, so the source is the return statement
+  // itself or, for an arrow written without one, its body.
   let expr: Node | undefined;
+  let source: Node | undefined;
   if (Node.isReturnStatement(node)) {
     expr = node.getExpression();
+    source = node;
   } else if (Node.isArrowFunction(node)) {
     const body = node.getBody();
     if (body !== undefined && !Node.isBlock(body)) {
       expr = body;
+      source = body;
     }
   }
-  if (expr === undefined) {
+  if (expr === undefined || source === undefined) {
     return null;
   }
   const tree = jsxToRenderNode(expr);
@@ -58,7 +63,7 @@ export function tryMatchJsxReturn(
     },
   };
 
-  return { node, terminal };
+  return { node, source, terminal };
 }
 
 /**

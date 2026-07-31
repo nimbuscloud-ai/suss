@@ -1,7 +1,8 @@
 // shared.ts — types shared between every terminal matcher.
 
+import { Node } from "ts-morph";
+
 import type { RawTerminal } from "@suss/extractor";
-import type { Node } from "ts-morph";
 
 export interface FoundTerminal {
   node: Node;
@@ -16,4 +17,49 @@ export interface FoundTerminal {
    * Anything downstream that guessed instead got it wrong.
    */
   source?: Node;
+}
+
+/**
+ * The return a value leaves through, or null when the value does not
+ * leave the function. A concise arrow answers with its body, since that
+ * is what it returns without writing `return`.
+ *
+ * The walk passes through everything that carries a value along without
+ * changing where it goes: parentheses, casts, an await, either branch of
+ * a ternary. It stops at anything else, so a value assigned to a
+ * variable or passed to a call is not in return position.
+ */
+export function returnPositionOf(value: Node): Node | null {
+  let current: Node = value;
+  while (true) {
+    const parent: Node | undefined = current.getParent();
+    if (parent === undefined) {
+      return null;
+    }
+    if (Node.isReturnStatement(parent)) {
+      return parent;
+    }
+    if (Node.isArrowFunction(parent)) {
+      return parent.getBody() === current ? current : null;
+    }
+    if (
+      Node.isParenthesizedExpression(parent) ||
+      Node.isAwaitExpression(parent) ||
+      Node.isAsExpression(parent) ||
+      Node.isNonNullExpression(parent) ||
+      Node.isSatisfiesExpression(parent)
+    ) {
+      current = parent;
+      continue;
+    }
+    // Only the branches of a ternary are returned; its condition is not.
+    if (
+      Node.isConditionalExpression(parent) &&
+      (parent.getWhenTrue() === current || parent.getWhenFalse() === current)
+    ) {
+      current = parent;
+      continue;
+    }
+    return null;
+  }
 }
