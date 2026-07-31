@@ -1,15 +1,13 @@
 # Facts and Rules
 
-How extraction's whole-program analyses are structured, for anyone adding or changing one. The short version: passes that used to be hand-written worklist loops are now Datalog rules over a shared fact database, and a strict three-layer boundary keeps them auditable.
+How extraction's whole-program analyses are structured, for anyone adding or changing one. The short version: they are Datalog rules over a shared fact database, and a strict three-layer boundary keeps them auditable.
 
-## Why rules instead of loops
+## Why rules
 
-Every whole-program analysis in extraction is the same shape underneath: start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability, re-throw resolution, and effect propagation are all that shape. Hand-written, each one re-proves termination and correctness on its own, and each bug hides inside its own loop.
-
-Written as rules, the shape is stated once:
+Every whole-program analysis in extraction is the same shape underneath: start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability, re-throw resolution, and effect propagation are all that shape. Rules state it once, and four properties come with that:
 
 - **Termination is the engine's property.** The evaluator (`@suss/datalog`) runs semi-naive fixpoint iteration. Every analysis written in it terminates by construction, because the fact universe is finite and rules only add.
-- **Negation can't silently lie.** Rules are stratified before evaluation. A cycle through negation is a hard error at evaluation time instead of a wrong answer at read time.
+- **Negation is sound.** Rules are stratified before evaluation, and a cycle through negation is a hard error at evaluation time.
 - **The logic is data.** A rule is a plain object you can print, test, and review in isolation. The audit surface is the facts a pass emits and the rules it runs.
 - **The analyses become language-independent.** A rule joins fact shapes (`calls`, `entry`, `unitEffect`, and so on), never AST nodes. A second language adapter that emits the same facts gets every analysis for free. This is the concrete mechanism behind "the IR is the product": the facts are a second, lower-level IR.
 
@@ -47,6 +45,99 @@ rule(
 ```
 
 Read it as: `reachable(callee) :- reachable(caller), calls(caller, callee).`
+
+## Worked derivations
+
+The production rule sets are small enough to trace by hand. Three walks, each on the facts a real extraction emits.
+
+### Reachability, round by round
+
+Take a handler that calls an orchestrator, which calls two helpers:
+
+```
+entry(handler)
+calls(handler, orchestrate)
+calls(orchestrate, validate)
+calls(orchestrate, persist)
+```
+
+The closure rules:
+
+```
+reachable(f) :- entry(f).
+reachable(g) :- reachable(f), calls(f, g).
+```
+
+Evaluation is semi-naive: the seed round applies every rule to the whole database, and each later round joins only against the facts that were new in the round before, so work is proportional to what changed.
+
+| Round | New facts | How |
+|---|---|---|
+| seed | `reachable(handler)` | rule 1 matches `entry(handler)` |
+| 1 | `reachable(orchestrate)` | rule 2 joins new `reachable(handler)` with `calls(handler, orchestrate)` |
+| 2 | `reachable(validate)`, `reachable(persist)` | rule 2 joins new `reachable(orchestrate)` with its two `calls` edges |
+| 3 | none | the round-2 facts have no outgoing `calls` edges, so the fixpoint is reached |
+
+The pass is demand-driven on top of this: after each evaluation it scans the newly reachable units for call edges, emits the `calls` facts, and evaluates again, so round 2 only happens after `orchestrate`'s body has actually been read.
+
+### Boundary effects: an effect two hops down
+
+Same call graph, plus one effect fact emitted from `persist`'s transitions:
+
+```
+unitEffect(persist, invocation, audit.log)
+```
+
+The effect rules track reachability per entry point, then join effects in:
+
+```
+reachFrom(e, e)            :- entry(e).
+reachFrom(e, v)            :- reachFrom(e, u), calls(u, v).
+boundaryEffect(e, k, t)    :- reachFrom(e, u), unitEffect(u, k, t).
+```
+
+| Round | New facts | How |
+|---|---|---|
+| seed | `reachFrom(handler, handler)` | rule 1 |
+| 1 | `reachFrom(handler, orchestrate)` | rule 2 walks one `calls` edge |
+| 2 | `reachFrom(handler, validate)`, `reachFrom(handler, persist)` | rule 2 again |
+| 3 | `boundaryEffect(handler, invocation, audit.log)` | rule 3 joins `reachFrom(handler, persist)` with the `unitEffect` fact |
+
+Assembly then stamps `metadata.effectsClosure: [{ kind: "invocation", target: "audit.log", transitive: true }]` on the handler's summary. The `transitive` flag comes from a plain-code check after evaluation: the effect's unit key differs from the entry's, so the effect lives on a callee.
+
+### Re-throw contribution: a chain of catches
+
+Handler `A` calls `B` inside a try block and re-throws from its catch; `B` does the same around a call to `C`; `C` throws `new NotFoundError("missing pet")`. The pass emits:
+
+```
+throwsDirect(C, "missing pet")
+rethrowSite(B, siteB)   siteCalls(siteB, C)
+rethrowSite(A, siteA)   siteCalls(siteA, B)
+```
+
+The rules:
+
+```
+contributes(u, s) :- throwsDirect(u, s).
+contributes(u, s) :- rethrowSite(u, site), siteCalls(site, c), contributes(c, s).
+```
+
+| Round | New facts | How |
+|---|---|---|
+| seed | `contributes(C, "missing pet")` | rule 1 |
+| 1 | `contributes(B, "missing pet")` | rule 2: `siteB` calls `C`, and `C` contributes the message |
+| 2 | `contributes(A, "missing pet")` | rule 2 again, one level up |
+
+The chain resolves bottom-up in as many rounds as it is deep, and `A`'s re-throw transition ends up carrying the literal message thrown three frames away. The `siteCalls` relation scopes each hop to one rethrow site's try block, so a call `A` makes outside that try contributes nothing.
+
+### Negation, when it arrives
+
+No production rule uses negation yet, but the engine supports it and the shape is worth knowing. A hypothetical "handlers with no test coverage" analysis:
+
+```
+untested(u) :- entry(u), not covered(u).
+```
+
+Two requirements apply. The variable `u` must be bound by a positive literal (`entry`) before the negated one, so the rule asks a closed question about known units. And the rule set must stratify: `covered` must be fully derivable before any rule reads its absence, which the evaluator enforces by evaluating strata in order and rejecting rule sets where negation forms a cycle.
 
 ## The shared fact store
 

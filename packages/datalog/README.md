@@ -9,11 +9,8 @@ Extraction keeps meeting problems that are naturally *fixpoints*: which
 functions are reachable from an entry point, what a bare `throw err`
 re-throw can actually raise (the union of what everything in the `try`
 block throws, transitively), how a wrapper-of-a-wrapper resolves to its
-underlying route. Hand-written worklists solve each one locally, and
-each grows its own traversal, cache, and termination argument.
-
-Expressed as rules over base facts, each analysis is a few auditable
-lines:
+underlying route. Expressed as rules over base facts, each analysis is
+a few auditable lines:
 
 ```ts
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
@@ -37,8 +34,8 @@ db.facts("reachable"); // [["main"], ["helper"], ["util"]]
 
 Termination and soundness are the engine's job, proven once. Negation
 (`notLit`) is *stratified*: a rule set with a negation cycle is a hard
-error at evaluation time, never a silently wrong answer, the property
-that makes rules safe to audit independently of any engine.
+error at evaluation time, the property that makes rules safe to audit
+independently of any engine.
 
 Because rules are plain data (no DSL strings, no embedded code), the
 same rule set can later run on a faster external engine, and (the
