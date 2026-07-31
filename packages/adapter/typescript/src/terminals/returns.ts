@@ -185,7 +185,13 @@ export function tryMatchReturnShape(
     return [];
   }
   if (resolved.kind === "unreadable") {
-    return [{ node, terminal: unresolvedTerminal(pattern.kind, returned) }];
+    return [
+      {
+        node,
+        source: node,
+        terminal: unresolvedTerminal(pattern.kind, returned),
+      },
+    ];
   }
 
   const terminals: FoundTerminal[] = [];
@@ -257,6 +263,10 @@ function terminalFromReturnedObject(
 
   return {
     node: anchor,
+    // The anchor is the caller own return when a helper built the
+    // value, so it answers for provenance too. A value reached some
+    // other way leaves this unset and its caller supplies it.
+    ...(Node.isReturnStatement(anchor) ? { source: anchor } : {}),
     terminal: {
       kind: pattern.kind,
       statusCode,
