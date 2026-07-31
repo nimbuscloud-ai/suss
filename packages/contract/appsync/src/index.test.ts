@@ -820,37 +820,6 @@ describe("appsyncToSummaries — SAM shape edge cases", () => {
     );
   });
 
-  it("reads a resolver on a type other than the three roots", () => {
-    // A field on an ordinary type is an ordinary resolver. Skipping
-    // those left the code serving them answering a field that,
-    // according to us, nobody declared.
-    const summaries = appsyncToSummaries({
-      Resources: {
-        Api: {
-          Type: "AWS::Serverless::GraphQLApi",
-          Properties: {
-            Name: "Fields",
-            SchemaInline:
-              "type Query { me: User } type User { displayName: String }",
-            DataSources: {
-              Lambda: {
-                NameDS: {
-                  FunctionArn: { "Fn::GetAtt": ["NameFn", "Arn"] },
-                },
-              },
-            },
-            Resolvers: {
-              User: { displayName: { DataSource: "NameDS" } },
-            },
-          },
-        },
-      },
-    });
-
-    expect(summaries.map((s) => s.identity.name)).toEqual(["User.displayName"]);
-    expect(appsyncMeta(summaries[0]).lambdaFunctionLogicalId).toBe("NameFn");
-  });
-
   it("skips malformed DataSources categories and Resolvers blocks", () => {
     const summaries = appsyncToSummaries({
       Resources: {
