@@ -5,6 +5,7 @@
 import { discoverClientCalls } from "./clientCall.js";
 import { discoverDecoratedMethods } from "./decoratedMethod.js";
 import { discoverDecoratedRoutes } from "./decoratedRoute.js";
+import { discoverFileConventions } from "./fileConvention.js";
 import { discoverGraphqlHookCalls } from "./graphqlHookCall.js";
 import { discoverGraphqlImperativeCalls } from "./graphqlImperativeCall.js";
 import { discoverNamedExports } from "./namedExport.js";
@@ -85,8 +86,14 @@ function runPattern(
   if (pattern.match.type === "decoratedRoute") {
     return discoverDecoratedRoutes(sourceFile, pattern.match, pattern.kind);
   }
-  // fileConvention: stub; discovery returns empty until a concrete pack
-  // motivates implementing it.
+  if (pattern.match.type === "fileConvention") {
+    return discoverFileConventions(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
+  }
   return [];
 }
 

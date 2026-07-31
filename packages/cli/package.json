@@ -2,7 +2,7 @@
   "name": "@suss/cli",
   "version": "0.0.2",
   "type": "module",
-  "description": "Command-line interface for suss — extract, inspect, diff, and check TypeScript behavioral summaries.",
+  "description": "Command-line interface for suss \u2014 extract, inspect, diff, and check TypeScript behavioral summaries.",
   "keywords": [
     "suss",
     "cli",
@@ -81,6 +81,7 @@
     "@suss/framework-hono": "0.0.2",
     "@suss/framework-nestjs-graphql": "0.0.2",
     "@suss/framework-nestjs-rest": "0.0.2",
+    "@suss/framework-nextjs": "0.0.2",
     "@suss/framework-prisma": "0.0.2",
     "@suss/framework-react": "0.0.2",
     "@suss/framework-react-router": "0.0.2",

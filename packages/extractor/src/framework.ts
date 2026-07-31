@@ -547,6 +547,14 @@ export interface TerminalExtraction {
     | { from: "argument"; position: number; minArgs?: number } // res.status(200) → position: 0
     | { from: "constructor"; codes: Record<string, number> } // throw new NotFound() → 404 via { NotFound: 404 }
     | {
+        // NextResponse.json(body, { status: 404 }) → the status sits on
+        // a property of the argument at `position`, rather than being
+        // the argument itself.
+        from: "argumentProperty";
+        position: number;
+        name: string;
+      }
+    | {
         // throw wrap(new NotFound(...)) → peek into the arg at `position` and
         // match its constructor name against `codes`. Covers wrapper patterns
         // like React Router's `httpErrorJson(new HttpError.NotFound("…"))`,

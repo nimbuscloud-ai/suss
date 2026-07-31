@@ -56,6 +56,12 @@ const BY_DEPENDENCY: Array<{
     kind: "framework",
   },
   {
+    dependency: "next",
+    name: "nextjs",
+    packageName: "@suss/framework-nextjs",
+    kind: "framework",
+  },
+  {
     dependency: "express",
     name: "express",
     packageName: "@suss/framework-express",

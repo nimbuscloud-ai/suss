@@ -143,6 +143,29 @@ function matchConstructorCode(
   return null;
 }
 
+/**
+ * The status a named property of an object literal carries. A number
+ * written out is the status; anything else is reported as the source
+ * text, so a reader sees where the value comes from.
+ */
+function statusFromProperty(
+  obj: ObjectLiteralExpression,
+  name: string,
+): RawTerminal["statusCode"] {
+  const prop = obj.getProperty(name);
+  if (prop === undefined || !Node.isPropertyAssignment(prop)) {
+    return null;
+  }
+  const value = prop.getInitializer();
+  if (value === undefined) {
+    return null;
+  }
+  const unwrapped = unwrapAs(value);
+  return Node.isNumericLiteral(unwrapped)
+    ? { type: "literal", value: Number(unwrapped.getText()) }
+    : { type: "dynamic", sourceText: unwrapped.getText() };
+}
+
 function extractStatusCodeFromRule(
   ctx: ExtractionContext,
 ): RawTerminal["statusCode"] {
@@ -176,6 +199,18 @@ function extractStatusCodeFromRule(
     }
     const ctorText = arg.getExpression().getText();
     return matchConstructorCode(ctorText, sc.codes);
+  }
+
+  if (sc.from === "argumentProperty") {
+    // `NextResponse.json(body, { status: 404 })`. The init object is an
+    // argument, so a call whose args this context does not carry has
+    // nothing to read.
+    const args = ctx.throwCallArgs ?? ctx.calls?.[0]?.getArguments();
+    const arg = args?.[sc.position];
+    if (arg === undefined || !Node.isObjectLiteralExpression(arg)) {
+      return null;
+    }
+    return statusFromProperty(arg, sc.name);
   }
 
   if (sc.from === "property") {

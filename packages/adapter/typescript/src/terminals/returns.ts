@@ -509,6 +509,23 @@ function unresolvedTerminal(
   };
 }
 
+/**
+ * The name an import gate should be checked against: the callee itself
+ * for `json(...)`, and the thing on the left for `NextResponse.json(...)`.
+ * Null when the callee is neither, as for a call on a value the
+ * expression built.
+ */
+function calleeSubject(callee: Node): Identifier | null {
+  if (Node.isIdentifier(callee)) {
+    return callee;
+  }
+  if (Node.isPropertyAccessExpression(callee)) {
+    const subject = callee.getExpression();
+    return Node.isIdentifier(subject) ? subject : null;
+  }
+  return null;
+}
+
 export function tryMatchFunctionCall(
   node: Node,
   pattern: TerminalPattern,
@@ -519,11 +536,11 @@ export function tryMatchFunctionCall(
   }
 
   const callee = node.getExpression();
-  if (!Node.isIdentifier(callee)) {
-    return null;
-  }
-
-  if (callee.getText() !== match.functionName) {
+  // A pack names either a function, `json`, or a method on something it
+  // brought in, `NextResponse.json`. The written name has to match, and
+  // for the dotted form the import check applies to what it hangs off.
+  const subject = calleeSubject(callee);
+  if (subject === null || callee.getText() !== match.functionName) {
     return null;
   }
 
@@ -535,7 +552,7 @@ export function tryMatchFunctionCall(
   if (
     match.requiresImport !== undefined &&
     match.requiresImport.length > 0 &&
-    !importedFromAny(callee, match.requiresImport)
+    !importedFromAny(subject, match.requiresImport)
   ) {
     return null;
   }

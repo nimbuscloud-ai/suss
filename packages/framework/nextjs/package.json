@@ -1,23 +1,22 @@
 {
-  "name": "@suss/adapter-typescript",
+  "name": "@suss/framework-nextjs",
   "version": "0.0.2",
   "type": "module",
-  "description": "TypeScript adapter for suss — walks source files with ts-morph and emits raw extractions for the suss pipeline.",
+  "description": "Pattern pack for extracting suss behavioral summaries from Next.js route handlers and pages.",
   "keywords": [
     "suss",
     "behavioral-summary",
-    "static-analysis",
-    "typescript",
-    "ts-morph",
-    "ast"
+    "framework-pack",
+    "nextjs",
+    "static-analysis"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/adapter/typescript#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/nextjs#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/adapter/typescript"
+    "directory": "packages/framework/nextjs"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -46,16 +45,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.0.2",
-    "@suss/datalog": "0.0.2",
-    "@suss/extractor": "0.0.2",
-    "graphql": "^16.8.0",
-    "picomatch": "^4.0.4",
-    "ts-morph": "^23.0.0"
+    "@suss/extractor": "0.0.2"
   },
   "devDependencies": {
-    "@types/node": "*",
-    "@types/picomatch": "^4.0.3",
+    "@suss/adapter-typescript": "*",
+    "@suss/behavioral-ir": "*",
+    "ts-morph": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
