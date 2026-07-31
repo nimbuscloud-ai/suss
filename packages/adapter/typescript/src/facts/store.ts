@@ -23,15 +23,8 @@ import {
   nodeId,
 } from "./extract.js";
 
+import type { TransparentWrapper } from "@suss/extractor";
 import type { Node, SourceFile } from "ts-morph";
-
-/** A library wrapper a pack declares as transparent. */
-export interface TransparentWrapper {
-  /** Callee text as written, e.g. "Sentry.wrapHandler". */
-  callee: string;
-  /** Which argument is the wrapped function. */
-  argument: number;
-}
 
 const RESOLUTION_RULES = [
   // A function resolves to itself; every chain ends here.

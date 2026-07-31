@@ -20,10 +20,10 @@ The adapter has four bespoke resolution walkers, each capped at one hop:
 They do not compose. Measured against a production serverless monorepo:
 88% of Lambda handler exports sit behind wrapper factories
 (`export const handler = createProtectedHandler(inner)`), and every SQS
-producer imports the AWS SDK through an internal barrel package. suss
-found 8 of 155 handlers in the largest service and zero SQS producers,
-not because extraction is weak but because discovery never reaches the
-function.
+producer imports the AWS SDK through an internal barrel package. In the
+largest service suss found 8 of the 34 handlers the deployment template
+declares, and zero SQS producers. Extraction was fine; discovery never
+reached the function.
 
 Each new pattern today means a new walker with its own scope rules, and
 stacked patterns (a wrapped handler exported through a barrel) fail even
@@ -35,8 +35,9 @@ Two layers, both in `packages/adapter/typescript/src/facts/`.
 
 **Fact extraction** walks a source file once and emits flat tuples.
 No resolution logic lives here; it records what is syntactically
-present. Node identity is `file:startOffset`, and a side table maps ids
-back to ts-morph nodes so the final answer is a `Node`.
+present. Node identity is `file:start-end`, because start alone collides
+a call with its callee, and a side table maps ids back to ts-morph nodes
+so the final answer is a `Node`.
 
     func(f)                      function/arrow/method declaration
     paramOf(f, k, p)             parameter k of f
@@ -52,10 +53,9 @@ back to ts-morph nodes so the final answer is a `Node`.
     returnsValue(f, v)
     bodyCalls(g, c)              call inside g whose callee is c
 
-**Rules** run to fixpoint in a small semi-naive evaluator (hand-rolled,
-no dependency; nothing on npm is both maintained and small, and the
-Soufflé-class engines are native binaries). The derived relation the
-rest of suss consumes is `resolves(x, f)`: value x is, after every hop,
+**Rules** run to fixpoint on `@suss/datalog`, the same evaluator the
+reachable-closure and rethrow passes use. The derived relation the rest
+of suss consumes is `resolves(x, f)`: value x is, after every hop,
 function f.
 
     resolves(f, f)  <- func(f)
@@ -93,10 +93,12 @@ which feeds `unwrapsByName`.
   reads only the file's own import specifiers and is defeated by
   barrels.
 
-Facts for a file are extracted on demand and only along the module
-edges a query actually follows, so the full-project cost stays
-proportional to the indirection present, not to project size. The gate
-uses a lighter tier that extracts import and re-export facts only.
+A query extracts the file its value lives in, asks, and widens to that
+file's imports only when the answer is still missing, up to six hops.
+A value that resolves without leaving its own file costs one file. The
+gate skips the rules entirely and walks module specifiers, memoized per
+gate set, because deriving every file's reachable-module set to answer
+one boolean costs far more than the answer is worth.
 
 ## What this absorbs
 
@@ -118,6 +120,7 @@ discovery's downstream filters keep precision.
 
 Fixtures per pattern: alias chain, re-export barrel, `export * from`,
 local wrapper factory, two stacked wrappers, pack-declared wrapper,
-`.bind`, and a wrapper imported through a barrel (composition). On the
-production monorepo: handler discovery in the largest service goes from
-8 to roughly 150, and SQS producer recognition stops being zero.
+`.bind`, a namespace-imported wrapper, a wrapped default export, and a
+wrapper reached through a barrel (composition). On the production
+monorepo, handler discovery in the largest service goes from 8 to all
+34 the template declares, and SQS producer recognition stops being zero.

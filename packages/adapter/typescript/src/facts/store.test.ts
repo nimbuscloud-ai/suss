@@ -222,6 +222,67 @@ describe("resolveCallable", () => {
     ).toContain("bound method");
   });
 
+  it("unwraps a wrapper reached through a namespace import", () => {
+    const project = projectOf({
+      "/wrap.ts": `
+        export function withAuth(fn: (event: unknown) => Promise<unknown>) {
+          return async (event: unknown) => {
+            return fn(event);
+          };
+        }
+      `,
+      "/mod.ts": `
+        import * as w from "./wrap";
+        export const handler = w.withAuth(async () => "namespace wrap");
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+    ).toContain("namespace wrap");
+  });
+
+  it("resolves a default export that wraps a function", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        function withAuth(fn: (event: unknown) => Promise<unknown>) {
+          return async (event: unknown) => fn(event);
+        }
+        const inner = async () => "default wrapped";
+        export default withAuth(inner);
+      `,
+    });
+    const store = new ResolutionStore();
+    const value = project
+      .getSourceFileOrThrow("/mod.ts")
+      .getExportAssignmentOrThrow(() => true)
+      .getExpression();
+
+    expect(resolvedBody(store, value)).toContain("default wrapped");
+  });
+
+  it("follows a re-export of an already wrapped export", () => {
+    const project = projectOf({
+      "/impl.ts": `
+        function withAuth(fn: (event: unknown) => Promise<unknown>) {
+          return async (event: unknown) => fn(event);
+        }
+        export const handler = withAuth(async () => "re-exported wrap");
+      `,
+      "/index.ts": `export { handler } from "./impl";`,
+      "/mod.ts": `
+        import { handler as inner } from "./index";
+        export const handler = inner;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+    ).toContain("re-exported wrap");
+  });
+
   it("returns null for a value that is not a function", () => {
     const project = projectOf({
       "/mod.ts": "export const handler = 42;",
