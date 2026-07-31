@@ -837,6 +837,17 @@ export interface PatternPack {
    */
   requiresImport?: string[];
   /**
+   * Library wrappers whose result is the wrapped function. The adapter
+   * derives this automatically for project-local factories by reading
+   * their bodies; a library wrapper's body is not readable, so the
+   * pack states the judgment: a call to `callee` resolves to its
+   * `argument`-th argument.
+   *
+   * `callee` matches the call expression text as written, e.g.
+   * `"Sentry.wrapHandler"`.
+   */
+  transparentWrappers?: Array<{ callee: string; argument: number }>;
+  /**
    * Per-property-access recognizers — sister to
    * `invocationRecognizers` but firing on `PropertyAccessExpression`
    * nodes rather than `CallExpression` nodes. Use these for patterns

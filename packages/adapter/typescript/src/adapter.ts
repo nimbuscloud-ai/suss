@@ -59,6 +59,7 @@ import {
 } from "./diagnostics.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery/index.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
+import { ResolutionStore } from "./facts/store.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
 import {
   type ClosureFacts,
@@ -776,6 +777,7 @@ function extractFromSourceFile(
   frameworks: PatternPack[],
   options?: ExtractorOptions,
   tallies?: Map<string, PackTally>,
+  resolution?: ResolutionStore,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   const filePath = sourceFile.getFilePath();
@@ -812,7 +814,7 @@ function extractFromSourceFile(
       tally.candidateFiles += 1;
     }
 
-    const units = discoverUnits(sourceFile, pack.discovery);
+    const units = discoverUnits(sourceFile, pack.discovery, resolution);
 
     // Pack-supplied discovery callback (sibling of subUnits at the
     // discovery layer). Packs whose conventions don't fit a
@@ -821,7 +823,7 @@ function extractFromSourceFile(
     // internal DiscoveredUnit type and feeds the result into the
     // same downstream pipeline.
     if (pack.discoverUnits !== undefined) {
-      const tsCtx = createTsDiscoveryContext();
+      const tsCtx = createTsDiscoveryContext(resolution);
       try {
         const customUnits = pack.discoverUnits(sourceFile, tsCtx);
         for (const cu of customUnits) {
@@ -1549,11 +1551,16 @@ export function createTypeScriptAdapter(
     ),
   );
 
+  const packWrappers = config.frameworks.flatMap(
+    (pack) => pack.transparentWrappers ?? [],
+  );
+
   return {
     project,
 
     async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
       const summaries: BehavioralSummary[] = [];
+      const resolution = new ResolutionStore(packWrappers);
 
       for (const fp of filePaths) {
         // Project may have skipped initial loading (lazy
@@ -1573,6 +1580,8 @@ export function createTypeScriptAdapter(
             sourceFile,
             config.frameworks,
             config.extractorOptions,
+            undefined,
+            resolution,
           ),
         );
       }
@@ -1695,8 +1704,9 @@ export function createTypeScriptAdapter(
       // skip the discovery walk entirely. Big speedup on
       // monorepo-scale projects where most files don't touch any
       // framework the active packs care about.
+      const resolution = new ResolutionStore(packWrappers);
       const packsByFile = timer.time("preFilter", () =>
-        computePackApplicability(sourceFiles, config.frameworks),
+        computePackApplicability(sourceFiles, config.frameworks, resolution),
       );
 
       // Per-file extract: the FULL pass walks every source file; the
@@ -1722,6 +1732,7 @@ export function createTypeScriptAdapter(
               applicablePacks,
               config.extractorOptions,
               tallies,
+              resolution,
             ),
           );
         }

@@ -239,6 +239,17 @@ function isImportedFrom(
       }
     }
   }
+
+  // Imported through a project-local barrel, the specifier names the
+  // barrel, not the SDK. The aliased symbol sits where the SDK
+  // declared it, so its file path names the package.
+  const aliased = symbol.getAliasedSymbol() ?? symbol;
+  for (const decl of aliased.getDeclarations()) {
+    const declaredIn = decl.getSourceFile().getFilePath();
+    if (declaredIn.includes(`/node_modules/${expectedModule}/`)) {
+      return true;
+    }
+  }
   void sourceFile;
   return false;
 }

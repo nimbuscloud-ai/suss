@@ -14,6 +14,19 @@
 import { Node, type SourceFile } from "ts-morph";
 
 import type { FunctionRoot } from "./conditions.js";
+import type { ResolutionStore } from "./facts/store.js";
+
+function toFunctionRootLocal(node: Node): FunctionRoot | null {
+  if (
+    Node.isFunctionDeclaration(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isArrowFunction(node) ||
+    Node.isMethodDeclaration(node)
+  ) {
+    return node as FunctionRoot;
+  }
+  return null;
+}
 
 export interface TsDiscoveryContext {
   /** Full filesystem path of the source file. Useful for excluding
@@ -49,10 +62,13 @@ export interface TsDiscoveryContext {
   hasJsxReturn(func: FunctionRoot): boolean;
 }
 
-export function createTsDiscoveryContext(): TsDiscoveryContext {
+export function createTsDiscoveryContext(
+  resolution?: ResolutionStore,
+): TsDiscoveryContext {
   return {
     getFilePath,
-    exportedFunctions,
+    exportedFunctions: (sourceFile) =>
+      exportedFunctions(sourceFile, resolution),
     hasJsxReturn,
   };
 }
@@ -63,6 +79,7 @@ function getFilePath(sourceFile: SourceFile): string {
 
 function exportedFunctions(
   sourceFile: SourceFile,
+  resolution?: ResolutionStore,
 ): Array<{ name: string; func: FunctionRoot; isDefault: boolean }> {
   const out: Array<{ name: string; func: FunctionRoot; isDefault: boolean }> =
     [];
@@ -73,7 +90,17 @@ function exportedFunctions(
       continue;
     }
     for (const decl of declarations) {
-      const fn = resolveDeclarationToFunction(decl);
+      let fn = resolveDeclarationToFunction(decl);
+      if (fn === null && resolution !== undefined) {
+        // The export is a wrapper call, an alias, or a .bind rather
+        // than a function. The fact layer follows those to the
+        // function they resolve to.
+        const value = Node.isVariableDeclaration(decl)
+          ? (decl.getInitializer() ?? decl)
+          : decl;
+        const resolved = resolution.resolveCallable(value);
+        fn = resolved === null ? null : toFunctionRootLocal(resolved);
+      }
       if (fn === null) {
         continue;
       }

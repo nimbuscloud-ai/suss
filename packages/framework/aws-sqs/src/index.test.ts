@@ -157,6 +157,53 @@ function messageSendEffectsOf(
   );
 }
 
+describe("sqs recognizer, through a project-local barrel", () => {
+  it("recognizes a send whose import goes through a re-export barrel", () => {
+    const project = new Project({
+      compilerOptions: {
+        target: ScriptTarget.ES2022,
+        strict: true,
+        moduleResolution: 100,
+      },
+      useInMemoryFileSystem: true,
+    });
+    project.createSourceFile(
+      "node_modules/@aws-sdk/client-sqs/index.d.ts",
+      `
+export class SQSClient {
+  constructor(config?: unknown);
+  send(command: unknown): Promise<unknown>;
+}
+export class SendMessageCommand {
+  constructor(input: { QueueUrl?: string; MessageBody?: string });
+}
+`,
+    );
+    // The barrel: an internal package re-exporting the SDK, which is
+    // how shared aws helpers are packaged in production monorepos.
+    project.createSourceFile(
+      "aws/sqs.ts",
+      `export { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";`,
+    );
+    const file = project.createSourceFile(
+      "producer.ts",
+      `
+      import { SQSClient, SendMessageCommand } from "./aws/sqs";
+      const client = new SQSClient({});
+      async function enqueue(order: { id: string }) {
+        await client.send(new SendMessageCommand({
+          QueueUrl: process.env.ORDERS_QUEUE_URL,
+          MessageBody: JSON.stringify(order),
+        }));
+      }
+    `,
+    );
+
+    const sends = messageSendEffectsOf(recognizeAll(file));
+    expect(sends).toHaveLength(1);
+  });
+});
+
 describe("sqs recognizer — happy path", () => {
   it("emits one message-send interaction for client.send(new SendMessageCommand({...}))", () => {
     const file = makeProject(`
