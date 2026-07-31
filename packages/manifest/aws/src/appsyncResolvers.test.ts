@@ -210,6 +210,87 @@ describe("readAppSyncResolvers", () => {
     expect(bindings[0]?.lambdaFunctionLogicalIds).toEqual(["PostsFn"]);
   });
 
+  it("refuses a data source name two APIs both claim", () => {
+    // Names are unique per API, not per template, so a public and an
+    // admin API can each have one called posts. Answering with
+    // whichever was read last hands one API the other one is Lambda.
+    const bindings = readAppSyncResolvers({
+      Resources: {
+        PublicPostsDS: {
+          Type: "AWS::AppSync::DataSource",
+          Properties: {
+            ApiId: { Ref: "PublicApi" },
+            Type: "AWS_LAMBDA",
+            Name: "posts",
+            LambdaConfig: {
+              LambdaFunctionArn: { "Fn::GetAtt": ["PublicPostsFn", "Arn"] },
+            },
+          },
+        },
+        AdminPostsDS: {
+          Type: "AWS::AppSync::DataSource",
+          Properties: {
+            ApiId: { Ref: "AdminApi" },
+            Type: "AWS_LAMBDA",
+            Name: "posts",
+            LambdaConfig: {
+              LambdaFunctionArn: { "Fn::GetAtt": ["AdminPostsFn", "Arn"] },
+            },
+          },
+        },
+        PublicPostsResolver: {
+          Type: "AWS::AppSync::Resolver",
+          Properties: {
+            ApiId: { Ref: "PublicApi" },
+            TypeName: "Query",
+            FieldName: "posts",
+            DataSourceName: "posts",
+          },
+        },
+      },
+    });
+
+    // No answer beats the wrong one.
+    expect(bindings[0]?.lambdaFunctionLogicalIds).toEqual([]);
+  });
+
+  it("prefers a logical id over a name another data source uses", () => {
+    const bindings = readAppSyncResolvers({
+      Resources: {
+        PostsDS: {
+          Type: "AWS::AppSync::DataSource",
+          Properties: {
+            Type: "AWS_LAMBDA",
+            Name: "posts",
+            LambdaConfig: {
+              LambdaFunctionArn: { "Fn::GetAtt": ["PostsFn", "Arn"] },
+            },
+          },
+        },
+        CommentsDS: {
+          Type: "AWS::AppSync::DataSource",
+          Properties: {
+            Type: "AWS_LAMBDA",
+            Name: "PostsDS",
+            LambdaConfig: {
+              LambdaFunctionArn: { "Fn::GetAtt": ["CommentsFn", "Arn"] },
+            },
+          },
+        },
+        R: {
+          Type: "AWS::AppSync::Resolver",
+          Properties: {
+            TypeName: "Query",
+            FieldName: "posts",
+            DataSourceName: "PostsDS",
+          },
+        },
+      },
+    });
+
+    expect(bindings[0]?.lambdaFunctionLogicalIds).toEqual(["PostsFn"]);
+  });
+
   it("says nothing about a template with no AppSync in it", () => {
     expect(
       readAppSyncResolvers({

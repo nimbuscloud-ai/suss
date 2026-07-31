@@ -143,8 +143,12 @@ function fromRawResources(
   resources: Record<string, CloudFormationResource | undefined>,
 ): AppSyncResolverBinding[] {
   // A resolver names a data source by logical id or by the Name
-  // property, and the two need not match, so both are keys here.
-  const lambdaByDataSource = new Map<string, string>();
+  // property, and the two need not match. Logical ids are unique across
+  // a template while names are only unique per API, so these are two
+  // lookups and a name that two data sources claim answers for neither.
+  const lambdaByLogicalId = new Map<string, string>();
+  const lambdaByName = new Map<string, string>();
+  const contestedNames = new Set<string>();
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource?.Type !== "AWS::AppSync::DataSource") {
       continue;
@@ -156,12 +160,20 @@ function fromRawResources(
     if (lambda === null) {
       continue;
     }
-    lambdaByDataSource.set(logicalId, lambda);
+    lambdaByLogicalId.set(logicalId, lambda);
     const name = stringOf(props.Name);
-    if (name !== null) {
-      lambdaByDataSource.set(name, lambda);
+    if (name === null) {
+      continue;
     }
+    if (lambdaByName.has(name) && lambdaByName.get(name) !== lambda) {
+      contestedNames.add(name);
+      continue;
+    }
+    lambdaByName.set(name, lambda);
   }
+  const lambdaFor = (reference: string): string | undefined =>
+    lambdaByLogicalId.get(reference) ??
+    (contestedNames.has(reference) ? undefined : lambdaByName.get(reference));
 
   // A pipeline resolver names functions, and each function names the
   // data source. This is also the shape the SAM transform expands the
@@ -202,8 +214,8 @@ function fromRawResources(
         props,
         dataSourceByFunction,
       )
-        .map((name) => lambdaByDataSource.get(name) ?? null)
-        .filter((id): id is string => id !== null),
+        .map((reference) => lambdaFor(reference))
+        .filter((id): id is string => id !== undefined),
     });
   }
   return bindings;

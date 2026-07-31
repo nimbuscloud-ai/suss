@@ -188,11 +188,14 @@ export const awsLambdaDiscovery: NonNullable<PatternPack["discoverUnits"]> = (
     // also the events that reach a bound handler without a boundary of
     // their own. A queue that feeds a resolver was reported before the
     // resolver binding existed, and has to keep being reported.
+    // Events that reach a handler without a boundary of their own get
+    // reported whatever else that handler bound to, so a queue feeding
+    // a route or an operation stays visible. A handler that bound to
+    // nothing at all gets one too, so nothing recognized is dropped.
     const unaccountedEvents = accountedEventTypes(entry);
-    if (
-      !hasBindableRoute(entry) &&
-      (operationFields(entry).length === 0 || unaccountedEvents.length > 0)
-    ) {
+    const boundToNothing =
+      !hasBindableRoute(entry) && operationFields(entry).length === 0;
+    if (unaccountedEvents.length > 0 || boundToNothing) {
       units.push(accountingUnit(entry, func));
     }
   }

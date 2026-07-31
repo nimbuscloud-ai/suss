@@ -75,6 +75,17 @@ Resources:
         Get:
           Type: HttpApi
           Properties: { Method: GET, Path: /both }
+  RouteQueueFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/routeQueue.handler
+      Events:
+        Get:
+          Type: HttpApi
+          Properties: { Method: GET, Path: /routeQueue }
+        Queue:
+          Type: SQS
+          Properties: { Queue: arn:aws:sqs:us-east-1:1:rq }
   QueueFn:
     Type: AWS::Serverless::Function
     Properties:
@@ -142,6 +153,10 @@ Resources:
     `export const handler = async () => ({ statusCode: 200, body: "" });`,
   );
   write("src/queued.ts", "export const handler = async () => ({ ok: true });");
+  write(
+    "src/routeQueue.ts",
+    `export const handler = async () => ({ statusCode: 200, body: "" });`,
+  );
   write(
     "src/posts.ts",
     `export const handler = async (event: { arguments?: { id?: string } }) => {
@@ -350,5 +365,25 @@ describe("awsLambdaDiscovery — fields on a non-root type", () => {
     expect(meta?.graphqlTypeFields).toEqual([
       { typeName: "User", fieldName: "profileState" },
     ]);
+  });
+});
+
+describe("awsLambdaDiscovery — events on a bound handler", () => {
+  it("reports a queue that feeds a handler which also serves a route", async () => {
+    const summaries = await run();
+    const both = summaries.filter((s) =>
+      s.identity.name.startsWith("RouteQueueFn."),
+    );
+    const kinds = both.map((s) => s.identity.boundaryBinding?.semantics.name);
+
+    expect(kinds).toContain("rest");
+    expect(kinds).toContain("function-call");
+    const accounting = both.find(
+      (s) => s.identity.boundaryBinding?.semantics.name === "function-call",
+    );
+    const meta = accounting?.metadata?.awsLambda as
+      | { eventTypes?: string[] }
+      | undefined;
+    expect(meta?.eventTypes).toContain("SQS");
   });
 });
