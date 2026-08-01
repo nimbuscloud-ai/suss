@@ -1,5 +1,6 @@
 // extract.ts — `suss extract` command implementation
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -31,7 +32,44 @@ import type { PatternPack } from "@suss/extractor";
 type PackFactory = (...args: never[]) => PatternPack;
 
 function instantiatePack(factory: PackFactory, options: unknown): PatternPack {
-  return (factory as (options?: unknown) => PatternPack)(options);
+  const pack = (factory as (options?: unknown) => PatternPack)(options);
+  if (options === undefined) {
+    return pack;
+  }
+
+  // Two runs of the same pack version read different code when the
+  // config differs, and the extraction cache keys on the version
+  // stamp, so a run with a config would otherwise be answered from a
+  // run without one.
+  return { ...pack, version: `${pack.version ?? "unset"}+${digest(options)}` };
+}
+
+/**
+ * Short content hash of a pack's config, stable across key order so
+ * reformatting the file does not throw away a valid cache entry.
+ */
+function digest(options: unknown): string {
+  return createHash("sha256")
+    .update(canonicalize(options))
+    .digest("hex")
+    .slice(0, 12);
+}
+
+function canonicalize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalize).join(",")}]`;
+  }
+
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const entries = Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`);
+    return `{${entries.join(",")}}`;
+  }
+
+  return JSON.stringify(value) ?? "undefined";
 }
 
 /**
