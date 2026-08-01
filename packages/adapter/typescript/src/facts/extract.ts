@@ -226,8 +226,16 @@ function unwrapExpression(expression: Expression): Expression {
  * Record that `value` is a value of interest and emit the facts that
  * let the rules resolve it: its own identity, and a binds edge when it
  * is an identifier or property access referencing a declaration.
+ *
+ * Exported for the store: file extraction only reaches values that
+ * hang off exports, so a query rooted anywhere else (a registration
+ * call's argument, say) seeds its own value through this.
  */
-function emitValue(db: Database, table: NodeTable, value: Expression): string {
+export function emitValue(
+  db: Database,
+  table: NodeTable,
+  value: Expression,
+): string {
   const expression = unwrapExpression(value);
   const id = nodeId(expression);
   table.byId.set(id, expression);

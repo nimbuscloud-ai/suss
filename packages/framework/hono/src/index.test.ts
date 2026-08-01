@@ -125,29 +125,23 @@ describe("honoFramework \u2014 zod-openapi registration", () => {
     summaries = await adapter.extractAll();
   }, 90_000);
 
-  // Expected failures: the chain from the registration argument to the
-  // contract object stops at a missing imports fact. These flip red
-  // the day that fact lands, which is the reminder to remove .fails.
-  it.fails(
-    "reads the route off the contract object the registration names",
-    () => {
-      const routes = summaries
-        .map((s) => s.identity.boundaryBinding)
-        .filter((b) => b?.semantics.name === "rest")
-        .map((b) =>
-          b?.semantics.name === "rest"
-            ? `${b.semantics.method} ${b.semantics.path}`
-            : "",
-        )
-        .sort();
-      expect(routes).toEqual([
-        "GET /v1/tenants/{tenantId}",
-        "POST /v1/tenants/{tenantId}/provision",
-      ]);
-    },
-  );
+  it("reads the route off the contract object the registration names", () => {
+    const routes = summaries
+      .map((s) => s.identity.boundaryBinding)
+      .filter((b) => b?.semantics.name === "rest")
+      .map((b) =>
+        b?.semantics.name === "rest"
+          ? `${b.semantics.method} ${b.semantics.path}`
+          : "",
+      )
+      .sort();
+    expect(routes).toEqual([
+      "GET /v1/tenants/{tenantId}",
+      "POST /v1/tenants/{tenantId}/provision",
+    ]);
+  });
 
-  it.fails("reads both outcomes of the provision handler", () => {
+  it("reads both outcomes of the provision handler", () => {
     const provision = summaries.find(
       (s) =>
         s.identity.boundaryBinding?.semantics.name === "rest" &&

@@ -13,19 +13,22 @@
 // edges a query follows, so cost tracks the indirection present, not
 // project size.
 
+import { Node } from "ts-morph";
+
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import { RESOLUTION_RULES as SHARED_RULES } from "@suss/resolution";
 
 import { isFunctionRoot } from "../discovery/shared.js";
 import {
   createNodeTable,
+  emitValue,
   extractFileFacts,
   type NodeTable,
   nodeId,
 } from "./extract.js";
 
 import type { TransparentWrapper } from "@suss/extractor";
-import type { Node, SourceFile } from "ts-morph";
+import type { SourceFile } from "ts-morph";
 
 const JS_RULES = [
   // f.bind(...) comes to whatever f comes to.
@@ -53,6 +56,7 @@ export class ResolutionStore {
   private readonly db = new Database();
   private readonly table: NodeTable = createNodeTable();
   private readonly fullyExtracted = new Set<string>();
+  private readonly seededValues = new Set<string>();
   private readonly gateAnswers = new Map<string, Map<string, boolean>>();
 
   private resolvedBySource = new Map<string, string[]>();
@@ -90,6 +94,8 @@ export class ResolutionStore {
   }
 
   private resolveByWaves(value: Node, ask: () => Node | null): Node | null {
+    this.seedValue(value);
+
     // Where the walk has been on this query, which is separate from
     // which files already have facts. A file extracted by an earlier
     // query still has to be walked through, or the frontier collapses
@@ -117,6 +123,25 @@ export class ResolutionStore {
       frontier = next;
     }
     return null;
+  }
+
+  /**
+   * Facts for the queried value itself. File extraction only reaches
+   * values that hang off exports, and a query can be rooted anywhere:
+   * a registration call passes `routes.provision` as an argument, and
+   * nothing else ever emits facts for that expression.
+   */
+  private seedValue(value: Node): void {
+    if (!Node.isExpression(value)) {
+      return;
+    }
+    const id = nodeId(value);
+    if (this.seededValues.has(id)) {
+      return;
+    }
+    this.seededValues.add(id);
+    this.stale = true;
+    emitValue(this.db, this.table, value);
   }
 
   private lookupObject(value: Node): Node | null {
