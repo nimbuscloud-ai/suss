@@ -142,6 +142,48 @@ export interface DiscoveredUnit {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * What makes two units the same unit. The enclosing function and the
+ * kind start it off, and then everything that lets one function be more
+ * than one boundary is added on: the package export a caller consumes,
+ * the route it serves, the GraphQL field it resolves, the channel it
+ * listens on, and the GraphQL operation it runs. A component that loads
+ * a user and searches for mentions runs two hooks in one body, and both
+ * documents are boundaries.
+ *
+ * One identity for two dedup passes over overlapping populations.
+ * Discovery dedups the units its patterns matched. The adapter claims
+ * over those plus the ones a pack's `discoverUnits` callback returned,
+ * which never went through discovery at all. Both passes are asking
+ * whether they have seen this unit already, so both ask it the same
+ * way.
+ */
+export function unitDedupKey(unit: DiscoveredUnit): string {
+  const parts = [
+    `${unit.func.getStart()}-${unit.func.getEnd()}`,
+    unit.kind,
+    unit.packageExportInfo === undefined
+      ? ""
+      : `${unit.packageExportInfo.packageName}::${unit.packageExportInfo.exportPath.join(".")}`,
+    unit.routeInfo === undefined
+      ? ""
+      : `${unit.routeInfo.method} ${unit.routeInfo.path}`,
+    unit.resolverInfo === undefined
+      ? ""
+      : `${unit.resolverInfo.typeName}.${unit.resolverInfo.fieldName}`,
+    unit.channelInfo === undefined
+      ? ""
+      : `${unit.channelInfo.messageBus}:${unit.channelInfo.channel}`,
+    // An anonymous operation has no name to key on, so the unit name
+    // stands in; it already carries the document reference discovery
+    // fell back to.
+    unit.operationInfo === undefined
+      ? ""
+      : `${unit.operationInfo.operationType}.${unit.operationInfo.operationName ?? unit.name}`,
+  ];
+  return parts.join("-");
+}
+
 /** Whether a node is one of the four function-shaped declarations. */
 export function isFunctionRoot(node: Node): boolean {
   return (

@@ -392,7 +392,7 @@ describe("apolloClientPack — edge cases", () => {
     expect(summaries).toEqual([]);
   });
 
-  it("skips calls whose first argument isn't a gql-tagged template", async () => {
+  it("reports a call whose first argument is not a document as a gap", async () => {
     const summaries = await runInMemory(`
       import { useQuery } from "@apollo/client";
       declare const doc: any;
@@ -400,10 +400,16 @@ describe("apolloClientPack — edge cases", () => {
         useQuery(doc);
       }
     `);
-    expect(summaries).toEqual([]);
+    expect(summaries).toHaveLength(1);
+    const gap = (
+      summaries[0].metadata?.graphql as
+        | { unresolvedDocument?: { reference: string } }
+        | undefined
+    )?.unresolvedDocument;
+    expect(gap?.reference).toBe("doc");
   });
 
-  it("skips tagged templates whose tag isn't gql", async () => {
+  it("does not read a tagged template whose tag isn't a document tag", async () => {
     const summaries = await runInMemory(`
       import { useQuery } from "@apollo/client";
       function css(strings: TemplateStringsArray) { return strings[0]; }
@@ -411,7 +417,10 @@ describe("apolloClientPack — edge cases", () => {
         useQuery(css\`query GetUser { user { id } }\`);
       }
     `);
-    expect(summaries).toEqual([]);
+    const semantics = summaries[0]?.identity.boundaryBinding?.semantics as
+      | { operationName?: string }
+      | undefined;
+    expect(semantics?.operationName).toBeUndefined();
   });
 
   it("handles the shorthand `{ ... }` anonymous query", async () => {
@@ -440,5 +449,102 @@ describe("apolloClientPack — edge cases", () => {
       }
     `);
     expect(summaries).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Documents held in named constants
+// ---------------------------------------------------------------------------
+
+// Nearly every codebase past a handful of operations writes the
+// document as an exported constant and imports the name, so this is
+// what a hook call usually looks like. The fixture puts a barrel
+// between the two, which is what defeats reading one variable
+// declaration.
+async function runDocumentsAdapter(): Promise<BehavioralSummary[]> {
+  const documentsDir = path.join(fixturesDir, "documents");
+  const project = makeProject();
+  project.addSourceFilesAtPaths(path.join(documentsDir, "**/*.ts"));
+  project.addSourceFilesAtPaths(path.join(documentsDir, "**/*.tsx"));
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: [apolloClientPack()],
+  });
+  return await adapter.extractAll();
+}
+
+describe("apolloClientPack (documents in named constants)", () => {
+  let summaries: BehavioralSummary[];
+  beforeAll(async () => {
+    summaries = await runDocumentsAdapter();
+  }, 90_000);
+
+  function operationType(operationName: string): string | null {
+    for (const summary of summaries) {
+      const sem = summary.identity.boundaryBinding?.semantics;
+      if (
+        sem?.name === "graphql-operation" &&
+        sem.operationName === operationName
+      ) {
+        return sem.operationType;
+      }
+    }
+    return null;
+  }
+
+  it("reads a document a gql tag call built, imported through a barrel", async () => {
+    expect(operationType("WidgetSettings")).toBe("query");
+    const summary = summaries.find(
+      (s) => s.identity.name === "useWidgetSettings.WidgetSettings",
+    );
+    const variables = (summary?.inputs ?? []).filter(
+      (input) => input.type === "parameter",
+    );
+    expect(variables.map((input) => input.name)).toContain("region");
+  });
+
+  it("reads a document the generated `graphql` function built", async () => {
+    expect(operationType("CreateWidget")).toBe("mutation");
+  });
+
+  it("reads a tagged-template document imported through a barrel", async () => {
+    expect(operationType("OnTick")).toBe("subscription");
+  });
+
+  it("follows a same-module alias to the document it stands for", async () => {
+    expect(operationType("SearchUsers")).toBe("query");
+  });
+
+  it("keeps two hook calls in one component apart", async () => {
+    const picker = summaries.filter((s) =>
+      s.identity.name.startsWith("UserPicker."),
+    );
+    expect(picker.map((s) => s.identity.name).sort()).toEqual([
+      "UserPicker.SearchUsers",
+      "UserPicker.User",
+    ]);
+  });
+
+  it("reports a document the code computes as a gap, naming the argument", async () => {
+    const chosen = summaries.filter((s) =>
+      s.identity.name.startsWith("useChosen."),
+    );
+    expect(chosen).toHaveLength(1);
+    const gap = (
+      chosen[0].metadata?.graphql as
+        | { unresolvedDocument?: { reference: string } }
+        | undefined
+    )?.unresolvedDocument;
+    expect(gap?.reference).toBe("CHOSEN_DOCUMENT");
+  });
+
+  it("leaves no gap behind on a document it could read", async () => {
+    const gaps = summaries.filter(
+      (s) =>
+        !s.identity.name.startsWith("useChosen.") &&
+        (s.metadata?.graphql as { unresolvedDocument?: unknown } | undefined)
+          ?.unresolvedDocument !== undefined,
+    );
+    expect(gaps).toEqual([]);
   });
 });

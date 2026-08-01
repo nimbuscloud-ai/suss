@@ -59,7 +59,11 @@ import {
   type PackTally,
 } from "./diagnostics.js";
 import { routePathFromFile } from "./discovery/filenameRoute.js";
-import { type DiscoveredUnit, discoverUnits } from "./discovery/index.js";
+import {
+  type DiscoveredUnit,
+  discoverUnits,
+  unitDedupKey,
+} from "./discovery/index.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { ResolutionStore } from "./facts/store.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
@@ -919,37 +923,9 @@ function extractFromSourceFile(
     }
 
     for (const unit of units) {
-      // Mirror the bindingSuffix logic in `discoverUnits` so consumer
-      // summaries that share an enclosing function but consume different
-      // exports survive (`extract` calling both
-      // `createTypeScriptAdapter()` and `.extractAll()` produces two
-      // distinct units that should both be summarized).
-      const bindingSuffix =
-        unit.packageExportInfo !== undefined
-          ? `-${unit.packageExportInfo.packageName}::${unit.packageExportInfo.exportPath.join(".")}`
-          : "";
-      // routeInfo distinguishes units that share a handler function but
-      // bind to different (method, path) pairs — one Lambda handler
-      // wired to several SAM route Events, or one function registered
-      // for GET and POST. Mirrors the dedup in discovery/index.ts.
-      const routeSuffix =
-        unit.routeInfo !== undefined
-          ? `-${unit.routeInfo.method} ${unit.routeInfo.path}`
-          : "";
-      // The same for GraphQL fields: one Lambda often serves a field and
-      // its singular sibling (`leads` and `lead`), and both are
-      // boundaries a client can call.
-      const resolverSuffix =
-        unit.resolverInfo !== undefined
-          ? `-${unit.resolverInfo.typeName}.${unit.resolverInfo.fieldName}`
-          : "";
-      // And for message-bus consumers: the channel keeps a unit distinct
-      // from a route or resolver unit sharing the same handler function.
-      const channelSuffix =
-        unit.channelInfo !== undefined
-          ? `-${unit.channelInfo.messageBus}:${unit.channelInfo.channel}`
-          : "";
-      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}${resolverSuffix}${channelSuffix}`;
+      // The same identity discovery deduped on. One pack claiming a
+      // unit keeps a later pack from claiming it again.
+      const claimKey = unitDedupKey(unit);
       if (claimed.has(claimKey)) {
         continue;
       }

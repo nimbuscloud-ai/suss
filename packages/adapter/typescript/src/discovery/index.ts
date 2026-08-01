@@ -21,9 +21,11 @@ import type { SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
 export { clearPackageExportsCache } from "./packageExports.js";
-export { toFunctionRoot } from "./shared.js";
+export { toFunctionRoot, unitDedupKey } from "./shared.js";
 
 export type { ClientCallSite, DiscoveredUnit } from "./shared.js";
+
+import { unitDedupKey } from "./shared.js";
 
 import type { DiscoveredUnit } from "./shared.js";
 
@@ -63,13 +65,19 @@ function runPattern(
     return discoverClientCalls(sourceFile, pattern.match, pattern.kind);
   }
   if (pattern.match.type === "graphqlHookCall") {
-    return discoverGraphqlHookCalls(sourceFile, pattern.match, pattern.kind);
+    return discoverGraphqlHookCalls(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
   }
   if (pattern.match.type === "graphqlImperativeCall") {
     return discoverGraphqlImperativeCalls(
       sourceFile,
       pattern.match,
       pattern.kind,
+      resolution,
     );
   }
   if (pattern.match.type === "resolverMap") {
@@ -117,34 +125,13 @@ export function discoverUnits(
     allResults.push(...found);
   }
 
-  // Deduplicate: same node + same kind → keep first occurrence. Units
-  // tagged with `packageExportInfo` additionally distinguish on the
-  // consumed binding — one enclosing function can legitimately emit
-  // multiple caller units, one per imported library function it calls.
+  // Keep the first unit under each identity; a pattern that matches the
+  // same boundary twice should not produce it twice.
   const seen = new Set<string>();
   const deduped: DiscoveredUnit[] = [];
 
   for (const unit of allResults) {
-    const bindingSuffix =
-      unit.packageExportInfo !== undefined
-        ? `-${unit.packageExportInfo.packageName}::${unit.packageExportInfo.exportPath.join(".")}`
-        : "";
-    // routeInfo distinguishes registrationTemplate-derived units that
-    // share a handler function but expand to different (method, path)
-    // pairs (one handler reused for GET and POST, etc.).
-    const routeSuffix =
-      unit.routeInfo !== undefined
-        ? `-${unit.routeInfo.method} ${unit.routeInfo.path}`
-        : "";
-    // The same for GraphQL fields. One resolver object shared by two
-    // types is how several types get the same id or createdAt
-    // resolver, and both fields are boundaries a client can select.
-    // Mirrors the claim dedup the adapter runs later.
-    const resolverSuffix =
-      unit.resolverInfo !== undefined
-        ? `-${unit.resolverInfo.typeName}.${unit.resolverInfo.fieldName}`
-        : "";
-    const key = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}${resolverSuffix}`;
+    const key = unitDedupKey(unit);
     if (!seen.has(key)) {
       seen.add(key);
       deduped.push(unit);

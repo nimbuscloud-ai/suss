@@ -16,6 +16,8 @@
 //
 //   func(f)                     f is a function
 //   objectValue(o)              o is an object written out literally
+//   writtenValue(x)             x is an expression written out in
+//                               source rather than a name for one
 //   holdsProperty(o, n, x)      object o holds x under the name n
 //   readsProperty(x, o, n)      x is the expression o.n
 //   binds(x, y)                 the name x is declared as y
@@ -32,11 +34,18 @@
 //
 // Node identity is the adapter's business. The rules only join on it.
 //
-// Two relations come out. `comesTo(x, z)` follows a name to the value
+// Three relations come out. `comesTo(x, z)` follows a name to the value
 // it ends up being, which can be an object as well as a function; the
 // chain has to pass through objects for `routes.list` to reach what
 // `list` holds. `resolves(x, z)` is `comesTo` narrowed to functions,
 // and is the question callers ask.
+//
+// `isWrittenAs(x, z)` follows the same names to the expression the
+// value is written as, whatever kind of expression that is. A GraphQL
+// document is neither a function nor an object, so `comesTo` never
+// reaches one; reading a document back off a named constant means
+// following the same binds and imports to a template literal or a tag
+// call and letting the caller decide what it is looking at.
 
 import { lit, rule, variable as v } from "@suss/datalog";
 
@@ -222,5 +231,31 @@ export const RESOLUTION_RULES = [
     "resolves",
     [v("x"), v("z")],
     [lit("comesTo", v("x"), v("z")), lit("func", v("z"))],
+  ),
+
+  // Following a name to the expression it is written as. A separate
+  // relation rather than a widening of `comesTo`, so a caller asking
+  // the older question never sees a new answer: a factory call already
+  // has an unwrapping answer, and letting it also answer with itself
+  // would make that pair ambiguous.
+  //
+  // The two seeds are the two ways an expression can be written out. An
+  // object literal is one of them, and it is the shape a generated
+  // GraphQL document takes.
+  rule("isWrittenAs", [v("x"), v("x")], [lit("writtenValue", v("x"))]),
+  rule("isWrittenAs", [v("x"), v("x")], [lit("objectValue", v("x"))]),
+  rule(
+    "isWrittenAs",
+    [v("x"), v("z")],
+    [lit("binds", v("x"), v("y")), lit("isWrittenAs", v("y"), v("z"))],
+  ),
+  rule(
+    "isWrittenAs",
+    [v("x"), v("z")],
+    [
+      lit("imports", v("x"), v("m"), v("n")),
+      lit("moduleExport", v("m"), v("n"), v("value")),
+      lit("isWrittenAs", v("value"), v("z")),
+    ],
   ),
 ];
