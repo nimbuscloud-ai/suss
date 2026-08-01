@@ -46,15 +46,45 @@ export class PutEventsCommand {
 `,
   );
 
+  // A project's own publisher, for the configured-producer tests.
+  project.createSourceFile(
+    "node_modules/@acme/async/package.json",
+    JSON.stringify({ name: "@acme/async", types: "index.d.ts" }),
+  );
+  project.createSourceFile(
+    "node_modules/@acme/async/index.d.ts",
+    `
+export declare class EventPublisher {
+  emit(subject: string, data: unknown, opts: unknown): Promise<void>;
+}
+`,
+  );
+
   return project.createSourceFile("user.ts", userSource);
 }
+
+/** The publisher config the configured-producer tests run with. */
+const PUBLISHER_OPTIONS = {
+  producers: [
+    {
+      module: "@acme/async",
+      receiver: "EventPublisher",
+      method: "emit",
+      subjectArg: 0,
+      bodyArg: 1,
+    },
+  ],
+};
 
 /**
  * Walk the source file and run the EventBridge recognizer on every
  * CallExpression. Returns the flat list of emitted effects.
  */
-function recognizeAll(sourceFile: SourceFile): Effect[] {
-  const pack = eventBridgeFramework();
+function recognizeAll(
+  sourceFile: SourceFile,
+  options?: Parameters<typeof eventBridgeFramework>[0],
+): Effect[] {
+  const pack = eventBridgeFramework(options);
   const recognizers = pack.invocationRecognizers ?? [];
   if (recognizers.length === 0) {
     return raise("expected pack to declare invocationRecognizers");
@@ -442,5 +472,74 @@ describe("eventbridge pack metadata", () => {
     expect(pack.terminals).toEqual([]);
     expect(pack.requiresImport).toEqual(["@aws-sdk/client-eventbridge"]);
     expect(pack.invocationRecognizers).toHaveLength(1);
+  });
+
+  it("adds a recognizer and an import gate per configured producer", () => {
+    const pack = eventBridgeFramework(PUBLISHER_OPTIONS);
+    expect(pack.invocationRecognizers).toHaveLength(2);
+    expect(pack.requiresImport).toEqual([
+      "@aws-sdk/client-eventbridge",
+      "@acme/async",
+    ]);
+  });
+});
+
+describe("eventbridge configured producer", () => {
+  it("reads a publish on the project's own publisher", () => {
+    const file = makeProject(`
+      import { EventPublisher } from "@acme/async";
+      export async function announce(publisher: EventPublisher) {
+        await publisher.emit(
+          "user.deleted",
+          { userId: "u-1" },
+          { partitionKey: "u-1" }
+        );
+      }
+    `);
+
+    const sends = messageSendEffectsOf(recognizeAll(file, PUBLISHER_OPTIONS));
+    expect(sends).toHaveLength(1);
+    const send = sends[0];
+    // No bus segment: the publisher takes its bus from constructor
+    // config the call site never states, and a channel with no bus
+    // agrees with any bus on the declared side.
+    expect(send.binding.semantics).toEqual({
+      name: "message-bus",
+      messageBus: "eventbridge",
+      channel: "user.deleted",
+    });
+    expect(send.binding.recognition).toBe("@suss/framework-aws-eventbridge");
+    expect(send.callee).toBe("publisher.emit");
+    if (send.interaction.class !== "message-send") {
+      throw new Error("wrong interaction class");
+    }
+    expect(send.interaction.body).toEqual({
+      kind: "object",
+      fields: { userId: { kind: "string", value: "u-1" } },
+    });
+  });
+
+  it("reads nothing when the subject is computed", () => {
+    const file = makeProject(`
+      import { EventPublisher } from "@acme/async";
+      export async function announce(publisher: EventPublisher, kind: string) {
+        await publisher.emit(kind, { userId: "u-1" }, { partitionKey: "u-1" });
+      }
+    `);
+
+    expect(messageSendEffectsOf(recognizeAll(file, PUBLISHER_OPTIONS))).toEqual(
+      [],
+    );
+  });
+
+  it("reads nothing without the config, on the same source", () => {
+    const file = makeProject(`
+      import { EventPublisher } from "@acme/async";
+      export async function announce(publisher: EventPublisher) {
+        await publisher.emit("user.deleted", { userId: "u-1" }, {});
+      }
+    `);
+
+    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
   });
 });

@@ -31,7 +31,11 @@ import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { PatternPack } from "@suss/extractor";
+import type {
+  AccessRecognizer,
+  InvocationRecognizer,
+  PatternPack,
+} from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { ClosureFacts } from "./boundaryEffects.js";
 
@@ -284,6 +288,7 @@ function collectReachable(func: FunctionRoot): ReachableCandidate[] {
 function extractReachableSummary(
   candidate: ReachableCandidate,
   options: ExtractorOptions | undefined,
+  recognizers: ClosureRecognizers,
 ): BehavioralSummary {
   const unit: DiscoveredUnit = {
     func: candidate.func,
@@ -294,6 +299,8 @@ function extractReachableSummary(
     unit,
     reachablePack,
     candidate.func.getSourceFile().getFilePath(),
+    recognizers.invocation,
+    recognizers.access,
   );
   raw.boundaryBinding = functionCallBinding({
     transport: "in-process",
@@ -336,12 +343,27 @@ const REACHABLE_RULES = [
  * scan the unscanned reachable frontier, add its edges, re-evaluate,
  * repeat until the reachable set stops growing.
  */
+/**
+ * The recognizers a reached function's body is read with. A reached
+ * function is where a service keeps most of its work, so a pack's
+ * recognizer has to fire there for the same reason it fires in a
+ * handler: the queue write, the query, the config read is behaviour of
+ * the code under analysis wherever it sits.
+ */
+export interface ClosureRecognizers {
+  invocation: InvocationRecognizer[];
+  access: AccessRecognizer[];
+}
+
+const NO_RECOGNIZERS: ClosureRecognizers = { invocation: [], access: [] };
+
 export function expandReachableClosure(
   seeds: BehavioralSummary[],
   project: Project,
   options?: ExtractorOptions,
   projectFileSet?: ReadonlySet<string>,
   facts?: ClosureFacts,
+  recognizers: ClosureRecognizers = NO_RECOGNIZERS,
 ): BehavioralSummary[] {
   // One source-file enumeration shared across every seed locate.
   // Without this, each `locateFunctionBySummary` was re-scanning the
@@ -419,7 +441,7 @@ export function expandReachableClosure(
         candidate.func.getSourceFile().getFilePath(),
       );
     }
-    const summary = extractReachableSummary(candidate, options);
+    const summary = extractReachableSummary(candidate, options, recognizers);
     facts?.unitKeyBySummary.set(summary, key);
     reached.push(summary);
   }

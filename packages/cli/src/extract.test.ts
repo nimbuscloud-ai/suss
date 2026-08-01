@@ -1,8 +1,25 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { formatCacheDiagnostic, resolveFramework } from "./extract.js";
+import {
+  extract,
+  formatCacheDiagnostic,
+  parseFrameworkSpec,
+  resolveFramework,
+} from "./extract.js";
 
 import type { CacheDiagnostic } from "@suss/adapter-typescript";
+
+/** Write a pack config to a temp file and answer its path. */
+function writeConfig(contents: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-pack-config-"));
+  const file = path.join(dir, "pack.json");
+  fs.writeFileSync(file, contents);
+  return file;
+}
 
 describe("resolveFramework", () => {
   it("loads a built-in pack by the name the CLI flag takes", async () => {
@@ -12,6 +29,70 @@ describe("resolveFramework", () => {
 
   it("says which names it knows when given one it does not", async () => {
     await expect(resolveFramework("nuxt")).rejects.toThrow(/nextjs/);
+  });
+
+  it("hands a pack the config the flag names", async () => {
+    const file = writeConfig(
+      JSON.stringify({
+        producers: [
+          {
+            module: "@acme/async",
+            receiver: "CommandDispatcher",
+            method: "dispatch",
+            subjectArg: 0,
+            bodyArg: 1,
+          },
+        ],
+      }),
+    );
+    const pack = await resolveFramework(`aws-sqs=${file}`);
+    expect(pack.requiresImport).toContain("@acme/async");
+    expect(pack.invocationRecognizers).toHaveLength(3);
+  });
+});
+
+describe("extract, on a project with no boundaries", () => {
+  it("returns nothing and fails the run when asked to", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-empty-"));
+    fs.writeFileSync(path.join(dir, "thing.ts"), "export const x = 1;\n");
+    const out = path.join(dir, "summaries.json");
+    const previous = process.exitCode;
+
+    const summaries = await extract({
+      dir,
+      frameworks: ["express"],
+      output: out,
+      failOnEmpty: true,
+    });
+
+    expect(summaries).toEqual([]);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = previous;
+  });
+});
+
+describe("parseFrameworkSpec", () => {
+  it("reads a bare pack name", () => {
+    expect(parseFrameworkSpec("aws-sqs")).toEqual({ name: "aws-sqs" });
+  });
+
+  it("reads the config file the spec names", () => {
+    const file = writeConfig(JSON.stringify({ producers: [] }));
+    expect(parseFrameworkSpec(`aws-sqs=${file}`)).toEqual({
+      name: "aws-sqs",
+      options: { producers: [] },
+    });
+  });
+
+  it("says where it looked when the config is missing", () => {
+    expect(() => parseFrameworkSpec("aws-sqs=./nowhere.json")).toThrow(
+      /No pack config at/,
+    );
+  });
+
+  it("says so when the config is not JSON", () => {
+    const file = writeConfig("producers: []");
+    expect(() => parseFrameworkSpec(`aws-sqs=${file}`)).toThrow(/is not JSON/);
   });
 });
 

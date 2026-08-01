@@ -123,6 +123,42 @@ another pack found:
 Your own packs work the same way. Install `@suss/framework-mypack` and
 `-f mypack` resolves it.
 
+### Configuring a pack
+
+Write `-f <pack>=<config.json>` and the file's contents go to the pack
+as its options. Each pack documents what it accepts; the CLI passes the
+JSON through without reading it.
+
+The message-bus packs use this to learn a project's own dispatcher. A
+service that sends every message through a wrapper writes no
+`SendMessageCommand`, so the pack sees nothing until it is told which
+call to read:
+
+```json
+{
+  "producers": [
+    {
+      "module": "@acme/async",
+      "receiver": "CommandDispatcher",
+      "method": "dispatch",
+      "subjectArg": 0,
+      "bodyArg": 1
+    }
+  ]
+}
+```
+
+`module` is where the dispatcher's type is declared, `receiver` is that
+type's name, `method` is the call that sends, and the two indexes say
+which argument carries the subject and which carries the body. Leave
+`bodyArg` out for a batch method that takes a list of entries. Run it
+with `-f aws-sqs=packs/sqs.json`.
+
+The subject becomes the channel the producer sends on, so it pairs with
+the handler that names the same subject. A subject the source does not
+state as a string yields no effect at all: pairing on a guessed channel
+would name the wrong consumer.
+
 ### Exit codes
 
 - `0`: extraction succeeded (regardless of how many summaries emerged).

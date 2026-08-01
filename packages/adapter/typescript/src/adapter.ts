@@ -1883,6 +1883,10 @@ export function createTypeScriptAdapter(
                 config.extractorOptions,
                 projectFileSet,
                 closureFacts,
+                {
+                  invocation: collectInvocationRecognizers(config.frameworks),
+                  access: collectAccessRecognizers(config.frameworks),
+                },
               ),
             )
           : withSubUnits;

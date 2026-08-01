@@ -714,6 +714,53 @@ describe("subject-channelled consumers", () => {
     ).toHaveLength(0);
   });
 
+  it("does not orphan a producer whose subject a consumer answers", () => {
+    // A wrapper names the subject and the template names the queue, so
+    // no provider carries the subject as its channel. The handler bound
+    // to that subject is what says the channel exists.
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "order.placed",
+      }),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "order.placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter((f) => f.kind === "messageBusProducerOrphan"),
+    ).toHaveLength(0);
+  });
+
+  it("still orphans a producer nothing declares and nothing answers", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "order.misspelled",
+      }),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "order.placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const orphans = findings.filter(
+      (f) => f.kind === "messageBusProducerOrphan",
+    );
+    expect(orphans).toHaveLength(1);
+    expect(orphans[0].description).toContain("order.misspelled");
+  });
+
   it("pairs a consumer that knows only its subject with a producer that names a bus", () => {
     const summaries = [
       queueProvider("OrdersQueue"),

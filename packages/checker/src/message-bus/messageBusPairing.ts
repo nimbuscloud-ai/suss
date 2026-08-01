@@ -175,14 +175,22 @@ export function checkMessageBus(
     }
   }
 
-  // Producer with no provider → orphan producer.
+  // Producer nothing declares → orphan producer. A declared queue and
+  // a handler bound to the subject are both declarations: a producer
+  // that names the subject a handler answers has been paired, even
+  // when no queue in scope carries that name, because a wrapper names
+  // the subject and the template names the queue.
   for (const p of producers) {
     const semantics = p.effect.binding.semantics;
     if (semantics.name !== "message-bus") {
       continue;
     }
     const ch = effectiveChannel(p);
-    if (ch === null || hasPair(providerChannels, ch)) {
+    if (
+      ch === null ||
+      hasPair(providerChannels, ch) ||
+      hasPair(consumerChannels, ch)
+    ) {
       continue;
     }
     findings.push(makeOrphanProducerFinding(p, semantics, ch));
@@ -422,7 +430,7 @@ function makeOrphanProducerFinding(
     boundary: producer.effect.binding,
     provider: makeSide(producer.summary, producer.transitionId),
     consumer: makeSide(producer.summary, producer.transitionId),
-    description: `${producer.summary.identity.name} sends to ${semantics.messageBus} channel ${channelDisplay} but no provider in the analysed scope declares this channel. Likely cases: (a) the queue is declared in another stack we don't analyse (multi-repo); (b) work-in-progress before infra is wired up; (c) a real misconfiguration. Severity is warning rather than error because (a) and (b) are common false-positive sources.`,
+    description: `${producer.summary.identity.name} sends to ${semantics.messageBus} channel ${channelDisplay} but nothing in the analysed scope declares this channel, and no handler answers it. Likely cases: (a) the queue is declared in another stack we don't analyse (multi-repo); (b) work-in-progress before infra is wired up; (c) a real misconfiguration. Severity is warning rather than error because (a) and (b) are common false-positive sources.`,
     severity: "warning",
   };
 }

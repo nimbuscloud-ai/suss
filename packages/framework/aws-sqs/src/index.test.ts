@@ -66,8 +66,42 @@ export interface SQSEvent {
 `,
   );
 
+  // A project's own dispatcher, for the configured-producer tests.
+  project.createSourceFile(
+    "node_modules/@acme/async/package.json",
+    JSON.stringify({ name: "@acme/async", types: "index.d.ts" }),
+  );
+  project.createSourceFile(
+    "node_modules/@acme/async/index.d.ts",
+    `
+export declare class CommandDispatcher {
+  dispatch(subject: string, data: unknown, opts: unknown): Promise<void>;
+  dispatchBatch(subject: string, entries: unknown[]): Promise<void>;
+}
+`,
+  );
+
   return project.createSourceFile("user.ts", userSource);
 }
+
+/** The dispatcher config the configured-producer tests run with. */
+const DISPATCHER_OPTIONS = {
+  producers: [
+    {
+      module: "@acme/async",
+      receiver: "CommandDispatcher",
+      method: "dispatch",
+      subjectArg: 0,
+      bodyArg: 1,
+    },
+    {
+      module: "@acme/async",
+      receiver: "CommandDispatcher",
+      method: "dispatchBatch",
+      subjectArg: 0,
+    },
+  ],
+};
 
 /**
  * Walk the source file and run the SQS recognizer on every CallExpression.
@@ -77,8 +111,11 @@ export interface SQSEvent {
  * would pull the adapter as a dependency for unit tests — these tests
  * exercise the recognizer in isolation.
  */
-function recognizeAll(sourceFile: SourceFile): Effect[] {
-  const pack = sqsFramework();
+function recognizeAll(
+  sourceFile: SourceFile,
+  options?: Parameters<typeof sqsFramework>[0],
+): Effect[] {
+  const pack = sqsFramework(options);
   const recognizers = pack.invocationRecognizers ?? [];
   if (recognizers.length === 0) {
     return raise("expected pack to declare invocationRecognizers");
@@ -564,5 +601,96 @@ describe("sqs pack metadata", () => {
     // Two recognizers: producer-side (sqsRecognizer) and consumer-side
     // (messageReceiveRecognizer).
     expect(pack.invocationRecognizers).toHaveLength(2);
+  });
+
+  it("adds a recognizer and an import gate per configured producer", () => {
+    const pack = sqsFramework(DISPATCHER_OPTIONS);
+    expect(pack.invocationRecognizers).toHaveLength(4);
+    expect(pack.requiresImport).toEqual([
+      "@aws-sdk/client-sqs",
+      "aws-lambda",
+      "@acme/async",
+    ]);
+  });
+});
+
+describe("sqs configured producer", () => {
+  it("reads a send on the project's own dispatcher", () => {
+    const file = makeProject(`
+      import { CommandDispatcher } from "@acme/async";
+      export async function place(dispatcher: CommandDispatcher) {
+        await dispatcher.dispatch(
+          "order.placed",
+          { orderId: "o-1", total: "9" },
+          { queueUrl: process.env.ORDERS_QUEUE_URL }
+        );
+      }
+    `);
+
+    const sends = messageSendEffectsOf(recognizeAll(file, DISPATCHER_OPTIONS));
+    expect(sends).toHaveLength(1);
+    const send = sends[0];
+    expect(send.binding.semantics).toEqual({
+      name: "message-bus",
+      messageBus: "sqs",
+      channel: "order.placed",
+    });
+    expect(send.binding.recognition).toBe("@suss/framework-aws-sqs");
+    expect(send.callee).toBe("dispatcher.dispatch");
+    if (send.interaction.class !== "message-send") {
+      throw new Error("wrong interaction class");
+    }
+    expect(send.interaction.body).toEqual({
+      kind: "object",
+      fields: {
+        orderId: { kind: "string", value: "o-1" },
+        total: { kind: "string", value: "9" },
+      },
+    });
+  });
+
+  it("reads nothing when the subject is computed", () => {
+    const file = makeProject(`
+      import { CommandDispatcher } from "@acme/async";
+      export async function place(dispatcher: CommandDispatcher, kind: string) {
+        await dispatcher.dispatch(kind, { orderId: "o-1" }, { queueUrl: "u" });
+      }
+    `);
+
+    expect(
+      messageSendEffectsOf(recognizeAll(file, DISPATCHER_OPTIONS)),
+    ).toEqual([]);
+  });
+
+  it("carries no body for a batch method the config gives no body argument", () => {
+    const file = makeProject(`
+      import { CommandDispatcher } from "@acme/async";
+      export async function placeMany(dispatcher: CommandDispatcher) {
+        await dispatcher.dispatchBatch("order.placed", []);
+      }
+    `);
+
+    const sends = messageSendEffectsOf(recognizeAll(file, DISPATCHER_OPTIONS));
+    expect(sends).toHaveLength(1);
+    if (sends[0].interaction.class !== "message-send") {
+      throw new Error("wrong interaction class");
+    }
+    expect(sends[0].interaction.body).toBeUndefined();
+    expect(sends[0].binding.semantics).toEqual({
+      name: "message-bus",
+      messageBus: "sqs",
+      channel: "order.placed",
+    });
+  });
+
+  it("reads nothing without the config, on the same source", () => {
+    const file = makeProject(`
+      import { CommandDispatcher } from "@acme/async";
+      export async function place(dispatcher: CommandDispatcher) {
+        await dispatcher.dispatch("order.placed", { orderId: "o-1" }, {});
+      }
+    `);
+
+    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
   });
 });

@@ -23,7 +23,7 @@ import type { ContractSource } from "./contract.js";
 export const USAGE = `
 Usage:
   suss init [directory] [--plain]
-  suss extract [-p <tsconfig> | --dir <directory>] -f <framework> [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
+  suss extract [-p <tsconfig> | --dir <directory>] -f <framework>[=<config.json>] [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss inspect <summaries.json>
   suss inspect --dir <directory>
   suss inspect --diff <before.json> <after.json>
@@ -53,6 +53,9 @@ Options (extract):
                    aws-lambda, react, react-router, fetch, axios,
                    apollo-client, node.
                    Other packs resolve as @suss/framework-<name>.
+                   Write -f <pack>=<config.json> to configure a pack, for
+                   example to name the dispatcher your project sends
+                   messages through. Each pack documents its own options.
   -o, --output     Write JSON to a file instead of stdout
   --files          Read only these source files
   --gaps           What to do with gaps: strict (default), permissive, silent
