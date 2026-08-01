@@ -99,5 +99,35 @@ Resources:
           Properties:
             Queue: !GetAtt JobsQueue.Arn
 
+  # SQS consumer built by a subject-naming handler factory. The
+  # config's `expected` property is the channel subject.
+  SubjectWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/subjectWorker.handler
+      Events:
+        Invoices:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt InvoicesQueue.Arn
+
+  # Same factory, but the subject is computed, so there is no channel
+  # to bind.
+  ComputedSubjectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/computedSubject.handler
+      Events:
+        Refunds:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt RefundsQueue.Arn
+
   JobsQueue:
+    Type: AWS::SQS::Queue
+
+  InvoicesQueue:
+    Type: AWS::SQS::Queue
+
+  RefundsQueue:
     Type: AWS::SQS::Queue

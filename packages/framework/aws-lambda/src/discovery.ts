@@ -10,6 +10,8 @@
 // extraction — the message-bus pass in @suss/contract-cloudformation
 // owns SQS consumers — but they're surfaced as `recognized-not-http`
 // accounting units so a recognized handler is never silently dropped.
+// An SQS consumer built by a subject-naming handler factory also gets
+// a message-bus binding on that subject, so it pairs with producers.
 
 import { type HandlerEntry, handlersForFile } from "./templateIndex.js";
 import { NON_HTTP_TERMINALS } from "./terminals.js";
@@ -111,7 +113,10 @@ function graphqlResolverUnits(
  * consumer, or one whose only route is ANY) still gets one accounting
  * unit — no `routeInfo`, so it falls back to a function-call binding and
  * pairs with nothing, but it appears in the summary set marked
- * `recognized-not-http` with the event types that reached it.
+ * `recognized-not-http` with the event types that reached it. When the
+ * handler's factory config names the subject it consumes (`channel`
+ * non-null), the unit carries a message-bus binding on that subject
+ * instead of the fallback.
  *
  * No HTTP envelope constrains what these answer with, so the unit
  * carries the wider terminal list and any returned object gets its
@@ -121,6 +126,7 @@ function graphqlResolverUnits(
 function accountingUnit(
   entry: HandlerEntry,
   func: FunctionRoot,
+  channel: string | null,
 ): DiscoveredCustomUnit {
   const eventTypes = accountedEventTypes(entry);
   const backs = typeFields(entry);
@@ -129,6 +135,9 @@ function accountingUnit(
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
     terminals: NON_HTTP_TERMINALS,
+    ...(channel !== null
+      ? { channelInfo: { messageBus: "sqs" as const, channel } }
+      : {}),
     metadata: {
       [METADATA_NAMESPACE]: {
         functionLogicalId: entry.functionLogicalId,
@@ -139,6 +148,44 @@ function accountingUnit(
       },
     },
   };
+}
+
+/**
+ * Handler factories whose config names the subject the consumer
+ * expects: `createEventHandler({ expected: "user.reported" as const,
+ * ... }, async ({ parsed }) => ...)`. The subject is the channel a
+ * producer publishes on, so it becomes the unit's message-bus binding.
+ *
+ * The queue itself stays with the declared side (the message-bus pass
+ * in @suss/contract-cloudformation reads the template's SQS wiring);
+ * what the code adds is which subject this consumer answers to.
+ */
+const SUBJECT_FACTORIES = {
+  callees: ["createEventHandler", "createCommandHandler"],
+  argIndex: 0,
+  property: "expected",
+};
+
+/**
+ * The subject a handler's factory config names, when the template
+ * routes SQS to it and the subject is a readable string. Anything
+ * else (no factory call, computed subject) answers null and the unit
+ * keeps its default binding.
+ */
+function subjectChannel(
+  entry: HandlerEntry,
+  sf: SourceFile,
+  tsCtx: TsDiscoveryContext,
+): string | null {
+  const consumesSqs = entry.nonHttpEvents.some((e) => e.eventType === "SQS");
+  if (!consumesSqs) {
+    return null;
+  }
+  return tsCtx.exportedCallConfigString(
+    sf,
+    entry.exportName,
+    SUBJECT_FACTORIES,
+  );
 }
 
 /** Events that reach a handler but do not bind to a route of their own. */
@@ -203,7 +250,7 @@ export const awsLambdaDiscovery: NonNullable<PatternPack["discoverUnits"]> = (
     const boundToNothing =
       !hasBindableRoute(entry) && operationFields(entry).length === 0;
     if (unaccountedEvents.length > 0 || boundToNothing) {
-      units.push(accountingUnit(entry, func));
+      units.push(accountingUnit(entry, func, subjectChannel(entry, sf, tsCtx)));
     }
   }
   return units;

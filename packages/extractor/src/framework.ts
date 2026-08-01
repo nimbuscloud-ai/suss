@@ -3,7 +3,7 @@
 // Pattern packs are declarative data that tell the language adapter WHAT to look for.
 // The adapter knows HOW to look for it in the language's AST.
 
-import type { Effect } from "@suss/behavioral-ir";
+import type { Effect, MessageBusSemantics } from "@suss/behavioral-ir";
 
 // =============================================================================
 // Discovery
@@ -1028,6 +1028,17 @@ export interface DiscoveredCustomUnit {
    * pairs with the operations a client sends.
    */
   resolverInfo?: { typeName: string; fieldName: string };
+  /**
+   * Message-bus channel identity for consumer units a callback
+   * discovers against a subject the code itself names (a handler
+   * factory whose config carries the expected subject). When set, the
+   * adapter builds a `message-bus` binding from `(messageBus, channel)`,
+   * which pairs with producers sending on the same channel.
+   */
+  channelInfo?: {
+    messageBus: MessageBusSemantics["messageBus"];
+    channel: string;
+  };
   /**
    * Metadata merged onto the resulting summary's `metadata` field.
    */

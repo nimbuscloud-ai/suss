@@ -8,6 +8,7 @@
 
 import { type CallExpression, Node } from "ts-morph";
 
+import type { MessageBusSemantics } from "@suss/behavioral-ir";
 import type {
   DiscoveryPattern,
   InputMappingPattern,
@@ -120,6 +121,17 @@ export interface DiscoveredUnit {
   routeInfo?: {
     method: string;
     path: string;
+  };
+  /**
+   * Populated by a pack's `discoverUnits` callback for a message-bus
+   * consumer whose channel the code names (a handler factory whose
+   * config carries the expected subject). The adapter uses it to build
+   * a `message-bus` binding directly, which pairs with producers
+   * sending on the same channel.
+   */
+  channelInfo?: {
+    messageBus: MessageBusSemantics["messageBus"];
+    channel: string;
   };
   /**
    * Metadata merged onto the assembled summary's `metadata` field.

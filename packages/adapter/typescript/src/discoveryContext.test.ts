@@ -2,6 +2,7 @@ import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTsDiscoveryContext } from "./discoveryContext.js";
+import { ResolutionStore } from "./facts/store.js";
 
 function sourceFile(code: string) {
   const project = new Project({
@@ -65,5 +66,66 @@ describe("createTsDiscoveryContext", () => {
     );
     const fn = ctx.exportedFunctions(file)[0].func;
     expect(ctx.hasJsxReturn(fn)).toBe(false);
+  });
+});
+
+describe("exportedCallConfigString", () => {
+  const spec = {
+    callees: ["createEventHandler"],
+    argIndex: 0,
+    property: "expected",
+  };
+
+  it("reads the subject through an as-const cast", () => {
+    const file = sourceFile(`
+      declare function createEventHandler(c: unknown, b: unknown): unknown;
+      export const handler = createEventHandler(
+        { name: "w", expected: "billing.invoicePaid" as const },
+        async () => undefined,
+      );
+    `);
+    expect(ctx.exportedCallConfigString(file, "handler", spec)).toBe(
+      "billing.invoicePaid",
+    );
+  });
+
+  it("answers null for a computed subject", () => {
+    const file = sourceFile(`
+      declare function createEventHandler(c: unknown, b: unknown): unknown;
+      const source = "billing";
+      export const handler = createEventHandler(
+        { expected: \`\${source}.refundIssued\` },
+        async () => undefined,
+      );
+    `);
+    expect(ctx.exportedCallConfigString(file, "handler", spec)).toBeNull();
+  });
+
+  it("answers null when the callee is not in the list", () => {
+    const file = sourceFile(`
+      declare function otherFactory(c: unknown, b: unknown): unknown;
+      export const handler = otherFactory(
+        { expected: "billing.invoicePaid" },
+        async () => undefined,
+      );
+    `);
+    expect(ctx.exportedCallConfigString(file, "handler", spec)).toBeNull();
+  });
+
+  it("answers null when the export is not a call", () => {
+    const file = sourceFile("export const handler = async () => undefined;");
+    expect(ctx.exportedCallConfigString(file, "handler", spec)).toBeNull();
+  });
+
+  it("follows a config variable to the object literal it names", () => {
+    const rctx = createTsDiscoveryContext(new ResolutionStore());
+    const file = sourceFile(`
+      declare function createEventHandler(c: unknown, b: unknown): unknown;
+      const config = { expected: "user.deleted" as const };
+      export const handler = createEventHandler(config, async () => undefined);
+    `);
+    expect(rctx.exportedCallConfigString(file, "handler", spec)).toBe(
+      "user.deleted",
+    );
   });
 });
