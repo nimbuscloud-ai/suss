@@ -95,7 +95,7 @@ interface Finding {
 }
 ```
 
-`FindingKind` spans REST coverage / consumer satisfaction / contract consistency, GraphQL operation pairing, React-component / Storybook agreement, storage-relational field pairing, message-bus producer / consumer / queue pairing, runtime-config env-var pairing, and meta-findings (`lowConfidence`, `unsupportedSemantics`, `opaquePredicateBlocking`). The authoritative enumeration is `FindingKindSchema` in `packages/ir/src/schemas.ts`; the [findings catalog](/reference/findings) groups every kind by domain with severity, emitter, and example.
+`FindingKind` spans REST coverage / consumer satisfaction / contract consistency, GraphQL operation pairing, React-component / Storybook agreement, storage-relational field pairing, message-bus producer / consumer / queue pairing, runtime-config env-var pairing, and meta-findings (`lowConfidence`, `unsupportedSemantics`, `opaquePredicateBlocking`). The authoritative enumeration is `FindingKindSchema` in `packages/behavioral-ir/src/schemas.ts`; the [findings catalog](/reference/findings) groups every kind by domain with severity, emitter, and example.
 
 Findings are JSON-serializable. The CLI exits non-zero when any `error`-severity finding exists (tunable via `--fail-on`).
 

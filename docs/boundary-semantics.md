@@ -87,7 +87,7 @@ ultimately describing, not what the recognition rules look like.
 
 ## Shipped shape
 
-`packages/ir/src/schemas.ts` exports `BoundaryBinding` as:
+`packages/behavioral-ir/src/schemas.ts` exports `BoundaryBinding` as:
 
 ```ts
 interface BoundaryBinding {

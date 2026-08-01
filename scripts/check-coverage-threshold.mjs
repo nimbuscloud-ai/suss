@@ -45,6 +45,16 @@ function readPctFromMain(relPath) {
 }
 
 const regressions = [];
+/**
+ * How far coverage may fall before the gate calls it a regression.
+ * A line moving between files shifts a percentage by a hundredth
+ * without anything going untested, and the gate used to compare raw
+ * floats while printing two decimals, so a package that printed
+ * `92.85% to 92.85%` could fail. Anything a reader would see as a drop
+ * still fails.
+ */
+const TOLERANCE = 0.05;
+
 let comparisonsRun = 0;
 
 for (const pkgPath of packageDirs) {
@@ -75,7 +85,7 @@ for (const pkgPath of packageDirs) {
     `  ${pkgPath}: ${baseline}% → ${current}% (${arrow}${Math.abs(delta).toFixed(2)}%)`,
   );
 
-  if (current < baseline) {
+  if (delta < -TOLERANCE) {
     regressions.push({ pkgPath, baseline, current, delta });
   }
 }

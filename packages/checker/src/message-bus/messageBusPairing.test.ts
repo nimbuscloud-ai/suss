@@ -26,6 +26,8 @@ function consumerSummary(opts: {
   name: string;
   channel: string;
   codeScopePath: string;
+  /** Queue logical id kept in metadata when the channel is a subject. */
+  queue?: string;
 }): BehavioralSummary {
   return {
     kind: "consumer",
@@ -53,6 +55,9 @@ function consumerSummary(opts: {
     confidence: { source: "inferred_static", level: "high" },
     metadata: {
       codeScope: { kind: "codeUri", path: opts.codeScopePath },
+      ...(opts.queue !== undefined
+        ? { messageBus: { queue: opts.queue } }
+        : {}),
     },
   };
 }
@@ -582,5 +587,248 @@ describe("eventbridge pairing", () => {
     expect(findings.filter((f) => f.kind === "unsupportedSemantics")).toEqual(
       [],
     );
+  });
+});
+
+/**
+ * A code unit the aws-lambda pack bound to the subject its handler
+ * factory names: a handler-kind summary carrying a message-bus binding
+ * rather than a declared subscription.
+ */
+function codeReceiver(opts: {
+  name: string;
+  filePath: string;
+  channel: string;
+}): BehavioralSummary {
+  return {
+    kind: "handler",
+    location: {
+      file: opts.filePath,
+      range: { start: 0, end: 0 },
+      exportName: "handler",
+    },
+    identity: {
+      name: opts.name,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "sqs",
+        semantics: {
+          name: "message-bus",
+          messageBus: "sqs",
+          channel: opts.channel,
+        },
+        recognition: "@suss/framework-aws-lambda",
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+describe("code-side receivers", () => {
+  it("stops a declared channel a handler answers being reported unused", () => {
+    const summaries = [
+      eventBridgeProvider("default#order.placed"),
+      codeReceiver({
+        name: "OrderProcessor.handler",
+        filePath: "src/order-processor/index.ts",
+        channel: "order.placed",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(findings.filter((f) => f.kind === "messageBusUnused")).toHaveLength(
+      0,
+    );
+  });
+
+  it("still reports a declared channel no handler answers as unused", () => {
+    const summaries = [
+      eventBridgeProvider("default#order.placed"),
+      codeReceiver({
+        name: "ShipmentProcessor.handler",
+        filePath: "src/shipment-processor/index.ts",
+        channel: "shipment.created",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(findings.filter((f) => f.kind === "messageBusUnused")).toHaveLength(
+      1,
+    );
+  });
+
+  it("does not orphan-check a code receiver that no producer sends to", () => {
+    const summaries = [
+      codeReceiver({
+        name: "OrderProcessor.handler",
+        filePath: "src/order-processor/index.ts",
+        channel: "order.placed",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(findings).toHaveLength(0);
+  });
+});
+
+describe("subject-channelled consumers", () => {
+  it("does not report the drained queue as unused when the consumer's channel is a subject", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "order.placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(findings.filter((f) => f.kind === "messageBusUnused")).toHaveLength(
+      0,
+    );
+  });
+
+  it("does not orphan a rule-fed consumer when a producer publishes its subject", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "AppBus#order.placed",
+      }),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "AppBus#order.placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter(
+        (f) =>
+          f.kind === "messageBusConsumerOrphan" ||
+          f.kind === "messageBusUnused",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("pairs a consumer that knows only its subject with a producer that names a bus", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "default#order.placed",
+      }),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "order.placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter(
+        (f) =>
+          f.kind === "messageBusConsumerOrphan" ||
+          f.kind === "messageBusUnused",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("orphans a consumer whose bus disagrees with the producer's", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "default#order.placed",
+      }),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "staging#order.placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const orphan = findings.find((f) => f.kind === "messageBusConsumerOrphan");
+    expect(orphan?.description).toContain("staging#order.placed");
+  });
+
+  it("keeps pairing a queue-id channel that carries no subject", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "OrdersQueue",
+      }),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "OrdersQueue",
+        codeScopePath: "src/order-processor/",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter(
+        (f) =>
+          f.kind === "messageBusConsumerOrphan" ||
+          f.kind === "messageBusUnused" ||
+          f.kind === "messageBusProducerOrphan",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("pairs a subject that contains the bus separator without splitting it twice", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "AppBus#order#placed",
+      }),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "AppBus#order#placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+      consumerSummary({
+        name: "PrefixProcessor.FromPrefix",
+        channel: "AppBus#order",
+        codeScopePath: "src/prefix-processor/",
+        queue: "PrefixQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const orphans = findings.filter(
+      (f) => f.kind === "messageBusConsumerOrphan",
+    );
+    expect(orphans).toHaveLength(1);
+    expect(orphans[0]?.description).toContain('AppBus#order"');
+  });
+
+  it("still reports a queue no consumer drains as unused", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      consumerSummary({
+        name: "OtherProcessor.FromOther",
+        channel: "other.subject",
+        codeScopePath: "src/other/",
+        queue: "OtherQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter(
+        (f) =>
+          f.kind === "messageBusUnused" &&
+          f.description.includes("OrdersQueue"),
+      ),
+    ).toHaveLength(1);
   });
 });

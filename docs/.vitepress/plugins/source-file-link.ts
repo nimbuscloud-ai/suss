@@ -1,6 +1,6 @@
 // Auto-link inline-code occurrences of repo source paths to GitHub.
 //
-// Any inline code that looks like `packages/ir/src/schemas.ts`,
+// Any inline code that looks like `packages/behavioral-ir/src/schemas.ts`,
 // `scripts/dogfood.mjs`, or `fixtures/apollo/server.ts` gets wrapped in
 // an anchor pointing at the file (blob/main/...) or directory
 // (tree/main/...) on GitHub. Solves the recurring problem of writing

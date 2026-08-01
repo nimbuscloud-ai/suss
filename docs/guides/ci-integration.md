@@ -87,7 +87,7 @@ for PR-comment bots, dashboards, dedicated reporting steps:
 The JSON shape is the IR's `Finding[]`, same types the checker
 exports. Downstream tools that consume it can validate via
 `@suss/behavioral-ir`'s exported schema or the generated
-JSON Schema (`packages/ir/schema/behavioral-summary.schema.json`).
+JSON Schema (`packages/behavioral-ir/schema/behavioral-summary.schema.json`).
 
 ## Suppressing known-accepted findings
 

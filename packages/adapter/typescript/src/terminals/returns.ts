@@ -9,6 +9,7 @@ import {
   Node,
   type ObjectLiteralExpression,
   type ParameterDeclaration,
+  type ReturnStatement,
 } from "ts-morph";
 
 import { extractShape } from "../shapes/shapes.js";
@@ -101,6 +102,17 @@ function unwrapMethodChain(
 }
 
 /**
+ * The value a return statement hands back, with the wrappers that carry
+ * it along peeled off. `return await respond(200)` produces what
+ * `return respond(200)` produces, and `return {...} as R` returns the
+ * object. Null for a bare `return;`.
+ */
+function returnedValueOf(returnStatement: ReturnStatement): Node | null {
+  const written = returnStatement.getExpression();
+  return written === undefined ? null : unwrapValue(written);
+}
+
+/**
  * Match a returned object against a `returnShape` pattern.
  *
  * Returns a list because a return can produce more than one outcome. A
@@ -114,14 +126,18 @@ export function tryMatchReturnShape(
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
 ): FoundTerminal[] {
   if (Node.isObjectLiteralExpression(node)) {
-    // A direct child of a return statement is handled by the
-    // ReturnStatement case below, and matching here as well would
-    // report the same return twice.
-    if (Node.isReturnStatement(node.getParent())) {
-      return [];
-    }
     const source = returnPositionOf(node);
     if (source === null) {
+      return [];
+    }
+    // The object a return writes is handled by the ReturnStatement case
+    // below, which looks through the wrappers first, so matching here as
+    // well would report the same return twice. Comparing against the
+    // unwrapped expression is what catches `return {...} as R` and the
+    // parenthesised, `as const`, and `satisfies` spellings of it. A
+    // ternary branch is not the whole returned expression, so both of
+    // its objects still match here.
+    if (Node.isReturnStatement(source) && returnedValueOf(source) === node) {
       return [];
     }
     const terminal = terminalFromReturnedObject(node, node, pattern, match);
@@ -132,14 +148,10 @@ export function tryMatchReturnShape(
     return [];
   }
 
-  const written = node.getExpression();
-  if (written === undefined) {
+  const returned = returnedValueOf(node);
+  if (returned === null) {
     return [];
   }
-  // `return await respond(200)` produces what `return respond(200)`
-  // produces, so look through the await and the parentheses before
-  // asking what was returned.
-  const returned = unwrapValue(written);
 
   if (Node.isObjectLiteralExpression(returned)) {
     const terminal = terminalFromReturnedObject(returned, node, pattern, match);

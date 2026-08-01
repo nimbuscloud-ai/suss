@@ -24,6 +24,13 @@ function pickConsumers(summaries: BehavioralSummary[]): BehavioralSummary[] {
   );
 }
 
+function channelsOf(summaries: BehavioralSummary[]): (string | null)[] {
+  return summaries.map((s) => {
+    const semantics = s.identity.boundaryBinding?.semantics;
+    return semantics?.name === "message-bus" ? semantics.channel : null;
+  });
+}
+
 describe("buildMessageBusSummaries", () => {
   it("emits one provider summary per AWS::SQS::Queue", () => {
     const out = cloudFormationToSummaries({
@@ -499,7 +506,7 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     expect(resolutionOf(consumer)).toBe("schedule");
   });
 
-  it("skips rules whose only targets are non-Lambda resources", () => {
+  it("declares the channel but emits no consumer when a rule's only targets are non-Lambda", () => {
     const out = cloudFormationToSummaries({
       Resources: {
         OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
@@ -517,6 +524,25 @@ describe("buildMessageBusSummaries — EventBridge", () => {
       },
     });
     expect(eventBridgeConsumers(out)).toEqual([]);
+    expect(channelsOf(eventBridgeProviders(out))).toEqual([
+      "OrderEventBus#OrderPlaced",
+    ]);
+  });
+
+  it("emits no provider for a rule with no targets at all", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEventBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        NoTargetRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventBusName: { Ref: "OrderEventBus" },
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [],
+          },
+        },
+      },
+    });
     expect(eventBridgeProviders(out)).toEqual([]);
   });
 
@@ -662,5 +688,291 @@ describe("buildMessageBusSummaries — EventBridge edge shapes", () => {
       },
     });
     expect(eventBridgeConsumers(out)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Subject channels on rule-fed SQS consumers
+// ---------------------------------------------------------------------------
+
+function sqsConsumerTemplate(rules: Record<string, unknown>) {
+  return {
+    Resources: {
+      OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+      OrderProcessor: {
+        Type: "AWS::Serverless::Function",
+        Properties: {
+          CodeUri: "src/order-processor/",
+          Events: {
+            FromOrders: {
+              Type: "SQS",
+              Properties: { Queue: { "Fn::GetAtt": ["OrdersQueue", "Arn"] } },
+            },
+          },
+        },
+      },
+      ...rules,
+    },
+  };
+}
+
+function singleSubjectRule(detailTypes: string[], eventBusName?: unknown) {
+  return {
+    Type: "AWS::Events::Rule",
+    Properties: {
+      ...(eventBusName !== undefined ? { EventBusName: eventBusName } : {}),
+      EventPattern: { "detail-type": detailTypes },
+      Targets: [
+        { Id: "orders", Arn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] } },
+      ],
+    },
+  };
+}
+
+describe("buildMessageBusSummaries: subject channels", () => {
+  it("names the consumer channel after the one detail-type routed into its queue", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({ OrdersRule: singleSubjectRule(["order.placed"]) }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "message-bus",
+      messageBus: "sqs",
+      channel: "default#order.placed",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      queue: "OrdersQueue",
+      subject: "order.placed",
+      eventBus: "default",
+    });
+  });
+
+  it("keeps the queue-id channel on the provider even when its consumer takes the subject", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({ OrdersRule: singleSubjectRule(["order.placed"]) }),
+    );
+    const provider = pickProviders(out)[0] ?? raise("no provider");
+    expect(provider.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+  });
+
+  it("keeps the queue-id channel when one rule routes several detail-types", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        OrdersRule: singleSubjectRule(["order.placed", "order.canceled"]),
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+    expect(consumer.metadata?.messageBus).not.toHaveProperty("subject");
+  });
+
+  it("keeps the queue-id channel when two rules route different subjects into the queue", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        PlacedRule: singleSubjectRule(["order.placed"]),
+        CanceledRule: singleSubjectRule(["order.canceled"]),
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+  });
+
+  it("takes the subject when two rules route the same detail-type", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        PlacedRule: singleSubjectRule(["order.placed"]),
+        MirrorRule: singleSubjectRule(["order.placed"]),
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "default#order.placed",
+    });
+  });
+
+  it("ignores rules whose pattern does not reduce to exact detail-types", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        FilterRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": [{ prefix: "order." }] },
+            Targets: [
+              { Id: "orders", Arn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] } },
+            ],
+          },
+        },
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+  });
+
+  it("ignores scheduled rules when collecting queue subjects", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        Nightly: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            ScheduleExpression: "rate(1 day)",
+            EventPattern: { "detail-type": ["order.placed"] },
+            Targets: [
+              { Id: "orders", Arn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] } },
+            ],
+          },
+        },
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+  });
+
+  it("names the EventSourceMapping consumer channel after the routed subject", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+        OrderProcessor: {
+          Type: "AWS::Lambda::Function",
+          Properties: { Code: {} },
+        },
+        Mapping: {
+          Type: "AWS::Lambda::EventSourceMapping",
+          Properties: {
+            EventSourceArn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
+            FunctionName: { Ref: "OrderProcessor" },
+          },
+        },
+        OrdersRule: singleSubjectRule(["order.placed"]),
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "default#order.placed",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      queue: "OrdersQueue",
+      subject: "order.placed",
+    });
+  });
+
+  it("carries the routing bus in the consumer channel so an EventBridge producer pairs", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        AppBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        ...sqsConsumerTemplate({
+          OrdersRule: singleSubjectRule(["order.placed"], { Ref: "AppBus" }),
+        }).Resources,
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "AppBus#order.placed",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      queue: "OrdersQueue",
+      subject: "order.placed",
+      eventBus: "AppBus",
+    });
+  });
+
+  it("keeps the queue-id channel when two buses route the same detail-type into the queue", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        AppBus: { Type: "AWS::Events::EventBus", Properties: {} },
+        ...sqsConsumerTemplate({
+          AppRule: singleSubjectRule(["order.placed"], { Ref: "AppBus" }),
+          DefaultRule: singleSubjectRule(["order.placed"]),
+        }).Resources,
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+    expect(consumer.metadata?.messageBus).not.toHaveProperty("subject");
+  });
+
+  it("resolves a queue target given as a plain SQS ARN", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        ...sqsConsumerTemplate({}).Resources,
+        OrdersRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["order.placed"] },
+            Targets: [
+              {
+                Id: "orders",
+                Arn: "arn:aws:sqs:us-east-1:111122223333:OrdersQueue",
+              },
+            ],
+          },
+        },
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "default#order.placed",
+    });
+  });
+
+  it("declares the routed subject as a provider when the rule's only target is a queue", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({ OrdersRule: singleSubjectRule(["order.placed"]) }),
+    );
+    const channels = channelsOf(pickProviders(out));
+    expect(channels).toContain("default#order.placed");
+    expect(channels).toContain("OrdersQueue");
+  });
+
+  it("does not lend a rule target's dead-letter queue the routed subject", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+        OrdersDlq: { Type: "AWS::SQS::Queue", Properties: {} },
+        DlqProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/dlq-processor/",
+            Events: {
+              FromDlq: {
+                Type: "SQS",
+                Properties: { Queue: { "Fn::GetAtt": ["OrdersDlq", "Arn"] } },
+              },
+            },
+          },
+        },
+        OrdersRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["order.placed"] },
+            Targets: [
+              {
+                Id: "orders",
+                Arn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
+                DeadLetterConfig: {
+                  Arn: { "Fn::GetAtt": ["OrdersDlq", "Arn"] },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersDlq",
+    });
+    expect(consumer.metadata?.messageBus).not.toHaveProperty("subject");
   });
 });

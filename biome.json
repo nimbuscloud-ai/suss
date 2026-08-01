@@ -9,7 +9,8 @@
       "!**/dist/**",
       "!fixtures/**",
       "!**/coverage/**",
-      "!**/.suss/**"
+      "!**/.suss/**",
+      "!**/.claude/worktrees/**"
     ]
   },
   "vcs": {
