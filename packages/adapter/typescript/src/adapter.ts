@@ -16,6 +16,7 @@ import {
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
+  messageBusBinding,
   packageExportBinding,
   restBinding,
 } from "@suss/behavioral-ir";
@@ -904,6 +905,9 @@ function extractFromSourceFile(
             ...(cu.resolverInfo !== undefined
               ? { resolverInfo: cu.resolverInfo }
               : {}),
+            ...(cu.channelInfo !== undefined
+              ? { channelInfo: cu.channelInfo }
+              : {}),
             ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
           });
         }
@@ -939,7 +943,13 @@ function extractFromSourceFile(
         unit.resolverInfo !== undefined
           ? `-${unit.resolverInfo.typeName}.${unit.resolverInfo.fieldName}`
           : "";
-      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}${resolverSuffix}`;
+      // And for message-bus consumers: the channel keeps a unit distinct
+      // from a route or resolver unit sharing the same handler function.
+      const channelSuffix =
+        unit.channelInfo !== undefined
+          ? `-${unit.channelInfo.messageBus}:${unit.channelInfo.channel}`
+          : "";
+      const claimKey = `${unit.func.getStart()}-${unit.func.getEnd()}-${unit.kind}${bindingSuffix}${routeSuffix}${resolverSuffix}${channelSuffix}`;
       if (claimed.has(claimKey)) {
         continue;
       }
@@ -1007,6 +1017,15 @@ function extractFromSourceFile(
           recognition: pack.name,
           method: unit.routeInfo.method,
           path: unit.routeInfo.path,
+        });
+      } else if (unit.channelInfo !== undefined) {
+        // Message-bus consumer: bind directly from the discovery-derived
+        // (messageBus, channel). The channel is the subject the handler's
+        // own config names, so it pairs with producers sending on it.
+        raw.boundaryBinding = messageBusBinding({
+          recognition: pack.name,
+          messageBus: unit.channelInfo.messageBus,
+          channel: unit.channelInfo.channel,
         });
       } else if (unit.operationInfo !== undefined) {
         // GraphQL operation (consumer-side hook): bind from the

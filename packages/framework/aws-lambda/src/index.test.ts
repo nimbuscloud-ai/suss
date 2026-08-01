@@ -23,7 +23,9 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
       skipLibCheck: true,
     },
   });
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "src/handlers/*.ts"));
+  // The whole src tree: handlers plus the lib/ factory a handler
+  // export resolves through.
+  project.addSourceFilesAtPaths(path.join(fixturesDir, "src/**/*.ts"));
 
   const adapter = createTypeScriptAdapter({
     project,
@@ -66,6 +68,18 @@ function byEventType(
       meta?.recognition === "recognized-not-http" &&
       (meta.eventTypes ?? []).includes(eventType)
     );
+  });
+}
+
+function byFunction(
+  summaries: BehavioralSummary[],
+  logicalId: string,
+): BehavioralSummary | undefined {
+  return summaries.find((s) => {
+    const meta = s.metadata?.awsLambda as
+      | { functionLogicalId?: string }
+      | undefined;
+    return meta?.functionLogicalId === logicalId;
   });
 }
 
@@ -188,7 +202,7 @@ describe("awsLambdaFramework — extraction", () => {
   });
 
   it("accounts for the SQS handler as recognized-not-http", () => {
-    const sqs = byEventType(summaries, "SQS");
+    const sqs = byFunction(summaries, "QueueWorkerFunction");
     expect(sqs).toBeDefined();
     const meta = (sqs as BehavioralSummary).metadata?.awsLambda as {
       recognition: string;
@@ -215,7 +229,10 @@ describe("awsLambdaFramework — extraction", () => {
   });
 
   it("keeps the SQS consumer's batch-failure return under the wider list", () => {
-    const sqs = byEventType(summaries, "SQS") as BehavioralSummary;
+    const sqs = byFunction(
+      summaries,
+      "QueueWorkerFunction",
+    ) as BehavioralSummary;
     const returns = sqs.transitions.filter((t) => t.output.type === "return");
     // The named batchItemFailures shape matches first; the unqualified
     // return terminal adds nothing on top of it.
@@ -268,5 +285,33 @@ describe("awsLambdaFramework — extraction", () => {
     expect(meta.functionLogicalId).toBe("ConfirmTokenFunction");
     expect(meta.handler).toBe("src/handlers/confirmToken.handler");
     expect(meta.apiEventType).toBe("HttpApi");
+  });
+
+  it("binds a factory-built SQS consumer to the subject its config names", () => {
+    const worker = byFunction(summaries, "SubjectWorkerFunction");
+    expect(worker).toBeDefined();
+    const binding = (worker as BehavioralSummary).identity
+      .boundaryBinding as BoundaryBinding;
+    expect(binding.semantics.name).toBe("message-bus");
+    if (binding.semantics.name === "message-bus") {
+      expect(binding.semantics.messageBus).toBe("sqs");
+      expect(binding.semantics.channel).toBe("billing.invoicePaid");
+    }
+    expect(binding.transport).toBe("sqs");
+    expect(binding.recognition).toBe("aws-lambda");
+    // Still a recognized-not-http accounting unit underneath.
+    const meta = (worker as BehavioralSummary).metadata?.awsLambda as {
+      recognition: string;
+      eventTypes: string[];
+    };
+    expect(meta.recognition).toBe("recognized-not-http");
+    expect(meta.eventTypes).toContain("SQS");
+  });
+
+  it("attaches no channel when the factory subject is computed", () => {
+    const computed = byFunction(summaries, "ComputedSubjectFunction");
+    expect(computed).toBeDefined();
+    const binding = (computed as BehavioralSummary).identity.boundaryBinding;
+    expect(binding?.semantics.name).not.toBe("message-bus");
   });
 });

@@ -11,7 +11,7 @@
 // Helpers stay narrow on purpose. They cover the cases real packs need
 // without exposing arbitrary ts-morph surface to pack authors.
 
-import { Node, type SourceFile } from "ts-morph";
+import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 
 import { toFunctionRoot } from "./discovery/shared.js";
 
@@ -40,6 +40,26 @@ export interface TsDiscoveryContext {
   ): Array<{ name: string; func: FunctionRoot; isDefault: boolean }>;
 
   /**
+   * For an export whose declaration is a call to one of `callees`,
+   * read the string a property of the call's config object holds:
+   * `export const handler = createEventHandler({ expected: "a.b" }, ...)`
+   * with `{ callees: ["createEventHandler"], argIndex: 0, property:
+   * "expected" }` answers `"a.b"`.
+   *
+   * The config argument is usually an object literal at the call site;
+   * a variable or import is followed to the literal it resolves to.
+   * `as const` and parentheses around the property value are peeled.
+   * Anything but a string literal underneath (a computed subject, a
+   * template, a call) answers null — the caller attaches nothing
+   * rather than guessing.
+   */
+  exportedCallConfigString(
+    sourceFile: SourceFile,
+    exportName: string,
+    spec: { callees: string[]; argIndex: number; property: string },
+  ): string | null;
+
+  /**
    * Walk a function's body for return statements whose value is a
    * JSX element / fragment / self-closing tag. Returns true on the
    * first match; false otherwise. Skips into nested function bodies
@@ -59,6 +79,8 @@ export function createTsDiscoveryContext(
     getFilePath,
     exportedFunctions: (sourceFile) =>
       exportedFunctions(sourceFile, resolution),
+    exportedCallConfigString: (sourceFile, exportName, spec) =>
+      exportedCallConfigString(sourceFile, exportName, spec, resolution),
     hasJsxReturn,
   };
 }
@@ -102,6 +124,95 @@ function exportedFunctions(
     }
   }
   return out;
+}
+
+function exportedCallConfigString(
+  sourceFile: SourceFile,
+  exportName: string,
+  spec: { callees: string[]; argIndex: number; property: string },
+  resolution?: ResolutionStore,
+): string | null {
+  const declarations = sourceFile.getExportedDeclarations().get(exportName);
+  if (declarations === undefined) {
+    return null;
+  }
+
+  for (const decl of declarations) {
+    if (!Node.isVariableDeclaration(decl)) {
+      continue;
+    }
+    const init = peelExpression(decl.getInitializer());
+    if (init === undefined || !Node.isCallExpression(init)) {
+      continue;
+    }
+    const callee = init.getExpression();
+    if (
+      !Node.isIdentifier(callee) ||
+      !spec.callees.includes(callee.getText())
+    ) {
+      continue;
+    }
+    const arg = init.getArguments()[spec.argIndex];
+    if (arg === undefined) {
+      continue;
+    }
+    const config = toObjectLiteral(arg, resolution);
+    if (config === null) {
+      continue;
+    }
+    const prop = config.getProperty(spec.property);
+    if (prop === undefined || !Node.isPropertyAssignment(prop)) {
+      continue;
+    }
+    const value = peelExpression(prop.getInitializer());
+    if (value !== undefined && Node.isStringLiteral(value)) {
+      return value.getLiteralValue();
+    }
+  }
+  return null;
+}
+
+/**
+ * Strip the wrappers that change a value's type without changing the
+ * value: `as const` / `as T`, `satisfies T`, parentheses, and `!`.
+ */
+function peelExpression(node: Node | undefined): Node | undefined {
+  let current = node;
+  while (
+    current !== undefined &&
+    (Node.isAsExpression(current) ||
+      Node.isSatisfiesExpression(current) ||
+      Node.isParenthesizedExpression(current) ||
+      Node.isNonNullExpression(current))
+  ) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+/**
+ * The object literal a value is, or resolves to through the fact
+ * layer (a config built in a shared constant or another file).
+ */
+function toObjectLiteral(
+  node: Node,
+  resolution?: ResolutionStore,
+): ObjectLiteralExpression | null {
+  const peeled = peelExpression(node);
+  if (peeled === undefined) {
+    return null;
+  }
+  if (Node.isObjectLiteralExpression(peeled)) {
+    return peeled;
+  }
+  if (resolution === undefined) {
+    return null;
+  }
+  const resolved = resolution.resolveObject(peeled);
+  if (resolved !== null && Node.isObjectLiteralExpression(resolved)) {
+    return resolved;
+  }
+  return null;
 }
 
 /**
