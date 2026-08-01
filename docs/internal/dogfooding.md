@@ -135,7 +135,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
   consumer sides of the in-process `function-call` boundary.
   Both slot into `BOUNDARY_ROLE` correctly.
 - **Per-package contracts** — the generated
-  `dist/suss-summaries.json` files now contain both sides
+  `.suss/suss-summaries.json` files now contain both sides
   together; consumers of the published package can run their
   own summaries against the shipped contract via `suss check`.
 

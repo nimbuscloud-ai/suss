@@ -10,7 +10,10 @@
 //        the package's public API.
 //      - `packageImport` produces consumer (`caller`) summaries for
 //        every function that calls into another `@suss/*` package.
-//   3. Writes per-package summaries to `<pkg>/dist/suss-summaries.json`.
+//   3. Writes per-package summaries to `<pkg>/.suss/suss-summaries.json`,
+//      beside the adapter's extraction cache: a local artifact of a
+//      local run, in the directory this repo already keeps out of git
+//      and out of every tarball.
 //   4. Unions all summaries, runs the checker's `pairSummaries`, and
 //      reports paired provider↔consumer edges plus unmatched
 //      providers/consumers — the cross-package dependency graph as
@@ -24,6 +27,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import { pairSummaries } from "../packages/checker/dist/index.js";
+import { SUMMARIES_DIR, SUMMARIES_FILE } from "./dogfoodOutputs.mjs";
 
 async function mapWithConcurrency(items, limit, fn) {
   const results = new Array(items.length);
@@ -212,16 +216,13 @@ for (const result of extractResults) {
   totalConsumers += consumers.length;
   allSummaries.push(...summaries);
 
-  const distDir = path.join(pkg.dir, "dist");
-  const summariesPath = path.join(distDir, "suss-summaries.json");
-  if (fs.existsSync(distDir)) {
-    fs.writeFileSync(summariesPath, JSON.stringify(summaries, null, 2));
-    console.log(
-      `  wrote ${path.relative(repoRoot, summariesPath)} (${summaries.length} summaries)`,
-    );
-  } else {
-    console.log("  skipped summary file: dist/ not present (run build first)");
-  }
+  const summariesDir = path.join(pkg.dir, SUMMARIES_DIR);
+  const summariesPath = path.join(summariesDir, SUMMARIES_FILE);
+  fs.mkdirSync(summariesDir, { recursive: true });
+  fs.writeFileSync(summariesPath, JSON.stringify(summaries, null, 2));
+  console.log(
+    `  wrote ${path.relative(repoRoot, summariesPath)} (${summaries.length} summaries)`,
+  );
 
   report.packages.push({
     name,
