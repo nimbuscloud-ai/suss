@@ -99,6 +99,15 @@ export function checkMessageBus(
     (s) => s.kind === "library",
   );
   const allConsumers = messageBusSummaries.filter((s) => s.kind === "consumer");
+  // A code unit bound to a channel is the receiving end the template
+  // declares: the aws-lambda pack binds a handler to the subject its
+  // factory config names. Its channel counts as consumed, so a channel
+  // some handler answers is not reported unused. These units are not
+  // orphan-checked. A handler reading a subject says nothing about
+  // whether anyone sends it; only a declared subscription does.
+  const codeReceivers = messageBusSummaries.filter(
+    (s) => s.kind !== "library" && s.kind !== "consumer",
+  );
   // EventBridge rules whose pattern couldn't be reduced to exact
   // detail-types, and scheduled invocations, carry a patternResolution
   // marker. Unresolvable rules surface as an info finding (never
@@ -151,6 +160,12 @@ export function checkMessageBus(
     const queue = consumedQueueOf(c);
     if (queue !== null) {
       addChannel(consumerChannels, queue);
+    }
+  }
+  for (const r of codeReceivers) {
+    const ch = channelOf(r);
+    if (ch !== null) {
+      addChannel(consumerChannels, ch);
     }
   }
   for (const p of producers) {

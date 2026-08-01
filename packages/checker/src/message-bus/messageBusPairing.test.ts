@@ -590,6 +590,87 @@ describe("eventbridge pairing", () => {
   });
 });
 
+/**
+ * A code unit the aws-lambda pack bound to the subject its handler
+ * factory names: a handler-kind summary carrying a message-bus binding
+ * rather than a declared subscription.
+ */
+function codeReceiver(opts: {
+  name: string;
+  filePath: string;
+  channel: string;
+}): BehavioralSummary {
+  return {
+    kind: "handler",
+    location: {
+      file: opts.filePath,
+      range: { start: 0, end: 0 },
+      exportName: "handler",
+    },
+    identity: {
+      name: opts.name,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "sqs",
+        semantics: {
+          name: "message-bus",
+          messageBus: "sqs",
+          channel: opts.channel,
+        },
+        recognition: "@suss/framework-aws-lambda",
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+describe("code-side receivers", () => {
+  it("stops a declared channel a handler answers being reported unused", () => {
+    const summaries = [
+      eventBridgeProvider("default#order.placed"),
+      codeReceiver({
+        name: "OrderProcessor.handler",
+        filePath: "src/order-processor/index.ts",
+        channel: "order.placed",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(findings.filter((f) => f.kind === "messageBusUnused")).toHaveLength(
+      0,
+    );
+  });
+
+  it("still reports a declared channel no handler answers as unused", () => {
+    const summaries = [
+      eventBridgeProvider("default#order.placed"),
+      codeReceiver({
+        name: "ShipmentProcessor.handler",
+        filePath: "src/shipment-processor/index.ts",
+        channel: "shipment.created",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(findings.filter((f) => f.kind === "messageBusUnused")).toHaveLength(
+      1,
+    );
+  });
+
+  it("does not orphan-check a code receiver that no producer sends to", () => {
+    const summaries = [
+      codeReceiver({
+        name: "OrderProcessor.handler",
+        filePath: "src/order-processor/index.ts",
+        channel: "order.placed",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(findings).toHaveLength(0);
+  });
+});
+
 describe("subject-channelled consumers", () => {
   it("does not report the drained queue as unused when the consumer's channel is a subject", () => {
     const summaries = [
