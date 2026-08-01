@@ -664,3 +664,176 @@ describe("buildMessageBusSummaries — EventBridge edge shapes", () => {
     expect(eventBridgeConsumers(out)).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Subject channels on rule-fed SQS consumers
+// ---------------------------------------------------------------------------
+
+function sqsConsumerTemplate(rules: Record<string, unknown>) {
+  return {
+    Resources: {
+      OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+      OrderProcessor: {
+        Type: "AWS::Serverless::Function",
+        Properties: {
+          CodeUri: "src/order-processor/",
+          Events: {
+            FromOrders: {
+              Type: "SQS",
+              Properties: { Queue: { "Fn::GetAtt": ["OrdersQueue", "Arn"] } },
+            },
+          },
+        },
+      },
+      ...rules,
+    },
+  };
+}
+
+function singleSubjectRule(detailTypes: string[]) {
+  return {
+    Type: "AWS::Events::Rule",
+    Properties: {
+      EventPattern: { "detail-type": detailTypes },
+      Targets: [
+        { Id: "orders", Arn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] } },
+      ],
+    },
+  };
+}
+
+describe("buildMessageBusSummaries: subject channels", () => {
+  it("names the consumer channel after the one detail-type routed into its queue", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({ OrdersRule: singleSubjectRule(["order.placed"]) }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "message-bus",
+      messageBus: "sqs",
+      channel: "order.placed",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      queue: "OrdersQueue",
+      subject: "order.placed",
+    });
+  });
+
+  it("keeps the queue-id channel on the provider even when its consumer takes the subject", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({ OrdersRule: singleSubjectRule(["order.placed"]) }),
+    );
+    const provider = pickProviders(out)[0] ?? raise("no provider");
+    expect(provider.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+  });
+
+  it("keeps the queue-id channel when one rule routes several detail-types", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        OrdersRule: singleSubjectRule(["order.placed", "order.canceled"]),
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+    expect(consumer.metadata?.messageBus).not.toHaveProperty("subject");
+  });
+
+  it("keeps the queue-id channel when two rules route different subjects into the queue", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        PlacedRule: singleSubjectRule(["order.placed"]),
+        CanceledRule: singleSubjectRule(["order.canceled"]),
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+  });
+
+  it("takes the subject when two rules route the same detail-type", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        PlacedRule: singleSubjectRule(["order.placed"]),
+        MirrorRule: singleSubjectRule(["order.placed"]),
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "order.placed",
+    });
+  });
+
+  it("ignores rules whose pattern does not reduce to exact detail-types", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        FilterRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": [{ prefix: "order." }] },
+            Targets: [
+              { Id: "orders", Arn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] } },
+            ],
+          },
+        },
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+  });
+
+  it("ignores scheduled rules when collecting queue subjects", () => {
+    const out = cloudFormationToSummaries(
+      sqsConsumerTemplate({
+        Nightly: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            ScheduleExpression: "rate(1 day)",
+            EventPattern: { "detail-type": ["order.placed"] },
+            Targets: [
+              { Id: "orders", Arn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] } },
+            ],
+          },
+        },
+      }),
+    );
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrdersQueue",
+    });
+  });
+
+  it("names the EventSourceMapping consumer channel after the routed subject", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+        OrderProcessor: {
+          Type: "AWS::Lambda::Function",
+          Properties: { Code: {} },
+        },
+        Mapping: {
+          Type: "AWS::Lambda::EventSourceMapping",
+          Properties: {
+            EventSourceArn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
+            FunctionName: { Ref: "OrderProcessor" },
+          },
+        },
+        OrdersRule: singleSubjectRule(["order.placed"]),
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "order.placed",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      queue: "OrdersQueue",
+      subject: "order.placed",
+    });
+  });
+});

@@ -4,8 +4,12 @@
 //   SQS         — provider per AWS::SQS::Queue, consumer per Lambda
 //                 wired via SAM Events:{Type: SQS} or an
 //                 AWS::Lambda::EventSourceMapping. Channel = queue CFN
-//                 logical id. Pairs against @suss/framework-aws-sqs
-//                 producer effects.
+//                 logical id, except when an EventBridge rule routes
+//                 exactly one detail-type into the queue. In that case
+//                 the consumer's channel is that subject, matching the
+//                 subject-named channel code-side SQS consumers carry.
+//                 Pairs against @suss/framework-aws-sqs producer
+//                 effects.
 //
 //   EventBridge — provider + consumer per (bus, detailType) a rule
 //                 routes, plus schedule / unresolvable-pattern
@@ -45,6 +49,15 @@ interface CloudFormationResource {
  *     metadata.codeScope mirrors the runtime-config summary's so
  *     the pairing layer can scope code reads to this consumer.
  *
+ *     When the template also routes the queue from an EventBridge
+ *     rule with exactly one exact detail-type, the consumer's channel
+ *     is that subject instead. Code-side SQS consumer units name the
+ *     subject they handle, so the subject is the identity both sides
+ *     share. The queue's logical id moves to metadata.messageBus.queue
+ *     so queue-level accounting still sees the consumer. A queue
+ *     routed with several detail-types (or none) keeps the logical-id
+ *     channel.
+ *
  * Producer effects on the consumer side are NOT emitted here — those
  * are recognized at extraction time by `@suss/framework-aws-sqs`.
  */
@@ -53,6 +66,7 @@ export function buildMessageBusSummaries(
   sourceFile: string,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
+  const queueSubjects = buildQueueSubjectMap(resources);
 
   // 1. Provider summaries: one per AWS::SQS::Queue.
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -95,6 +109,7 @@ export function buildMessageBusSummaries(
           lambdaResource: resource,
           eventName,
           channel,
+          subject: singleSubjectOf(queueSubjects, channel),
           sourceFile,
         }),
       );
@@ -129,6 +144,7 @@ export function buildMessageBusSummaries(
         lambdaResource,
         eventName: "EventSourceMapping",
         channel,
+        subject: singleSubjectOf(queueSubjects, channel),
         sourceFile,
       }),
     );
@@ -182,7 +198,14 @@ interface LambdaConsumerOpts {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
   eventName: string;
+  /** CFN logical id of the queue the Lambda consumes from. */
   channel: string;
+  /**
+   * The one detail-type an EventBridge rule routes into the queue, or
+   * null when the queue is not rule-fed (command queues) or is routed
+   * with several detail-types.
+   */
+  subject: string | null;
   sourceFile: string;
 }
 
@@ -211,7 +234,7 @@ function buildLambdaConsumerSummary(
       boundaryBinding: messageBusBinding({
         recognition: "cloudformation",
         messageBus: "sqs",
-        channel: opts.channel,
+        channel: opts.subject ?? opts.channel,
       }),
     },
     inputs: [],
@@ -223,9 +246,72 @@ function buildLambdaConsumerSummary(
       messageBus: {
         consumerLambda: opts.lambdaId,
         eventName: opts.eventName,
+        ...(opts.subject !== null
+          ? { queue: opts.channel, subject: opts.subject }
+          : {}),
       },
     },
   };
+}
+
+/**
+ * Map each SQS queue's CFN logical id to the set of exact detail-types
+ * EventBridge rules route into it. Only rules whose EventPattern
+ * reduces to exact detail-types contribute; scheduled rules carry no
+ * message subject and are skipped.
+ */
+function buildQueueSubjectMap(
+  resources: Record<string, CloudFormationResource>,
+): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const [, resource] of Object.entries(resources)) {
+    if (resource.Type !== "AWS::Events::Rule") {
+      continue;
+    }
+    const scheduleExpr = resource.Properties?.ScheduleExpression;
+    if (typeof scheduleExpr === "string" && scheduleExpr.length > 0) {
+      continue;
+    }
+    const reduction = reduceEventPattern(resource.Properties?.EventPattern);
+    if (reduction.kind !== "exact") {
+      continue;
+    }
+    const targets = resource.Properties?.Targets;
+    if (!Array.isArray(targets)) {
+      continue;
+    }
+    for (const target of targets) {
+      if (target === null || typeof target !== "object") {
+        continue;
+      }
+      const queueId = resolveLogicalId((target as { Arn?: unknown }).Arn);
+      if (queueId === null || resources[queueId]?.Type !== "AWS::SQS::Queue") {
+        continue;
+      }
+      const subjects = map.get(queueId) ?? new Set<string>();
+      for (const detailType of reduction.detailTypes) {
+        subjects.add(detailType);
+      }
+      map.set(queueId, subjects);
+    }
+  }
+  return map;
+}
+
+/**
+ * The queue's routed subject when rules route exactly one distinct
+ * detail-type into it; null otherwise. Only a single-subject queue can
+ * lend its consumer an unambiguous subject channel.
+ */
+function singleSubjectOf(
+  queueSubjects: Map<string, Set<string>>,
+  queueId: string,
+): string | null {
+  const subjects = queueSubjects.get(queueId);
+  if (subjects === undefined || subjects.size !== 1) {
+    return null;
+  }
+  return [...subjects][0] ?? null;
 }
 
 // ---------------------------------------------------------------------------
