@@ -96,6 +96,7 @@ describe("reactFramework — integration", () => {
       "Form",
       "Greeting",
       "Nav",
+      "RowBuilder",
       "UserCard",
     ]);
   });
@@ -415,6 +416,34 @@ describe("reactFramework — integration", () => {
       raise("handler summary not found");
     expect(handler).toBeDefined();
     expect(handler?.kind).toBe("handler");
+  });
+
+  it("RowBuilder's brace-free handler reports the record it hands back", () => {
+    const handler =
+      summaries.find((s) => s.identity.name === "RowBuilder.buildRow") ??
+      raise("handler summary not found");
+    expect(handler.transitions).toHaveLength(1);
+    expect(handler.transitions[0].output).toMatchObject({
+      type: "return",
+      value: {
+        type: "record",
+        properties: {
+          label: { type: "text" },
+          open: { type: "ref" },
+          kind: { type: "literal", value: "row" },
+          editable: { type: "literal", value: true },
+          weight: { type: "literal", value: 1 },
+        },
+      },
+    });
+  });
+
+  it("RowBuilder's brace-free handler written for the side effect still reports its return", () => {
+    const handler =
+      summaries.find((s) => s.identity.name === "RowBuilder.dismiss") ??
+      raise("handler summary not found");
+    expect(handler.transitions).toHaveLength(1);
+    expect(handler.transitions[0].output).toMatchObject({ type: "return" });
   });
 
   it("does not synthesize handlers for prop-delegating onClick refs", () => {
