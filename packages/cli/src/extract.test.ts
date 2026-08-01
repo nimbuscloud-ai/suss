@@ -96,10 +96,22 @@ describe("resolveFramework", () => {
     );
   });
 
-  it("stamps a pack the same way twice from the same code", async () => {
-    const first = await resolveFramework("apollo-client");
-    const second = await resolveFramework("apollo-client");
-    expect(second.version).toBe(first.version);
+  it("gives two packs resolved in one process their own code hash", async () => {
+    // One hash per pack is kept for the life of the process, so a
+    // second pack must not be answered with the first pack's hash.
+    const apollo = await resolveFramework("apollo-client");
+    const web = await resolveFramework("fetch");
+
+    expect(apollo.version).toContain(
+      computeContentHash([
+        fileURLToPath(import.meta.resolve("@suss/client-apollo")),
+      ]),
+    );
+    expect(web.version).toContain(
+      computeContentHash([
+        fileURLToPath(import.meta.resolve("@suss/client-web")),
+      ]),
+    );
   });
 
   it("keeps the config in the stamp alongside the code", async () => {
@@ -149,6 +161,30 @@ describe("resolveFramework", () => {
     for (const pack of packs) {
       expect(pack.name).toBeTruthy();
     }
+  });
+
+  it("points every name it takes at a package the CLI depends on", async () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { dependencies: Record<string, string> };
+
+    // The record holds package names as plain strings, so a typo or a
+    // pack that stopped being a dependency reaches the user as a failed
+    // run rather than a failed build. Four of these names sit outside
+    // the `@suss/framework-` family the test above walks.
+    for (const [name, specifier] of Object.entries(BUILTIN_FRAMEWORKS)) {
+      expect(
+        { name, declared: specifier in manifest.dependencies },
+        `-f ${name} names ${specifier}`,
+      ).toEqual({ name, declared: true });
+    }
+
+    const packs = await Promise.all(
+      Object.keys(BUILTIN_FRAMEWORKS).map(resolveFramework),
+    );
+    expect(packs.map((pack) => pack.name).filter(Boolean)).toHaveLength(
+      Object.keys(BUILTIN_FRAMEWORKS).length,
+    );
   });
 });
 
