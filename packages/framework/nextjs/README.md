@@ -29,9 +29,10 @@ provider in another framework serving it, since `/api/orders/{id}` and
 - **Server actions.** A `"use server"` function is reached through a
   compiler-generated ID rather than a URL, so there is no boundary to
   pair it on.
-- **The method of a pages handler.** One default export answers every
-  method and switches on `req.method` inside, so the pack reports the
-  path and leaves the method blank rather than guessing one.
+- **Pairing a pages handler.** One default export answers every method
+  and switches on `req.method` inside, so the pack reports the path and
+  leaves the method blank. A summary with no method does not pair with
+  a caller, so those routes show up in an inventory and stop there.
 - **Page components.** `@suss/framework-react` already reads those.
 - **A route a library serves.** NextAuth's route file is
   `export { GET, POST } from "@/auth"`, where those names come out of

@@ -15,10 +15,12 @@
 // here pairs with a client calling the same URL, and with an Express
 // service writing `/api/orders/:id`.
 //
-// The older `pages/api` routes are covered too, with one difference
-// worth knowing: a pages handler is a single default export that
-// switches on `req.method` inside, so it answers every method and this
-// pack reports no method for it. It pairs by path but not by method.
+// The older `pages/api` routes are found too, and they stop short of
+// pairing. A pages handler is one default export that switches on
+// `req.method` inside, so it answers every method, and a REST binding
+// holds one. The summary carries the path and no method, which is
+// enough to see the route in an inventory and not enough to match it
+// with a caller.
 //
 // Out of scope for now: server actions, whose identity is a compiler
 // generated ID rather than a URL, and page components, which the React

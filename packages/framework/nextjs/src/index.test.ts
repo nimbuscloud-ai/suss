@@ -117,8 +117,9 @@ describe("nextjsFramework — extraction", () => {
     const legacy = summaries.find(
       (s) => routeOf(s) === " /api/legacy",
     ) as BehavioralSummary;
-    // The path is right and the statuses are right. The method is not,
-    // because one export answers all of them.
+    // The path is right and the statuses are right. There is no
+    // method, because one export answers all of them, so this route
+    // does not pair with a caller.
     expect(statusesOf(legacy)).toEqual([200, 405]);
   });
 });
