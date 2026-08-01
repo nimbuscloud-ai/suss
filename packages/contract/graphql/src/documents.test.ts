@@ -287,12 +287,35 @@ describe("graphqlDocumentsToSummaries", () => {
     const summaries = graphqlDocumentsToSummaries([
       { path: "/some/dir/shop.graphql", text: "{ shop { name } }" },
     ]);
-    expect(summaries[0]?.identity.name).toBe("shop.graphql:query");
+    expect(summaries[0]?.identity.name).toBe("/some/dir/shop.graphql:query");
     const semantics = summaries[0]?.identity.boundaryBinding?.semantics;
     expect(semantics).toEqual({
       name: "graphql-operation",
       operationType: "query",
     });
+  });
+
+  it("distinguishes anonymous operations in same-named files", () => {
+    const summaries = graphqlDocumentsToSummaries([
+      { path: "/dir1/ops.graphql", text: "{ a }" },
+      { path: "/dir2/ops.graphql", text: "{ b }" },
+    ]);
+    expect(summaries.map((s) => s.identity.name)).toEqual([
+      "/dir1/ops.graphql:query",
+      "/dir2/ops.graphql:query",
+    ]);
+    const ids = summaries.flatMap((s) => s.transitions.map((t) => t.id));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("numbers repeated anonymous operations in one file", () => {
+    const summaries = graphqlDocumentsToSummaries([
+      { path: "ops.graphql", text: "{ a } { b }" },
+    ]);
+    expect(summaries.map((s) => s.identity.name)).toEqual([
+      "ops.graphql:query",
+      "ops.graphql:query#2",
+    ]);
   });
 
   it("keeps inline fragments and merges their fields into the response shape", () => {
@@ -342,6 +365,7 @@ describe("graphqlDocumentsPathToSummaries", () => {
       "CheckoutFind",
       "ProductList",
       "anonymous.graphql:query",
+      "nested/anonymous.graphql:query",
     ]);
   });
 
@@ -367,6 +391,15 @@ describe("graphqlDocumentsPathToSummaries", () => {
     const file = path.join(fixturesDir, "accountUpdate.gql");
     const summaries = graphqlDocumentsPathToSummaries(file);
     expect(summaries.map((s) => s.identity.name)).toEqual(["AccountUpdate"]);
+  });
+
+  it("names an anonymous operation by its path under the walked root", () => {
+    const summaries = graphqlDocumentsPathToSummaries(
+      path.join(fixturesDir, "nested", "anonymous.graphql"),
+    );
+    expect(summaries.map((s) => s.identity.name)).toEqual([
+      "anonymous.graphql:query",
+    ]);
   });
 
   it("throws a readable error for a missing path", () => {

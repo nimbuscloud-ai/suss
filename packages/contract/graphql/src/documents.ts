@@ -56,6 +56,13 @@ export interface GraphqlDocumentsOptions {
    * `"http-graphql"` to match the schema reader's resolver side.
    */
   transport?: string;
+  /**
+   * Directory the document paths hang off. An anonymous operation is
+   * named after its path relative to this root, so the name stays the
+   * same on every machine that checks the repo out. Without it the
+   * path is used as given.
+   */
+  rootDir?: string;
 }
 
 /** One parsed source document, tagged with where it came from. */
@@ -89,14 +96,23 @@ export function graphqlDocumentsToSummaries(
 
   const fragments = collectFragments(parsed);
 
+  // Every summary name has to be distinct, because the transition ids
+  // are built from it and a repeated id makes two operations look like
+  // one downstream.
+  const takenNames = new Set<string>();
+
   const out: BehavioralSummary[] = [];
   for (const { source, doc } of parsed) {
     for (const def of doc.definitions) {
       if (def.kind !== Kind.OPERATION_DEFINITION) {
         continue;
       }
+      const name = distinctName(
+        operationName(def, source.path, options.rootDir),
+        takenNames,
+      );
       out.push(
-        buildOperationSummary(def, source.path, fragments, {
+        buildOperationSummary(def, name, source.path, fragments, {
           recognition,
           transport,
         }),
@@ -104,6 +120,44 @@ export function graphqlDocumentsToSummaries(
     }
   }
   return out;
+}
+
+/**
+ * A named operation goes by its own name. An anonymous one goes by
+ * where it lives, which is all that tells it apart from the next one.
+ */
+function operationName(
+  op: OperationDefinitionNode,
+  file: string,
+  rootDir: string | undefined,
+): string {
+  const declared = op.name?.value;
+  if (declared !== undefined) {
+    return declared;
+  }
+  return `${displayPath(file, rootDir)}:${op.operation}`;
+}
+
+function displayPath(file: string, rootDir: string | undefined): string {
+  if (rootDir === undefined) {
+    return file;
+  }
+  const relative = path.relative(rootDir, file);
+  if (relative === "" || relative.startsWith("..")) {
+    return file;
+  }
+  return relative.split(path.sep).join("/");
+}
+
+function distinctName(candidate: string, taken: Set<string>): string {
+  let name = candidate;
+  let suffix = 2;
+  while (taken.has(name)) {
+    name = `${candidate}#${suffix}`;
+    suffix += 1;
+  }
+  taken.add(name);
+  return name;
 }
 
 /**
@@ -144,8 +198,12 @@ export function graphqlDocumentsPathToSummaries(
     );
   }
   const stat = fs.statSync(absolute);
-  const files = stat.isDirectory() ? walkForDocuments(absolute) : [absolute];
-  return graphqlDocumentFilesToSummaries(files, options);
+  const isDirectory = stat.isDirectory();
+  const files = isDirectory ? walkForDocuments(absolute) : [absolute];
+  return graphqlDocumentFilesToSummaries(files, {
+    rootDir: isDirectory ? absolute : path.dirname(absolute),
+    ...options,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -221,13 +279,13 @@ function collectFragments(
 
 function buildOperationSummary(
   op: OperationDefinitionNode,
+  name: string,
   file: string,
   fragments: FragmentIndex,
   config: BindingConfig,
 ): BehavioralSummary {
   const operationType = op.operation;
   const operationName = op.name?.value;
-  const name = operationName ?? `${path.basename(file)}:${operationType}`;
 
   const unexpanded = emptyUnexpandedSpreads();
   const inlined = inlineSpreadsInOperation(op, fragments, unexpanded);
