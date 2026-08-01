@@ -76,12 +76,9 @@ function byFunction(
   summaries: BehavioralSummary[],
   logicalId: string,
 ): BehavioralSummary | undefined {
-  return summaries.find((s) => {
-    const meta = s.metadata?.awsLambda as
-      | { functionLogicalId?: string }
-      | undefined;
-    return meta?.functionLogicalId === logicalId;
-  });
+  return summaries.find(
+    (s) => s.identity.deployableUnit?.instanceName === logicalId,
+  );
 }
 
 function statusCodesOf(summary: BehavioralSummary): number[] {
@@ -293,13 +290,19 @@ describe("awsLambdaFramework — extraction", () => {
   });
 
   it("carries the SAM function + event provenance on route units", () => {
-    const confirm = byRoute(summaries, "POST", "/tokens/{tokenId}/confirm");
-    const meta = (confirm as BehavioralSummary).metadata?.awsLambda as {
-      functionLogicalId: string;
+    const confirm = byRoute(
+      summaries,
+      "POST",
+      "/tokens/{tokenId}/confirm",
+    ) as BehavioralSummary;
+    expect(confirm.identity.deployableUnit).toEqual({
+      deploymentTarget: "lambda",
+      instanceName: "ConfirmTokenFunction",
+    });
+    const meta = confirm.metadata?.awsLambda as {
       handler: string;
       apiEventType: string;
     };
-    expect(meta.functionLogicalId).toBe("ConfirmTokenFunction");
     expect(meta.handler).toBe("src/handlers/confirmToken.handler");
     expect(meta.apiEventType).toBe("HttpApi");
   });

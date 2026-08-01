@@ -93,6 +93,12 @@ describe("buildMessageBusSummaries", () => {
       messageBus: "sqs",
       channel: "OrdersQueue",
     });
+    // The Lambda this subscription belongs to, so pairing keeps it
+    // away from another Lambda's handler on the same subject.
+    expect(consumer.identity.deployableUnit).toEqual({
+      deploymentTarget: "lambda",
+      instanceName: "OrderProcessor",
+    });
   });
 
   it("threads Lambda CodeUri into consumer's metadata.codeScope", () => {
@@ -346,6 +352,10 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     expect(consumer.metadata?.codeScope).toEqual({
       kind: "codeUri",
       path: "src/order-consumer/",
+    });
+    expect(consumer.identity.deployableUnit).toEqual({
+      deploymentTarget: "lambda",
+      instanceName: "OrderConsumer",
     });
     expect(resolutionOf(consumer)).toBe("exact");
   });

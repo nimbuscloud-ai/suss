@@ -17,7 +17,7 @@
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
 
 interface CloudFormationResource {
   Type?: string;
@@ -187,6 +187,10 @@ function buildSummary(opts: {
   envVarTargets?: Record<string, { kind: "ref"; logicalId: string }>;
   codeScope: { kind: "codeUri" | "unknown"; path?: string };
 }): BehavioralSummary | null {
+  const deployableUnit: DeployableUnit = {
+    deploymentTarget: opts.deploymentTarget,
+    instanceName: opts.logicalId,
+  };
   const platformVars = PLATFORM_INJECTED[opts.deploymentTarget] ?? [];
   const merged = new Set<string>();
   const sources: Record<string, "template" | "platform"> = {};
@@ -217,9 +221,15 @@ function buildSummary(opts: {
       exportPath: null,
       boundaryBinding: runtimeConfigBinding({
         recognition: "cloudformation",
-        deploymentTarget: opts.deploymentTarget,
-        instanceName: opts.logicalId,
+        ...deployableUnit,
       }),
+      // The runtime-config boundary IS a deployable unit's config
+      // channel, so the binding already carries the pair and keeps
+      // carrying it: it is what keys this boundary. Saying it on the
+      // identity too lets anything reading summaries of mixed kinds
+      // ask one question of all of them. Both come from the one value
+      // above, so they cannot drift.
+      deployableUnit,
     },
     inputs: [],
     transitions: [],
