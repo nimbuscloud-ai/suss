@@ -141,24 +141,34 @@ export const GraphqlOperationSemanticsSchema = z.object({
 });
 
 /**
- * Provider-side runtime configuration channel — env vars + their
- * declared values on a deployable unit. The channel is the boundary;
- * env var names are FIELDS on its contract. Pairing key:
- * `(deploymentTarget, instanceName)`.
+ * One thing that gets deployed and runs on its own: a Lambda
+ * function, an ECS task's container, a plain container, a k8s
+ * deployment.
+ *
+ * `instanceName` is the stable identifier the deployment medium uses:
+ * the CFN logical resource id for Lambda and ECS, the deployment name
+ * for k8s, the container name for a plain container.
  */
-export const RuntimeConfigSemanticsSchema = z.object({
-  name: z.literal("runtime-config"),
+export const DeployableUnitSchema = z.object({
   deploymentTarget: z.enum([
     "lambda",
     "ecs-task",
     "container",
     "k8s-deployment",
   ]),
-  /**
-   * Stable identifier for the runtime instance — CFN logical resource
-   * ID for Lambda / ECS, k8s deployment name, container name.
-   */
   instanceName: z.string(),
+});
+
+/**
+ * Provider-side runtime configuration channel — env vars + their
+ * declared values on a deployable unit. The channel is the boundary;
+ * env var names are FIELDS on its contract. Pairing key:
+ * `(deploymentTarget, instanceName)`, which is exactly a deployable
+ * unit, so the two fields come from `DeployableUnitSchema` rather
+ * than being spelled a second time.
+ */
+export const RuntimeConfigSemanticsSchema = DeployableUnitSchema.extend({
+  name: z.literal("runtime-config"),
 });
 
 /**

@@ -55,6 +55,7 @@ export type {
   ConfidenceLevel,
   ConfidenceSource,
   Corroboration,
+  DeployableUnit,
   FunctionCallSemantics,
   GraphqlOperationSemantics,
   GraphqlResolverSemantics,

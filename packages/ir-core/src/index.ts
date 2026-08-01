@@ -23,6 +23,7 @@ export {
   ConfidenceLevelSchema,
   ConfidenceSourceSchema,
   CorroborationSchema,
+  DeployableUnitSchema,
   FunctionCallSemanticsSchema,
   GraphqlOperationSemanticsSchema,
   GraphqlResolverSemanticsSchema,
@@ -89,6 +90,10 @@ export {
   type ParsedChannel,
   parseChannel,
 } from "./channel.js";
+export {
+  type DeployableUnit,
+  deployableUnitsAgree,
+} from "./deployableUnit.js";
 export {
   applySuppressionsToFindings,
   countsForThreshold,

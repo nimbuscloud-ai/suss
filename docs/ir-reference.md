@@ -64,6 +64,12 @@ interface CodeUnitIdentity {
   name: string;
   exportPath: string[] | null;  // null for unexported code
   boundaryBinding: BoundaryBinding | null;  // null for unbound code
+  deployableUnit?: DeployableUnit;  // absent when the pack cannot know
+}
+
+interface DeployableUnit {
+  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment";
+  instanceName: string;
 }
 ```
 
@@ -72,6 +78,10 @@ Location is file + line range. Identity is symbolic: *what* is this code unit, r
 **`exportPath` as a string array, not a dotted string.** Deep module namespaces (`namespace.submodule.getUser`) show up in some frameworks; arrays are easier to compare than strings.
 
 **`boundaryBinding` is explicitly nullable.** Utility functions, custom hooks, and internal helpers don't participate in cross-service contracts. They can still have behavioral summaries, but they don't have a boundary to bind to. Explicit `null` forces consumers to handle that case.
+
+**`deployableUnit` names the thing that runs this code**, when the pack knows it: the Lambda's logical id from a SAM template, the container or deployment name elsewhere. It settles a question a boundary cannot. Five Lambdas subscribing to one subject and five handlers answering it produce twenty-five combinations if the subject is all you compare, and five if you also compare the Lambda. Two summaries pair only when the units they name agree; a summary that names none pairs with anything, so a pack reading a queue resource is not shut out for having no function to name. `runtime-config` boundaries carry the same pair in their semantics, since it is what keys that boundary, and both come from one value.
+
+Optional rather than nullable: a React component or a library export is never deployed on its own, so there is nothing for it to say.
 
 ## `BoundaryBinding`
 
