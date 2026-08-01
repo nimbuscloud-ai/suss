@@ -401,64 +401,71 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
       fact(db, "paramOf", fnId, String(position), parameterId);
     }
 
-    // Arrow shorthand body is itself the returned value, and when it
-    // is a call, that call is also a body call for the unwraps rule.
-    if (Node.isArrowFunction(fn)) {
-      const body = fn.getBody();
+    const body = fn.getBody?.();
+    if (body !== undefined) {
+      // An arrow written without braces returns its body, and the body
+      // is a node the descendant walk never visits, so drive the same
+      // handling from it first. Writing that case out separately is
+      // what hid `containsFn` for a function nested in a shorthand
+      // body, which is how a factory delegating to another factory
+      // resolved to nothing.
       if (Node.isExpression(body)) {
         fact(db, "returnsValue", fnId, emitValue(db, table, body));
-        const unwrapped = unwrapExpression(body);
-        if (Node.isCallExpression(unwrapped)) {
-          const callee = unwrapExpression(unwrapped.getExpression());
-          if (Node.isIdentifier(callee)) {
-            fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
-          }
-        }
+        recordBodyNode(db, table, fnId, body);
       }
-    }
-
-    const body = fn.getBody?.();
-    if (body !== undefined && !Node.isExpression(body)) {
       body.forEachDescendant((descendant, traversal) => {
-        // Nested functions are walked separately, but their calls
-        // still belong to this function for the unwraps judgment: a
-        // closure declared here runs as part of this function, so a
-        // wrapper that delegates to its parameter inside one still
-        // delegates. containsFn is what makes bodyCalls transitive.
-        if (isFunctionRoot(descendant)) {
-          if (descendantIsReturned(descendant)) {
-            fact(
-              db,
-              "returnsValue",
-              fnId,
-              emitValue(db, table, descendant as Expression),
-            );
-          } else {
-            emitValue(db, table, descendant as Expression);
-          }
-          fact(db, "containsFn", fnId, nodeId(descendant));
+        if (recordBodyNode(db, table, fnId, descendant)) {
           traversal.skip();
-          return;
-        }
-
-        if (Node.isReturnStatement(descendant)) {
-          const returned = descendant.getExpression();
-          if (returned !== undefined) {
-            fact(db, "returnsValue", fnId, emitValue(db, table, returned));
-          }
-          return;
-        }
-
-        if (Node.isCallExpression(descendant)) {
-          const callee = unwrapExpression(descendant.getExpression());
-          if (Node.isIdentifier(callee)) {
-            const calleeId = emitValue(db, table, callee);
-            fact(db, "bodyCalls", fnId, calleeId);
-          }
         }
       });
     }
   }
+}
+
+/**
+ * What one node inside a function body says about that function.
+ * Returns whether the walk should stop descending, which it does at a
+ * nested function: that function is walked in its own right, and
+ * `containsFn` is what carries its calls back up.
+ *
+ * A closure declared here runs as part of this function, so a wrapper
+ * delegating to its parameter inside one still delegates.
+ */
+function recordBodyNode(
+  db: Database,
+  table: NodeTable,
+  fnId: string,
+  node: Node,
+): boolean {
+  if (isFunctionRoot(node)) {
+    if (descendantIsReturned(node)) {
+      fact(db, "returnsValue", fnId, emitValue(db, table, node as Expression));
+    } else {
+      emitValue(db, table, node as Expression);
+    }
+    fact(db, "containsFn", fnId, nodeId(node));
+    return true;
+  }
+
+  if (Node.isReturnStatement(node)) {
+    const returned = node.getExpression();
+    if (returned !== undefined) {
+      fact(db, "returnsValue", fnId, emitValue(db, table, returned));
+    }
+    return false;
+  }
+
+  if (!Node.isExpression(node)) {
+    return false;
+  }
+  const call = unwrapExpression(node);
+  if (Node.isCallExpression(call)) {
+    const callee = unwrapExpression(call.getExpression());
+    if (Node.isIdentifier(callee)) {
+      fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
+    }
+  }
+  return false;
 }
 
 /** Whether a nested function expression sits directly under a return. */
