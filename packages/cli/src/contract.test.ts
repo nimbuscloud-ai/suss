@@ -175,6 +175,33 @@ describe("contract CLI command", () => {
     ).rejects.toThrow(/No stories found/);
   });
 
+  it("emits operation summaries from a documents dir via --from graphql-documents", async () => {
+    const docsDir = path.resolve(
+      __dirname,
+      "../../../fixtures/graphql-documents",
+    );
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    try {
+      const summaries = await contract({
+        from: "graphql-documents",
+        spec: docsDir,
+      });
+      expect(summaries.length).toBeGreaterThan(0);
+      expect(summaries.every((s) => s.kind === "client")).toBe(true);
+      const productList = summaries.find(
+        (s) => s.identity.name === "ProductList",
+      );
+      expect(productList?.identity.boundaryBinding?.semantics).toEqual({
+        name: "graphql-operation",
+        operationType: "query",
+        operationName: "ProductList",
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  });
+
   describe("URL inputs", () => {
     let server: http.Server;
     let baseUrl: string;
