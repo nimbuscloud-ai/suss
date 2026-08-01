@@ -81,12 +81,13 @@ it has. So a shape that comes back null usually means the extractor
 never wrote down something the rules needed, not that a rule is
 missing.
 
-A production service made the point. It declared 91 handlers and 11
-resolved. The 80 missing ones went through a factory in another package
-that reached its argument from inside a closure written as an arrow
-without braces, and the extractor skipped the body of any arrow written
-that way. One condition in extraction, and the existing rules found all
-90 that had a body to find.
+A production service made the point. Against it, suss resolved 11 of
+the handlers the deployment template declared and missed the rest.
+Those went through a factory in another package that reached its
+argument from inside a closure written as an arrow without braces, and
+the extractor skipped the body of any arrow written that way. One
+condition in extraction, and the existing rules found every handler
+that had a body to find.
 
 The same reasoning runs the other way. A rule that names a shape which
 smaller rules could compose is worth trying to delete, because a shape

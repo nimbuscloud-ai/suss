@@ -131,18 +131,19 @@ describe("resolveCallable", () => {
   });
 
   it("unwraps a static class method factory", () => {
-    // The other production shape: Service.createProtectedHandler(fn).
+    // The wrapper is a static method rather than a free function, so the
+    // callee is a property access and not an identifier.
     const project = projectOf({
       "/mod.ts": `
-        class AuthService {
-          static createProtectedHandler(fn: (event: unknown) => Promise<unknown>) {
+        class Handlers {
+          static withAuth(fn: (event: unknown) => Promise<unknown>) {
             return async (event: unknown) => {
               return fn(event);
             };
           }
         }
         const inner = async (event: unknown) => "protected";
-        export const handler = AuthService.createProtectedHandler(inner);
+        export const handler = Handlers.withAuth(inner);
       `,
     });
     const store = new ResolutionStore();
