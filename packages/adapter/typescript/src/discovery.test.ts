@@ -2037,3 +2037,29 @@ describe("decoratedRoute discovery", () => {
     expect(units[0].routeInfo?.method).toBe("GET");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Unit identity
+// ---------------------------------------------------------------------------
+
+describe("unit identity", () => {
+  it("keeps two hook calls in one component apart", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      export function WidgetPanel() {
+        const a = useQuery(gql\`query WidgetItem { widget { id } }\`);
+        const b = useQuery(gql\`query WidgetOwner { owner { id } }\`);
+        return [a, b];
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units.map((u) => u.name).sort()).toEqual([
+      "WidgetPanel.WidgetItem",
+      "WidgetPanel.WidgetOwner",
+    ]);
+  });
+});
