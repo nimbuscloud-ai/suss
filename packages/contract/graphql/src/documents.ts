@@ -504,10 +504,15 @@ function mergeSelectionsInto(
   for (const selection of selections) {
     if (selection.kind === Kind.FIELD) {
       const key = selection.alias?.value ?? selection.name.value;
-      properties[key] =
+      const selected: TypeShape =
         selection.selectionSet !== undefined
           ? selectionSetToShape(selection.selectionSet)
           : { type: "unknown" };
+      // The same field can be selected twice, once in the operation
+      // and once through a fragment. A server merges those selections
+      // and returns one object with both sets of fields, so the shape
+      // has to merge them too.
+      properties[key] = mergeShapes(properties[key], selected);
       continue;
     }
 
@@ -517,6 +522,34 @@ function mergeSelectionsInto(
     // Fragment spreads were already inlined; any survivor was
     // unresolvable and is recorded as a gap.
   }
+}
+
+/**
+ * Combine two shapes read for the same field. Two records become one
+ * record holding both field sets. Otherwise the record wins over an
+ * `unknown`, because a selection set says more than a leaf does.
+ */
+function mergeShapes(
+  existing: TypeShape | undefined,
+  incoming: TypeShape,
+): TypeShape {
+  if (existing === undefined) {
+    return incoming;
+  }
+
+  if (existing.type === "record" && incoming.type === "record") {
+    const properties = { ...existing.properties };
+    for (const [key, shape] of Object.entries(incoming.properties)) {
+      properties[key] = mergeShapes(properties[key], shape);
+    }
+    return { type: "record", properties };
+  }
+
+  if (existing.type === "record") {
+    return existing;
+  }
+
+  return incoming;
 }
 
 function safeParse(text: string): DocumentNode | null {

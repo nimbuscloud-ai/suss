@@ -229,6 +229,32 @@ describe("graphqlDocumentsToSummaries", () => {
     expect(meta.document).toContain("email");
   });
 
+  it("merges overlapping selections instead of overwriting them", () => {
+    const summaries = graphqlDocumentsToSummaries([
+      {
+        path: "op.graphql",
+        text: `query Q { user { id } ...F }
+               fragment F on Query { user { email } }`,
+      },
+    ]);
+    const success = summaries[0]?.transitions.find((t) => t.isDefault);
+    expect(success?.output).toEqual({
+      type: "return",
+      value: {
+        type: "record",
+        properties: {
+          user: {
+            type: "record",
+            properties: {
+              id: { type: "unknown" },
+              email: { type: "unknown" },
+            },
+          },
+        },
+      },
+    });
+  });
+
   it("leaves a cyclic spread in place and records it as a gap", () => {
     const summaries = graphqlDocumentsToSummaries([
       {
