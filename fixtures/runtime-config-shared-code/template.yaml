@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Two Lambdas built from one source directory. Each declares its own
+  environment, and the file layout gives the checker no way to tell the two
+  apart, so only the deployable unit says which code runs where.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+
+Resources:
+  CatalogHttpApi:
+    Type: AWS::Serverless::HttpApi
+
+  IndexerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      # Both functions build from the service root, which is how a
+      # monorepo service is usually laid out.
+      CodeUri: ./
+      Handler: src/handlers/indexer.handler
+      Environment:
+        Variables:
+          INDEX_TABLE_NAME: "catalog-index"
+      Events:
+        Index:
+          Type: HttpApi
+          Properties:
+            Method: POST
+            Path: /index
+
+  NotifierFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: src/handlers/notifier.handler
+      Environment:
+        Variables:
+          NOTIFY_TOPIC_ARN: "arn:aws:sns:us-east-1:000000000000:catalog"
+      Events:
+        Notify:
+          Type: HttpApi
+          Properties:
+            Method: POST
+            Path: /notify

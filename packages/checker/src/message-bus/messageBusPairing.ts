@@ -42,6 +42,12 @@ import {
   providersOf,
 } from "../interactions/dispatcher.js";
 import {
+  runsIn,
+  type UnitScope,
+  type UnitsByFile,
+  unitsByFile,
+} from "../scope/unitScope.js";
+import {
   addChannel,
   type ChannelSet,
   channelsPair,
@@ -137,7 +143,8 @@ export function checkMessageBus(
   // each producer, find the runtime-config summary whose codeScope
   // contains the producer file; the env vars on that runtime are the
   // candidate channels. v0 simplification: trust direct name match.
-  resolveProducerChannels(producers, summaries);
+  const byFile = unitsByFile(summaries);
+  resolveProducerChannels(producers, summaries, byFile);
 
   const providerChannels: ChannelSet = createChannelSet();
   const consumerChannels: ChannelSet = createChannelSet();
@@ -229,7 +236,14 @@ export function checkMessageBus(
   // (sends) and consumer (receives), compare field sets and emit
   // findings for fields the consumer reads but the producer
   // doesn't send.
-  findings.push(...checkBodyShapes(consumers, producers, summaries));
+  findings.push(
+    ...checkBodyShapes({
+      cfnConsumers: consumers,
+      producers,
+      allSummaries: summaries,
+      byFile,
+    }),
+  );
 
   return findings;
 }
@@ -293,6 +307,7 @@ function effectiveChannel(p: ProducerRecord): string | null {
 function resolveProducerChannels(
   producers: ProducerRecord[],
   summaries: BehavioralSummary[],
+  byFile: UnitsByFile,
 ): void {
   const runtimeProviders = summaries.filter(
     (s) =>
@@ -310,10 +325,7 @@ function resolveProducerChannels(
     // derived — split it off, resolve the bus, recompose with the
     // detail-type intact.
     const { busToken, detailSuffix } = splitBusChannel(semantics);
-    const runtime = findRuntimeForFile(
-      runtimeProviders,
-      producer.summary.location.file,
-    );
+    const runtime = runtimeRunning(runtimeProviders, producer.summary, byFile);
     if (runtime === null) {
       continue;
     }
@@ -376,9 +388,11 @@ function readPatternResolution(
   return null;
 }
 
-function findRuntimeForFile(
+/** The runtime whose environment this producer's code is deployed with. */
+function runtimeRunning(
   runtimes: BehavioralSummary[],
-  filePath: string,
+  producer: BehavioralSummary,
+  byFile: UnitsByFile,
 ): BehavioralSummary | null {
   for (const runtime of runtimes) {
     const meta = runtime.metadata as
@@ -388,7 +402,16 @@ function findRuntimeForFile(
     if (scope?.kind !== "codeUri" || scope.path === undefined) {
       continue;
     }
-    if (filePath.startsWith(scope.path)) {
+    const scopePath = scope.path;
+    const inUnit = runsIn(
+      producer,
+      {
+        unit: runtime.identity.deployableUnit,
+        fileInScope: (file) => file.startsWith(scopePath),
+      },
+      byFile,
+    );
+    if (inUnit) {
       return runtime;
     }
   }
@@ -545,13 +568,14 @@ interface ReceiveRecord {
  * identifier-shaped, or absent) — we'd be guessing, and a false
  * positive on body shape is worse than a missed finding.
  */
-function checkBodyShapes(
-  cfnConsumers: BehavioralSummary[],
-  producers: ProducerRecord[],
-  allSummaries: BehavioralSummary[],
-): Finding[] {
+function checkBodyShapes(opts: {
+  cfnConsumers: BehavioralSummary[];
+  producers: ProducerRecord[];
+  allSummaries: BehavioralSummary[];
+  byFile: UnitsByFile;
+}): Finding[] {
   const findings: Finding[] = [];
-  for (const cfnConsumer of cfnConsumers) {
+  for (const cfnConsumer of opts.cfnConsumers) {
     const semantics = cfnConsumer.identity.boundaryBinding?.semantics;
     if (semantics?.name !== "message-bus") {
       continue;
@@ -562,12 +586,19 @@ function checkBodyShapes(
       continue;
     }
 
-    const receives = collectReceives(allSummaries, codeScope);
+    const receives = collectReceives(
+      opts.allSummaries,
+      {
+        unit: cfnConsumer.identity.deployableUnit,
+        fileInScope: (file) => file.includes(codeScope),
+      },
+      opts.byFile,
+    );
     if (receives.length === 0) {
       continue;
     }
 
-    const producerFields = collectProducerFields(producers, channel);
+    const producerFields = collectProducerFields(opts.producers, channel);
     if (producerFields === null) {
       continue;
     }
@@ -599,11 +630,12 @@ function readCodeScope(summary: BehavioralSummary): string | null {
 
 function collectReceives(
   summaries: BehavioralSummary[],
-  codeScopePath: string,
+  scope: UnitScope,
+  byFile: UnitsByFile,
 ): ReceiveRecord[] {
   const out: ReceiveRecord[] = [];
   for (const summary of summaries) {
-    if (!summary.location.file.includes(codeScopePath)) {
+    if (!runsIn(summary, scope, byFile)) {
       continue;
     }
     for (const transition of summary.transitions) {

@@ -10,6 +10,7 @@ function makeRuntimeProvider(opts: {
   instanceName: string;
   envVars: string[];
   codeScope: { kind: "codeUri" | "unknown"; path?: string };
+  namesUnit?: boolean;
 }): BehavioralSummary {
   return {
     kind: "library",
@@ -26,6 +27,14 @@ function makeRuntimeProvider(opts: {
         deploymentTarget: "lambda",
         instanceName: opts.instanceName,
       }),
+      ...(opts.namesUnit === true
+        ? {
+            deployableUnit: {
+              deploymentTarget: "lambda" as const,
+              instanceName: opts.instanceName,
+            },
+          }
+        : {}),
     },
     inputs: [],
     transitions: [],
@@ -42,6 +51,7 @@ function makeCodeSummary(opts: {
   name: string;
   file: string;
   envReads: string[];
+  runsInUnit?: string;
 }): BehavioralSummary {
   const transition: Transition = {
     id: "t0",
@@ -70,6 +80,14 @@ function makeCodeSummary(opts: {
       name: opts.name,
       exportPath: [opts.name],
       boundaryBinding: null,
+      ...(opts.runsInUnit !== undefined
+        ? {
+            deployableUnit: {
+              deploymentTarget: "lambda" as const,
+              instanceName: opts.runsInUnit,
+            },
+          }
+        : {}),
     },
     inputs: [],
     transitions: [transition],
@@ -282,5 +300,134 @@ describe("checkRuntimeConfig", () => {
     expect(
       findings.filter((f) => f.kind === "boundaryFieldUnknown"),
     ).toHaveLength(1);
+  });
+
+  describe("two runtimes built from one source directory", () => {
+    const sharedScope = { kind: "codeUri" as const, path: "" };
+
+    function twoRuntimes(): BehavioralSummary[] {
+      return [
+        makeRuntimeProvider({
+          instanceName: "IndexerFunction",
+          envVars: ["INDEX_TABLE_NAME"],
+          codeScope: sharedScope,
+          namesUnit: true,
+        }),
+        makeRuntimeProvider({
+          instanceName: "NotifierFunction",
+          envVars: ["NOTIFY_TOPIC_ARN"],
+          codeScope: sharedScope,
+          namesUnit: true,
+        }),
+      ];
+    }
+
+    it("pairs each read against the runtime it names", () => {
+      const findings = checkRuntimeConfig([
+        ...twoRuntimes(),
+        makeCodeSummary({
+          name: "indexer",
+          file: "src/handlers/indexer.ts",
+          envReads: ["INDEX_TABLE_NAME"],
+          runsInUnit: "IndexerFunction",
+        }),
+        makeCodeSummary({
+          name: "notifier",
+          file: "src/handlers/notifier.ts",
+          envReads: ["NOTIFY_TOPIC_ARN"],
+          runsInUnit: "NotifierFunction",
+        }),
+      ]);
+      expect(findings).toEqual([]);
+    });
+
+    it("still reports a read no runtime declares", () => {
+      const findings = checkRuntimeConfig([
+        ...twoRuntimes(),
+        makeCodeSummary({
+          name: "notifier",
+          file: "src/handlers/notifier.ts",
+          envReads: ["NOTIFY_TOPIC_ARN", "RETRY_LIMIT"],
+          runsInUnit: "NotifierFunction",
+        }),
+        makeCodeSummary({
+          name: "indexer",
+          file: "src/handlers/indexer.ts",
+          envReads: ["INDEX_TABLE_NAME"],
+          runsInUnit: "IndexerFunction",
+        }),
+      ]);
+      const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
+      expect(unknown).toHaveLength(1);
+      expect(unknown[0].description).toContain("RETRY_LIMIT");
+      expect(unknown[0].description).toContain("NotifierFunction");
+    });
+
+    it("gives a helper the unit of the handler in its module", () => {
+      const findings = checkRuntimeConfig([
+        ...twoRuntimes(),
+        makeCodeSummary({
+          name: "handler",
+          file: "src/handlers/indexer.ts",
+          envReads: [],
+          runsInUnit: "IndexerFunction",
+        }),
+        makeCodeSummary({
+          name: "indexTable",
+          file: "src/handlers/indexer.ts",
+          envReads: ["INDEX_TABLE_NAME"],
+        }),
+        makeCodeSummary({
+          name: "notifier",
+          file: "src/handlers/notifier.ts",
+          envReads: ["NOTIFY_TOPIC_ARN"],
+          runsInUnit: "NotifierFunction",
+        }),
+      ]);
+      expect(findings).toEqual([]);
+    });
+
+    it("leaves a module its two handlers disagree over on the file path", () => {
+      // Two units in one file, so the module says nothing about where
+      // the helper runs and the directory answers as it always has.
+      const findings = checkRuntimeConfig([
+        ...twoRuntimes(),
+        makeCodeSummary({
+          name: "indexHandler",
+          file: "src/handlers/both.ts",
+          envReads: [],
+          runsInUnit: "IndexerFunction",
+        }),
+        makeCodeSummary({
+          name: "notifyHandler",
+          file: "src/handlers/both.ts",
+          envReads: [],
+          runsInUnit: "NotifierFunction",
+        }),
+        makeCodeSummary({
+          name: "shared",
+          file: "src/handlers/both.ts",
+          envReads: ["INDEX_TABLE_NAME", "NOTIFY_TOPIC_ARN"],
+        }),
+      ]);
+      const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
+      expect(unknown).toHaveLength(2);
+    });
+
+    it("leaves code that names no unit scoped by its file path", () => {
+      // A pack that never stamps a unit gets the multi-attribution it
+      // has always had: the shared module pairs against both runtimes.
+      const findings = checkRuntimeConfig([
+        ...twoRuntimes(),
+        makeCodeSummary({
+          name: "sharedConfig",
+          file: "src/lib/config.ts",
+          envReads: ["INDEX_TABLE_NAME"],
+        }),
+      ]);
+      const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
+      expect(unknown).toHaveLength(1);
+      expect(unknown[0].description).toContain("NotifierFunction");
+    });
   });
 });
