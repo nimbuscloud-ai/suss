@@ -1,4 +1,4 @@
-# Proposal: a value that comes to two things, each under a condition
+# Proposal: a value chosen by a ternary resolves to both arms
 
 Status: draft, seeking alignment. Nothing implemented.
 
@@ -13,109 +13,68 @@ wrong for a choice the code spells out:
 export const handler = flag ? handlerA : handlerB;
 ```
 
-This is not ambiguous. It is both, and the code says when each. Today
-it resolves to nothing, so a handler behind a feature flag disappears
-from the summaries entirely.
-
-The same shape wears other clothes:
-
-- A `pages/api` handler switching on `req.method`, which answers every
-  method through one export. The Next.js pack had to leave those
-  unpaired because a REST binding holds one method.
-- A wrapper choosing between implementations by environment:
-  `createHandler(isProd ? realSender : dryRunSender)`.
-- A config-object factory whose callbacks nulled out sixty handlers
-  this week. Several properties were each a candidate for the whole
-  call. With guards, each candidate would carry "when the wrapper calls
-  `.entryLogExtractor`", and a consumer could keep the one guarded by
-  the property a pack names, rather than the store discarding all of
-  them.
-
-And the deeper connection: a transition already is "this outcome, under
-these conditions". Resolution throwing away the condition is the fact
-layer being less expressive than the thing it feeds.
+The code says the value is both, and says when each. Today it resolves
+to nothing, so a handler behind a feature flag disappears from the
+summaries entirely.
 
 ## The change
 
-`comesTo` gains a guard column: `comesTo(x, z, g)`, where `g` names a
-condition or is the empty guard. The adapter emits one new fact family
-for the choices it can already read:
+The adapter emits one new fact when a declaration's initializer is a
+ternary:
 
 ```
-chooses(site, cond, whenTrue, whenFalse)   a ternary or an if/else
-guardTest(cond, subject, op, literal)      what the condition compares
+chooses(site, cond, whenTrue, whenFalse)
 ```
 
-Two rules replace silence with two guarded answers:
+One rule derives the resolved pair, in plain positive Datalog:
 
 ```
-comesTo(x, z, g) :- chooses(x, c, a, _), comesTo(a, z, g2), and(c, g2, g).
-comesTo(x, z, g) :- chooses(x, c, _, b), comesTo(b, z, g2), and(not(c), g2, g).
+choosesResolved(site, cond, fa, fb) :-
+    chooses(site, cond, a, b), resolves(a, fa), resolves(b, fb).
 ```
 
-`and` composes guards. The empty guard is the identity, so every
-existing rule keeps its meaning by carrying the guard through
-unchanged, and a chain with no choices in it derives exactly what it
-derives today.
+The store exposes `resolveAlternatives(value)`, which reads that
+relation and walks nested choices, so `x ? f : (y ? g : h)` answers
+three functions, each with the condition on its path. `resolveCallable`
+is untouched: it keeps answering one function or null, and a ternary
+still gets null from it.
 
-The store's contract widens without breaking: `resolveCallable` keeps
-answering a single function or null, and answers null when two guarded
-answers exist, exactly as now. A new question sits beside it,
-`resolveAlternatives(value)`, returning each function with the guard
-that selects it. Discovery consumes that where it makes sense, one unit
-per alternative, with the guard joining the unit's conditions the way a
-branch condition already does.
+Nothing that resolves today can regress, because a ternary already
+dead-ends in extraction. The new fact adds answers where there were
+none. There is no guard column on `comesTo`, no `and`, no guard
+algebra, and no change to `@suss/datalog`.
 
-## What it deliberately does not do
+Discovery consumes the alternatives for the feature-flag case: one
+unit per alternative, the condition joining the unit's conditions the
+way a branch condition already does.
 
-**Guard language stays tiny.** A guard is a conjunction of tests the
-parser saw written down: a comparison against a literal, a truthiness
-check, a negation. No solver, no implication, no simplification beyond
-dropping duplicates. Two guards are the same when their test sets are
-the same, which is enough to merge the two arms of
-`x ? f : (y ? f : g)` reaching `f`.
+## What stays out
 
-**No reachability claims.** A guard says "the code selects this under
-that test", not "this test can be true". Dead configuration stays a
-question for the checker.
+- **A handler branching on `req.method` inside its body.** No value
+  chooses between two functions there, so `chooses` never fires; the
+  framework-rules proposal covers that shape with `serves(U, M)` and
+  method sets.
+- **The config-object factory.** "Which property answers" is a pack
+  judgment, not a condition in the code; a pack naming the property is
+  the same kind of statement as `transparentWrappers` naming an
+  argument, recorded in the resolution rules README.
+- **Reassignment.** `let h = a; if (c) h = b;` drags in statement
+  ordering, and the initializer form covers the production cases seen
+  so far.
 
-**Reassignment stays out.** `let h = a; if (c) h = b;` is the same
-idea through mutation, and mutation drags in ordering. The ternary and
-the if/else expression forms cover the cases seen in production so
-far. Reassignment can join later without changing the guard model.
+## Relation to provenance
 
-## Where it pays off first
-
-1. The feature-flag handler stops disappearing. Two summaries, one
-   guarded by the flag, both checkable.
-2. A `pages/api` handler splits into one unit per method it branches
-   on, each pairing with the callers of that method. This closes the
-   gap #24 documented.
-3. The config-factory shape becomes expressible for a pack: "the
-   property that answers is `handler`" keeps the one guarded candidate
-   and drops the rest, instead of the store nulling everything.
-
-## Cost and risk
-
-The guard column multiplies tuples where choices nest. A chain through
-k independent choices carries 2^k guards in the worst case, and real
-code keeps k tiny; a depth cap with an explicit "guard dropped, answer
-degraded to ambiguous" keeps the pathological case bounded and
-recorded rather than slow.
-
-`and` as a computed relation does not fit pure Datalog. The engine
-already carries stratified negation, and the join can be implemented as
-a functional term the way node identity already is, but this is the
-part to design against the engine rather than assume. It is the one
-piece that touches `@suss/datalog` itself.
+The backlog entry on provenance ({#datalog-provenance}) describes the
+engine recording what supports every derived fact. Full provenance
+would subsume this: a store that knows why it believes a resolution
+could answer the alternatives question from the support graph. This
+proposal does not foreclose that. `chooses` is an extraction fact
+either way, and `choosesResolved` would become one query over the
+support graph instead of its own rule.
 
 ## Order
 
-1. The guard shape and `and`, in `@suss/datalog`, with property tests.
-2. `chooses` facts from ternaries in the TypeScript adapter, guards
-   carried through `comesTo`, `resolveAlternatives` on the store.
-3. Discovery consuming alternatives for the feature-flag case.
-4. `req.method` branching, which needs `guardTest` tied to a parameter
-   so the split lands as method bindings.
-5. The pack-named property for config factories, once guards exist to
-   hang it on.
+1. `chooses` from ternary initializers in the TypeScript adapter.
+2. The rule and `resolveAlternatives` on the store, with a test for a
+   nested choice.
+3. Discovery consuming alternatives for the feature-flag handler.
