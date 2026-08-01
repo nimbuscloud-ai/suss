@@ -425,6 +425,96 @@ describe("check CLI command", () => {
     );
   }
 
+  /** A pair that disagrees on both sides at once. */
+  function writeTwoSidedScenario() {
+    fs.writeFileSync(
+      providerPath,
+      JSON.stringify([
+        provider("getUser", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+          transition("t-410", { statusCode: 410 }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      consumerPath,
+      JSON.stringify([
+        consumer("UserPage", [
+          transition("ct-503", { conditionStatus: 503 }),
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+  }
+
+  it("prints a rule that names the side the finding's transition sits on", () => {
+    writeTwoSidedScenario();
+    const output = captureStdout(() => {
+      check({ providerFile: providerPath, consumerFile: consumerPath });
+    });
+    expect(output).toContain('provider: { transitionId: "t-410" }');
+    expect(output).toContain('consumer: { transitionId: "ct-503" }');
+  });
+
+  it("silences the finding whose printed rule was copied, and only that one", () => {
+    writeTwoSidedScenario();
+    const ignore = path.join(tmpDir, ".sussignore.yml");
+    fs.writeFileSync(
+      ignore,
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: unhandledProviderCase",
+        '    boundary: "GET /getUser"',
+        '    provider: { transitionId: "t-410" }',
+        "    reason: the caller retries anything unexpected",
+      ].join("\n"),
+    );
+
+    captureStdout(() => {
+      const result = check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+        sussignore: ignore,
+      });
+      const suppressed = result.findings.filter(
+        (f) => f.suppressed !== undefined,
+      );
+      expect(suppressed).toHaveLength(1);
+      expect(suppressed[0].kind).toBe("unhandledProviderCase");
+      expect(
+        result.findings.some(
+          (f) => f.kind === "deadConsumerBranch" && f.suppressed === undefined,
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("stops offering a rule for a finding that a rule already covers", () => {
+    writeTwoSidedScenario();
+    const ignore = path.join(tmpDir, ".sussignore.yml");
+    fs.writeFileSync(
+      ignore,
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: unhandledProviderCase",
+        '    provider: { transitionId: "t-410" }',
+        "    reason: the caller retries anything unexpected",
+      ].join("\n"),
+    );
+
+    const output = captureStdout(() => {
+      check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+        sussignore: ignore,
+      });
+    });
+    expect(output).not.toContain('provider: { transitionId: "t-410" }');
+    expect(output).toContain('consumer: { transitionId: "ct-503" }');
+  });
+
   it("marks a suppressed finding and excludes it from the failure threshold", () => {
     writeDeadBranchScenario();
     fs.writeFileSync(
