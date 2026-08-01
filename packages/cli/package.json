@@ -23,7 +23,7 @@
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

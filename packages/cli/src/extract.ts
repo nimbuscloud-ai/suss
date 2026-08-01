@@ -2,7 +2,6 @@
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,7 +36,7 @@ type PackFactory = (...args: never[]) => PatternPack;
 function instantiatePack(
   factory: PackFactory,
   options: unknown,
-  module: string,
+  specifier: string,
 ): PatternPack {
   const pack = (factory as (options?: unknown) => PatternPack)(options);
 
@@ -49,7 +48,7 @@ function instantiatePack(
   // keep serving summaries the previous code produced.
   const stamp = [
     pack.version ?? "unset",
-    packCodeHash(module),
+    packCodeHash(specifier),
     options === undefined ? "" : digest(options),
   ].filter((part) => part.length > 0);
   return { ...pack, version: stamp.join("+") };
@@ -67,33 +66,31 @@ const packCodeHashes = new Map<string, string>();
  * what a host that bundles its packs looks like. Such a pack falls back
  * to whatever version it declares.
  */
-function packCodeHash(module: string): string {
-  const cached = packCodeHashes.get(module);
+function packCodeHash(specifier: string): string {
+  const cached = packCodeHashes.get(specifier);
   if (cached !== undefined) {
     return cached;
   }
 
-  const hash = computeContentHash(resolvePackFile(module));
-  packCodeHashes.set(module, hash);
+  const hash = computeContentHash(resolvePackFile(specifier));
+  packCodeHashes.set(specifier, hash);
   return hash;
 }
 
 /**
  * The file the pack was imported from. `import.meta.resolve` answers
  * under the same conditions the import used, so a package shipping both
- * an ESM and a CommonJS build gives back the one that ran. Older Node
- * has no such answer for a bare specifier, and `createRequire` picks the
- * CommonJS build for those runs.
+ * an ESM and a CommonJS build gives back the one that ran.
+ *
+ * A specifier it cannot place yields no file, and the pack falls back to
+ * whatever version it declares. Resolving such a specifier some other
+ * way would be worse than not resolving it: `createRequire` answers with
+ * the CommonJS build, and a stable hash of a file the run never loaded
+ * reads as a working cache key while invalidating on nothing.
  */
-function resolvePackFile(module: string): string[] {
+function resolvePackFile(specifier: string): string[] {
   try {
-    return [fileURLToPath(import.meta.resolve(module))];
-  } catch {
-    // fall through to the CommonJS resolution
-  }
-
-  try {
-    return [createRequire(import.meta.url).resolve(module)];
+    return [fileURLToPath(import.meta.resolve(specifier))];
   } catch {
     return [];
   }
@@ -214,16 +211,16 @@ export async function resolveFramework(spec: string): Promise<PatternPack> {
   // A name the record does not carry is taken for a pack published
   // under the family prefix, so someone can ship one without waiting
   // for the CLI to list it.
-  const module = `@suss/framework-${name}`;
+  const specifier = `@suss/framework-${name}`;
   let mod: { default: PackFactory };
   try {
-    mod = (await import(module)) as { default: PackFactory };
+    mod = (await import(specifier)) as { default: PackFactory };
   } catch {
     throw new Error(
       `Unknown framework: "${name}". Built-in: ${Object.keys(BUILTIN_FRAMEWORKS).join(", ")}`,
     );
   }
-  return instantiatePack(mod.default, options, module);
+  return instantiatePack(mod.default, options, specifier);
 }
 
 // ---------------------------------------------------------------------------
