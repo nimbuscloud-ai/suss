@@ -84,6 +84,18 @@ export function awsLambdaFramework(): PatternPack {
         },
       },
       {
+        // `return { batchItemFailures }`, which is how a consumer tells
+        // Lambda which records to retry and which to drop. Lambda
+        // defines the shape, so this pack can name it, the same way it
+        // names the HTTP envelope above.
+        kind: "return",
+        match: {
+          type: "returnShape",
+          requiredProperties: ["batchItemFailures"],
+        },
+        extraction: {},
+      },
+      {
         // `throw new SomeError(...)` — an uncaught throw becomes a
         // throw-output transition; API Gateway maps it to a 5xx, but the
         // specific status is the platform's, not the handler's.

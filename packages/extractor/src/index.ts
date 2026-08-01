@@ -578,6 +578,14 @@ export function detectGaps(
 // =============================================================================
 
 export function assessConfidence(raw: RawCodeStructure): ConfidenceInfo {
+  // A return nobody could read is the plainest reason not to trust a
+  // summary, and it says so directly. Counting conditions cannot see
+  // it: a function whose returns all went unread has no conditions
+  // either, and zero opaque out of zero used to come out as certain.
+  if ((raw.unmatchedReturns ?? 0) > 0) {
+    return { source: "inferred_static", level: "low" };
+  }
+
   let total = 0;
   let opaque = 0;
 
