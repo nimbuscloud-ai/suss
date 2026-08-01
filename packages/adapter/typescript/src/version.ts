@@ -49,28 +49,32 @@ function computeDistHash(): string {
     // sibling `index.js` does not exist, so we fall through to the
     // empty stamp. Test-time cache keys stay stable across processes.
     const selfPath = fileURLToPath(import.meta.url);
-    const dir = path.dirname(selfPath);
-    const candidates = [
-      path.join(dir, "index.js"),
-      path.join(dir, "index.cjs"),
-    ];
-    for (const candidate of candidates) {
-      if (!fs.existsSync(candidate)) {
-        continue;
-      }
-      const hash = createHash("sha256").update(fs.readFileSync(candidate));
-      for (const bundle of analysisBundles()) {
-        hash.update(fs.readFileSync(bundle));
-      }
-      cachedDistHash = hash.digest("hex").slice(0, 16);
-      return cachedDistHash;
-    }
-    cachedDistHash = "";
+    cachedDistHash = computeDistHashFrom(path.dirname(selfPath));
     return cachedDistHash;
   } catch {
     cachedDistHash = "";
     return cachedDistHash;
   }
+}
+
+/**
+ * The hash for a bundle directory: the bundle itself plus every
+ * analysis package that can be placed. Empty when the directory holds
+ * no bundle, which is what running from source looks like.
+ */
+export function computeDistHashFrom(dir: string): string {
+  const candidates = [path.join(dir, "index.js"), path.join(dir, "index.cjs")];
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+    const hash = createHash("sha256").update(fs.readFileSync(candidate));
+    for (const bundle of analysisBundles()) {
+      hash.update(fs.readFileSync(bundle));
+    }
+    return hash.digest("hex").slice(0, 16);
+  }
+  return "";
 }
 
 /**
