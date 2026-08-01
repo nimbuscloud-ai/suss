@@ -989,6 +989,15 @@ describe("assessConfidence", () => {
     });
   });
 
+  it("returns 'low' when a return went unread", () => {
+    // Nothing about the conditions changed. What changed is that part
+    // of what the function produces was never described.
+    expect(assessConfidence({ ...baseRaw, unmatchedReturns: 1 })).toEqual({
+      source: "inferred_static",
+      level: "low",
+    });
+  });
+
   it("returns 'medium' when fewer than half of conditions are opaque", () => {
     const raw: RawCodeStructure = {
       ...baseRaw,
