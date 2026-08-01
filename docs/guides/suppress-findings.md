@@ -5,10 +5,11 @@ a planned migration, a known issue with a documented owner.
 Suppressions live in a `.sussignore` file that travels with the
 code.
 
-Put it next to the summaries. `suss check --dir summaries/` looks
-inside `summaries/`; `suss check provider.json consumer.json`
-looks in the working directory. `--sussignore <path>` overrides
-both.
+Put it at the project root, next to `package.json`. `suss check`
+starts looking where it reads the summaries and walks up to the
+project root, taking the nearest file it finds, so a file beside
+the summaries works too. `--sussignore <path>` overrides the
+search.
 
 For the conceptual model and full rule schema see
 [Suppressions](/suppressions).
@@ -28,17 +29,33 @@ The default is `mark` if you don't specify.
 
 ## Pattern 1: suppress a specific finding
 
-You've seen a warning and decided it's accepted. Copy the finding's
-kind + boundary into `.sussignore`:
+`suss check` prints a rule under each finding it reports:
+
+```
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /legacy/health"
+      provider: { transitionId: "health:response:503:1c40e2b" }
+      reason: TODO say why you accept this
+```
+
+Paste it under `rules:` and replace the reason with yours:
 
 ```yaml
-# summaries/.sussignore.yml
+# .sussignore.yml
 version: 1
 rules:
   - kind: unhandledProviderCase
-    boundary: GET /legacy/health
-    reason: load balancer only; consumer doesn't need status handling
+    boundary: "GET /legacy/health"
+    provider: { transitionId: "health:response:503:1c40e2b" }
+    reason: load balancer only; the caller doesn't need status handling
 ```
+
+The rule matches that finding and no other, because the transition
+id names one branch of one function.
+
+Every file starts with `version: 1`. Leave it off and `suss check`
+stops and tells you to add it.
 
 The filename is `.sussignore.yml`, `.sussignore.yaml`, or
 `.sussignore.json`, checked in that order. `suss check` picks up the
@@ -79,13 +96,15 @@ rules:
 ```
 
 Narrow-scope rules (the default) require at least `kind` AND one
-of `boundary` / `consumer.transitionId` to prevent accidentally-wide
-matches. Broad rules opt in with `scope: broad`.
+of `boundary` / `consumer.transitionId` / `provider.transitionId`
+to prevent accidentally-wide matches. Broad rules opt in with
+`scope: broad`.
 
-## Pattern 4: match by consumer transition
+## Pattern 4: match one branch, on either side
 
-Useful when the same boundary has multiple consumer branches and
-only one needs suppression:
+Useful when the same boundary has several branches and only one
+needs suppression. A finding about a branch of the caller carries
+its transition id on the consumer side:
 
 ```yaml
 version: 1
@@ -96,7 +115,21 @@ rules:
     reason: ops team retired the 503 path; branch kept for one more release
 ```
 
-Transition IDs come from the summary file. Inspect to find them:
+A finding about a status the provider produces carries it on the
+provider side, and a rule keyed on the consumer never matches one
+of those:
+
+```yaml
+version: 1
+rules:
+  - kind: unhandledProviderCase
+    provider:
+      transitionId: get:response:410:3b915da
+    reason: the caller retries anything unexpected, 410 included
+```
+
+The printed rule already picks the right side. Transition ids also
+come from the summary file. Inspect to find them:
 
 ```bash
 npx suss inspect summaries/consumer.json

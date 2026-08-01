@@ -183,7 +183,11 @@ Compared 2 boundaries:
     also from: openapi:openapi.yaml::GET /users/{id}
   consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
   boundary: express (http) GET /users/:id
-  to silence this one: get:response:404:afd032b
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:404:afd032b" }
+      reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 [ERROR] unhandledProviderCase
   Consumer's default branch reads fields on status 200 that the provider never sends
@@ -191,7 +195,11 @@ Compared 2 boundaries:
     also from: openapi:openapi.yaml::GET /users/{id}
   consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
   boundary: express (http) GET /users/:id
-  to silence this one: get:response:200:ddaf2ab
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:200:ddaf2ab" }
+      reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 [WARNING] consumerContractViolation
   Contract declares response 404 but consumer does not handle it
