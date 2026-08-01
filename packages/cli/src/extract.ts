@@ -2,9 +2,12 @@
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
+  computeContentHash,
   createProjectWithoutTsconfig,
   createTypeScriptAdapter,
   findNearestTsconfig,
@@ -31,17 +34,69 @@ import type { PatternPack } from "@suss/extractor";
  */
 type PackFactory = (...args: never[]) => PatternPack;
 
-function instantiatePack(factory: PackFactory, options: unknown): PatternPack {
+function instantiatePack(
+  factory: PackFactory,
+  options: unknown,
+  module: string,
+): PatternPack {
   const pack = (factory as (options?: unknown) => PatternPack)(options);
-  if (options === undefined) {
-    return pack;
+
+  // The extraction cache keys on the pack's version stamp, so anything
+  // that changes what a pack reads has to reach the stamp. Two of those
+  // things are invisible to the pack itself: the config it was handed,
+  // and its own code. Almost no pack declares a version, and nothing
+  // checks that an author bumped one, so a pack edit would otherwise
+  // keep serving summaries the previous code produced.
+  const stamp = [
+    pack.version ?? "unset",
+    packCodeHash(module),
+    options === undefined ? "" : digest(options),
+  ].filter((part) => part.length > 0);
+  return { ...pack, version: stamp.join("+") };
+}
+
+const packCodeHashes = new Map<string, string>();
+
+/**
+ * Content hash of the file a pack was loaded from. Resolution happens
+ * from the CLI, which is the package that depends on the packs, and the
+ * answer is kept for the rest of the process so a run naming a dozen
+ * packs reads each file once.
+ *
+ * Empty when the specifier does not resolve to a file on disk, which is
+ * what a host that bundles its packs looks like. Such a pack falls back
+ * to whatever version it declares.
+ */
+function packCodeHash(module: string): string {
+  const cached = packCodeHashes.get(module);
+  if (cached !== undefined) {
+    return cached;
   }
 
-  // Two runs of the same pack version read different code when the
-  // config differs, and the extraction cache keys on the version
-  // stamp, so a run with a config would otherwise be answered from a
-  // run without one.
-  return { ...pack, version: `${pack.version ?? "unset"}+${digest(options)}` };
+  const hash = computeContentHash(resolvePackFile(module));
+  packCodeHashes.set(module, hash);
+  return hash;
+}
+
+/**
+ * The file the pack was imported from. `import.meta.resolve` answers
+ * under the same conditions the import used, so a package shipping both
+ * an ESM and a CommonJS build gives back the one that ran. Older Node
+ * has no such answer for a bare specifier, and `createRequire` picks the
+ * CommonJS build for those runs.
+ */
+function resolvePackFile(module: string): string[] {
+  try {
+    return [fileURLToPath(import.meta.resolve(module))];
+  } catch {
+    // fall through to the CommonJS resolution
+  }
+
+  try {
+    return [createRequire(import.meta.url).resolve(module)];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -79,41 +134,38 @@ function canonicalize(value: unknown): string {
  * through the dynamic fallback below but never appears in the list the
  * error message prints, so nobody finds out it exists.
  */
-export const BUILTIN_FRAMEWORKS: Record<
-  string,
-  () => Promise<{ default: PackFactory }>
-> = {
+export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   // HTTP framework packs (providers).
-  "ts-rest": () => import("@suss/framework-ts-rest"),
-  "react-router": () => import("@suss/framework-react-router"),
-  express: () => import("@suss/framework-express"),
-  fastify: () => import("@suss/framework-fastify"),
-  hono: () => import("@suss/framework-hono"),
+  "ts-rest": "@suss/framework-ts-rest",
+  "react-router": "@suss/framework-react-router",
+  express: "@suss/framework-express",
+  fastify: "@suss/framework-fastify",
+  hono: "@suss/framework-hono",
   // Next.js route handlers, whose route comes from where the file sits.
-  nextjs: () => import("@suss/framework-nextjs"),
+  nextjs: "@suss/framework-nextjs",
   // React components + event handlers + useEffect bodies.
-  react: () => import("@suss/framework-react"),
+  react: "@suss/framework-react",
   // GraphQL code-first resolver discovery (Apollo Server).
-  apollo: () => import("@suss/framework-apollo"),
+  apollo: "@suss/framework-apollo",
   // GraphQL resolver discovery via NestJS decorators.
-  "nestjs-graphql": () => import("@suss/framework-nestjs-graphql"),
+  "nestjs-graphql": "@suss/framework-nestjs-graphql",
   // REST controller discovery via NestJS decorators.
-  "nestjs-rest": () => import("@suss/framework-nestjs-rest"),
+  "nestjs-rest": "@suss/framework-nestjs-rest",
   // AWS Lambda HTTP handlers, paired to SAM/CFN-declared routes.
-  "aws-lambda": () => import("@suss/framework-aws-lambda"),
+  "aws-lambda": "@suss/framework-aws-lambda",
   // Storage access, emitted as interactions per read / write.
-  prisma: () => import("@suss/framework-prisma"),
-  drizzle: () => import("@suss/framework-drizzle"),
+  prisma: "@suss/framework-prisma",
+  drizzle: "@suss/framework-drizzle",
   // Message producers.
-  "aws-sqs": () => import("@suss/framework-aws-sqs"),
-  "aws-eventbridge": () => import("@suss/framework-aws-eventbridge"),
+  "aws-sqs": "@suss/framework-aws-sqs",
+  "aws-eventbridge": "@suss/framework-aws-eventbridge",
   // HTTP client packs (consumers).
-  fetch: () => import("@suss/client-web"),
-  axios: () => import("@suss/client-axios"),
+  fetch: "@suss/client-web",
+  axios: "@suss/client-axios",
   // GraphQL consumer hooks / imperative client calls.
-  "apollo-client": () => import("@suss/client-apollo"),
+  "apollo-client": "@suss/client-apollo",
   // JS runtime packs.
-  node: () => import("@suss/runtime-node"),
+  node: "@suss/runtime-node",
 };
 
 /**
@@ -155,20 +207,23 @@ export async function resolveFramework(spec: string): Promise<PatternPack> {
 
   const builtin = BUILTIN_FRAMEWORKS[name];
   if (builtin !== undefined) {
-    const mod = await builtin();
-    return instantiatePack(mod.default, options);
+    const mod = (await import(builtin)) as { default: PackFactory };
+    return instantiatePack(mod.default, options, builtin);
   }
 
-  // Try dynamic import for custom framework packs
+  // A name the record does not carry is taken for a pack published
+  // under the family prefix, so someone can ship one without waiting
+  // for the CLI to list it.
+  const module = `@suss/framework-${name}`;
   let mod: { default: PackFactory };
   try {
-    mod = (await import(`@suss/framework-${name}`)) as { default: PackFactory };
+    mod = (await import(module)) as { default: PackFactory };
   } catch {
     throw new Error(
       `Unknown framework: "${name}". Built-in: ${Object.keys(BUILTIN_FRAMEWORKS).join(", ")}`,
     );
   }
-  return instantiatePack(mod.default, options);
+  return instantiatePack(mod.default, options, module);
 }
 
 // ---------------------------------------------------------------------------

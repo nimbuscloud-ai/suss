@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
+
+import { computeContentHash } from "@suss/adapter-typescript";
 
 import {
   BUILTIN_FRAMEWORKS,
@@ -75,6 +78,43 @@ describe("resolveFramework", () => {
 
     expect(configured.version).not.toBe(plain.version);
     expect(other.version).not.toBe(configured.version);
+  });
+
+  it("stamps a pack with a hash of the code it loaded", async () => {
+    const pack = await resolveFramework("apollo-client");
+    const loaded = fileURLToPath(import.meta.resolve("@suss/client-apollo"));
+
+    // Editing a pack has to invalidate warm caches, and the version
+    // stamp is the only thing about a pack the cache key sees. Almost
+    // no pack declares a version, so without the hash of what was
+    // loaded, a pack edit would be answered from the previous code.
+    expect(pack.version).toContain(computeContentHash([loaded]));
+    expect(pack.version).not.toContain(
+      computeContentHash([
+        fileURLToPath(import.meta.resolve("@suss/client-web")),
+      ]),
+    );
+  });
+
+  it("stamps a pack the same way twice from the same code", async () => {
+    const first = await resolveFramework("apollo-client");
+    const second = await resolveFramework("apollo-client");
+    expect(second.version).toBe(first.version);
+  });
+
+  it("keeps the config in the stamp alongside the code", async () => {
+    const configured = await resolveFramework(
+      `aws-sqs=${writeConfig('{"producers":[{"module":"@acme/async","receiver":"CommandDispatcher","method":"dispatch","subjectArg":0}]}')}`,
+    );
+    const plain = await resolveFramework("aws-sqs");
+    const loaded = fileURLToPath(
+      import.meta.resolve("@suss/framework-aws-sqs"),
+    );
+    const code = computeContentHash([loaded]);
+
+    expect(plain.version).toContain(code);
+    expect(configured.version).toContain(code);
+    expect(configured.version).not.toBe(plain.version);
   });
 
   it("stamps the same config the same way whatever order it is written in", async () => {
