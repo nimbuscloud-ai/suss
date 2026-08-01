@@ -19,6 +19,11 @@ factory in TypeScript.
 
 ```
 func(f)                     f is a function
+objectValue(o)              o is an object written out literally
+writtenValue(x)             x is an expression written out in source
+                            rather than a name for one
+holdsProperty(o, n, x)      object o holds x under the name n
+readsProperty(x, o, n)      x is the expression o.n
 binds(x, y)                 the name x is declared as y
 paramOf(f, k, p)            p is f's parameter at position k
 returnsValue(f, v)          f returns v
@@ -39,6 +44,23 @@ body nobody can read: `unwrapsByName(name, k)` and
 match.
 
 Node identity is the adapter's business. The rules only join on it.
+
+## What comes out
+
+```
+comesTo(x, z)               following x arrives at the value z
+resolves(x, z)              comesTo narrowed to functions
+isWrittenAs(x, z)           x is written as the expression z
+```
+
+`resolves` is the question most callers ask. `comesTo` is the one
+underneath it, and it can answer with an object, since a chain has to
+pass through objects for `routes.list` to reach what `list` holds.
+
+`isWrittenAs` follows the same names to the expression a value is
+written as, whatever kind of expression that turns out to be. A GraphQL
+document is neither a function nor an object, so `comesTo` never
+reaches one.
 
 ## Why rules and not a walker
 

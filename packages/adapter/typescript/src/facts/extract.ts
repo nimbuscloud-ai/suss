@@ -313,9 +313,15 @@ export function emitValue(
 
   if (Node.isCallExpression(expression)) {
     emitCallFacts(db, table, expression);
+    fact(db, "writtenValue", id);
     return id;
   }
 
+  // Everything left is written out here and refers to nothing further:
+  // a template literal, a tag call's result, a ternary, a `new`. A name
+  // for one of these ends its chain here, and the caller decides
+  // whether what it found is the thing it was looking for.
+  fact(db, "writtenValue", id);
   return id;
 }
 

@@ -1,8 +1,11 @@
-// store.ts - the resolution store and its two questions.
+// store.ts - the resolution store and the questions it answers.
 //
 // resolveCallable: which function does this value resolve to, through
 // any depth of aliasing, imports, re-export barrels, wrapper
 // factories, and .bind.
+//
+// resolveWrittenValue: which expression is this value written as, for
+// callers after something that is neither a function nor an object.
 //
 // importsTransitively: does this file reach any of these packages
 // through its imports, following project-local re-export chains. The
@@ -62,6 +65,7 @@ export class ResolutionStore {
 
   private resolvedBySource = new Map<string, string[]>();
   private comesToBySource = new Map<string, string[]>();
+  private writtenAsBySource = new Map<string, string[]>();
   private stale = true;
 
   constructor(wrappers: TransparentWrapper[] = []) {
@@ -94,6 +98,22 @@ export class ResolutionStore {
   resolveObject(value: Node): Node | null {
     const target = factKeyOf(value);
     return this.resolveByWaves(target, () => this.lookupObject(target));
+  }
+
+  /**
+   * The expression `value` is written as, or null. Unlike the other two
+   * questions this one does not care what kind of expression it lands
+   * on, so it answers for values that are neither functions nor
+   * objects: a GraphQL document held in a named constant in another
+   * file comes back as the template literal or tag call that built it.
+   *
+   * A value the code computes has no written form to report, so the
+   * answer is the computing expression itself and the caller gets
+   * nothing it can use, which is the point.
+   */
+  resolveWrittenValue(value: Node): Node | null {
+    const target = factKeyOf(value);
+    return this.resolveByWaves(target, () => this.lookupWritten(target));
   }
 
   private resolveByWaves(value: Node, ask: () => Node | null): Node | null {
@@ -154,6 +174,31 @@ export class ResolutionStore {
     for (const target of this.comesToBySource.get(nodeId(value)) ?? []) {
       const node = this.table.byId.get(target);
       if (node === undefined || isFunctionRoot(node)) {
+        continue;
+      }
+      candidates.add(node);
+    }
+
+    if (candidates.size !== 1) {
+      return null;
+    }
+    return [...candidates][0] as Node;
+  }
+
+  /**
+   * Reaching two different expressions means the rules cannot tell
+   * which one the value is written as, and the same reasoning applies
+   * as for the other two questions: ambiguity is nothing. The value
+   * itself is not an answer, or every identifier would answer with
+   * itself the moment its chain went nowhere.
+   */
+  private lookupWritten(value: Node): Node | null {
+    this.derive();
+
+    const candidates = new Set<Node>();
+    for (const target of this.writtenAsBySource.get(nodeId(value)) ?? []) {
+      const node = this.table.byId.get(target);
+      if (node === undefined || node === value) {
         continue;
       }
       candidates.add(node);
@@ -256,6 +301,7 @@ export class ResolutionStore {
 
     this.resolvedBySource = indexBySource(this.db.facts("resolves"));
     this.comesToBySource = indexBySource(this.db.facts("comesTo"));
+    this.writtenAsBySource = indexBySource(this.db.facts("isWrittenAs"));
   }
 
   /** Emit a file's facts, unless some earlier query already did. */

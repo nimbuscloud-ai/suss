@@ -790,3 +790,94 @@ describe("importsTransitively", () => {
     ).toBe(false);
   });
 });
+
+describe("resolveWrittenValue", () => {
+  /** The identifier `name` where it is passed to a call in `file`. */
+  function usageOf(project: Project, file: string, name: string): Node {
+    const sourceFile = project.getSourceFileOrThrow(file);
+    const found = sourceFile
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .flatMap((call) => call.getArguments())
+      .find((arg) => arg.getText() === name);
+    if (found === undefined) {
+      throw new Error(`No use of ${name} in ${file}`);
+    }
+    return found;
+  }
+
+  it("follows a name to the tag call it is written as", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare function gql(source: string): unknown;
+        declare function run(doc: unknown): void;
+        const DOC = gql(\`query WidgetSettings { widgetSettings { id } }\`);
+        export function go() { run(DOC); }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      usageOf(project, "/mod.ts", "DOC"),
+    );
+    expect(written?.getText()).toContain("query WidgetSettings");
+  });
+
+  it("follows a name across a module boundary and a barrel", () => {
+    const project = projectOf({
+      "/documents.ts": `
+        declare function gql(source: string): unknown;
+        export const DOC = gql(\`query WidgetSettings { widgetSettings { id } }\`);
+      `,
+      "/barrel.ts": `export { DOC } from "./documents.js";`,
+      "/mod.ts": `
+        import { DOC } from "./barrel.js";
+        declare function run(doc: unknown): void;
+        export function go() { run(DOC); }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      usageOf(project, "/mod.ts", "DOC"),
+    );
+    expect(written?.getText()).toContain("query WidgetSettings");
+  });
+
+  it("answers with the object literal a name holds", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare function run(doc: unknown): void;
+        const DOC = { kind: "Document" };
+        export function go() { run(DOC); }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      usageOf(project, "/mod.ts", "DOC"),
+    );
+    expect(written?.getText()).toContain("Document");
+  });
+
+  it("answers with the computing expression when a value is decided at runtime", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare function gql(source: string): unknown;
+        declare function run(doc: unknown): void;
+        declare const legacy: boolean;
+        const A = gql(\`query A { a }\`);
+        const B = gql(\`query B { b }\`);
+        const DOC = legacy ? A : B;
+        export function go() { run(DOC); }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    // The ternary is what the name is written as, and it is not a
+    // document, so a caller looking for one comes away with nothing.
+    const written = store.resolveWrittenValue(
+      usageOf(project, "/mod.ts", "DOC"),
+    );
+    expect(written?.getKindName()).toBe("ConditionalExpression");
+  });
+});
