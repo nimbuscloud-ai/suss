@@ -73,7 +73,7 @@ Options (check):
 
 Options (contract):
   --from           What kind of file to read: openapi, cloudformation,
-                   storybook, appsync, prisma, graphql
+                   storybook, appsync, prisma, graphql, graphql-documents
   -o, --output     Write JSON to a file instead of stdout
 
 Options (corroborate):
@@ -419,6 +419,7 @@ async function runContract(args: string[]): Promise<number> {
     "appsync",
     "prisma",
     "graphql",
+    "graphql-documents",
   ];
   if (!SUPPORTED_FROM.includes(from)) {
     process.stderr.write(

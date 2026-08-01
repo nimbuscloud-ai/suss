@@ -1,0 +1,15 @@
+fragment ProductListItem on Product {
+  id
+  name
+  pricing {
+    ...PriceRange
+  }
+}
+
+fragment PriceRange on ProductPricingInfo {
+  priceRange {
+    start {
+      amount
+    }
+  }
+}

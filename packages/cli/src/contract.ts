@@ -18,7 +18,8 @@ export type ContractSource =
   | "storybook"
   | "appsync"
   | "prisma"
-  | "graphql";
+  | "graphql"
+  | "graphql-documents";
 
 export interface ContractOptions {
   from: ContractSource;
@@ -66,6 +67,16 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     // resolvers extracted by framework-apollo / framework-nestjs-graphql.
     const mod = await import("@suss/contract-graphql");
     return mod.graphqlSdlFileToSummaries(specPath);
+  },
+  "graphql-documents": async (specPath) => {
+    // `--from graphql-documents` reads committed `.graphql` / `.gql`
+    // operation documents (a single file or a directory walked
+    // recursively) and emits one `client`-kind summary per query /
+    // mutation / subscription with graphql-operation semantics. Pairs
+    // against resolver summaries the same way call-site-traced
+    // operations do.
+    const mod = await import("@suss/contract-graphql");
+    return mod.graphqlDocumentsPathToSummaries(specPath);
   },
 };
 
