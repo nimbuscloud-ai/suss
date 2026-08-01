@@ -183,7 +183,8 @@
                             ]
                           },
                           "instanceName": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "name": {
                             "type": "string",
@@ -264,7 +265,8 @@
                 "enum": ["lambda", "ecs-task", "container", "k8s-deployment"]
               },
               "instanceName": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": ["deploymentTarget", "instanceName"],
@@ -763,7 +765,8 @@
                                     ]
                                   },
                                   "instanceName": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "minLength": 1
                                   },
                                   "name": {
                                     "type": "string",

@@ -156,11 +156,13 @@ export const DeployableUnitSchema = z.object({
     "container",
     "k8s-deployment",
   ]),
-  instanceName: z.string(),
+  // An empty name would agree with every other empty name, so a unit
+  // that names nothing has to leave the field off instead.
+  instanceName: z.string().min(1),
 });
 
 /**
- * Provider-side runtime configuration channel — env vars + their
+ * Provider-side runtime configuration channel: env vars and their
  * declared values on a deployable unit. The channel is the boundary;
  * env var names are FIELDS on its contract. Pairing key:
  * `(deploymentTarget, instanceName)`, which is exactly a deployable
