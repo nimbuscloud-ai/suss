@@ -751,6 +751,7 @@ function resolveContractField(
     callSite.callExpression,
     callSite.methodName,
     pack.contractReading,
+    pack.name,
   );
   if (result === null || result.boundaryBinding === null) {
     return undefined;
@@ -1110,7 +1111,7 @@ function extractFromSourceFile(
         }
       } else if (pack.contractReading !== undefined) {
         // Provider: attempt contract reading
-        const contract = readContract(unit, pack.contractReading);
+        const contract = readContract(unit, pack.contractReading, pack.name);
         if (contract !== null) {
           raw.declaredContract = contract.declaredContract;
           if (contract.boundaryBinding !== null) {

@@ -511,6 +511,7 @@ describe("readContract", () => {
       units[0],
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
     );
 
     expect(result).not.toBeNull();
@@ -521,7 +522,7 @@ describe("readContract", () => {
     expect(result?.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "GET", path: "/users/:id" },
-      recognition: "core",
+      recognition: "ts-rest",
     });
   });
 
@@ -540,6 +541,7 @@ describe("readContract", () => {
       { func: fn, kind: "handler", name: "standalone" },
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
     );
 
     expect(result).toBeNull();
@@ -578,6 +580,7 @@ describe("readContract", () => {
       units[0],
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
     );
     expect(result).toBeNull();
   });
@@ -613,6 +616,7 @@ describe("readContract", () => {
       units[0],
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
     );
 
     expect(result).not.toBeNull();
@@ -649,6 +653,7 @@ describe("readContract", () => {
       units[0],
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
     );
 
     expect(result).not.toBeNull();
@@ -700,6 +705,7 @@ describe("readContract", () => {
       units[0],
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
     );
 
     expect(result).not.toBeNull();
@@ -732,6 +738,7 @@ describe("readContract", () => {
       units[0],
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
     );
 
     expect(result).not.toBeNull();

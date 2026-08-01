@@ -100,7 +100,7 @@ describe("tsRestFramework — integration", () => {
     expect(getUser?.identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "GET", path: "/users/:id" },
-      recognition: "core",
+      recognition: "ts-rest",
     });
   });
 
@@ -110,7 +110,7 @@ describe("tsRestFramework — integration", () => {
     expect(createUser?.identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "POST", path: "/users" },
-      recognition: "core",
+      recognition: "ts-rest",
     });
   });
 
@@ -240,7 +240,7 @@ describe("tsRestFramework — composed contracts", () => {
     expect(recordEvent?.identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "POST", path: "/events" },
-      recognition: "core",
+      recognition: "ts-rest",
     });
   });
 
@@ -249,7 +249,7 @@ describe("tsRestFramework — composed contracts", () => {
     expect(fetchThing?.identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "GET", path: "/things/:id" },
-      recognition: "core",
+      recognition: "ts-rest",
     });
   });
 });
