@@ -1,0 +1,75 @@
+// The digest that names an adapter+packs combination in cache keys.
+//
+// Run from source there is no dist file to hash, so the stamp is the
+// bare version. What these pin is the part that must not wobble: the
+// same packs in any order produce the same digest, and a pack without a
+// version says so rather than disappearing.
+
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  ADAPTER_VERSION,
+  computeAdapterPacksDigest,
+  computeDistHashFrom,
+} from "./version.js";
+
+describe("computeAdapterPacksDigest", () => {
+  it("names the adapter and every pack", () => {
+    expect(
+      computeAdapterPacksDigest([{ name: "express", version: "1.2.0" }]),
+    ).toBe(`adapter@${ADAPTER_VERSION}|express@1.2.0`);
+  });
+
+  it("does not care what order the packs arrive in", () => {
+    const forwards = computeAdapterPacksDigest([
+      { name: "express", version: "1.0.0" },
+      { name: "react", version: "2.0.0" },
+    ]);
+    const backwards = computeAdapterPacksDigest([
+      { name: "react", version: "2.0.0" },
+      { name: "express", version: "1.0.0" },
+    ]);
+    expect(forwards).toBe(backwards);
+  });
+
+  it("says when a pack declared no version", () => {
+    expect(computeAdapterPacksDigest([{ name: "local" }])).toContain(
+      "local@unset",
+    );
+  });
+
+  it("answers the same thing twice", () => {
+    const packs = [{ name: "express", version: "1.0.0" }];
+    expect(computeAdapterPacksDigest(packs)).toBe(
+      computeAdapterPacksDigest(packs),
+    );
+  });
+});
+
+describe("computeDistHashFrom", () => {
+  it("answers empty for a directory with no bundle in it", () => {
+    expect(computeDistHashFrom(mkdtempSync(path.join(tmpdir(), "no-")))).toBe(
+      "",
+    );
+  });
+
+  it("changes when the bundle changes", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "dist-"));
+    writeFileSync(path.join(dir, "index.js"), "one");
+    const first = computeDistHashFrom(dir);
+    writeFileSync(path.join(dir, "index.js"), "two");
+    const second = computeDistHashFrom(dir);
+    expect(first).not.toBe("");
+    expect(first).not.toBe(second);
+  });
+
+  it("answers the same for the same bundle", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "dist-"));
+    writeFileSync(path.join(dir, "index.js"), "same");
+    expect(computeDistHashFrom(dir)).toBe(computeDistHashFrom(dir));
+  });
+});

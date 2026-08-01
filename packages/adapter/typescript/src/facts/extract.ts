@@ -238,11 +238,58 @@ function emitValue(db: Database, table: NodeTable, value: Expression): string {
     return id;
   }
 
-  if (
-    Node.isIdentifier(expression) ||
-    Node.isPropertyAccessExpression(expression)
-  ) {
+  if (Node.isPropertyAccessExpression(expression)) {
+    // Both readings are emitted and whichever finds facts wins. The
+    // symbol route answers when the property resolves to a declaration,
+    // and the structural route answers when the object is a literal
+    // whose property holds a value.
+    fact(
+      db,
+      "readsProperty",
+      id,
+      emitValue(db, table, expression.getExpression()),
+      expression.getName(),
+    );
     emitReferenceFacts(db, table, expression);
+    return id;
+  }
+
+  if (Node.isIdentifier(expression)) {
+    emitReferenceFacts(db, table, expression);
+    return id;
+  }
+
+  if (Node.isObjectLiteralExpression(expression)) {
+    fact(db, "objectValue", id);
+    for (const property of expression.getProperties()) {
+      if (Node.isPropertyAssignment(property)) {
+        const held = property.getInitializer();
+        if (held !== undefined) {
+          fact(
+            db,
+            "holdsProperty",
+            id,
+            property.getName(),
+            emitValue(db, table, held),
+          );
+        }
+      } else if (Node.isShorthandPropertyAssignment(property)) {
+        // `{ handler }` holds whatever the name refers to.
+        fact(
+          db,
+          "holdsProperty",
+          id,
+          property.getName(),
+          emitValue(db, table, property.getNameNode()),
+        );
+      } else if (Node.isMethodDeclaration(property)) {
+        const methodId = nodeId(property);
+        table.byId.set(methodId, property);
+        fact(db, "func", methodId);
+        emitFunctionFacts(db, table, property);
+        fact(db, "holdsProperty", id, property.getName(), methodId);
+      }
+    }
     return id;
   }
 
@@ -461,7 +508,10 @@ function recordBodyNode(
   const call = unwrapExpression(node);
   if (Node.isCallExpression(call)) {
     const callee = unwrapExpression(call.getExpression());
-    if (Node.isIdentifier(callee)) {
+    // A name or a property read: `body(e)` and `opts.body(e)` both say
+    // this function runs its argument, and the property rule needs the
+    // second to see which property it was.
+    if (Node.isIdentifier(callee) || Node.isPropertyAccessExpression(callee)) {
       fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
     }
   }
