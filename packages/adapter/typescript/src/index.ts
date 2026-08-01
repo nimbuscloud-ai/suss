@@ -10,6 +10,7 @@ export {
   findNearestTsconfig,
 } from "./bootstrap/noTsconfigProject.js";
 export { collectAncestorBranches } from "./conditions.js";
+export { readConfiguredCall } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery/index.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
@@ -27,6 +28,11 @@ export type {
 } from "./adapter.js";
 export type { CacheDiagnostic, CacheLookup } from "./cache.js";
 export type { FunctionRoot } from "./conditions.js";
+export type {
+  ConfiguredCallContext,
+  ConfiguredCallRead,
+  ConfiguredCallSpec,
+} from "./configuredCall.js";
 export type { ContractReadResult } from "./contract.js";
 export type {
   EmptyStage,

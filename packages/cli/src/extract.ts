@@ -22,9 +22,21 @@ import type { PatternPack } from "@suss/extractor";
 // Framework pack resolution
 // ---------------------------------------------------------------------------
 
+/**
+ * A pack factory takes the options its own package documents, or none.
+ * Each pack types its own, so the CLI holds them only as "some
+ * options", hands over whatever the config file said, and lets the
+ * pack decide what is valid.
+ */
+type PackFactory = (...args: never[]) => PatternPack;
+
+function instantiatePack(factory: PackFactory, options: unknown): PatternPack {
+  return (factory as (options?: unknown) => PatternPack)(options);
+}
+
 const BUILTIN_FRAMEWORKS: Record<
   string,
-  () => Promise<{ default: () => PatternPack }>
+  () => Promise<{ default: PackFactory }>
 > = {
   // HTTP framework packs (providers).
   "ts-rest": () => import("@suss/framework-ts-rest"),
@@ -53,24 +65,59 @@ const BUILTIN_FRAMEWORKS: Record<
   node: () => import("@suss/runtime-node"),
 };
 
-export async function resolveFramework(name: string): Promise<PatternPack> {
+/**
+ * Split `-f aws-sqs=packs/sqs.json` into the pack name and the options
+ * the file holds. A plain `-f aws-sqs` carries no options.
+ *
+ * Configuration is per pack because what it says is per pack: a pack
+ * that reads a project's own dispatcher needs to be told which one,
+ * and no other pack can act on that.
+ */
+export function parseFrameworkSpec(spec: string): {
+  name: string;
+  options?: unknown;
+} {
+  const separator = spec.indexOf("=");
+  if (separator === -1) {
+    return { name: spec };
+  }
+
+  const name = spec.slice(0, separator);
+  const configPath = spec.slice(separator + 1);
+  const resolved = path.resolve(configPath);
+  if (!fs.existsSync(resolved)) {
+    throw new Error(
+      `No pack config at ${resolved}, named by -f ${name}=${configPath}.`,
+    );
+  }
+
+  try {
+    return { name, options: JSON.parse(fs.readFileSync(resolved, "utf8")) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`The pack config at ${resolved} is not JSON: ${message}`);
+  }
+}
+
+export async function resolveFramework(spec: string): Promise<PatternPack> {
+  const { name, options } = parseFrameworkSpec(spec);
+
   const builtin = BUILTIN_FRAMEWORKS[name];
   if (builtin !== undefined) {
     const mod = await builtin();
-    return mod.default();
+    return instantiatePack(mod.default, options);
   }
 
   // Try dynamic import for custom framework packs
+  let mod: { default: PackFactory };
   try {
-    const mod = (await import(`@suss/framework-${name}`)) as {
-      default: () => PatternPack;
-    };
-    return mod.default();
+    mod = (await import(`@suss/framework-${name}`)) as { default: PackFactory };
   } catch {
     throw new Error(
       `Unknown framework: "${name}". Built-in: ${Object.keys(BUILTIN_FRAMEWORKS).join(", ")}`,
     );
   }
+  return instantiatePack(mod.default, options);
 }
 
 // ---------------------------------------------------------------------------

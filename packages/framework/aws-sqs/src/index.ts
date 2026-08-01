@@ -18,6 +18,19 @@
 // AWS SDK v2 (`new AWS.SQS().sendMessage(...).promise()`) is a
 // follow-up — the surface is similar but the call shape differs.
 //
+// A service that sends through its own dispatcher writes no
+// SendMessageCommand of its own, so this recognizer never fires on it.
+// Such a project names the dispatcher in the pack's `producers`
+// option:
+//
+//   { module: "@acme/async", receiver: "CommandDispatcher",
+//     method: "dispatch", subjectArg: 0, bodyArg: 1 }
+//
+// which reads `dispatcher.dispatch("order.placed", order, { queueUrl })`
+// as a send on channel "order.placed" — the same subject the consumer
+// names, so the two pair. A subject the source does not state as a
+// string yields no effect.
+//
 // Channel identity: the recognizer reads the env-var name from
 // QueueUrl (e.g., "ORDERS_QUEUE_URL"). Pairing against CFN provider
 // summaries collapses a two-link chain via the existing runtime-config
@@ -33,8 +46,13 @@ import {
   type SourceFile,
 } from "ts-morph";
 
+import { readConfiguredCall } from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
 
+import type {
+  ConfiguredCallContext,
+  ConfiguredCallSpec,
+} from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   EffectArg,
@@ -487,12 +505,67 @@ function extractDestructuredFields(
 }
 
 /**
- * Pack export. Two invocation recognizers — producer-side and
- * consumer-side — plus an import gate that admits both
- * `@aws-sdk/client-sqs` (producer files) and `aws-lambda` (consumer
- * files; SQSEvent type comes from there).
+ * A send method on a project's own dispatcher. The pack recognizes
+ * `SendMessageCommand` by name, and a service that wraps the SDK
+ * writes no such call, so the project describes its wrapper here
+ * instead.
  */
-export function sqsFramework(): PatternPack {
+export type SqsProducer = ConfiguredCallSpec;
+
+export interface SqsPackOptions {
+  /**
+   * Dispatchers this project sends through. Each one adds a
+   * recognizer and widens the import gate to the module it names.
+   */
+  producers?: SqsProducer[];
+}
+
+/**
+ * One recognizer per configured dispatcher method. The subject the
+ * call names is the channel, with no bus segment: a wrapper knows
+ * which queue it writes to only at runtime, and the consumer names
+ * the same subject, so pairing has what it needs and nothing is
+ * invented.
+ */
+function configuredProducerRecognizer(
+  spec: ConfiguredCallSpec,
+): InvocationRecognizer {
+  return ((call: unknown, ctx: unknown): Effect[] | null => {
+    const read = readConfiguredCall(
+      call as CallExpression,
+      ctx as ConfiguredCallContext,
+      spec,
+    );
+    if (read === null) {
+      return null;
+    }
+    return [
+      {
+        type: "interaction",
+        binding: messageBusBinding({
+          recognition: "@suss/framework-aws-sqs",
+          messageBus: "sqs",
+          channel: read.subject,
+        }),
+        callee: read.callee,
+        interaction: {
+          class: "message-send",
+          ...(read.body !== null ? { body: read.body } : {}),
+        },
+      },
+    ];
+  }) as InvocationRecognizer;
+}
+
+/**
+ * Pack export. Two invocation recognizers — producer-side and
+ * consumer-side — plus one per configured dispatcher, and an import
+ * gate that admits `@aws-sdk/client-sqs` (producer files),
+ * `aws-lambda` (consumer files; SQSEvent type comes from there), and
+ * every module a configured dispatcher is declared in.
+ */
+export function sqsFramework(options: SqsPackOptions = {}): PatternPack {
+  const producers = options.producers ?? [];
   return {
     name: "sqs",
     protocol: "sqs",
@@ -504,10 +577,17 @@ export function sqsFramework(): PatternPack {
     // (producer side) or `aws-lambda` (consumer side; SQSEvent type).
     // The recognizers' structural checks are quick but the import
     // gate spares walking SQS-irrelevant files in monorepos.
-    requiresImport: ["@aws-sdk/client-sqs", "aws-lambda"],
+    requiresImport: [
+      ...new Set([
+        "@aws-sdk/client-sqs",
+        "aws-lambda",
+        ...producers.map((p) => p.module),
+      ]),
+    ],
     invocationRecognizers: [
       sqsRecognizer as InvocationRecognizer,
       messageReceiveRecognizer as InvocationRecognizer,
+      ...producers.map(configuredProducerRecognizer),
     ],
   };
 }

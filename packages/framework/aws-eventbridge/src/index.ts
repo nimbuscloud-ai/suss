@@ -28,6 +28,17 @@
 // AWS SDK v2 (`new AWS.EventBridge().putEvents(...).promise()`) is a
 // follow-up — the surface is similar but the call shape differs.
 //
+// A service that publishes through its own EventPublisher writes no
+// PutEventsCommand of its own, so this recognizer never fires on it.
+// Such a project names the publisher in the pack's `producers` option:
+//
+//   { module: "@acme/async", receiver: "EventPublisher",
+//     method: "emit", subjectArg: 0, bodyArg: 1 }
+//
+// which reads `publisher.emit("user.deleted", data, opts)` as a send on
+// channel "user.deleted". A subject the source does not state as a
+// string yields no effect.
+//
 // CHANNEL IDENTITY SCHEME
 // -----------------------
 // One event bus multiplexes many event types; a rule subscribes to a
@@ -68,8 +79,13 @@ import {
   type SourceFile,
 } from "ts-morph";
 
+import { readConfiguredCall } from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
 
+import type {
+  ConfiguredCallContext,
+  ConfiguredCallSpec,
+} from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   EffectArg,
@@ -318,10 +334,67 @@ function rootIdentifier(node: Node): Node | null {
 }
 
 /**
- * Pack export. One producer-side invocation recognizer plus an import
- * gate admitting `@aws-sdk/client-eventbridge`.
+ * A publish method on a project's own publisher. The pack recognizes
+ * `PutEventsCommand` by name, and a service that wraps the SDK writes
+ * no such call, so the project describes its publisher here instead.
  */
-export function eventBridgeFramework(): PatternPack {
+export type EventBridgeProducer = ConfiguredCallSpec;
+
+export interface EventBridgePackOptions {
+  /**
+   * Publishers this project emits through. Each one adds a recognizer
+   * and widens the import gate to the module it names.
+   */
+  producers?: EventBridgeProducer[];
+}
+
+/**
+ * One recognizer per configured publisher method. The subject the
+ * call names is the channel, with no bus segment: a publisher takes
+ * its bus from constructor config the call site never states, and the
+ * checker treats an unstated bus as agreeing with any, so the subject
+ * alone pairs against the rule that routes it.
+ */
+function configuredProducerRecognizer(
+  spec: ConfiguredCallSpec,
+): InvocationRecognizer {
+  return ((call: unknown, ctx: unknown): Effect[] | null => {
+    const read = readConfiguredCall(
+      call as CallExpression,
+      ctx as ConfiguredCallContext,
+      spec,
+    );
+    if (read === null) {
+      return null;
+    }
+    return [
+      {
+        type: "interaction",
+        binding: messageBusBinding({
+          recognition: "@suss/framework-aws-eventbridge",
+          messageBus: "eventbridge",
+          channel: read.subject,
+        }),
+        callee: read.callee,
+        interaction: {
+          class: "message-send",
+          ...(read.body !== null ? { body: read.body } : {}),
+        },
+      },
+    ];
+  }) as InvocationRecognizer;
+}
+
+/**
+ * Pack export. The producer-side invocation recognizer plus one per
+ * configured publisher, and an import gate admitting
+ * `@aws-sdk/client-eventbridge` and every module a configured
+ * publisher is declared in.
+ */
+export function eventBridgeFramework(
+  options: EventBridgePackOptions = {},
+): PatternPack {
+  const producers = options.producers ?? [];
   return {
     name: "eventbridge",
     protocol: "eventbridge",
@@ -330,8 +403,16 @@ export function eventBridgeFramework(): PatternPack {
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
     // Skip files that don't import `@aws-sdk/client-eventbridge`.
-    requiresImport: ["@aws-sdk/client-eventbridge"],
-    invocationRecognizers: [eventBridgeRecognizer as InvocationRecognizer],
+    requiresImport: [
+      ...new Set([
+        "@aws-sdk/client-eventbridge",
+        ...producers.map((p) => p.module),
+      ]),
+    ],
+    invocationRecognizers: [
+      eventBridgeRecognizer as InvocationRecognizer,
+      ...producers.map(configuredProducerRecognizer),
+    ],
   };
 }
 
