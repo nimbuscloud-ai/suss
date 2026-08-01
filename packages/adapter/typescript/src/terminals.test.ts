@@ -1188,6 +1188,94 @@ describe("returnShape — ternary return branches", () => {
     expect(terminals).toHaveLength(1);
   });
 
+  it("does NOT duplicate a return whose object is cast with `as`", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      type R = { status: number; body: unknown };
+      function handler() {
+        return { status: 200, body: {} } as R;
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeReturnShapePattern()]);
+
+    expect(terminals).toHaveLength(1);
+  });
+
+  it("does NOT duplicate a return whose object is cast with `as const`", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function handler() {
+        return { scanned: 1, skipped: 0 } as const;
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeReturnShapePattern()]);
+
+    expect(terminals).toHaveLength(1);
+  });
+
+  it("does NOT duplicate a return whose object carries `satisfies`", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      type R = { status: number; body: unknown };
+      function handler() {
+        return { status: 200, body: {} } satisfies R;
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeReturnShapePattern()]);
+
+    expect(terminals).toHaveLength(1);
+  });
+
+  it("does NOT duplicate a parenthesised return object", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function handler() {
+        return ({ status: 200, body: {} });
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeReturnShapePattern()]);
+
+    expect(terminals).toHaveLength(1);
+  });
+
+  it("still matches both branches of a cast ternary return", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      type R = { status: number; body: unknown };
+      function handler(ok: boolean) {
+        return (ok ? { status: 200, body: {} } : { status: 409, body: {} }) as R;
+      }
+    `,
+    );
+
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [makeReturnShapePattern()]);
+
+    expect(terminals).toHaveLength(2);
+  });
+
   it("matches when only one ternary branch is an object literal", () => {
     const project = createProject();
     const file = project.createSourceFile(

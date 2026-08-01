@@ -180,9 +180,13 @@ describe("awsLambdaFramework — extraction", () => {
 
   it("unwraps JSON.stringify in a direct envelope body", () => {
     const list = byRoute(summaries, "GET", "/widgets");
-    const ok = (list as BehavioralSummary).transitions.find(
+    const responses = (list as BehavioralSummary).transitions.filter(
       (t) => t.output.type === "response",
     );
+    // The handler casts its envelope, and a cast around the returned
+    // object used to produce a second, identical response.
+    expect(responses).toHaveLength(1);
+    const ok = responses[0];
     expect(ok?.output.type).toBe("response");
     if (ok?.output.type === "response") {
       // Shape of `{ widgets }`, not the `JSON.stringify(...)` call text.
@@ -219,6 +223,8 @@ describe("awsLambdaFramework — extraction", () => {
     const returns = (scheduled as BehavioralSummary).transitions.filter(
       (t) => t.output.type === "return",
     );
+    // The job writes `satisfies` on the object it returns, and that
+    // wrapper used to make the same return count twice.
     expect(returns).toHaveLength(1);
     const body = JSON.stringify(returns[0].output);
     expect(body).toContain("requestId");
