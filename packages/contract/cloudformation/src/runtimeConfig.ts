@@ -223,12 +223,8 @@ function buildSummary(opts: {
         recognition: "cloudformation",
         ...deployableUnit,
       }),
-      // The runtime-config boundary IS a deployable unit's config
-      // channel, so the binding already carries the pair and keeps
-      // carrying it: it is what keys this boundary. Saying it on the
-      // identity too lets anything reading summaries of mixed kinds
-      // ask one question of all of them. Both come from the one value
-      // above, so they cannot drift.
+      // The binding keeps its own copy because the unit is what keys a
+      // runtime-config boundary, not incidental to it.
       deployableUnit,
     },
     inputs: [],

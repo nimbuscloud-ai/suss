@@ -1047,14 +1047,7 @@ export interface DiscoveredCustomUnit {
     messageBus: MessageBusSemantics["messageBus"];
     channel: string;
   };
-  /**
-   * The thing that gets deployed and runs this unit, when the pack
-   * knows it. A pack reading a SAM template names the Lambda's logical
-   * id; a pack reading a Compose file or a k8s manifest names the
-   * container or the deployment. Lands on the summary's identity,
-   * where pairing uses it to keep two sides on one channel apart when
-   * they run in different units.
-   */
+  /** The thing that gets deployed and runs this unit, when known. */
   deployableUnit?: DeployableUnit;
   /**
    * Metadata merged onto the resulting summary's `metadata` field.

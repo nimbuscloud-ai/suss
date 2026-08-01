@@ -294,18 +294,7 @@ export const CodeUnitIdentitySchema = z.object({
   name: z.string(),
   exportPath: z.array(z.string()).nullable(),
   boundaryBinding: BoundaryBindingSchema.nullable(),
-  /**
-   * The thing that gets deployed and runs this unit, when the pack
-   * that produced the summary knows it. A Lambda handler names its
-   * function's logical id, a service in a container names the
-   * container, a pod names its k8s deployment.
-   *
-   * Two summaries pair only when the units they name agree, which is
-   * what separates five handlers on one subject from the twenty-five
-   * combinations the subject alone allows. Optional rather than
-   * nullable: a React component or a library export is never deployed
-   * on its own, so there is nothing for it to say.
-   */
+  /** The thing that gets deployed and runs this unit, when known. */
   deployableUnit: DeployableUnitSchema.optional(),
 });
 

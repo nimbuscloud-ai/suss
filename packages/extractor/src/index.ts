@@ -254,11 +254,7 @@ export interface RawCodeStructure {
    * helpers, pure utilities, and anything the adapter can't place.
    */
   boundaryBinding: BoundaryBinding | null;
-  /**
-   * The deployable unit this code runs in, when the pack that
-   * discovered it knows. Absent otherwise, which is the common case:
-   * most code is not deployed on its own.
-   */
+  /** The thing that gets deployed and runs this code, when known. */
   deployableUnit?: DeployableUnit;
   parameters: RawParameter[];
   branches: RawBranch[];

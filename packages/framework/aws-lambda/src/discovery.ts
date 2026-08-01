@@ -27,11 +27,7 @@ import type { SourceFile } from "ts-morph";
 /** Metadata namespace stamped on every unit this pack discovers. */
 export const METADATA_NAMESPACE = "awsLambda";
 
-/**
- * The Lambda a template entry deploys. Every unit this pack discovers
- * carries it, so two units on one subject that run in different
- * functions do not pair with each other's declared subscription.
- */
+/** The Lambda a template entry deploys. */
 function deployableUnit(entry: HandlerEntry): DeployableUnit {
   return { deploymentTarget: "lambda", instanceName: entry.functionLogicalId };
 }
