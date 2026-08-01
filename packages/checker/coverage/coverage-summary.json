@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1438,
-      "covered": 1287,
+      "total": 1465,
+      "covered": 1314,
       "skipped": 0,
-      "pct": 89.49
+      "pct": 89.69
     },
     "statements": {
-      "total": 1454,
-      "covered": 1303,
+      "total": 1482,
+      "covered": 1331,
       "skipped": 0,
-      "pct": 89.61
+      "pct": 89.81
     },
     "functions": {
-      "total": 239,
-      "covered": 213,
+      "total": 247,
+      "covered": 221,
       "skipped": 0,
-      "pct": 89.12
+      "pct": 89.47
     },
     "branches": {
-      "total": 974,
-      "covered": 792,
+      "total": 991,
+      "covered": 808,
       "skipped": 0,
-      "pct": 81.31
+      "pct": 81.53
     },
     "branchesTrue": {
       "total": 0,
@@ -473,30 +473,56 @@
       "pct": 56
     }
   },
-  "src/message-bus/messageBusPairing.ts": {
+  "src/message-bus/channelPairing.ts": {
     "lines": {
-      "total": 179,
-      "covered": 168,
+      "total": 20,
+      "covered": 20,
       "skipped": 0,
-      "pct": 93.85
+      "pct": 100
     },
     "functions": {
-      "total": 24,
-      "covered": 24,
+      "total": 7,
+      "covered": 7,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 180,
-      "covered": 169,
+      "total": 21,
+      "covered": 21,
       "skipped": 0,
-      "pct": 93.88
+      "pct": 100
     },
     "branches": {
-      "total": 116,
-      "covered": 90,
+      "total": 11,
+      "covered": 11,
       "skipped": 0,
-      "pct": 77.58
+      "pct": 100
+    }
+  },
+  "src/message-bus/messageBusPairing.ts": {
+    "lines": {
+      "total": 186,
+      "covered": 175,
+      "skipped": 0,
+      "pct": 94.08
+    },
+    "functions": {
+      "total": 25,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 187,
+      "covered": 176,
+      "skipped": 0,
+      "pct": 94.11
+    },
+    "branches": {
+      "total": 122,
+      "covered": 95,
+      "skipped": 0,
+      "pct": 77.86
     }
   },
   "src/pairing/graphqlPairing.ts": {
