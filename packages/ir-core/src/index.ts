@@ -84,6 +84,12 @@ export type { TypeShape } from "./schemas.js";
 
 export { boundaryKey, normalizePath } from "./boundaryKey.js";
 export {
+  busesAgree,
+  channelsPair,
+  type ParsedChannel,
+  parseChannel,
+} from "./channel.js";
+export {
   applySuppressionsToFindings,
   countsForThreshold,
   type FindingSuppression,

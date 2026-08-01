@@ -649,6 +649,29 @@ describe("inspect", () => {
     },
   );
 
+  it("shows a queue subscriber's channel next to its name", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-bus-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify([
+        busSummary("OrderPlacedFunction.QueueEvent", "default#order.placed"),
+        // A queue declared by a template is named after its own
+        // channel, where showing both would stutter.
+        busSummary("OrdersQueue", "OrdersQueue"),
+      ]),
+    );
+
+    const output = captureInspect(() => inspect({ file }));
+    expect(output).toContain(
+      "OrderPlacedFunction.QueueEvent → sqs default#order.placed",
+    );
+    expect(output).toContain("sqs OrdersQueue");
+    expect(output).not.toContain("OrdersQueue → sqs OrdersQueue");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
   it("throws on nonexistent file", () => {
     expect(() => inspect({ file: "/nonexistent/file.json" })).toThrow(
       "File not found",
@@ -833,3 +856,44 @@ describe("end-to-end: semantic bridging — soft-delete motivating example", () 
     },
   );
 });
+
+/** A minimal summary carrying a message-bus binding. */
+function busSummary(name: string, channel: string): unknown {
+  return {
+    kind: "consumer",
+    location: {
+      file: "src/handler.ts",
+      range: { start: 1, end: 2 },
+      exportName: name,
+    },
+    identity: {
+      name,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "sqs",
+        semantics: { name: "message-bus", messageBus: "sqs", channel },
+        recognition: "aws-sqs",
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+/** Run inspect with stdout captured. */
+function captureInspect(run: () => void): string {
+  const chunks: string[] = [];
+  const original = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string) => {
+    chunks.push(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    run();
+  } finally {
+    process.stdout.write = original;
+  }
+  return chunks.join("");
+}
