@@ -106,14 +106,24 @@ function previousRelease() {
     return tag;
   }
 
-  const releaseCommit = attempt([
-    "log",
-    "--format=%H",
-    `--grep=${RELEASE_SUBJECT}`,
-    "--extended-regexp",
-    "--max-count=1",
-    to,
-  ]);
+  // Two, because the release being written is usually the newest one.
+  // A run from the release commit itself would otherwise start there
+  // and report that nothing has landed.
+  const releaseCommits = (
+    attempt([
+      "log",
+      "--format=%H",
+      `--grep=${RELEASE_SUBJECT}`,
+      "--extended-regexp",
+      "--max-count=2",
+      to,
+    ]) ?? ""
+  )
+    .split("\n")
+    .filter((line) => line !== "");
+  const head = git(["rev-parse", to]);
+  const releaseCommit =
+    releaseCommits[0] === head ? releaseCommits[1] : releaseCommits[0];
   if (releaseCommit !== undefined && releaseCommit !== "") {
     console.error(
       `No v* tag is reachable from ${to}. Starting at the last release commit,` +
