@@ -19,10 +19,10 @@
       "pct": 89.87
     },
     "branches": {
-      "total": 998,
-      "covered": 813,
+      "total": 999,
+      "covered": 814,
       "skipped": 0,
-      "pct": 81.46
+      "pct": 81.48
     },
     "branchesTrue": {
       "total": 0,
@@ -519,10 +519,10 @@
       "pct": 94.11
     },
     "branches": {
-      "total": 122,
-      "covered": 95,
+      "total": 123,
+      "covered": 96,
       "skipped": 0,
-      "pct": 77.86
+      "pct": 78.04
     }
   },
   "src/pairing/graphqlPairing.ts": {
