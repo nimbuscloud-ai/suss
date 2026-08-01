@@ -46,6 +46,7 @@ function runPattern(
       pattern.match,
       pattern.kind,
       pattern.bindingExtraction,
+      resolution,
     );
   }
   if (pattern.match.type === "registrationTemplate") {

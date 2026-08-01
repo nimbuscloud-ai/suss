@@ -391,6 +391,13 @@ export type BindingExtraction = {
   path:
     | { type: "fromRegistration"; position: number }
     | {
+        // The path sits on a property of the argument at `position`,
+        // the way a route object built by createRoute carries it.
+        type: "fromArgumentProperty";
+        position: number;
+        property: string;
+      }
+    | {
         /**
          * The route path comes from where the file sits, which is how
          * Next.js and React Router describe their routes. The pack
