@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  BUILTIN_FRAMEWORKS,
   extract,
   formatCacheDiagnostic,
   parseFrameworkSpec,
@@ -48,6 +49,29 @@ describe("resolveFramework", () => {
     const pack = await resolveFramework(`aws-sqs=${file}`);
     expect(pack.requiresImport).toContain("@acme/async");
     expect(pack.invocationRecognizers).toHaveLength(3);
+  });
+
+  it("names every framework pack the CLI ships with, and loads each", async () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { dependencies: Record<string, string> };
+
+    const shipped = Object.keys(manifest.dependencies)
+      .filter((dep) => dep.startsWith("@suss/framework-"))
+      .map((dep) => dep.slice("@suss/framework-".length))
+      .sort();
+
+    // The dynamic fallback would load a pack that is missing from the
+    // record, so ask the record itself rather than asking whether the
+    // name resolves.
+    expect(shipped.filter((name) => name in BUILTIN_FRAMEWORKS)).toEqual(
+      shipped,
+    );
+
+    const packs = await Promise.all(shipped.map(resolveFramework));
+    for (const pack of packs) {
+      expect(pack.name).toBeTruthy();
+    }
   });
 });
 

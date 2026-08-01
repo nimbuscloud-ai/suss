@@ -34,7 +34,14 @@ function instantiatePack(factory: PackFactory, options: unknown): PatternPack {
   return (factory as (options?: unknown) => PatternPack)(options);
 }
 
-const BUILTIN_FRAMEWORKS: Record<
+/**
+ * The pack names `-f` accepts, each mapped to the package that supplies
+ * it. Every `@suss/framework-*` the CLI depends on belongs here under
+ * its suffix; a test asserts that, because a pack left out still loads
+ * through the dynamic fallback below but never appears in the list the
+ * error message prints, so nobody finds out it exists.
+ */
+export const BUILTIN_FRAMEWORKS: Record<
   string,
   () => Promise<{ default: PackFactory }>
 > = {
@@ -56,6 +63,12 @@ const BUILTIN_FRAMEWORKS: Record<
   "nestjs-rest": () => import("@suss/framework-nestjs-rest"),
   // AWS Lambda HTTP handlers, paired to SAM/CFN-declared routes.
   "aws-lambda": () => import("@suss/framework-aws-lambda"),
+  // Storage access, emitted as interactions per read / write.
+  prisma: () => import("@suss/framework-prisma"),
+  drizzle: () => import("@suss/framework-drizzle"),
+  // Message producers.
+  "aws-sqs": () => import("@suss/framework-aws-sqs"),
+  "aws-eventbridge": () => import("@suss/framework-aws-eventbridge"),
   // HTTP client packs (consumers).
   fetch: () => import("@suss/client-web"),
   axios: () => import("@suss/client-axios"),

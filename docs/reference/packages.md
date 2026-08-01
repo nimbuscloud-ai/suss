@@ -49,7 +49,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-ts-rest`](../../packages/framework/ts-rest) | ts-rest providers + clients (contract-backed). | ![](../../.github/badges/coverage-ts-rest.svg) |
 | [`@suss/framework-express`](../../packages/framework/express) | Express handlers. | ![](../../.github/badges/coverage-express.svg) |
 | [`@suss/framework-fastify`](../../packages/framework/fastify) | Fastify handlers. | ![](../../.github/badges/coverage-fastify.svg) |
-| [`@suss/framework-hono`](../../packages/framework/hono) | Hono handlers, including the `c.json(body, status)` argument order. | |
+| [`@suss/framework-hono`](../../packages/framework/hono) | Hono handlers, including the `c.json(body, status)` argument order. | ![](../../.github/badges/coverage-hono.svg) |
 | [`@suss/framework-nextjs`](../../packages/framework/nextjs) | Next.js route handlers and pages; the route comes from where the file sits. | ![](../../.github/badges/coverage-nextjs.svg) |
 | [`@suss/framework-react`](../../packages/framework/react) | React function components, event handlers, `useEffect` bodies. | ![](../../.github/badges/coverage-react.svg) |
 | [`@suss/framework-react-router`](../../packages/framework/react-router) | React Router loaders / actions / routes. | ![](../../.github/badges/coverage-react-router.svg) |
@@ -59,8 +59,8 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-prisma`](../../packages/framework/prisma) | Prisma client calls, emits storage-access interactions per read / write. | ![](../../.github/badges/coverage-prisma.svg) |
 | [`@suss/framework-drizzle`](../../packages/framework/drizzle) | Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names. | ![](../../.github/badges/coverage-drizzle.svg) |
 | [`@suss/framework-aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls, emits message-send interactions. | ![](../../.github/badges/coverage-aws-sqs.svg) |
-| [`@suss/framework-aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | |
-| [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | |
+| [`@suss/framework-aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
+| [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | ![](../../.github/badges/coverage-aws-lambda.svg) |
 
 ## Clients
 
@@ -93,6 +93,6 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 
 | Package | Description | Coverage |
 |---------|-------------|----------|
-| [`@suss/manifest-aws`](../../packages/manifest/aws) | Parse CloudFormation / SAM templates into a shared facts layer that contract readers and manifest-driven framework packs both consume. | |
+| [`@suss/manifest-aws`](../../packages/manifest/aws) | Parse CloudFormation / SAM templates into a shared facts layer that contract readers and manifest-driven framework packs both consume. | ![](../../.github/badges/coverage-manifest-aws.svg) |
 
 Adding a framework is one pack file (~100-300 lines of declarative `PatternPack` configuration); adding a contract source is one reader. The IR is protocol-agnostic, so new boundary kinds slot in without architectural change. See [Packs](/packs) for the model and [Write a pack](/guides/writing-a-pack) for the how-to.
