@@ -26,11 +26,11 @@ features:
     link: /glossary
     linkText: Glossary
   - title: Add a framework in one file
-    details: "Nineteen packs ship. Hono, Express, Fastify, Next.js, NestJS REST and GraphQL, ts-rest and AWS Lambda read HTTP handlers. Apollo Server reads GraphQL resolvers. React and React Router read the browser side. fetch, axios and Apollo Client read call sites. Prisma, Drizzle, SQS and EventBridge read what a handler reaches, and the Node pack reads process.env and scheduling. A new framework is a small declarative pack, with no fork of the analyzer."
+    details: "Nineteen packs ship, for HTTP handlers, GraphQL resolvers, React components, queue consumers, database calls and client call sites. Adding a framework means writing a small pack, not forking the analyzer."
     link: /guides/writing-a-pack
     linkText: Write a pack
   - title: Compare against declared contracts
-    details: "OpenAPI against handlers, CloudFormation against API Gateway, GraphQL SDL against resolvers, committed .graphql operations against those same resolvers, Storybook against components, Prisma schema against query call sites. The contract reader and the source extractor produce the same shape."
+    details: "Check your handlers against an OpenAPI spec, your resolvers against a GraphQL schema, your components against Storybook. A contract and your source come out in the same shape, so comparing them is one step."
     link: /cross-boundary-checking
     linkText: How checking works
   - title: Runs on the code you already have
