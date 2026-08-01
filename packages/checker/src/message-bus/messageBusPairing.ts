@@ -120,7 +120,6 @@ export function checkMessageBus(
   // candidate channels. v0 simplification: trust direct name match.
   resolveProducerChannels(producers, summaries);
 
-  const allChannels = new Set<string>();
   const providerChannels = new Set<string>();
   const consumerChannels = new Set<string>();
   const producerChannels = new Set<string>();
@@ -129,14 +128,12 @@ export function checkMessageBus(
     const ch = channelOf(p);
     if (ch !== null) {
       providerChannels.add(ch);
-      allChannels.add(ch);
     }
   }
   for (const c of consumers) {
     const ch = channelOf(c);
     if (ch !== null) {
       consumerChannels.add(ch);
-      allChannels.add(ch);
     }
     // A subject-channelled SQS consumer still drains a concrete queue.
     // The CFN contract keeps that queue's logical id in metadata so the
@@ -144,14 +141,12 @@ export function checkMessageBus(
     const queue = consumedQueueOf(c);
     if (queue !== null) {
       consumerChannels.add(queue);
-      allChannels.add(queue);
     }
   }
   for (const p of producers) {
     const ch = effectiveChannel(p);
     if (ch !== null) {
       producerChannels.add(ch);
-      allChannels.add(ch);
     }
   }
 

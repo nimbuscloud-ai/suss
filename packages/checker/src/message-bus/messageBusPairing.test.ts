@@ -607,6 +607,31 @@ describe("subject-channelled consumers", () => {
     );
   });
 
+  it("does not orphan a rule-fed consumer when a producer publishes its subject", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "AppBus#order.placed",
+      }),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "AppBus#order.placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter(
+        (f) =>
+          f.kind === "messageBusConsumerOrphan" ||
+          f.kind === "messageBusUnused",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("still reports a queue no consumer drains as unused", () => {
     const summaries = [
       queueProvider("OrdersQueue"),
