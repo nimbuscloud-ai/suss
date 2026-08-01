@@ -1,28 +1,64 @@
 # Releasing
 
-All 34 packages share one version. A release is that number bumped
-once in the root `package.json`, copied out to every package by
-[`scripts/preparePublish.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/preparePublish.mjs),
-and published by
-[`scripts/release.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/release.mjs).
-The Release workflow drives both.
+All 38 packages share one version. You raise that number once in the
+root `package.json`,
+[`scripts/preparePublish.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/preparePublish.mjs)
+copies it out to every package, and
+[`scripts/release.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/release.mjs)
+publishes the set at whatever version is committed. The workflow never
+picks a version of its own.
 
 Most of this page is about npm credentials, because that is the part
 that lives outside the repository and cannot be fixed by a commit.
 
 ## Running a release
 
-Actions → Release → Run workflow. Pick `patch`, `minor` or `major`, or
-type an exact version to override the choice. `dry-run` lists what
-would publish and publishes nothing.
+Two steps, and a person does the first one.
 
-The workflow dispatches from a branch and pushes the version bump
-commit and its tag back to that same branch, so run it from `main`
-unless you mean otherwise.
+**Raise the version, on a branch.** `npm run bump patch` moves the
+version up one patch. It also takes `minor`, `major`, or a version you
+type. It writes the root `package.json`, runs `preparePublish` over the
+packages, and refreshes `package-lock.json`, which `npm ci` would
+otherwise refuse to install from. Read the diff, commit it as
+`chore: release <version>`, and open a pull request like any other
+change.
+
+**Publish it.** Once that is on `main`: Actions → Release → Run
+workflow. It reads the version out of the root `package.json`, stops if
+that version is already tagged, and publishes. `dry-run` publishes
+nothing and still writes the release notes to the job summary, so you
+can read what the release would say before it says it.
 
 Start with a dry run. It reports which credential it found before it
-lists anything, so a rehearsal that says "would publish 34 packages" is
+lists anything, so a rehearsal that says "would publish 38 packages" is
 one that would really have published them.
+
+You can publish from a laptop with `npm run release -- --otp <code>`,
+which does the same thing without the tag or the GitHub release. It
+prints the three commands for those at the end.
+
+## What goes in the release notes
+
+[`scripts/changelog.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/changelog.mjs)
+reads the commits between the last release and `HEAD` and groups them by
+conventional-commit type, features first, then fixes, then the rest. A
+squash merge ends its subject with the pull request number, and that
+number becomes the link on the line. A commit that arrived without one
+links to itself instead.
+
+Run it any time to see where things stand:
+
+```sh
+npm run changelog                    # since the last release, to HEAD
+npm run changelog -- --from v0.1.0 --version 0.2.0
+```
+
+A subject that is not a conventional commit still gets a line, under
+"Other changes". Nothing is dropped for being written the wrong way.
+
+The notes live on the GitHub release and nowhere else. There is no
+committed `CHANGELOG.md`, because the commits already say all of this
+and a second copy in the tree is one more thing to keep in step.
 
 ## How npm authenticates the publish
 
@@ -43,7 +79,7 @@ each package names for itself, at
 `POST /-/npm/v1/oidc/token/exchange/package/{name}`. A package that has
 not been set up gets nothing back, and with no token to fall back on,
 that package alone fails. There is no organization-wide setting and no
-bulk UI, so this is 34 passes.
+bulk UI, so this is 38 passes.
 
 On npmjs.com, for each package: **Packages → the package → Settings →
 Trusted Publisher → GitHub Actions**, then
@@ -91,7 +127,7 @@ exercise the exchange.
 ## When a release fails
 
 The publish step prints one failing package's npm output in full and
-says when the rest failed the same way, since 34 identical error codes
+says when the rest failed the same way, since 38 identical error codes
 say less than one transcript does.
 
 `--verbose` puts npm's own account of the token exchange in the log. It
@@ -108,15 +144,29 @@ is the registry confirming the version is up.
 
 ## What a release leaves behind
 
-- 34 packages on the registry at the new version.
-- A `chore: release <version>` commit on the branch it ran from.
-- An annotated `v<version>` tag, pushed with that commit in one atomic
-  push, so a release is never half-recorded.
-- A **draft** GitHub release with generated notes, which someone still
-  has to read and publish.
+- 38 packages on the registry at the new version.
+- An annotated `v<version>` tag on the commit that was published.
+- A GitHub release at that tag, titled `v<version>`, carrying the notes
+  the workflow generated from the commits since the last release.
 
-The tag has to be annotated: `git push --follow-tags` carries annotated
-tags only, and a lightweight one stays on the runner while the commit
-goes out — which is how 0.0.2 reached npm and `main` with no tag behind
-it. The push names the tag explicitly now, so it no longer turns on
-that distinction.
+The version bump commit is already on `main` before any of this runs, so
+the workflow pushes a tag and nothing else. It stops before publishing
+if that tag is already there, which is what a run somebody dispatched
+twice, or dispatched without bumping first, looks like.
+
+The tag has to be annotated. A lightweight one is skipped by
+`--follow-tags` and by anything else that reads tag objects, and that is
+how 0.0.2 reached npm and `main` with no tag behind it. The release is
+created with `--verify-tag`, so if the tag did not reach the remote the
+release is not written either.
+
+Publishing 38 packages, tagging, and writing the release are three
+steps, and a run can stop between them. Re-dispatching is safe: the
+packages already on the registry are skipped, and the tag check stops
+the run before it publishes a version that is already out. If the tag
+landed but the release did not, write it by hand:
+
+```sh
+node scripts/changelog.mjs --from v0.0.2 --version 0.0.3 --output /tmp/notes.md
+gh release create v0.0.3 --title v0.0.3 --notes-file /tmp/notes.md --verify-tag
+```
