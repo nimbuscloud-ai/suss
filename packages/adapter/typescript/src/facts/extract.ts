@@ -202,6 +202,16 @@ function packagesDescribedByTypes(owner: string): string[] {
   return scoped.length === 2 ? [name, `@${scoped[0]}/${scoped[1]}`] : [name];
 }
 
+/**
+ * The node a value's facts are keyed under. `emitValue` records the
+ * value inside the wrappers, so anything asking the rules about
+ * `local as H` has to ask about `local`, or it looks up an id nothing
+ * ever emitted a fact for.
+ */
+export function factKeyOf(value: Node): Node {
+  return Node.isExpression(value) ? unwrapExpression(value) : value;
+}
+
 /** Peel await, parentheses, satisfies, and as-casts. */
 function unwrapExpression(expression: Expression): Expression {
   let current = expression;

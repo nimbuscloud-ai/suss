@@ -125,6 +125,8 @@ describe("honoFramework \u2014 zod-openapi registration", () => {
     summaries = await adapter.extractAll();
   }, 90_000);
 
+  // The read route is registered through a cast, which the resolution
+  // store used to answer null for, losing the route entirely.
   it("reads the route off the contract object the registration names", () => {
     const routes = summaries
       .map((s) => s.identity.boundaryBinding)

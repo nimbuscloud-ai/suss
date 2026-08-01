@@ -23,6 +23,7 @@ import {
   createNodeTable,
   emitValue,
   extractFileFacts,
+  factKeyOf,
   type NodeTable,
   nodeId,
 } from "./extract.js";
@@ -81,7 +82,8 @@ export class ResolutionStore {
    * one file of extraction, not the whole import closure.
    */
   resolveCallable(value: Node): Node | null {
-    return this.resolveByWaves(value, () => this.lookup(value));
+    const target = factKeyOf(value);
+    return this.resolveByWaves(target, () => this.lookup(target));
   }
 
   /**
@@ -90,7 +92,8 @@ export class ResolutionStore {
    * another file, and this is how discovery reads it back.
    */
   resolveObject(value: Node): Node | null {
-    return this.resolveByWaves(value, () => this.lookupObject(value));
+    const target = factKeyOf(value);
+    return this.resolveByWaves(target, () => this.lookupObject(target));
   }
 
   private resolveByWaves(value: Node, ask: () => Node | null): Node | null {
