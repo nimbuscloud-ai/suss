@@ -11,6 +11,7 @@ import {
   type GraphqlOperationType,
   operationInfoFromResolution,
   resolveGraphqlDocument,
+  unreadableDocument,
 } from "./graphqlShared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -70,10 +71,9 @@ export function discoverGraphqlHookCalls(
     if (args.length === 0) {
       return;
     }
-    const document = resolveGraphqlDocument(args[0], resolution);
-    if (document === null) {
-      return;
-    }
+    const document =
+      resolveGraphqlDocument(args[0], resolution) ??
+      unreadableDocument(args[0]);
     const operationInfo = operationInfoFromResolution(
       document,
       spec.operationType,

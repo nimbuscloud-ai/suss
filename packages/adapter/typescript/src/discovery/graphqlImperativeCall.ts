@@ -11,6 +11,7 @@ import {
   type GraphqlOperationType,
   operationInfoFromResolution,
   resolveGraphqlDocument,
+  unreadableDocument,
 } from "./graphqlShared.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
 
@@ -77,10 +78,9 @@ export function discoverGraphqlImperativeCalls(
     if (docValue === null) {
       return;
     }
-    const document = resolveGraphqlDocument(docValue, resolution);
-    if (document === null) {
-      return;
-    }
+    const document =
+      resolveGraphqlDocument(docValue, resolution) ??
+      unreadableDocument(docValue);
     // Method-driven operation type wins when the gql header is
     // anonymous — `client.mutate({ mutation: gql\`...\` })` is a
     // mutation regardless of whether the doc says `mutation` or just

@@ -5,7 +5,7 @@
 //   - declared in this module, one hop of aliasing away
 //   - `useLazyQuery`, which is what a query bound to an event uses
 //   - two hooks in one component, which are two boundaries
-//   - a document the code computes, which resolves to nothing
+//   - a document the code computes, which is reported as a gap
 
 import {
   useLazyQuery,
@@ -64,7 +64,8 @@ const CHOSEN_DOCUMENT = preferLegacy
   ? SEARCH_USERS_QUERY_DOCUMENT
   : USER_QUERY_DOCUMENT;
 
-// The document is decided at runtime, so there is nothing to report.
+// The document is decided at runtime, so the call is reported without
+// an operation and the gap says which argument to go look at.
 export function useChosen() {
   return useQuery(CHOSEN_DOCUMENT);
 }

@@ -194,7 +194,8 @@ export interface DocumentResolution {
  * guess.
  *
  * Returns null when the argument isn't recognizable as a GraphQL
- * document reference, and the caller skips it. Returns a
+ * document reference. The caller pairs that with `unreadableDocument`
+ * so the call is still reported, as a gap. Returns a
  * `DocumentResolution` with `unresolved` set when it IS recognizable
  * but the header couldn't be fully read.
  */
@@ -357,6 +358,30 @@ export function operationInfoFromResolution(
       ? { unresolved: resolution.unresolved }
       : {}),
   };
+}
+
+/**
+ * What to report for a call that matched the pack and whose document
+ * argument nobody could read. Without it a user cannot tell a file with
+ * no GraphQL hooks from a file with five the reader could not follow,
+ * and the second is the one worth knowing about. The boundary is
+ * emitted with the operation type the call shape gives and the argument
+ * text as the reference, so the gap says which call to go look at.
+ */
+export function unreadableDocument(arg: Node): DocumentResolution {
+  return {
+    unresolved: {
+      reference: singleLine(stripDocumentNodeCasts(arg).getText()),
+      reason:
+        "the call matched but its document argument did not resolve to a readable GraphQL document",
+    },
+  };
+}
+
+/** The argument text, on one line and short enough to read in a report. */
+function singleLine(text: string): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length > 80 ? `${collapsed.slice(0, 79)}…` : collapsed;
 }
 
 /**

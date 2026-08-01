@@ -392,7 +392,7 @@ describe("apolloClientPack — edge cases", () => {
     expect(summaries).toEqual([]);
   });
 
-  it("skips calls whose first argument isn't a document", async () => {
+  it("reports a call whose first argument is not a document as a gap", async () => {
     const summaries = await runInMemory(`
       import { useQuery } from "@apollo/client";
       declare const doc: any;
@@ -400,10 +400,16 @@ describe("apolloClientPack — edge cases", () => {
         useQuery(doc);
       }
     `);
-    expect(summaries).toEqual([]);
+    expect(summaries).toHaveLength(1);
+    const gap = (
+      summaries[0].metadata?.graphql as
+        | { unresolvedDocument?: { reference: string } }
+        | undefined
+    )?.unresolvedDocument;
+    expect(gap?.reference).toBe("doc");
   });
 
-  it("skips a tagged template whose tag isn't a document tag", async () => {
+  it("does not read a tagged template whose tag isn't a document tag", async () => {
     const summaries = await runInMemory(`
       import { useQuery } from "@apollo/client";
       function css(strings: TemplateStringsArray) { return strings[0]; }
@@ -411,7 +417,10 @@ describe("apolloClientPack — edge cases", () => {
         useQuery(css\`query GetUser { user { id } }\`);
       }
     `);
-    expect(summaries).toEqual([]);
+    const semantics = summaries[0]?.identity.boundaryBinding?.semantics as
+      | { operationName?: string }
+      | undefined;
+    expect(semantics?.operationName).toBeUndefined();
   });
 
   it("handles the shorthand `{ ... }` anonymous query", async () => {
@@ -516,15 +525,23 @@ describe("apolloClientPack (documents in named constants)", () => {
     ]);
   });
 
-  it("reports nothing for a document the code computes", async () => {
-    expect(
-      summaries.some((s) => s.identity.name.startsWith("useChosen.")),
-    ).toBe(false);
+  it("reports a document the code computes as a gap, naming the argument", async () => {
+    const chosen = summaries.filter((s) =>
+      s.identity.name.startsWith("useChosen."),
+    );
+    expect(chosen).toHaveLength(1);
+    const gap = (
+      chosen[0].metadata?.graphql as
+        | { unresolvedDocument?: { reference: string } }
+        | undefined
+    )?.unresolvedDocument;
+    expect(gap?.reference).toBe("CHOSEN_DOCUMENT");
   });
 
-  it("resolves every document it found, leaving no gap behind", async () => {
+  it("leaves no gap behind on a document it could read", async () => {
     const gaps = summaries.filter(
       (s) =>
+        !s.identity.name.startsWith("useChosen.") &&
         (s.metadata?.graphql as { unresolvedDocument?: unknown } | undefined)
           ?.unresolvedDocument !== undefined,
     );

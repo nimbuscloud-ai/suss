@@ -1385,7 +1385,7 @@ describe("graphqlHookCall discovery", () => {
     expect(units).toEqual([]);
   });
 
-  it("skips calls whose first argument isn't a document", () => {
+  it("reports a call whose first argument is not a document as a gap", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "page.ts",
@@ -1398,10 +1398,12 @@ describe("graphqlHookCall discovery", () => {
     `,
     );
     const units = discoverUnits(file, [makeGraphqlHookPattern()]);
-    expect(units).toEqual([]);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo?.operationName).toBeUndefined();
+    expect(units[0].operationInfo?.unresolved?.reference).toBe("doc");
   });
 
-  it("skips a tagged template whose tag isn't a document tag", () => {
+  it("does not read a tagged template whose tag isn't a document tag", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "page.ts",
@@ -1414,7 +1416,7 @@ describe("graphqlHookCall discovery", () => {
     `,
     );
     const units = discoverUnits(file, [makeGraphqlHookPattern()]);
-    expect(units).toEqual([]);
+    expect(units[0]?.operationInfo?.operationName).toBeUndefined();
   });
 
   it("skips hook calls with no arguments", () => {
@@ -2135,7 +2137,11 @@ describe("graphqlHookCall discovery through the fact layer", () => {
     `,
     );
     const store = new ResolutionStore();
-    expect(discoverUnits(file, [makeGraphqlHookPattern()], store)).toEqual([]);
+    const units = discoverUnits(file, [makeGraphqlHookPattern()], store);
+    expect(units[0]?.operationInfo?.operationName).toBeUndefined();
+    expect(units[0]?.operationInfo?.unresolved?.reference).toBe(
+      "CREATE_WIDGET",
+    );
   });
 
   it("recognizes a tag imported under another name", () => {
@@ -2155,7 +2161,7 @@ describe("graphqlHookCall discovery through the fact layer", () => {
     expect(units[0]?.operationInfo?.operationName).toBe("GetPet");
   });
 
-  it("reports nothing for a document the code computes", () => {
+  it("reports a document the code computes as a gap rather than an operation", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "page.ts",
@@ -2172,7 +2178,11 @@ describe("graphqlHookCall discovery through the fact layer", () => {
     `,
     );
     const store = new ResolutionStore();
-    expect(discoverUnits(file, [makeGraphqlHookPattern()], store)).toEqual([]);
+    const units = discoverUnits(file, [makeGraphqlHookPattern()], store);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo?.operationName).toBeUndefined();
+    expect(units[0].operationInfo?.operationType).toBe("query");
+    expect(units[0].operationInfo?.unresolved?.reference).toBe("CHOSEN");
   });
 
   it("keeps two hook calls in one function apart", () => {
