@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-cloudformation",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "type": "module",
   "description": "Generate suss behavioral summaries from AWS CloudFormation / SAM templates with embedded API Gateway OpenAPI definitions.",
   "keywords": [
@@ -47,10 +47,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.0.2",
-    "@suss/contract-aws-apigateway": "0.0.2",
-    "@suss/contract-openapi": "0.0.2",
-    "@suss/manifest-aws": "0.0.2",
+    "@suss/behavioral-ir": "0.1.0",
+    "@suss/contract-aws-apigateway": "0.1.0",
+    "@suss/contract-openapi": "0.1.0",
+    "@suss/manifest-aws": "0.1.0",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
