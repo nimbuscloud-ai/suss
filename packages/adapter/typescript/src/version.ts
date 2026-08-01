@@ -16,13 +16,23 @@
 // Tests run from src (no dist sibling); the hash falls through to an
 // empty string, so test-time cache keys stay deterministic across
 // runs.
+//
+// The hash covers the packages the analysis runs through, not only
+// this one. The extractor turns what the adapter reads into summaries
+// and the resolution rules decide what an export comes down to, and
+// both ship separately, so a release changing only one of them would
+// otherwise keep serving summaries the previous one produced.
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const ADAPTER_VERSION = "0.1.0";
+export const ADAPTER_VERSION = "0.2.0";
+
+/** Packages whose behaviour shapes extraction output. */
+const ANALYSIS_PACKAGES = ["@suss/extractor", "@suss/resolution"];
 
 let cachedDistHash: string | null = null;
 
@@ -48,11 +58,11 @@ function computeDistHash(): string {
       if (!fs.existsSync(candidate)) {
         continue;
       }
-      const content = fs.readFileSync(candidate);
-      cachedDistHash = createHash("sha256")
-        .update(content)
-        .digest("hex")
-        .slice(0, 16);
+      const hash = createHash("sha256").update(fs.readFileSync(candidate));
+      for (const bundle of analysisBundles()) {
+        hash.update(fs.readFileSync(bundle));
+      }
+      cachedDistHash = hash.digest("hex").slice(0, 16);
       return cachedDistHash;
     }
     cachedDistHash = "";
@@ -61,6 +71,26 @@ function computeDistHash(): string {
     cachedDistHash = "";
     return cachedDistHash;
   }
+}
+
+/**
+ * Where the analysis packages were loaded from. Only consulted once the
+ * adapter has found its own bundle, so a run from source keeps the
+ * empty stamp and its deterministic keys. A package that cannot be
+ * placed is skipped rather than failing the hash.
+ */
+function analysisBundles(): string[] {
+  const require = createRequire(import.meta.url);
+  const found: string[] = [];
+  for (const name of ANALYSIS_PACKAGES) {
+    try {
+      found.push(require.resolve(name));
+    } catch {
+      // A host that bundles everything has no separate file to hash,
+      // and its own bundle already carries the code.
+    }
+  }
+  return found;
 }
 
 /**
