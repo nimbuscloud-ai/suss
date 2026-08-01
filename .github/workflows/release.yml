@@ -23,22 +23,16 @@ name: Release
 #
 # npm attaches provenance by itself when it publishes this way, so
 # nothing here passes --provenance.
+#
+# The version is whatever the root package.json says. Somebody raises it
+# with `npm run bump` and commits that first, so this workflow publishes
+# a number a pull request approved rather than one it worked out here.
 
 on:
   workflow_dispatch:
     inputs:
-      bump:
-        description: What to release
-        required: true
-        default: patch
-        type: choice
-        options: [patch, minor, major]
-      version:
-        description: An exact version, if you would rather name one (overrides the choice above)
-        required: false
-        type: string
       dry-run:
-        description: List what would publish, and publish nothing
+        description: List what would publish and show the notes, and publish nothing
         required: false
         default: false
         type: boolean
@@ -53,13 +47,16 @@ jobs:
     permissions:
       # OIDC needs this to mint the credential npm checks.
       id-token: write
-      # The version bump and its tag are pushed back to the branch.
+      # The tag is pushed and the GitHub release is written under this
+      # one. Releases are part of the contents scope, so nothing else
+      # has to be granted for them.
       contents: write
 
     steps:
       - uses: actions/checkout@v4
         with:
-          # A shallow clone cannot be committed back to.
+          # The notes are read out of the history between the last tag
+          # and here, and a shallow clone has neither.
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -83,6 +80,35 @@ jobs:
       - name: Run the tests
         run: npm test
 
+      - name: Read the version being released
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v${VERSION}" > /dev/null; then
+            echo "::error::v${VERSION} is already tagged. Run \`npm run bump\` and land that before releasing again."
+            exit 1
+          fi
+
+      # Written before anything is published, so a dry run shows the
+      # same notes the release would carry. The step summary is where
+      # someone reads them without digging through the log.
+      #
+      # The file lands outside the checkout, because the publish refuses
+      # to run against a working tree with anything uncommitted in it,
+      # and it also has to be written before the tag exists: the notes
+      # run from the last tag to here.
+      - name: Write the release notes
+        run: |
+          node scripts/changelog.mjs \
+            --version "${{ steps.version.outputs.version }}" \
+            --output "${{ runner.temp }}/release-notes.md"
+          {
+            echo "## v${{ steps.version.outputs.version }}"
+            echo
+            cat "${{ runner.temp }}/release-notes.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Set the committer
         run: |
           git config user.name "github-actions[bot]"
@@ -92,37 +118,29 @@ jobs:
         id: publish
         run: |
           node scripts/release.mjs \
-            "${{ inputs.version || inputs.bump }}" \
             --skip-build \
             --verbose \
             ${{ inputs.dry-run && '--dry-run' || '' }}
 
-      - name: Commit the version bump and push it with its tag
+      - name: Tag the commit that was published
         if: ${{ !inputs.dry-run }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          # --no-verify on both. The hooks run typecheck, the whole test
-          # suite and lint-staged, which this job has already done as its
-          # own steps; without it the release runs them a second time.
-          git commit --no-verify -am "chore: release ${VERSION}"
-          # Annotated rather than lightweight, because --follow-tags
-          # carries only annotated tags. A lightweight one stayed on the
-          # runner while the commit went out, and the release note below
-          # had no tag to hang itself on. Naming the tag in the push means
-          # it no longer turns on that distinction either way, and
-          # --atomic means the commit and the tag land together or neither
-          # does, so a release is never half-recorded.
+          VERSION="${{ steps.version.outputs.version }}"
+          # Annotated rather than lightweight, because a lightweight tag
+          # is skipped by --follow-tags and by anything else that reads
+          # tag objects. The release below hangs on this tag, so it has
+          # to be on the remote before that runs.
           git tag -a "v${VERSION}" -m "v${VERSION}"
-          git push --no-verify --atomic origin \
-            "HEAD:${{ github.ref_name }}" "v${VERSION}"
+          git push --no-verify origin "v${VERSION}"
 
-      - name: Draft a release note
+      - name: Cut the GitHub release
         if: ${{ !inputs.dry-run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION="${{ steps.version.outputs.version }}"
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
-            --generate-notes \
-            --draft
+            --notes-file "${{ runner.temp }}/release-notes.md" \
+            --verify-tag \
+            --latest
