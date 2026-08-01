@@ -1,22 +1,27 @@
 #!/usr/bin/env node
-// release.mjs - bump every package to one version and publish the set.
+// release.mjs - publish every package at the version already committed.
 //
-//   node scripts/release.mjs patch --otp 123456
-//   node scripts/release.mjs 0.2.0 --otp 123456 --dry-run
+//   node scripts/release.mjs --otp 123456
+//   node scripts/release.mjs --dry-run
+//
+// The version comes out of the root package.json and nothing here
+// changes it. Someone bumps it with `npm run bump` and commits that, so
+// what reaches the registry is a number a pull request approved rather
+// than one a workflow worked out on the runner.
 //
 // On Actions there is no password to type: npm mints a credential from
 // the workflow's OIDC token, and there is no stored token behind it. The
 // job's ability to mint one is checked before anything is written,
-// because without it all 34 publishes fail with ENEEDAUTH and npm's
+// because without it all 38 publishes fail with ENEEDAUTH and npm's
 // error code alone does not say why. --verbose passes --loglevel verbose
 // down to npm, the only place it accounts for the token exchange.
 //
-// The 34 packages share a single version, so a release is one number
-// bumped in the root package.json and propagated by preparePublish.
+// The 38 packages share a single version, which preparePublish copies
+// out of the root package.json into each of them.
 //
 // Two things make this survive a bad run. Publishing happens in
 // parallel, because npm's one-time password is good for about thirty
-// seconds and 34 sequential publishes outlast it. And a package already
+// seconds and 38 sequential publishes outlast it. And a package already
 // on the registry at this version is skipped, so a run that half
 // finished can be repeated with a fresh password and will pick up only
 // what is left.
@@ -49,7 +54,6 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
 });
 
-const bump = positionals[0];
 const otp = values.otp;
 const dryRun = values["dry-run"] === true;
 const skipBuild = values["skip-build"] === true;
@@ -58,30 +62,26 @@ const verbose = values.verbose === true;
 /** Whether this is the release workflow rather than someone's terminal. */
 const onActions = process.env.GITHUB_ACTIONS === "true";
 
-if (bump === undefined) {
+if (positionals.length > 0) {
   fail(
-    "Say what to release: patch, minor, major, or an exact version.\n" +
-      "  node scripts/release.mjs patch --otp 123456",
+    `This publishes the committed version, so it takes no "${positionals[0]}".\n` +
+      "  npm run bump patch     to raise the version, then commit it\n" +
+      "  node scripts/release.mjs --otp 123456",
   );
 }
 
-const current = readJson(ROOT_MANIFEST).version;
-const next = resolveVersion(current, bump);
+const version = readJson(ROOT_MANIFEST).version;
 
-console.log(`${current} -> ${next}\n`);
+console.log(`Releasing ${version}.\n`);
 
 requireCleanTree();
+requirePreparedManifests();
 
-// Before 34 manifests are rewritten and 34 publishes are attempted, and
-// while the message can still name the one thing that is missing. A dry
-// run reports the same thing without stopping, so a rehearsal that says
-// 34 packages would publish is not one that would have failed on auth.
+// Before 38 publishes are attempted, and while the message can still
+// name the one thing that is missing. A dry run reports the same thing
+// without stopping, so a rehearsal that says 38 packages would publish
+// is not one that would have failed on auth.
 checkPublishCredential({ fatal: !dryRun });
-
-// The version lives in the root manifest; preparePublish copies it to
-// every package and repoints their dependencies on each other.
-writeVersion(next);
-run("node", [path.join(ROOT, "scripts", "preparePublish.mjs")]);
 
 if (!skipBuild) {
   console.log("\nBuilding...");
@@ -94,16 +94,16 @@ const packages = findPackages().map((dir) => ({
 }));
 
 console.log(
-  `\nChecking which of ${packages.length} packages are already at ${next}...`,
+  `\nChecking which of ${packages.length} packages are already at ${version}...`,
 );
-const pending = packages.filter(({ name }) => !isPublished(name, next));
+const pending = packages.filter(({ name }) => !isPublished(name, version));
 const skipped = packages.length - pending.length;
 if (skipped > 0) {
-  console.log(`${skipped} already published at ${next}, skipping those.`);
+  console.log(`${skipped} already published at ${version}, skipping those.`);
 }
 
 if (pending.length === 0) {
-  console.log(`\nEverything is already on the registry at ${next}.`);
+  console.log(`\nEverything is already on the registry at ${version}.`);
   process.exit(0);
 }
 
@@ -118,7 +118,7 @@ if (dryRun) {
 if (otp === undefined && requiresOtp()) {
   fail(
     "npm wants a one-time password to publish.\n" +
-      `  node scripts/release.mjs ${bump} --otp <code from your authenticator>\n\n` +
+      "  node scripts/release.mjs --otp <code from your authenticator>\n\n" +
       "Read the code as late as you can: publishing has to finish inside its window.",
   );
 }
@@ -152,7 +152,7 @@ if (failures.length > 0) {
 
   console.error(
     `\n${failures.length} of ${pending.length} did not publish. The ones that` +
-      ` did are on the registry at ${next}.\n${
+      ` did are on the registry at ${version}.\n${
         onActions
           ? "Re-run this workflow; it will pick up only what is left."
           : "Re-run the same command with a fresh --otp; it will pick up only" +
@@ -164,40 +164,23 @@ if (failures.length > 0) {
 
 const alreadyThere = results.filter((r) => r.alreadyThere).length;
 console.log(
-  `\nPublished ${pending.length - alreadyThere} packages at ${next}.` +
+  `\nPublished ${pending.length - alreadyThere} packages at ${version}.` +
     (alreadyThere > 0
       ? ` ${alreadyThere} were already up from an earlier run.`
       : ""),
 );
-console.log(
-  `\nStill to do:\n  git commit -am "chore: release ${next}"\n  git tag v${next}\n  git push --follow-tags`,
-);
+if (!onActions) {
+  console.log(
+    "\nStill to do: tag the commit these came from and write up the release.\n" +
+      "The notes go to /tmp, because an untracked file in the tree would" +
+      " stop the next release.\n" +
+      `  node scripts/changelog.mjs --version ${version} --output /tmp/notes.md\n` +
+      `  git tag -a v${version} -m v${version} && git push origin v${version}\n` +
+      `  gh release create v${version} --title v${version} --notes-file /tmp/notes.md`,
+  );
+}
 
 // ---------------------------------------------------------------------
-
-function resolveVersion(from, request) {
-  const steps = {
-    major: ([major]) => [major + 1, 0, 0],
-    minor: ([major, minor]) => [major, minor + 1, 0],
-    patch: ([major, minor, patch]) => [major, minor, patch + 1],
-  };
-
-  const step = steps[request];
-  if (step === undefined) {
-    if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(request)) {
-      fail(`"${request}" is not patch, minor, major, or a version like 1.2.3.`);
-    }
-    return request;
-  }
-
-  const parts = from.split(".").map(Number);
-  if (parts.length !== 3 || parts.some(Number.isNaN)) {
-    fail(
-      `The root version is "${from}", which this cannot bump. Pass an exact version.`,
-    );
-  }
-  return step(parts).join(".");
-}
 
 function requireCleanTree() {
   const dirty = execFileSync("git", ["status", "--porcelain"], {
@@ -216,10 +199,26 @@ function requireCleanTree() {
   );
 }
 
-function writeVersion(version) {
-  const manifest = readJson(ROOT_MANIFEST);
-  manifest.version = version;
-  fs.writeFileSync(ROOT_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+/**
+ * Whether the packages agree with the root version and with each other.
+ *
+ * `npm run bump` leaves them that way. Somebody who edited the root
+ * version by hand did not, and the packages would go out at whatever
+ * they still say, which is the version already on the registry.
+ */
+function requirePreparedManifests() {
+  try {
+    execFileSync(
+      "node",
+      [path.join(ROOT, "scripts", "preparePublish.mjs"), "--check"],
+      { cwd: ROOT, stdio: "inherit" },
+    );
+  } catch {
+    fail(
+      `The packages do not all say ${version}. Run \`npm run bump ${version}\` and` +
+        " commit what it changes.",
+    );
+  }
 }
 
 function findPackages() {
