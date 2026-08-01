@@ -2,10 +2,10 @@
 //
 // These rules are about programming languages rather than about any one
 // of them. A name binds to a value, a call puts an argument in a
-// parameter, a module exports a name and another module can forward it,
-// and a function that returns a function calling its parameter hands
-// back the argument it was given. That last one is a decorator in
-// Python and a closure in Go.
+// parameter, an object holds a value under a name, a module exports a
+// name and another module can forward it, and a function that returns a
+// function calling its parameter hands back the argument it was given.
+// That last one is a decorator in Python and a closure in Go.
 //
 // So an adapter's job is reading source into the facts below, not
 // deciding what they mean. Anything genuinely particular to a language,
@@ -15,6 +15,9 @@
 // The facts a language adapter has to supply:
 //
 //   func(f)                     f is a function
+//   objectValue(o)              o is an object written out literally
+//   holdsProperty(o, n, x)      object o holds x under the name n
+//   readsProperty(x, o, n)      x is the expression o.n
 //   binds(x, y)                 the name x is declared as y
 //   paramOf(f, k, p)            p is f's parameter at position k
 //   returnsValue(f, v)          f returns v
@@ -28,6 +31,12 @@
 //   reExportsAll(m, m2)         m forwards everything m2 exports
 //
 // Node identity is the adapter's business. The rules only join on it.
+//
+// Two relations come out. `comesTo(x, z)` follows a name to the value
+// it ends up being, which can be an object as well as a function; the
+// chain has to pass through objects for `routes.list` to reach what
+// `list` holds. `resolves(x, z)` is `comesTo` narrowed to functions,
+// and is the question callers ask.
 
 import { lit, rule, variable as v } from "@suss/datalog";
 
@@ -36,24 +45,26 @@ import { lit, rule, variable as v } from "@suss/datalog";
  * rules onto these before evaluating.
  */
 export const RESOLUTION_RULES = [
-  // A function resolves to itself; every chain ends here.
-  rule("resolves", [v("f"), v("f")], [lit("func", v("f"))]),
+  // A value comes to itself; every chain ends at something written out
+  // in source, a function or an object.
+  rule("comesTo", [v("x"), v("x")], [lit("func", v("x"))]),
+  rule("comesTo", [v("x"), v("x")], [lit("objectValue", v("x"))]),
 
   // Aliasing: const x = y, or an identifier referencing a declaration.
   rule(
-    "resolves",
+    "comesTo",
     [v("x"), v("z")],
-    [lit("binds", v("x"), v("y")), lit("resolves", v("y"), v("z"))],
+    [lit("binds", v("x"), v("y")), lit("comesTo", v("y"), v("z"))],
   ),
 
-  // An import resolves to what the module exports under that name.
+  // An import comes to what the module exports under that name.
   rule(
-    "resolves",
+    "comesTo",
     [v("x"), v("z")],
     [
       lit("imports", v("x"), v("m"), v("n")),
       lit("moduleExport", v("m"), v("n"), v("value")),
-      lit("resolves", v("value"), v("z")),
+      lit("comesTo", v("value"), v("z")),
     ],
   ),
 
@@ -80,14 +91,29 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
+  // Reading a property comes to what the object holds under that name.
+  // `comesTo` in the middle is what lets the object arrive through an
+  // alias, an import, or a factory call.
+  rule(
+    "comesTo",
+    [v("x"), v("z")],
+    [
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("comesTo", v("o"), v("obj")),
+      lit("holdsProperty", v("obj"), v("n"), v("held")),
+      lit("comesTo", v("held"), v("z")),
+    ],
+  ),
+
   // Wrapper transparency, derived: calling a factory that returns a
-  // function which calls its parameter k resolves to argument k.
+  // function which calls its parameter k comes to argument k.
   rule(
     "returnsFunc",
     [v("f"), v("g")],
     [
       lit("returnsValue", v("f"), v("value")),
-      lit("resolves", v("value"), v("g")),
+      lit("comesTo", v("value"), v("g")),
+      lit("func", v("g")),
     ],
   ),
   // A call made by a nested closure counts as made by the function
@@ -127,7 +153,7 @@ export const RESOLUTION_RULES = [
     [v("r"), v("p")],
     [
       lit("call", v("r"), v("c")),
-      lit("resolves", v("c"), v("f")),
+      lit("comesTo", v("c"), v("f")),
       lit("unwraps", v("f"), v("k")),
       lit("callArg", v("r"), v("k"), v("a")),
       lit("flowsToParam", v("a"), v("p")),
@@ -143,14 +169,32 @@ export const RESOLUTION_RULES = [
     ],
   ),
   rule(
-    "resolves",
+    "comesTo",
     [v("r"), v("h")],
     [
       lit("call", v("r"), v("c")),
-      lit("resolves", v("c"), v("f")),
+      lit("comesTo", v("c"), v("f")),
       lit("unwraps", v("f"), v("k")),
       lit("callArg", v("r"), v("k"), v("a")),
-      lit("resolves", v("a"), v("h")),
+      lit("comesTo", v("a"), v("h")),
+    ],
+  ),
+
+  // A property read off a call: `make(body).handle`. The call itself is
+  // not given a `comesTo`, since a factory call usually IS the wrapper
+  // and answering with the raw returned function would fight the
+  // unwraps answer. Only the property read narrows enough to be safe.
+  rule(
+    "comesTo",
+    [v("x"), v("z")],
+    [
+      lit("readsProperty", v("x"), v("r"), v("n")),
+      lit("call", v("r"), v("c")),
+      lit("comesTo", v("c"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+      lit("comesTo", v("ret"), v("obj")),
+      lit("holdsProperty", v("obj"), v("n"), v("held")),
+      lit("comesTo", v("held"), v("z")),
     ],
   ),
 
@@ -159,7 +203,7 @@ export const RESOLUTION_RULES = [
   // to have been imported from the library the pack named, so a local
   // object spelled the same way is not mistaken for it.
   rule(
-    "resolves",
+    "comesTo",
     [v("r"), v("h")],
     [
       lit("calleeName", v("r"), v("n")),
@@ -167,7 +211,16 @@ export const RESOLUTION_RULES = [
       lit("wrapperModule", v("n"), v("m")),
       lit("calleeOrigin", v("r"), v("m")),
       lit("callArg", v("r"), v("k"), v("a")),
-      lit("resolves", v("a"), v("h")),
+      lit("comesTo", v("a"), v("h")),
     ],
+  ),
+
+  // The question callers ask: what a value comes to, narrowed to the
+  // functions. Objects appear in the middle of chains and never in an
+  // answer.
+  rule(
+    "resolves",
+    [v("x"), v("z")],
+    [lit("comesTo", v("x"), v("z")), lit("func", v("z"))],
   ),
 ];

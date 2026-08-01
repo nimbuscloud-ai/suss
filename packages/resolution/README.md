@@ -55,21 +55,19 @@ and the rules found the other 79 unchanged.
 
 ## What is not modelled
 
-**A value reached through a property.** There is no fact for what an
-object literal holds, so all of these come back empty:
+**A handler passed as one property of a config.** `make({ body:
+handler })`, where the factory reads `opts.body`, does not resolve. A
+rule for it was tried and taken out: production wrappers read several
+callbacks off the same config (a log extractor, an error builder, the
+handler), the rule made each one a candidate for the whole call, and
+ambiguity nulled out sixty handlers that used to resolve. Saying which
+property is the handler takes something structure does not carry,
+either "the only property called" (which needs negation) or a pack
+naming the property. Until one of those exists, this shape stays
+unresolved on purpose.
 
-```ts
-const routes = { list: handler };  export const h = routes.list;
-make({ body: handler });           // factory reads opts.body
-make(handler).handle;              // factory returns an object
-```
-
-Adding it needs a fact for what an object holds and a chain that can
-pass through a value that is not a function. The chain rules bottom out
-at `func`, so they answer only about functions today. Splitting that
-into "what this name comes down to" plus "and it is a function" is what
-lets a property access join in the middle, and it makes the rule set
-smaller rather than larger.
+**An element of an array.** `all[0]` has no fact for what an array
+holds.
 
 **Reassignment.** A name assigned twice resolves to the first
 assignment rather than to both or to neither.

@@ -28,11 +28,11 @@ import type { TransparentWrapper } from "@suss/extractor";
 import type { Node, SourceFile } from "ts-morph";
 
 const JS_RULES = [
-  // f.bind(...) resolves to whatever f resolves to.
+  // f.bind(...) comes to whatever f comes to.
   rule(
-    "resolves",
+    "comesTo",
     [v("r"), v("h")],
-    [lit("bindCall", v("r"), v("t")), lit("resolves", v("t"), v("h"))],
+    [lit("bindCall", v("r"), v("t")), lit("comesTo", v("t"), v("h"))],
   ),
 ];
 

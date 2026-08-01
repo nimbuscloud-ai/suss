@@ -148,6 +148,76 @@ describe("a factory that hands back what it was given", () => {
   });
 });
 
+describe("a value reached through a property", () => {
+  it("follows a name to what an object holds under it", () => {
+    // const routes = { list: f }; routes.list
+    expect(
+      resolutionsOf(
+        [
+          ["func", "f"],
+          ["objectValue", "obj"],
+          ["holdsProperty", "obj", "list", "f"],
+          ["binds", "routes", "obj"],
+          ["readsProperty", "x", "routesRef", "list"],
+          ["binds", "routesRef", "routes"],
+        ],
+        "x",
+      ),
+    ).toEqual(["f"]);
+  });
+
+  it("keeps sibling properties apart", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "f"],
+          ["func", "g"],
+          ["objectValue", "obj"],
+          ["holdsProperty", "obj", "list", "f"],
+          ["holdsProperty", "obj", "remove", "g"],
+          ["readsProperty", "x", "objRef", "remove"],
+          ["binds", "objRef", "obj"],
+        ],
+        "x",
+      ),
+    ).toEqual(["g"]);
+  });
+
+  it("follows a property read off a factory call", () => {
+    // make(f).handle, where make returns { handle: g }.
+    expect(
+      resolutionsOf(
+        [
+          ["func", "g"],
+          ["func", "make"],
+          ["objectValue", "ret"],
+          ["holdsProperty", "ret", "handle", "g"],
+          ["returnsValue", "make", "ret"],
+          ["call", "site", "makeRef"],
+          ["binds", "makeRef", "make"],
+          ["readsProperty", "x", "site", "handle"],
+        ],
+        "x",
+      ),
+    ).toEqual(["g"]);
+  });
+
+  it("answers nothing for a property the object does not hold", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "f"],
+          ["objectValue", "obj"],
+          ["holdsProperty", "obj", "list", "f"],
+          ["readsProperty", "x", "objRef", "missing"],
+          ["binds", "objRef", "obj"],
+        ],
+        "x",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("a wrapper the caller declared transparent", () => {
   it("resolves through a named wrapper from the module it names", () => {
     expect(
