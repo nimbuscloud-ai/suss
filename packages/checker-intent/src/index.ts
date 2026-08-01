@@ -438,8 +438,8 @@ function withProvenance(
  * behavioural checker's `applySuppressions`). Rule discriminators map
  * as: `kind` → the intent finding kind; `boundary` → the finding's
  * boundary key (exact for `fn:` / `gql:` keys, path-normalized for
- * REST). A rule that specifies `consumer` never matches an intent
- * finding — there is no consumer side.
+ * REST). A rule that specifies `consumer` or `provider` never matches
+ * an intent finding — it has neither side.
  */
 export function applyIntentSuppressions(
   findings: IntentFinding[],
@@ -450,7 +450,7 @@ export function applyIntentSuppressions(
     findings,
     rules,
     (rule, finding) => {
-      if (rule.consumer !== undefined) {
+      if (rule.consumer !== undefined || rule.provider !== undefined) {
         return false;
       }
       return (

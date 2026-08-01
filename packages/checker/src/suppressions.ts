@@ -4,10 +4,10 @@
 // threshold counting) lives in @suss/ir-core so the intent checker
 // shares it without depending on this package; the rule types are
 // re-exported here for existing consumers. What this module owns is
-// the behavioural matcher: how a rule's `boundary` / `consumer`
-// discriminators match a two-sided `Finding` (boundary key computed
-// from the finding's BoundaryBinding, consumer summary / transitionId
-// compared directly).
+// the behavioural matcher: how a rule's `boundary` / `consumer` /
+// `provider` discriminators match a two-sided `Finding` (boundary key
+// computed from the finding's BoundaryBinding, per-side summary and
+// transitionId compared directly).
 //
 // File I/O stays out — the CLI reads .sussignore.yml / .sussignore.json
 // from disk and hands the parsed rules here.
@@ -31,6 +31,29 @@ export {
   validateRule,
 } from "@suss/ir-core";
 
+/**
+ * Both sides of a finding carry the same two discriminators, so one
+ * helper answers for either side.
+ */
+function ruleSideMatches(
+  side: SuppressionRule["consumer"],
+  findingSide: Finding["consumer"],
+): boolean {
+  if (side === undefined) {
+    return true;
+  }
+  if (side.summary !== undefined && side.summary !== findingSide.summary) {
+    return false;
+  }
+  if (
+    side.transitionId !== undefined &&
+    side.transitionId !== findingSide.transitionId
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
   if (
     rule.boundary !== undefined &&
@@ -38,21 +61,10 @@ function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
   ) {
     return false;
   }
-  if (rule.consumer !== undefined) {
-    if (
-      rule.consumer.summary !== undefined &&
-      rule.consumer.summary !== finding.consumer.summary
-    ) {
-      return false;
-    }
-    if (
-      rule.consumer.transitionId !== undefined &&
-      rule.consumer.transitionId !== finding.consumer.transitionId
-    ) {
-      return false;
-    }
-  }
-  return true;
+  return (
+    ruleSideMatches(rule.consumer, finding.consumer) &&
+    ruleSideMatches(rule.provider, finding.provider)
+  );
 }
 
 /**

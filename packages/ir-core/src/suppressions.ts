@@ -24,6 +24,14 @@ import { normalizePath } from "./boundaryKey.js";
 // Rule schema
 // ---------------------------------------------------------------------------
 
+/** The discriminators available on either side of a finding. */
+const SuppressionSideSchema = z
+  .object({
+    summary: z.string().optional(),
+    transitionId: z.string().optional(),
+  })
+  .optional();
+
 export const SuppressionRuleSchema = z
   .object({
     /**
@@ -45,17 +53,21 @@ export const SuppressionRuleSchema = z
      * `consumer` never matches an intent finding, which has no
      * consumer side.
      */
-    consumer: z
-      .object({
-        summary: z.string().optional(),
-        transitionId: z.string().optional(),
-      })
-      .optional(),
+    consumer: SuppressionSideSchema,
     /**
-     * "narrow" (default): requires at least (kind + boundary) OR
-     *   (kind + consumer.transitionId) — enough to target a specific
-     *   finding class. "broad" opts in to kind-only or boundary-only
-     *   matches, which silence future regressions in that category too.
+     * Provider-side discriminators, the mirror of `consumer`. A finding
+     * about a status the provider produces carries its transition id on
+     * this side, and that id is the only handle narrow enough to name
+     * that one finding. Like `consumer`, a rule that specifies
+     * `provider` never matches an intent finding.
+     */
+    provider: SuppressionSideSchema,
+    /**
+     * "narrow" (default): requires kind plus one of boundary,
+     * consumer.transitionId, or provider.transitionId — enough to
+     * target a specific finding class. "broad" opts in to kind-only or
+     * boundary-only matches, which silence future regressions in that
+     * category too.
      */
     scope: z.enum(["narrow", "broad"]).default("narrow"),
     /** Required human-written justification. */
@@ -118,20 +130,22 @@ export function validateRule(rule: SuppressionRule): string | null {
     if (
       rule.kind === undefined &&
       rule.boundary === undefined &&
-      rule.consumer === undefined
+      rule.consumer === undefined &&
+      rule.provider === undefined
     ) {
-      return "broad-scope rule must constrain at least one field (kind, boundary, or consumer)";
+      return "broad-scope rule must constrain at least one field (kind, boundary, consumer, or provider)";
     }
     return null;
   }
-  // narrow scope: require either (kind + boundary) or (kind + consumer.transitionId)
   const hasKind = rule.kind !== undefined;
   const hasBoundary = rule.boundary !== undefined;
-  const hasConsumerTxn = rule.consumer?.transitionId !== undefined;
-  if (hasKind && (hasBoundary || hasConsumerTxn)) {
+  const hasTransition =
+    rule.consumer?.transitionId !== undefined ||
+    rule.provider?.transitionId !== undefined;
+  if (hasKind && (hasBoundary || hasTransition)) {
     return null;
   }
-  return "narrow-scope rule must specify kind AND (boundary OR consumer.transitionId); set scope: 'broad' to silence wider categories";
+  return "narrow-scope rule must specify kind AND (boundary OR consumer.transitionId OR provider.transitionId); set scope: 'broad' to silence wider categories";
 }
 
 // ---------------------------------------------------------------------------

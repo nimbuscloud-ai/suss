@@ -202,6 +202,65 @@ describe("applySuppressions", () => {
     expect(out.suppressed).toBeUndefined();
   });
 
+  it("matches on provider.transitionId, and only that provider transition", () => {
+    const providerFinding = finding({
+      kind: "unhandledProviderCase",
+      provider: { ...finding().provider, transitionId: "pt-410" },
+    });
+    const [hit] = applySuppressions(
+      [providerFinding],
+      [
+        SuppressionRuleSchema.parse({
+          kind: "unhandledProviderCase",
+          provider: { transitionId: "pt-410" },
+          reason: "x",
+        }),
+      ],
+    );
+    expect(hit.suppressed?.reason).toBe("x");
+
+    const [miss] = applySuppressions(
+      [providerFinding],
+      [
+        SuppressionRuleSchema.parse({
+          kind: "unhandledProviderCase",
+          provider: { transitionId: "pt-OTHER" },
+          reason: "x",
+        }),
+      ],
+    );
+    expect(miss.suppressed).toBeUndefined();
+  });
+
+  it("leaves a consumer-side finding alone when the rule names a provider transition", () => {
+    const [out] = applySuppressions(
+      [finding()],
+      [
+        SuppressionRuleSchema.parse({
+          kind: "deadConsumerBranch",
+          provider: { transitionId: "ct-500" },
+          reason: "x",
+        }),
+      ],
+    );
+    expect(out.suppressed).toBeUndefined();
+  });
+
+  it("matches on provider.summary", () => {
+    const [out] = applySuppressions(
+      [finding()],
+      [
+        SuppressionRuleSchema.parse({
+          kind: "deadConsumerBranch",
+          boundary: "GET /pet/:id",
+          provider: { summary: "src/handlers/pet.ts::getPet" },
+          reason: "x",
+        }),
+      ],
+    );
+    expect(out.suppressed?.reason).toBe("x");
+  });
+
   it("broad-scope kind-only rule matches any finding of that kind", () => {
     const rules: SuppressionRule[] = [
       SuppressionRuleSchema.parse({
