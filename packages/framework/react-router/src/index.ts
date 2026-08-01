@@ -49,28 +49,6 @@ const HTTP_ERRORS_CODES: Record<string, number> = {
   GatewayTimeout: 504,
 };
 
-/**
- * Where React Router keeps its routes and how it writes them. A file
- * under `app/routes` holds its whole path in its own name, with dots
- * between the segments and a `$` in front of each parameter, so
- * `orders.$id.edit.tsx` serves `/orders/{id}/edit`. A route can also be
- * a folder holding `route.tsx`, and `_index` names the route at the
- * path rather than a segment under it.
- *
- * Projects that configure their own routes instead of using the
- * convention get nothing from this, which is the same as before.
- */
-const ROUTE_FILES: Extract<
-  NonNullable<PatternPack["discovery"][number]["bindingExtraction"]>["path"],
-  { type: "fromFilename" }
-> = {
-  type: "fromFilename",
-  root: "app/routes",
-  dropBasenames: ["_index", "route", "index"],
-  dynamic: "dollarPrefix",
-  flat: true,
-};
-
 export function reactRouterFramework(): PatternPack {
   return {
     name: "react-router",
@@ -81,10 +59,13 @@ export function reactRouterFramework(): PatternPack {
       {
         kind: "loader",
         match: { type: "namedExport", names: ["loader"] },
-        bindingExtraction: {
-          method: { type: "literal", value: "GET" },
-          path: ROUTE_FILES,
-        },
+        // No route derived from the filename. React Router only
+        // reads routes that way when the project opted in by
+        // importing @react-router/fs-routes, and the pack language
+        // has no way to say "only when that import is there". A
+        // loader whose route came out of a guess pairs with whatever
+        // consumer matches the guess, which is worse than pairing
+        // with nothing.
         // Empty gate: route files often re-export `loader` /
         // `action` from non-router-importing modules
         // (server-side data functions, shared util re-exports).
@@ -96,10 +77,13 @@ export function reactRouterFramework(): PatternPack {
       {
         kind: "action",
         match: { type: "namedExport", names: ["action"] },
-        bindingExtraction: {
-          method: { type: "literal", value: "POST" },
-          path: ROUTE_FILES,
-        },
+        // No route derived from the filename. React Router only
+        // reads routes that way when the project opted in by
+        // importing @react-router/fs-routes, and the pack language
+        // has no way to say "only when that import is there". A
+        // loader whose route came out of a guess pairs with whatever
+        // consumer matches the guess, which is worse than pairing
+        // with nothing.
         requiresImport: [],
       },
       {
