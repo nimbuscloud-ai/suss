@@ -33,13 +33,14 @@ universal. You import it, errors flow, and nothing about that depends
 on how your team writes code.
 
 Suss produces its data by static analysis that has to recognize how a
-team expresses its boundaries. The July run is the counterexample. The
-SPA routes 270 of its 275 GraphQL call sites through a local
-`useGraphQLQuery` wrapper, and the pack sees the five that call Apollo
-directly. The Lambda service wraps its response envelope in a local
-`json(status, payload)` helper, and the pack assumed the opposite
-argument order, so every extracted status and body came back inverted
-at high confidence. Neither pattern is unusual.
+team expresses its boundaries. The July run is the counterexample. A
+team that wraps Apollo in one local hook and calls that hook everywhere
+gets almost nothing from the Apollo pack, which looks for the library
+call itself; suss saw only the handful of call sites that still reached
+Apollo directly. A team that builds its Lambda response envelope
+through a local helper gets whatever argument order the pack guessed,
+and the pack guessed wrong, so every extracted status and body came
+back inverted at high confidence. Neither pattern is unusual.
 
 So the on-ramp is not three lines and no configuration. It is "does a
 pack recognize the way your team writes code." That is the largest
@@ -120,7 +121,7 @@ that constraint is where the Sentry model would otherwise break.
 
 So the unit of feedback is a structural fingerprint: the shape of the
 thing that was not recognized, with every identifier, literal, and path
-removed. The `json` case becomes something like
+removed. The response-helper case becomes something like
 
     unrecognized: call in return position
       callee: local function, same module
@@ -132,7 +133,7 @@ removed. The `json` case becomes something like
 
 and the wrapper case becomes
 
-    unrecognized: exported function, called from 270 sites
+    unrecognized: exported function, called from many sites
       body calls: hook imported from @apollo/client
       pack active: apollo-client
       gate matched: yes

@@ -17,13 +17,14 @@ The adapter has four bespoke resolution walkers, each capped at one hop:
   It does not chase re-exports.
 - `.then` parameter binding follows one Promise hop.
 
-They do not compose. Measured against a production serverless monorepo:
-88% of Lambda handler exports sit behind wrapper factories
-(`export const handler = createProtectedHandler(inner)`), and every SQS
-producer imports the AWS SDK through an internal barrel package. In the
-largest service suss found 8 of the 34 handlers the deployment template
-declares, and zero SQS producers. Extraction was fine; discovery never
-reached the function.
+They do not compose. Serverless projects rarely write a handler as a
+plain exported function. They write
+`export const handler = withAuth(inner)`, and they reach the AWS SDK
+through a barrel package rather than importing it directly. Both shapes
+defeat a one-hop walker.
+Against a production monorepo, suss found 8 of the 34 handlers the
+deployment template declared, and no SQS producers at all. Extraction
+was fine; discovery never reached the function.
 
 Each new pattern today means a new walker with its own scope rules, and
 stacked patterns (a wrapped handler exported through a barrel) fail even
@@ -110,9 +111,9 @@ until a later pass.
 
 ## Out of scope for v0
 
-Class-method delegation (following `handleChannelQuery` out of a
-handler body into a class) is the next phase; it adds `methodOf` facts
-and rules but no engine changes. Scope-sensitive dataflow, reassignment,
+Class-method delegation (following a method call out of a handler body
+into the class that defines it) is the next phase; it adds `methodOf`
+facts and rules but no engine changes. Scope-sensitive dataflow, reassignment,
 and conditional exports stay out; the fact layer over-approximates and
 discovery's downstream filters keep precision.
 
@@ -122,5 +123,6 @@ Fixtures per pattern: alias chain, re-export barrel, `export * from`,
 local wrapper factory, two stacked wrappers, pack-declared wrapper,
 `.bind`, a namespace-imported wrapper, a wrapped default export, and a
 wrapper reached through a barrel (composition). On the production
-monorepo, handler discovery in the largest service goes from 8 to all
-34 the template declares, and SQS producer recognition stops being zero.
+monorepo, suss goes from finding 8 of the 34 handlers the template
+declared to finding all 34, and SQS producer recognition stops being
+zero.

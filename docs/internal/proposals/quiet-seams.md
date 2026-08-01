@@ -13,15 +13,16 @@ one the symptoms suggest.
    and exited 0. Every pack that discovers through a callback was
    affected, which is every AWS pack.
 2. Every extracted status code and body came back swapped, at
-   `confidence: high`, with no gap. The service wraps its response
-   envelope in a local `json(status, payload)` helper; the pack assumed
-   `json(payload, status)`.
+   `confidence: high`, with no gap. The project builds its response
+   envelope through a local helper, and the pack assumed an argument
+   order for it rather than reading the helper. It assumed the wrong
+   one.
 3. Pairing the template-declared routes against the extracted handlers
    reported `Paired 0 provider-consumer combinations` and `No findings`,
    and exited 0.
-4. The frontend routes 270 of its 275 GraphQL call sites through a local
-   `useGraphQLQuery` wrapper. The Apollo pack sees the five that call
-   the library directly.
+4. The Apollo pack found only a handful of GraphQL call sites. Almost
+   every call in that frontend goes through one local hook wrapping the
+   Apollo hook, and the pack looks for the library call itself.
 
 Number 1 was a stale duplicate of a predicate and is fixed. The
 remaining three are covered here, along with the part of 4 that shares
@@ -82,7 +83,7 @@ inheriting. "The gate matched no files" and "the gate matched files but
 the module does not resolve" are different problems with different
 fixes, and today both present as zero. One `ts.resolveModuleName` call
 per gate separates them, and turns the Apollo case from silence into a
-sentence: the `@apollo/client` gate matched 5 files, the specifier does
+sentence: the `@apollo/client` gate matched files, the specifier does
 not resolve from this tsconfig, install dependencies. That covers the
 undocumented prerequisite that packs relying on symbol resolution need
 the target's dependencies installed while packs relying on textual
@@ -131,7 +132,8 @@ certain. Fixing only the pack leaves the next pack free to repeat it.
 
 **Origin binding on terminal matches.** Add the same import binding
 terminals already lack and discovery already has. A pack can then say
-"the library's `json`", and a local helper stops matching.
+"the library's own `json`", and a same-named local helper stops
+matching.
 
 On its own this yields zero terminals where it previously yielded
 inverted ones. Better, because silence beats a wrong answer, and not
@@ -146,7 +148,8 @@ helper's return, and `statusCode` resolves back through the parameter
 binding to whichever argument the caller passed. Both argument orders
 work and the pack encodes neither.
 
-Parameter defaults come along for free. `redirect(url, cookie)` against
+Parameter defaults come along for free. A call written
+`redirect(url, cookie)` against a declaration written
 `function redirect(location, cookie?, status = 302)` resolves to 302,
 which the positional guess gets wrong today.
 
@@ -165,8 +168,9 @@ first regardless of when resolution does.
 
 The helpers are already extracted. `includeReachable` defaults to true,
 so every function reachable from a discovered unit becomes a
-`library`-kind summary. In the run above, 35 of 42 summaries were
-these, including `json` and `redirect`. Nothing consumes them.
+`library`-kind summary. In the run above, 35 of the 42 summaries suss
+wrote were these, and the response helper was among them. Nothing
+consumes them.
 
 So "resolve the helper" has two possible shapes:
 
@@ -180,8 +184,9 @@ parameters.
 
 By reference is better in the long run:
 
-- One extraction per helper rather than one per call site. At 270 call
-  sites through one wrapper, that difference is the budget.
+- One extraction per helper rather than one per call site. When a
+  codebase funnels hundreds of call sites through a single wrapper,
+  that difference is the budget.
 - Helpers calling helpers work by the same mechanism, with no hop
   limit to tune.
 - A helper in another workspace package is already a unit if that
@@ -189,7 +194,7 @@ By reference is better in the long run:
   ts-morph project.
 - It is where transitive recognition has to live. If a unit carries a
   boundary binding, a caller that inlines it can inherit that binding,
-  which is the answer to the 270-wrapper case. Inline resolution has
+  which is the answer to the local-wrapper case. Inline resolution has
   nowhere to put that.
 
 It also carries the risk: a four-branch helper inlined at twenty call
