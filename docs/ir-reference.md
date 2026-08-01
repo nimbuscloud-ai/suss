@@ -1,6 +1,6 @@
 # IR Reference
 
-A type-by-type walkthrough of `@suss/behavioral-ir`. The authoritative source is `packages/ir/src/index.ts`; this document explains *why* each type has the shape it does, when to use which variant, and how they compose.
+A type-by-type walkthrough of `@suss/behavioral-ir`. The authoritative source is `packages/behavioral-ir/src/index.ts`; this document explains *why* each type has the shape it does, when to use which variant, and how they compose.
 
 ## `BehavioralSummary`
 
@@ -368,7 +368,7 @@ Consumers use confidence to decide how strictly to enforce findings. High-confid
 ## `Finding`
 
 ```typescript
-type FindingKind = string;  // see FindingKindSchema in packages/ir/src/schemas.ts
+type FindingKind = string;  // see FindingKindSchema in packages/behavioral-ir/src/schemas.ts
 
 type FindingSeverity = "error" | "warning" | "info";
 
@@ -399,7 +399,7 @@ interface Finding {
 
 What the pairwise checker emits. Each finding names the boundary, both sides of it, and a human-readable description.
 
-The `kind` enum is open-ended in this doc on purpose, the canonical list spans REST, GraphQL, React, storage, message-bus, runtime-config, and meta domains and changes as new packs ship. The authoritative enumeration is `FindingKindSchema` in `packages/ir/src/schemas.ts`; the [findings catalog](/reference/findings) groups every kind by domain with severity, emitter, and a concrete example.
+The `kind` enum is open-ended in this doc on purpose, the canonical list spans REST, GraphQL, React, storage, message-bus, runtime-config, and meta domains and changes as new packs ship. The authoritative enumeration is `FindingKindSchema` in `packages/behavioral-ir/src/schemas.ts`; the [findings catalog](/reference/findings) groups every kind by domain with severity, emitter, and a concrete example.
 
 **Why both sides are always named.** Even when only one side is at fault (e.g., `providerContractViolation` is structurally about provider-vs-its-own-contract), the finding still points at a consumer summary, typically the same summary, used as the pairing anchor, so tooling can attribute the finding to a specific pairing rather than a free-floating provider. `transitionId` is the optional field; both `summary` references are required.
 
