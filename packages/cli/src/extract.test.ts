@@ -51,6 +51,43 @@ describe("resolveFramework", () => {
     expect(pack.invocationRecognizers).toHaveLength(3);
   });
 
+  it("stamps a configured pack with a version the config changes", async () => {
+    const producer = (receiver: string) =>
+      JSON.stringify({
+        producers: [
+          {
+            module: "@acme/async",
+            receiver,
+            method: "dispatch",
+            subjectArg: 0,
+            bodyArg: 1,
+          },
+        ],
+      });
+
+    const plain = await resolveFramework("aws-sqs");
+    const configured = await resolveFramework(
+      `aws-sqs=${writeConfig(producer("CommandDispatcher"))}`,
+    );
+    const other = await resolveFramework(
+      `aws-sqs=${writeConfig(producer("EventDispatcher"))}`,
+    );
+
+    expect(configured.version).not.toBe(plain.version);
+    expect(other.version).not.toBe(configured.version);
+  });
+
+  it("stamps the same config the same way whatever order it is written in", async () => {
+    const one = await resolveFramework(
+      `aws-sqs=${writeConfig('{"producers":[{"module":"@acme/async","receiver":"D","method":"send","subjectArg":0}]}')}`,
+    );
+    const two = await resolveFramework(
+      `aws-sqs=${writeConfig('{"producers":[{"subjectArg":0,"method":"send","receiver":"D","module":"@acme/async"}]}')}`,
+    );
+
+    expect(two.version).toBe(one.version);
+  });
+
   it("names every framework pack the CLI ships with, and loads each", async () => {
     const manifest = JSON.parse(
       fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
