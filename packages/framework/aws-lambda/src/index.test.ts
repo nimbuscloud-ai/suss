@@ -54,6 +54,21 @@ function byRoute(
   });
 }
 
+function byEventType(
+  summaries: BehavioralSummary[],
+  eventType: string,
+): BehavioralSummary | undefined {
+  return summaries.find((s) => {
+    const meta = s.metadata?.awsLambda as
+      | { recognition?: string; eventTypes?: string[] }
+      | undefined;
+    return (
+      meta?.recognition === "recognized-not-http" &&
+      (meta.eventTypes ?? []).includes(eventType)
+    );
+  });
+}
+
 function statusCodesOf(summary: BehavioralSummary): number[] {
   const codes: number[] = [];
   for (const t of summary.transitions) {
@@ -173,12 +188,7 @@ describe("awsLambdaFramework — extraction", () => {
   });
 
   it("accounts for the SQS handler as recognized-not-http", () => {
-    const sqs = summaries.find((s) => {
-      const meta = s.metadata?.awsLambda as
-        | { recognition?: string; eventTypes?: string[] }
-        | undefined;
-      return meta?.recognition === "recognized-not-http";
-    });
+    const sqs = byEventType(summaries, "SQS");
     expect(sqs).toBeDefined();
     const meta = (sqs as BehavioralSummary).metadata?.awsLambda as {
       recognition: string;
@@ -187,6 +197,65 @@ describe("awsLambdaFramework — extraction", () => {
     expect(meta.eventTypes).toContain("SQS");
     // Not bound as an HTTP route.
     expect(restBindingOf(sqs as BehavioralSummary)).toBeNull();
+  });
+
+  it("reads the summary object a scheduled job returns", () => {
+    const scheduled = byEventType(summaries, "Schedule");
+    expect(scheduled).toBeDefined();
+    const returns = (scheduled as BehavioralSummary).transitions.filter(
+      (t) => t.output.type === "return",
+    );
+    expect(returns).toHaveLength(1);
+    const body = JSON.stringify(returns[0].output);
+    expect(body).toContain("requestId");
+    expect(body).toContain("success");
+    // The return was read, so no unread-return gap and no low confidence.
+    expect((scheduled as BehavioralSummary).gaps).toEqual([]);
+    expect((scheduled as BehavioralSummary).confidence.level).not.toBe("low");
+  });
+
+  it("keeps the SQS consumer's batch-failure return under the wider list", () => {
+    const sqs = byEventType(summaries, "SQS") as BehavioralSummary;
+    const returns = sqs.transitions.filter((t) => t.output.type === "return");
+    // The named batchItemFailures shape matches first; the unqualified
+    // return terminal adds nothing on top of it.
+    expect(returns).toHaveLength(1);
+    expect(sqs.gaps).toEqual([]);
+  });
+
+  // Pinned: an earlier pack-wide catch-all return terminal fired on the
+  // return statement wrapping a ternary as well as on each envelope
+  // inside it, so an HTTP handler picked up a phantom third transition.
+  // The wider list is per non-HTTP unit now; route units must not see it.
+  it("gives a ternary envelope return exactly two response transitions", () => {
+    const toggle = byRoute(summaries, "POST", "/flags/toggle");
+    expect(toggle).toBeDefined();
+    const responses = (toggle as BehavioralSummary).transitions.filter(
+      (t) => t.output.type === "response",
+    );
+    expect(responses).toHaveLength(2);
+    expect(statusCodesOf(toggle as BehavioralSummary)).toEqual([200, 400]);
+    const returns = (toggle as BehavioralSummary).transitions.filter(
+      (t) => t.output.type === "return",
+    );
+    expect(returns).toHaveLength(0);
+  });
+
+  // Pinned: the same catch-all also swallowed the unread-return signal,
+  // replacing the gap with a return transition nothing reads. An HTTP
+  // handler whose return the pack cannot read has to keep saying so.
+  it("keeps the unread-return gap on an HTTP handler returning a variable", () => {
+    const mirror = byRoute(summaries, "GET", "/mirror");
+    expect(mirror).toBeDefined();
+    const gaps = (mirror as BehavioralSummary).gaps.filter(
+      (g) => g.type === "unreadOutcome",
+    );
+    expect(gaps).toHaveLength(1);
+    expect((mirror as BehavioralSummary).confidence.level).toBe("low");
+    const returns = (mirror as BehavioralSummary).transitions.filter(
+      (t) => t.output.type === "return",
+    );
+    expect(returns).toHaveLength(0);
   });
 
   it("carries the SAM function + event provenance on route units", () => {

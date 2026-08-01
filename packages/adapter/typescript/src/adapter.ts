@@ -477,10 +477,16 @@ export function extractCodeStructure(
   barriers: DescentBarriers = NO_BARRIERS,
 ): RawCodeStructure {
   const { func, kind, name } = unit;
-  const params = extractParameters(func, pack.inputMapping);
+  // A discoverUnits callback can attach terminals or an input mapping to
+  // one unit, for a pack whose units follow more than one output
+  // convention. The pack-level declaration is the default.
+  const params = extractParameters(
+    func,
+    unit.inputMapping ?? pack.inputMapping,
+  );
   const extracted = extractRawBranches(
     func,
-    pack.terminals,
+    unit.terminals ?? pack.terminals,
     invocationRecognizers,
     accessRecognizers,
     barriers,
@@ -899,7 +905,7 @@ function extractFromSourceFile(
               ? { resolverInfo: cu.resolverInfo }
               : {}),
             ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
-          } as (typeof units)[number]);
+          });
         }
       } catch (err) {
         process.stderr.write(
