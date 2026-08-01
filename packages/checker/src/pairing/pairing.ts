@@ -1,5 +1,5 @@
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
-import { boundaryKey, channelsPair } from "@suss/ir-core";
+import { boundaryKey, channelsPair, deployableUnitsAgree } from "@suss/ir-core";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -54,6 +54,29 @@ function bindingsPair(
 }
 
 /**
+ * Whether two summaries in the same key bucket really name the same
+ * boundary.
+ *
+ * Two questions, both answered the same way. The binding asks whether
+ * the two sides agree on the channel; the identity asks whether they
+ * agree on the deployable unit that runs them. In each case a side
+ * that cannot know the answer still pairs, and two sides that both
+ * answer have to answer alike.
+ */
+function summariesPair(
+  provider: BehavioralSummary,
+  consumer: BehavioralSummary,
+): boolean {
+  return (
+    bindingsPair(provider, consumer) &&
+    deployableUnitsAgree(
+      provider.identity.deployableUnit,
+      consumer.identity.deployableUnit,
+    )
+  );
+}
+
+/**
  * Given a flat list of summaries, match providers to consumers by
  * `(method, normalizedPath)`.
  *
@@ -100,8 +123,9 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
 
   const pairs: SummaryPair[] = [];
   // Tracked per summary rather than per key, because a key bucket can
-  // now hold a summary that pairs with nothing in it: two message-bus
-  // sides share a subject but name different buses.
+  // hold a summary that pairs with nothing in it: two message-bus
+  // sides share a subject but name different buses, or two sides name
+  // different deployable units.
   const matchedProviders = new Set<BehavioralSummary>();
   const matchedConsumers = new Set<BehavioralSummary>();
 
@@ -113,7 +137,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
 
     for (const provider of providers) {
       for (const consumer of consumers) {
-        if (!bindingsPair(provider, consumer)) {
+        if (!summariesPair(provider, consumer)) {
           continue;
         }
         pairs.push({ provider, consumer, key });
