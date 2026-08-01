@@ -20,7 +20,11 @@ export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";
 export { findTerminals } from "./terminals/index.js";
-export { ADAPTER_VERSION, computeAdapterPacksDigest } from "./version.js";
+export {
+  ADAPTER_VERSION,
+  computeAdapterPacksDigest,
+  computeContentHash,
+} from "./version.js";
 
 export type {
   TypeScriptAdapter,
