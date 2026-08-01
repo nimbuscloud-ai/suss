@@ -20,6 +20,26 @@ export interface FoundTerminal {
 }
 
 /**
+ * The value inside the wrappers that carry it along without changing
+ * what it is: parentheses, an await, a cast. `await json(payload)` and
+ * `json(payload)` produce the same response, so a matcher looking at
+ * the call has to see through the await to find it.
+ */
+export function unwrapValue(node: Node): Node {
+  let current: Node = node;
+  while (
+    Node.isParenthesizedExpression(current) ||
+    Node.isAwaitExpression(current) ||
+    Node.isAsExpression(current) ||
+    Node.isNonNullExpression(current) ||
+    Node.isSatisfiesExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+/**
  * The return a value leaves through, or null when the value does not
  * leave the function. A concise arrow answers with its body, since that
  * is what it returns without writing `return`.

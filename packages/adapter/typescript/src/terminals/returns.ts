@@ -18,7 +18,7 @@ import {
   extractStatusCode,
 } from "./extract.js";
 import { resolveHelperReturn } from "./helperResolution.js";
-import { returnPositionOf } from "./shared.js";
+import { returnPositionOf, unwrapValue } from "./shared.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -132,10 +132,14 @@ export function tryMatchReturnShape(
     return [];
   }
 
-  const returned = node.getExpression();
-  if (returned === undefined) {
+  const written = node.getExpression();
+  if (written === undefined) {
     return [];
   }
+  // `return await respond(200)` produces what `return respond(200)`
+  // produces, so look through the await and the parentheses before
+  // asking what was returned.
+  const returned = unwrapValue(written);
 
   if (Node.isObjectLiteralExpression(returned)) {
     const terminal = terminalFromReturnedObject(returned, node, pattern, match);
@@ -326,20 +330,7 @@ function returnCoveredByParameterMethodCall(
   func: FunctionRoot,
   patterns: TerminalPattern[],
 ): boolean {
-  let current: Node = expr;
-  while (true) {
-    if (
-      Node.isParenthesizedExpression(current) ||
-      Node.isAsExpression(current) ||
-      Node.isNonNullExpression(current) ||
-      Node.isSatisfiesExpression(current) ||
-      Node.isAwaitExpression(current)
-    ) {
-      current = current.getExpression();
-      continue;
-    }
-    break;
-  }
+  const current = unwrapValue(expr);
   if (!Node.isCallExpression(current)) {
     return false;
   }

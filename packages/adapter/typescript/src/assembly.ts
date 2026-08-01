@@ -6,7 +6,6 @@ import {
   type ConditionInfo,
   conditionInfoToRawCondition,
 } from "./conditions.js";
-import { isFunctionRoot } from "./discovery/shared.js";
 import { computePathConditions } from "./paths/pathConditions.js";
 import {
   extractInvocationEffects,
@@ -23,6 +22,7 @@ import {
   type DescentBarriers,
   isDescentStop,
   NO_BARRIERS,
+  startsItsOwnScope,
 } from "./walk/descent.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -51,22 +51,9 @@ const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
   );
 
 /**
- * Extract all raw branches from a function, composing:
- *   1. findTerminals — locate terminal nodes
- *   2. computePathConditions — per-path conditions (CFG enumeration;
- *      declined shapes degrade to sound under-specification)
- *   3. parseConditionExpression — Expression → Predicate
- *   4. extractInvocationEffects — bare expression-statement calls
- *      (Phase 1.5b — attaches to the default branch so handler /
- *      useEffect bodies carry their side-effect set)
- *
- * `isDefault` is true when the branch has no conditions, or all
- * conditions come from early returns/throws.
- */
-/**
- * Return statements the terminal patterns did not claim. Nested
- * functions are somebody else's returns, so the same descent rules the
- * terminal search uses apply here.
+ * Return statements the terminal patterns did not claim. A return that
+ * belongs to a nested scope belongs to whatever owns that scope, which
+ * is the same rule the terminal search applies.
  */
 export function countUnmatchedReturns(
   func: FunctionRoot,
@@ -97,10 +84,9 @@ export function countUnmatchedReturns(
       traversal.skip();
       return;
     }
-    // A nested function returns for itself, and it gets its own summary
-    // if anything discovers it. Accessors and constructors declared in
-    // the body are somebody else s returns too.
-    if (node !== func && (isFunctionRoot(node) || isNestedBodyOwner(node))) {
+    // A nested scope returns for itself, and it gets its own summary if
+    // anything discovers it.
+    if (startsItsOwnScope(node)) {
       traversal.skip();
       return;
     }
@@ -118,16 +104,20 @@ export function countUnmatchedReturns(
   return unmatched;
 }
 
-/** Accessors and constructors hold returns that answer for themselves. */
-function isNestedBodyOwner(node: Node): boolean {
-  return (
-    Node.isGetAccessorDeclaration(node) ||
-    Node.isSetAccessorDeclaration(node) ||
-    Node.isConstructorDeclaration(node) ||
-    Node.isFunctionDeclaration(node)
-  );
-}
-
+/**
+ * Extract all raw branches from a function, composing:
+ *   1. findTerminals, to locate terminal nodes
+ *   2. computePathConditions, for the conditions on each path (CFG
+ *      enumeration; declined shapes degrade to sound
+ *      under-specification)
+ *   3. parseConditionExpression, turning an Expression into a Predicate
+ *   4. extractInvocationEffects, for bare expression-statement calls,
+ *      attached to the default branch so handler and useEffect bodies
+ *      carry their side-effect set
+ *
+ * `isDefault` is true when the branch has no conditions, or all
+ * conditions come from early returns or throws.
+ */
 /**
  * The branches a function produces, alongside the terminals they came
  * from. A caller that wants to know which returns went unclaimed needs

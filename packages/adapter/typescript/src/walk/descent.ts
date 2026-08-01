@@ -78,10 +78,27 @@ export function isDescentStop(
 export function crossesNestedFunctionScope(node: Node, func: Node): boolean {
   let current: Node | undefined = node;
   while (current !== undefined && current !== func) {
-    if (Node.isArrowFunction(current) || Node.isFunctionExpression(current)) {
+    if (startsItsOwnScope(current)) {
       return true;
     }
     current = current.getParent();
   }
   return false;
+}
+
+/**
+ * Does this node return for itself rather than for whatever encloses
+ * it? An accessor and a constructor do, the same way a callback does,
+ * so a getter inside a returned object answers for the getter.
+ */
+export function startsItsOwnScope(node: Node): boolean {
+  return (
+    Node.isArrowFunction(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isFunctionDeclaration(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isGetAccessorDeclaration(node) ||
+    Node.isSetAccessorDeclaration(node) ||
+    Node.isConstructorDeclaration(node)
+  );
 }

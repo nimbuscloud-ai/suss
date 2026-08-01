@@ -28,6 +28,52 @@ function countIn(source: string, name: string): number {
   return countUnmatchedReturns(func, findTerminals(func, HTTP_TERMINALS));
 }
 
+describe("a value reached through a wrapper", () => {
+  const HELPER = `function respond(code: number) {
+    return { statusCode: code, body: "" };
+  }`;
+
+  function readsFrom(source: string): { terminals: number; unread: number } {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const file = project.createSourceFile("/mod.ts", source);
+    const func = file
+      .getVariableDeclarationOrThrow("handler")
+      .getInitializerOrThrow() as unknown as FunctionRoot;
+    const terminals = findTerminals(func, HTTP_TERMINALS);
+    return {
+      terminals: terminals.length,
+      unread: countUnmatchedReturns(func, terminals),
+    };
+  }
+
+  it("reads a helper the handler awaited", () => {
+    expect(
+      readsFrom(`${HELPER}
+       export const handler = async () => { return await respond(200); };`),
+    ).toEqual({ terminals: 1, unread: 0 });
+  });
+
+  it("reads a helper the handler wrapped in parentheses", () => {
+    expect(
+      readsFrom(`${HELPER}
+       export const handler = async () => { return (respond(200)); };`),
+    ).toEqual({ terminals: 1, unread: 0 });
+  });
+
+  it("leaves a getter's return to the getter", () => {
+    // The getter is its own scope, so its 500 is not a second outcome
+    // of the handler around it.
+    expect(
+      readsFrom(`export const handler = async () => {
+         return {
+           statusCode: 200,
+           get inner() { return { statusCode: 500 }; },
+         };
+       };`),
+    ).toEqual({ terminals: 1, unread: 0 });
+  });
+});
+
 describe("countUnmatchedReturns", () => {
   it("counts a return the terminals do not describe", () => {
     expect(
