@@ -1,0 +1,201 @@
+{
+  "totals": {
+    "packages": 38,
+    "packagesWithExports": 37,
+    "providers": 949,
+    "consumers": 254,
+    "pairs": 246
+  },
+  "packages": {
+    "packages/adapter/typescript": {
+      "name": "@suss/adapter-typescript",
+      "providers": 364,
+      "consumers": 21
+    },
+    "packages/behavioral-ir": {
+      "name": "@suss/behavioral-ir",
+      "providers": 18,
+      "consumers": 0
+    },
+    "packages/checker": {
+      "name": "@suss/checker",
+      "providers": 157,
+      "consumers": 31
+    },
+    "packages/checker-intent": {
+      "name": "@suss/checker-intent",
+      "providers": 14,
+      "consumers": 7
+    },
+    "packages/cli": {
+      "name": "@suss/cli",
+      "providers": 62,
+      "consumers": 86
+    },
+    "packages/client/apollo": {
+      "name": "@suss/client-apollo",
+      "providers": 3,
+      "consumers": 6
+    },
+    "packages/client/axios": {
+      "name": "@suss/client-axios",
+      "providers": 2,
+      "consumers": 10
+    },
+    "packages/client/web": {
+      "name": "@suss/client-web",
+      "providers": 2,
+      "consumers": 6
+    },
+    "packages/contract/appsync": {
+      "name": "@suss/contract-appsync",
+      "providers": 48,
+      "consumers": 2
+    },
+    "packages/contract/aws-apigateway": {
+      "name": "@suss/contract-aws-apigateway",
+      "providers": 18,
+      "consumers": 3
+    },
+    "packages/contract/cloudformation": {
+      "name": "@suss/contract-cloudformation",
+      "providers": 40,
+      "consumers": 18
+    },
+    "packages/contract/graphql": {
+      "name": "@suss/contract-graphql",
+      "providers": 25,
+      "consumers": 2
+    },
+    "packages/contract/intent": {
+      "name": "@suss/contract-intent",
+      "providers": 4,
+      "consumers": 2
+    },
+    "packages/contract/openapi": {
+      "name": "@suss/contract-openapi",
+      "providers": 21,
+      "consumers": 1
+    },
+    "packages/contract/prisma": {
+      "name": "@suss/contract-prisma",
+      "providers": 8,
+      "consumers": 1
+    },
+    "packages/contract/storybook": {
+      "name": "@suss/contract-storybook",
+      "providers": 5,
+      "consumers": 1
+    },
+    "packages/datalog": {
+      "name": "@suss/datalog",
+      "providers": 36,
+      "consumers": 0
+    },
+    "packages/extractor": {
+      "name": "@suss/extractor",
+      "providers": 11,
+      "consumers": 0
+    },
+    "packages/framework/apollo": {
+      "name": "@suss/framework-apollo",
+      "providers": 2,
+      "consumers": 6
+    },
+    "packages/framework/aws-eventbridge": {
+      "name": "@suss/framework-aws-eventbridge",
+      "providers": 6,
+      "consumers": 3
+    },
+    "packages/framework/aws-lambda": {
+      "name": "@suss/framework-aws-lambda",
+      "providers": 6,
+      "consumers": 7
+    },
+    "packages/framework/aws-sqs": {
+      "name": "@suss/framework-aws-sqs",
+      "providers": 8,
+      "consumers": 4
+    },
+    "packages/framework/drizzle": {
+      "name": "@suss/framework-drizzle",
+      "providers": 17,
+      "consumers": 1
+    },
+    "packages/framework/express": {
+      "name": "@suss/framework-express",
+      "providers": 2,
+      "consumers": 3
+    },
+    "packages/framework/fastify": {
+      "name": "@suss/framework-fastify",
+      "providers": 2,
+      "consumers": 3
+    },
+    "packages/framework/hono": {
+      "name": "@suss/framework-hono",
+      "providers": 2,
+      "consumers": 5
+    },
+    "packages/framework/nestjs-graphql": {
+      "name": "@suss/framework-nestjs-graphql",
+      "providers": 2,
+      "consumers": 2
+    },
+    "packages/framework/nestjs-rest": {
+      "name": "@suss/framework-nestjs-rest",
+      "providers": 2,
+      "consumers": 2
+    },
+    "packages/framework/nextjs": {
+      "name": "@suss/framework-nextjs",
+      "providers": 2,
+      "consumers": 2
+    },
+    "packages/framework/prisma": {
+      "name": "@suss/framework-prisma",
+      "providers": 8,
+      "consumers": 1
+    },
+    "packages/framework/react": {
+      "name": "@suss/framework-react",
+      "providers": 2,
+      "consumers": 2
+    },
+    "packages/framework/react-router": {
+      "name": "@suss/framework-react-router",
+      "providers": 2,
+      "consumers": 2
+    },
+    "packages/framework/ts-rest": {
+      "name": "@suss/framework-ts-rest",
+      "providers": 3,
+      "consumers": 4
+    },
+    "packages/intent-ir": {
+      "name": "@suss/intent-ir",
+      "providers": 1,
+      "consumers": 2
+    },
+    "packages/ir-core": {
+      "name": "@suss/ir-core",
+      "providers": 19,
+      "consumers": 0
+    },
+    "packages/manifest/aws": {
+      "name": "@suss/manifest-aws",
+      "providers": 5,
+      "consumers": 0
+    },
+    "packages/resolution": {
+      "name": "@suss/resolution",
+      "providers": 0,
+      "consumers": 3
+    },
+    "packages/runtime/node": {
+      "name": "@suss/runtime-node",
+      "providers": 20,
+      "consumers": 5
+    }
+  }
+}
