@@ -5,7 +5,7 @@
 // same packs in any order produce the same digest, and a pack without a
 // version says so rather than disappearing.
 
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -107,6 +107,17 @@ describe("computeDistHashFrom", () => {
     const second = computeDistHashFrom(dir);
     expect(first).not.toBe("");
     expect(first).not.toBe(second);
+  });
+
+  it("answers empty for a bundle it can see but cannot read", () => {
+    // A bundle it cannot read used to throw out of here, and the caller
+    // turned that into the empty stamp one level up. Answering empty
+    // directly is the same answer to the caller, and this is the path
+    // that says so.
+    const dir = mkdtempSync(path.join(tmpdir(), "dist-"));
+    mkdirSync(path.join(dir, "index.js"));
+
+    expect(computeDistHashFrom(dir)).toBe("");
   });
 
   it("answers the same for the same bundle", () => {
