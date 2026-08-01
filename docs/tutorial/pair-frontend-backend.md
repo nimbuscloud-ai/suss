@@ -1,25 +1,29 @@
 # Pair a frontend with a backend
 
-A small Express API and a React component that calls it, with two known mismatches: the response field has different names on each side, and the consumer doesn't handle one of the response statuses. suss catches both from source alone, with the OpenAPI document as the contract joining them.
+An Express API, an OpenAPI document, and the frontend code that calls the
+API. The frontend has two bugs. It reads a field the backend does not
+send, and it has no branch for the 404. Both compile. suss finds both
+from source alone.
 
-The two sides don't share types or a framework; the only common artifact is the OpenAPI document on the backend.
+The two sides share no types and no framework. The OpenAPI document is
+the only artifact they have in common.
 
 ## Step 1. Set up a workspace
 
 ```bash
 mkdir suss-pair-tutorial && cd suss-pair-tutorial
 npm init -y
+npm install express
 npm install --save-dev \
   typescript \
   @suss/cli \
   @suss/framework-express \
   @suss/client-web \
   @suss/contract-openapi \
-  @types/express @types/react \
-  express react
+  @types/express
 ```
 
-Create `tsconfig.json`:
+`tsconfig.json`:
 
 ```json
 {
@@ -27,7 +31,7 @@ Create `tsconfig.json`:
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "bundler",
-    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true
@@ -68,7 +72,8 @@ app.get("/users/:id", (req: Request, res: Response) => {
 });
 ```
 
-The handler returns the user object on 200 (with `fullName`), or a `404` with an error message if the id isn't known.
+Two outcomes. A 404 with an error message when the id is unknown, and a
+200 carrying the user.
 
 ## Step 3. Declare the contract
 
@@ -110,129 +115,164 @@ paths:
                   error: { type: string }
 ```
 
-The contract declares both the success and not-found responses. The 200 body shape (`{ id, fullName }`) is the one the handler returns.
+The contract declares both responses, and the 200 body matches what the
+handler returns.
 
-## Step 4. Write the frontend component
+## Step 4. Write the frontend loader
 
-`frontend/src/UserCard.tsx`:
+`frontend/src/loadUser.ts`:
 
-```tsx
-import { useEffect, useState } from "react";
-
-export function UserCard({ id }: { id: string }) {
-  const [name, setName] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch(`/users/${id}`)
-      .then((res) => res.json())
-      .then((data) => setName(data.name));
-  }, [id]);
-
-  if (name === null) return <div>Loading…</div>;
-  return <div>User: {name}</div>;
+```ts
+export function loadUser(id: string) {
+  return fetch(`/users/${id}`)
+    .then((res) => res.json())
+    .then((data) => data.name);
 }
 ```
 
-Two things to notice:
+This is the code a component would call. Two things are wrong with it.
 
-1. The component reads `data.name`, but the backend (and the contract) return `fullName`.
-2. The component doesn't check `res.status` or `res.ok`, so it has no branch for the 404.
+It reads `data.name`, and the backend sends `fullName`. It never looks at
+`res.status`, so a 404 body flows on as if it were a user. Neither is a
+type error, because the frontend never imports the backend's types.
 
-Both are drift bugs that survive type-checking because the frontend never imports the backend's types. Let suss catch them.
-
-## Step 5. Extract summaries
+## Step 5. Read all three
 
 ```bash
 mkdir summaries
 npx suss extract -p tsconfig.json -f express -o summaries/backend.json
-npx suss extract -p tsconfig.json -f web -o summaries/frontend.json
+npx suss extract -p tsconfig.json -f fetch -o summaries/frontend.json
 npx suss contract --from openapi backend/openapi.yaml -o summaries/contract.json
 ```
 
-Three summary files, one per source: the backend handler's behavior, the frontend component's behavior, and the contract derived from the OpenAPI document.
+Three summary files: what the handler does, what the loader expects, and
+what the document promises. All three are the same shape.
 
-Quick look at what came out of the backend:
+Look at the backend:
 
 ```bash
 npx suss inspect summaries/backend.json
 ```
 
-You should see the `GET /users/:id` handler with two transitions, a 404 path gated on `!user`, and a default 200 path returning the user object.
+```
+backend/src/server.ts
+└─ GET /users/:id  (express handler | line 14)
+       if  !user
+         -> 404 { error }
+       else
+         -> 200 { id, fullName }
 
-## Step 6. Run the checker
+1 summary.
+```
+
+## Step 6. Compare them
 
 ```bash
 npx suss check --dir summaries
 ```
 
-Expected output (wording may vary slightly):
-
 ```
-[WARNING] unhandledProviderCase
+Compared 2 boundaries:
+  GET /users/{id}: get <-> loadUser
+  GET /users/{id}: GET /users/{id} <-> loadUser
+
+────────────────────────────────────────────────────────────
+[ERROR] unhandledProviderCase
   Provider produces status 404 but no consumer branch handles it
-  provider: backend/src/server.ts:14 (express handler)
-  consumer: frontend/src/UserCard.tsx:6 (UserCard)
-  boundary: GET /users/:id
-
-[ERROR] consumerFieldMismatch
-  Consumer reads body.name; provider's 200 body has { id, fullName }
-  provider: backend/src/server.ts:14 — body { id, fullName }
-  consumer: frontend/src/UserCard.tsx:8 — reads .name
-  boundary: GET /users/:id
+  provider: backend/src/server.ts::get (backend/src/server.ts:14)
+    also from: openapi:openapi.yaml::GET /users/{id}
+  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
+  boundary: express (http) GET /users/:id
+  to silence this one: get:response:404:afd032b
+────────────────────────────────────────────────────────────
+[ERROR] unhandledProviderCase
+  Consumer's default branch reads fields on status 200 that the provider never sends
+  provider: backend/src/server.ts::get (backend/src/server.ts:14)
+    also from: openapi:openapi.yaml::GET /users/{id}
+  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
+  boundary: express (http) GET /users/:id
+  to silence this one: get:response:200:ddaf2ab
+────────────────────────────────────────────────────────────
+[WARNING] consumerContractViolation
+  Contract declares response 404 but consumer does not handle it
+  provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
+  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
+  boundary: openapi (http) GET /users/{id}
+────────────────────────────────────────────────────────────
+[WARNING] consumerContractViolation
+  Consumer reads fields on status 200 that the declared contract does not promise, so it relies on something the provider never agreed to keep
+  provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
+  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
+  boundary: openapi (http) GET /users/{id}
 ```
 
-The two findings come from different parts of the IR:
+Both bugs are there, and each is reported twice: once against the
+handler, once against the document.
 
-1. **`unhandledProviderCase`**, the provider's transitions include a 404; the consumer's code has no branch on `res.status` or `res.ok`. The checker pairs the two summaries on `(GET, /users/:id)` and notices the asymmetry.
-2. **`consumerFieldMismatch`**, the provider's 200 body has shape `{ id, fullName }`; the consumer reads `.name` off the parsed body. Field-level shape comparison handles this in `body/bodyMatch.ts`.
+The `.name` read is the interesting one. suss followed the response
+through two `.then` callbacks to work out which fields the loader
+depends on, then compared that list against the handler's 200 body.
 
-The OpenAPI contract participates too, the `contract.json` summary declares the same 200 and 404 shapes, so the consumer's gaps are gaps against the declared contract, not only against the implementation.
+The run ends with a note that two files claim `GET /users/{id}`. That is
+expected here, since the handler and the document describe the same
+endpoint.
 
-## Step 7. Fix the findings
+## Step 7. Fix the loader
 
-Update `frontend/src/UserCard.tsx` to handle both the 404 and the correct field name:
+`frontend/src/loadUser.ts`:
 
-```tsx
-import { useEffect, useState } from "react";
+```ts
+export async function loadUser(id: string) {
+  const res = await fetch(`/users/${id}`);
 
-export function UserCard({ id }: { id: string }) {
-  const [name, setName] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  if (res.status === 404) {
+    return null;
+  }
 
-  useEffect(() => {
-    fetch(`/users/${id}`).then((res) => {
-      if (res.status === 404) {
-        setError("User not found");
-        return;
-      }
-      return res.json().then((data) => setName(data.fullName));
-    });
-  }, [id]);
-
-  if (error !== null) return <div>{error}</div>;
-  if (name === null) return <div>Loading…</div>;
-  return <div>User: {name}</div>;
+  return res.json().then((data) => data.fullName);
 }
 ```
 
-Re-extract the frontend and re-check:
+Re-read the frontend and compare again:
 
 ```bash
-npx suss extract -p tsconfig.json -f web -o summaries/frontend.json
+npx suss extract -p tsconfig.json -f fetch -o summaries/frontend.json
 npx suss check --dir summaries
 ```
 
-Both findings should be gone. `suss check` exits 0.
+```
+Compared 2 boundaries:
+  GET /users/{id}: get <-> loadUser
+  GET /users/{id}: GET /users/{id} <-> loadUser
+
+No findings. Every compared boundary agreed.
+```
+
+`suss check` exits 0.
 
 ## What this run exercises
 
-- **Cross-stack pairing.** Express on one side, `fetch` from a React component on the other, no shared types. suss read each side's behavior into the same shape and paired them on `(method, path)` automatically.
-- **Field-level body matching.** The consumer's `.name` access compared against the provider's `{ id, fullName }` body went through structural comparison. TypeScript wouldn't catch this, the frontend never imports the backend's types.
-- **Status-handling gaps.** The missing 404 branch is a reachability check against the provider's transitions, not a coverage measurement. The finding fires regardless of whether the 404 path is exercised at runtime.
+**Cross-stack pairing.** Express on one side, `fetch` on the other, no
+shared types. suss read each side into the same shape and paired them on
+`(method, path)`.
+
+**Field-level body matching.** The loader's `.name` read went through
+two `.then` callbacks before it reached a comparison against
+`{ id, fullName }`. TypeScript never sees this, because the frontend
+never imports the backend's types.
+
+**Status handling.** The missing 404 branch is a reachability check
+against the handler's transitions. It fires whether or not any test
+exercises the 404.
+
+**Status checks have to be visible.** suss reads the branch on
+`res.status` at the top of the loader. A status check buried in a
+callback whose value nobody returns leaves no transition for suss to
+read, so keep the branch where the loader returns from.
 
 ## Further reading
 
-- [Get started](/tutorial/get-started), the same workflow with ts-rest, where the contract is in the framework rather than a separate document.
-- [Pair against OpenAPI](/guides/pair-against-openapi), recipe form of this workflow once you know it.
+- [Get started](/tutorial/get-started), the same idea with Hono and no separate document.
+- [Pair against OpenAPI](/guides/pair-against-openapi), the recipe form once you know the workflow.
 - [Findings catalog](/reference/findings), every finding kind with an example.
-- [Three kinds of truth](/contracts), the specification / observation / derivation taxonomy that grounds the checker's finding semantics.
+- [Three kinds of truth](/contracts), the specification / observation / derivation taxonomy behind the finding semantics.

@@ -4,7 +4,7 @@ Every command, every flag. For prose-style usage see the
 [tutorial](/tutorial/get-started) and [how-to guides](/guides/add-to-project).
 
 Placeholder notation: `<...>` marks a required value, `[...]` marks
-optional. Example: `suss extract -p TSCONFIG -f FRAMEWORK [-o OUTPUT]`.
+optional. Example: `suss extract -f FRAMEWORK [-o OUTPUT]`.
 
 ## What each command is for
 
@@ -22,10 +22,39 @@ over it; `check` is a comparator. Anything you can do in `inspect` or
 `check` you can also do by reading the JSON yourself, they're
 conveniences, not parsing layers.
 
-Two more commands sit outside the pipeline: `suss init` works out
-which packs your project needs and offers to set them up, and
-`suss corroborate` (experimental, [below](#suss-corroborate-experimental))
-executes handlers against their own summaries.
+Two more commands sit outside the pipeline. `suss init` works out which
+packs your project needs and offers to set them up. `suss corroborate`
+(experimental, [below](#suss-corroborate-experimental)) executes handlers
+against their own summaries.
+
+## `suss init`
+
+Work out which packs this project needs, then offer to install them.
+
+**What it does.** Reads `package.json`, looks for schemas and deploy
+templates on disk, and maps what it finds to packs. Then it asks whether
+to install them, whether to run the first extract and check, and whether
+to write a `.sussignore` and a CI workflow. Installing defaults to yes;
+writing files defaults to no. Nothing reaches disk unless you accept it.
+
+At a monorepo root it reads the workspace declaration from
+`package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json`, or
+`turbo.json`, and asks which packages to set up.
+
+```
+suss init [DIRECTORY] [--plain]
+```
+
+| Flag | Description |
+|---|---|
+| `DIRECTORY` | Where to look. Default: the current directory. |
+| `--plain` | Print the commands instead of asking. Piped or in CI, it prints either way. |
+
+### Exit codes
+
+`0`, always. Declining every question, cancelling, and a failed install
+all end the same way. A failed install stops there, prints what npm said,
+and leaves the command behind for you to retry.
 
 ## `suss extract`
 
@@ -38,17 +67,24 @@ its branches and terminals into a decision tree, and emits one
 annotations.
 
 ```
-suss extract -p TSCONFIG -f FRAMEWORK [-f FRAMEWORK ...] [-o OUTPUT]
-             [--files FILE ...] [--gaps strict|permissive|silent]
+suss extract [-p TSCONFIG | --dir DIR] -f FRAMEWORK [-f FRAMEWORK ...]
+             [-o OUTPUT] [--files FILE ...]
+             [--gaps strict|permissive|silent]
+             [--explain] [--timing] [--no-cache] [--fail-on-empty]
 ```
 
 | Flag | Required | Description |
 |---|---|---|
-| `-p`, `--project PATH` | yes | Path to `tsconfig.json`. suss uses this to resolve types; make sure the `include` covers the files you want analyzed. |
-| `-f`, `--framework NAME` | yes | Framework pack name. Repeatable. See [built-in packs](#built-in-packs) below. Custom packs resolve via the `@suss/framework-NAME` convention. |
+| `-f`, `--framework NAME` | yes | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. Anything else resolves as `@suss/framework-NAME`. |
+| `-p`, `--project PATH` | no | Path to `tsconfig.json`, for the same type resolution your compiler sees. Leave it off and suss uses the nearest tsconfig or jsconfig above the working directory. |
+| `--dir PATH` | no | Read this directory directly, for a project with no tsconfig. |
 | `-o`, `--output PATH` | no | Write JSON to file. Default: stdout. Parent dirs created automatically. |
 | `--files F1 F2 ...` | no | Scope extraction to specific files. Default: every file in the tsconfig. Paths are resolved relative to cwd. |
 | `--gaps MODE` | no | `strict` (default), record gaps where conditions can't be decomposed. `permissive`, record gaps silently. `silent`, skip gap detection entirely. |
+| `--explain` | no | Print the extraction funnel, file by file and pack by pack, so you can see where summaries came from. A run that produced nothing prints it either way. |
+| `--timing` | no | Print the per-phase wall-clock breakdown to stderr. |
+| `--no-cache` | no | Skip the on-disk extraction cache for this run. Normal runs benefit from it; reach for this when debugging cache invalidation. |
+| `--fail-on-empty` | no | Exit non-zero when the run produces no summaries. Worth turning on in CI, where a silent zero looks the same as a passing check. |
 
 ### Built-in packs
 
@@ -57,17 +93,35 @@ suss extract -p TSCONFIG -f FRAMEWORK [-f FRAMEWORK ...] [-o OUTPUT]
 | Name | Package | What it discovers |
 |---|---|---|
 | `ts-rest` | `@suss/framework-ts-rest` | ts-rest routers + contracts; handlers and clients derive method/path from the contract |
-| `react-router` | `@suss/framework-react-router` | React Router v6+ `loader` / `action` named exports |
 | `express` | `@suss/framework-express` | `app.get(...)` / `router.get(...)` style registration |
 | `fastify` | `@suss/framework-fastify` | `fastify.get(...)` / equivalent Fastify handlers |
-| `react` | `@suss/framework-react` | Function components + locally-authored event handlers + `useEffect` bodies |
+| `hono` | `@suss/framework-hono` | `app.get(...)` Hono handlers, including `c.json(body, status)` |
+| `nextjs` | `@suss/framework-nextjs` | Next.js route handlers and pages; the route comes from where the file sits |
+| `nestjs-rest` | `@suss/framework-nestjs-rest` | NestJS REST controllers (`@Controller` / `@Get`) |
+| `nestjs-graphql` | `@suss/framework-nestjs-graphql` | NestJS GraphQL resolvers (`@Resolver` / `@Query` / `@Mutation`) |
 | `apollo` | `@suss/framework-apollo` | Apollo Server code-first resolvers (`new ApolloServer({ typeDefs, resolvers })`) |
+| `aws-lambda` | `@suss/framework-aws-lambda` | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes |
+| `react` | `@suss/framework-react` | Function components + locally-authored event handlers + `useEffect` bodies |
+| `react-router` | `@suss/framework-react-router` | React Router v6+ `loader` / `action` named exports |
 | `fetch` | `@suss/client-web` | Global `fetch(...)` call sites |
 | `axios` | `@suss/client-axios` | axios call sites + `axios.create` factories |
 | `apollo-client` | `@suss/client-apollo` | `@apollo/client` hooks + imperative `client.query` / `mutate` |
+| `node` | `@suss/runtime-node` | `setTimeout` and friends, the `process` surface including `process.env.X`, module-loading globals |
 
-Custom packs: if you install `@suss/framework-mypack`, `-f mypack`
-resolves it automatically.
+Four more packs ship and resolve by the same `@suss/framework-NAME`
+convention rather than being listed above. They discover no units of
+their own; they attach typed effects to calls inside whatever units
+another pack found:
+
+| Name | Package | What it recognizes |
+|---|---|---|
+| `prisma` | `@suss/framework-prisma` | Prisma client calls, as storage-access interactions |
+| `drizzle` | `@suss/framework-drizzle` | Drizzle query-builder and relational-query calls, with SQL table names |
+| `aws-sqs` | `@suss/framework-aws-sqs` | AWS SDK v3 SQS producer calls, as message-send interactions |
+| `aws-eventbridge` | `@suss/framework-aws-eventbridge` | EventBridge `PutEvents` calls, as message-bus interactions |
+
+Your own packs work the same way. Install `@suss/framework-mypack` and
+`-f mypack` resolves it.
 
 ### Exit codes
 
@@ -122,8 +176,15 @@ else including no extension → YAML).
 | `storybook` | `@suss/contract-storybook` | CSF3 `.stories.ts` / `.stories.tsx` file or directory of stories |
 | `appsync` | `@suss/contract-appsync` | CFN template with `AWS::AppSync::*` resources |
 | `prisma` | `@suss/contract-prisma` | `schema.prisma` file (Postgres / MySQL / SQLite datasources) |
-| `graphql` | `@suss/contract-graphql` | Plain GraphQL SDL file (Query / Mutation / Subscription fields) |
-| `intent` | `@suss/contract-intent` | Team-authored `*.intent.yaml` / `*.intent.json` files declaring purpose, audience, and per-status transitions for a REST boundary. Accepts a file or a directory. |
+| `graphql` | `@suss/contract-graphql` | Plain GraphQL SDL file. Each Query / Mutation / Subscription field becomes a resolver-kind summary. |
+| `graphql-documents` | `@suss/contract-graphql` | Committed `.graphql` / `.gql` operation documents, a single file or a directory walked recursively. Each query / mutation / subscription becomes a client-kind summary, so a repo that keeps its operations in files pairs against its resolvers without any call site being traced. Fragment spreads are inlined across the whole read set. |
+
+Team-authored intent specs are not a `--from` source. They are their own
+artifact stream, read straight by `suss check`:
+
+```bash
+suss check --dir summaries/ --intent intent/
+```
 
 ### Exit codes
 
@@ -157,15 +218,24 @@ a concrete pair.
 suss check PROVIDER.json CONSUMER.json [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 
 # A whole directory, auto-pairs by boundary key
-suss check --dir DIR [--json] [-o OUTPUT] [--fail-on THRESHOLD]
+suss check --dir DIR [--intent INTENT_DIR] [--json] [-o OUTPUT]
+           [--fail-on THRESHOLD] [--sussignore PATH] [--no-suppressions]
 ```
 
 | Flag | Description |
 |---|---|
 | `--dir PATH` | Directory containing summary JSON files. suss reads every `.json` in the dir and auto-pairs by boundary. Mutually exclusive with positional args. |
+| `--intent PATH` | Directory of team-authored intent docs (`*.intent.yaml`, `*.intent.yml`, `*.intent.json`, and the same three for `*.prd`). Each boundary intent is paired against the summaries in `--dir`, adding intent-coverage findings to the report. Needs `--dir`. |
 | `--json` | Emit findings as JSON rather than human-readable text. Default: human text. |
 | `-o`, `--output PATH` | Write findings to file. Default: stdout. |
 | `--fail-on THRESHOLD` | `error` (default), exit non-zero when any error-severity finding exists. `warning`, also fail on warnings. `info`, fail on any finding. `none`, never fail (still prints). |
+| `--sussignore PATH` | Use this `.sussignore` file instead of searching for one nearby. |
+| `--no-suppressions` | Report every finding, ignoring any `.sussignore`. Useful for auditing what the suppressions are hiding. |
+
+A finding that points at one transition prints a `to silence this one:`
+line under it, naming that transition. A `.sussignore` rule targets a
+finding by `kind` plus either the boundary or the consumer's transition
+id. See [Suppressions](/suppressions).
 
 ### Exit codes
 

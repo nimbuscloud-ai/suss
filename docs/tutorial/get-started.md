@@ -127,9 +127,10 @@ Compared 1 boundary:
 ────────────────────────────────────────────────────────────
 [ERROR] unhandledProviderCase
   Provider produces status 404 but no consumer branch handles it
-  provider: src/api.ts::get @ get:response:404 (src/api.ts:5)
+  provider: src/api.ts::get (src/api.ts:5)
   consumer: src/client.ts::loadUser (src/client.ts:1)
   boundary: hono (http) GET /users/:id
+  to silence this one: get:response:404:afd032b
 ────────────────────────────────────────────────────────────
 1 finding: 1 error, 0 warning, 0 info
 ```
@@ -138,6 +139,10 @@ The endpoint separates "no such user" from every other failure. The
 caller does not, so a missing user and a database outage both reach the
 screen as `{ state: "error" }`. Both files typecheck, so nothing else
 was going to tell you.
+
+The last line names the transition the finding points at. It is there
+for when you decide to live with a finding, since a `.sussignore` rule
+targets one. See [Suppress a finding](/guides/suppress-findings).
 
 Give the caller its own branch:
 
@@ -193,8 +198,10 @@ npx suss check --dir summaries/
 ────────────────────────────────────────────────────────────
 [ERROR] unhandledProviderCase
   Provider produces status 410 but no consumer branch handles it
+  provider: src/api.ts::get (src/api.ts:5)
   consumer: src/client.ts::loadUser (src/client.ts:1)
   boundary: hono (http) GET /users/:id
+  to silence this one: get:response:410:3b915da
 ────────────────────────────────────────────────────────────
 1 finding: 1 error, 0 warning, 0 info
 ```

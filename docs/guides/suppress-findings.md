@@ -2,8 +2,13 @@
 
 For findings you've reviewed and accepted, a legacy endpoint,
 a planned migration, a known issue with a documented owner.
-Suppressions live in `.sussignore` at the repo root and travel
-with the code.
+Suppressions live in a `.sussignore` file that travels with the
+code.
+
+Put it next to the summaries. `suss check --dir summaries/` looks
+inside `summaries/`; `suss check provider.json consumer.json`
+looks in the working directory. `--sussignore <path>` overrides
+both.
 
 For the conceptual model and full rule schema see
 [Suppressions](/suppressions).
@@ -27,15 +32,17 @@ You've seen a warning and decided it's accepted. Copy the finding's
 kind + boundary into `.sussignore`:
 
 ```yaml
-# .sussignore
+# summaries/.sussignore.yml
+version: 1
 rules:
   - kind: unhandledProviderCase
     boundary: GET /legacy/health
     reason: load balancer only; consumer doesn't need status handling
 ```
 
-`.sussignore` is YAML or JSON (any extension). Put it at the repo
-root. `suss check` picks it up automatically.
+The filename is `.sussignore.yml`, `.sussignore.yaml`, or
+`.sussignore.json`, checked in that order. `suss check` picks up the
+first one it finds.
 
 ## Pattern 2: downgrade instead of silence
 
@@ -43,6 +50,7 @@ Often better than hiding: let the finding keep showing, but not
 fail the build.
 
 ```yaml
+version: 1
 rules:
   - kind: deadConsumerBranch
     boundary: POST /users
@@ -62,6 +70,7 @@ For an entire *kind* of finding you don't want to fail on, e.g.
 `lowConfidence` findings across the whole codebase:
 
 ```yaml
+version: 1
 rules:
   - kind: lowConfidence
     scope: broad
@@ -79,6 +88,7 @@ Useful when the same boundary has multiple consumer branches and
 only one needs suppression:
 
 ```yaml
+version: 1
 rules:
   - kind: deadConsumerBranch
     consumer:
@@ -111,19 +121,24 @@ underlying issue instead.
 npx suss check --dir summaries/
 ```
 
-Suppressed findings show an annotated severity:
+A `mark` suppression keeps the finding in the report and tags the
+severity. The reason sits under the description:
 
 ```
-[ERROR, suppressed] deadConsumerBranch
-  Consumer expects status 503 but provider never produces it
-  ... (rest of finding) ...
-  suppression: ct-503 branch kept for one more release
+[ERROR, suppressed] unhandledProviderCase
+  Provider produces status 410 but no consumer branch handles it
+  suppressed (mark): the caller retries on anything unexpected
+  provider: src/api.ts::get (src/api.ts:5)
+  consumer: src/client.ts::loadUser (src/client.ts:1)
+  boundary: hono (http) GET /users/:id
 ```
 
-Findings at the downgraded severity show both forms:
+A `downgrade` names both severities:
 
 ```
-[WARNING, downgraded from ERROR] deadConsumerBranch
+[WARNING, downgraded from ERROR] unhandledProviderCase
+  Provider produces status 410 but no consumer branch handles it
+  suppressed (downgrade): 410 is defensive for now
 ```
 
 The `countsForThreshold` test in `@suss/checker` is the
