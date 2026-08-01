@@ -1,23 +1,21 @@
 {
-  "name": "@suss/adapter-typescript",
+  "name": "@suss/resolution",
   "version": "0.0.2",
   "type": "module",
-  "description": "TypeScript adapter for suss \u2014 walks source files with ts-morph and emits raw extractions for the suss pipeline.",
+  "description": "Language-neutral rules for following a value to the function it comes down to.",
   "keywords": [
     "suss",
-    "behavioral-summary",
-    "static-analysis",
-    "typescript",
-    "ts-morph",
-    "ast"
+    "datalog",
+    "resolution",
+    "static-analysis"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/adapter/typescript#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/resolution#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/adapter/typescript"
+    "directory": "packages/resolution"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -45,23 +43,16 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@suss/behavioral-ir": "0.0.2",
-    "@suss/datalog": "0.0.2",
-    "@suss/extractor": "0.0.2",
-    "@suss/resolution": "0.0.2",
-    "graphql": "^16.8.0",
-    "picomatch": "^4.0.4",
-    "ts-morph": "^23.0.0"
-  },
   "devDependencies": {
-    "@types/node": "*",
-    "@types/picomatch": "^4.0.3",
+    "fast-check": "^3.23.1",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "@suss/datalog": "0.0.2"
   }
 }

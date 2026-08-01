@@ -14,6 +14,7 @@
 // project size.
 
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
+import { RESOLUTION_RULES as SHARED_RULES } from "@suss/resolution";
 
 import { isFunctionRoot } from "../discovery/shared.js";
 import {
@@ -26,149 +27,20 @@ import {
 import type { TransparentWrapper } from "@suss/extractor";
 import type { Node, SourceFile } from "ts-morph";
 
-const RESOLUTION_RULES = [
-  // A function resolves to itself; every chain ends here.
-  rule("resolves", [v("f"), v("f")], [lit("func", v("f"))]),
-
-  // Aliasing: const x = y, or an identifier referencing a declaration.
-  rule(
-    "resolves",
-    [v("x"), v("z")],
-    [lit("binds", v("x"), v("y")), lit("resolves", v("y"), v("z"))],
-  ),
-
-  // An import resolves to what the module exports under that name.
-  rule(
-    "resolves",
-    [v("x"), v("z")],
-    [
-      lit("imports", v("x"), v("m"), v("n")),
-      lit("moduleExport", v("m"), v("n"), v("value")),
-      lit("resolves", v("value"), v("z")),
-    ],
-  ),
-
-  // What a module exports: directly, or through re-export chains.
-  rule(
-    "moduleExport",
-    [v("m"), v("n"), v("value")],
-    [lit("exportsAs", v("m"), v("n"), v("value"))],
-  ),
-  rule(
-    "moduleExport",
-    [v("m"), v("n"), v("value")],
-    [
-      lit("reExports", v("m"), v("n"), v("m2"), v("n2")),
-      lit("moduleExport", v("m2"), v("n2"), v("value")),
-    ],
-  ),
-  rule(
-    "moduleExport",
-    [v("m"), v("n"), v("value")],
-    [
-      lit("reExportsAll", v("m"), v("m2")),
-      lit("moduleExport", v("m2"), v("n"), v("value")),
-    ],
-  ),
-
+const JS_RULES = [
   // f.bind(...) resolves to whatever f resolves to.
   rule(
     "resolves",
     [v("r"), v("h")],
     [lit("bindCall", v("r"), v("t")), lit("resolves", v("t"), v("h"))],
   ),
-
-  // Wrapper transparency, derived: calling a factory that returns a
-  // function which calls its parameter k resolves to argument k.
-  rule(
-    "returnsFunc",
-    [v("f"), v("g")],
-    [
-      lit("returnsValue", v("f"), v("value")),
-      lit("resolves", v("value"), v("g")),
-    ],
-  ),
-  // A call made by a nested closure counts as made by the function
-  // that declares it; the closure runs as part of that function.
-  rule("bodyCallsDeep", [v("f"), v("c")], [lit("bodyCalls", v("f"), v("c"))]),
-  rule(
-    "bodyCallsDeep",
-    [v("f"), v("c")],
-    [lit("containsFn", v("f"), v("g")), lit("bodyCallsDeep", v("g"), v("c"))],
-  ),
-  rule(
-    "unwraps",
-    [v("f"), v("k")],
-    [
-      lit("returnsFunc", v("f"), v("g")),
-      lit("bodyCallsDeep", v("g"), v("c")),
-      lit("binds", v("c"), v("p")),
-      lit("paramOf", v("f"), v("k"), v("p")),
-    ],
-  ),
-
-  // Argument flow: which parameter a value traces back to. Directly
-  // (an identifier bound to the parameter), or through a call to
-  // another unwrapping factory. This is what lets
-  // `createProtected(h) { return service.withAuth(h); }` unwrap:
-  // the returned call passes h through withAuth, which unwraps.
-  rule(
-    "flowsToParam",
-    [v("x"), v("p")],
-    [
-      lit("binds", v("x"), v("p")),
-      lit("paramOf", v("anyF"), v("anyK"), v("p")),
-    ],
-  ),
-  rule(
-    "flowsToParam",
-    [v("r"), v("p")],
-    [
-      lit("call", v("r"), v("c")),
-      lit("resolves", v("c"), v("f")),
-      lit("unwraps", v("f"), v("k")),
-      lit("callArg", v("r"), v("k"), v("a")),
-      lit("flowsToParam", v("a"), v("p")),
-    ],
-  ),
-  rule(
-    "unwraps",
-    [v("f"), v("k")],
-    [
-      lit("returnsValue", v("f"), v("value")),
-      lit("flowsToParam", v("value"), v("p")),
-      lit("paramOf", v("f"), v("k"), v("p")),
-    ],
-  ),
-  rule(
-    "resolves",
-    [v("r"), v("h")],
-    [
-      lit("call", v("r"), v("c")),
-      lit("resolves", v("c"), v("f")),
-      lit("unwraps", v("f"), v("k")),
-      lit("callArg", v("r"), v("k"), v("a")),
-      lit("resolves", v("a"), v("h")),
-    ],
-  ),
-
-  // Wrapper transparency, declared: a pack says this callee wraps
-  // argument k, whatever its implementation looks like. The callee has
-  // to have been imported from the library the pack named, so a local
-  // object spelled the same way is not mistaken for it.
-  rule(
-    "resolves",
-    [v("r"), v("h")],
-    [
-      lit("calleeName", v("r"), v("n")),
-      lit("unwrapsByName", v("n"), v("k")),
-      lit("wrapperModule", v("n"), v("m")),
-      lit("calleeOrigin", v("r"), v("m")),
-      lit("callArg", v("r"), v("k"), v("a")),
-      lit("resolves", v("a"), v("h")),
-    ],
-  ),
 ];
+
+/**
+ * What this adapter evaluates: the shared language rules, plus the ones
+ * that are about JavaScript in particular.
+ */
+const RESOLUTION_RULES = [...SHARED_RULES, ...JS_RULES];
 
 /**
  * How many module hops a query follows when pulling in facts. Deep
