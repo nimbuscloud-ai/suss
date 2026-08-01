@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/contract/storybook/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 89,
       "covered": 76,

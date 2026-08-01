@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/ir/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 21,
       "covered": 21,
@@ -57,7 +57,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/ir/src/interpret.ts": {
+  "src/interpret.ts": {
     "lines": {
       "total": 94,
       "covered": 94,
@@ -83,7 +83,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/ir/src/schemas.ts": {
+  "src/schemas.ts": {
     "lines": {
       "total": 26,
       "covered": 26,
