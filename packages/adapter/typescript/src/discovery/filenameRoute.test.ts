@@ -64,9 +64,35 @@ describe("routePathFromFile — Next.js app directory", () => {
     ).toBe("/docs/{slug}");
   });
 
-  it("resolves against the innermost root when a path repeats it", () => {
+  it("keeps a route segment that happens to be named like the root", () => {
+    // Taking the last match here would answer "/", which then pairs
+    // with whatever calls the site root.
+    expect(routePathFromFile("/src/app/api/app/route.ts", nextApp)).toBe(
+      "/api/app",
+    );
+  });
+
+  it("keeps a directory named like the filename it looks for", () => {
+    expect(routePathFromFile("/src/app/api/page/route.ts", nextApp)).toBe(
+      "/api/page",
+    );
+  });
+
+  it("drops a slot, which renders alongside a route without being one", () => {
+    expect(routePathFromFile("/src/app/@modal/photo/route.ts", nextApp)).toBe(
+      "/photo",
+    );
+  });
+
+  it("drops a directory Next keeps out of routing", () => {
+    expect(routePathFromFile("/src/app/_lib/thing/route.ts", nextApp)).toBe(
+      "/thing",
+    );
+  });
+
+  it("resolves the outermost root, which a monorepo app directory is", () => {
     expect(
-      routePathFromFile("/repo/app/apps/web/app/api/ping/route.ts", nextApp),
+      routePathFromFile("/repo/apps/web/app/api/ping/route.ts", nextApp),
     ).toBe("/api/ping");
   });
 

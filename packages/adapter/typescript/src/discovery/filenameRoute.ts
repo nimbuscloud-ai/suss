@@ -23,14 +23,15 @@ export function routePathFromFile(
   }
 
   const parts: string[] = [];
-  for (const segment of belowRoot) {
+  belowRoot.forEach((segment, index) => {
+    const isBasename = index === belowRoot.length - 1;
     for (const part of splitSegment(segment, convention)) {
-      const rewritten = rewriteSegment(part, convention);
+      const rewritten = rewriteSegment(part, convention, isBasename);
       if (rewritten !== null) {
         parts.push(rewritten);
       }
     }
-  }
+  });
   return `/${parts.join("/")}`;
 }
 
@@ -42,10 +43,11 @@ function segmentsBelowRoot(filePath: string, root: string): string[] | null {
   const all = filePath.split("/").filter((s) => s.length > 0);
   const rootParts = root.split("/").filter((s) => s.length > 0);
 
-  // Search from the end, so a project that keeps its app directory
-  // inside another one named the same way still resolves against the
-  // innermost match.
-  for (let start = all.length - rootParts.length; start >= 0; start--) {
+  // Search from the start. A route segment named like the root is far
+  // likelier than a directory above the root named like it, and taking
+  // the last match turns `app/api/app/route.ts` into `/`, which then
+  // pairs with whatever calls `/`.
+  for (let start = 0; start <= all.length - rootParts.length; start++) {
     const matches = rootParts.every((part, i) => all[start + i] === part);
     if (!matches) {
       continue;
@@ -74,21 +76,36 @@ function splitSegment(segment: string, convention: FilenameRoute): string[] {
 function rewriteSegment(
   segment: string,
   convention: FilenameRoute,
+  isBasename: boolean,
 ): string | null {
   if (segment.length === 0) {
     return null;
   }
-  if ((convention.dropBasenames ?? []).includes(segment)) {
+  // Only the filename names the file's role. A directory called
+  // `route` is a path segment like any other.
+  if (isBasename && (convention.dropBasenames ?? []).includes(segment)) {
     return null;
   }
-  if (
-    convention.dropParenthesized === true &&
-    segment.startsWith("(") &&
-    segment.endsWith(")")
-  ) {
+  if (convention.dropParenthesized === true && isGrouping(segment)) {
     return null;
   }
   return parameterName(segment, convention) ?? segment;
+}
+
+/**
+ * A directory that organises files without appearing in the URL. Next
+ * writes three of these: `(shop)` groups routes, `@modal` names a slot
+ * rendered alongside them, and a leading underscore keeps a directory
+ * out of routing altogether.
+ */
+function isGrouping(segment: string): boolean {
+  if (segment.startsWith("@")) {
+    return true;
+  }
+  if (segment.startsWith("_")) {
+    return true;
+  }
+  return segment.startsWith("(") && segment.endsWith(")");
 }
 
 /**
