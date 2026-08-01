@@ -2,7 +2,7 @@
 
 import path from "node:path";
 
-import { Project } from "ts-morph";
+import { type CallExpression, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { assembleSummary } from "@suss/extractor";
@@ -1266,6 +1266,87 @@ describe("createTypeScriptAdapter — reachable closure", () => {
       semantics: { name: "function-call" },
       recognition: "reachable",
     });
+  });
+
+  it("runs pack recognizers over a reached helper's body", async () => {
+    // A service keeps most of its work in functions the closure reaches
+    // rather than in the handler itself, so a recognizer that fires only
+    // on discovered units misses nearly every call a pack cares about.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function enqueue(id: string) {
+        sendIt(id);
+        return { id };
+      }
+      export function sendIt(id: string) {
+        return id;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { enqueue } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        go: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: enqueue(params.id) };
+        },
+      });
+    `,
+    );
+
+    const recognizerPack: PatternPack = {
+      name: "sender",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [],
+      terminals: [],
+      inputMapping: { type: "positionalParams", params: [] },
+      invocationRecognizers: [
+        (call) => {
+          const node = call as CallExpression;
+          if (node.getExpression().getText() !== "sendIt") {
+            return null;
+          }
+          return [
+            {
+              type: "interaction",
+              binding: {
+                transport: "sqs",
+                semantics: {
+                  name: "message-bus",
+                  messageBus: "sqs",
+                  channel: "thing.done",
+                },
+                recognition: "sender",
+              },
+              callee: "sendIt",
+              interaction: { class: "message-send" },
+            },
+          ];
+        },
+      ],
+    };
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack, recognizerPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const helper = summaries.find((s) => s.identity.name === "enqueue");
+    expect(helper).toBeDefined();
+    const sends = (helper?.transitions ?? []).flatMap((t) =>
+      t.effects.filter(
+        (e) =>
+          e.type === "interaction" && e.interaction.class === "message-send",
+      ),
+    );
+    expect(sends).toHaveLength(1);
   });
 
   it("transitively reaches helpers called by other helpers", async () => {
