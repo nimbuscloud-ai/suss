@@ -153,7 +153,16 @@ function statusFromProperty(
   name: string,
 ): RawTerminal["statusCode"] {
   const prop = obj.getProperty(name);
-  if (prop === undefined || !Node.isPropertyAssignment(prop)) {
+  if (prop === undefined) {
+    return null;
+  }
+  // `{ status }` names a variable holding the status. The value is not
+  // readable here, and reporting the pack default instead would put a
+  // number on the summary that the handler never sends.
+  if (Node.isShorthandPropertyAssignment(prop)) {
+    return { type: "dynamic", sourceText: prop.getName() };
+  }
+  if (!Node.isPropertyAssignment(prop)) {
     return null;
   }
   const value = prop.getInitializer();

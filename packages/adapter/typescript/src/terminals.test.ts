@@ -1314,6 +1314,26 @@ describe("functionCall on an imported object", () => {
     ).toEqual([]);
   });
 
+  it("leaves a constructed response alone when it is thrown", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `function GET() {
+         throw new Response("nope", { status: 404 });
+       }`,
+    );
+    const func = file.getFunctions()[0] as FunctionRoot;
+    const terminals = findTerminals(func, [
+      {
+        kind: "response",
+        match: { type: "functionCall", functionName: "Response" },
+        extraction: {},
+      },
+      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+    ]);
+    expect(terminals.map((t) => t.terminal.kind)).toEqual(["throw"]);
+  });
+
   it("matches a response the handler constructs", () => {
     const project = createProject();
     const file = project.createSourceFile(

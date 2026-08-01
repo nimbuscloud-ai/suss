@@ -537,6 +537,12 @@ export function tryMatchFunctionCall(
   if (!Node.isCallExpression(node) && !Node.isNewExpression(node)) {
     return null;
   }
+  // `throw new Response(...)` is a throw, and a pack naming `Response`
+  // is describing what a handler answers with. Without this the same
+  // statement produces a throw and a response.
+  if (Node.isNewExpression(node) && returnPositionOf(node) === null) {
+    return null;
+  }
 
   const callee = node.getExpression();
   // A pack names either a function, `json`, or a method on something it
