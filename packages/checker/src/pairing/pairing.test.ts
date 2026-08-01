@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   functionCallBinding,
   graphqlResolverBinding,
+  messageBusBinding,
   restBinding,
 } from "@suss/behavioral-ir";
 
@@ -159,6 +160,162 @@ function consumerWithPath(
     },
   };
 }
+
+/** A code handler bound to a channel: the side that answers. */
+function handlerOnChannel(
+  name: string,
+  channel: string,
+  messageBus: "sqs" | "eventbridge" = "sqs",
+): BehavioralSummary {
+  const base = provider(name, [
+    transition("t-200", { output: response(200), isDefault: true }),
+  ]);
+  return {
+    ...base,
+    identity: {
+      ...base.identity,
+      boundaryBinding: messageBusBinding({
+        recognition: "aws-lambda",
+        messageBus,
+        channel,
+      }),
+    },
+  };
+}
+
+/** A template's declared subscriber to a channel. */
+function subscriberOnChannel(
+  name: string,
+  channel: string,
+  messageBus: "sqs" | "eventbridge" = "sqs",
+): BehavioralSummary {
+  const base = consumer(name, [
+    transition("ct-200", { output: { type: "return", value: null } }),
+  ]);
+  return {
+    ...base,
+    kind: "consumer",
+    identity: {
+      ...base.identity,
+      boundaryBinding: messageBusBinding({
+        recognition: "cloudformation",
+        messageBus,
+        channel,
+      }),
+    },
+  };
+}
+
+describe("pairSummaries over a message bus", () => {
+  it("pairs a subscriber with the handler that answers it", () => {
+    const handler = handlerOnChannel("OrderPlacedFunction.handler", "jobs");
+    const subscriber = subscriberOnChannel(
+      "OrderPlacedFunction.QueueEvent",
+      "jobs",
+    );
+
+    const result = pairSummaries([handler, subscriber]);
+
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0].provider).toBe(handler);
+    expect(result.pairs[0].consumer).toBe(subscriber);
+    expect(result.pairs[0].key).toBe("bus:sqs jobs");
+    expect(result.unmatched.providers).toHaveLength(0);
+    expect(result.unmatched.consumers).toHaveLength(0);
+  });
+
+  it("pairs when only one side names its bus", () => {
+    const handler = handlerOnChannel(
+      "OrderPlacedFunction.handler",
+      "order.placed",
+    );
+    const subscriber = subscriberOnChannel(
+      "OrderPlacedFunction.QueueEvent",
+      "default#order.placed",
+    );
+
+    const result = pairSummaries([handler, subscriber]);
+
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0].key).toBe("bus:sqs order.placed");
+  });
+
+  it("pairs when both sides name the same bus", () => {
+    const handler = handlerOnChannel(
+      "OrderPlacedFunction.handler",
+      "default#order.placed",
+    );
+    const subscriber = subscriberOnChannel(
+      "OrderPlacedFunction.QueueEvent",
+      "default#order.placed",
+    );
+
+    expect(pairSummaries([handler, subscriber]).pairs).toHaveLength(1);
+  });
+
+  it("does not pair a subject carried on two different buses", () => {
+    const handler = handlerOnChannel(
+      "OrderPlacedFunction.handler",
+      "staging#order.placed",
+    );
+    const subscriber = subscriberOnChannel(
+      "OrderPlacedFunction.QueueEvent",
+      "default#order.placed",
+    );
+
+    const result = pairSummaries([handler, subscriber]);
+
+    // Same key bucket, since the key carries the subject alone, so the
+    // bus comparison is what has to keep them apart.
+    expect(result.pairs).toHaveLength(0);
+    expect(result.unmatched.providers).toEqual([handler]);
+    expect(result.unmatched.consumers).toEqual([subscriber]);
+  });
+
+  it("does not pair a subject carried on two different bus technologies", () => {
+    const handler = handlerOnChannel(
+      "OrderPlacedFunction.handler",
+      "order.placed",
+      "eventbridge",
+    );
+    const subscriber = subscriberOnChannel(
+      "OrderPlacedFunction.QueueEvent",
+      "order.placed",
+      "sqs",
+    );
+
+    expect(pairSummaries([handler, subscriber]).pairs).toHaveLength(0);
+  });
+
+  it("leaves a summary unmatched when it shares a bucket but pairs with nothing in it", () => {
+    const paired = handlerOnChannel(
+      "OrderPlacedFunction.handler",
+      "default#order.placed",
+    );
+    const wrongBus = handlerOnChannel(
+      "StagingOrderPlacedFunction.handler",
+      "staging#order.placed",
+    );
+    const subscriber = subscriberOnChannel(
+      "OrderPlacedFunction.QueueEvent",
+      "default#order.placed",
+    );
+
+    const result = pairSummaries([paired, wrongBus, subscriber]);
+
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0].provider).toBe(paired);
+    expect(result.unmatched.providers).toEqual([wrongBus]);
+  });
+
+  it("leaves a channel with no subject out of pairing entirely", () => {
+    const handler = handlerOnChannel("OrderPlacedFunction.handler", "default#");
+
+    const result = pairSummaries([handler]);
+
+    expect(result.unmatched.noBinding).toEqual([handler]);
+  });
+});
 
 describe("pairSummaries", () => {
   it("pairs provider and consumer on same method+path", () => {

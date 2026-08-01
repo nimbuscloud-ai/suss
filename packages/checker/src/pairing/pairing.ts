@@ -1,5 +1,5 @@
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
-import { boundaryKey } from "@suss/ir-core";
+import { boundaryKey, channelsPair } from "@suss/ir-core";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -26,6 +26,31 @@ export interface PairingResult {
     consumers: BehavioralSummary[];
     noBinding: BehavioralSummary[];
   };
+}
+
+/**
+ * Whether two summaries that share a key really name the same
+ * boundary.
+ *
+ * A key is usually the whole answer, but a message-bus key carries
+ * only the subject so that `default#order.placed` and `order.placed`
+ * land in one bucket. The bus is compared here instead, where a side
+ * that names its bus can still pair with a side that cannot know one,
+ * and two named buses have to agree.
+ */
+function bindingsPair(
+  provider: BehavioralSummary,
+  consumer: BehavioralSummary,
+): boolean {
+  const providerSemantics = provider.identity.boundaryBinding?.semantics;
+  const consumerSemantics = consumer.identity.boundaryBinding?.semantics;
+  if (
+    providerSemantics?.name === "message-bus" &&
+    consumerSemantics?.name === "message-bus"
+  ) {
+    return channelsPair(providerSemantics.channel, consumerSemantics.channel);
+  }
+  return true;
 }
 
 /**
@@ -74,8 +99,11 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
   }
 
   const pairs: SummaryPair[] = [];
-  const matchedProviderKeys = new Set<string>();
-  const matchedConsumerKeys = new Set<string>();
+  // Tracked per summary rather than per key, because a key bucket can
+  // now hold a summary that pairs with nothing in it: two message-bus
+  // sides share a subject but name different buses.
+  const matchedProviders = new Set<BehavioralSummary>();
+  const matchedConsumers = new Set<BehavioralSummary>();
 
   for (const [key, providers] of providersByKey) {
     const consumers = consumersByKey.get(key);
@@ -83,27 +111,33 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       continue;
     }
 
-    matchedProviderKeys.add(key);
-    matchedConsumerKeys.add(key);
-
     for (const provider of providers) {
       for (const consumer of consumers) {
+        if (!bindingsPair(provider, consumer)) {
+          continue;
+        }
         pairs.push({ provider, consumer, key });
+        matchedProviders.add(provider);
+        matchedConsumers.add(consumer);
       }
     }
   }
 
   const unmatchedProviders: BehavioralSummary[] = [];
-  for (const [key, providers] of providersByKey) {
-    if (!matchedProviderKeys.has(key)) {
-      unmatchedProviders.push(...providers);
+  for (const providers of providersByKey.values()) {
+    for (const provider of providers) {
+      if (!matchedProviders.has(provider)) {
+        unmatchedProviders.push(provider);
+      }
     }
   }
 
   const unmatchedConsumers: BehavioralSummary[] = [];
-  for (const [key, consumers] of consumersByKey) {
-    if (!matchedConsumerKeys.has(key)) {
-      unmatchedConsumers.push(...consumers);
+  for (const consumers of consumersByKey.values()) {
+    for (const consumer of consumers) {
+      if (!matchedConsumers.has(consumer)) {
+        unmatchedConsumers.push(consumer);
+      }
     }
   }
 

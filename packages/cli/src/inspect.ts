@@ -900,6 +900,10 @@ function summaryHeaderName(
     binding !== null && binding.semantics.name === "function-call"
       ? binding.semantics
       : null;
+  const bus =
+    binding !== null && binding.semantics.name === "message-bus"
+      ? binding.semantics
+      : null;
   if (rest !== null && (rest.method !== "" || rest.path !== "")) {
     return `${rest.method} ${rest.path}`.trim();
   }
@@ -914,9 +918,30 @@ function summaryHeaderName(
       ? `${summary.identity.name} → ${target}`
       : target;
   }
-  // Inside a file-group, the file path is already visible in the
-  // group header — bare name is unambiguous. Only qualify when the
-  // summary is standalone.
+  // A route shows what it serves in the header. A queue subscriber
+  // should too: its name says which deployable unit receives, and its
+  // channel says what. A queue declared by a template is named after
+  // its own channel, where showing both would stutter.
+  if (bus !== null && bus.channel !== "") {
+    const channel = `${bus.messageBus} ${bus.channel}`;
+    if (summary.identity.name === bus.channel) {
+      return channel;
+    }
+    return `${bareName(summary, ctx, layout)} → ${channel}`;
+  }
+
+  return bareName(summary, ctx, layout);
+}
+
+/**
+ * The summary's own name, qualified by file only when the file is not
+ * already visible in a group header above it.
+ */
+function bareName(
+  summary: BehavioralSummary,
+  ctx: RenderCtx,
+  layout: SummaryLayout,
+): string {
   if (layout.inFileGroup) {
     return summary.identity.name;
   }

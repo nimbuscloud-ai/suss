@@ -20,6 +20,7 @@ import type {
   BoundaryBinding,
   Finding,
 } from "@suss/behavioral-ir";
+import type { SummaryPair } from "./pairing/pairing.js";
 
 /**
  * Human-readable pairing key for unmatched-summary reporting. Mirrors
@@ -41,7 +42,31 @@ function describeBinding(binding: BoundaryBinding): string {
     const label = sem.operationName ?? "<anonymous>";
     return `${sem.operationType} ${label}`;
   }
+  if (sem.name === "message-bus") {
+    // The whole channel, bus included, unlike the pairing key, which
+    // carries the subject alone. Someone reading a list of channels
+    // that found no counterpart wants to see which bus each one named.
+    return `bus:${sem.messageBus} ${sem.channel}`;
+  }
   return `${sem.name}:${binding.recognition}`;
+}
+
+/**
+ * Whether a pair goes through `checkPair`.
+ *
+ * Every check behind `checkPair` reads status codes and response
+ * shapes off an HTTP exchange, which a queue and the handler draining
+ * it never have. Message-bus agreement is checked by `checkMessageBus`
+ * over the same summaries, so pairing here is reporting: it says which
+ * handler answers a declared subscriber and leaves the findings to the
+ * pass that knows how to judge them.
+ */
+function pairIsCheckable(pair: SummaryPair): boolean {
+  return !isMessageBus(pair.provider);
+}
+
+function isMessageBus(summary: BehavioralSummary): boolean {
+  return summary.identity.boundaryBinding?.semantics.name === "message-bus";
 }
 
 export { checkBodyCompatibility } from "./body/bodyCompatibility.js";
@@ -130,21 +155,31 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
 
   // REST pairs run through the full check-pair machinery
   // (provider coverage, consumer satisfaction, body / contract
-  // checks). GraphQL pairs surface in `pairInfo` for discoverability
-  // but skip checkPair — the REST checks all key on status-code +
-  // response shape, which doesn't apply to resolvers. Per-semantics
-  // checks for GraphQL land alongside `pairGraphqlOperations` when
-  // a concrete case motivates them.
-  for (const { provider, consumer, key } of restPairs) {
-    findings.push(...checkPair(provider, consumer));
+  // checks). GraphQL and message-bus pairs surface in `pairInfo` for
+  // discoverability but skip checkPair, because the REST checks all key
+  // on status-code + response shape, which doesn't apply to resolvers or
+  // to queues. Per-semantics checks for GraphQL land alongside
+  // `pairGraphqlOperations` when a concrete case motivates them;
+  // message-bus already has `checkMessageBus`.
+  for (const pair of restPairs) {
+    if (pairIsCheckable(pair)) {
+      findings.push(...checkPair(pair.provider, pair.consumer));
+    }
     pairInfo.push({
-      key,
-      provider: provider.identity.name,
-      consumer: consumer.identity.name,
+      key: pair.key,
+      provider: pair.provider.identity.name,
+      consumer: pair.consumer.identity.name,
     });
   }
   // Track which summaries got at least one graphql pairing so they
-  // don't double-surface as unmatched below.
+  // don't double-surface as unmatched below. Message-bus summaries are
+  // dropped from the unmatched lists for a stronger reason: a channel
+  // that paired with nothing is already reported by `checkMessageBus`,
+  // as `messageBusUnused` or one of the orphan findings, with a
+  // severity and with knowledge of who sends to it. Listing it again as
+  // "no client to compare against" says the same thing a second time,
+  // in weaker words. Pairing owns the pair list; `checkMessageBus` owns
+  // every judgement about a channel.
   const graphqlMatched = new Set<BehavioralSummary>();
   for (const { provider, consumer, key } of graphql.pairs) {
     graphqlMatched.add(provider);
@@ -155,9 +190,11 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
       consumer: consumer.identity.name,
     });
   }
+  const stillUnmatched = (s: BehavioralSummary): boolean =>
+    !graphqlMatched.has(s) && !isMessageBus(s);
   const unmatched = {
-    providers: restUnmatched.providers.filter((s) => !graphqlMatched.has(s)),
-    consumers: restUnmatched.consumers.filter((s) => !graphqlMatched.has(s)),
+    providers: restUnmatched.providers.filter(stillUnmatched),
+    consumers: restUnmatched.consumers.filter(stillUnmatched),
     noBinding: restUnmatched.noBinding.filter((s) => !graphqlMatched.has(s)),
   };
 
