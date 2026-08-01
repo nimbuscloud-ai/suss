@@ -1,0 +1,10 @@
+query ProductList($first: Int!, $channel: String!, $after: String) {
+  products(first: $first, after: $after, channel: $channel) {
+    edges {
+      node {
+        ...ProductListItem
+      }
+    }
+    totalCount
+  }
+}

@@ -18,21 +18,23 @@ import {
   type DocumentNode,
   type FieldDefinitionNode,
   Kind,
-  type NamedTypeNode,
   type ObjectTypeDefinitionNode,
   type ObjectTypeExtensionNode,
   parse,
-  type TypeNode,
 } from "graphql";
 
 import { graphqlResolverBinding } from "@suss/behavioral-ir";
 
-import type {
-  BehavioralSummary,
-  Input,
-  Transition,
-  TypeShape,
-} from "@suss/behavioral-ir";
+import { typeNodeToShape } from "./typeShape.js";
+
+import type { BehavioralSummary, Input, Transition } from "@suss/behavioral-ir";
+
+export {
+  type GraphqlDocumentsOptions,
+  graphqlDocumentFilesToSummaries,
+  graphqlDocumentsPathToSummaries,
+  graphqlDocumentsToSummaries,
+} from "./documents.js";
 
 const ROOT_TYPES = ["Query", "Mutation", "Subscription"] as const;
 type RootType = (typeof ROOT_TYPES)[number];
@@ -286,36 +288,4 @@ function buildTransitions(
       },
     },
   ];
-}
-
-// ---------------------------------------------------------------------------
-// SDL TypeNode → TypeShape
-// ---------------------------------------------------------------------------
-
-function typeNodeToShape(node: TypeNode): TypeShape {
-  if (node.kind === Kind.NON_NULL_TYPE) {
-    // Non-null is enforced by GraphQL — drop the wrapper since
-    // TypeShape's nullability is implicit (non-union with null/undefined).
-    return typeNodeToShape(node.type);
-  }
-  if (node.kind === Kind.LIST_TYPE) {
-    return { type: "array", items: typeNodeToShape(node.type) };
-  }
-  return scalarOrRef(node);
-}
-
-function scalarOrRef(node: NamedTypeNode): TypeShape {
-  const name = node.name.value;
-  switch (name) {
-    case "String":
-    case "ID":
-      return { type: "text" };
-    case "Int":
-    case "Float":
-      return { type: "number" };
-    case "Boolean":
-      return { type: "boolean" };
-    default:
-      return { type: "ref", name };
-  }
 }
