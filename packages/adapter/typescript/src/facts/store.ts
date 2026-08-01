@@ -13,19 +13,22 @@
 // edges a query follows, so cost tracks the indirection present, not
 // project size.
 
+import { Node } from "ts-morph";
+
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import { RESOLUTION_RULES as SHARED_RULES } from "@suss/resolution";
 
 import { isFunctionRoot } from "../discovery/shared.js";
 import {
   createNodeTable,
+  emitValue,
   extractFileFacts,
   type NodeTable,
   nodeId,
 } from "./extract.js";
 
 import type { TransparentWrapper } from "@suss/extractor";
-import type { Node, SourceFile } from "ts-morph";
+import type { SourceFile } from "ts-morph";
 
 const JS_RULES = [
   // f.bind(...) comes to whatever f comes to.
@@ -53,9 +56,11 @@ export class ResolutionStore {
   private readonly db = new Database();
   private readonly table: NodeTable = createNodeTable();
   private readonly fullyExtracted = new Set<string>();
+  private readonly seededValues = new Set<string>();
   private readonly gateAnswers = new Map<string, Map<string, boolean>>();
 
   private resolvedBySource = new Map<string, string[]>();
+  private comesToBySource = new Map<string, string[]>();
   private stale = true;
 
   constructor(wrappers: TransparentWrapper[] = []) {
@@ -76,6 +81,21 @@ export class ResolutionStore {
    * one file of extraction, not the whole import closure.
    */
   resolveCallable(value: Node): Node | null {
+    return this.resolveByWaves(value, () => this.lookup(value));
+  }
+
+  /**
+   * The object literal `value` ends up being, or null. The route a
+   * registration call names often lives on a shared object built in
+   * another file, and this is how discovery reads it back.
+   */
+  resolveObject(value: Node): Node | null {
+    return this.resolveByWaves(value, () => this.lookupObject(value));
+  }
+
+  private resolveByWaves(value: Node, ask: () => Node | null): Node | null {
+    this.seedValue(value);
+
     // Where the walk has been on this query, which is separate from
     // which files already have facts. A file extracted by an earlier
     // query still has to be walked through, or the frontier collapses
@@ -93,7 +113,7 @@ export class ResolutionStore {
         this.extractFile(sourceFile);
         next.push(...referencedProjectFiles(sourceFile));
       }
-      const found = this.lookup(value);
+      const found = ask();
       if (found !== null) {
         return found;
       }
@@ -103,6 +123,43 @@ export class ResolutionStore {
       frontier = next;
     }
     return null;
+  }
+
+  /**
+   * Facts for the queried value itself. File extraction only reaches
+   * values that hang off exports, and a query can be rooted anywhere:
+   * a registration call passes `routes.provision` as an argument, and
+   * nothing else ever emits facts for that expression.
+   */
+  private seedValue(value: Node): void {
+    if (!Node.isExpression(value)) {
+      return;
+    }
+    const id = nodeId(value);
+    if (this.seededValues.has(id)) {
+      return;
+    }
+    this.seededValues.add(id);
+    this.stale = true;
+    emitValue(this.db, this.table, value);
+  }
+
+  private lookupObject(value: Node): Node | null {
+    this.derive();
+
+    const candidates = new Set<Node>();
+    for (const target of this.comesToBySource.get(nodeId(value)) ?? []) {
+      const node = this.table.byId.get(target);
+      if (node === undefined || isFunctionRoot(node)) {
+        continue;
+      }
+      candidates.add(node);
+    }
+
+    if (candidates.size !== 1) {
+      return null;
+    }
+    return [...candidates][0] as Node;
   }
 
   /**
@@ -194,16 +251,8 @@ export class ResolutionStore {
     this.stale = false;
     evaluate(this.db, RESOLUTION_RULES);
 
-    this.resolvedBySource = new Map();
-    for (const tuple of this.db.facts("resolves")) {
-      const source = String(tuple[0]);
-      const targets = this.resolvedBySource.get(source);
-      if (targets === undefined) {
-        this.resolvedBySource.set(source, [String(tuple[1])]);
-      } else {
-        targets.push(String(tuple[1]));
-      }
-    }
+    this.resolvedBySource = indexBySource(this.db.facts("resolves"));
+    this.comesToBySource = indexBySource(this.db.facts("comesTo"));
   }
 
   /** Emit a file's facts, unless some earlier query already did. */
@@ -256,4 +305,21 @@ function referencedProjectFiles(sourceFile: SourceFile): SourceFile[] {
     }
   }
   return referenced;
+}
+
+/** One relation's tuples, grouped by their first column. */
+function indexBySource(
+  tuples: ReadonlyArray<ReadonlyArray<string | number>>,
+): Map<string, string[]> {
+  const index = new Map<string, string[]>();
+  for (const tuple of tuples) {
+    const source = String(tuple[0]);
+    const targets = index.get(source);
+    if (targets === undefined) {
+      index.set(source, [String(tuple[1])]);
+    } else {
+      targets.push(String(tuple[1]));
+    }
+  }
+  return index;
 }
