@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "src/index.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/contract/intent/src/index.ts": {
     "lines": {
       "total": 28,
       "covered": 26,
