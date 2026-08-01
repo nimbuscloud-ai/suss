@@ -289,7 +289,7 @@ fs.writeFileSync("dist/suss-summaries.json", JSON.stringify(adapter.extractAll()
 
 Framework-shaped APIs (Express / ts-rest / Apollo resolvers / …) use a framework pack in place of `packageExports` and produce REST- or GraphQL-semantics bindings the same way.
 
-suss itself ships this: `scripts/dogfood.mjs` runs the above shape against every `@suss/*` package and writes their `dist/suss-summaries.json` files. See `docs/internal/dogfooding.md` for the run output.
+suss itself runs this: `scripts/dogfood.mjs` runs the above shape against every `@suss/*` package. A package that means to publish its contract writes it into `dist/` alongside the build, as above. The dogfood run is a local analysis of this repo and nothing reads it back, so it writes to `<pkg>/.suss/suss-summaries.json` instead, beside the extraction cache and outside anything npm ships. See `docs/internal/dogfooding.md` for the run output.
 
 Consumers can check against published summaries directly:
 

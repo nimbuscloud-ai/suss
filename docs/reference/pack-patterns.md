@@ -111,7 +111,7 @@ Produced bindings carry the stronger identity
 `{ transport: "in-process", semantics: { name: "function-call", package, exportPath }, recognition: <pack.name> }`,
 so sub-path exports identify as e.g. `@suss/behavioral-ir/schemas::BehavioralSummarySchema` (`exportPath = ["schemas", "BehavioralSummarySchema"]`). Root exports omit the sub-path segment.
 
-Used by the dogfood script, see [`internal/dogfooding.md`](../internal/dogfooding.md), to publish per-package contracts to `dist/suss-summaries.json`. Paired against consumer-side summaries produced by `packageImport`.
+Used by the dogfood script, see [`internal/dogfooding.md`](../internal/dogfooding.md), to write per-package contracts to `.suss/suss-summaries.json`. Paired against consumer-side summaries produced by `packageImport`.
 
 v0 scope: resolves the `types` / `default` / `import` conditions on `exports`, falls back to `types` + `main` + `module` when no `exports` field is set. Pattern exports (`./utils/*`) and `development`-conditional resolution are deferred and surface as warnings on the resolver result.
 
