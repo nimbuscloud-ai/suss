@@ -175,6 +175,8 @@ The consumer has a branch that reads a status the provider never produces. Code 
 
 The provider produces a status code (or body shape) its declared contract doesn't include. Self-inconsistency, provider and consumer fields point at the same summary. Skipped when the contract source is itself derived from the implementation.
 
+Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap does not; it comes out as `lowConfidence` at info instead, because it says the pack has no shape for what the handler returns rather than that the handler is wrong.
+
 **Fix:** add the status to the contract, or remove it from the handler.
 
 ### `consumerContractViolation` *(shipped)*
@@ -262,7 +264,17 @@ These kinds exist in the enum but no checker emits them today. They cover failur
 
 **Severity:** info • **Emitted by:** any check, as a meta-finding
 
-The analyzer couldn't fully decompose the summary, predicates stayed opaque, type resolution failed, or confidence dropped below `medium`.
+suss could not finish reading one side, so it says so rather than guessing. Predicates stayed opaque, type resolution failed, or confidence dropped below `medium`.
+
+It also carries every `unreadOutcome` gap on the provider. That gap means a `return` in the handler matched none of the terminal shapes the pack looks for:
+
+```
+[INFO] lowConfidence
+  One return in this function matches none of the terminal shapes this
+  pack looks for, so what it produces is not described here
+```
+
+**Fix:** teach the pack that terminal shape. Until then the handler is under-described, not wrong, which is why this is info and not an error.
 
 ### `unsupportedSemantics` *(reserved)*
 
