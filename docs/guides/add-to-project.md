@@ -109,23 +109,30 @@ your code uses, plus the CLI. Pick from:
 | `@suss/framework-ts-rest` | ts-rest providers + clients (contract-backed) | `npm i -D @suss/framework-ts-rest` |
 | `@suss/framework-express` | Express `app.get(...)` / `router.get(...)` handlers | `npm i -D @suss/framework-express` |
 | `@suss/framework-fastify` | Fastify `fastify.get(...)` handlers | `npm i -D @suss/framework-fastify` |
+| `@suss/framework-hono` | Hono `app.get(...)` handlers, including `c.json(body, status)` | `npm i -D @suss/framework-hono` |
+| `@suss/framework-nextjs` | Next.js route handlers and pages; the route comes from where the file sits | `npm i -D @suss/framework-nextjs` |
 | `@suss/framework-nestjs-rest` | NestJS REST controllers (`@Controller` / `@Get`) | `npm i -D @suss/framework-nestjs-rest` |
 | `@suss/framework-nestjs-graphql` | NestJS GraphQL resolvers (`@Resolver` / `@Query` / `@Mutation`) | `npm i -D @suss/framework-nestjs-graphql` |
 | `@suss/framework-react-router` | React Router v6+ loaders / actions | `npm i -D @suss/framework-react-router` |
 | `@suss/framework-react` | React components + event handlers + `useEffect` | `npm i -D @suss/framework-react` |
 | `@suss/framework-apollo` | Apollo Server resolvers (code-first) | `npm i -D @suss/framework-apollo` |
+| `@suss/framework-aws-lambda` | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes | `npm i -D @suss/framework-aws-lambda` |
 | `@suss/framework-prisma` | Prisma client calls, emits storage-access interactions | `npm i -D @suss/framework-prisma` |
+| `@suss/framework-drizzle` | Drizzle query-builder and relational-query calls, with SQL table names | `npm i -D @suss/framework-drizzle` |
 | `@suss/framework-aws-sqs` | AWS SDK v3 SQS producer calls, emits message-send interactions | `npm i -D @suss/framework-aws-sqs` |
+| `@suss/framework-aws-eventbridge` | EventBridge `PutEvents` calls, emits message-bus interactions | `npm i -D @suss/framework-aws-eventbridge` |
 | `@suss/runtime-node` | Node runtime surface, scheduling, `process.*` (incl. `process.env.X` config-read interactions), module-loading globals | `npm i -D @suss/runtime-node` |
 | `@suss/client-web` | Global `fetch` call sites | `npm i -D @suss/client-web` |
 | `@suss/client-axios` | axios call sites + `axios.create` factories | `npm i -D @suss/client-axios` |
 | `@suss/client-apollo` | `@apollo/client` hooks + imperative `client.query` | `npm i -D @suss/client-apollo` |
 | `@suss/contract-openapi` | OpenAPI 3.x spec → provider summaries | `npm i -D @suss/contract-openapi` |
+| `@suss/contract-graphql` | GraphQL SDL → resolver summaries, and committed `.graphql` operation documents → client summaries | `npm i -D @suss/contract-graphql` |
 | `@suss/contract-aws-apigateway` | API Gateway REST/HTTP API resource semantics → summaries | `npm i -D @suss/contract-aws-apigateway` |
 | `@suss/contract-cloudformation` | CFN / SAM templates → summaries (delegates to OpenAPI + API Gateway; also reads SQS event-source mappings + Lambda Environment) | `npm i -D @suss/contract-cloudformation` |
 | `@suss/contract-appsync` | AppSync schema + resolver mapping templates → summaries | `npm i -D @suss/contract-appsync` |
 | `@suss/contract-storybook` | Storybook CSF3 stories → component contract summaries | `npm i -D @suss/contract-storybook` |
 | `@suss/contract-prisma` | Prisma schema → storage provider summaries | `npm i -D @suss/contract-prisma` |
+| `@suss/contract-intent` | Team-authored `*.intent` / `*.prd` docs, read by `suss check --intent` | `npm i -D @suss/contract-intent` |
 
 Plus the CLI once:
 

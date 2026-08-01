@@ -70,7 +70,13 @@ export default defineConfig({
       {
         text: "Tutorial",
         collapsed: false,
-        items: [{ text: "Get started", link: "/tutorial/get-started" }],
+        items: [
+          { text: "Get started", link: "/tutorial/get-started" },
+          {
+            text: "Pair a frontend with a backend",
+            link: "/tutorial/pair-frontend-backend",
+          },
+        ],
       },
       {
         text: "How-to guides",

@@ -90,7 +90,7 @@ None of the existing layers go away, each approximates derived behavior from a d
 suss's product is the `BehavioralSummary[]`, structured JSON describing what each code unit does under what conditions. The CLI bundles four kinds of work over those summaries:
 
 - `suss extract`: derive summaries from TypeScript source.
-- `suss contract`: produce summaries from declared contracts (OpenAPI, CloudFormation, AppSync, GraphQL SDL, Prisma schema, Storybook CSF3).
+- `suss contract`: produce summaries from declared contracts (OpenAPI, CloudFormation, AppSync, GraphQL SDL, committed `.graphql` operation documents, Prisma schema, Storybook CSF3).
 - `suss check`: pair providers with consumers (two files, or a whole directory) and report cross-boundary findings. See [`cross-boundary-checking.md`](cross-boundary-checking.md).
 - `suss inspect`: render a summary file or directory as text, or `--diff BEFORE AFTER` to see which behavioral cases a change added, removed, or altered.
 

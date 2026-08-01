@@ -22,7 +22,7 @@ One canonical definition per term. Other docs link here rather than redefining. 
 
 **[Effect](/ir-reference#effect)**, an observable side effect a code unit causes during execution: a database write, a queue message, scheduled work, a config read, a call to another service. Effects are part of the output alongside the terminal value, two implementations that return the same shape but cause different side effects don't agree.
 
-**[Gap](/ir-reference#gap)**, a case the code unit doesn't explicitly handle. Recorded in the summary, not raised as an error. Gaps run both directions: declared-but-not-produced (the contract says the endpoint can return 500, but the handler never produces one) and produced-but-not-declared (the handler returns a shape the contract didn't list).
+**[Gap](/ir-reference#gap)**, something the summary could not account for. Recorded in the summary, not raised as an error. An `unhandledCase` gap is about the code: the contract says the endpoint can return 500 and the handler never produces one, or the handler returns a status the contract didn't list. An `unreadOutcome` gap is about the reading: a `return` matched none of the terminal shapes the pack looks for. The checker reports the first as a contract violation at error severity and the second at info, since the handler may be answering correctly in a shape nobody taught the pack.
 
 **Declared contract**, a machine-readable behavioral declaration authored alongside the implementation: a ts-rest router, an OpenAPI document, a GraphQL SDL, a Prisma schema, a Storybook story. The extractor reads both the declaration and the implementation, and the checker compares them. See [Contracts](/contracts) for how declared contracts relate to derived and observed truth.
 
@@ -36,7 +36,7 @@ One canonical definition per term. Other docs link here rather than redefining. 
 
 **Sub-unit**, a code unit a pack declares inside another (a callback passed to `setTimeout`, a React event handler inside a component). A sub-unit's behavior lands on its own summary; the walker otherwise descends into nested arrows and function expressions and attributes their behavior to the enclosing unit.
 
-**[Confidence](/ir-reference#confidenceinfo)**, how much of a code unit's behavior was structurally analyzed vs. opaque, computed as the ratio of opaque predicates to total and bucketed into `high` / `medium` / `low`. Informational: the checker doesn't downgrade finding severities from it. A `confidence.source` field records where the summary came from (extracted code vs. a contract source).
+**[Confidence](/ir-reference#confidenceinfo)**, how much of a code unit's behavior was read, bucketed into `high` / `medium` / `low`. A return the pack could not read makes it `low` on its own; otherwise it is the ratio of opaque predicates to total. Informational: the checker doesn't downgrade finding severities from it. A `confidence.source` field records where the summary came from (extracted code vs. a contract source).
 
 **Intent doc**, a team-authored statement of what a boundary *should* do (`*.intent` / system intent) or what should happen for the user (`*.prd` / outcome intent). Intent parses to `IntentSummary`, its own artifact stream, and is paired against derived code by `@suss/checker-intent`. See the [intent section of Contracts](/contracts#intent).
 

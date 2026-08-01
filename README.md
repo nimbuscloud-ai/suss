@@ -80,7 +80,7 @@ The summary is the product. Checking is the most-developed use; others include r
 Over the same `BehavioralSummary[]`:
 
 - `suss extract` derives summaries from TypeScript source.
-- `suss contract` derives summaries from declared contracts (OpenAPI, CloudFormation, AppSync, GraphQL SDL, Prisma schema, Storybook).
+- `suss contract` derives summaries from declared contracts (OpenAPI, CloudFormation, AppSync, GraphQL SDL, committed `.graphql` operation documents, Prisma schema, Storybook).
 - `suss check` pairs providers with consumers and emits findings where they disagree. The exit code crosses the `--fail-on error|warning|info|none` threshold.
 - `suss inspect` renders summaries as text, or `--diff BEFORE AFTER` to see what a change added, removed, or altered.
 
@@ -121,7 +121,11 @@ Reference and internals: [Summary format](docs/behavioral-summary-format.md), [I
 
 ## Status
 
-The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs. Shipped recognition: ts-rest, React Router, Express, Fastify, Apollo Server, NestJS REST + GraphQL, React (components + handlers + effects), fetch, axios, Apollo Client, Prisma, AWS SQS + EventBridge producers, AWS Lambda, `process.env`. Shipped contract sources: OpenAPI 3.x, GraphQL SDL, AWS API Gateway, CloudFormation / SAM, AppSync, Storybook CSF3, Prisma schema.
+The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
+
+Nineteen packs read code today: ts-rest, Express, Fastify, Hono, Next.js, NestJS REST and GraphQL, Apollo Server, AWS Lambda, React (components, handlers, effects), React Router, fetch, axios, Apollo Client, Prisma, Drizzle, AWS SQS and EventBridge producers, and the Node runtime surface including `process.env`.
+
+Seven contract readers turn a declared artifact into the same shape: OpenAPI 3.x, GraphQL (SDL and committed `.graphql` operation documents), AWS API Gateway, CloudFormation / SAM, AppSync, Storybook CSF3, Prisma schema. Team-authored intent docs are their own stream, read by `suss check --intent`.
 
 ## License
 

@@ -1,14 +1,20 @@
 # Suppressing findings
 
-Some findings are true but accepted, a consumer that deliberately doesn't handle a rare upstream status, a documented contract-spec divergence kept for migration reasons, a legacy quirk scheduled to be removed next quarter. Suss has a `.sussignore` file at the project root that silences or annotates these without modifying the summaries themselves.
+Some findings are true but accepted, a consumer that deliberately doesn't handle a rare upstream status, a documented contract-spec divergence kept for migration reasons, a legacy quirk scheduled to be removed next quarter. A `.sussignore` file silences or annotates these without modifying the summaries themselves.
 
-## File format
+## Where the file goes
 
-`suss check` looks for the first of these in the directory it's invoked against (or pointed at by `--sussignore <path>`):
+`suss check --dir summaries/` looks inside `summaries/`. `suss check provider.json consumer.json` looks in the working directory. `--sussignore <path>` overrides both.
+
+It takes the first of these it finds:
 
 1. `.sussignore.yml`
 2. `.sussignore.yaml`
 3. `.sussignore.json`
+
+A `.sussignore.json` sitting in the summaries directory is read as suppression config, not as a summaries file.
+
+## File format
 
 Both YAML and JSON encode the same shape:
 
@@ -56,8 +62,6 @@ A finding matches a rule when every specified field on the rule equals the corre
 The same rules apply to intent findings from `suss check --dir --intent`. `kind` and `boundary` match the same way (the intent finding's boundary is already a key string); `consumer` never matches an intent finding, there is no consumer side. Effects and threshold semantics are identical.
 
 PRD scenario-coverage findings don't always resolve to a real boundary. A `danglingScenarioLink` whose intent name *did* resolve is keyed on that intent's boundary (`GET /users/{id}`), so a narrow `kind` + `boundary` rule targets it. An `unlinkedScenario`, an `ambiguousScenarioLink`, or a link whose intent name doesn't resolve has no boundary to key on, so it carries a `prd:<title>` key instead, match those with `boundary: "prd:<title>"` verbatim, or with `scope: broad` on `kind` alone.
-
-Note: `.sussignore.json` living inside the `--dir` summaries directory is recognised as suppression config and excluded from the summaries walk.
 
 ## CLI flags
 

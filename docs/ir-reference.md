@@ -323,14 +323,40 @@ How inputs reach a code unit. Most of these are for React/Vue components; HTTP h
 
 ```typescript
 interface Gap {
-  type: "unhandledCase";
+  type: "unhandledCase" | "unreadOutcome";
   conditions: Predicate[];
   consequence: "frameworkDefault" | "implicitThrow" | "fallthrough" | "unknown";
   description: string;
 }
 ```
 
-A case the code unit doesn't explicitly handle. Gaps are top-level output, not errors, "I can see that this case exists but I can't determine what happens" is useful information for downstream tools.
+Something the summary could not account for. Gaps are top-level output, not errors, "I can see that this case exists but I can't determine what happens" is useful information for downstream tools.
+
+**`type`** says whose problem it is, and the checker treats the two differently.
+
+**`unhandledCase`** is a statement about the code. The declared contract lists a response the handler never produces, or the handler produces a status the contract never declared:
+
+```json
+{
+  "type": "unhandledCase",
+  "consequence": "frameworkDefault",
+  "description": "Declared response 500 is never produced by the handler"
+}
+```
+
+The checker turns each of these into a `providerContractViolation` at error severity. Something is wrong with the handler or with its contract.
+
+**`unreadOutcome`** is a statement about the reading. A `return` in the function matched none of the terminal shapes the pack looks for, so nothing describes what it produces:
+
+```json
+{
+  "type": "unreadOutcome",
+  "consequence": "unknown",
+  "description": "One return in this function matches none of the terminal shapes this pack looks for, so what it produces is not described here"
+}
+```
+
+The handler may be answering correctly in a shape nobody taught the pack. Holding that against it fails checks on working code, so the checker reports `lowConfidence` at info severity instead. Teaching the pack that terminal shape is what makes it go away.
 
 **`consequence`** tells you what actually happens in the unhandled case:
 
@@ -339,7 +365,7 @@ A case the code unit doesn't explicitly handle. Gaps are top-level output, not e
 - **`fallthrough`**: control passes to the next middleware / handler
 - **`unknown`**: the extractor can't determine the consequence
 
-The extractor populates `gaps` in two scenarios today: (1) a declared contract response that the handler never produces, and (2) a produced status code that isn't in the declared contract. Phase 2 will add more: uncaught exceptions, branch paths with no terminal, fall-through from switch.
+The extractor populates `gaps` in three cases today: a declared contract response the handler never produces, a produced status code the declared contract doesn't list, and a return the pack has no terminal shape for. Uncaught exceptions and fall-through from a switch are still ahead.
 
 ## `ConfidenceInfo`
 
@@ -357,7 +383,9 @@ How much of the behavior was structurally analyzed vs. opaque, and where the inf
 - **`declared`**: the summary was authored by hand, not extracted (e.g., a community-maintained summary for a library)
 - **`derived`**: produced from a contract source (OpenAPI, CloudFormation, a schema), not extracted from code
 
-Level is computed as the ratio of opaque predicates to total predicates:
+A return the pack could not read sets the level to `low` on its own. That check runs first, because counting predicates cannot see it: a function whose returns all went unread has no conditions either, and zero opaque out of zero used to come out as `high`.
+
+Otherwise the level is the ratio of opaque predicates to total predicates:
 
 - `ratio == 0` → `high`
 - `ratio < 0.5` → `medium`

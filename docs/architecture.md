@@ -120,18 +120,24 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
     │     │
     │     ├─ @suss/adapter-typescript    ts-morph-based extraction; runs
     │     │        │                     whole-program passes as rules
-    │     │        └─ @suss/datalog      small Datalog evaluator (facts,
-    │     │                              rules, stratified negation)
+    │     │        ├─ @suss/datalog      small Datalog evaluator (facts,
+    │     │        │                     rules, stratified negation)
+    │     │        └─ @suss/resolution   language-neutral rules for following
+    │     │                              a value to the function it comes
+    │     │                              down to
     │     │
     │     ├─ Framework packs             discover handlers, define terminals
     │     │     @suss/framework-ts-rest          and inputs for a framework
     │     │     @suss/framework-express
     │     │     @suss/framework-fastify
+    │     │     @suss/framework-hono
+    │     │     @suss/framework-nextjs
     │     │     @suss/framework-react
     │     │     @suss/framework-react-router
     │     │     @suss/framework-nestjs-rest
     │     │     @suss/framework-nestjs-graphql
     │     │     @suss/framework-apollo
+    │     │     @suss/framework-aws-lambda
     │     │     @suss/framework-aws-sqs
     │     │     @suss/framework-aws-eventbridge
     │     │     @suss/framework-prisma
@@ -147,7 +153,7 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
     │
     ├─ Contract packs                    external spec → BehavioralSummary
     │     @suss/contract-openapi
-    │     @suss/contract-graphql
+    │     @suss/contract-graphql   (SDL + committed .graphql operations)
     │     @suss/contract-aws-apigateway
     │     @suss/contract-cloudformation  (delegates to openapi + apigateway)
     │     @suss/contract-appsync
@@ -170,8 +176,9 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
 - `@suss/contract-intent`: reader for `*.intent` / `*.prd` files. Unlike the other `contract-*` readers it produces `IntentSummary`, not `BehavioralSummary`: intent is a separate artifact stream that gets *compared against* behavior, not folded into it.
 - `@suss/checker-intent`: depends on both IRs (it compares them) and `ir-core`. Pure function `checkIntentAgreement(intents, code)` → findings + checked / unchecked accounting. Peer of `@suss/checker`, not a dependency of it.
 - `@suss/extractor`: depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
-- `@suss/adapter-typescript`: depends on IR, extractor, ts-morph, and `@suss/datalog` for its whole-program passes. The heavyweight package.
+- `@suss/adapter-typescript`: depends on IR, extractor, ts-morph, `@suss/datalog` for its whole-program passes, and `@suss/resolution` for the rules those passes join on. The heavyweight package.
 - `@suss/datalog`: zero dependencies. A small semi-naive Datalog evaluator with stratified negation; rules are plain data. Knows nothing about the IR or the AST, which is the point: analyses written against fact shapes stay language-independent.
+- `@suss/resolution`: a list of Datalog rules and nothing else. No parser, no language, no files. The rules answer one question, which function does this value come down to, and they compose one hop at a time, so a factory handing off to another factory or a barrel re-exporting a wrapper resolves without a rule naming that shape. An adapter reads source into facts (`binds`, `paramOf`, `callArg`, `reExports`, and a handful more), concatenates its own rules, and evaluates on `@suss/datalog`. When an answer comes back empty, suspect the facts before the rules. See `packages/resolution/README.md` for the fact vocabulary and the shapes deliberately left unresolved.
 - **All pack kinds** (framework, client, runtime), depend only on `@suss/extractor` for the `PatternPack` type, plus `@suss/manifest-*` packages where discovery is manifest-driven. They're data, not logic.
 - `@suss/manifest-*` packages, parse deploy manifests (SAM/CFN templates) into plain data. No IR, no `@suss` dependencies. Both contract readers (manifest as specification) and framework packs (manifest as discovery index) read through them; the parse lives once, and neither witness depends on the other.
 - `@suss/contract-*` packages, depend only on the IR, plus on each other where they compose (`cloudformation` delegates to `openapi` + `aws-apigateway`). Produce `BehavioralSummary[]` from specs, manifests, schemas; carry `confidence.source: "derived"`. See [`contract-sources.md`](contract-sources.md).
@@ -243,8 +250,8 @@ The pipeline contract is strict: the adapter fills in `RawCodeStructure` (includ
 Static analysis of production codebases is always imperfect. suss handles this explicitly:
 
 - **Opaque predicates**: when the adapter can't decompose a condition expression, it preserves the source text and marks the predicate `opaque`. Downstream tools see an explicit "we don't know" rather than a fabricated decomposition.
-- **Gaps**: cases the code unit doesn't handle (declared-but-not-produced, produced-but-not-declared, uncaught exceptions, fall-through branches) are top-level output, not errors.
-- **Confidence levels** (`high` / `medium` / `low`), computed from the ratio of opaque to structured predicates. A summary with 80% opaque conditions is labeled "low confidence" so consumers can treat it with appropriate skepticism.
+- **Gaps**: two kinds, and they say different things. An `unhandledCase` is about the code: the contract declares a 500 the handler never produces, or the handler produces a 418 the contract never declared. An `unreadOutcome` is about the reading: a `return` matched none of the terminal shapes the pack looks for, so what it produces went undescribed. Both are top-level output, not errors.
+- **Confidence levels** (`high` / `medium` / `low`). A return nobody could read drops the summary straight to `low`, since a function whose returns all went unread has no conditions either and would otherwise score as certain. Otherwise the level comes from the ratio of opaque to structured predicates. A summary with 80% opaque conditions is labeled low confidence so consumers can treat it with appropriate skepticism.
 - **Layered dependency resolution**: in-project code gets full extraction; typed external dependencies get type info; untyped ones become opaque predicates. No configuration needed.
 
 ## Boundary semantics today

@@ -146,7 +146,7 @@ Not modelled today: *propagated* throws, the implicit throw paths of a function 
 
 ## Confidence
 
-Every summary has a confidence level computed from how much of the code was structurally analyzed versus marked opaque:
+Every summary has a confidence level. A return the pack could not read sets it to **low** outright, since nothing describes what that path produces. Otherwise it comes from how much of the code was decomposed versus marked opaque:
 
 - **high**: all conditions decomposed into structured predicates
 - **medium**: some opaque predicates (< 50%)
@@ -156,7 +156,9 @@ Tools consuming summaries can use confidence to decide how much to trust the ana
 
 ## Gaps
 
-Gaps represent cases the code unit doesn't handle:
+A gap is something the summary could not account for. There are two kinds and they point in opposite directions.
+
+**`unhandledCase`** says the code has a hole. The contract declares a response no transition produces, or a transition produces a status the contract never declared:
 
 ```json
 {
@@ -166,7 +168,19 @@ Gaps represent cases the code unit doesn't handle:
 }
 ```
 
-When a contract declares a status code that no transition produces, the gap tells you the code has a behavioral hole.
+The checker reports these as `providerContractViolation` at error severity.
+
+**`unreadOutcome`** says the reading has a hole. A `return` matched none of the terminal shapes the pack looks for, so nothing here describes what it produces:
+
+```json
+{
+  "type": "unreadOutcome",
+  "consequence": "unknown",
+  "description": "One return in this function matches none of the terminal shapes this pack looks for, so what it produces is not described here"
+}
+```
+
+The handler may be answering perfectly well in a shape nobody taught the pack, so the checker reports `lowConfidence` at info severity rather than blaming the code.
 
 ## Metadata
 

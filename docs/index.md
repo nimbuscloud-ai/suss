@@ -26,11 +26,11 @@ features:
     link: /glossary
     linkText: Glossary
   - title: Add a framework in one file
-    details: "Hono, Express, Fastify, NestJS, ts-rest, React, React Router, Apollo Server, AWS Lambda, Prisma, AWS SQS, and process.env ship in the box. A new framework is a small declarative pack, with no fork of the analyzer."
+    details: "Nineteen packs ship, for HTTP handlers, GraphQL resolvers, React components, queue consumers, database calls and client call sites. Adding a framework means writing a small pack, not forking the analyzer."
     link: /guides/writing-a-pack
     linkText: Write a pack
   - title: Compare against declared contracts
-    details: "OpenAPI against handlers, CloudFormation against API Gateway, Storybook against components, Prisma schema against query call sites, provider against consumer. The contract reader and the source extractor produce the same shape."
+    details: "Check your handlers against an OpenAPI spec, your resolvers against a GraphQL schema, your components against Storybook. A contract and your source come out in the same shape, so comparing them is one step."
     link: /cross-boundary-checking
     linkText: How checking works
   - title: Runs on the code you already have

@@ -78,7 +78,7 @@ The depth of comparison has grown in stages, and some layers remain in progress,
 
 **Opaque predicates surface uncertainty explicitly.** When decomposition fails, the checker emits `lowConfidence` rather than a false negative.
 
-**Gaps carry forward.** Provider gaps (declared-but-not-produced, produced-but-not-declared) flow through the checker as `providerContractViolation` findings.
+**Gaps carry forward, and the two kinds land differently.** A provider's `unhandledCase` gap becomes a `providerContractViolation` at error severity: the contract declares a response the handler never produces, or the handler produces one the contract never declared. An `unreadOutcome` gap becomes `lowConfidence` at info instead. That gap says a `return` matched none of the pack's terminal shapes, which is a limit on the reading. The handler may be answering correctly, and failing the check would punish working code.
 
 ## Output: findings
 
