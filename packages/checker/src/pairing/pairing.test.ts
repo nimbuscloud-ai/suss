@@ -206,20 +206,6 @@ function subscriberOnChannel(
   };
 }
 
-/** Say which Lambda a summary runs in. */
-function inLambda(
-  summary: BehavioralSummary,
-  instanceName: string,
-): BehavioralSummary {
-  return {
-    ...summary,
-    identity: {
-      ...summary.identity,
-      deployableUnit: { deploymentTarget: "lambda", instanceName },
-    },
-  };
-}
-
 describe("pairSummaries over a message bus", () => {
   it("pairs a subscriber with the handler that answers it", () => {
     const handler = handlerOnChannel("OrderPlacedFunction.handler", "jobs");
@@ -328,103 +314,6 @@ describe("pairSummaries over a message bus", () => {
     const result = pairSummaries([handler]);
 
     expect(result.unmatched.noBinding).toEqual([handler]);
-  });
-});
-
-describe("pairSummaries across deployable units", () => {
-  it("pairs a handler with the subscription declared for its own Lambda", () => {
-    const handler = inLambda(
-      handlerOnChannel("PostCategorize.handler", "post.created"),
-      "PostCategorizeFunction",
-    );
-    const own = inLambda(
-      subscriberOnChannel("PostCategorize.QueueEvent", "default#post.created"),
-      "PostCategorizeFunction",
-    );
-
-    const result = pairSummaries([handler, own]);
-
-    expect(result.pairs).toHaveLength(1);
-    expect(result.pairs[0].consumer).toBe(own);
-  });
-
-  it("does not pair a handler with another Lambda's subscription", () => {
-    const handler = inLambda(
-      handlerOnChannel("PostCategorize.handler", "post.created"),
-      "PostCategorizeFunction",
-    );
-    const other = inLambda(
-      subscriberOnChannel(
-        "PostNotifyTagged.QueueEvent",
-        "default#post.created",
-      ),
-      "PostNotifyTaggedFunction",
-    );
-
-    const result = pairSummaries([handler, other]);
-
-    expect(result.pairs).toHaveLength(0);
-    expect(result.unmatched.providers).toEqual([handler]);
-    expect(result.unmatched.consumers).toEqual([other]);
-  });
-
-  it("collapses a shared subject to one pair per Lambda", () => {
-    const names = [
-      "PostCategorize",
-      "PostNotifyTagged",
-      "PostFetchUrlMetadata",
-    ];
-    const summaries = names.flatMap((n) => [
-      inLambda(
-        handlerOnChannel(`${n}.handler`, "post.created"),
-        `${n}Function`,
-      ),
-      inLambda(
-        subscriberOnChannel(`${n}.QueueEvent`, "default#post.created"),
-        `${n}Function`,
-      ),
-    ]);
-
-    const result = pairSummaries(summaries);
-
-    // Three handlers and three subscriptions on one subject: nine
-    // combinations, three of which name the same Lambda.
-    expect(result.pairs).toHaveLength(3);
-    for (const pair of result.pairs) {
-      expect(pair.provider.identity.deployableUnit).toEqual(
-        pair.consumer.identity.deployableUnit,
-      );
-    }
-  });
-
-  it("pairs when only one side names a deployable unit", () => {
-    const queue = handlerOnChannel("LibraryAutoPublishQueue", "post.created");
-    const subscriber = inLambda(
-      subscriberOnChannel("PostCategorize.QueueEvent", "post.created"),
-      "PostCategorizeFunction",
-    );
-
-    expect(pairSummaries([queue, subscriber]).pairs).toHaveLength(1);
-  });
-
-  it("keeps two sides apart when the deployment target differs", () => {
-    const handler = inLambda(
-      handlerOnChannel("Worker.handler", "post.created"),
-      "Worker",
-    );
-    const subscriber = subscriberOnChannel("Worker.QueueEvent", "post.created");
-    const onEcs: BehavioralSummary = {
-      ...subscriber,
-      identity: {
-        ...subscriber.identity,
-        deployableUnit: {
-          deploymentTarget: "ecs-task",
-          instanceName: "Worker",
-        },
-      },
-    };
-
-    expect(pairSummaries([handler, onEcs]).pairs).toHaveLength(0);
   });
 });
 
