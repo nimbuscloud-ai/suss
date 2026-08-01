@@ -31,7 +31,7 @@ export function readJsonFromRef(ref, relPath) {
     git(`rev-parse --verify --quiet ${ref}^{commit}`);
   } catch {
     throw new Error(
-      `Cannot resolve ${ref}. CI checks out with fetch-depth: 0 so origin/main is present; locally you may need \`git fetch origin main\`.`,
+      `Cannot resolve ${ref}, so there is nothing to compare against. CI checks out with fetch-depth: 0, which is what makes remote refs available; locally you may need to fetch first.`,
     );
   }
 

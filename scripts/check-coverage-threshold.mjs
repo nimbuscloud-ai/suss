@@ -66,7 +66,14 @@ for (const pkgPath of packageDirs) {
   }
 
   const current = readPct(absPath);
-  const baseline = readPctFromMain(relPath);
+
+  let baseline;
+  try {
+    baseline = readPctFromMain(relPath);
+  } catch (err) {
+    console.error(`✗ ${err.message}`);
+    process.exit(1);
+  }
 
   if (current === null) {
     console.log(`  ${pkgPath}: no current coverage — skipping`);

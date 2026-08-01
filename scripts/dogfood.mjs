@@ -18,7 +18,15 @@
 //      reports paired provider↔consumer edges plus unmatched
 //      providers/consumers — the cross-package dependency graph as
 //      structured data.
-//   5. Writes a consolidated roll-up to `scripts/dogfood-report.json`.
+//   5. Writes a consolidated roll-up to `scripts/dogfood-report.json`,
+//      and the per-package counts to `scripts/dogfood-baseline.json`.
+//      The roll-up is megabytes and stays out of git; the baseline is
+//      committed, and `checkDogfoodBaseline.mjs` compares a fresh run
+//      against the copy the author committed.
+//   6. Checks the invariants: the things that have to be true of any
+//      run, whatever source it ran over.
+//
+// Exits non-zero if a package failed to extract or an invariant broke.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -27,7 +35,12 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import { pairSummaries } from "../packages/checker/dist/index.js";
-import { SUMMARIES_DIR, SUMMARIES_FILE } from "./dogfoodOutputs.mjs";
+import { evaluateInvariants } from "./dogfoodInvariants.mjs";
+import {
+  BASELINE_PATH,
+  SUMMARIES_DIR,
+  SUMMARIES_FILE,
+} from "./dogfoodOutputs.mjs";
 
 async function mapWithConcurrency(items, limit, fn) {
   const results = new Array(items.length);
@@ -226,6 +239,7 @@ for (const result of extractResults) {
 
   report.packages.push({
     name,
+    dir: path.relative(repoRoot, pkg.dir).split(path.sep).join("/"),
     packageJson: path.relative(repoRoot, pkg.packageJsonPath),
     tsconfig: path.relative(repoRoot, tsconfig),
     providerCount: providers.length,
@@ -298,7 +312,87 @@ report.pairing = {
 const reportPath = path.join(__dirname, "dogfood-report.json");
 fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
+// The full report is megabytes of per-summary detail and stays out of
+// git. What gets committed is the count of what suss saw, per package,
+// so a later run can compare against it and say when suss starts seeing
+// less of the same source.
+//
+// Packages are keyed by directory rather than by name. A rename then
+// reads as one package whose count changed, which is what it is, instead
+// of one package vanishing and an unrelated one appearing with no
+// history to compare against.
+const baseline = {
+  totals: {
+    packages: packages.length,
+    packagesWithExports: totalPackagesWithExports,
+    providers: totalProviders,
+    consumers: totalConsumers,
+    pairs: pairing.pairs.length,
+  },
+  packages: Object.fromEntries(
+    report.packages
+      .filter((p) => p.skipped === undefined && p.error === undefined)
+      .map((p) => [
+        p.dir,
+        {
+          name: p.name,
+          providers: p.providerCount,
+          consumers: p.consumerCount,
+        },
+      ]),
+  ),
+};
+fs.writeFileSync(BASELINE_PATH, `${JSON.stringify(baseline, null, 2)}\n`);
+
 console.log(
   `\nSummary: ${totalProviders} provider + ${totalConsumers} consumer summaries across ${packages.length} @suss/* packages. ${pairing.pairs.length} cross-package edges paired.`,
 );
 console.log(`Report written to ${path.relative(repoRoot, reportPath)}`);
+console.log(`Baseline written to ${path.relative(repoRoot, BASELINE_PATH)}`);
+
+const failed = report.packages.filter((p) => p.error !== undefined);
+if (failed.length > 0) {
+  console.error(`\n✗ ${failed.length} package(s) failed to extract:`);
+  for (const p of failed) {
+    console.error(`  ${p.name}: ${p.error}`);
+  }
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// Invariants
+// ---------------------------------------------------------------------------
+//
+// These hold for any source suss runs over, so the run itself is where
+// they belong: anyone refreshing the baseline after deleting an export
+// finds out here, without needing a git ref to compare against.
+
+console.log("\n=== Invariants ===");
+const invariants = evaluateInvariants({
+  packages: extractResults
+    .filter((r) => r.kind === "ok")
+    .map((r) => ({
+      name: r.name,
+      dir: r.pkg.dir,
+      packageJson: r.pkg.packageJson,
+      summaries: r.summaries,
+    })),
+  pairing,
+});
+
+let brokenInvariants = 0;
+for (const invariant of invariants) {
+  const mark = invariant.violations.length === 0 ? "✓" : "✗";
+  console.log(`  ${mark} ${invariant.name}`);
+  for (const violation of invariant.violations) {
+    console.error(`      ${violation.label}: ${violation.detail}`);
+  }
+  brokenInvariants += invariant.violations.length;
+}
+
+if (brokenInvariants > 0) {
+  console.error(
+    `\n✗ ${brokenInvariants} violation(s). Something suss could see before, it cannot see now, on source that says it is still there.`,
+  );
+  process.exit(1);
+}

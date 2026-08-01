@@ -23,9 +23,13 @@ runs the adapter twice:
   summaries for every function in the package that calls into
   another `@suss/*` package.
 
-Both sides land in `<pkg>/dist/suss-summaries.json` — the format
-proposed in `docs/behavioral-summary-format.md`'s "Publishing
-summaries" section, now shipping output. The consolidated
+Both sides land in `<pkg>/.suss/suss-summaries.json`, in the
+format proposed in `docs/behavioral-summary-format.md`'s
+"Publishing summaries" section. A package that means to publish
+its contract writes that file into `dist/` alongside its build;
+this run is local analysis of this repo, so it goes beside the
+extraction cache instead, where git and npm both already ignore
+it. The consolidated
 roll-up (`scripts/dogfood-report.json`) includes a `pairing`
 section: `pairSummaries` is run across the union of all
 packages, and every matched provider↔consumer edge is recorded
@@ -33,25 +37,27 @@ by `fn:<package>::<exportPath>`.
 
 ## What the run produces
 
-**335 provider + 82 consumer + 248 reachable-closure library summaries across 19/19 `@suss/*` packages. 82 cross-package edges paired.**
+**949 provider + 254 consumer summaries across 38/38 `@suss/*` packages. 246 cross-package edges paired.**
 
-The 248 `library` summaries come from the transitive-closure pass — every internal helper a pack-recognised entry point reaches through a static call chain gets its own summary, with `recognition: "reachable"` distinguishing them from pack-discovered units.
+753 of the 949 provider summaries come from the transitive-closure pass. Every internal helper a pack-recognised entry point reaches through a static call chain gets its own summary, with `recognition: "reachable"` telling them apart from the 196 pack-discovered units. A reachable helper is not on a boundary, so it carries no package and export path and cannot pair, and `pairSummaries` reports all 753 under `unmatched.noBinding`.
+
+`scripts/dogfood.mjs` writes these counts to `scripts/dogfood-baseline.json`, which is committed, and CI runs the script on every push. [What CI enforces](#what-ci-enforces) covers what happens when a number moves.
 
 Top consumed exports (packages most depended on by others in the
 suss monorepo):
 
 | Export | Callers |
 |--------|--------:|
-| `@suss/adapter-typescript::createTypeScriptAdapter` | 21 |
-| `@suss/behavioral-ir::restBinding` | 19 |
-| `@suss/behavioral-ir::functionCallBinding` | 11 |
-| `@suss/behavioral-ir::graphqlResolverBinding` | 4 |
-| `@suss/checker::checkAll` | 4 |
-| `@suss/extractor::assembleSummary` | 4 |
-| `@suss/behavioral-ir::graphqlOperationBinding` | 2 |
-| `@suss/behavioral-ir::safeParseSummaries` | 2 |
-| `@suss/checker::applySuppressions` | 2 |
-| `@suss/extractor::httpRouteDiscovery` | 2 |
+| `@suss/adapter-typescript::createTypeScriptAdapter` | 40 |
+| `@suss/adapter-typescript::createTypeScriptAdapter.extractAll` | 40 |
+| `@suss/behavioral-ir::restBinding` | 21 |
+| `@suss/behavioral-ir::functionCallBinding` | 13 |
+| `@suss/behavioral-ir::messageBusBinding` | 12 |
+| `@suss/checker::checkAll` | 10 |
+| `@suss/manifest-aws::refTarget` | 8 |
+| `@suss/behavioral-ir::runtimeConfigBinding` | 6 |
+| `@suss/extractor::assembleSummary` | 6 |
+| `@suss/behavioral-ir::graphqlResolverBinding` | 5 |
 
 Every edge is a behavioural pair: the provider summary describes
 what the called function does (per-branch conditions + outputs);
@@ -139,17 +145,137 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
   together; consumers of the published package can run their
   own summaries against the shipped contract via `suss check`.
 
+## Where the unmatched summaries come from
+
+The run leaves 134 providers and 8 consumers unpaired, plus the
+753 with no binding. Every group has a cause.
+
+**The 753 with no binding are expected.** All of them have
+`recognition: "reachable"` and `kind: "library"`. They are the
+internal helpers the transitive-closure pass picks up, and
+`@suss/adapter-typescript` alone contributes 342 of them from
+things like `nodeKey` and `locationKey` in `resolve/`. A helper
+nothing outside its file calls is not on a boundary, so it has
+no package or export path, so `pairSummaries` cannot build a key
+for it. The name is what misleads: these do carry a
+`function-call` binding, they only lack the package and export
+path a pairing key needs. Anyone who wants the number smaller
+should change how `pairSummaries` reports, not what the adapter
+sees.
+
+**Of the 134 unmatched providers, 23 point at something suss
+should be recognizing.**
+
+- **17 are the `default` export of a package the CLI only ever
+  loads through a dynamic `import()`.** `loadFramework` reaches
+  for `mod.default` and nothing else, so treating one of those
+  thunks as a consumer edge would recover the default and no
+  more. 39 unmatched providers sit in those nineteen packages;
+  the other 22 are named exports, and they are unmatched for the
+  ordinary reason below rather than because of the dynamic
+  import. `fastifyFramework` and `honoFramework` are two of the
+  22: nobody imports them by name, so nothing about dynamic
+  `import()` is hiding them.
+- **6 are `@suss/ir-core` exports that `@suss/behavioral-ir`
+  re-exports**, `graphqlResolverBinding` and `messageBusBinding`
+  among them. A consumer's boundary key names the specifier it
+  wrote, so it pairs with the barrel's copy of the provider and
+  leaves `ir-core`'s original unmatched. Both providers describe
+  the same function, and following a re-export back to the
+  package that declares it would collapse the pair.
+
+The remaining 111 are ordinary: exports whose only callers live
+inside their own package or in tests, which the run does not
+scan.
+
+**The 8 unmatched consumers are member calls on a returned or
+parsed value**, like `checkAll(...).findings.filter(...)` and
+`SuppressionFileSchema.safeParse(...)`. The consumer records the
+whole member chain as its export path, and no provider is
+published under that key. This is the number
+`dogfoodInvariants.mjs` holds a ceiling on, because what bounds
+it is how well suss resolves rather than how large this repo is.
+
+## What CI enforces
+
+Two things, and they fail for different reasons.
+
+**The invariants** live in `scripts/dogfoodInvariants.mjs` and
+`npm run dogfood` checks them on every run, with no baseline and
+no git ref involved:
+
+1. Every function a package declares as a callable export has a
+   provider summary. The declared set comes from each manifest's
+   `exports` map, read through the TypeScript compiler, so it is
+   a second opinion arrived at without suss.
+2. Every summary a pack recognised carries the package and export
+   path a pairing key is built from. The transitive closure is
+   the exception, since a reachable helper is not on a boundary.
+3. No more than eight consumers go unpaired while their provider
+   sits in the same run.
+
+These hold whatever the source looks like. Move an export between
+packages and both sides still balance. Delete one and there is
+nothing left to require. Strip a package back to types and it
+asks for nothing at all.
+
+**The counts** live in `scripts/dogfood-baseline.json` and
+`npm run check:dogfood` compares a fresh run against the copy
+committed in the same tree. They only act as a floor: a number
+going up is fine and needs no refresh, and CI on main pushes the
+refreshed file back so the floor keeps up with the source.
+
+The counts are there because the invariants cannot see a
+recognizer that stops firing at some call sites while still
+firing at others. Every declared export still has its summary,
+every boundary still has its key, and the only thing that moved
+is how much of the closure suss reached. That closure is 753 of
+the 949 provider summaries, so leaving it unguarded would leave
+most of the run unguarded.
+
+### What this blocks, and what to do about it
+
+A count going down fails the build. That is the point, and it
+means these ordinary changes fail until you do something:
+
+| What you did | What to do |
+|---|---|
+| Deleted an export or folded two helpers into one | `npm run dogfood`, commit the refreshed baseline |
+| Moved an export from one package to another | Same. The losing package's line drops and the gaining package's rises, both in the diff |
+| Narrowed a recognizer that was over-firing | Same. This is the case worth being careful about, since the diff looks identical to a regression |
+| Renamed a package in place | Nothing. Packages are keyed by directory, so the rename reads as one package whose name changed |
+| Moved a package to a different directory | `npm run dogfood`, commit. The old path leaves the baseline and the new one enters it |
+
+The refreshed baseline lands in the pull request diff as a
+per-package delta against main, which is where a reviewer reads
+it. A drop nobody can explain is the signal. Nothing else can
+lower a committed number, and no bot refreshes the file on a
+pull request branch, so the drop cannot pass through unseen.
+
+### Its relationship to `check:self`
+
+`scripts/checkSelf.mjs` is the other place suss runs on suss, and
+the two answer different questions. `check:self` extracts the
+public exports of the two checker packages and runs the CLI's
+`check` against the intent specs under `intent/`, asking whether
+those exports still behave the way the specs say. It reports and
+never fails. The dogfood run asks how much of its own source suss
+can see at all, across all 38 packages, and it does fail. Neither
+subsumes the other: `check:self` covers two packages in depth
+against authored intent, the dogfood run covers the whole
+workspace by extent.
+
 ## What's still out of scope
 
-- **Factory-return follow-through.** `createTypeScriptAdapter()`
-  returns an object with `extractAll()` / `extractFromFiles()`.
-  Those methods aren't top-level exports so `packageExports`
-  doesn't summarise them, and `packageImport` only tracks bare
-  calls — `adapter.extractAll()` is a member-call chain that
-  falls through the v0 consumer-side matcher. Both together
-  would make factory-shaped APIs first-class.
-- **Member-call chains.** The dogfood currently misses consumers
-  like `adapter.extractAll()` (see above) and `BehavioralSummarySchema.parse()`.
+- **Dynamic `import()`.** The CLI reaches nineteen packages only
+  through `BUILTIN_FRAMEWORKS`, a record of
+  `() => import("@suss/framework-…")` thunks. `packageImport`
+  walks static named and default imports, so none of those loads
+  is a consumer edge.
+- **Re-export provenance.** Six `@suss/ir-core` exports are
+  re-exported by `@suss/behavioral-ir`. A consumer's boundary key
+  names the specifier it imported from, so the barrel's copy of
+  the provider pairs and `ir-core`'s original does not.
 - **Namespace imports.** `import * as X from "pkg"` is not yet
   tracked on the consumer side.
 - **Declarative-data packs.** Framework packs (ts-rest, Express,
@@ -157,7 +283,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
   that returns a `PatternPack` data structure. Their public API
   is structurally small — one summary per pack, trivially
   bodied. That's correct: a pack is data, not behaviour. The
-  19/19 coverage counts them as analysed, not as substantive.
+  38/38 coverage counts them as analysed, not as substantive.
 
 ## The in-process API still feels clean
 
@@ -173,11 +299,10 @@ boilerplate for ad-hoc usage.
 
 Not landing in this pass; they go on the backlog:
 
-1. Factory-return follow-through so methods reachable via
-   `createX()` / class constructors get their own `library`
-   summaries.
-2. Member-call chain detection on the consumer side so
-   `adapter.extractAll()` pairs with its provider.
+1. Dynamic `import()` as a consumer-side edge, so a plugin
+   registry of import thunks is a dependency suss can see.
+2. Following a re-export back to the package that declares the
+   function, so a barrel does not hide the original provider.
 3. Namespace imports (`import * as X`) and pattern exports
    (`./utils/*`).
 4. Defaults on `PatternPack` to reduce scaffolding friction.
