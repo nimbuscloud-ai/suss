@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/pubsub-pairing/packages/resolution/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 1,
       "covered": 1,
