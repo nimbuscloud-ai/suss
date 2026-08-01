@@ -19,8 +19,8 @@ describe("honoFramework", () => {
     const pack = honoFramework();
     expect(pack.name).toBe("hono");
     expect(pack.protocol).toBe("http");
-    // `new Hono()` and `new OpenAPIHono()`, times six verbs.
-    expect(pack.discovery).toHaveLength(2);
+    // Two import sources times the verb list, plus app.openapi.
+    expect(pack.discovery).toHaveLength(4);
     expect(pack.discovery[0]?.requiresImport).toEqual(["hono"]);
   });
 
@@ -101,5 +101,59 @@ describe("honoFramework — extraction", () => {
 
   it("gives a redirect Hono's default status", () => {
     expect(statuses(boundary("GET", "/legacy/:id"))).toEqual([302]);
+  });
+});
+
+describe("honoFramework \u2014 zod-openapi registration", () => {
+  const dir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../../fixtures/hono-openapi",
+  );
+
+  let summaries: BehavioralSummary[];
+  beforeAll(async () => {
+    const { Project } = await import("ts-morph");
+    const project = new Project({
+      skipAddingFilesFromTsConfig: true,
+      compilerOptions: { strict: true, skipLibCheck: true },
+    });
+    project.addSourceFilesAtPaths(path.join(dir, "*.ts"));
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoFramework()],
+    });
+    summaries = await adapter.extractAll();
+  }, 90_000);
+
+  it("reads the route off the contract object the registration names", () => {
+    const routes = summaries
+      .map((s) => s.identity.boundaryBinding)
+      .filter((b) => b?.semantics.name === "rest")
+      .map((b) =>
+        b?.semantics.name === "rest"
+          ? `${b.semantics.method} ${b.semantics.path}`
+          : "",
+      )
+      .sort();
+    expect(routes).toEqual([
+      "GET /v1/tenants/{tenantId}",
+      "POST /v1/tenants/{tenantId}/provision",
+    ]);
+  });
+
+  it("reads both outcomes of the provision handler", () => {
+    const provision = summaries.find(
+      (s) =>
+        s.identity.boundaryBinding?.semantics.name === "rest" &&
+        s.identity.boundaryBinding.semantics.method === "POST",
+    );
+    const statuses = provision?.transitions
+      .map((t) =>
+        t.output.type === "response" && t.output.statusCode?.type === "literal"
+          ? t.output.statusCode.value
+          : null,
+      )
+      .sort();
+    expect(statuses).toEqual([200, 409]);
   });
 });

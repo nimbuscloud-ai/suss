@@ -14,6 +14,7 @@ import {
 } from "ts-morph";
 
 import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 export function discoverRegistrationCalls(
@@ -21,6 +22,7 @@ export function discoverRegistrationCalls(
   match: Extract<DiscoveryPattern["match"], { type: "registrationCall" }>,
   kind: string,
   bindingExtraction?: BindingExtraction,
+  resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
 
@@ -95,6 +97,26 @@ export function discoverRegistrationCalls(
       registrationVarNames.add(varDecl.getName());
     }
   }
+
+  // A function that takes the app as a parameter registers on it the
+  // same way. The type annotation names the imported class, which is
+  // how a service split across files hands its app around.
+  sourceFile.forEachDescendant((node) => {
+    if (!Node.isParameterDeclaration(node)) {
+      return;
+    }
+    const typeNode = node.getTypeNode();
+    if (typeNode === undefined) {
+      return;
+    }
+    const typeText = typeNode.getText();
+    if (
+      typeText === importedLocalName ||
+      typeText.startsWith(`${importedLocalName}<`)
+    ) {
+      registrationVarNames.add(node.getName());
+    }
+  });
 
   // Step 3: Walk all call expressions and match registration chains
   const registrationMethods = match.registrationChain.map((c) =>
@@ -190,7 +212,12 @@ export function discoverRegistrationCalls(
         ) {
           const routeInfo =
             bindingExtraction !== undefined
-              ? extractRouteInfoFromBinding(node, methodName, bindingExtraction)
+              ? extractRouteInfoFromBinding(
+                  node,
+                  methodName,
+                  bindingExtraction,
+                  resolution,
+                )
               : null;
           results.push({
             func: lastArg as ArrowFunction | FunctionExpression,
@@ -204,6 +231,25 @@ export function discoverRegistrationCalls(
   });
 
   return results;
+}
+
+/** The string a property of an object literal holds, or null. */
+function stringProperty(obj: Node, name: string): string | null {
+  if (!Node.isObjectLiteralExpression(obj)) {
+    return null;
+  }
+  const property = obj.getProperty(name);
+  if (property === undefined || !Node.isPropertyAssignment(property)) {
+    return null;
+  }
+  const value = property.getInitializer();
+  if (
+    value !== undefined &&
+    (Node.isStringLiteral(value) || Node.isNoSubstitutionTemplateLiteral(value))
+  ) {
+    return value.getLiteralValue();
+  }
+  return null;
 }
 
 /**
@@ -228,7 +274,40 @@ function extractRouteInfoFromBinding(
   call: CallExpression,
   methodName: string,
   binding: BindingExtraction,
+  resolution?: ResolutionStore,
 ): { method: string; path: string } | null {
+  // Both halves on one argument's properties: the registration passes
+  // a route object, `app.openapi(route, handler)`, and the object
+  // carries its own method and path. The object usually lives on a
+  // shared contract in another file, so the fact layer follows the
+  // reference to the literal before the properties are read.
+  if (
+    binding.method.type === "fromArgumentProperty" &&
+    binding.path.type === "fromArgumentProperty" &&
+    binding.method.position === binding.path.position
+  ) {
+    const arg = call.getArguments()[binding.method.position];
+    if (arg === undefined) {
+      return null;
+    }
+    const routeObject = Node.isObjectLiteralExpression(arg)
+      ? arg
+      : resolution?.resolveObject(arg);
+    if (
+      routeObject === undefined ||
+      routeObject === null ||
+      !Node.isObjectLiteralExpression(routeObject)
+    ) {
+      return null;
+    }
+    const method = stringProperty(routeObject, binding.method.property);
+    const path = stringProperty(routeObject, binding.path.property);
+    if (method === null || path === null) {
+      return null;
+    }
+    return { method: method.toUpperCase(), path };
+  }
+
   if (
     binding.method.type !== "fromRegistration" ||
     binding.path.type !== "fromRegistration"

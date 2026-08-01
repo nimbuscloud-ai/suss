@@ -33,15 +33,52 @@ export function honoFramework(): PatternPack {
     protocol: "http",
     languages: ["typescript", "javascript"],
 
+    // createRoute wraps its config without changing it; the call IS the
+    // route object. Declared here because the wrapper's body lives in
+    // the library, where nobody can read it.
+    transparentWrappers: [
+      { callee: "createRoute", argument: 0, module: "@hono/zod-openapi" },
+    ],
+
     // `new Hono()` and `new OpenAPIHono()` both register the same way.
     // Sub-apps mounted with `app.route(path, sub)` keep the path they
     // were declared with, which is a gap worth naming: a route declared
     // on a sub-app is reported without its mount prefix.
-    discovery: httpRouteDiscovery({
-      importModule: "hono",
-      importNames: ["Hono", "OpenAPIHono"],
-      methods: [".get", ".post", ".put", ".delete", ".patch", ".options"],
-    }),
+    discovery: [
+      ...httpRouteDiscovery({
+        importModule: "hono",
+        importNames: ["Hono", "OpenAPIHono"],
+        methods: [".get", ".post", ".put", ".delete", ".patch", ".options"],
+      }),
+      ...httpRouteDiscovery({
+        importModule: "@hono/zod-openapi",
+        importNames: ["OpenAPIHono"],
+        methods: [".get", ".post", ".put", ".delete", ".patch", ".options"],
+      }),
+      {
+        // app.openapi(route, handler), where the route is a
+        // createRoute({ method, path, ... }) object that usually lives
+        // on a shared contract in another file. The fact layer follows
+        // the reference; the route object carries its own method and
+        // path.
+        kind: "handler",
+        match: {
+          type: "registrationCall",
+          importModule: "@hono/zod-openapi",
+          importName: "OpenAPIHono",
+          registrationChain: [".openapi"],
+        },
+        bindingExtraction: {
+          method: {
+            type: "fromArgumentProperty",
+            position: 0,
+            property: "method",
+          },
+          path: { type: "fromArgumentProperty", position: 0, property: "path" },
+        },
+        requiresImport: ["@hono/zod-openapi"],
+      },
+    ],
 
     terminals: [
       {
