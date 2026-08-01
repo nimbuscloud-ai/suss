@@ -516,7 +516,9 @@ export function detectGaps(
   if (raw.unmatchedReturns !== undefined && raw.unmatchedReturns > 0) {
     const count = raw.unmatchedReturns;
     gaps.push({
-      type: "unhandledCase",
+      // Not a contract violation: the handler may be answering
+      // correctly, in a shape nobody taught the pack.
+      type: "unreadOutcome",
       conditions: [],
       consequence: "unknown",
       description:

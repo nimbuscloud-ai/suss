@@ -1092,7 +1092,7 @@
           "properties": {
             "type": {
               "type": "string",
-              "const": "unhandledCase"
+              "enum": ["unhandledCase", "unreadOutcome"]
             },
             "conditions": {
               "type": "array",

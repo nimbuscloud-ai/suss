@@ -160,6 +160,16 @@ export function unhandledCaseGap(description: string): Gap {
   };
 }
 
+/** A gap saying part of the unit was not described, not that it misbehaved. */
+export function unreadOutcomeGap(description: string): Gap {
+  return {
+    type: "unreadOutcome",
+    conditions: [],
+    consequence: "unknown",
+    description,
+  };
+}
+
 export function consumer(
   name: string,
   transitions: Transition[],
