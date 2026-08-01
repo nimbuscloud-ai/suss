@@ -8,7 +8,11 @@
 
 import { type CallExpression, Node } from "ts-morph";
 
-import type { DiscoveryPattern } from "@suss/extractor";
+import type {
+  DiscoveryPattern,
+  InputMappingPattern,
+  TerminalPattern,
+} from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 
 export interface ClientCallSite {
@@ -24,6 +28,21 @@ export interface DiscoveredUnit {
   callSite?: ClientCallSite;
   /** The discovery pattern that produced this unit. Set by discoverUnits. */
   pattern?: DiscoveryPattern;
+  /**
+   * Terminal patterns for this unit's body, when a discoverUnits
+   * callback attached them (`DiscoveredCustomUnit.terminals`). A pack
+   * whose units follow more than one output convention declares the
+   * common one at pack level and attaches the other per unit.
+   * `extractCodeStructure` falls back to the pack-level `terminals`
+   * when unset.
+   */
+  terminals?: TerminalPattern[];
+  /**
+   * Input mapping for this unit, when a discoverUnits callback attached
+   * one (`DiscoveredCustomUnit.inputMapping`). Falls back to the
+   * pack-level `inputMapping` when unset.
+   */
+  inputMapping?: InputMappingPattern;
   /**
    * Populated by `resolverMap`-style discovery (GraphQL code-first).
    * The adapter uses it to build a `graphql-resolver` binding directly,

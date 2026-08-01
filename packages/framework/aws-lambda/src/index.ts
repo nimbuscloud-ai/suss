@@ -22,11 +22,13 @@
 // `json(payload, status)` both come out right, as does one that calls
 // the helper `respond`.
 //
-// Out of scope: SQS / Schedule / SNS event handlers. Those surface as
-// `recognized-not-http` accounting units (see `discovery.ts`) — the
+// SQS / Schedule / SNS event handlers surface as `recognized-not-http`
+// accounting units (see `discovery.ts`), and those read what they
+// return under a wider terminal list (see `terminals.ts`). The
 // message-bus pass in @suss/contract-cloudformation owns SQS consumers.
 
 import { awsLambdaDiscovery } from "./discovery.js";
+import { HTTP_TERMINALS } from "./terminals.js";
 
 import type { PatternPack } from "@suss/extractor";
 
@@ -70,40 +72,9 @@ export function awsLambdaFramework(): PatternPack {
     // the template reachable from it, and a directory with no template
     // resolves to null once and stays memoized.
 
-    terminals: [
-      {
-        // `return { statusCode, body, headers? }`, written at the return
-        // site or built by a helper the adapter follows into. `body`
-        // holds the serialized payload, so unwrap `JSON.stringify(x)` to
-        // the shape of `x`.
-        kind: "response",
-        match: { type: "returnShape", requiredProperties: ["statusCode"] },
-        extraction: {
-          statusCode: { from: "property", name: "statusCode" },
-          body: { from: "property", name: "body", unwrapJsonStringify: true },
-        },
-      },
-      {
-        // `return { batchItemFailures }`, which is how a consumer tells
-        // Lambda which records to retry and which to drop. Lambda
-        // defines the shape, so this pack can name it, the same way it
-        // names the HTTP envelope above.
-        kind: "return",
-        match: {
-          type: "returnShape",
-          requiredProperties: ["batchItemFailures"],
-        },
-        extraction: {},
-      },
-      {
-        // `throw new SomeError(...)` — an uncaught throw becomes a
-        // throw-output transition; API Gateway maps it to a 5xx, but the
-        // specific status is the platform's, not the handler's.
-        kind: "throw",
-        match: { type: "throwExpression" },
-        extraction: {},
-      },
-    ],
+    // Route units extract against these. Non-HTTP accounting units carry
+    // their own wider list, attached per unit by the discovery callback.
+    terminals: HTTP_TERMINALS,
 
     // Lambda's handler signature is `(event, context, callback?)`. The
     // HTTP request data (path params, query, body) lives on `event`;

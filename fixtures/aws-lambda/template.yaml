@@ -53,6 +53,41 @@ Resources:
             Method: DELETE
             Path: /widgets/{widgetId}
 
+  # HTTP handler whose two envelopes sit in a ternary at the return site.
+  ToggleFlagFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/toggleFlag.handler
+      Events:
+        Toggle:
+          Type: HttpApi
+          Properties:
+            Method: POST
+            Path: /flags/toggle
+
+  # HTTP handler that returns a variable the pack cannot read.
+  MirrorRequestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/mirrorRequest.handler
+      Events:
+        Mirror:
+          Type: HttpApi
+          Properties:
+            Method: GET
+            Path: /mirror
+
+  # Non-HTTP handler on a timer. Answers with an arbitrary summary object.
+  ScheduledSyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/scheduledSync.handler
+      Events:
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 day)
+
   # Non-HTTP handler — surfaces as recognized-not-http accounting.
   QueueWorkerFunction:
     Type: AWS::Serverless::Function

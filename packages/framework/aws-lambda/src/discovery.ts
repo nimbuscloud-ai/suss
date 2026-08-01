@@ -12,6 +12,7 @@
 // accounting units so a recognized handler is never silently dropped.
 
 import { type HandlerEntry, handlersForFile } from "./templateIndex.js";
+import { NON_HTTP_TERMINALS } from "./terminals.js";
 
 import type {
   FunctionRoot,
@@ -111,6 +112,11 @@ function graphqlResolverUnits(
  * unit — no `routeInfo`, so it falls back to a function-call binding and
  * pairs with nothing, but it appears in the summary set marked
  * `recognized-not-http` with the event types that reached it.
+ *
+ * No HTTP envelope constrains what these answer with, so the unit
+ * carries the wider terminal list and any returned object gets its
+ * shape read. Route units keep the pack-level list, where a return
+ * outside the envelope stays an unread return.
  */
 function accountingUnit(
   entry: HandlerEntry,
@@ -122,6 +128,7 @@ function accountingUnit(
     func,
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
+    terminals: NON_HTTP_TERMINALS,
     metadata: {
       [METADATA_NAMESPACE]: {
         functionLogicalId: entry.functionLogicalId,
