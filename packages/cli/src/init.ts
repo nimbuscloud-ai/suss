@@ -409,12 +409,13 @@ export function formatInitReport(report: InitReport): string {
     ),
   );
   lines.push("");
-  lines.push(dim('   { "rules": [{ "kind": "unhandledProviderCase",'));
+  lines.push(dim('   { "version": 1,'));
+  lines.push(dim('     "rules": [{ "kind": "unhandledProviderCase",'));
   lines.push(
-    dim('                "boundary": "GET /legacy/*", "effect": "hide",'),
+    dim('                 "boundary": "GET /legacy/*", "effect": "hide",'),
   );
   lines.push(
-    dim('                "reason": "legacy route, retiring in Q3" }] }'),
+    dim('                 "reason": "legacy route, retiring in Q3" }] }'),
   );
   lines.push("");
 
