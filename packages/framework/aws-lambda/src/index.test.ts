@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 
 import { awsLambdaFramework, clearTemplateCache } from "./index.js";
+import { HTTP_TERMINALS, NON_HTTP_TERMINALS } from "./terminals.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 
@@ -130,6 +131,16 @@ describe("awsLambdaFramework — pack shape", () => {
       name: "body",
       unwrapJsonStringify: true,
     });
+  });
+
+  it("lets a non-HTTP handler fall off the end, and holds a route to the envelope", () => {
+    // A queue consumer acks by not throwing, so falling through is a
+    // terminal there. An HTTP route that answers nothing is a bug, so
+    // the route list must not gain the same terminal.
+    const fallthroughOf = (terminals: typeof HTTP_TERMINALS) =>
+      terminals.filter((t) => t.match.type === "functionFallthrough");
+    expect(fallthroughOf(NON_HTTP_TERMINALS)).toHaveLength(1);
+    expect(fallthroughOf(HTTP_TERMINALS)).toEqual([]);
   });
 });
 

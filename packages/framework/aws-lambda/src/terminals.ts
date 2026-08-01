@@ -72,4 +72,14 @@ export const NON_HTTP_TERMINALS: TerminalPattern[] = [
     match: { type: "returnShape" },
     extraction: {},
   },
+  {
+    // A queue consumer answers by not throwing: it processes the batch
+    // and falls off the end, and Lambda takes the absence of an error
+    // as the ack. Without this the handler has no terminal at all, so
+    // it carries no transition, and everything it does — the queue it
+    // writes to, the table it reads — goes with it.
+    kind: "return",
+    match: { type: "functionFallthrough" },
+    extraction: {},
+  },
 ];
