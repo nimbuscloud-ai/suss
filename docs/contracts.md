@@ -89,7 +89,7 @@ Design-source-of-truth artifacts upstream of code: Figma / Sketch files, design 
 
 ## How suss absorbs contracts today
 
-Two of the five shapes, **schema** and **spec**, ship today across HTTP, GraphQL, AppSync, message-bus, storage-relational, and component domains. The contract reader pipeline (`suss contract --from <source>`) covers eight sources:
+Two of the five shapes, **schema** and **spec**, ship today across HTTP, GraphQL, AppSync, message-bus, storage-relational, and component domains. `suss contract --from <source>` takes seven values, from six reader packages:
 
 - `@suss/contract-openapi`, OpenAPI 3.x (schema, HTTP)
 - `@suss/contract-cloudformation`, CFN / SAM templates with API Gateway resources (schema, HTTP), built on the internal `@suss/contract-aws-apigateway` shared library

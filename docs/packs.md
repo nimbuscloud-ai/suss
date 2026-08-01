@@ -8,10 +8,10 @@ For the type-by-type pattern catalogue, see [`reference/pack-patterns.md`](refer
 
 Four kinds of pack feed the extractor, all using the `PatternPack` interface:
 
-- **Framework packs** discover handlers, components, resolvers, and consumers, the units a framework defines and the shapes they produce. Examples include ts-rest, Express, NestJS, React, and Prisma; see [`architecture.md`](architecture.md#packages-and-what-each-owns) for the full list of shipped packs.
+- **Framework packs** discover handlers, components, resolvers, and consumers, the units a framework defines and the shapes they produce. Fifteen ship: ts-rest, Express, Fastify, Hono, Next.js, NestJS REST and GraphQL, Apollo Server, AWS Lambda, React, React Router, Prisma, Drizzle, SQS, and EventBridge. [`reference/packages.md`](reference/packages.md) has the table.
 - **Client packs** discover the consumer side: HTTP clients, GraphQL clients, and RPC clients. Today's three are web (`fetch`), axios, and Apollo client.
 - **Runtime packs** recognize behavior the runtime defines (not the language spec, not a framework). For Node, `@suss/runtime-node` covers scheduling primitives like `setTimeout` and the `process.*` surface, including `process.env.X` reads, which emit config-read interactions the runtime-config checker pairs against a deployable unit's declared env-var contract. Recognizer-only, no top-level discovery.
-- **Contract packs** translate external specifications (e.g. OpenAPI documents and GraphQL SDL) into `BehavioralSummary[]` directly. They don't use `PatternPack` and aren't covered here, see [`contract-sources.md`](contract-sources.md).
+- **Contract packs** translate external specifications into `BehavioralSummary[]` directly: OpenAPI documents, GraphQL SDL, committed `.graphql` operation documents, CloudFormation and SAM templates, AppSync resources, Prisma schemas, Storybook stories. They don't use `PatternPack` and aren't covered here, see [`contract-sources.md`](contract-sources.md).
 
 The first three share one interface and the rest of this document. Their differences are which fields they emphasize.
 

@@ -2,6 +2,8 @@
 
 suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and contract sources a project uses. Install the CLI and only the packs you need; nothing pulls in the whole set.
 
+Nineteen packs read code today, across fifteen frameworks, three HTTP and GraphQL clients, and the Node runtime. Seven contract readers turn a declared artifact into the same summary shape. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
+
 ## Install by stack
 
 ```bash
@@ -13,7 +15,9 @@ Common combinations:
 | Stack | Packs |
 |---|---|
 | ts-rest full-stack | `@suss/framework-ts-rest` (provider + client through the contract) |
+| Hono + fetch | `@suss/framework-hono @suss/client-web` |
 | Express + fetch | `@suss/framework-express @suss/client-web` |
+| Next.js route handlers | `@suss/framework-nextjs` |
 | React + GraphQL | `@suss/framework-react @suss/client-apollo` |
 | Lambda + SQS | `@suss/framework-aws-sqs @suss/contract-cloudformation @suss/runtime-node` |
 | App backed by Postgres (Prisma) | add `@suss/framework-prisma @suss/contract-prisma` to any of the above |
@@ -31,6 +35,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/behavioral-ir`](../../packages/behavioral-ir) | zod schemas, types, parsers, and generated [JSON Schema](../../packages/behavioral-ir/schema/behavioral-summary.schema.json). Install this to consume summaries. | ![](../../.github/badges/coverage-ir.svg) |
 | [`@suss/intent-ir`](../../packages/intent-ir) | Team-authored intent: system intent (what a boundary should do) + PRD outcome intent, paired against derived summaries. | ![](../../.github/badges/coverage-intent-ir.svg) |
 | [`@suss/datalog`](../../packages/datalog) | Small semi-naive Datalog evaluator with stratified negation; the rules engine behind derived program facts. | ![](../../.github/badges/coverage-datalog.svg) |
+| [`@suss/resolution`](../../packages/resolution) | Datalog rules for following a value to the function it comes down to: a factory's argument, a re-exported wrapper, a closure three levels down. Language-neutral, so an adapter supplies facts and inherits the rules. | ![](../../.github/badges/coverage-resolution.svg) |
 | [`@suss/extractor`](../../packages/extractor) | Assembly engine. Converts raw extracted structure into `BehavioralSummary`. | ![](../../.github/badges/coverage-extractor.svg) |
 | [`@suss/adapter-typescript`](../../packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](../../.github/badges/coverage-typescript.svg) |
 | [`@suss/checker`](../../packages/checker) | Pairwise cross-boundary checker (behavioral). | ![](../../.github/badges/coverage-checker.svg) |
@@ -44,6 +49,8 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-ts-rest`](../../packages/framework/ts-rest) | ts-rest providers + clients (contract-backed). | ![](../../.github/badges/coverage-ts-rest.svg) |
 | [`@suss/framework-express`](../../packages/framework/express) | Express handlers. | ![](../../.github/badges/coverage-express.svg) |
 | [`@suss/framework-fastify`](../../packages/framework/fastify) | Fastify handlers. | ![](../../.github/badges/coverage-fastify.svg) |
+| [`@suss/framework-hono`](../../packages/framework/hono) | Hono handlers, including the `c.json(body, status)` argument order. | |
+| [`@suss/framework-nextjs`](../../packages/framework/nextjs) | Next.js route handlers and pages; the route comes from where the file sits. | ![](../../.github/badges/coverage-nextjs.svg) |
 | [`@suss/framework-react`](../../packages/framework/react) | React function components, event handlers, `useEffect` bodies. | ![](../../.github/badges/coverage-react.svg) |
 | [`@suss/framework-react-router`](../../packages/framework/react-router) | React Router loaders / actions / routes. | ![](../../.github/badges/coverage-react-router.svg) |
 | [`@suss/framework-apollo`](../../packages/framework/apollo) | Apollo Server resolvers (code-first). | ![](../../.github/badges/coverage-apollo.svg) |
@@ -52,8 +59,8 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-prisma`](../../packages/framework/prisma) | Prisma client calls, emits storage-access interactions per read / write. | ![](../../.github/badges/coverage-prisma.svg) |
 | [`@suss/framework-drizzle`](../../packages/framework/drizzle) | Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names. | ![](../../.github/badges/coverage-drizzle.svg) |
 | [`@suss/framework-aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls, emits message-send interactions. | ![](../../.github/badges/coverage-aws-sqs.svg) |
-| [`@suss/framework-aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. |, |
-| [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. |, |
+| [`@suss/framework-aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | |
+| [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | |
 
 ## Clients
 
@@ -74,7 +81,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | Package | Description | Coverage |
 |---------|-------------|----------|
 | [`@suss/contract-openapi`](../../packages/contract/openapi) | OpenAPI 3.x → behavioral summaries. | ![](../../.github/badges/coverage-contract-openapi.svg) |
-| [`@suss/contract-graphql`](../../packages/contract/graphql) | Plain GraphQL SDL → resolver-kind summaries (Query / Mutation / Subscription fields). | ![](../../.github/badges/coverage-contract-graphql.svg) |
+| [`@suss/contract-graphql`](../../packages/contract/graphql) | Two readers. A plain GraphQL SDL file becomes one resolver-kind summary per Query / Mutation / Subscription field. Committed `.graphql` / `.gql` operation documents become one client-kind summary per operation, with fragment spreads inlined, so a repo that keeps its queries in files pairs against its resolvers without any call site being traced. | ![](../../.github/badges/coverage-contract-graphql.svg) |
 | [`@suss/contract-aws-apigateway`](../../packages/contract/aws-apigateway) | API Gateway resource semantics, REST / HTTP API configs → summaries with platform-injected transitions. | ![](../../.github/badges/coverage-contract-aws-apigateway.svg) |
 | [`@suss/contract-cloudformation`](../../packages/contract/cloudformation) | CloudFormation / SAM templates → summaries (delegates to contract-openapi + contract-aws-apigateway; also handles SQS event-source mappings + Lambda Environment). | ![](../../.github/badges/coverage-contract-cloudformation.svg) |
 | [`@suss/contract-appsync`](../../packages/contract/appsync) | AppSync GraphQL schema + resolver mapping templates. | ![](../../.github/badges/coverage-contract-appsync.svg) |
@@ -86,6 +93,6 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 
 | Package | Description | Coverage |
 |---------|-------------|----------|
-| [`@suss/manifest-aws`](../../packages/manifest/aws) | Parse CloudFormation / SAM templates into a shared facts layer that contract readers and manifest-driven framework packs both consume. |, |
+| [`@suss/manifest-aws`](../../packages/manifest/aws) | Parse CloudFormation / SAM templates into a shared facts layer that contract readers and manifest-driven framework packs both consume. | |
 
 Adding a framework is one pack file (~100-300 lines of declarative `PatternPack` configuration); adding a contract source is one reader. The IR is protocol-agnostic, so new boundary kinds slot in without architectural change. See [Packs](/packs) for the model and [Write a pack](/guides/writing-a-pack) for the how-to.

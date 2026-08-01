@@ -66,7 +66,7 @@ Findings are graded `error | warning | info` and you control the CI gate with `-
 
 ## What's the difference between `suss extract` and `suss contract`?
 
-`extract` runs over TypeScript source and derives summaries from the implementation. `contract` runs over a declared artifact, OpenAPI spec, CloudFormation template, Prisma schema, Storybook CSF3 file, and emits summaries in the same shape. Both feed `suss check`, which pairs them.
+`extract` runs over TypeScript source and derives summaries from the implementation. `contract` runs over a declared artifact, an OpenAPI spec, a CloudFormation template, a Prisma schema, a GraphQL SDL or operation document, a Storybook CSF3 file, and emits summaries in the same shape. Both feed `suss check`, which pairs them.
 
 ## Can library authors publish suss summaries with their package?
 

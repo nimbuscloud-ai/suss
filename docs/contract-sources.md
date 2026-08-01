@@ -66,6 +66,24 @@ All three readers ultimately call `restApiToSummaries(config)` / `httpApiToSumma
 
 For sources where there's no plausible second reader (a single OpenAPI document is the whole spec), the split adds no value. `@suss/contract-openapi` is a single package.
 
+## Two readers in one package: GraphQL
+
+`@suss/contract-graphql` reads two things, and they land on opposite sides of the boundary.
+
+`--from graphql` takes a plain SDL file. Every Query, Mutation, and Subscription field becomes a resolver-kind summary. That is the provider side, and it pairs against resolvers the Apollo and NestJS packs find in code.
+
+`--from graphql-documents` takes committed `.graphql` / `.gql` operation documents, a single file or a directory walked recursively. Every query, mutation, and subscription becomes a client-kind summary. That is the consumer side, for a repo that keeps its operations in files rather than in tagged template literals at the call site. Nothing has to be traced through the code:
+
+```bash
+suss contract --from graphql schema.graphql -o summaries/schema.json
+suss contract --from graphql-documents src/queries -o summaries/operations.json
+suss check --dir summaries/
+```
+
+Fragment spreads resolve against every fragment definition in the read set and are inlined into the stored document, so the pairing pass sees the selected fields directly. A spread the reader cannot expand stays in the document as written and becomes a gap on that summary rather than an error.
+
+Each operation summary carries its document text at `metadata.graphql.document`, the same place the TypeScript adapter puts documents it recovers from client call sites. The checker reads both the same way, so a repo can move an operation from a call site into a file without the findings changing.
+
 ## Configuration drives behavior
 
 A contract source must capture *configuration-driven* behavior, not just the structural surface. An API Gateway endpoint with no authorizer produces what its integration returns. Add an authorizer and the same endpoint can also return 401/403. Add throttling and it can return 429. The summary has to reflect the full envelope.
