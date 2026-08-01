@@ -57,6 +57,7 @@ import {
   type ExtractionReport,
   type PackTally,
 } from "./diagnostics.js";
+import { routePathFromFile } from "./discovery/filenameRoute.js";
 import { type DiscoveredUnit, discoverUnits } from "./discovery/index.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { ResolutionStore } from "./facts/store.js";
@@ -599,6 +600,54 @@ function extractConsumerBinding(
   });
 }
 
+/**
+ * The REST identity of a unit whose route comes from where its file
+ * sits. Null when the file sits outside the root the pack named, or
+ * when nothing says which method it answers.
+ */
+function fileRouteBinding(
+  filePath: string,
+  unit: DiscoveredUnit,
+  binding: BindingExtraction,
+  pack: PatternPack,
+): BoundaryBinding | null {
+  if (binding.path.type !== "fromFilename") {
+    return null;
+  }
+  const routePath = routePathFromFile(filePath, binding.path);
+  if (routePath === null) {
+    return null;
+  }
+  const method = fileRouteMethod(binding, unit);
+  if (method === undefined) {
+    return null;
+  }
+  return restBinding({
+    transport: pack.protocol,
+    recognition: pack.name,
+    method,
+    path: routePath,
+  });
+}
+
+/**
+ * The method a file-routed unit answers. A pack either states it
+ * outright, as React Router does for its loader, or takes it from the
+ * export name, as Next.js does for `export async function GET`.
+ */
+function fileRouteMethod(
+  binding: BindingExtraction,
+  unit: DiscoveredUnit,
+): string | undefined {
+  if (binding.method.type === "literal") {
+    return binding.method.value;
+  }
+  if (binding.method.type === "fromExportName") {
+    return unit.name.toUpperCase();
+  }
+  return undefined;
+}
+
 function extractBindingMethod(
   binding: BindingExtraction,
   callSite: NonNullable<DiscoveredUnit["callSite"]>,
@@ -993,6 +1042,21 @@ function extractFromSourceFile(
             // types; don't re-append.
             typeText: v.type,
           });
+        }
+      } else if (
+        matchedPattern?.bindingExtraction?.path.type === "fromFilename"
+      ) {
+        // File-convention routing: Next.js and React Router put the
+        // route in the path to the file, so the pack says how to read
+        // it and the file itself carries the answer.
+        const binding = fileRouteBinding(
+          raw.identity.file,
+          unit,
+          matchedPattern.bindingExtraction,
+          pack,
+        );
+        if (binding !== null) {
+          raw.boundaryBinding = binding;
         }
       } else if (unit.callSite !== undefined && matchedPattern !== undefined) {
         // Consumer: extract binding from call site

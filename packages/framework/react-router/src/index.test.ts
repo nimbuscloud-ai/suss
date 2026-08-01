@@ -74,6 +74,9 @@ describe("reactRouterFramework — integration", () => {
     expect(summaries).toHaveLength(2);
     const kinds = summaries.map((s) => s.kind).sort();
     expect(kinds).toEqual(["action", "loader"]);
+  });
+
+  it("claims no route, since the convention is opt-in and unreadable here", () => {
     for (const s of summaries) {
       expect(s.identity.boundaryBinding).toEqual({
         transport: "http",

@@ -59,10 +59,13 @@ export function reactRouterFramework(): PatternPack {
       {
         kind: "loader",
         match: { type: "namedExport", names: ["loader"] },
-        bindingExtraction: {
-          method: { type: "literal", value: "GET" },
-          path: { type: "fromFilename" },
-        },
+        // No route derived from the filename. React Router only
+        // reads routes that way when the project opted in by
+        // importing @react-router/fs-routes, and the pack language
+        // has no way to say "only when that import is there". A
+        // loader whose route came out of a guess pairs with whatever
+        // consumer matches the guess, which is worse than pairing
+        // with nothing.
         // Empty gate: route files often re-export `loader` /
         // `action` from non-router-importing modules
         // (server-side data functions, shared util re-exports).
@@ -74,10 +77,13 @@ export function reactRouterFramework(): PatternPack {
       {
         kind: "action",
         match: { type: "namedExport", names: ["action"] },
-        bindingExtraction: {
-          method: { type: "literal", value: "POST" },
-          path: { type: "fromFilename" },
-        },
+        // No route derived from the filename. React Router only
+        // reads routes that way when the project opted in by
+        // importing @react-router/fs-routes, and the pack language
+        // has no way to say "only when that import is there". A
+        // loader whose route came out of a guess pairs with whatever
+        // consumer matches the guess, which is worse than pairing
+        // with nothing.
         requiresImport: [],
       },
       {

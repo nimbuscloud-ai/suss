@@ -390,7 +390,47 @@ export type BindingExtraction = {
     | { type: "literal"; value: string };
   path:
     | { type: "fromRegistration"; position: number }
-    | { type: "fromFilename" }
+    | {
+        /**
+         * The route path comes from where the file sits, which is how
+         * Next.js and React Router describe their routes. The pack
+         * spells out its own convention here, since the adapter knows
+         * about files and the pack knows what the framework does with
+         * their names.
+         *
+         * `app/api/orders/[id]/route.ts` under `{ root: "app",
+         * dropBasenames: ["route"], dynamic: "brackets" }` comes out as
+         * `/api/orders/{id}`, which pairs with an Express provider
+         * writing `/api/orders/:id`.
+         */
+        type: "fromFilename";
+        /**
+         * Where a route path starts. The directories below it become
+         * the path; everything above it belongs to the project layout
+         * and is dropped.
+         */
+        root: string;
+        /**
+         * Filenames that say what a file is rather than adding a
+         * segment: `route`, `page`, `index`, `_index`.
+         */
+        dropBasenames?: string[];
+        /**
+         * How the framework writes a parameter in a filename. Next.js
+         * uses `[id]`, React Router uses `$id`.
+         */
+        dynamic?: "brackets" | "dollarPrefix";
+        /**
+         * Whether a directory in parentheses organises files without
+         * appearing in the URL, as `app/(marketing)/about` does.
+         */
+        dropParenthesized?: boolean;
+        /**
+         * Whether one filename holds the whole path with dots between
+         * the segments, as `routes/orders.$id.tsx` does.
+         */
+        flat?: boolean;
+      }
     | { type: "fromContract" }
     | { type: "fromClientMethod" }
     | { type: "fromArgumentLiteral"; position: number };
@@ -506,6 +546,14 @@ export interface TerminalExtraction {
     | { from: "property"; name: string } // { status: 200 } → name: "status"
     | { from: "argument"; position: number; minArgs?: number } // res.status(200) → position: 0
     | { from: "constructor"; codes: Record<string, number> } // throw new NotFound() → 404 via { NotFound: 404 }
+    | {
+        // NextResponse.json(body, { status: 404 }) → the status sits on
+        // a property of the argument at `position`, rather than being
+        // the argument itself.
+        from: "argumentProperty";
+        position: number;
+        name: string;
+      }
     | {
         // throw wrap(new NotFound(...)) → peek into the arg at `position` and
         // match its constructor name against `codes`. Covers wrapper patterns

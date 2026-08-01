@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCacheDiagnostic } from "./extract.js";
+import { formatCacheDiagnostic, resolveFramework } from "./extract.js";
 
 import type { CacheDiagnostic } from "@suss/adapter-typescript";
+
+describe("resolveFramework", () => {
+  it("loads a built-in pack by the name the CLI flag takes", async () => {
+    const pack = await resolveFramework("nextjs");
+    expect(pack.name).toBe("nextjs");
+  });
+
+  it("says which names it knows when given one it does not", async () => {
+    await expect(resolveFramework("nuxt")).rejects.toThrow(/nextjs/);
+  });
+});
 
 describe("formatCacheDiagnostic", () => {
   it("renders a hit", () => {

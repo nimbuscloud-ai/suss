@@ -32,6 +32,8 @@ const BUILTIN_FRAMEWORKS: Record<
   express: () => import("@suss/framework-express"),
   fastify: () => import("@suss/framework-fastify"),
   hono: () => import("@suss/framework-hono"),
+  // Next.js route handlers, whose route comes from where the file sits.
+  nextjs: () => import("@suss/framework-nextjs"),
   // React components + event handlers + useEffect bodies.
   react: () => import("@suss/framework-react"),
   // GraphQL code-first resolver discovery (Apollo Server).

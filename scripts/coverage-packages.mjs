@@ -28,6 +28,7 @@ export const coveragePackages = [
   ["packages/framework/react", "react"],
   ["packages/framework/express", "express"],
   ["packages/framework/fastify", "fastify"],
+  ["packages/framework/nextjs", "nextjs"],
   ["packages/framework/apollo", "apollo"],
   ["packages/framework/nestjs-rest", "nestjs-rest"],
   ["packages/framework/nestjs-graphql", "nestjs-graphql"],
