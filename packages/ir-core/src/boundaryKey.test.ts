@@ -80,13 +80,95 @@ describe("boundaryKey", () => {
     ).toBeNull();
   });
 
-  it("returns null for semantics without a defined key", () => {
+  it("keys a message-bus binding on its bus technology and subject", () => {
     expect(
       boundaryKey(
         messageBusBinding({
           recognition: "sqs",
           messageBus: "sqs",
           channel: "jobs",
+        }),
+      ),
+    ).toBe("bus:sqs jobs");
+  });
+
+  it("drops the bus so both written forms of a channel land in one bucket", () => {
+    const qualified = boundaryKey(
+      messageBusBinding({
+        recognition: "cloudformation",
+        messageBus: "sqs",
+        channel: "default#order.placed",
+      }),
+    );
+    const bare = boundaryKey(
+      messageBusBinding({
+        recognition: "aws-lambda",
+        messageBus: "sqs",
+        channel: "order.placed",
+      }),
+    );
+    expect(qualified).toBe("bus:sqs order.placed");
+    expect(bare).toBe(qualified);
+  });
+
+  it("keeps two buses carrying one subject in the same bucket", () => {
+    // Whether they pair is `channelsPair`'s call, made inside the
+    // bucket. The key cannot make it: a side that names no bus has to
+    // land with the sides that do.
+    expect(
+      boundaryKey(
+        messageBusBinding({
+          recognition: "cloudformation",
+          messageBus: "sqs",
+          channel: "staging#order.placed",
+        }),
+      ),
+    ).toBe("bus:sqs order.placed");
+  });
+
+  it("keeps the bus technology apart", () => {
+    expect(
+      boundaryKey(
+        messageBusBinding({
+          recognition: "cloudformation",
+          messageBus: "eventbridge",
+          channel: "default#order.placed",
+        }),
+      ),
+    ).toBe("bus:eventbridge order.placed");
+  });
+
+  it("splits a channel on its first # only", () => {
+    expect(
+      boundaryKey(
+        messageBusBinding({
+          recognition: "cloudformation",
+          messageBus: "eventbridge",
+          channel: "default#order#placed",
+        }),
+      ),
+    ).toBe("bus:eventbridge order#placed");
+  });
+
+  it("keeps subject case, which AWS compares byte for byte", () => {
+    expect(
+      boundaryKey(
+        messageBusBinding({
+          recognition: "cloudformation",
+          messageBus: "sqs",
+          channel: "OrderPlacedQueue",
+        }),
+      ),
+    ).toBe("bus:sqs OrderPlacedQueue");
+  });
+
+  it("returns null for a channel with no subject", () => {
+    expect(
+      boundaryKey(
+        messageBusBinding({
+          recognition: "cloudformation",
+          messageBus: "eventbridge",
+          channel: "default#",
         }),
       ),
     ).toBeNull();

@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { checkAll } from "../index.js";
 import { checkMessageBus } from "./messageBusPairing.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
@@ -830,5 +831,96 @@ describe("subject-channelled consumers", () => {
           f.description.includes("OrdersQueue"),
       ),
     ).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration with checkAll
+// ---------------------------------------------------------------------------
+
+/** A code handler bound to a channel: the side that answers. */
+function handlerSummary(name: string, channel: string): BehavioralSummary {
+  return {
+    kind: "handler",
+    location: {
+      file: "src/orders/placed.ts",
+      range: { start: 0, end: 0 },
+      exportName: "handler",
+    },
+    identity: {
+      name,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "sqs",
+        semantics: { name: "message-bus", messageBus: "sqs", channel },
+        recognition: "@suss/framework-aws-lambda",
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+describe("checkAll, message-bus pairing integration", () => {
+  it("surfaces which handler answers a declared subscriber", () => {
+    const handler = handlerSummary(
+      "OrderPlacedFunction.handler",
+      "order.placed",
+    );
+    const subscriber = consumerSummary({
+      name: "OrderPlacedFunction.QueueEvent",
+      channel: "default#order.placed",
+      codeScopePath: "src/orders/",
+    });
+
+    const result = checkAll([handler, subscriber]);
+
+    expect(result.pairs).toEqual([
+      {
+        key: "bus:sqs order.placed",
+        provider: "OrderPlacedFunction.handler",
+        consumer: "OrderPlacedFunction.QueueEvent",
+      },
+    ]);
+  });
+
+  it("does not run the REST per-pair checks against a message-bus pair", () => {
+    const handler = handlerSummary(
+      "OrderPlacedFunction.handler",
+      "order.placed",
+    );
+    const subscriber = consumerSummary({
+      name: "OrderPlacedFunction.QueueEvent",
+      channel: "default#order.placed",
+      codeScopePath: "src/orders/",
+    });
+
+    const result = checkAll([handler, subscriber]);
+    const restKinds = result.findings.filter(
+      (f) => !f.kind.startsWith("messageBus"),
+    );
+    expect(restKinds).toEqual([]);
+  });
+
+  it("leaves every judgement about an unpaired channel to checkMessageBus", () => {
+    // A declared queue nobody sends to or drains. `messageBusUnused`
+    // says so, with a severity. The unmatched list must not say it a
+    // second time in weaker words.
+    const queue = consumerSummary({
+      name: "OrdersQueue",
+      channel: "OrdersQueue",
+      codeScopePath: "src/orders/",
+    });
+
+    const result = checkAll([queue]);
+
+    expect(result.unmatched.providers).toEqual([]);
+    expect(result.unmatched.consumers).toEqual([]);
+    expect(result.unmatched.noBinding).toEqual([]);
+    expect(result.findings.map((f) => f.kind)).toContain(
+      "messageBusConsumerOrphan",
+    );
   });
 });
