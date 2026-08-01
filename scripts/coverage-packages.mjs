@@ -29,6 +29,7 @@ export const coveragePackages = [
   ["packages/framework/react", "react"],
   ["packages/framework/express", "express"],
   ["packages/framework/fastify", "fastify"],
+  ["packages/framework/hono", "hono"],
   ["packages/framework/nextjs", "nextjs"],
   ["packages/framework/apollo", "apollo"],
   ["packages/framework/nestjs-rest", "nestjs-rest"],
@@ -36,6 +37,8 @@ export const coveragePackages = [
   ["packages/framework/prisma", "prisma"],
   ["packages/framework/drizzle", "drizzle"],
   ["packages/framework/aws-sqs", "aws-sqs"],
+  ["packages/framework/aws-eventbridge", "aws-eventbridge"],
+  ["packages/framework/aws-lambda", "aws-lambda"],
   // Clients
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],
@@ -51,4 +54,6 @@ export const coveragePackages = [
   ["packages/contract/storybook", "contract-storybook"],
   ["packages/contract/prisma", "contract-prisma"],
   ["packages/contract/intent", "contract-intent"],
+  // Manifests
+  ["packages/manifest/aws", "manifest-aws"],
 ];
