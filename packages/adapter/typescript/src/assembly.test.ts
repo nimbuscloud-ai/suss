@@ -107,7 +107,7 @@ describe("ts-rest style — returnShape", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(1);
     expect(branches[0].conditions).toHaveLength(0);
     expect(branches[0].isDefault).toBe(true);
@@ -133,7 +133,7 @@ describe("ts-rest style — returnShape", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(2);
 
     // First branch: if (!user) → 404
@@ -179,7 +179,7 @@ describe("ts-rest style — returnShape", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(2);
 
     // The if-branch should have a comparison predicate
@@ -205,7 +205,7 @@ describe("ts-rest style — returnShape", () => {
     const varDecl = file.getVariableDeclarations()[0];
     const arrowFn = varDecl.getInitializerOrThrow() as FunctionRoot;
 
-    const branches = extractRawBranches(arrowFn, tsRestTerminals);
+    const branches = extractRawBranches(arrowFn, tsRestTerminals).branches;
     expect(branches).toHaveLength(1);
     expect(branches[0].terminal.kind).toBe("response");
     expect(branches[0].terminal.statusCode).toEqual({
@@ -232,7 +232,7 @@ describe("Express style — parameterMethodCall", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, expressTerminals);
+    const branches = extractRawBranches(fn, expressTerminals).branches;
     expect(branches).toHaveLength(1);
     expect(branches[0].terminal.kind).toBe("response");
     expect(branches[0].terminal.statusCode).toEqual({
@@ -257,7 +257,7 @@ describe("Express style — parameterMethodCall", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, expressTerminals);
+    const branches = extractRawBranches(fn, expressTerminals).branches;
     expect(branches).toHaveLength(2);
 
     // 400 branch: inside if(!id)
@@ -296,7 +296,7 @@ describe("Express style — parameterMethodCall", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, expressTerminals);
+    const branches = extractRawBranches(fn, expressTerminals).branches;
     expect(branches).toHaveLength(3);
 
     // Final 200: should have two early return conditions (both negative)
@@ -337,7 +337,7 @@ describe("React Router style — returnShape + throwExpression", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, reactRouterTerminals);
+    const branches = extractRawBranches(fn, reactRouterTerminals).branches;
     expect(branches).toHaveLength(2);
 
     const throwBranch = branches.find((b) => b.terminal.kind === "throw");
@@ -380,7 +380,7 @@ describe("try/catch", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(2);
 
     const catchBranch = branches.find(
@@ -418,7 +418,7 @@ describe("if / else-if chain", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(3);
 
     // First branch: positive condition
@@ -461,7 +461,7 @@ describe("switch/case", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(3);
 
     // Switch case conditions are synthetic (expression is null → structured is null)
@@ -500,7 +500,7 @@ describe("metadata", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches[0].effects).toEqual([]);
   });
 
@@ -515,7 +515,7 @@ describe("metadata", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches[0].location).toEqual(branches[0].terminal.location);
     expect(branches[0].location.start).toBeGreaterThan(0);
     expect(branches[0].location.end).toBeGreaterThanOrEqual(
@@ -551,7 +551,7 @@ describe("nested conditions", () => {
     // over-constrained 403 branch claiming ¬authenticated ∧ ¬admin —
     // the documented nested-guard soundness gap, closed by the CFG
     // path engine.)
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(3);
 
     const secretBranch = branches.find(
@@ -600,7 +600,7 @@ describe("mixed early returns + ancestor conditions", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(3);
 
     // The admin branch: early return (!params.id) + ancestor (role === "admin")
@@ -652,7 +652,7 @@ describe("compound predicates through assembly", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(2);
 
     const okBranch = branches[0];
@@ -679,7 +679,7 @@ describe("compound predicates through assembly", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     const goneBranch = branches[0];
     expect(goneBranch.conditions[0].structured).not.toBeNull();
     expect(goneBranch.conditions[0].structured?.type).toBe("compound");
@@ -709,7 +709,7 @@ describe("null check predicates through assembly", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     const notFoundBranch = branches[0];
     expect(notFoundBranch.conditions[0].structured).not.toBeNull();
     expect(notFoundBranch.conditions[0].structured?.type).toBe("nullCheck");
@@ -730,7 +730,7 @@ describe("null check predicates through assembly", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     const cachedBranch = branches[0];
     expect(cachedBranch.conditions[0].structured).not.toBeNull();
     expect(cachedBranch.conditions[0].structured?.type).toBe("nullCheck");
@@ -760,7 +760,7 @@ describe("call predicates through assembly", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     const adminBranch = branches[0];
     expect(adminBranch.conditions[0].structured).not.toBeNull();
     expect(adminBranch.conditions[0].structured?.type).toBe("call");
@@ -794,7 +794,7 @@ describe("try/catch + nested conditions", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(3);
 
     // 404 branch: catch + if condition
@@ -852,7 +852,7 @@ describe("mixed early throw + early return", () => {
 
     // The throw won't match tsRestTerminals (no throwExpression pattern),
     // but the early-throw guard still produces a condition on subsequent branches
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(2);
 
     // Final 200 branch: earlyThrow (!params.id) + earlyReturn (!params.auth)
@@ -903,7 +903,7 @@ describe("realistic multi-layer handler", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(6);
 
     // 400 (missing repoId): 0 early returns, 1 explicit condition
@@ -994,7 +994,7 @@ describe("realistic Express handler", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, expressTerminals);
+    const branches = extractRawBranches(fn, expressTerminals).branches;
     expect(branches).toHaveLength(4);
 
     // 400 branch: explicit condition
@@ -1039,7 +1039,7 @@ describe("edge cases", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(0);
   });
 
@@ -1063,7 +1063,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     expect(branches).toHaveLength(1);
     expect(branches[0].isDefault).toBe(true);
     // Invocation effects capture the body's bare calls.
@@ -1087,7 +1087,7 @@ describe("edge cases", () => {
     const patterns: TerminalPattern[] = [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     expect(branches).toHaveLength(0);
   });
 
@@ -1117,7 +1117,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     // Only one terminal — the explicit return — because it covers the
     // default path. Fall-through suppressed.
     expect(branches).toHaveLength(1);
@@ -1152,7 +1152,7 @@ describe("edge cases", () => {
         },
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     expect(branches).toHaveLength(1);
     const callees = branches[0].effects
       .filter((e) => e.type === "invocation")
@@ -1186,7 +1186,7 @@ describe("edge cases", () => {
     const patterns: TerminalPattern[] = [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const invocations = branches[0].effects.filter(
       (e) => e.type === "invocation",
     );
@@ -1228,7 +1228,7 @@ describe("edge cases", () => {
     const patterns: TerminalPattern[] = [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const invocation = branches[0].effects.find((e) => e.type === "invocation");
     if (invocation === undefined || invocation.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1258,7 +1258,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const pushEffect = branches[0].effects.find(
       (e) => e.type === "invocation" && e.callee === "findings.push",
     );
@@ -1305,7 +1305,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const effect = branches[0].effects[0];
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1334,7 +1334,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const effect = branches[0].effects.find((e) => e.type === "invocation");
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1363,7 +1363,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const effect = branches[0].effects.find((e) => e.type === "invocation");
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1408,7 +1408,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const effect = branches[0].effects.find((e) => e.type === "invocation");
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1444,7 +1444,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const effect = branches[0].effects.find((e) => e.type === "invocation");
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1475,7 +1475,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const effect = branches[0].effects.find((e) => e.type === "invocation");
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1503,7 +1503,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const effect = branches[0].effects.find((e) => e.type === "invocation");
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1537,7 +1537,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const effect = branches[0].effects.find((e) => e.type === "invocation");
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1571,7 +1571,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const effect = branches[0].effects.find((e) => e.type === "invocation");
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
@@ -1623,7 +1623,7 @@ describe("edge cases", () => {
     const patterns: TerminalPattern[] = [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     expect(branches).toHaveLength(1);
     const callees = branches[0].effects
       .filter((e) => e.type === "invocation")
@@ -1647,7 +1647,7 @@ describe("edge cases", () => {
     const patterns: TerminalPattern[] = [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     expect(branches).toHaveLength(1);
     const callees = branches[0].effects
       .filter((e) => e.type === "invocation")
@@ -1670,7 +1670,7 @@ describe("edge cases", () => {
     const patterns: TerminalPattern[] = [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const callees = branches[0].effects
       .filter((e) => e.type === "invocation")
       .map((e) => (e.type === "invocation" ? e.callee : null));
@@ -1697,7 +1697,7 @@ describe("edge cases", () => {
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns);
+    const branches = extractRawBranches(fn, patterns).branches;
     const callees = branches[0].effects
       .filter((e) => e.type === "invocation")
       .map((e) => (e.type === "invocation" ? e.callee : null));
@@ -1724,7 +1724,7 @@ describe("edge cases", () => {
     `,
     );
 
-    const branches = extractRawBranches(fn, tsRestTerminals);
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
     const deepBranch = branches.find((b) => b.conditions.length === 4);
     expect(deepBranch).toBeDefined();
     expect(deepBranch?.conditions[0].sourceText).toBe("params.a");

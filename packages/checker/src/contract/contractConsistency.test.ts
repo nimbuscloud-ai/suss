@@ -7,6 +7,7 @@ import {
   statusEq,
   transition,
   unhandledCaseGap,
+  unreadOutcomeGap,
   withContract,
   withContractBodies,
 } from "../__fixtures__/pairs.js";
@@ -26,6 +27,35 @@ describe("checkContractConsistency", () => {
       }),
     ]);
     expect(checkContractConsistency(p, c)).toEqual([]);
+  });
+
+  it("does not blame the contract for a return nobody could read", () => {
+    // The handler may be answering correctly, in a shape the pack was
+    // never taught. Failing the contract on that fails correct code.
+    const p = withContract(
+      provider("getUser", [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      [200],
+      [
+        unreadOutcomeGap(
+          "One return in this function matches none of the terminal shapes this pack looks for",
+        ),
+      ],
+    );
+    const c = consumer("UserPage", [
+      transition("ct", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    const findings = checkContractConsistency(p, c);
+    expect(
+      findings.filter((f) => f.kind === "providerContractViolation"),
+    ).toEqual([]);
+    const noted = findings.filter((f) => f.kind === "lowConfidence");
+    expect(noted).toHaveLength(1);
+    expect(noted[0].severity).toBe("info");
   });
 
   it("surfaces each provider summary.gaps entry as a providerContractViolation finding", () => {

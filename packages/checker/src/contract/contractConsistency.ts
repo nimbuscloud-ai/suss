@@ -34,6 +34,21 @@ export function checkContractConsistency(
 
   if (!skipSelfComparison) {
     for (const gap of provider.gaps) {
+      // A gap saying part of the handler went unread says the pack has
+      // no shape for what it returns, which is a limit on the reading
+      // rather than something the handler did wrong. Holding it against
+      // the contract fails checks on code that is answering correctly.
+      if (gap.type === "unreadOutcome") {
+        findings.push({
+          kind: "lowConfidence",
+          boundary,
+          provider: makeSide(provider),
+          consumer: makeSide(consumer),
+          description: gap.description,
+          severity: "info",
+        });
+        continue;
+      }
       findings.push({
         kind: "providerContractViolation",
         boundary,

@@ -255,6 +255,13 @@ export interface RawCodeStructure {
   boundaryBinding: BoundaryBinding | null;
   parameters: RawParameter[];
   branches: RawBranch[];
+  /**
+   * Return statements in the body that none of the pack's terminals
+   * matched. A handler shaped in a way the pack does not describe still
+   * returns something, and saying nothing about it reads the same as
+   * saying it does nothing.
+   */
+  unmatchedReturns?: number;
   dependencyCalls: RawDependencyCall[];
   declaredContract: RawDeclaredContract | null;
   /**
@@ -502,6 +509,24 @@ export function detectGaps(
   }
 
   const gaps: Gap[] = [];
+
+  // A function that returns something the pack could not describe. The
+  // summary would otherwise carry no transition and no gap, which reads
+  // as a function that does nothing rather than one nobody read.
+  if (raw.unmatchedReturns !== undefined && raw.unmatchedReturns > 0) {
+    const count = raw.unmatchedReturns;
+    gaps.push({
+      // Not a contract violation: the handler may be answering
+      // correctly, in a shape nobody taught the pack.
+      type: "unreadOutcome",
+      conditions: [],
+      consequence: "unknown",
+      description:
+        count === 1
+          ? "One return in this function matches none of the terminal shapes this pack looks for, so what it produces is not described here"
+          : `${count} returns in this function match none of the terminal shapes this pack looks for, so what they produce is not described here`,
+    });
+  }
 
   if (raw.declaredContract) {
     const producedStatuses = new Set(

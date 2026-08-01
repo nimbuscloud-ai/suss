@@ -18,6 +18,7 @@ import {
   extractStatusCode,
 } from "./extract.js";
 import { resolveHelperReturn } from "./helperResolution.js";
+import { returnPositionOf, unwrapValue } from "./shared.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -100,40 +101,6 @@ function unwrapMethodChain(
 }
 
 /**
- * Check if an ObjectLiteralExpression is in a position that makes it a return
- * value — direct return, arrow expression body, or branch of a ternary that
- * itself is returned.
- */
-function isInReturnPosition(ole: Node): boolean {
-  let current: Node | undefined = ole.getParent();
-  // Direct child of ReturnStatement is already handled by the ReturnStatement
-  // case in tryMatchReturnShape — skip to avoid duplicate terminals.
-  if (current !== undefined && Node.isReturnStatement(current)) {
-    return false;
-  }
-  while (current !== undefined) {
-    if (Node.isReturnStatement(current)) {
-      return true;
-    }
-    if (Node.isArrowFunction(current)) {
-      // Only match expression bodies, not OLEs inside a block body
-      const body = current.getBody();
-      return body !== undefined && !Node.isBlock(body);
-    }
-    // Walk through ternary branches and parens
-    if (
-      Node.isParenthesizedExpression(current) ||
-      Node.isConditionalExpression(current)
-    ) {
-      current = current.getParent();
-      continue;
-    }
-    return false;
-  }
-  return false;
-}
-
-/**
  * Match a returned object against a `returnShape` pattern.
  *
  * Returns a list because a return can produce more than one outcome. A
@@ -147,21 +114,32 @@ export function tryMatchReturnShape(
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
 ): FoundTerminal[] {
   if (Node.isObjectLiteralExpression(node)) {
-    if (!isInReturnPosition(node)) {
+    // A direct child of a return statement is handled by the
+    // ReturnStatement case below, and matching here as well would
+    // report the same return twice.
+    if (Node.isReturnStatement(node.getParent())) {
+      return [];
+    }
+    const source = returnPositionOf(node);
+    if (source === null) {
       return [];
     }
     const terminal = terminalFromReturnedObject(node, node, pattern, match);
-    return terminal === null ? [] : [terminal];
+    return terminal === null ? [] : [{ ...terminal, source }];
   }
 
   if (!Node.isReturnStatement(node)) {
     return [];
   }
 
-  const returned = node.getExpression();
-  if (returned === undefined) {
+  const written = node.getExpression();
+  if (written === undefined) {
     return [];
   }
+  // `return await respond(200)` produces what `return respond(200)`
+  // produces, so look through the await and the parentheses before
+  // asking what was returned.
+  const returned = unwrapValue(written);
 
   if (Node.isObjectLiteralExpression(returned)) {
     const terminal = terminalFromReturnedObject(returned, node, pattern, match);
@@ -180,7 +158,13 @@ export function tryMatchReturnShape(
     return [];
   }
   if (resolved.kind === "unreadable") {
-    return [{ node, terminal: unresolvedTerminal(pattern.kind, returned) }];
+    return [
+      {
+        node,
+        source: node,
+        terminal: unresolvedTerminal(pattern.kind, returned),
+      },
+    ];
   }
 
   const terminals: FoundTerminal[] = [];
@@ -252,6 +236,10 @@ function terminalFromReturnedObject(
 
   return {
     node: anchor,
+    // The anchor is the caller own return when a helper built the
+    // value, so it answers for provenance too. A value reached some
+    // other way leaves this unset and its caller supplies it.
+    ...(Node.isReturnStatement(anchor) ? { source: anchor } : {}),
     terminal: {
       kind: pattern.kind,
       statusCode,
@@ -293,6 +281,10 @@ export function tryMatchParameterMethodCall(
 
   const { calls } = result;
 
+  // `res.json(body)` writes to the response and often stands alone as a
+  // statement, so it only claims a return when it sits in one.
+  const source = returnPositionOf(node);
+
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
     calls,
@@ -316,7 +308,7 @@ export function tryMatchParameterMethodCall(
     },
   };
 
-  return { node, terminal };
+  return { node, ...(source !== null ? { source } : {}), terminal };
 }
 
 /**
@@ -338,20 +330,7 @@ function returnCoveredByParameterMethodCall(
   func: FunctionRoot,
   patterns: TerminalPattern[],
 ): boolean {
-  let current: Node = expr;
-  while (true) {
-    if (
-      Node.isParenthesizedExpression(current) ||
-      Node.isAsExpression(current) ||
-      Node.isNonNullExpression(current) ||
-      Node.isSatisfiesExpression(current) ||
-      Node.isAwaitExpression(current)
-    ) {
-      current = current.getExpression();
-      continue;
-    }
-    break;
-  }
+  const current = unwrapValue(expr);
   if (!Node.isCallExpression(current)) {
     return false;
   }
@@ -463,7 +442,10 @@ function buildReturnTerminal(
       end: locationNode.getEndLineNumber(),
     },
   };
-  return { node: locationNode, terminal };
+  // The caller passes either the return statement or the body of a
+  // concise arrow, so the node this terminal sits on is also the return
+  // it came from.
+  return { node: locationNode, source: locationNode, terminal };
 }
 
 /**
@@ -583,5 +565,8 @@ export function tryMatchFunctionCall(
     },
   };
 
-  return { node, terminal };
+  // `json(...)` builds a response, and a handler nearly always returns
+  // the call, but it can be assigned first and returned later.
+  const source = returnPositionOf(node);
+  return { node, ...(source !== null ? { source } : {}), terminal };
 }

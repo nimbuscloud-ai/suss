@@ -55,6 +55,7 @@ export function tryMatchThrowExpression(
     },
   };
 
+  // No `source`: a throw leaves by a different door than a return.
   return { node, terminal };
 }
 

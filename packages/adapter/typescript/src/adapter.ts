@@ -39,7 +39,7 @@ import {
   type TerminalPattern,
 } from "@suss/extractor";
 
-import { extractRawBranches } from "./assembly.js";
+import { countUnmatchedReturns, extractRawBranches } from "./assembly.js";
 import {
   createLazyProject,
   readTsconfigFileList,
@@ -477,11 +477,17 @@ export function extractCodeStructure(
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   const params = extractParameters(func, pack.inputMapping);
-  let branches = extractRawBranches(
+  const extracted = extractRawBranches(
     func,
     pack.terminals,
     invocationRecognizers,
     accessRecognizers,
+    barriers,
+  );
+  let branches = extracted.branches;
+  const unmatchedReturns = countUnmatchedReturns(
+    func,
+    extracted.terminals,
     barriers,
   );
   const depCalls = extractDependencyCalls(func);
@@ -547,6 +553,7 @@ export function extractCodeStructure(
     boundaryBinding: null,
     parameters: params,
     branches,
+    ...(unmatchedReturns > 0 ? { unmatchedReturns } : {}),
     dependencyCalls: depCalls,
     declaredContract: null,
     ...(bodyAccessors !== undefined && bodyAccessors.length > 0

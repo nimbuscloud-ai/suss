@@ -760,7 +760,16 @@ export const TransitionSchema = z.object({
 });
 
 export const GapSchema = z.object({
-  type: z.literal("unhandledCase"),
+  /**
+   * "unhandledCase": the unit meets a case and does nothing useful with
+   * it, which is a statement about the code.
+   *
+   * "unreadOutcome": part of what the unit produces was not described,
+   * because no pack terminal matched it, which is a statement about the
+   * reading rather than the code. A checker should not hold this
+   * against the handler.
+   */
+  type: z.enum(["unhandledCase", "unreadOutcome"]),
   conditions: z.array(PredicateSchema),
   consequence: z.enum([
     "frameworkDefault",
