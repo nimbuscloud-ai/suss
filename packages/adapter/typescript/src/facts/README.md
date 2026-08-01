@@ -69,3 +69,29 @@ on the order facts arrived in.
 Reassignment, conditional exports, and scope-sensitive dataflow are not
 modelled at all. Discovery filters what comes back, which is where the
 precision is recovered.
+
+## When something does not resolve
+
+Suspect the facts before the rules.
+
+Every rule here describes one hop. A factory chain three deep, a
+closure two levels down, a barrel re-exporting a wrapper: none of those
+is written down, and all of them work, because the engine composes what
+it has. So a shape that comes back null usually means the extractor
+never wrote down something the rules needed, not that a rule is
+missing.
+
+A production service made the point. It declared 91 handlers and 11
+resolved. The 80 missing ones went through a factory in another package
+that reached its argument from inside a closure written as an arrow
+without braces, and the extractor skipped the body of any arrow written
+that way. One condition in extraction, and the existing rules found all
+90 that had a body to find.
+
+The same reasoning runs the other way. A rule that names a shape which
+smaller rules could compose is worth trying to delete, because a shape
+handled by its own rule is a shape the inference never had to get
+right. The shorthand-arrow body used to be described twice, once in the
+walk and once beside it, and the copy beside it is what hid the closure
+above. Deleting it meant making the walk cover the one node it could
+not see, which is a smaller thing to keep correct.

@@ -455,6 +455,9 @@ function recordBodyNode(
     return false;
   }
 
+  if (!Node.isExpression(node)) {
+    return false;
+  }
   const call = unwrapExpression(node);
   if (Node.isCallExpression(call)) {
     const callee = unwrapExpression(call.getExpression());
