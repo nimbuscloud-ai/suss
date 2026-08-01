@@ -62,6 +62,22 @@ describe("boundaryKey", () => {
     ).toBe("gql:Query.user");
   });
 
+  it("has no key for a boundary shape it does not know", () => {
+    // A runtime-config or storage binding names a boundary with no
+    // counterpart to pair against, so it stays out of the buckets.
+    expect(
+      boundaryKey({
+        transport: "in-process",
+        recognition: "process-env",
+        semantics: {
+          name: "runtime-config",
+          deploymentTarget: "lambda",
+          instanceName: "worker",
+        },
+      }),
+    ).toBeNull();
+  });
+
   it("keys a function-call binding only when package + exportPath are set", () => {
     expect(
       boundaryKey(
@@ -90,6 +106,20 @@ describe("boundaryKey", () => {
         }),
       ),
     ).toBe("bus:sqs jobs");
+  });
+
+  it("has no key for a channel that names a bus and no subject", () => {
+    // `default#` says which bus and never says what travels on it, so
+    // there is nothing for the other side to match.
+    expect(
+      boundaryKey(
+        messageBusBinding({
+          recognition: "cloudformation",
+          messageBus: "eventbridge",
+          channel: "default#",
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("drops the bus so both written forms of a channel land in one bucket", () => {
