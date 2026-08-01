@@ -11,8 +11,9 @@
 //
 // Fragment spreads are resolved against every fragment definition in
 // the read set and inlined into the stored document, so the pairing
-// pass sees the selected fields directly. A spread whose fragment is
-// not in the read set becomes a gap on the summary, not a crash.
+// pass sees the selected fields directly. A spread the reader cannot
+// expand stays in the document as written and becomes a gap on the
+// summary, not a crash.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -86,7 +87,7 @@ export function graphqlDocumentsToSummaries(
     parsed.push({ source, doc });
   }
 
-  const fragments = collectFragments(parsed.map((p) => p.doc));
+  const fragments = collectFragments(parsed);
 
   const out: BehavioralSummary[] = [];
   for (const { source, doc } of parsed) {
@@ -176,32 +177,60 @@ interface BindingConfig {
   transport: string;
 }
 
+/**
+ * The fragment definitions of the whole read set, keyed by name, plus
+ * the names that more than one file defines. The first definition in
+ * read order wins so that two runs over the same files agree, and any
+ * operation that spreads a contested name carries a gap saying the
+ * choice was ambiguous.
+ */
+interface FragmentIndex {
+  definitions: Map<string, FragmentDefinitionNode>;
+  competingFiles: Map<string, string[]>;
+}
+
 function collectFragments(
-  docs: DocumentNode[],
-): Map<string, FragmentDefinitionNode> {
-  const fragments = new Map<string, FragmentDefinitionNode>();
-  for (const doc of docs) {
+  parsed: { source: DocumentSource; doc: DocumentNode }[],
+): FragmentIndex {
+  const definitions = new Map<string, FragmentDefinitionNode>();
+  const definingFiles = new Map<string, string[]>();
+  for (const { source, doc } of parsed) {
     for (const def of doc.definitions) {
-      if (def.kind === Kind.FRAGMENT_DEFINITION) {
-        fragments.set(def.name.value, def);
+      if (def.kind !== Kind.FRAGMENT_DEFINITION) {
+        continue;
       }
+      const name = def.name.value;
+      if (!definitions.has(name)) {
+        definitions.set(name, def);
+      }
+      definingFiles.set(name, [
+        ...(definingFiles.get(name) ?? []),
+        source.path,
+      ]);
     }
   }
-  return fragments;
+
+  const competingFiles = new Map<string, string[]>();
+  for (const [name, files] of definingFiles) {
+    if (files.length > 1) {
+      competingFiles.set(name, files);
+    }
+  }
+  return { definitions, competingFiles };
 }
 
 function buildOperationSummary(
   op: OperationDefinitionNode,
   file: string,
-  fragments: Map<string, FragmentDefinitionNode>,
+  fragments: FragmentIndex,
   config: BindingConfig,
 ): BehavioralSummary {
   const operationType = op.operation;
   const operationName = op.name?.value;
   const name = operationName ?? `${path.basename(file)}:${operationType}`;
 
-  const unresolved = new Set<string>();
-  const inlined = inlineSpreadsInOperation(op, fragments, unresolved);
+  const unexpanded = emptyUnexpandedSpreads();
+  const inlined = inlineSpreadsInOperation(op, fragments, unexpanded);
   const documentText = print(documentOf(inlined));
   const responseShape = selectionSetToShape(inlined.selectionSet);
 
@@ -224,15 +253,13 @@ function buildOperationSummary(
     },
     inputs: buildVariableInputs(op),
     transitions: buildTransitions(name, responseShape),
-    gaps: [...unresolved].map((fragmentName) =>
-      unresolvedFragmentGap(fragmentName),
-    ),
+    gaps: unexpandedSpreadGaps(unexpanded, fragments),
     confidence: { source: "declared", level: "high" },
     metadata: {
       graphql: {
         document: documentText,
-        ...(unresolved.size > 0
-          ? { unresolvedFragments: [...unresolved].sort() }
+        ...(unexpanded.missing.size > 0
+          ? { unresolvedFragments: [...unexpanded.missing].sort() }
           : {}),
       },
     },
@@ -294,14 +321,45 @@ function buildTransitions(
   ];
 }
 
-function unresolvedFragmentGap(fragmentName: string): Gap {
+function unexpandedSpreadGaps(
+  unexpanded: UnexpandedSpreads,
+  fragments: FragmentIndex,
+): Gap[] {
+  const gaps: Gap[] = [];
+  for (const name of [...unexpanded.missing].sort()) {
+    gaps.push(
+      // A statement about the reading, not the code: the fragment
+      // likely exists somewhere outside the files handed to this
+      // reader.
+      readingGap(
+        `Fragment spread "...${name}" has no matching fragment definition in the read set; its selections are not part of this summary.`,
+      ),
+    );
+  }
+  for (const name of [...unexpanded.cyclic].sort()) {
+    gaps.push(
+      readingGap(
+        `Fragment spread "...${name}" is part of a fragment cycle, which no server would execute; the repeated spread was left unexpanded.`,
+      ),
+    );
+  }
+  for (const name of [...unexpanded.ambiguous].sort()) {
+    const files = fragments.competingFiles.get(name) ?? [];
+    gaps.push(
+      readingGap(
+        `Fragment "${name}" is defined in more than one file (${files.join(", ")}); the first definition was used, so the selections here may not be the ones the build resolves.`,
+      ),
+    );
+  }
+  return gaps;
+}
+
+function readingGap(description: string): Gap {
   return {
-    // A statement about the reading, not the code: the fragment likely
-    // exists somewhere outside the files handed to this reader.
     type: "unreadOutcome",
     conditions: [],
     consequence: "unknown",
-    description: `Fragment spread "...${fragmentName}" has no matching fragment definition in the read set; its selections are not part of this summary.`,
+    description,
   };
 }
 
@@ -309,10 +367,27 @@ function unresolvedFragmentGap(fragmentName: string): Gap {
 // Fragment inlining
 // ---------------------------------------------------------------------------
 
+/**
+ * Spreads the reader could not expand, by reason. A spread in any of
+ * these sets stays in the document exactly as it was written: dropping
+ * it would leave behind either an empty selection set, which does not
+ * parse, or a composite field printed as a leaf, which is a different
+ * operation from the one on disk.
+ */
+interface UnexpandedSpreads {
+  missing: Set<string>;
+  cyclic: Set<string>;
+  ambiguous: Set<string>;
+}
+
+function emptyUnexpandedSpreads(): UnexpandedSpreads {
+  return { missing: new Set(), cyclic: new Set(), ambiguous: new Set() };
+}
+
 function inlineSpreadsInOperation(
   op: OperationDefinitionNode,
-  fragments: Map<string, FragmentDefinitionNode>,
-  unresolved: Set<string>,
+  fragments: FragmentIndex,
+  unexpanded: UnexpandedSpreads,
 ): OperationDefinitionNode {
   return {
     ...op,
@@ -320,29 +395,29 @@ function inlineSpreadsInOperation(
       op.selectionSet,
       fragments,
       [],
-      unresolved,
+      unexpanded,
     ),
   };
 }
 
 function inlineSelectionSet(
   selectionSet: SelectionSetNode,
-  fragments: Map<string, FragmentDefinitionNode>,
+  fragments: FragmentIndex,
   stack: string[],
-  unresolved: Set<string>,
+  unexpanded: UnexpandedSpreads,
 ): SelectionSetNode {
   const out: SelectionNode[] = [];
   for (const selection of selectionSet.selections) {
-    out.push(...inlineOneSelection(selection, fragments, stack, unresolved));
+    out.push(...inlineOneSelection(selection, fragments, stack, unexpanded));
   }
   return { ...selectionSet, selections: out };
 }
 
 function inlineOneSelection(
   selection: SelectionNode,
-  fragments: Map<string, FragmentDefinitionNode>,
+  fragments: FragmentIndex,
   stack: string[],
-  unresolved: Set<string>,
+  unexpanded: UnexpandedSpreads,
 ): SelectionNode[] {
   if (selection.kind === Kind.FIELD) {
     if (selection.selectionSet === undefined) {
@@ -354,7 +429,7 @@ function inlineOneSelection(
         selection.selectionSet,
         fragments,
         stack,
-        unresolved,
+        unexpanded,
       ),
     };
     return [field];
@@ -362,21 +437,25 @@ function inlineOneSelection(
 
   if (selection.kind === Kind.FRAGMENT_SPREAD) {
     const fragmentName = selection.name.value;
-    if (stack.includes(fragmentName)) {
-      // Fragment cycle: invalid GraphQL, but a reader should not
-      // loop on it. Drop the repeated spread.
-      return [];
+    if (fragments.competingFiles.has(fragmentName)) {
+      unexpanded.ambiguous.add(fragmentName);
     }
-    const fragment = fragments.get(fragmentName);
+    if (stack.includes(fragmentName)) {
+      // Fragment cycle: invalid GraphQL, but a reader should not loop
+      // on it.
+      unexpanded.cyclic.add(fragmentName);
+      return [selection];
+    }
+    const fragment = fragments.definitions.get(fragmentName);
     if (fragment === undefined) {
-      unresolved.add(fragmentName);
-      return [];
+      unexpanded.missing.add(fragmentName);
+      return [selection];
     }
     const inlined = inlineSelectionSet(
       fragment.selectionSet,
       fragments,
       [...stack, fragmentName],
-      unresolved,
+      unexpanded,
     );
     return [...inlined.selections];
   }
@@ -389,7 +468,7 @@ function inlineOneSelection(
       selection.selectionSet,
       fragments,
       stack,
-      unresolved,
+      unexpanded,
     ),
   };
   return [inlineFragment];

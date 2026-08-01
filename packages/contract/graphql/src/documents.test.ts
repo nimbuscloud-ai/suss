@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { parse } from "graphql";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,6 +26,14 @@ function byName(
     throw new Error(`no summary named ${name}`);
   }
   return found;
+}
+
+function documentOf(summary: BehavioralSummary | undefined): string {
+  const meta = summary?.metadata?.graphql as { document?: string } | undefined;
+  if (typeof meta?.document !== "string") {
+    throw new Error("summary has no metadata.graphql.document");
+  }
+  return meta.document;
 }
 
 describe("graphqlDocumentsToSummaries", () => {
@@ -174,6 +183,36 @@ describe("graphqlDocumentsToSummaries", () => {
     expect(meta.unresolvedFragments).toEqual(["Elsewhere"]);
   });
 
+  it("keeps an unresolvable spread in the document so it still parses", () => {
+    const summaries = graphqlDocumentsToSummaries([
+      { path: "op.graphql", text: "query Q { ...Missing }" },
+    ]);
+    const document = documentOf(summaries[0]);
+    expect(() => parse(document)).not.toThrow();
+    expect(document).toContain("...Missing");
+    expect(summaries[0]?.gaps).toHaveLength(1);
+  });
+
+  it("keeps a field composite when all of its selections are unresolvable", () => {
+    const summaries = graphqlDocumentsToSummaries([
+      { path: "op.graphql", text: "query Q { user { ...Missing } }" },
+    ]);
+    const document = documentOf(summaries[0]);
+    const reparsed = parse(document);
+    expect(document).toContain("...Missing");
+    // The point of reparsing: `user` must still be a field with a
+    // selection set, not a leaf.
+    const operation = reparsed.definitions[0];
+    if (operation?.kind !== "OperationDefinition") {
+      throw new Error("expected an operation definition");
+    }
+    const user = operation.selectionSet.selections[0];
+    if (user?.kind !== "Field") {
+      throw new Error("expected a field");
+    }
+    expect(user.selectionSet).toBeDefined();
+  });
+
   it("survives a fragment cycle without looping", () => {
     const summaries = graphqlDocumentsToSummaries([
       {
@@ -188,6 +227,34 @@ describe("graphqlDocumentsToSummaries", () => {
     expect(summaries).toHaveLength(1);
     const meta = summaries[0]?.metadata?.graphql as { document: string };
     expect(meta.document).toContain("email");
+  });
+
+  it("leaves a cyclic spread in place and records it as a gap", () => {
+    const summaries = graphqlDocumentsToSummaries([
+      {
+        path: "op.graphql",
+        text: `query Q { ...A }
+               fragment A on Query { user { id } ...A }`,
+      },
+    ]);
+    const document = documentOf(summaries[0]);
+    expect(() => parse(document)).not.toThrow();
+    expect(document).toContain("id");
+    expect(summaries[0]?.gaps).toHaveLength(1);
+    expect(summaries[0]?.gaps[0]?.description).toContain("cycle");
+  });
+
+  it("records a gap when one fragment name has competing definitions", () => {
+    const summaries = graphqlDocumentsToSummaries([
+      { path: "op.graphql", text: "query Q { user { ...F } }" },
+      { path: "f1.graphql", text: "fragment F on User { id }" },
+      { path: "f2.graphql", text: "fragment F on User { email }" },
+    ]);
+    // First definition in read order wins, so the reading is
+    // repeatable, and the summary says the choice was ambiguous.
+    expect(documentOf(summaries[0])).toContain("id");
+    expect(summaries[0]?.gaps).toHaveLength(1);
+    expect(summaries[0]?.gaps[0]?.description).toContain("f2.graphql");
   });
 
   it("names an anonymous operation after its file", () => {
