@@ -123,6 +123,41 @@ Resources:
           Properties:
             Queue: !GetAtt RefundsQueue.Arn
 
+  # Two Lambdas answer one subject, each behind its own queue. Both
+  # queues are fed by the rule that routes `order.placed`, so the
+  # subject alone would pair every handler with every subscription.
+  OrderIndexerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/orderIndexer.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrderIndexerQueue.Arn
+
+  OrderNotifierFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/orderNotifier.handler
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrderNotifierQueue.Arn
+
+  OrderPlacedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        detail-type:
+          - order.placed
+      Targets:
+        - Id: indexer
+          Arn: !GetAtt OrderIndexerQueue.Arn
+        - Id: notifier
+          Arn: !GetAtt OrderNotifierQueue.Arn
+
   JobsQueue:
     Type: AWS::SQS::Queue
 
@@ -130,4 +165,10 @@ Resources:
     Type: AWS::SQS::Queue
 
   RefundsQueue:
+    Type: AWS::SQS::Queue
+
+  OrderIndexerQueue:
+    Type: AWS::SQS::Queue
+
+  OrderNotifierQueue:
     Type: AWS::SQS::Queue
