@@ -29,32 +29,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const ROOT = path.resolve(import.meta.dirname, "..");
-const PACKAGES_DIR = path.join(ROOT, "packages");
+import { findManifests, PACKAGES_DIR, ROOT } from "./workspacePackages.mjs";
 
 /** The version every package publishes at. One number for the whole set. */
 const VERSION = JSON.parse(
   fs.readFileSync(path.join(ROOT, "package.json"), "utf8"),
 ).version;
-
-function findManifests(dir, depth = 0) {
-  if (depth > 3) {
-    return [];
-  }
-  const found = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "dist") {
-      continue;
-    }
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      found.push(...findManifests(full, depth + 1));
-    } else if (entry.name === "package.json") {
-      found.push(full);
-    }
-  }
-  return found;
-}
 
 /** Rewrite one manifest. Returns the list of what it changed. */
 function prepare(manifest, { write }) {

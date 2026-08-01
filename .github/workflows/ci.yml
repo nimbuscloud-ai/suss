@@ -63,6 +63,12 @@ jobs:
       - name: Publish readiness
         run: npm run check:publish
 
+      # A package left out of the coverage list has no badge and no
+      # baseline, so its coverage can fall to zero and the regression
+      # gate will not notice. Four packages shipped that way.
+      - name: Coverage list completeness
+        run: npm run check:coverage-packages
+
       # Hand-authored SVG buys layout control and costs the guarantee
       # that a label fits where it was put. Two collisions shipped before
       # this ran.

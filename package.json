@@ -46,6 +46,7 @@
     "typecheck": "turbo typecheck",
     "check:self": "turbo check:self",
     "check:publish": "node scripts/preparePublish.mjs --check",
+    "check:coverage-packages": "node scripts/checkCoveragePackages.mjs",
     "prepare:publish": "node scripts/preparePublish.mjs",
     "bump": "node scripts/bumpVersion.mjs",
     "changelog": "node scripts/changelog.mjs",
