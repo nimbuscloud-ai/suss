@@ -14,6 +14,7 @@ import {
 } from "./graphqlShared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 interface HookSpec {
@@ -25,6 +26,7 @@ export function discoverGraphqlHookCalls(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "graphqlHookCall" }>,
   kind: string,
+  resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   // Resolve each hook's local name by walking named imports on the
   // target module. A hook imported under an alias is honored:
@@ -68,12 +70,12 @@ export function discoverGraphqlHookCalls(
     if (args.length === 0) {
       return;
     }
-    const resolution = resolveGraphqlDocument(args[0]);
-    if (resolution === null) {
+    const document = resolveGraphqlDocument(args[0], resolution);
+    if (document === null) {
       return;
     }
     const operationInfo = operationInfoFromResolution(
-      resolution,
+      document,
       spec.operationType,
     );
     if (operationInfo === null) {

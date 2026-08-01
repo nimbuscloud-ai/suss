@@ -15,12 +15,14 @@ import {
 import { resolveImportedLocalName } from "./resolveImport.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 export function discoverGraphqlImperativeCalls(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "graphqlImperativeCall" }>,
   kind: string,
+  resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   // Gate on the client identifier being imported — reduces false
   // positives against any object with a `.query()` / `.mutate()`
@@ -75,8 +77,8 @@ export function discoverGraphqlImperativeCalls(
     if (docValue === null) {
       return;
     }
-    const resolution = resolveGraphqlDocument(docValue);
-    if (resolution === null) {
+    const document = resolveGraphqlDocument(docValue, resolution);
+    if (document === null) {
       return;
     }
     // Method-driven operation type wins when the gql header is
@@ -85,7 +87,7 @@ export function discoverGraphqlImperativeCalls(
     // `{ ... }` — and supplies the type when the document body isn't
     // statically readable at all.
     const operationInfo = operationInfoFromResolution(
-      resolution,
+      document,
       spec.operationType,
     );
     if (operationInfo === null) {

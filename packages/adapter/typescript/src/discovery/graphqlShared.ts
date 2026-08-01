@@ -18,6 +18,27 @@ import {
 import { Node } from "ts-morph";
 
 import type { FunctionRoot } from "../conditions.js";
+import type { ResolutionStore } from "../facts/store.js";
+
+/**
+ * The names a GraphQL document tag goes by. `gql` is the tag every
+ * client library ships; `graphql` is what GraphQL Code Generator's
+ * client preset calls its generated function. Both appear as a tagged
+ * template and as a plain call, and the generated module they come from
+ * is named by the project rather than by a library, so a pack cannot
+ * name the module the way it names a transparent wrapper's.
+ */
+const DOCUMENT_TAGS = new Set(["gql", "graphql"]);
+
+/**
+ * The one tag name taken at face value without checking where it came
+ * from. `gql` names a GraphQL document across every client library and
+ * almost nothing else, so a local function called `gql` whose argument
+ * parses as GraphQL is a document by any reading. `graphql` is a common
+ * enough name for a local helper that it has to come from an import to
+ * count.
+ */
+const UNQUALIFIED_DOCUMENT_TAG = "gql";
 
 /**
  * Parse a gql document source via graphql-js. Extracts everything
@@ -150,28 +171,44 @@ export interface DocumentResolution {
  * Resolve a hook / imperative call argument to a GraphQL document.
  *
  * Tries, in order:
- *   `useQuery(gql\`query ...\`)`          — inline gql tag
- *   `useQuery(GET_USER)`                   — const-bound gql tag, same
- *                                            module OR imported from
- *                                            another module
- *   `import GET_USER from "./q.graphql"`   — .graphql / .gql file import
- *   `useQuery(FooDocument)`                — generated TypedDocumentNode
- *                                            object literal (graphql-
- *                                            codegen client-preset),
- *                                            same or cross module
- *   `useQuery(FooDocument)` where the body — header recovered from the
- *     isn't a readable object literal         `TypedDocumentNode<FooQuery,
- *                                             FooQueryVariables>` type args
+ *
+ *   `useQuery(gql\`query ...\`)`
+ *       an inline gql tag.
+ *   `useQuery(gql(\`query ...\`))`
+ *       an inline tag call, which is how graphql-codegen's client
+ *       preset is written.
+ *   `useQuery(GET_USER)`
+ *       a named constant holding either, in this module or in another
+ *       one, through any depth of aliasing and re-export barrels.
+ *   `import GET_USER from "./q.graphql"`
+ *       a `.graphql` / `.gql` file import.
+ *   `useQuery(FooDocument)`
+ *       a generated TypedDocumentNode object literal (graphql-codegen
+ *       client preset), same module or cross module.
+ *   `useQuery(FooDocument)` whose body isn't a readable object literal
+ *       the operation header off the `TypedDocumentNode<FooQuery,
+ *       FooQueryVariables>` type arguments.
+ *
+ * A document the code computes (a ternary, a builder call) has no
+ * written form to read, so it resolves to nothing rather than to a
+ * guess.
  *
  * Returns null when the argument isn't recognizable as a GraphQL
- * document reference — the caller skips it. Returns a `DocumentResolution`
- * with `unresolved` set when it IS recognizable but the header couldn't
- * be fully read.
+ * document reference, and the caller skips it. Returns a
+ * `DocumentResolution` with `unresolved` set when it IS recognizable
+ * but the header couldn't be fully read.
  */
-export function resolveGraphqlDocument(arg: Node): DocumentResolution | null {
+export function resolveGraphqlDocument(
+  arg: Node,
+  resolution?: ResolutionStore,
+): DocumentResolution | null {
   // Peel `FooDocument as DocumentNode` / parenthesization at the call
   // site so the underlying identifier or tagged template is reached.
   const stripped = stripDocumentNodeCasts(arg);
+  const inline = documentTextFromExpression(stripped);
+  if (inline !== null) {
+    return { document: inline };
+  }
   const templateText = resolveGqlTemplateText(stripped);
   if (templateText !== null) {
     return { document: templateText };
@@ -180,7 +217,99 @@ export function resolveGraphqlDocument(arg: Node): DocumentResolution | null {
   if (objectDoc !== null) {
     return { document: objectDoc };
   }
+  const throughFacts = resolveThroughFacts(stripped, resolution);
+  if (throughFacts !== null) {
+    return { document: throughFacts };
+  }
   return resolveTypedDocumentHeader(stripped);
+}
+
+/**
+ * The document text an expression carries when it is written out as a
+ * tag: `gql\`...\`` or `gql(\`...\`)`. Returns null for anything else,
+ * including a tag call whose argument is built rather than written.
+ */
+function documentTextFromExpression(node: Node): string | null {
+  if (Node.isTaggedTemplateExpression(node)) {
+    if (!isDocumentTag(node.getTag())) {
+      return null;
+    }
+    return innerTemplateText(node.getTemplate());
+  }
+  if (!Node.isCallExpression(node)) {
+    return null;
+  }
+  if (!isDocumentTag(node.getExpression())) {
+    return null;
+  }
+  const first = node.getArguments()[0];
+  if (first === undefined) {
+    return null;
+  }
+  const template = stripDocumentNodeCasts(first);
+  if (
+    !Node.isNoSubstitutionTemplateLiteral(template) &&
+    !Node.isTemplateExpression(template)
+  ) {
+    return null;
+  }
+  return innerTemplateText(template);
+}
+
+/**
+ * Whether an expression names a GraphQL document tag. `import { gql as
+ * apolloGql }` is a name the file chose, so the name the module exports
+ * is what answers when there is one.
+ */
+function isDocumentTag(tag: Node): boolean {
+  if (!Node.isIdentifier(tag)) {
+    return false;
+  }
+  if (tag.getText() === UNQUALIFIED_DOCUMENT_TAG) {
+    return true;
+  }
+  const symbol = tag.getSymbol();
+  if (symbol === undefined) {
+    return false;
+  }
+  for (const declaration of symbol.getDeclarations()) {
+    if (
+      Node.isImportSpecifier(declaration) &&
+      DOCUMENT_TAGS.has(declaration.getName())
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Ask the fact layer what expression the argument is written as, then
+ * read the answer as a document. This is what covers a document held in
+ * a named constant: the syntactic walks above follow one variable
+ * declaration, and production code puts the document behind an alias, a
+ * re-export barrel, or a module the consumer only names.
+ *
+ * The fact layer answers with an expression and no opinion about what
+ * it is. Recognizing a tag call as a document is GraphQL's business, so
+ * it happens here rather than in the rules.
+ */
+function resolveThroughFacts(
+  arg: Node,
+  resolution: ResolutionStore | undefined,
+): string | null {
+  if (resolution === undefined || !Node.isIdentifier(arg)) {
+    return null;
+  }
+  const written = resolution.resolveWrittenValue(arg);
+  if (written === null) {
+    return null;
+  }
+  const text = documentTextFromExpression(written);
+  if (text !== null) {
+    return text;
+  }
+  return typedDocumentSourceOf(written);
 }
 
 /** Operation shape a discovered GraphQL consumer unit carries. */
@@ -271,12 +400,9 @@ function importedVariableInitializers(identifier: Node): Node[] {
  * to null rather than throwing — discovery stays advisory, not punitive.
  */
 export function resolveGqlTemplateText(arg: Node): string | null {
-  if (Node.isTaggedTemplateExpression(arg)) {
-    const tag = arg.getTag();
-    if (!Node.isIdentifier(tag) || tag.getText() !== "gql") {
-      return null;
-    }
-    return innerTemplateText(arg.getTemplate());
+  const direct = documentTextFromExpression(arg);
+  if (direct !== null) {
+    return direct;
   }
   if (!Node.isIdentifier(arg)) {
     return null;
@@ -296,15 +422,12 @@ export function resolveGqlTemplateText(arg: Node): string | null {
       }
     }
   }
-  // gql-tagged const — same module, or resolved through the import to
+  // A tagged const in this module, or one reached through the import to
   // the defining module's declaration.
   for (const init of importedVariableInitializers(arg)) {
-    const stripped = stripDocumentNodeCasts(init);
-    if (Node.isTaggedTemplateExpression(stripped)) {
-      const text = resolveGqlTemplateText(stripped);
-      if (text !== null) {
-        return text;
-      }
+    const text = documentTextFromExpression(stripDocumentNodeCasts(init));
+    if (text !== null) {
+      return text;
     }
   }
   return null;
@@ -336,26 +459,38 @@ export function resolveTypedDocumentSource(arg: Node): string | null {
     return null;
   }
   for (const init of importedVariableInitializers(arg)) {
-    const inner = stripDocumentNodeCasts(init);
-    if (!Node.isObjectLiteralExpression(inner)) {
-      continue;
-    }
-    const evaluated = evaluateObjectLiteralAsJson(inner);
-    if (evaluated === null || typeof evaluated !== "object") {
-      continue;
-    }
-    const doc = evaluated as Record<string, unknown>;
-    if (doc.kind !== "Document" || !Array.isArray(doc.definitions)) {
-      continue;
-    }
-    try {
-      return graphqlPrint(evaluated as unknown as GraphqlDocumentNode);
-    } catch {
-      // Malformed AST — skip rather than throw.
-      return null;
+    const source = typedDocumentSourceOf(init);
+    if (source !== null) {
+      return source;
     }
   }
   return null;
+}
+
+/**
+ * Read a generated DocumentNode object literal back as GraphQL source.
+ * Returns null when the expression isn't such a literal or when any
+ * corner of it can't be evaluated statically.
+ */
+function typedDocumentSourceOf(node: Node): string | null {
+  const inner = stripDocumentNodeCasts(node);
+  if (!Node.isObjectLiteralExpression(inner)) {
+    return null;
+  }
+  const evaluated = evaluateObjectLiteralAsJson(inner);
+  if (evaluated === null || typeof evaluated !== "object") {
+    return null;
+  }
+  const doc = evaluated as Record<string, unknown>;
+  if (doc.kind !== "Document" || !Array.isArray(doc.definitions)) {
+    return null;
+  }
+  try {
+    return graphqlPrint(evaluated as unknown as GraphqlDocumentNode);
+  } catch {
+    // Malformed AST, so skip it rather than throw.
+    return null;
+  }
 }
 
 /**

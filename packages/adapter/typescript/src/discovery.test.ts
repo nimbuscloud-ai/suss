@@ -4,6 +4,7 @@ import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { discoverUnits } from "./discovery/index.js";
+import { ResolutionStore } from "./facts/store.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 
@@ -1384,7 +1385,7 @@ describe("graphqlHookCall discovery", () => {
     expect(units).toEqual([]);
   });
 
-  it("skips calls whose first argument isn't a gql-tagged template", () => {
+  it("skips calls whose first argument isn't a document", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "page.ts",
@@ -1400,7 +1401,7 @@ describe("graphqlHookCall discovery", () => {
     expect(units).toEqual([]);
   });
 
-  it("skips tagged templates whose tag isn't `gql`", () => {
+  it("skips a tagged template whose tag isn't a document tag", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "page.ts",
@@ -2035,6 +2036,184 @@ describe("decoratedRoute discovery", () => {
     const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
     expect(units).toHaveLength(1);
     expect(units[0].routeInfo?.method).toBe("GET");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// graphqlHookCall discovery, documents held in named constants
+// ---------------------------------------------------------------------------
+
+describe("graphqlHookCall discovery through the fact layer", () => {
+  it("reads a document a gql tag call built in the same module", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      declare function gql(source: string): unknown;
+      const WIDGET_SETTINGS_QUERY_DOCUMENT = gql(/* GraphQL */ \`
+        query WidgetSettings { widgetSettings { id } }
+      \`);
+      export function useWidgetSettings() {
+        return useQuery(WIDGET_SETTINGS_QUERY_DOCUMENT);
+      }
+    `,
+    );
+    const store = new ResolutionStore();
+    const units = discoverUnits(file, [makeGraphqlHookPattern()], store);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo?.operationName).toBe("WidgetSettings");
+  });
+
+  it("reads a document imported from another module through a barrel", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "documents.ts",
+      `
+      declare function gql(source: string): unknown;
+      export const WIDGET_SETTINGS_QUERY_DOCUMENT = gql(\`
+        query WidgetSettings($region: String!) { widgetSettings(region: $region) { id } }
+      \`);
+    `,
+    );
+    project.createSourceFile(
+      "barrel.ts",
+      `export { WIDGET_SETTINGS_QUERY_DOCUMENT } from "./documents.js";`,
+    );
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      import { WIDGET_SETTINGS_QUERY_DOCUMENT } from "./barrel.js";
+      export function useWidgetSettings(region: string) {
+        return useQuery(WIDGET_SETTINGS_QUERY_DOCUMENT, { variables: { region } });
+      }
+    `,
+    );
+    const store = new ResolutionStore();
+    const units = discoverUnits(file, [makeGraphqlHookPattern()], store);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo?.operationName).toBe("WidgetSettings");
+    expect(units[0].operationInfo?.variables.map((v) => v.name)).toEqual([
+      "region",
+    ]);
+  });
+
+  it("reads a document the generated `graphql` function built", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "generated/gql.ts",
+      "export declare function graphql(source: string): unknown;",
+    );
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useMutation } from "@apollo/client";
+      import { graphql } from "./generated/gql.js";
+      const CREATE_WIDGET = graphql(\`mutation CreateWidget { createWidget { id } }\`);
+      export function useCreateWidget() {
+        return useMutation(CREATE_WIDGET);
+      }
+    `,
+    );
+    const store = new ResolutionStore();
+    const units = discoverUnits(file, [makeGraphqlHookPattern()], store);
+    expect(units[0]?.operationInfo?.operationName).toBe("CreateWidget");
+  });
+
+  it("does not take a locally declared `graphql` for a document tag", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useMutation } from "@apollo/client";
+      function graphql(source: string): unknown { return { source }; }
+      const CREATE_WIDGET = graphql(\`mutation CreateWidget { createWidget { id } }\`);
+      export function useCreateWidget() {
+        return useMutation(CREATE_WIDGET);
+      }
+    `,
+    );
+    const store = new ResolutionStore();
+    expect(discoverUnits(file, [makeGraphqlHookPattern()], store)).toEqual([]);
+  });
+
+  it("recognizes a tag imported under another name", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql as apolloGql, useQuery } from "@apollo/client";
+      const GET_PET = apolloGql\`query GetPet { pet { id } }\`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const store = new ResolutionStore();
+    const units = discoverUnits(file, [makeGraphqlHookPattern()], store);
+    expect(units[0]?.operationInfo?.operationName).toBe("GetPet");
+  });
+
+  it("reports nothing for a document the code computes", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      declare function gql(source: string): unknown;
+      declare const legacy: boolean;
+      const A = gql(\`query A { a }\`);
+      const B = gql(\`query B { b }\`);
+      const CHOSEN = legacy ? A : B;
+      export function useChosen() {
+        return useQuery(CHOSEN);
+      }
+    `,
+    );
+    const store = new ResolutionStore();
+    expect(discoverUnits(file, [makeGraphqlHookPattern()], store)).toEqual([]);
+  });
+
+  it("keeps two hook calls in one function apart", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      declare function gql(source: string): unknown;
+      const SEARCH = gql(\`query SearchUsers { searchUsers { id } }\`);
+      const USER = gql(\`query User { user { id } }\`);
+      export function UserPicker() {
+        return [useQuery(SEARCH), useQuery(USER)];
+      }
+    `,
+    );
+    const store = new ResolutionStore();
+    const units = discoverUnits(file, [makeGraphqlHookPattern()], store);
+    expect(units.map((u) => u.name).sort()).toEqual([
+      "UserPicker.SearchUsers",
+      "UserPicker.User",
+    ]);
+  });
+
+  it("reads a document a named constant holds for an imperative call", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "loader.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      declare function gql(source: string): unknown;
+      const LOAD_PET = gql(\`query LoadPet { pet { id } }\`);
+      declare const client: ApolloClient<unknown>;
+      export async function loadPet() {
+        return await client.query({ query: LOAD_PET });
+      }
+    `,
+    );
+    const store = new ResolutionStore();
+    const units = discoverUnits(file, [makeImperativePattern()], store);
+    expect(units[0]?.operationInfo?.operationName).toBe("LoadPet");
   });
 });
 
