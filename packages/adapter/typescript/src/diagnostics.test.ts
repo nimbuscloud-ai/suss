@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildExtractionReport,
+  commonDirectoryOf,
   createPackTallies,
   unresolvedGatesFor,
 } from "./diagnostics.js";
@@ -68,6 +69,7 @@ function report(
       0,
     ),
     tsConfigFilePath: undefined,
+    projectRoot: undefined,
   });
 }
 
@@ -156,19 +158,41 @@ describe("unresolvedGatesFor", () => {
     return path.join(dir, "tsconfig.json");
   }
 
+  const from = (tsConfigFilePath?: string, projectRoot?: string) =>
+    unresolvedGatesFor(["@scope/lib"], { tsConfigFilePath, projectRoot });
+
   it("reports a gate that does not resolve", async () => {
-    const tsconfig = await tempProject(false);
-    expect(unresolvedGatesFor(["@scope/lib"], tsconfig)).toEqual([
-      "@scope/lib",
-    ]);
+    expect(from(await tempProject(false))).toEqual(["@scope/lib"]);
   });
 
   it("stays silent when the gate resolves", async () => {
-    const tsconfig = await tempProject(true);
-    expect(unresolvedGatesFor(["@scope/lib"], tsconfig)).toEqual([]);
+    expect(from(await tempProject(true))).toEqual([]);
   });
 
-  it("checks nothing without a tsconfig path", () => {
-    expect(unresolvedGatesFor(["@scope/lib"], undefined)).toEqual([]);
+  it("resolves from the project root when there is no tsconfig", async () => {
+    const installed = path.dirname(await tempProject(true));
+    const bare = path.dirname(await tempProject(false));
+    expect(from(undefined, installed)).toEqual([]);
+    expect(from(undefined, bare)).toEqual(["@scope/lib"]);
+  });
+
+  it("checks nothing with neither a tsconfig nor a root", () => {
+    expect(from(undefined, undefined)).toEqual([]);
+  });
+});
+
+describe("commonDirectoryOf", () => {
+  it("gives the deepest directory holding every file", () => {
+    expect(
+      commonDirectoryOf(["/a/b/src/x.ts", "/a/b/src/nested/y.ts", "/a/b/z.ts"]),
+    ).toBe("/a/b");
+  });
+
+  it("gives nothing when the paths share only the filesystem root", () => {
+    expect(commonDirectoryOf(["/a/x.ts", "/b/y.ts"])).toBeUndefined();
+  });
+
+  it("ignores the in-memory paths a virtual project uses", () => {
+    expect(commonDirectoryOf(["x.ts", "y.ts"])).toBeUndefined();
   });
 });

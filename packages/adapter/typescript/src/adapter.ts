@@ -54,6 +54,7 @@ import {
 import { readContract, readContractForClientCall } from "./contract.js";
 import {
   buildExtractionReport,
+  commonDirectoryOf,
   createPackTallies,
   type ExtractionReport,
   type PackTally,
@@ -1930,6 +1931,9 @@ export function createTypeScriptAdapter(
             filesWalked: sourceFiles.length,
             summaries: enriched.length,
             tsConfigFilePath: config.tsConfigFilePath,
+            projectRoot: commonDirectoryOf(
+              sourceFiles.map((f) => f.getFilePath()),
+            ),
           }),
         );
       }

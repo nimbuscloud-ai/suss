@@ -89,40 +89,116 @@ export function createPackTallies(
 }
 
 /**
- * Check each gate specifier against the tsconfig's module resolution.
- * Returns the specifiers that do not resolve.
+ * The deepest directory holding every file, or undefined when the
+ * paths share no absolute root. Stands in for the project root when no
+ * tsconfig names one, since resolution from anywhere inside the tree
+ * finds the same `node_modules`.
+ */
+export function commonDirectoryOf(
+  files: ReadonlyArray<string>,
+): string | undefined {
+  const absolute = files.filter((f) => path.isAbsolute(f));
+  const first = absolute[0];
+  if (first === undefined) {
+    return undefined;
+  }
+
+  let shared = path.dirname(first).split(path.sep);
+  for (const file of absolute.slice(1)) {
+    const parts = path.dirname(file).split(path.sep);
+    let i = 0;
+    while (i < shared.length && i < parts.length && shared[i] === parts[i]) {
+      i += 1;
+    }
+    shared = shared.slice(0, i);
+  }
+
+  const joined = shared.join(path.sep);
+  return joined.length > 1 ? joined : undefined;
+}
+
+/** Bundler-style defaults for a project that never wrote a tsconfig. */
+const DEFAULT_RESOLUTION: ts.CompilerOptions = {
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  target: ts.ScriptTarget.ESNext,
+  module: ts.ModuleKind.ESNext,
+};
+
+/**
+ * Where module resolution should be anchored, and under which options.
  *
- * Skipped without a tsconfig path, since there is no resolution
- * context to check against and a caller-supplied Project may be
- * entirely in memory.
+ * A tsconfig answers both. Without one there is still a directory the
+ * walked files sit under, and resolving from there against bundler
+ * defaults finds an installed dependency the same way the packs do.
+ * Getting this right without a tsconfig matters more than it sounds:
+ * `--dir` runs are exactly the ones aimed at projects that may not
+ * have their dependencies installed, and a resolution check that
+ * quietly answers "all fine" there turns every such run into a false
+ * report of a broken pack.
+ */
+function resolutionContext(args: {
+  tsConfigFilePath: string | undefined;
+  projectRoot: string | undefined;
+}): { containingFile: string; options: ts.CompilerOptions } | null {
+  if (args.tsConfigFilePath !== undefined) {
+    const configFile = ts.readConfigFile(
+      args.tsConfigFilePath,
+      ts.sys.readFile,
+    );
+    if (configFile.error !== undefined) {
+      return null;
+    }
+
+    const dir = path.dirname(args.tsConfigFilePath);
+    const parsed = ts.parseJsonConfigFileContent(
+      configFile.config,
+      ts.sys,
+      dir,
+      /*existingOptions*/ undefined,
+      args.tsConfigFilePath,
+    );
+    return {
+      containingFile: path.join(dir, "index.ts"),
+      options: parsed.options,
+    };
+  }
+
+  if (args.projectRoot === undefined || !path.isAbsolute(args.projectRoot)) {
+    return null;
+  }
+
+  return {
+    containingFile: path.join(args.projectRoot, "index.ts"),
+    options: DEFAULT_RESOLUTION,
+  };
+}
+
+/**
+ * Check each gate specifier against the project's module resolution.
+ * Returns the specifiers that do not resolve.
  */
 export function unresolvedGatesFor(
   gates: ReadonlyArray<string>,
-  tsConfigFilePath: string | undefined,
+  args: {
+    tsConfigFilePath: string | undefined;
+    projectRoot: string | undefined;
+  },
 ): string[] {
-  if (tsConfigFilePath === undefined || gates.length === 0) {
+  if (gates.length === 0) {
     return [];
   }
 
-  const configFile = ts.readConfigFile(tsConfigFilePath, ts.sys.readFile);
-  if (configFile.error !== undefined) {
+  const context = resolutionContext(args);
+  if (context === null) {
     return [];
   }
-  const parsed = ts.parseJsonConfigFileContent(
-    configFile.config,
-    ts.sys,
-    path.dirname(tsConfigFilePath),
-    /*existingOptions*/ undefined,
-    tsConfigFilePath,
-  );
 
-  const containingFile = path.join(path.dirname(tsConfigFilePath), "index.ts");
   const unresolved: string[] = [];
   for (const gate of gates) {
     const resolved = ts.resolveModuleName(
       gate,
-      containingFile,
-      parsed.options,
+      context.containingFile,
+      context.options,
       ts.sys,
     );
     if (resolved.resolvedModule === undefined) {
@@ -132,6 +208,16 @@ export function unresolvedGatesFor(
   return unresolved;
 }
 
+/**
+ * The summary-side funnel counts, per pack.
+ *
+ * These are read back off the finished run rather than tallied during
+ * it, because the summaries a pack is responsible for are not all built
+ * where the pack is in scope: wrapper expansion and sub-unit synthesis
+ * both add summaries after the discovery loop has moved on. Every
+ * summary carries the name of what recognised it, so grouping on that
+ * attributes each one to the pack that owns it however late it arrived.
+ */
 export function buildExtractionReport(args: {
   packs: ReadonlyArray<PatternPack>;
   tallies: Map<string, PackTally>;
@@ -139,6 +225,8 @@ export function buildExtractionReport(args: {
   filesWalked: number;
   summaries: number;
   tsConfigFilePath: string | undefined;
+  /** Where to resolve gate specifiers from when there is no tsconfig. */
+  projectRoot: string | undefined;
 }): ExtractionReport {
   const packFunnels: PackFunnel[] = args.packs.map((pack) => {
     const gates = packIsUngated(pack) ? [] : collectPackGates(pack);
@@ -150,7 +238,10 @@ export function buildExtractionReport(args: {
     return {
       pack: pack.name,
       gates,
-      unresolvedGates: unresolvedGatesFor(gates, args.tsConfigFilePath),
+      unresolvedGates: unresolvedGatesFor(gates, {
+        tsConfigFilePath: args.tsConfigFilePath,
+        projectRoot: args.projectRoot,
+      }),
       candidateFiles: tally.candidateFiles,
       unitsDiscovered: tally.unitsDiscovered,
       summariesProduced: tally.summariesProduced,
