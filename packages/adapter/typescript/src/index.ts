@@ -14,6 +14,7 @@ export { readConfiguredCall } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery/index.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
+export { evaluatePackHealth, formatPackHealth } from "./packHealth.js";
 export { parseConditionExpression } from "./predicates.js";
 export { isImportedFrom } from "./resolve/invocationEffects.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
@@ -45,6 +46,7 @@ export type {
 } from "./diagnostics.js";
 export type { ClientCallSite, DiscoveredUnit } from "./discovery/index.js";
 export type { TsDiscoveryContext } from "./discoveryContext.js";
+export type { HealthCheck, HealthViolation } from "./packHealth.js";
 export type {
   TsJsxAttributeLocation,
   TsSubUnitContext,

@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import {
   buildExtractionReport,
   commonDirectoryOf,
@@ -11,6 +13,7 @@ import {
   unresolvedGatesFor,
 } from "./diagnostics.js";
 
+import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
 
 const gatedPack: PatternPack = {
@@ -43,6 +46,56 @@ const ungatedPack: PatternPack = {
   inputMapping: { type: "positionalParams", params: [] },
 };
 
+/**
+ * A summary carrying only what the funnel reads off it: which pack
+ * recognised it, and whether it says anything.
+ */
+function summaryFrom(
+  pack: string,
+  opts: {
+    transitions?: number;
+    gaps?: number;
+    confidence?: "high" | "low";
+  } = {},
+): BehavioralSummary {
+  return {
+    kind: "handler",
+    location: { file: "x.ts", range: { start: 0, end: 1 }, exportName: null },
+    identity: {
+      name: "handler",
+      exportPath: null,
+      boundaryBinding: restBinding({
+        transport: "http",
+        method: "GET",
+        path: "/",
+        recognition: pack,
+      }),
+    },
+    inputs: [],
+    transitions: Array.from(
+      { length: opts.transitions ?? 1 },
+      (_, i): Transition => ({
+        id: `t${i}`,
+        conditions: [],
+        output: { type: "void" },
+        effects: [],
+        location: { start: 0, end: 1 },
+        isDefault: true,
+      }),
+    ),
+    gaps: Array.from({ length: opts.gaps ?? 0 }, () => ({
+      type: "unreadOutcome" as const,
+      conditions: [],
+      consequence: "unknown" as const,
+      description: "x",
+    })),
+    confidence: {
+      source: "inferred_static" as const,
+      level: opts.confidence ?? ("high" as const),
+    },
+  };
+}
+
 function report(
   packs: PatternPack[],
   counts: Record<
@@ -56,18 +109,23 @@ function report(
   overrides: { filesInProject?: number | null; filesWalked?: number } = {},
 ) {
   const tallies = createPackTallies(packs);
+  const summaries: BehavioralSummary[] = [];
   for (const [name, c] of Object.entries(counts)) {
-    tallies.set(name, c);
+    tallies.set(name, {
+      ...c,
+      unitsClaimed: c.unitsDiscovered,
+      selfCollisions: 0,
+    });
+    for (let i = 0; i < c.summariesProduced; i += 1) {
+      summaries.push(summaryFrom(name));
+    }
   }
   return buildExtractionReport({
     packs,
     tallies,
     filesInProject: overrides.filesInProject ?? 10,
     filesWalked: overrides.filesWalked ?? 5,
-    summaries: Object.values(counts).reduce(
-      (sum, c) => sum + c.summariesProduced,
-      0,
-    ),
+    summaries,
     tsConfigFilePath: undefined,
     projectRoot: undefined,
   });

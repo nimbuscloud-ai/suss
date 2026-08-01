@@ -9,7 +9,9 @@ import {
   computeContentHash,
   createProjectWithoutTsconfig,
   createTypeScriptAdapter,
+  evaluatePackHealth,
   findNearestTsconfig,
+  formatPackHealth,
 } from "@suss/adapter-typescript";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 
@@ -400,6 +402,12 @@ export async function extract(
     if (options.explain === true || report.summaries === 0) {
       process.stderr.write(formatExtractionReport(report));
     }
+
+    // A run that produced plenty can still have one pack in it that
+    // produced nothing, and that pack is invisible in a total. The
+    // health checks print whenever they fire, whatever the run's own
+    // counts look like, and never change the exit code.
+    process.stderr.write(formatPackHealth(evaluatePackHealth(report)));
   }
 
   if (options.failOnEmpty === true && summaries.length === 0) {
@@ -501,6 +509,10 @@ export function formatExtractionReport(report: ExtractionReport): string {
     rows.push([pack.candidateFiles, imports]);
     rows.push([pack.unitsDiscovered, `boundaries recognized by ${pack.pack}`]);
     rows.push([pack.summariesProduced, `summaries from ${pack.pack}`]);
+    rows.push([
+      pack.summariesWithBehavior,
+      `of those, summaries saying what ${pack.pack} does`,
+    ]);
   }
 
   const width = Math.max(...rows.map(([count]) => String(count).length));

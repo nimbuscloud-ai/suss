@@ -13,11 +13,18 @@ import type { ExtractionReport, PackFunnel } from "@suss/adapter-typescript";
 function pack(overrides: Partial<PackFunnel> = {}): PackFunnel {
   return {
     pack: "express",
+    version: "1.0.0",
+    discovers: true,
     gates: ["express"],
     unresolvedGates: [],
     candidateFiles: 3,
     unitsDiscovered: 2,
+    unitsClaimed: 2,
+    selfCollisions: 0,
     summariesProduced: 2,
+    summariesBound: 2,
+    providerSummaries: 2,
+    summariesWithBehavior: 2,
     ...overrides,
   };
 }

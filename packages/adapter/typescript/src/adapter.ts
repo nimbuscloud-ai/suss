@@ -869,7 +869,11 @@ function extractFromSourceFile(
   // gives React components; `-f react-router -f react` gives RR-labeled
   // components. Without this the same source function would produce two
   // independent summaries at different recognition labels.
-  const claimed = new Set<string>();
+  //
+  // Which pack claimed a key is kept too. A later pack losing a unit to
+  // an earlier one is precedence working; a pack losing a unit to
+  // itself is two of its own patterns reading the same code.
+  const claimed = new Map<string, string>();
 
   for (const pack of frameworks) {
     // Funnel accounting: this pack was applicable to this file, and
@@ -931,10 +935,17 @@ function extractFromSourceFile(
       // The same identity discovery deduped on. One pack claiming a
       // unit keeps a later pack from claiming it again.
       const claimKey = unitDedupKey(unit);
-      if (claimed.has(claimKey)) {
+      const claimant = claimed.get(claimKey);
+      if (claimant !== undefined) {
+        if (claimant === pack.name && tally !== undefined) {
+          tally.selfCollisions += 1;
+        }
         continue;
       }
-      claimed.add(claimKey);
+      claimed.set(claimKey, pack.name);
+      if (tally !== undefined) {
+        tally.unitsClaimed += 1;
+      }
       const barriers = computeSubUnitBarriers(unit, pack, subUnitCtx);
       const raw = extractCodeStructure(
         unit,
@@ -1929,7 +1940,7 @@ export function createTypeScriptAdapter(
             tallies,
             filesInProject: tsconfigFileList?.length ?? null,
             filesWalked: sourceFiles.length,
-            summaries: enriched.length,
+            summaries: enriched,
             tsConfigFilePath: config.tsConfigFilePath,
             projectRoot: commonDirectoryOf(
               sourceFiles.map((f) => f.getFilePath()),
