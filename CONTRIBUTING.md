@@ -1,6 +1,6 @@
 # Contributing to suss
 
-Thanks for your interest in contributing. This document covers the practical bits — for design conventions, see [`docs/style.md`](docs/style.md).
+Thanks for your interest in contributing. This document covers the practical bits — for design conventions, see [`docs/internal/style.md`](docs/internal/style.md).
 
 ## Getting set up
 
@@ -39,7 +39,7 @@ Keep PRs focused on a single intent. If you find yourself writing "and also" in 
 
 ## Commit messages
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/). See [`docs/style.md#commits`](docs/style.md#commits) for the full rules. In short:
+We follow [Conventional Commits](https://www.conventionalcommits.org/). See [`docs/internal/style.md#commits`](docs/internal/style.md#commits) for the full rules. In short:
 
 ```
 <type>(<scope>): <short summary>
@@ -55,11 +55,15 @@ Scopes: `ir`, `extractor`, `adapter`, `cli`, `checker`, `express`, `react-router
 - Vitest, test files next to source (`foo.ts` → `foo.test.ts`).
 - Describe behavior, not implementation: `it("rejects missing id")` beats `it("extractId works")`.
 - Prefer hand-crafted fixtures over file-based ones when they fit on one screen.
-- See [`docs/style.md#tests`](docs/style.md#tests).
+- See [`docs/internal/style.md#tests`](docs/internal/style.md#tests).
+
+## Naming
+
+Name a thing for the job it does, and let a package's directory spell out the name it publishes: `@suss/framework-hono` lives in `packages/framework/hono`. [`docs/internal/style.md#naming`](docs/internal/style.md#naming) covers package, directory, function, Datalog-relation, and concept names.
 
 ## Adding a new framework pack
 
-Framework packs are declarative pattern configurations. See [`docs/framework-packs.md`](docs/framework-packs.md) for the full guide. The existing packs under `packages/framework/` and `packages/client/` are the best reference.
+Framework packs are declarative pattern configurations. See [`docs/packs.md`](docs/packs.md) for the full guide. The existing packs under `packages/framework/` and `packages/client/` are the best reference.
 
 ## Reporting bugs and proposing features
 

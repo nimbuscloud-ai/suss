@@ -26,6 +26,8 @@ function consumerSummary(opts: {
   name: string;
   channel: string;
   codeScopePath: string;
+  /** Queue logical id kept in metadata when the channel is a subject. */
+  queue?: string;
 }): BehavioralSummary {
   return {
     kind: "consumer",
@@ -53,6 +55,9 @@ function consumerSummary(opts: {
     confidence: { source: "inferred_static", level: "high" },
     metadata: {
       codeScope: { kind: "codeUri", path: opts.codeScopePath },
+      ...(opts.queue !== undefined
+        ? { messageBus: { queue: opts.queue } }
+        : {}),
     },
   };
 }
@@ -582,5 +587,68 @@ describe("eventbridge pairing", () => {
     expect(findings.filter((f) => f.kind === "unsupportedSemantics")).toEqual(
       [],
     );
+  });
+});
+
+describe("subject-channelled consumers", () => {
+  it("does not report the drained queue as unused when the consumer's channel is a subject", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "order.placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(findings.filter((f) => f.kind === "messageBusUnused")).toHaveLength(
+      0,
+    );
+  });
+
+  it("does not orphan a rule-fed consumer when a producer publishes its subject", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "AppBus#order.placed",
+      }),
+      consumerSummary({
+        name: "OrderProcessor.FromOrders",
+        channel: "AppBus#order.placed",
+        codeScopePath: "src/order-processor/",
+        queue: "OrdersQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter(
+        (f) =>
+          f.kind === "messageBusConsumerOrphan" ||
+          f.kind === "messageBusUnused",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("still reports a queue no consumer drains as unused", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      consumerSummary({
+        name: "OtherProcessor.FromOther",
+        channel: "other.subject",
+        codeScopePath: "src/other/",
+        queue: "OtherQueue",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter(
+        (f) =>
+          f.kind === "messageBusUnused" &&
+          f.description.includes("OrdersQueue"),
+      ),
+    ).toHaveLength(1);
   });
 });

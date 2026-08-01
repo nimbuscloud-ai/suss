@@ -120,7 +120,6 @@ export function checkMessageBus(
   // candidate channels. v0 simplification: trust direct name match.
   resolveProducerChannels(producers, summaries);
 
-  const allChannels = new Set<string>();
   const providerChannels = new Set<string>();
   const consumerChannels = new Set<string>();
   const producerChannels = new Set<string>();
@@ -129,21 +128,25 @@ export function checkMessageBus(
     const ch = channelOf(p);
     if (ch !== null) {
       providerChannels.add(ch);
-      allChannels.add(ch);
     }
   }
   for (const c of consumers) {
     const ch = channelOf(c);
     if (ch !== null) {
       consumerChannels.add(ch);
-      allChannels.add(ch);
+    }
+    // A subject-channelled SQS consumer still drains a concrete queue.
+    // The CFN contract keeps that queue's logical id in metadata so the
+    // queue is not mis-reported as unused.
+    const queue = consumedQueueOf(c);
+    if (queue !== null) {
+      consumerChannels.add(queue);
     }
   }
   for (const p of producers) {
     const ch = effectiveChannel(p);
     if (ch !== null) {
       producerChannels.add(ch);
-      allChannels.add(ch);
     }
   }
 
@@ -205,6 +208,16 @@ export function checkMessageBus(
 function channelOf(s: BehavioralSummary): string | null {
   const sem = s.identity.boundaryBinding?.semantics;
   return sem?.name === "message-bus" ? sem.channel : null;
+}
+
+/**
+ * The CFN logical id of the queue a subject-channelled SQS consumer
+ * drains, or null when the consumer's channel already names the queue.
+ */
+function consumedQueueOf(s: BehavioralSummary): string | null {
+  const meta = s.metadata as { messageBus?: { queue?: unknown } } | undefined;
+  const queue = meta?.messageBus?.queue;
+  return typeof queue === "string" ? queue : null;
 }
 
 /**

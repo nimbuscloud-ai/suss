@@ -182,7 +182,7 @@ export default defineConfig({
   //   1. glossaryLinkPlugin — auto-link inline-code IR types
   //      (`BoundaryBinding`, `Transition`, …) to their reference section.
   //   2. sourceFileLinkPlugin — auto-link inline-code repo paths
-  //      (`packages/ir/src/schemas.ts`, `scripts/dogfood.mjs`) to
+  //      (`packages/behavioral-ir/src/schemas.ts`, `scripts/dogfood.mjs`) to
   //      the corresponding GitHub blob/tree URL.
   //   3. pageTitleLinkPlugin — rewrite placeholder-style internal
   //      markdown link text (`[some-page.md](some-page.md)`) to use
