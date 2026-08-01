@@ -738,15 +738,15 @@ export interface PatternPack {
   /**
    * Pack version stamp, which feeds the cache invalidation key. Bump on
    * any change that affects discovered units / extracted summaries.
-   * Format is opaque to the adapter: semver, a content hash, a build
-   * SHA, or a monotonic integer all work.
+   * Format is opaque to the adapter, so semver or a content hash both
+   * work.
    *
    * Optional, because whoever loads the pack knows more about it than
    * the pack does. The CLI folds a hash of the file it loaded and of
    * the config it passed into this stamp, so a pack run through the CLI
    * invalidates on an edit whether or not it declares a version. A host
    * that builds packs some other way carries that responsibility
-   * itself; a pack with nothing to stamp reads as `"unset"`, and warm
+   * itself. A pack with nothing to stamp reads as `"unset"`, and warm
    * caches will answer for code that has since changed.
    */
   version?: string;
