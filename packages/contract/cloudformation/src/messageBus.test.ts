@@ -524,9 +524,9 @@ describe("buildMessageBusSummaries — EventBridge", () => {
       },
     });
     expect(eventBridgeConsumers(out)).toEqual([]);
-    expect(
-      channelsOf(eventBridgeProviders(out)),
-    ).toEqual(["OrderEventBus#OrderPlaced"]);
+    expect(channelsOf(eventBridgeProviders(out))).toEqual([
+      "OrderEventBus#OrderPlaced",
+    ]);
   });
 
   it("emits no provider for a rule with no targets at all", () => {
