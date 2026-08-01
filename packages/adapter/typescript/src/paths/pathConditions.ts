@@ -702,11 +702,12 @@ export function computePathConditions(
   if (!Node.isBlock(body)) {
     // Expression-bodied arrow: one unconditional path; all branching is
     // expression-level (ternaries, &&/||) — same as the legacy walk.
+    // The body itself is a terminal here, because an arrow written
+    // without braces returns it. Only a block body can also anchor the
+    // synthetic fall-through terminal the caller fills in, so nothing
+    // is skipped on this path.
     const byTerminal = new Map<Node, TerminalPaths>();
     for (const terminal of terminalNodes) {
-      if (terminal === body) {
-        continue;
-      }
       byTerminal.set(terminal, [
         collectAncestorConditionInfosBelow(terminal, func),
       ]);
