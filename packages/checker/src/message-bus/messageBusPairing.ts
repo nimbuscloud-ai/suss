@@ -20,6 +20,9 @@
 //                                  warning  consumer destructures field X from JSON.parse(record.body)
 //                                           but no producer to this channel sends X
 //
+// Channels pair on their subject, with the bus required to agree only
+// when both sides carry one; see channelPairing.ts for why.
+//
 // Body-shape pairing (the field-shape finding) joins producer
 // `message-send` effects against consumer `message-receive` effects
 // by channel. Producer-side bodies come from object-literal
@@ -38,6 +41,13 @@ import {
   interactionsOf,
   providersOf,
 } from "../interactions/dispatcher.js";
+import {
+  addChannel,
+  type ChannelSet,
+  channelsPair,
+  createChannelSet,
+  hasPair,
+} from "./channelPairing.js";
 
 import type {
   BehavioralSummary,
@@ -120,33 +130,33 @@ export function checkMessageBus(
   // candidate channels. v0 simplification: trust direct name match.
   resolveProducerChannels(producers, summaries);
 
-  const providerChannels = new Set<string>();
-  const consumerChannels = new Set<string>();
-  const producerChannels = new Set<string>();
+  const providerChannels: ChannelSet = createChannelSet();
+  const consumerChannels: ChannelSet = createChannelSet();
+  const producerChannels: ChannelSet = createChannelSet();
 
   for (const p of queueProviders) {
     const ch = channelOf(p);
     if (ch !== null) {
-      providerChannels.add(ch);
+      addChannel(providerChannels, ch);
     }
   }
   for (const c of consumers) {
     const ch = channelOf(c);
     if (ch !== null) {
-      consumerChannels.add(ch);
+      addChannel(consumerChannels, ch);
     }
     // A subject-channelled SQS consumer still drains a concrete queue.
     // The CFN contract keeps that queue's logical id in metadata so the
     // queue is not mis-reported as unused.
     const queue = consumedQueueOf(c);
     if (queue !== null) {
-      consumerChannels.add(queue);
+      addChannel(consumerChannels, queue);
     }
   }
   for (const p of producers) {
     const ch = effectiveChannel(p);
     if (ch !== null) {
-      producerChannels.add(ch);
+      addChannel(producerChannels, ch);
     }
   }
 
@@ -157,7 +167,7 @@ export function checkMessageBus(
       continue;
     }
     const ch = effectiveChannel(p);
-    if (ch === null || providerChannels.has(ch)) {
+    if (ch === null || hasPair(providerChannels, ch)) {
       continue;
     }
     findings.push(makeOrphanProducerFinding(p, semantics, ch));
@@ -171,7 +181,7 @@ export function checkMessageBus(
     if (semantics?.name !== "message-bus") {
       continue;
     }
-    if (producerChannels.has(semantics.channel)) {
+    if (hasPair(producerChannels, semantics.channel)) {
       continue;
     }
     findings.push(makeOrphanConsumerFinding(c, semantics));
@@ -184,8 +194,8 @@ export function checkMessageBus(
       continue;
     }
     if (
-      producerChannels.has(semantics.channel) ||
-      consumerChannels.has(semantics.channel)
+      hasPair(producerChannels, semantics.channel) ||
+      hasPair(consumerChannels, semantics.channel)
     ) {
       continue;
     }
@@ -611,7 +621,8 @@ function collectProducerFields(
   const out = new Set<string>();
   let anyExtractable = false;
   for (const producer of producers) {
-    if (effectiveChannel(producer) !== channel) {
+    const producerChannel = effectiveChannel(producer);
+    if (producerChannel === null || !channelsPair(producerChannel, channel)) {
       continue;
     }
     const body = producer.effect.interaction;
