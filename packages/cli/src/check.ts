@@ -448,10 +448,7 @@ function renderHuman(
     lines.push(
       `  boundary: ${f.boundary.recognition} (${f.boundary.transport})${formatRoute(f.boundary)}`,
     );
-    const handle = formatTransitionHandle(f);
-    if (handle !== null) {
-      lines.push(handle);
-    }
+    lines.push(...formatSuppressionRule(f));
   }
   lines.push("─".repeat(60));
   lines.push(
@@ -492,14 +489,51 @@ function formatSide(
 }
 
 /**
- * The transition a finding points at, on its own line.
+ * A `.sussignore` rule that matches this finding and nothing else,
+ * ready to paste.
  *
- * It reads as noise in the middle of the provider line, and it is the
- * handle a `.sussignore` rule uses, so it is worth naming as one.
+ * Naming the transition alone left the reader to write the rule, and
+ * the side it sits on decides which discriminator to write it under. A
+ * finding about a status the provider produces carries its id on the
+ * provider side, and a rule keyed on `consumer.transitionId` would
+ * never match it. Printing the whole rule takes that guesswork away.
+ *
+ * A finding with no transition on either side gets nothing: `kind` plus
+ * `boundary` is the only rule left to write, and it would silence every
+ * other finding of that kind on the same boundary too. A finding a rule
+ * already covers gets nothing either.
  */
-function formatTransitionHandle(f: Finding): string | null {
-  const id = f.provider.transitionId ?? f.consumer.transitionId;
-  return id === undefined ? null : `  to silence this one: ${id}`;
+function formatSuppressionRule(f: Finding): string[] {
+  const side = findingTransitionSide(f);
+  if (side === null || f.suppressed !== undefined) {
+    return [];
+  }
+  const key = boundaryKey(f.boundary);
+  const lines = [
+    "  to silence this one, add to the rules in .sussignore.yml:",
+    `    - kind: ${f.kind}`,
+  ];
+  if (key !== null) {
+    lines.push(`      boundary: ${JSON.stringify(key)}`);
+  }
+  lines.push(
+    `      ${side.name}: { transitionId: ${JSON.stringify(side.transitionId)} }`,
+    "      reason: TODO say why you accept this",
+  );
+  return lines;
+}
+
+/** Which side of a finding carries the transition it points at. */
+function findingTransitionSide(
+  f: Finding,
+): { name: "provider" | "consumer"; transitionId: string } | null {
+  if (f.provider.transitionId !== undefined) {
+    return { name: "provider", transitionId: f.provider.transitionId };
+  }
+  if (f.consumer.transitionId !== undefined) {
+    return { name: "consumer", transitionId: f.consumer.transitionId };
+  }
+  return null;
 }
 
 function formatRoute(boundary: Finding["boundary"]): string {

@@ -4,9 +4,9 @@ Some findings are true but accepted, a consumer that deliberately doesn't handle
 
 ## Where the file goes
 
-`suss check --dir summaries/` looks inside `summaries/`. `suss check provider.json consumer.json` looks in the working directory. `--sussignore <path>` overrides both.
+The project root is the usual home for it, next to `package.json`. `suss check --dir summaries/` starts looking inside `summaries/` and walks up to the project root, taking the nearest file it finds. `suss check provider.json consumer.json` starts in the working directory and walks up the same way. The walk stops at the first directory holding a `package.json` or a `.git`, so a file outside the project never reaches a run. `--sussignore <path>` overrides the search.
 
-It takes the first of these it finds:
+In each directory it takes the first of these it finds:
 
 1. `.sussignore.yml`
 2. `.sussignore.yaml`
@@ -31,14 +31,32 @@ rules:
     effect: hide
 ```
 
+`version: 1` is required. A file without it does not load, and `suss check` says so and names the line to add.
+
+### Writing a rule from a finding
+
+`suss check` prints a rule for each finding it reports, ready to paste under `rules:`:
+
+```
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:410:3b915da" }
+      reason: TODO say why you accept this
+```
+
+The rule names the transition on whichever side carries it, so it matches that finding and no other. Replace the reason with your own and it is done. A finding with no transition on either side gets no printed rule, because `kind` plus `boundary` is the only rule left to write and it would silence every other finding of that kind on the boundary.
+
 ### Fields
 
 | Field | Required | Notes |
 |---|---|---|
-| `kind` | at least one of kind/boundary/consumer.transitionId unless `scope: broad` | Any behavioral finding kind, see the [findings catalog](/reference/findings) for the full list (REST coverage / contract / consumer kinds, GraphQL pairing, React-Storybook, storage-relational, message-bus, runtime-config, plus meta kinds like `lowConfidence`), or any intent finding kind: system-intent-vs-code (`uncoveredOutcome`, `unimplementedBoundary`, `outcomeShapeMismatch`, `undeclaredOutcome`, `unkeyableBoundary`) and PRD scenario coverage (`unlinkedScenario`, `danglingScenarioLink`, `ambiguousScenarioLink`). Unknown kinds are rejected at load time. |
+| `kind` | at least one of kind/boundary/consumer.transitionId/provider.transitionId unless `scope: broad` | Any behavioral finding kind, see the [findings catalog](/reference/findings) for the full list (REST coverage / contract / consumer kinds, GraphQL pairing, React-Storybook, storage-relational, message-bus, runtime-config, plus meta kinds like `lowConfidence`), or any intent finding kind: system-intent-vs-code (`uncoveredOutcome`, `unimplementedBoundary`, `outcomeShapeMismatch`, `undeclaredOutcome`, `unkeyableBoundary`) and PRD scenario coverage (`unlinkedScenario`, `danglingScenarioLink`, `ambiguousScenarioLink`). Unknown kinds are rejected at load time. |
 | `boundary` | see above | Human-readable key: `"METHOD /path"` (both `:id` and `{id}` accepted), or a non-REST key verbatim (`"fn:@acme/api::getUser"`, `"gql:Query.user"`). |
 | `consumer.summary` | optional | `${file}::${name}` key matching the consumer side of the finding. |
 | `consumer.transitionId` | optional | Matches `Finding.consumer.transitionId`. |
+| `provider.summary` | optional | `${file}::${name}` key matching the provider side of the finding. |
+| `provider.transitionId` | optional | Matches `Finding.provider.transitionId`. A finding about a status the provider produces carries its id here, not on the consumer. |
 | `scope` | optional, default `"narrow"` | `"broad"` opts in to kind-only or boundary-only matches. |
 | `reason` | **required** | Free text explaining why this is accepted. Surfaces in human output next to the suppressed finding. |
 | `effect` | optional, default `"mark"` | See below. |
@@ -47,7 +65,7 @@ rules:
 
 A finding matches a rule when every specified field on the rule equals the corresponding field on the finding. Unspecified fields are wildcards. The *first* rule that matches a finding wins, ordering matters if you have overlapping rules with different effects.
 
-**Narrow scope (default)** requires at least `kind` AND one of `boundary` / `consumer.transitionId`. This is strict enough to target a specific finding class without accidentally silencing future regressions of an entirely different kind on an unrelated boundary.
+**Narrow scope (default)** requires at least `kind` AND one of `boundary` / `consumer.transitionId` / `provider.transitionId`. This is strict enough to target a specific finding class without accidentally silencing future regressions of an entirely different kind on an unrelated boundary.
 
 **Broad scope** (`scope: broad`) opts in to kind-only or boundary-only matches. Use sparingly, these silence future regressions in that category too, and the `reason` field is your only trace of why when that happens six months from now.
 
@@ -59,7 +77,7 @@ A finding matches a rule when every specified field on the rule equals the corre
 
 ## Intent findings
 
-The same rules apply to intent findings from `suss check --dir --intent`. `kind` and `boundary` match the same way (the intent finding's boundary is already a key string); `consumer` never matches an intent finding, there is no consumer side. Effects and threshold semantics are identical.
+The same rules apply to intent findings from `suss check --dir --intent`. `kind` and `boundary` match the same way (the intent finding's boundary is already a key string); `consumer` and `provider` never match an intent finding, which has neither side. Effects and threshold semantics are identical.
 
 PRD scenario-coverage findings don't always resolve to a real boundary. A `danglingScenarioLink` whose intent name *did* resolve is keyed on that intent's boundary (`GET /users/{id}`), so a narrow `kind` + `boundary` rule targets it. An `unlinkedScenario`, an `ambiguousScenarioLink`, or a link whose intent name doesn't resolve has no boundary to key on, so it carries a `prd:<title>` key instead, match those with `boundary: "prd:<title>"` verbatim, or with `scope: broad` on `kind` alone.
 

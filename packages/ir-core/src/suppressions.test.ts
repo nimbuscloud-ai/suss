@@ -46,6 +46,12 @@ describe("validateRule", () => {
     ).toBeNull();
   });
 
+  it("accepts narrow rules with kind + provider.transitionId", () => {
+    expect(
+      validateRule(rule({ kind: "x", provider: { transitionId: "t1" } })),
+    ).toBeNull();
+  });
+
   it("rejects narrow rules missing a second discriminator", () => {
     expect(validateRule(rule({ kind: "x" }))).toMatch(/narrow-scope/);
     expect(validateRule(rule({ boundary: "GET /a" }))).toMatch(/narrow-scope/);

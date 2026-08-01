@@ -130,7 +130,11 @@ Compared 1 boundary:
   provider: src/api.ts::get (src/api.ts:5)
   consumer: src/client.ts::loadUser (src/client.ts:1)
   boundary: hono (http) GET /users/:id
-  to silence this one: get:response:404:afd032b
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:404:afd032b" }
+      reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 1 finding: 1 error, 0 warning, 0 info
 ```
@@ -140,9 +144,9 @@ caller does not, so a missing user and a database outage both reach the
 screen as `{ state: "error" }`. Both files typecheck, so nothing else
 was going to tell you.
 
-The last line names the transition the finding points at. It is there
-for when you decide to live with a finding, since a `.sussignore` rule
-targets one. See [Suppress a finding](/guides/suppress-findings).
+The last lines are a rule you can paste, for when you decide to live
+with a finding. It matches this finding and no other. See [Suppress a
+finding](/guides/suppress-findings).
 
 Give the caller its own branch:
 
@@ -201,7 +205,11 @@ npx suss check --dir summaries/
   provider: src/api.ts::get (src/api.ts:5)
   consumer: src/client.ts::loadUser (src/client.ts:1)
   boundary: hono (http) GET /users/:id
-  to silence this one: get:response:410:3b915da
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:410:3b915da" }
+      reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 1 finding: 1 error, 0 warning, 0 info
 ```

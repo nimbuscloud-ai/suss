@@ -21,6 +21,7 @@ import * as p from "@clack/prompts";
 
 import { formatInitReport, inspectProject } from "./init.js";
 import { run } from "./processRun.js";
+import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
 
 import type { InitReport, PackSuggestion } from "./init.js";
@@ -377,7 +378,10 @@ function runCommandsFor(target: Target): RunnableCommand[] {
 
 async function offerSuppressions(root: string): Promise<void> {
   const file = path.join(root, ".sussignore.json");
-  if (fs.existsSync(file)) {
+  const existing = DEFAULT_SUPPRESSIONS_FILENAMES.some((name) =>
+    fs.existsSync(path.join(root, name)),
+  );
+  if (existing) {
     return;
   }
 
@@ -389,15 +393,18 @@ async function offerSuppressions(root: string): Promise<void> {
     return;
   }
 
+  // `version` is required, and a file without it does not load, so the
+  // starter carries it. The note that used to sit in a `$comment` key
+  // was one of those files: the schema rejects unknown keys.
   const starter = {
-    $comment:
-      "A rule silences one finding. Give every rule a reason, so the next person knows it was a decision.",
+    version: 1,
     rules: [
       {
         kind: "unhandledProviderCase",
         boundary: "GET /example/*",
         effect: "hide",
-        reason: "replace this example with a decision of your own",
+        reason:
+          "replace this example with a decision of your own, and say why you made it",
       },
     ],
   };

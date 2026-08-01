@@ -38,17 +38,68 @@ export const DEFAULT_SUPPRESSIONS_FILENAMES = [
 ];
 
 /**
- * Locate a .sussignore file in the given search directory. Returns the
- * absolute path to the first matching file, or null if none found.
+ * The directories a search covers, nearest first: the starting
+ * directory, then each parent up to and including the project root.
+ *
+ * `suss check --dir summaries/` starts at the summaries folder, and a
+ * reader who keeps their `.sussignore` beside `package.json` expects it
+ * to apply. Walking up finds both. The walk stops at the first
+ * directory holding a `package.json` or a `.git`, so a file in a
+ * parent project or in the home directory never reaches a run.
+ */
+export function suppressionsSearchDirs(startDir: string): string[] {
+  const dirs: string[] = [];
+  let dir = path.resolve(startDir);
+  for (;;) {
+    dirs.push(dir);
+    if (isProjectRoot(dir)) {
+      return dirs;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      return dirs;
+    }
+    dir = parent;
+  }
+}
+
+function isProjectRoot(dir: string): boolean {
+  return (
+    fs.existsSync(path.join(dir, "package.json")) ||
+    fs.existsSync(path.join(dir, ".git"))
+  );
+}
+
+/**
+ * Locate a .sussignore file, starting at the given directory and
+ * walking up to the project root. Returns the absolute path to the
+ * first matching file, or null if none found.
  */
 export function findSuppressionsFile(searchDir: string): string | null {
-  for (const name of DEFAULT_SUPPRESSIONS_FILENAMES) {
-    const candidate = path.resolve(searchDir, name);
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-      return candidate;
+  for (const dir of suppressionsSearchDirs(searchDir)) {
+    for (const name of DEFAULT_SUPPRESSIONS_FILENAMES) {
+      const candidate = path.resolve(dir, name);
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        return candidate;
+      }
     }
   }
   return null;
+}
+
+/**
+ * Leaving `version` off is the mistake people make copying a rule out
+ * of the docs, and the schema error for it names a literal rather than
+ * the fix.
+ */
+function isMissingVersion(raw: unknown): boolean {
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    !Array.isArray(raw) &&
+    !("version" in raw) &&
+    "rules" in raw
+  );
 }
 
 /**
@@ -60,6 +111,12 @@ export function loadSuppressions(filePath: string): SuppressionRule[] {
   const content = fs.readFileSync(filePath, "utf-8");
   const ext = path.extname(filePath).toLowerCase();
   const raw = ext === ".json" ? JSON.parse(content) : yaml.parse(content);
+
+  if (isMissingVersion(raw)) {
+    throw new Error(
+      `${filePath} has no version. Add \`version: 1\` above the rules; every suppressions file starts with it.`,
+    );
+  }
 
   const parsed = SuppressionFileSchema.safeParse(raw);
   if (!parsed.success) {

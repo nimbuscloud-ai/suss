@@ -98,7 +98,8 @@ produced. The `.sussignore` file holds these exceptions, each
 carrying a written reason:
 
 ```yaml
-# .sussignore: one rule per accepted finding
+# .sussignore.yml at the project root: one rule per accepted finding
+version: 1
 rules:
   - kind: deadConsumerBranch
     boundary: GET /legacy/health

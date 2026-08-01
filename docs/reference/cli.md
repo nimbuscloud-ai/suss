@@ -232,10 +232,10 @@ suss check --dir DIR [--intent INTENT_DIR] [--json] [-o OUTPUT]
 | `--sussignore PATH` | Use this `.sussignore` file instead of searching for one nearby. |
 | `--no-suppressions` | Report every finding, ignoring any `.sussignore`. Useful for auditing what the suppressions are hiding. |
 
-A finding that points at one transition prints a `to silence this one:`
-line under it, naming that transition. A `.sussignore` rule targets a
-finding by `kind` plus either the boundary or the consumer's transition
-id. See [Suppressions](/suppressions).
+A finding that points at one transition prints a `.sussignore` rule for
+it, ready to paste under `rules:`. The rule names the transition on
+whichever side carries it, so it matches that finding and no other. See
+[Suppressions](/suppressions).
 
 ### Exit codes
 
