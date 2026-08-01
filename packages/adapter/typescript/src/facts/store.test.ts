@@ -3,7 +3,7 @@
 // matters: which function does this export resolve to, or which
 // packages does this file reach.
 
-import { type Node, Project } from "ts-morph";
+import { type Node, Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { ResolutionStore } from "./store.js";
@@ -595,6 +595,56 @@ describe("resolveCallable", () => {
     expect(
       store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
     ).toBeNull();
+  });
+});
+
+describe("a query rooted at a wrapped value", () => {
+  /** The argument at `position` of the first call to `callee` in `file`. */
+  function argumentOf(
+    project: Project,
+    file: string,
+    callee: string,
+    position: number,
+  ): Node {
+    const call = project
+      .getSourceFileOrThrow(file)
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((candidate) => candidate.getExpression().getText() === callee);
+    if (call === undefined) {
+      throw new Error(`No call to ${callee} in ${file}`);
+    }
+    return call.getArguments()[position] as Node;
+  }
+
+  it("resolves a handler argument written with a cast", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        type H = () => Promise<string>;
+        const local = async () => "cast handler";
+        app.get("/x", local as H);
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, argumentOf(project, "/mod.ts", "app.get", 1)),
+    ).toContain("cast handler");
+  });
+
+  it("resolves a route object argument written with `as const`", () => {
+    const project = projectOf({
+      "/contract.ts": `export const route = { method: "get", path: "/x" };`,
+      "/mod.ts": `
+        import { route } from "./contract";
+        app.openapi(route as const, async () => "h");
+      `,
+    });
+    const store = new ResolutionStore();
+    const resolved = store.resolveObject(
+      argumentOf(project, "/mod.ts", "app.openapi", 0),
+    );
+
+    expect(resolved?.getText()).toContain('path: "/x"');
   });
 });
 
