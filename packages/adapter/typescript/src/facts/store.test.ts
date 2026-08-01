@@ -106,7 +106,8 @@ describe("resolveCallable", () => {
   });
 
   it("unwraps a factory that takes config before the handler", () => {
-    // The production shape: withInstrumentation(config, fn).
+    // The handler is not the first argument, so the rule has to find which
+    // parameter the returned function calls.
     const project = projectOf({
       "/mod.ts": `
         function withInstrumentation(
@@ -664,7 +665,8 @@ describe("importsTransitively", () => {
   });
 
   it("sees a package through a project-local barrel", () => {
-    // The production shape: an internal aws package re-exports the SDK.
+    // A shared package re-exports the SDK, so the importing file never
+    // names the SDK itself and the gate has to follow the re-export.
     const project = projectOf({
       "/aws/sqs.ts": `export { SendMessageCommand } from "@aws-sdk/client-sqs";`,
       "/service.ts": `

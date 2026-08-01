@@ -71,19 +71,20 @@ barrel re-exporting a wrapper. The engine composes what it has, so those
 work without being named.
 
 The corollary is where to look when something comes back empty. Suspect
-the facts before the rules. A production service once declared 91
-handlers and resolved 11; the fix was one condition in fact extraction,
-and the rules found the other 79 unchanged.
+the facts before the rules. Against one production service suss
+resolved 11 handlers and missed most of what the template declared. The
+fix was one condition in fact extraction, and the existing rules found
+the rest unchanged.
 
 ## What is not modelled
 
 **A handler passed as one property of a config.** `make({ body:
 handler })`, where the factory reads `opts.body`, does not resolve. A
-rule for it was tried and taken out: production wrappers read several
-callbacks off the same config (a log extractor, an error builder, the
-handler), the rule made each one a candidate for the whole call, and
-ambiguity nulled out sixty handlers that used to resolve. Saying which
-property is the handler takes something structure does not carry,
+rule for it was tried and taken out: a wrapper often reads several
+callbacks off the same config object, the rule made each one a
+candidate for the whole call, and the resulting ambiguity nulled out
+handlers that used to resolve. Saying which property is the handler
+takes something structure does not carry,
 either "the only property called" (which needs negation) or a pack
 naming the property. Until one of those exists, this shape stays
 unresolved on purpose.
