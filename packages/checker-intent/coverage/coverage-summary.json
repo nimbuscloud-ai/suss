@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/checker-intent/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 150,
       "covered": 143,

@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/contract/aws-apigateway/src/config.ts": {
+  "src/config.ts": {
     "lines": {
       "total": 0,
       "covered": 0,
@@ -57,7 +57,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/contract/aws-apigateway/src/http.ts": {
+  "src/http.ts": {
     "lines": {
       "total": 71,
       "covered": 67,
@@ -83,7 +83,7 @@
       "pct": 88.46
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/contract/aws-apigateway/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 0,
       "covered": 0,
@@ -109,7 +109,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/contract/aws-apigateway/src/rest.ts": {
+  "src/rest.ts": {
     "lines": {
       "total": 63,
       "covered": 62,
@@ -135,7 +135,7 @@
       "pct": 93.87
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/contract/aws-apigateway/src/shared.ts": {
+  "src/shared.ts": {
     "lines": {
       "total": 19,
       "covered": 19,
@@ -161,7 +161,7 @@
       "pct": 95.83
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/packages/contract/aws-apigateway/src/transitions.ts": {
+  "src/transitions.ts": {
     "lines": {
       "total": 13,
       "covered": 11,
