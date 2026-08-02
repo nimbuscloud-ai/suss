@@ -268,6 +268,40 @@ describe("namedExport — export default function", () => {
     expect(units[0].name).toBe("panel");
   });
 
+  it("names a bound arrow reached as a default after its binding", () => {
+    const project = new Project({
+      useInMemoryFileSystem: true,
+      compilerOptions: { moduleResolution: 100 },
+    });
+    const file = project.createSourceFile(
+      "/panel.ts",
+      `
+      export const panel = (args: any) => args;
+
+      export default panel;
+    `,
+    );
+    const barrel = project.createSourceFile(
+      "/index.ts",
+      `export { default } from "./panel";`,
+    );
+
+    const store = new ResolutionStore();
+    const declared = discoverUnits(
+      file,
+      [makeNamedExportPattern(["default"])],
+      store,
+    );
+    expect(declared).toHaveLength(1);
+    expect(declared[0].name).toBe("panel");
+
+    // The barrel names a function it does not contain, so the file that
+    // declares it is the one that claims it.
+    expect(
+      discoverUnits(barrel, [makeNamedExportPattern(["default"])], store),
+    ).toHaveLength(0);
+  });
+
   it("leaves a function with no name of its own as the default", () => {
     const project = createProject();
     const file = project.createSourceFile(

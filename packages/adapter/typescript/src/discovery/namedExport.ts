@@ -62,6 +62,18 @@ function resolveDefaultExportName(decl: Node, fn: FunctionRoot): string {
     }
   }
 
+  // An arrow bound to a name carries that name, and asking the function
+  // itself is what keeps the answer the same whichever module the
+  // question came through. A barrel re-exporting the default of
+  // `export const Panel = () => ...` would otherwise report `default`.
+  const binding = fn.getParent();
+  if (binding !== undefined && Node.isVariableDeclaration(binding)) {
+    const name = binding.getName();
+    if (name.length > 0) {
+      return name;
+    }
+  }
+
   return "default";
 }
 
