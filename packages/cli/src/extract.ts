@@ -513,6 +513,20 @@ export function formatExtractionReport(report: ExtractionReport): string {
         ? `files importing ${listOf(pack.gates)}`
         : `files ${pack.pack} looked at`;
     rows.push([pack.candidateFiles, imports]);
+
+    // A pack made only of recognisers finds no boundary of its own and
+    // writes no summary, so the discovery rows below would print three
+    // zeros and read as a broken pack. What it contributes is effects
+    // attached to units other packs found, which is what to show.
+    if (!pack.discovers && pack.recognizes) {
+      rows.push([
+        pack.unitsInGatedFiles,
+        `unit bodies ${pack.pack} could look inside`,
+      ]);
+      rows.push([pack.effectsRecognized, `effects ${pack.pack} recognized`]);
+      continue;
+    }
+
     rows.push([pack.unitsDiscovered, `boundaries recognized by ${pack.pack}`]);
     rows.push([pack.summariesProduced, `summaries from ${pack.pack}`]);
     rows.push([
