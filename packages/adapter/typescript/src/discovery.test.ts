@@ -2532,3 +2532,51 @@ describe("a handler named at the registration rather than written there", () => 
     expect(units).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// namedExport, where a binding is written again after it is declared
+// ---------------------------------------------------------------------------
+
+describe("namedExport of a binding written more than once", () => {
+  it("finds the write that survives, not the initializer", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      async function laterAction(args: any) { return { later: args }; }
+      export let action = async (args: any) => ({ first: args });
+      action = laterAction;
+    `,
+    );
+
+    const store = new ResolutionStore();
+    const units = discoverUnits(
+      file,
+      [makeNamedExportPattern(["action"])],
+      store,
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].func.getText()).toContain("later");
+  });
+
+  it("finds nothing when a branch decides which write runs", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      declare const flag: boolean;
+      async function laterAction(args: any) { return { later: args }; }
+      export let action = async (args: any) => ({ first: args });
+      if (flag) { action = laterAction; }
+    `,
+    );
+
+    const store = new ResolutionStore();
+    const units = discoverUnits(
+      file,
+      [makeNamedExportPattern(["action"])],
+      store,
+    );
+    expect(units).toHaveLength(0);
+  });
+});

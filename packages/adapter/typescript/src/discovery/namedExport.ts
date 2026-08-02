@@ -11,6 +11,7 @@ import {
   type SourceFile,
 } from "ts-morph";
 
+import { isWrittenAgain } from "../facts/assignments.js";
 import { type DiscoveredUnit, toFunctionRoot } from "./shared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -91,6 +92,20 @@ export function discoverNamedExports(
 
     const init = varDecl.getInitializer();
     if (init === undefined) {
+      continue;
+    }
+
+    // A name written again holds something else by the time anything
+    // imports it, so the binding is the question and the rules answer
+    // it. They come back with nothing when the writes cannot be
+    // ordered, and nothing is the right answer there.
+    if (isWrittenAgain(varDecl)) {
+      const rewritten =
+        resolution === undefined ? null : resolution.resolveCallable(varDecl);
+      const fn = rewritten === null ? null : toFunctionRoot(rewritten);
+      if (fn !== null) {
+        results.push({ func: fn, kind, name });
+      }
       continue;
     }
 
