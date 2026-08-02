@@ -1,4 +1,4 @@
-// minimize.ts — cut a failing shape down to the part that matters.
+// minimize.ts: cut a failing shape down to the part that matters.
 //
 // fast-check shrinks the value it drew, which gets the body small but
 // leaves every dimension where the draw put it. A finding is only

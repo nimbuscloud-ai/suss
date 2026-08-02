@@ -1,4 +1,4 @@
-// shape.test.ts — the shape fuzzer's properties.
+// shape.test.ts: the shape fuzzer's properties.
 //
 // Same protocol as the handler differential: a sound tier that must
 // hold, and one inverted property per documented gap, so a gap can
@@ -11,15 +11,22 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
+import { nestjsRestFramework } from "@suss/framework-nestjs-rest";
 import { reactFramework } from "@suss/framework-react";
 
+import {
+  type AnnounceShapeSpec,
+  SIMPLEST_ANNOUNCEMENT,
+} from "./announceShape.js";
 import {
   type ComponentShapeSpec,
   repairComponentShape,
 } from "./componentShape.js";
+import { ANNOUNCEMENT_BUGS, COMPONENT_BUGS } from "./knownBugs.js";
 import { findingSignature, signaturesOf } from "./minimize.js";
 import {
   formatShapeFailure,
+  runAnnounceShapeDifferential,
   runComponentShapeDifferential,
   runShapeDifferential,
   shapeFailed,
@@ -89,7 +96,7 @@ const arbSoundComponentShape: fc.Arbitrary<ComponentShapeSpec> =
   );
 
 for (const shapeTarget of ALL_SHAPE_TARGETS) {
-  describe(`shape fuzzer — sound tier (${shapeTarget.target.name})`, () => {
+  describe(`shape fuzzer, sound tier (${shapeTarget.target.name})`, () => {
     it(
       "however the handler at a registration call is written, the summary says the same thing",
       { timeout: 300_000 },
@@ -108,7 +115,7 @@ for (const shapeTarget of ALL_SHAPE_TARGETS) {
   });
 }
 
-describe("shape fuzzer — sound tier (react)", () => {
+describe("shape fuzzer, sound tier (react)", () => {
   it(
     "however a component is written, bound, and exported, the summary says the same thing",
     { timeout: 300_000 },
@@ -132,7 +139,7 @@ describe("shape fuzzer — sound tier (react)", () => {
   );
 
   it(
-    "extraction is deterministic — the same shape yields the same summaries",
+    "extraction is deterministic, the same shape yields the same summaries",
     { timeout: 60_000 },
     async () => {
       await fc.assert(
@@ -154,77 +161,10 @@ describe("shape fuzzer — sound tier (react)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Gap tier — each of these must keep reproducing until it is fixed
+// Bugs that are in the tree today. Each test below asserts the WRONG
+// behaviour, so that fixing the bug breaks the test and whoever fixed
+// it promotes the dimension value into the sound tier above.
 // ---------------------------------------------------------------------------
-
-/**
- * A documented gap: one dimension value, the finding it produces today,
- * and a sentence a reader can act on. When the fix lands, the property
- * below fails and says to move the value into the sound tier.
- */
-interface DocumentedGap {
-  dimension: "form" | "binding" | "route";
-  value: string;
-  signature: string;
-  says: string;
-}
-
-const COMPONENT_GAPS: DocumentedGap[] = [
-  {
-    dimension: "form",
-    value: "overloaded",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    says: "a component with overload signatures is not discovered at all",
-  },
-  {
-    dimension: "binding",
-    value: "letReassigned",
-    signature: "equivalence:summaries[0].transitions",
-    says: "a reassigned binding is summarized from its first assignment",
-  },
-  {
-    dimension: "binding",
-    value: "destructured",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    says: "a component bound by destructuring is not discovered",
-  },
-  {
-    dimension: "binding",
-    value: "withDefault",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    says: "a component bound with a default is not discovered",
-  },
-  {
-    dimension: "route",
-    value: "defaultOfName",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    says: "`export default Panel`, where Panel is a binding, is not discovered",
-  },
-  {
-    dimension: "route",
-    value: "defaultDeclaration",
-    signature: "invariant:aNamedUnitKeepsItsName",
-    says: "a named function exported as the default is reported as `default`",
-  },
-  {
-    dimension: "route",
-    value: "throughProperty",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    says: "`export default views.Panel` is not discovered",
-  },
-  {
-    dimension: "route",
-    value: "throughFactoryArg",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    says: "a component handed to a factory in an object argument is not discovered",
-  },
-  {
-    dimension: "route",
-    value: "barrel",
-    signature: "invariant:noTwoSummariesShareAnIdentity",
-    says: "a barrel re-export produces a second summary on the same identity",
-  },
-];
 
 const PLAIN_COMPONENT_BODY = {
   props: [],
@@ -232,10 +172,10 @@ const PLAIN_COMPONENT_BODY = {
   root: { type: "element" as const, tag: "div", children: [] },
 };
 
-describe("shape fuzzer — documented gaps still reproduce", () => {
-  for (const gap of COMPONENT_GAPS) {
+describe("shape fuzzer, bugs that are still in the tree", () => {
+  for (const gap of COMPONENT_BUGS) {
     it(
-      `${gap.dimension}=${gap.value}: ${gap.says}`,
+      `still broken, ${gap.dimension}=${gap.value}: ${gap.wrong}`,
       { timeout: 60_000 },
       async () => {
         const spec = repairComponentShape({
@@ -246,9 +186,12 @@ describe("shape fuzzer — documented gaps still reproduce", () => {
           [gap.dimension]: gap.value,
         } as ComponentShapeSpec);
         const result = await runComponentShapeDifferential(spec, REACT_PACK);
+        // Asserting the broken behaviour on purpose: this test fails
+        // the moment the bug is fixed, which is when the dimension
+        // value belongs in the sound tier instead.
         expect(
           [...signaturesOf(result)],
-          `the gap may have been fixed. If it was, move ${gap.dimension}=${gap.value} into the sound tier and delete this entry.\n${formatShapeFailure(result)}`,
+          `${gap.wrong}: the fuzzer no longer finds this, so it looks fixed. Move ${gap.dimension}=${gap.value} into the sound tier above and delete this entry.\n${formatShapeFailure(result)}`,
         ).toContain(gap.signature);
       },
     );
@@ -259,9 +202,9 @@ describe("shape fuzzer — documented gaps still reproduce", () => {
 // The registration gap, which the reach dimension is entirely inside
 // ---------------------------------------------------------------------------
 
-describe("shape fuzzer — a registered handler reached by name", () => {
+describe("shape fuzzer, a registered handler reached by name", () => {
   it(
-    "a handler that is not written at the registration call loses its boundary",
+    "still broken: a handler that is not written at the registration call loses its boundary",
     { timeout: 120_000 },
     async () => {
       const body = {
@@ -289,7 +232,7 @@ describe("shape fuzzer — a registered handler reached by name", () => {
   );
 });
 
-describe("shape fuzzer — a response typed by a library type", () => {
+describe("shape fuzzer, a response typed by a library type", () => {
   it(
     "a wide type is walked across its whole breadth, into a summary nobody can read",
     { timeout: 120_000 },
@@ -297,7 +240,7 @@ describe("shape fuzzer — a response typed by a library type", () => {
       const result = await runShapeDifferential(
         {
           ...SIMPLEST_SHAPE,
-          result: "wideLibraryType",
+          result: "wideNamedType",
           body: {
             guards: [],
             final: {
@@ -317,10 +260,57 @@ describe("shape fuzzer — a response typed by a library type", () => {
 });
 
 // ---------------------------------------------------------------------------
+// How a boundary announces itself, where a class carries the decorator
+// ---------------------------------------------------------------------------
+
+const NEST_PACK = nestjsRestFramework();
+
+describe("shape fuzzer, sound tier (nestjs-rest)", () => {
+  for (const method of ["method", "asyncMethod"] as const) {
+    it(
+      `a controller whose handler is written as ${method === "method" ? "a method" : "an async method"} summarizes the same way`,
+      { timeout: 60_000 },
+      async () => {
+        const result = await runAnnounceShapeDifferential(
+          { ...SIMPLEST_ANNOUNCEMENT, method, bodyKey: "ok" },
+          NEST_PACK,
+        );
+        if (shapeFailed(result)) {
+          throw new Error(formatShapeFailure(result));
+        }
+      },
+    );
+  }
+});
+
+describe("shape fuzzer, decorator bugs that are still in the tree", () => {
+  for (const bug of ANNOUNCEMENT_BUGS) {
+    it(
+      `still broken, ${bug.dimension}=${bug.value}: ${bug.wrong}`,
+      { timeout: 60_000 },
+      async () => {
+        const spec: AnnounceShapeSpec = {
+          ...SIMPLEST_ANNOUNCEMENT,
+          bodyKey: "ok",
+          [bug.dimension]: bug.value,
+        };
+        const result = await runAnnounceShapeDifferential(spec, NEST_PACK);
+        // Asserting the broken behaviour on purpose, so that fixing it
+        // breaks this test and the value moves into the sound tier.
+        expect(
+          [...signaturesOf(result)],
+          `${bug.wrong}: the fuzzer no longer finds this, so it looks fixed. Move ${bug.dimension}=${bug.value} into the sound tier above and take it out of knownBugs.ts.\n${formatShapeFailure(result)}`,
+        ).toContain(bug.signature);
+      },
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
 // The generator reaches its own dimensions
 // ---------------------------------------------------------------------------
 
-describe("shape fuzzer — the generator covers the space it declares", () => {
+describe("shape fuzzer, the generator covers the space it declares", () => {
   it("every binding form appears in a sample of shapes", () => {
     const sample = fc.sample(arbComponentShapeSpec, {
       numRuns: 200,

@@ -29,14 +29,12 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Handler and component differentials, random seeds
-        working-directory: tools/differential
-        run: |
-          SUSS_FUZZ_SEED=$RANDOM SUSS_FUZZ_RUNS=1500 npx vitest run
-
-      # Reporting only: most dimension values fail today by design, and
-      # each one that does has an entry in the suite above. Read the log
-      # for a finding whose minimized program is not one of those.
-      - name: Shapes, random seed
-        working-directory: tools/differential
-        run: node longrunShape.mjs both "${{ inputs.programs || '2000' }}"
+      # Every bug the fuzzer knows about is written down in
+      # src/shape/knownBugs.ts. This run fails on a finding that is not
+      # in that list, and on a pinned bug that stopped reproducing,
+      # which is a fix somebody landed without promoting the dimension
+      # value. Either way the log carries the minimized program.
+      - name: Property suites and shapes, at a seed from the clock
+        run: npm run fuzz:long
+        env:
+          FUZZ_PROGRAMS: ${{ inputs.programs || '4000' }}

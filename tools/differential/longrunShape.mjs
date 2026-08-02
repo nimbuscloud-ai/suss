@@ -1,11 +1,11 @@
-// longrunShape.mjs — exploratory session over the shape dimensions.
+// longrunShape.mjs: exploratory session over the shape dimensions.
 //
 // Samples shapes, runs every oracle, groups what it finds by signature,
 // minimizes one program per signature, and prints the per-dimension
 // coverage of the sample. Usage:
 //   node longrunShape.mjs [family] [count] [seed]
 //     family: http | component | both   (default both)
-// Build first (`npx tsup`) — imports from dist.
+// Build first (`npx tsup`), imports from dist.
 import fc from "fast-check";
 
 import { reactFramework } from "@suss/framework-react";

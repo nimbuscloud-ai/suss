@@ -1,10 +1,10 @@
-// equivalence.ts — the oracle for programs that mean the same thing.
+// equivalence.ts: the oracle for programs that mean the same thing.
 //
 // One behavior can be written many ways: a concise arrow or a block
 // arrow, a name or a property read, a direct call or one through a
 // factory. Whichever way it is written, the summary should say the same
-// thing. So the generator emits a pair — a variant and the plainest
-// spelling of the same behavior — and this compares the two summary
+// thing. So the generator emits a pair, a variant and the plainest
+// spelling of the same behavior, and this compares the two summary
 // sets. Everything is compared except where a value names a position in
 // source, since the two programs are different text.
 

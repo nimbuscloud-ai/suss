@@ -1,4 +1,4 @@
-// shapeGenerators.ts — fast-check arbitraries over the shape
+// shapeGenerators.ts: fast-check arbitraries over the shape
 // dimensions.
 //
 // Each dimension is drawn independently and the combination is repaired
@@ -75,7 +75,7 @@ export function repairShape(spec: ShapeSpec): ShapeSpec {
   if (spec.form === "conciseArrow") {
     return {
       ...spec,
-      result: spec.result === "wideLibraryType" ? "respond" : spec.result,
+      result: spec.result === "wideNamedType" ? "respond" : spec.result,
       body: { guards: [], final: singleResponse(spec.body) },
     };
   }

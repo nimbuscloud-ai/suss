@@ -1,4 +1,4 @@
-// invariants.ts — what a summary set has to be true of, whatever the
+// invariants.ts: what a summary set has to be true of, whatever the
 // program says.
 //
 // Execution can only falsify a claim about what runs. Several things a

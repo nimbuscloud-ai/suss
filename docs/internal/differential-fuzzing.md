@@ -264,7 +264,7 @@ Five dimensions, drawn independently and combined:
 | How the binding is formed | `const`, `let` assigned once, `let` reassigned, `var`, destructured, with a default |
 | How the value reaches its use | direct, through a name, a property, an array index, a call's return, a factory's object argument, an alias, a parameter, an import, a barrel, two barrels |
 | What the function hands back | a response, a returned response, a value typed by a library type |
-| How the boundary is announced | a registration call (Express, Fastify), an export name, a default export, both, an alias, a barrel |
+| How the boundary is announced | a registration call (Express, Fastify), an export name, a default export, both, an alias, a barrel, a class decorator (NestJS), a project decorator that wraps it, `applyDecorators` |
 
 A draw whose dimensions do not fit is repaired rather than thrown away
 (a concise arrow keeps the response its body ends on and drops the
@@ -277,17 +277,17 @@ mean something, and the tests hold it.
 Execution alone cannot see most shape bugs, because a shape does not
 change what the program does. Two more join it:
 
-- **Execution** — unchanged from the handler differential. A transition
+- **Execution**, unchanged from the handler differential. A transition
   whose conditions hold promised a status the run did not produce.
   Catches a reassigned binding, since the run takes the second
   assignment and the summary reports the first.
-- **Invariants** (`invariants.ts`) — what a summary set has to be true
+- **Invariants** (`invariants.ts`), what a summary set has to be true
   of whatever the program says. A boundary that was announced and not
   summarized, one summarized twice, two summaries collapsing onto one
   identity, a boundary with no key to pair on, a summary that says
   nothing at high confidence, a summary past a quarter of a megabyte.
   Each is a named check, and the name is what a failure reports.
-- **Equivalence** (`equivalence.ts`) — the generator renders the same
+- **Equivalence** (`equivalence.ts`), the generator renders the same
   behavior twice, once as drawn and once in the plainest spelling, and
   the two summaries have to agree on everything except where they sit
   in source. This is the one execution cannot substitute for: a
@@ -300,7 +300,7 @@ fast-check shrinks the body and leaves the dimensions where the draw
 put them, which is not enough to see *why* a program failed.
 `minimize.ts` walks each dimension back toward its plainest value and
 keeps the change whenever the same finding survives, so what a failure
-prints is the shortest program in the space that still shows it —
+prints is the shortest program in the space that still shows it,
 usually six lines. A finding is identified by its oracle plus the
 invariant name or the path that disagreed, so minimization cannot
 wander off onto a different bug.
@@ -308,6 +308,18 @@ wander off onto a different bug.
 `longrunShape.mjs` also runs one program per dimension value with every
 other dimension at its plainest. The sample says how often a shape
 fails; that table says which dimension is why.
+
+### What a scheduled run does with what it finds
+
+Every bug the fuzzer finds today is written down in `knownBugs.ts`,
+with the dimension value that produces it and a sentence saying what is
+wrong. Two readers use that list. The pinned tests assert each bug still
+reproduces, so fixing one breaks a test and the failure says to promote
+the dimension value. `longFuzz.mjs`, which the schedule runs, fails on a
+finding whose signature is not in the list and on a pinned bug that
+stopped reproducing. A nightly that writes into a log and returns
+success is a nightly nobody reads, so this one exits non-zero and prints
+the minimized program.
 
 ### Tiers
 

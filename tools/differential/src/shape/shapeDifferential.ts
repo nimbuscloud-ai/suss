@@ -1,4 +1,4 @@
-// shapeDifferential.ts — run every oracle against one generated shape.
+// shapeDifferential.ts: run every oracle against one generated shape.
 //
 // Three oracles, and each catches something the others cannot:
 //
@@ -16,6 +16,11 @@ import { judgeObservation } from "../differential.js";
 import { executeHandler } from "../execute.js";
 import { extractAllSummaries } from "../extract.js";
 import { requestBattery } from "../requests.js";
+import {
+  type AnnounceShapeSpec,
+  renderAnnounceShape,
+  SIMPLEST_ANNOUNCEMENT,
+} from "./announceShape.js";
 import {
   type ComponentShapeSpec,
   renderComponentShape,
@@ -45,7 +50,7 @@ export interface ShapeHarnessFailure {
 }
 
 export interface ShapeResult {
-  spec: ShapeSpec | ComponentShapeSpec;
+  spec: ShapeSpec | ComponentShapeSpec | AnnounceShapeSpec;
   /** The dimension values this shape was drawn at, for the failure line. */
   label: string;
   files: Record<string, string>;
@@ -215,6 +220,66 @@ export async function runComponentShapeDifferential(
     label: `${spec.form} / ${spec.binding} / ${spec.route}`,
     files: rendered.files,
     baselineFiles: baselineRendered.files,
+    summaries,
+    findings,
+    harnessFailures: [],
+    requestsRun: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// How a boundary announces itself
+// ---------------------------------------------------------------------------
+
+/**
+ * A decorated controller is not run either: NestJS reads the decorators
+ * and calls the method itself, so what a generated one does in a vm
+ * says nothing. The invariants and the comparison against the bare
+ * decorator are the oracle.
+ */
+export async function runAnnounceShapeDifferential(
+  spec: AnnounceShapeSpec,
+  pack: PatternPack,
+): Promise<ShapeResult> {
+  const files = renderAnnounceShape(spec);
+  const summaries = await extractAllSummaries({ files, pack });
+
+  const findings: ShapeFinding[] = checkInvariants(summaries, {
+    kind: "handler",
+    boundaryCount: 1,
+    unitName: null,
+  }).map((violation) => ({
+    oracle: "invariant" as const,
+    detail: `${violation.invariant}: ${violation.detail}`,
+  }));
+
+  const baseline = { ...SIMPLEST_ANNOUNCEMENT, bodyKey: spec.bodyKey };
+  const baselineFiles = renderAnnounceShape(baseline);
+  const isBaseline =
+    spec.announcement === baseline.announcement &&
+    spec.method === baseline.method;
+
+  if (!isBaseline) {
+    const baselineSummaries = await extractAllSummaries({
+      files: baselineFiles,
+      pack,
+    });
+    for (const difference of summarySetDifferences(
+      baselineSummaries,
+      summaries,
+    )) {
+      findings.push({
+        oracle: "equivalence",
+        detail: `${difference.path}: the plainest spelling says ${difference.baseline}, this spelling says ${difference.variant}`,
+      });
+    }
+  }
+
+  return {
+    spec,
+    label: `${spec.announcement} / ${spec.method}`,
+    files,
+    baselineFiles,
     summaries,
     findings,
     harnessFailures: [],

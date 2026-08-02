@@ -1,4 +1,4 @@
-// componentShape.ts — the same dimensions at the render boundary.
+// componentShape.ts: the same dimensions at the render boundary.
 //
 // The HTTP registration call reads the function literal handed to it,
 // so the shapes it can express stop at the call's last argument.

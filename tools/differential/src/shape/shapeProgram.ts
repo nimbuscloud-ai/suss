@@ -1,4 +1,4 @@
-// shapeProgram.ts — the DSL for how a unit is written, bound, reached,
+// shapeProgram.ts: the DSL for how a unit is written, bound, reached,
 // and announced.
 //
 // The handler DSL (../program.ts) varies what happens *inside* a unit.
@@ -6,8 +6,8 @@
 // written in, the binding that holds it, the path a value takes from
 // that binding to the registration site, and the shape of what the
 // function hands back. Extraction has to arrive at the same summary
-// however the source spells it, so a shape is rendered twice — once as
-// the variant and once as a baseline that means the same thing — and
+// however the source spells it, so a shape is rendered twice, once as
+// the variant and once as a baseline that means the same thing, and
 // the two summaries are compared.
 
 import { type DispatchTable, dispatchByType } from "../dispatch.js";
@@ -49,7 +49,7 @@ export type ReachPath =
   | "throughTwoBarrels";
 
 /** What the function hands back on top of responding. */
-export type ResultShape = "respond" | "returnRespond" | "wideLibraryType";
+export type ResultShape = "respond" | "returnRespond" | "wideNamedType";
 
 export interface ShapeSpec {
   form: FunctionForm;
@@ -106,7 +106,7 @@ export interface ShapeSyntax {
 }
 
 // ---------------------------------------------------------------------------
-// Constraints — which combinations mean anything
+// Constraints, which combinations mean anything
 // ---------------------------------------------------------------------------
 
 /** Forms whose function is a statement, so the binding only re-names it. */
@@ -128,7 +128,7 @@ export function isValidShape(spec: ShapeSpec): boolean {
     return (
       spec.body.guards.length === 0 &&
       spec.body.final.type === "respond" &&
-      spec.result !== "wideLibraryType"
+      spec.result !== "wideNamedType"
     );
   }
   if (spec.reach === "direct") {
@@ -145,7 +145,7 @@ const PARAMS = "req: any, res: any";
 
 function bodyLines(spec: ShapeSpec, syntax: ShapeSyntax): string[] {
   const lines = renderBodyLines(spec.body, syntax.renderTerminal);
-  if (spec.result === "wideLibraryType") {
+  if (spec.result === "wideNamedType") {
     return [
       ...lines.slice(0, -1),
       `${syntax.renderTypedResponse("describe()")};`,
@@ -363,7 +363,7 @@ const imported = (
 });
 
 // ---------------------------------------------------------------------------
-// The wide library type — a type whose breadth, not depth, is the risk
+// The wide library type, a type whose breadth, not depth, is the risk
 // ---------------------------------------------------------------------------
 
 export interface WideTypeSize {
@@ -407,7 +407,7 @@ export function renderShape(options: RenderShapeOptions): RenderedShape {
   const declarationLines = reach.bindsInEntry ? fn.statements : [];
 
   const wideImport =
-    spec.result === "wideLibraryType"
+    spec.result === "wideNamedType"
       ? [`import { describe } from "./wide.js";`]
       : [];
 
@@ -432,20 +432,20 @@ export function renderShape(options: RenderShapeOptions): RenderedShape {
     ...reach.extraFiles,
     [ENTRY_FILE]: entry,
   };
-  if (spec.result === "wideLibraryType") {
+  if (spec.result === "wideNamedType") {
     files[WIDE_FILE] = renderWideTypeModule(options.wideType);
   }
 
   return {
     files,
     handlerSource: renderExecutableHandler(spec, syntax),
-    executable: spec.result !== "wideLibraryType",
+    executable: spec.result !== "wideNamedType",
   };
 }
 
 /**
  * The bare arrow the vm runs. Every shape of one body means the same
- * run, so execution reads the body alone — with one exception that is
+ * run, so execution reads the body alone, with one exception that is
  * the point: a reassigned binding runs its *final* value, which is what
  * makes the first-assignment claim falsifiable.
  */

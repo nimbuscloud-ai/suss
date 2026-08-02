@@ -1,4 +1,4 @@
-// shapeTargets.ts — the pack-specific surface of the shape fuzzer.
+// shapeTargets.ts: the pack-specific surface of the shape fuzzer.
 //
 // A shape target is a `FuzzTarget` (pack, terminal syntax, response
 // stub) plus the registration form a shape is announced through. The
