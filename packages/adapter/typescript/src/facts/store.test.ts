@@ -106,7 +106,8 @@ describe("resolveCallable", () => {
   });
 
   it("unwraps a factory that takes config before the handler", () => {
-    // The production shape: withInstrumentation(config, fn).
+    // The handler is not the first argument, so the rule has to find which
+    // parameter the returned function calls.
     const project = projectOf({
       "/mod.ts": `
         function withInstrumentation(
@@ -131,18 +132,19 @@ describe("resolveCallable", () => {
   });
 
   it("unwraps a static class method factory", () => {
-    // The other production shape: Service.createProtectedHandler(fn).
+    // The wrapper is a static method rather than a free function, so the
+    // callee is a property access and not an identifier.
     const project = projectOf({
       "/mod.ts": `
-        class AuthService {
-          static createProtectedHandler(fn: (event: unknown) => Promise<unknown>) {
+        class Handlers {
+          static withAuth(fn: (event: unknown) => Promise<unknown>) {
             return async (event: unknown) => {
               return fn(event);
             };
           }
         }
         const inner = async (event: unknown) => "protected";
-        export const handler = AuthService.createProtectedHandler(inner);
+        export const handler = Handlers.withAuth(inner);
       `,
     });
     const store = new ResolutionStore();
@@ -663,7 +665,8 @@ describe("importsTransitively", () => {
   });
 
   it("sees a package through a project-local barrel", () => {
-    // The production shape: an internal aws package re-exports the SDK.
+    // A shared package re-exports the SDK, so the importing file never
+    // names the SDK itself and the gate has to follow the re-export.
     const project = projectOf({
       "/aws/sqs.ts": `export { SendMessageCommand } from "@aws-sdk/client-sqs";`,
       "/service.ts": `

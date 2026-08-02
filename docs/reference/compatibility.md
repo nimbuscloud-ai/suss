@@ -123,4 +123,4 @@ suss check --dir auth/
 |---|---|
 | Other languages | A Python or Ruby service is invisible. The adapter interface is language-agnostic, so one could be written. |
 | Routes registered at runtime | `registerRoutes(configBuiltAtRuntime)`. suss reads what the code says without running it. |
-| Your own wrapper around a library | A project that wraps `useQuery` in its own `useGraphQLQuery` hook is invisible to the Apollo pack, which looks for the library call itself. |
+| Your own wrapper around a library | A project that wraps `useQuery` in a hook of its own is invisible to the Apollo pack, which looks for the library call itself. |

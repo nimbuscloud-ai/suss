@@ -152,7 +152,7 @@ function accountingUnit(
 
 /**
  * Handler factories whose config names the subject the consumer
- * expects: `createEventHandler({ expected: "user.reported" as const,
+ * expects: `createEventHandler({ expected: "widget.created" as const,
  * ... }, async ({ parsed }) => ...)`. The subject is the channel a
  * producer publishes on, so it becomes the unit's message-bus binding.
  *

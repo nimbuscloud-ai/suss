@@ -1,9 +1,9 @@
 // helperResolution.test.ts — reading a project's own response helper.
 //
-// The case these cover came from a production service whose handlers all
-// returned through a local `json(statusCode, payload)`. The pack assumed
-// the opposite argument order, so every route reported its body as the
-// status and its status as the body, at high confidence.
+// A handler that returns through a helper of the project's own gives the
+// pack nothing to match on but the helper's name, and a pack that guesses
+// the argument order from the name gets it wrong half the time. These
+// cover reading the helper instead of guessing.
 
 import { Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
