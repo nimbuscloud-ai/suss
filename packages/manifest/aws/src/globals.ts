@@ -1,4 +1,4 @@
-// globals.ts — fold the SAM `Globals` section into the resources that
+// globals.ts: fold the SAM `Globals` section into the resources that
 // inherit from it, so every reader sees one set of properties per
 // resource and none of them has to know that `Globals` exists.
 //
