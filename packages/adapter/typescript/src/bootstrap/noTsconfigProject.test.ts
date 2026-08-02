@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { testCompilerOptions } from "@suss/test-project";
+
 import {
   createProjectWithoutTsconfig,
   findNearestTsconfig,
@@ -133,5 +135,20 @@ describe("findNearestTsconfig", () => {
     expect(findNearestTsconfig(nested)).toBe(
       path.join(nested, "tsconfig.json"),
     );
+  });
+});
+
+describe("the options tests read fixture source with", () => {
+  it("are the ones a codebase with no tsconfig gets", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-optioncheck-"));
+    try {
+      const { project } = createProjectWithoutTsconfig(dir);
+      const production = project.getCompilerOptions();
+      for (const [name, value] of Object.entries(testCompilerOptions)) {
+        expect({ [name]: production[name] }).toEqual({ [name]: value });
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,0 +1,32 @@
+{
+  "name": "@suss/test-project",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The ts-morph Project that tests parse fixture source with. Internal tool; never published.",
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ts-morph": "^23.0.0"
+  },
+  "devDependencies": {
+    "tsup": "*",
+    "typescript": "*"
+  }
+}
