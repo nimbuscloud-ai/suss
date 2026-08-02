@@ -1,0 +1,42 @@
+name: Fuzz
+
+# The fixed-seed suites run on every pull request under CI's test step.
+# This one runs the same generators for longer and at random seeds, so
+# it reaches shapes a fixed seed never draws. Nightly, plus on demand.
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      programs:
+        description: Programs per family
+        default: "2000"
+
+jobs:
+  fuzz:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Handler and component differentials, random seeds
+        working-directory: tools/differential
+        run: |
+          SUSS_FUZZ_SEED=$RANDOM SUSS_FUZZ_RUNS=1500 npx vitest run
+
+      # Reporting only: most dimension values fail today by design, and
+      # each one that does has an entry in the suite above. Read the log
+      # for a finding whose minimized program is not one of those.
+      - name: Shapes, random seed
+        working-directory: tools/differential
+        run: node longrunShape.mjs both "${{ inputs.programs || '2000' }}"
