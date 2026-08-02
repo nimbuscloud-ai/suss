@@ -140,9 +140,17 @@ rather than a guess. `resolveCallable` returns null when the rules reach
 two different functions, since picking one would make the answer depend
 on the order facts arrived in.
 
-Reassignment, conditional exports, and scope-sensitive dataflow are not
-modelled at all. Discovery filters what comes back, which is where the
-precision is recovered.
+Conditional exports and scope-sensitive dataflow are not modelled at
+all. Discovery filters what comes back, which is where the precision is
+recovered.
+
+Reassignment is modelled where control flow cannot change the answer.
+A name written straight through a module's statement list ends up
+holding its last write, which is what an importer gets, and that is the
+fact the extractor writes down. A write under a branch, in a loop, or
+in a function body could run any number of times, so nothing goes down
+and the name comes to nothing rather than to whichever write was
+written first.
 
 ## When something does not resolve
 

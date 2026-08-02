@@ -922,3 +922,153 @@ describe("resolveWrittenValue", () => {
     expect(written?.getKindName()).toBe("ConditionalExpression");
   });
 });
+
+describe("a binding written more than once", () => {
+  /** The exported variable declaration named `name`. */
+  function bindingOf(project: Project, file: string, name: string): Node {
+    return project
+      .getSourceFileOrThrow(file)
+      .getVariableDeclarationOrThrow(name);
+  }
+
+  it("resolves to the last write when the module writes it straight through", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        function later() { return "later"; }
+        let handler = () => "first";
+        handler = later;
+        export { handler };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, bindingOf(project, "/mod.ts", "handler")),
+    ).toContain('"later"');
+  });
+
+  it("resolves to nothing when a branch decides which write runs", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare const useLater: boolean;
+        function later() { return "later"; }
+        let handler = () => "first";
+        if (useLater) { handler = later; }
+        export { handler };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(resolvedBody(store, bindingOf(project, "/mod.ts", "handler"))).toBe(
+      null,
+    );
+  });
+
+  it("resolves to nothing when a function body does the writing", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        function later() { return "later"; }
+        let handler = () => "first";
+        export function install() { handler = later; }
+        export { handler };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(resolvedBody(store, bindingOf(project, "/mod.ts", "handler"))).toBe(
+      null,
+    );
+  });
+
+  it("resolves to nothing when a loop writes it", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare const steps: Array<() => string>;
+        let handler = () => "first";
+        for (const step of steps) { handler = step; }
+        export { handler };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(resolvedBody(store, bindingOf(project, "/mod.ts", "handler"))).toBe(
+      null,
+    );
+  });
+
+  it("resolves to nothing when the module reads it before the last write", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare function register(fn: unknown): void;
+        function later() { return "later"; }
+        let handler = () => "first";
+        register(handler);
+        handler = later;
+        export { handler };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(resolvedBody(store, bindingOf(project, "/mod.ts", "handler"))).toBe(
+      null,
+    );
+  });
+
+  it("reads a document off the write that survives", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare function gql(source: string): unknown;
+        let DOC = gql(\`query First { first }\`);
+        DOC = gql(\`query Second { second }\`);
+        export { DOC };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      bindingOf(project, "/mod.ts", "DOC"),
+    );
+    expect(written?.getText()).toContain("query Second");
+  });
+});
+
+describe("a binding declared without a value", () => {
+  function bindingFor(project: Project, file: string, name: string): Node {
+    return project
+      .getSourceFileOrThrow(file)
+      .getVariableDeclarationOrThrow(name);
+  }
+
+  it("resolves to the write when the module makes it straight through", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        function later() { return "later"; }
+        let handler;
+        handler = later;
+        export { handler };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, bindingFor(project, "/mod.ts", "handler")),
+    ).toContain('"later"');
+  });
+
+  it("resolves to nothing when the write sits under a branch", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare const flag: boolean;
+        function later() { return "later"; }
+        let handler;
+        if (flag) { handler = later; }
+        export { handler };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(resolvedBody(store, bindingFor(project, "/mod.ts", "handler"))).toBe(
+      null,
+    );
+  });
+});
