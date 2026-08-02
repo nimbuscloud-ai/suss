@@ -238,6 +238,20 @@ export interface RawDeclaredContract {
   provenance?: "derived" | "independent";
 }
 
+/**
+ * What sits where a unit's body should be.
+ *
+ *   - "absent": there is no body behind this declaration (an overload
+ *     signature, an ambient declaration, an abstract method), so the
+ *     pack read nothing about what the unit does.
+ *   - "empty": a body with nothing in it. A summary that says nothing
+ *     about it has described it completely.
+ *   - "statements": a body with work in it, including a concise
+ *     arrow's expression. A summary that says nothing about it has
+ *     described none of it.
+ */
+export type BodyContent = "absent" | "empty" | "statements";
+
 export interface RawCodeStructure {
   identity: {
     name: string;
@@ -265,6 +279,14 @@ export interface RawCodeStructure {
    * saying it does nothing.
    */
   unmatchedReturns?: number;
+  /**
+   * What the adapter found where the unit's body should be. A summary
+   * with nothing in it means one of two different things, and only the
+   * adapter can say which: a body nobody could read, or a body with
+   * nothing in it to read. Adapters that do not say leave this unset,
+   * and everything downstream treats the summary as it did before.
+   */
+  bodyContent?: BodyContent;
   dependencyCalls: RawDependencyCall[];
   declaredContract: RawDeclaredContract | null;
   /**
@@ -534,6 +556,16 @@ export function detectGaps(
     });
   }
 
+  const unreadBody = describeUnreadBody(raw);
+  if (unreadBody !== null) {
+    gaps.push({
+      type: "unreadOutcome",
+      conditions: [],
+      consequence: "unknown",
+      description: unreadBody,
+    });
+  }
+
   if (raw.declaredContract) {
     const producedStatuses = new Set(
       transitions.flatMap((t) => {
@@ -583,12 +615,54 @@ export function detectGaps(
 // Confidence
 // =============================================================================
 
+/**
+ * True when the summary's silence comes from what the pack could read
+ * rather than from a unit that does nothing. Either there was no body
+ * behind the declaration, or there was a body with work in it and
+ * nothing in that work matched a shape the pack looks for.
+ */
+function bodyWentUnread(raw: RawCodeStructure): boolean {
+  if (raw.bodyContent === "absent") {
+    return true;
+  }
+  return raw.bodyContent === "statements" && raw.branches.length === 0;
+}
+
+/**
+ * Why a summary with nothing in it has nothing in it, in a sentence, or
+ * null when the summary is not that shape. A reader looking at an empty
+ * summary cannot tell a unit nobody read from a unit that does nothing,
+ * and the transitions alone will never tell them.
+ */
+function describeUnreadBody(raw: RawCodeStructure): string | null {
+  if (!bodyWentUnread(raw)) {
+    return null;
+  }
+  if (raw.bodyContent === "absent") {
+    return "This unit is a declaration with no body behind it, so nothing about what it does was read here";
+  }
+  // Unmatched returns already say this, in more detail, about the same
+  // body.
+  if ((raw.unmatchedReturns ?? 0) > 0) {
+    return null;
+  }
+  return "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here";
+}
+
 export function assessConfidence(raw: RawCodeStructure): ConfidenceInfo {
   // A return nobody could read is the plainest reason not to trust a
   // summary, and it says so directly. Counting conditions cannot see
   // it: a function whose returns all went unread has no conditions
   // either, and zero opaque out of zero used to come out as certain.
   if ((raw.unmatchedReturns ?? 0) > 0) {
+    return { source: "inferred_static", level: "low" };
+  }
+
+  // The same arithmetic, one level up. A summary with no transitions
+  // agrees with nothing it read, and reporting that as agreement is how
+  // a unit nobody could read came out indistinguishable from a unit
+  // that does nothing.
+  if (bodyWentUnread(raw)) {
     return { source: "inferred_static", level: "low" };
   }
 

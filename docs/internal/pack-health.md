@@ -244,6 +244,16 @@ opaque conditions by zero total and reads the result as agreement. A
 summary with nothing in it comes out at high confidence. Fixing that
 arithmetic is worth doing and is not a heuristic.
 
+That arithmetic has since been fixed. The adapter now says what it
+found where a unit's body should be, and the extractor answers the two
+cases differently: a body with nothing in it stays at high confidence,
+because a summary that says nothing has described it completely, while
+a body with work in it that produced no transition, and a declaration
+with no body behind it, drop to low and carry an `unreadOutcome` gap
+saying why. The check that was dropped would now be asking a question
+the summary answers directly, which is why it is still not worth
+running as a heuristic.
+
 ## What this does not do
 
 **It leaves five packs unmeasured.** Prisma, Drizzle, SQS,

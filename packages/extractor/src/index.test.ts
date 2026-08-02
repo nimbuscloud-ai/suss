@@ -998,6 +998,33 @@ describe("assessConfidence", () => {
     });
   });
 
+  it("returns 'high' for a body with nothing in it", () => {
+    // A unit that does nothing is described completely by a summary
+    // that says nothing.
+    expect(assessConfidence({ ...baseRaw, bodyContent: "empty" })).toEqual({
+      source: "inferred_static",
+      level: "high",
+    });
+  });
+
+  it("returns 'low' when there was no body to read", () => {
+    expect(assessConfidence({ ...baseRaw, bodyContent: "absent" })).toEqual({
+      source: "inferred_static",
+      level: "low",
+    });
+  });
+
+  it("returns 'low' when a body full of work produced no transition", () => {
+    expect(assessConfidence({ ...baseRaw, bodyContent: "statements" })).toEqual(
+      { source: "inferred_static", level: "low" },
+    );
+  });
+
+  it("leaves a body full of work at 'high' once something matched", () => {
+    const raw: RawCodeStructure = { ...twoPathRaw, bodyContent: "statements" };
+    expect(assessConfidence(raw).level).toBe("high");
+  });
+
   it("returns 'medium' when fewer than half of conditions are opaque", () => {
     const raw: RawCodeStructure = {
       ...baseRaw,
@@ -1098,6 +1125,59 @@ describe("detectGaps", () => {
     const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
 
     expect(gaps[0]?.description).toContain("3 returns");
+  });
+
+  it("says so when there was no body behind the declaration", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      branches: [],
+      bodyContent: "absent",
+    };
+    const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.type).toBe("unreadOutcome");
+    expect(gaps[0]?.description).toContain("no body");
+  });
+
+  it("says so when nothing in a body full of work matched", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      branches: [],
+      bodyContent: "statements",
+    };
+    const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.type).toBe("unreadOutcome");
+    expect(gaps[0]?.description).toContain("not described here");
+  });
+
+  it("says nothing about a body with nothing in it", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      branches: [],
+      bodyContent: "empty",
+    };
+
+    expect(detectGaps(raw, [], { gapHandling: "permissive" })).toEqual([]);
+  });
+
+  it("does not repeat itself when unmatched returns already said it", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      branches: [],
+      bodyContent: "statements",
+      unmatchedReturns: 2,
+    };
+    const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.description).toContain("2 returns");
   });
 
   it("stays quiet when every return matched", () => {

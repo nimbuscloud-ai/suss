@@ -40,7 +40,11 @@ import {
   type TerminalPattern,
 } from "@suss/extractor";
 
-import { countUnmatchedReturns, extractRawBranches } from "./assembly.js";
+import {
+  bodyContentOf,
+  countUnmatchedReturns,
+  extractRawBranches,
+} from "./assembly.js";
 import {
   createLazyProject,
   readTsconfigFileList,
@@ -568,6 +572,7 @@ export function extractCodeStructure(
     parameters: params,
     branches,
     ...(unmatchedReturns > 0 ? { unmatchedReturns } : {}),
+    bodyContent: bodyContentOf(func),
     dependencyCalls: depCalls,
     declaredContract: null,
     ...(bodyAccessors !== undefined && bodyAccessors.length > 0

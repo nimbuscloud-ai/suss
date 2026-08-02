@@ -28,6 +28,7 @@ import {
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   AccessRecognizer,
+  BodyContent,
   InvocationRecognizer,
   RawBranch,
   RawCondition,
@@ -49,6 +50,25 @@ const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
   conditions.every(
     (c) => c.source === "earlyReturn" || c.source === "earlyThrow",
   );
+
+/**
+ * What sits where this unit's body should be. A declaration with no
+ * body behind it and a body with nothing in it both produce a summary
+ * with nothing in it, and the confidence on that summary is a different
+ * answer in each case.
+ */
+export function bodyContentOf(func: FunctionRoot): BodyContent {
+  const body = func.getBody?.();
+  if (body === undefined) {
+    return "absent";
+  }
+  // A concise arrow produces its value from an expression, which is
+  // work whatever it is.
+  if (!Node.isBlock(body)) {
+    return "statements";
+  }
+  return body.getStatements().length === 0 ? "empty" : "statements";
+}
 
 /**
  * Return statements the terminal patterns did not claim. A return that
