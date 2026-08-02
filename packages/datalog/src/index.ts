@@ -582,6 +582,41 @@ export function evaluate(db: Database, rules: Rule[]): Database {
 }
 
 /**
+ * Empty these relations, and leave `rules` able to carry on from where
+ * it got to.
+ *
+ * `retract` cannot do this. A fact leaving the database can take away a
+ * conclusion drawn anywhere, so it sends the next run back to the base
+ * facts. A caller here is saying something stronger than "these facts
+ * are gone": nothing outside `relations` was derived from them, so what
+ * is left is already the fixpoint and the next run has only the facts
+ * that arrive after this to work through.
+ *
+ * That is what a demand-driven rule set gives a caller between
+ * questions. Every relation `deriveOnDemand` restricts is derived under
+ * a demand fact, so clearing the demand together with everything under
+ * it costs one question's worth of derivation rather than every
+ * question asked so far. The relations named as complete keep what they
+ * hold, which is the answers a caller has already read.
+ *
+ * Any other rule set over the same database does start over, since a
+ * relation it derived from may be one of these.
+ */
+export function clearRelations(
+  db: Database,
+  rules: Rule[],
+  relations: readonly string[],
+): void {
+  for (const relation of relations) {
+    db.retract(relation, [...db.facts(relation)]);
+  }
+  const state = statesFor(db).get(signatureOf(rules));
+  if (state !== undefined) {
+    state.marks = currentMarks(db);
+  }
+}
+
+/**
  * What a rule set is called and how it stratifies, worked out once. A
  * store evaluating after every wave of facts runs the same array
  * thousands of times, and re-deriving these each time charges every
@@ -593,6 +628,8 @@ interface RuleSetShape {
   derivedRelations: string[];
   strata: Rule[][];
 }
+
+const signatureOf = (rules: Rule[]): string => shapeOf(rules).signature;
 
 const shapes = new WeakMap<Rule[], RuleSetShape>();
 

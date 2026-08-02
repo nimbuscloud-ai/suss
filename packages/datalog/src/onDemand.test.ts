@@ -10,6 +10,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  clearRelations,
   constant,
   Database,
   deriveOnDemand,
@@ -120,6 +121,19 @@ function fill(facts: Array<[string, Tuple]>): Database {
   return db;
 }
 
+/** The answer rows for one value, which is all a caller asking reads. */
+const answersAbout = (db: Database, value: string): Record<string, string[]> =>
+  Object.fromEntries(
+    ANSWERS.map((relation) => [
+      relation,
+      db
+        .facts(relation)
+        .filter((tuple) => tuple[0] === value)
+        .map((t) => t.join("|"))
+        .sort(),
+    ]),
+  );
+
 const answersFrom = (db: Database): Record<string, string[]> =>
   Object.fromEntries(
     ANSWERS.map((relation) => [
@@ -137,7 +151,10 @@ describe("answering the same questions from less", () => {
       fc.property(arbRules, arbFacts, (rules, facts) => {
         const whole = [...rules, ...QUESTIONS];
         const plain = evaluate(fill(facts), whole);
-        const onDemand = evaluate(fill(facts), deriveOnDemand(whole, ANSWERS));
+        const onDemand = evaluate(
+          fill(facts),
+          deriveOnDemand(whole, ANSWERS).rules,
+        );
         expect(answersFrom(onDemand)).toEqual(answersFrom(plain));
       }),
       { numRuns: 300 },
@@ -148,7 +165,7 @@ describe("answering the same questions from less", () => {
     fc.assert(
       fc.property(arbRules, arbFacts, (rules, facts) => {
         const whole = [...rules, ...QUESTIONS];
-        const rewritten = deriveOnDemand(whole, ANSWERS);
+        const rewritten = deriveOnDemand(whole, ANSWERS).rules;
 
         const inOneGo = evaluate(fill(facts), rewritten);
         const resumed = new Database();
@@ -162,12 +179,43 @@ describe("answering the same questions from less", () => {
     );
   });
 
+  it("answers a question the same whether or not earlier ones were cleared", () => {
+    fc.assert(
+      fc.property(arbRules, arbFacts, (rules, facts) => {
+        const whole = [...rules, ...QUESTIONS];
+        const program = deriveOnDemand(whole, ANSWERS);
+        const scope = [...program.demandDriven, "asked"];
+
+        const scoped = new Database();
+        const keeping = new Database();
+        for (const [relation, tuple] of facts) {
+          scoped.add(relation, tuple);
+          keeping.add(relation, tuple);
+          if (relation !== "asked") {
+            continue;
+          }
+          evaluate(scoped, program.rules);
+          evaluate(keeping, whole);
+          const asked = String(tuple[0]);
+          expect(answersAbout(scoped, asked)).toEqual(
+            answersAbout(keeping, asked),
+          );
+          clearRelations(scoped, program.rules, scope);
+        }
+      }),
+      { numRuns: 300 },
+    );
+  });
+
   it("derives no more of a complete relation than it has to", () => {
     fc.assert(
       fc.property(arbRules, arbFacts, (rules, facts) => {
         const whole = [...rules, ...QUESTIONS];
         const plain = evaluate(fill(facts), whole);
-        const onDemand = evaluate(fill(facts), deriveOnDemand(whole, ANSWERS));
+        const onDemand = evaluate(
+          fill(facts),
+          deriveOnDemand(whole, ANSWERS).rules,
+        );
         for (const relation of DERIVED) {
           expect(onDemand.size(relation)).toBeLessThanOrEqual(
             plain.size(relation),
@@ -212,7 +260,7 @@ describe("the rewrite itself", () => {
     }
     db.add("asked", ["a"]);
 
-    evaluate(db, deriveOnDemand(chain, ["answer"]));
+    evaluate(db, deriveOnDemand(chain, ["answer"]).rules);
     expect(reached(db, "answer")).toEqual(["a|b", "a|c"]);
     // The chain nobody asked about is not walked at all.
     expect(reached(db, "reaches")).toEqual(["a|b", "a|c", "b|c"]);
@@ -222,12 +270,38 @@ describe("the rewrite itself", () => {
     const db = new Database();
     db.add("edge", ["a", "b"]);
     db.add("edge", ["b", "c"]);
-    evaluate(db, deriveOnDemand(chain, ["answer"]));
+    evaluate(db, deriveOnDemand(chain, ["answer"]).rules);
     expect(reached(db, "answer")).toEqual([]);
 
     db.add("asked", ["a"]);
-    evaluate(db, deriveOnDemand(chain, ["answer"]));
+    evaluate(db, deriveOnDemand(chain, ["answer"]).rules);
     expect(reached(db, "answer")).toEqual(["a|b", "a|c"]);
+  });
+
+  it("costs a second question nothing for the first one's chain", () => {
+    const program = deriveOnDemand(chain, ["answer"]);
+    const scope = [...program.demandDriven, "asked"];
+    const db = new Database();
+    for (const [from, to] of [
+      ["a", "b"],
+      ["b", "c"],
+      ["m", "n"],
+      ["n", "o"],
+    ]) {
+      db.add("edge", [from, to]);
+    }
+
+    db.add("asked", ["a"]);
+    evaluate(db, program.rules);
+    expect(reached(db, "answer")).toEqual(["a|b", "a|c"]);
+    clearRelations(db, program.rules, scope);
+
+    db.add("asked", ["m"]);
+    evaluate(db, program.rules);
+    // Only the chain the second question walks, and the answers the
+    // first question already gave.
+    expect(reached(db, "reaches")).toEqual(["m|n", "m|o", "n|o"]);
+    expect(reached(db, "answer")).toEqual(["a|b", "a|c", "m|n", "m|o"]);
   });
 
   it("keeps a constant in a rule head as a constant to match", () => {
@@ -243,7 +317,7 @@ describe("the rewrite itself", () => {
     db.add("flag", ["a"]);
     db.add("flag", ["b"]);
     db.add("asked", ["a"]);
-    evaluate(db, deriveOnDemand(rules, ["answer"]));
+    evaluate(db, deriveOnDemand(rules, ["answer"]).rules);
     expect(reached(db, "answer")).toEqual(["a|leaf"]);
   });
 
@@ -261,7 +335,7 @@ describe("the rewrite itself", () => {
         [lit("flag", v("y")), lit("pair", v("x"), v("y"))],
       ),
     ];
-    const rewritten = deriveOnDemand(rules, ["leftOf", "rightOf"]);
+    const rewritten = deriveOnDemand(rules, ["leftOf", "rightOf"]).rules;
     const heads = new Set(rewritten.map((r) => r.head.relation));
     expect(heads.has("pair:bf")).toBe(true);
     expect(heads.has("pair:fb")).toBe(true);

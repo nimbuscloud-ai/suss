@@ -16,7 +16,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { Database, deriveOnDemand, evaluate, type Tuple } from "@suss/datalog";
+import {
+  clearRelations,
+  Database,
+  deriveOnDemand,
+  evaluate,
+  type Tuple,
+} from "@suss/datalog";
 
 import {
   ANSWER_RELATIONS,
@@ -25,7 +31,11 @@ import {
 } from "./index.js";
 
 const COMPLETE = [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS];
-const ON_DEMAND = deriveOnDemand(COMPLETE, ANSWER_RELATIONS);
+const PROGRAM = deriveOnDemand(COMPLETE, ANSWER_RELATIONS);
+const ON_DEMAND = PROGRAM.rules;
+
+/** What the store takes back once it has read a query's answer. */
+const QUERY_FACTS = [...PROGRAM.demandDriven, "wanted", "wantedOrigin"];
 
 /**
  * How wide each base relation is. Every relation an adapter supplies
@@ -120,6 +130,49 @@ function fill(facts: Array<[string, Tuple]>): Database {
   return db;
 }
 
+/**
+ * What a caller reads back after asking one of the two questions about
+ * `value`. `wanted` asks what the value is and reads the three answer
+ * relations keyed by it; `wantedOrigin` asks where the name came from
+ * and reads the imports it carries plus the calls made by whatever it
+ * comes to.
+ */
+function readableFor(
+  db: Database,
+  question: string,
+  value: string,
+): Record<string, string[]> {
+  const keyed = (relation: string): string[] =>
+    db
+      .facts(relation)
+      .filter((tuple) => tuple[0] === value)
+      .map((tuple) => tuple.join("|"))
+      .sort();
+
+  if (question === "wanted") {
+    return {
+      wantedResolves: keyed("wantedResolves"),
+      wantedComesTo: keyed("wantedComesTo"),
+      wantedIsWrittenAs: keyed("wantedIsWrittenAs"),
+    };
+  }
+
+  const targets = new Set(
+    db
+      .facts("wantedComesTo")
+      .filter((tuple) => tuple[0] === value)
+      .map((tuple) => tuple[1]),
+  );
+  return {
+    wantedComesFrom: keyed("wantedComesFrom"),
+    wantedCallsInto: db
+      .facts("wantedCallsInto")
+      .filter((tuple) => targets.has(tuple[0]))
+      .map((tuple) => tuple.join("|"))
+      .sort(),
+  };
+}
+
 /** Facts in, rules to fixpoint, answers out. */
 function answers(
   facts: Array<[string, Tuple]>,
@@ -172,6 +225,53 @@ describe("deriving the resolution rules on demand", () => {
         evaluate(late, ON_DEMAND);
 
         expect(answersFrom(late)).toEqual(answers(facts, COMPLETE));
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  it("answers a question the same whether or not earlier ones were cleared", () => {
+    // The store reads an answer and then takes the question back, so
+    // what it reads has to match what a database keeping every question
+    // ever asked would have told it at that moment.
+    fc.assert(
+      fc.property(arbFacts, (facts) => {
+        const scoped = new Database();
+        const keeping = new Database();
+        for (const [relation, tuple] of facts) {
+          scoped.add(relation, tuple);
+          keeping.add(relation, tuple);
+          if (relation !== "wanted" && relation !== "wantedOrigin") {
+            continue;
+          }
+          evaluate(scoped, ON_DEMAND);
+          evaluate(keeping, ON_DEMAND);
+          const asked = String(tuple[0]);
+          expect(readableFor(scoped, relation, asked)).toEqual(
+            readableFor(keeping, relation, asked),
+          );
+          clearRelations(scoped, ON_DEMAND, QUERY_FACTS);
+        }
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("holds nothing about a chain once the question is taken back", () => {
+    fc.assert(
+      fc.property(arbFacts, (facts) => {
+        const db = fill(facts);
+        evaluate(db, ON_DEMAND);
+        clearRelations(db, ON_DEMAND, QUERY_FACTS);
+        for (const relation of QUERY_FACTS) {
+          expect(db.size(relation)).toBe(0);
+        }
+        // Nothing is owed: the rules have seen every fact the database
+        // holds and no question is left to derive for.
+        evaluate(db, ON_DEMAND);
+        for (const relation of QUERY_FACTS) {
+          expect(db.size(relation)).toBe(0);
+        }
       }),
       { numRuns: 200 },
     );
