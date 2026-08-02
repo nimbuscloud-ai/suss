@@ -27,6 +27,27 @@ import {
 } from "./shapeProgram.js";
 
 import type { HandlerProgram } from "../program.js";
+import type { EnvShapeSpec, ReadForm, ReadSite } from "./envShape.js";
+import type {
+  ImportForm,
+  PackageShapeSpec,
+  PublishRoute,
+} from "./packageShape.js";
+import type {
+  ConfigStyle,
+  ConsumerBuild,
+  QueueShapeSpec,
+} from "./queueShape.js";
+import type {
+  ApolloResolverSpec,
+  FieldForm,
+  FieldOwner,
+  MapRoute,
+  NestResolverSpec,
+  Operation,
+  ResolverAnnouncement,
+  ResolverMethodForm,
+} from "./resolverShape.js";
 
 export const FUNCTION_FORMS: FunctionForm[] = [
   "declaration",
@@ -143,6 +164,154 @@ export function arbComponentShapeWith(
   return arbComponentShapeSpec.map((spec) =>
     repairComponentShape({ ...spec, ...fixed }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Package exports
+// ---------------------------------------------------------------------------
+
+export const PUBLISH_ROUTES: PublishRoute[] = [
+  "namedFunction",
+  "exportedArrow",
+  "reexportedFromModule",
+  "renamedExport",
+  "starReexport",
+  "subPathExport",
+  "mainOnly",
+];
+
+export const IMPORT_FORMS: ImportForm[] = [
+  "namedImport",
+  "aliasedImport",
+  "namespaceImport",
+  "throughLocalBinding",
+  "reexportedByConsumer",
+];
+
+export const arbPackageShapeSpec: fc.Arbitrary<PackageShapeSpec> = fc.record({
+  route: fc.constantFrom(...PUBLISH_ROUTES),
+  form: fc.constantFrom(...IMPORT_FORMS),
+});
+
+// ---------------------------------------------------------------------------
+// Queue consumers
+// ---------------------------------------------------------------------------
+
+export const CONSUMER_BUILDS: ConsumerBuild[] = [
+  "factoryConfigFirst",
+  "factoryConfigSecond",
+  "configThroughVariable",
+  "spreadIntoConfig",
+  "asConstSubject",
+  "factoryThroughAlias",
+  "subjectFromConst",
+  "subjectFromSharedMap",
+  "spreadCarriesSubject",
+  "wrappedFactoryResult",
+  "reexportedHandler",
+  "bareFunction",
+];
+
+export const CONFIG_STYLES: ConfigStyle[] = [
+  "propertyOnly",
+  "namedCallee",
+  "argIndexed",
+];
+
+export const arbQueueShapeSpec: fc.Arbitrary<QueueShapeSpec> = fc.record({
+  build: fc.constantFrom(...CONSUMER_BUILDS),
+  config: fc.constantFrom(...CONFIG_STYLES),
+});
+
+// ---------------------------------------------------------------------------
+// GraphQL resolvers
+// ---------------------------------------------------------------------------
+
+export const MAP_ROUTES: MapRoute[] = [
+  "inlineLiteral",
+  "constBinding",
+  "satisfiesWrapped",
+  "asConstWrapped",
+  "spreadIntoLiteral",
+  "typeMapConst",
+  "importedMap",
+];
+
+export const FIELD_FORMS: FieldForm[] = [
+  "arrow",
+  "asyncArrow",
+  "functionExpression",
+  "methodShorthand",
+  "namedReference",
+];
+
+export const FIELD_OWNERS: FieldOwner[] = ["Query", "Mutation", "Widget"];
+
+export const arbApolloResolverSpec: fc.Arbitrary<ApolloResolverSpec> =
+  fc.record({
+    route: fc.constantFrom(...MAP_ROUTES),
+    field: fc.constantFrom(...FIELD_FORMS),
+    owner: fc.constantFrom(...FIELD_OWNERS),
+  });
+
+export const RESOLVER_ANNOUNCEMENTS: ResolverAnnouncement[] = [
+  "typeArgument",
+  "noTypeArgument",
+  "aliasedImport",
+  "wrappedDecorator",
+  "composedDecorator",
+];
+
+export const OPERATIONS: Operation[] = ["Query", "Mutation", "ResolveField"];
+
+export const RESOLVER_METHOD_FORMS: ResolverMethodForm[] = [
+  "method",
+  "asyncMethod",
+  "arrowProperty",
+  "renamedField",
+];
+
+export const arbNestResolverSpec: fc.Arbitrary<NestResolverSpec> = fc.record({
+  announcement: fc.constantFrom(...RESOLVER_ANNOUNCEMENTS),
+  operation: fc.constantFrom(...OPERATIONS),
+  method: fc.constantFrom(...RESOLVER_METHOD_FORMS),
+});
+
+// ---------------------------------------------------------------------------
+// Runtime configuration
+// ---------------------------------------------------------------------------
+
+export const READ_SITES: ReadSite[] = [
+  "inBody",
+  "inGuard",
+  "inNestedArrow",
+  "inLocalHelper",
+  "inImportedHelper",
+  "atModuleScope",
+];
+
+export const READ_FORMS: ReadForm[] = [
+  "dotted",
+  "bracket",
+  "defaulted",
+  "destructured",
+];
+
+// Names a service would give its own variables. The name is not a
+// dimension, so a handful is enough to keep one hard-coded string from
+// being what makes a read resolve.
+const VAR_NAMES = ["SERVICE_URL", "API_TOKEN", "TABLE_NAME", "LOG_LEVEL"];
+
+export const arbEnvShapeSpec: fc.Arbitrary<EnvShapeSpec> = fc.record({
+  site: fc.constantFrom(...READ_SITES),
+  form: fc.constantFrom(...READ_FORMS),
+  varName: fc.constantFrom(...VAR_NAMES),
+});
+
+export function arbEnvShapeWith(
+  fixed: Partial<EnvShapeSpec>,
+): fc.Arbitrary<EnvShapeSpec> {
+  return arbEnvShapeSpec.map((spec) => ({ ...spec, ...fixed }));
 }
 
 /** A shape that forces one dimension's value, for a targeted property. */

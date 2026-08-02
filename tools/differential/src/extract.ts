@@ -72,7 +72,17 @@ export async function extractSummary(
 export interface ExtractAllOptions {
   /** In-memory path to source, for every file the program spans. */
   files: Record<string, string>;
-  pack: PatternPack;
+  /**
+   * One pack, or several when a family needs a pack that discovers
+   * units and another that recognizes what happens inside them.
+   */
+  pack: PatternPack | PatternPack[];
+  /**
+   * Whether to follow calls out of a discovered unit. A read that sits
+   * in a helper is only visible this way, and the runtime packs are the
+   * families that care.
+   */
+  includeReachable?: boolean;
 }
 
 /**
@@ -94,10 +104,64 @@ export async function extractAllSummaries(
 
   const adapter = createTypeScriptAdapter({
     project,
-    frameworks: [options.pack],
+    frameworks: Array.isArray(options.pack) ? options.pack : [options.pack],
+    includeReachable: options.includeReachable ?? false,
+  });
+  return adapter.extractAll();
+}
+
+export interface ExtractFromDiskOptions {
+  /**
+   * Absolute path to source, for every TypeScript file the program
+   * spans. A family lands here when a pack reads something off the
+   * filesystem, a deployment template or a package manifest, and the
+   * files have to sit where that reader looks.
+   */
+  files: Record<string, string>;
+  pack: PatternPack | PatternPack[];
+}
+
+/**
+ * Every summary a program on disk produces. One project per set of
+ * paths is reused, since the bootstrap dominates and the content is
+ * replaced per program.
+ */
+export async function extractFromDisk(
+  options: ExtractFromDiskOptions,
+): Promise<BehavioralSummary[]> {
+  const paths = Object.keys(options.files).sort();
+  const project = getDiskProject(paths.join("|"));
+  for (const [filePath, content] of Object.entries(options.files)) {
+    project.createSourceFile(filePath, content, { overwrite: true });
+  }
+
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: Array.isArray(options.pack) ? options.pack : [options.pack],
     includeReachable: false,
   });
   return adapter.extractAll();
+}
+
+const diskProjects = new Map<string, Project>();
+
+function getDiskProject(key: string): Project {
+  const existing = diskProjects.get(key);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const project = new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: {
+      strict: true,
+      target: 99, // ESNext
+      module: 99, // ESNext
+      moduleResolution: 100, // Bundler
+      skipLibCheck: true,
+    },
+  });
+  diskProjects.set(key, project);
+  return project;
 }
 
 export async function extractHandlerSummary(

@@ -39,6 +39,28 @@ property runs against both.
 | `src/jsx/*` | the render boundary: component DSL, TSX transpile + stub `createElement` execution, tree-admissibility judge, its own sound tier / milestone / corpus |
 | `longrun.mjs` | exploratory random-seed sessions (`node longrun.mjs jsx 800 3`) |
 
+## The families under `src/shape`
+
+Each one generates a whole program around a boundary of one kind and
+runs the invariants, the equivalence comparison against the plainest
+spelling of the same behaviour, and, where a generated program can be
+run, execution.
+
+| Family | What it varies |
+|---|---|
+| `shapeProgram.ts` | an HTTP registration call: how the handler is written, bound, and reached |
+| `componentShape.ts` | a React component: how it is written, bound, and exported |
+| `announceShape.ts` | a NestJS controller: how the class announces the boundary |
+| `resolverShape.ts` | a GraphQL field: the Apollo resolver map, and the decorated resolver class |
+| `envShape.ts` | a runtime-configuration read: where it sits and how it is spelled |
+| `queueShape.ts` | a queue consumer: how it is built, and how the project configures the subject it answers |
+| `packageShape.ts` | a package boundary: how a function is published and how another package calls it |
+
+The last two write files and read a template or a manifest back off
+disk, so they cost several times what the in-memory families do. Their
+per-pull-request samples are smaller (`SUSS_FUZZ_QUEUE_RUNS`,
+`SUSS_FUZZ_PACKAGE_RUNS`) and the scheduled run takes the volume.
+
 ## Running
 
 ```sh
@@ -46,4 +68,5 @@ npx vitest run                          # full suite, CI defaults (fixed seed)
 SUSS_FUZZ_RUNS=500 npx vitest run src/differential.test.ts
 SUSS_FUZZ_SEED=12345 npx vitest run     # reproduce a specific CI run
 npx tsup && node longrun.mjs sound 1500 4 fastify   # exploratory session
+node longFuzz.mjs 4000                  # the scheduled run, every family
 ```
