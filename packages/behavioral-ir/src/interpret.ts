@@ -13,21 +13,9 @@
 // adjudicate extracted claims against executions; `suss corroborate`
 // uses it as the oracle for generating claim-satisfying inputs.
 
+import { type DispatchTable, dispatchByType } from "@suss/ir-core";
+
 import type { ComparisonOp, Predicate, ValueRef } from "./index.js";
-
-type DispatchTable<T extends { type: string }, R> = {
-  [K in T["type"]]: (variant: Extract<T, { type: K }>) => R;
-};
-
-function dispatchByType<T extends { type: string }, R>(
-  table: DispatchTable<T, R>,
-  value: T,
-): R {
-  const handler = (table as unknown as Record<string, (val: T) => R>)[
-    value.type
-  ];
-  return handler(value);
-}
 
 /** Three-valued truth: definitely true / definitely false / abstain. */
 export type Tri = "true" | "false" | "unknown";

@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { BOUNDARY_ROLE, safeParseSummaries } from "@suss/behavioral-ir";
+import {
+  BOUNDARY_ROLE,
+  safeParseSummaries,
+  summaryRef,
+} from "@suss/behavioral-ir";
 import {
   applySuppressions,
   boundaryKey,
@@ -43,7 +47,7 @@ function buildConfidenceLookup(
   const map: ConfidenceLookup = new Map();
   for (const group of groups) {
     for (const s of group) {
-      map.set(`${s.location.file}::${s.identity.name}`, s.confidence);
+      map.set(summaryRef(s), s.confidence);
     }
   }
   return map;

@@ -4,6 +4,7 @@ import {
   consumerExpectedStatuses,
   extractResponseStatus,
   hasOpaqueStatus,
+  isSuccessStatus,
   makeBoundary,
   makeSide,
   refLooksLikeStatus,
@@ -197,8 +198,4 @@ function isStatusPredicate(p: Predicate, accessors: StatusAccessors): boolean {
     return isStatusPredicate(p.operand, accessors);
   }
   return false;
-}
-
-function isSuccessStatus(status: number): boolean {
-  return status >= 200 && status < 300;
 }

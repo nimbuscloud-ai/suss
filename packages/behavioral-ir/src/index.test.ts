@@ -20,6 +20,7 @@ import {
   safeParseSummaries,
   safeParseSummary,
   storageRelationalBinding,
+  summaryRef,
   type Transition,
 } from "./index.js";
 
@@ -49,6 +50,18 @@ function makeTransition(id: string, output: Output): Transition {
     isDefault: false,
   };
 }
+
+describe("summaryRef", () => {
+  it("names a summary by its file and its identity name", () => {
+    expect(summaryRef(makeSummary([]))).toBe("src/test.ts::test");
+  });
+
+  it("takes the identity name rather than the export name", () => {
+    const summary = makeSummary([]);
+    summary.identity.name = "listUsers";
+    expect(summaryRef(summary)).toBe("src/test.ts::listUsers");
+  });
+});
 
 describe("diffSummaries", () => {
   it("returns empty arrays for identical summaries", () => {

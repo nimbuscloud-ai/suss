@@ -2,6 +2,7 @@ import { bodyShapesMatch } from "../body/bodyMatch.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
+  isSuccessStatus,
   makeBoundary,
   makeSide,
 } from "../coverage/responseMatch.js";
@@ -152,8 +153,4 @@ export function checkContractConsistency(
   }
 
   return findings;
-}
-
-function isSuccessStatus(status: number): boolean {
-  return status >= 200 && status < 300;
 }

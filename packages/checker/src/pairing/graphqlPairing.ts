@@ -27,6 +27,8 @@ import {
   type TypeNode,
 } from "graphql";
 
+import { summaryRef } from "@suss/behavioral-ir";
+
 import type {
   BehavioralSummary,
   Finding,
@@ -407,7 +409,7 @@ function fieldNotImplementedFinding(
   if (binding === null) {
     throw new Error("expected graphql-operation boundary binding");
   }
-  const sideSummary = `${operation.location.file}::${operation.identity.name}`;
+  const sideSummary = summaryRef(operation);
   return {
     kind: "boundaryFieldUnknown",
     aspect: "read",
@@ -439,7 +441,7 @@ function nestedFieldUnknownFinding(
   if (binding === null) {
     throw new Error("expected graphql-operation boundary binding");
   }
-  const sideSummary = `${operation.location.file}::${operation.identity.name}`;
+  const sideSummary = summaryRef(operation);
   return {
     kind: "boundaryFieldUnknown",
     aspect: "read",

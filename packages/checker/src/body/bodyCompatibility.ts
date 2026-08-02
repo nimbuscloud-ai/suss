@@ -6,12 +6,13 @@
 // consumer's expected shape.
 
 import {
-  bodyAccessorsFor,
   statusAccessorsFor,
+  unwrapBodyField,
 } from "../contract/declaredContract.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
+  isSuccessStatus,
   makeBoundary,
   makeSide,
 } from "../coverage/responseMatch.js";
@@ -202,9 +203,6 @@ export function checkBodyCompatibility(
         }
 
         const consumerBodyShape = unwrapBodyField(expectedInput, consumer);
-        if (consumerBodyShape === null) {
-          continue;
-        }
 
         const result = providerCoversConsumerFields(
           providerBody,
@@ -251,20 +249,13 @@ export function checkBodyCompatibility(
     if (consumerStatuses.length === 0 && ct.isDefault) {
       for (const pt of provider.transitions) {
         const providerStatus = extractResponseStatus(pt);
-        if (
-          providerStatus === null ||
-          providerStatus < 200 ||
-          providerStatus >= 300
-        ) {
+        if (providerStatus === null || !isSuccessStatus(providerStatus)) {
           continue;
         }
         if (pt.output.type !== "response" || pt.output.body === null) {
           continue;
         }
         const consumerBodyShape = unwrapBodyField(expectedInput, consumer);
-        if (consumerBodyShape === null) {
-          continue;
-        }
         const result = providerCoversConsumerFields(
           pt.output.body,
           consumerBodyShape,
@@ -298,20 +289,4 @@ export function checkBodyCompatibility(
   }
 
   return findings;
-}
-
-function unwrapBodyField(
-  shape: TypeShape,
-  consumer: BehavioralSummary,
-): TypeShape | null {
-  if (shape.type !== "record") {
-    return shape;
-  }
-  for (const accessor of bodyAccessorsFor(consumer)) {
-    const wrapped = shape.properties[accessor];
-    if (wrapped !== undefined) {
-      return wrapped;
-    }
-  }
-  return shape;
 }

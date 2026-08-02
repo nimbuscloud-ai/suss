@@ -1,16 +1,18 @@
 # Where the same thing is written twice
 
-Three copies of `normalizeCodeUri` disagree about a trailing slash. One
-appends it, one keeps whatever the template wrote, one strips it. The
+Three copies of `normalizeCodeUri` disagreed about a trailing slash. One
+appended it, one kept whatever the template wrote, one stripped it. The
 field they produce is prefix-matched against summary file paths by the
-checker, and the checker reads it two ways as well, `startsWith` in one
-place and `includes` in another. That is four spellings of one
-convention on a field that decides which Lambda a finding names.
+checker, and the checker read it two ways as well, `startsWith` in one
+place and `includes` in another. That was four spellings of one
+convention on a field that decides which Lambda a finding names. #78
+fixed it while this was being written.
 
-This survey looked for the rest of that pattern. It found 61 clusters
-worth naming. The ranking below is by evidence: a copy that already
-disagrees ranks above a copy that merely exists, and a disagreement that
-reaches output ranks above one absorbed by its callers.
+This survey looked for the rest of that pattern across every package.
+Forty-six clusters are written up below, eight of them merged in this
+change. The ranking is by evidence: a copy that already disagrees ranks
+above a copy that merely exists, and a disagreement that reaches output
+ranks above one absorbed by its callers.
 
 Counts from the public corpora are given in full. A run against a
 production monorepo is described only as a ratio, which says nothing
@@ -82,8 +84,9 @@ docstring saying it must mirror the shape pass's `unwrap` except that it
 does not peel `await`. The shape pass's `unwrap` does not peel `await`
 either, and says so four lines further down. The bodies were identical
 and the comment describing the difference was describing nothing. The
-two now share `peelSyntax`. This closes 2 of about 29 sites that peel
-wrappers; the other 27 are group two, below.
+two now share `peelSyntax`. That closes 2 of the 29 sites that peel
+wrappers. The other 27 disagree with each other, so they are item 9
+below.
 
 One incidental result. Adding a value import to `interpret.ts` put it in
 the module graph for the first time, and suss now sees 7 units inside it
@@ -130,37 +133,35 @@ exception has to survive the merge.
 
 Cost: small, and it is the highest-value item in this document.
 
-### 2. `normalizeCodeUri`, and the convention that lives nowhere
+### 2. `normalizeCodeUri`, fixed on main while this was being written
 
-The three producers disagree three ways about the trailing slash. The
-two consumers disagree again:
+Kept here because it is the case that prompted the survey and because
+what it settled sets the pattern for the rest.
 
-```
-runtimeConfigPairing   file.startsWith(scopePath)
-messageBusPairing      file.includes(codeScope)
-```
+Three producers disagreed three ways about the trailing slash. Two
+consumers disagreed again, `startsWith` in one pass and `includes`
+fifty lines further down the same file, and none of the three stopped
+at a segment boundary, so a scope of `src/foo` covered `src/foobar` and
+the `includes` spelling covered `vendor/src/foo` too. The producer whose
+comment stated the invariant was the one that did not enforce it.
 
-`includes` matches `vendor/src/orders/handler.ts` against a scope of
-`src/orders/`. And the producer whose comment states the invariant
-("Trailing slash is preserved when present so prefix-match in the
-checker keeps `src/foo/` from matching `src/foobar/`") is the one that
-does not enforce it: `CodeUri: src/orders`, the ordinary SAM spelling,
-comes out as `src/orders` and prefix-matches `src/orders-legacy/`. Every
-fixture in the pairing tests writes the trailing slash by hand, so the
-tests exercise the case the producer does not reliably produce.
+`codeScopePath` and `fileInCodeScope` in `@suss/ir-core` now own both
+halves, and `runsIn` takes the scope path rather than a callback, which
+is what had let the three call sites drift (#78).
 
-A fourth producer passes the raw `CodeUri` through with no
-normalisation at all.
+Two things to carry forward. The fix put the convention in the package
+both sides already reach, next to `normalizePath` and `bodyShapesMatch`,
+which are there for the same reason. And it landed as a pair of
+functions rather than a type. That is the weaker form: a caller can
+still hold a scope string that never went through `codeScopePath`, and
+`fileInCodeScope` normalises whatever it is handed to cover for that.
+The stronger form is in the types section below. The functions were the
+right call for a fix that had to keep reading summaries written under
+the older conventions.
 
-One of the three is a different concern and should keep its behaviour.
-The SAM function reader's output is a directory that gets joined onto a
-module path, so stripping the trailing slash is right there. It wants a
-name that says so.
-
-**The checker's path handling is under active change.** This item is
-described here and left for after that lands. The producers are not
-under change and could move first, but splitting it would put the
-convention in two places for the duration, which is the disease.
+The SAM function reader kept its own behaviour, correctly. Its output is
+a directory that gets joined onto a module path, so stripping the
+trailing slash is right there.
 
 ### 3. `process.env.X`, read three ways, two of which disagree
 
@@ -247,6 +248,44 @@ The contract reader needs strictly more per resolver than the manifest
 reader does, so this is a layering job rather than a deletion. Real
 work, and it should fix both disagreements on the way through.
 
+### 9. Twenty-nine peelers, eleven names, no two agreeing
+
+The adapter peels value-preserving wrappers at 29 places. Eleven of them
+are named functions and the rest are inline loops. No two agree on which
+wrappers they peel:
+
+| helper | parens | await | `as` | `!` | satisfies | `<T>` |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| `unwrapValue` | yes | yes | yes | yes | yes | no |
+| `peelSyntax` (was `unwrap` twice) | yes | no | yes | yes | yes | yes |
+| `unwrapCasts` | yes | no | yes | yes | yes | no |
+| `peelExpression` | yes | no | yes | yes | yes | no |
+| `unwrapExpression` | yes | yes | yes | no | yes | no |
+| `unwrap` in the field-access pass | yes | yes | yes | no | no | no |
+| `resolveSubject` | yes | yes | yes | no | no | no |
+| `stripDocumentNodeCasts` | yes | no | yes | no | no | no |
+| `peelToObjectLiteral` | no | no | yes | no | yes | no |
+| `peelParens` (was `unwrapParens` twice) | yes | no | no | no | no | no |
+| `unwrapAs` | no | no | yes | no | no | no |
+
+One of the inline copies is a single-level ternary rather than a loop,
+so `await (foo())` peels the await, stops at the parentheses, and hands
+back something no caller expects. Every other peeler loops. That is a
+latent bug rather than a style difference.
+
+`await` is the only axis that matters, and it maps onto the two
+questions the repo asks. A pass wanting the type TypeScript infers stops
+at the await, because TypeScript already reports the resolved type
+there. A pass following a value sees through it. Three names cover all
+29 sites: `peelParens`, `peelSyntax`, and a `peelValue` that adds
+`await`. Two of the three landed in group one.
+
+Merging the rest changes behaviour at every site whose current peeler
+has the wrong axis set, which is most of them, so each site needs
+checking against what it asks. About a dozen of the 29 sit in the
+discovery directory and the fact layer, so this sequences after that
+work.
+
 ## Group three: leave alone, and why
 
 An audit that recommends merging everything is not an audit. These look
@@ -327,17 +366,20 @@ The repo already has one that works. `ResolutionStore` holds the fact
 database and answers six question-shaped methods, and across every
 consumer no caller reaches a raw tuple. That is the pattern paying.
 
-**A code scope. Yes.** This is the motivating case. Today the convention
-lives in a comment on one of three producers, and the comment is wrong
-about its own function. A type holding an already-normalised scope, with
-one constructor, would refuse: a non-string, an empty or whitespace-only
-`CodeUri` (one producer accepts `""` today and yields `/`, which prefix-
-matches every file in the tree), and a scope of `/` or `./`, because a
-scope that matches everything is a template problem worth surfacing
-rather than a summary worth emitting. The checker then asks
-`scope.matches(file)` and the `startsWith` versus `includes` split has
-nowhere to live. The directory-join case keeps a plain function under a
-name that says it is a base directory, so nobody merges the two again.
+**A code scope. Half of it is done, and the half left is the invariant.**
+`codeScopePath` and `fileInCodeScope` landed on main and put the
+convention in one place, which stops the three producers drifting again.
+What a function cannot do is stop a caller holding a scope string that
+never went through the constructor, which is why `fileInCodeScope` has
+to re-normalise whatever it is handed. A type would refuse: a
+non-string, an empty or whitespace-only `CodeUri` (one producer used to
+accept `""` and yield `/`, which prefix-matches every file in the tree),
+and a scope of `/` or `./`, because a scope that matches everything is a
+template problem worth surfacing rather than a summary worth emitting.
+None of those three is rejected today. The obstacle is that summaries on
+disk were written under the older conventions, so the constructor has to
+accept them on the way in; that is a version question rather than a
+reason not to have the type.
 
 **A channel. Yes.** Three writers, two disagreeing readers, and a reader
 already in the shared package with no constructor beside it. The

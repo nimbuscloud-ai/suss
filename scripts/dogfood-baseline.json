@@ -2,41 +2,41 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "exports": 207,
-    "internal": 860,
-    "consumers": 300,
-    "pairs": 292
+    "exports": 210,
+    "internal": 850,
+    "consumers": 319,
+    "pairs": 311
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 25,
-      "internal": 396,
+      "internal": 394,
       "consumers": 23
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 18,
-      "internal": 0,
-      "consumers": 0
+      "exports": 20,
+      "internal": 7,
+      "consumers": 3
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 26,
-      "internal": 136,
-      "consumers": 32
+      "internal": 126,
+      "consumers": 41
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
       "exports": 2,
-      "internal": 12,
-      "consumers": 7
+      "internal": 11,
+      "consumers": 8
     },
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 78,
-      "consumers": 115
+      "internal": 74,
+      "consumers": 121
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -214,7 +214,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 21,
+      "exports": 22,
       "internal": 0,
       "consumers": 0
     },

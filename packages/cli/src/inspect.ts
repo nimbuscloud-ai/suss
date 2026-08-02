@@ -6,7 +6,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { diffSummaries, safeParseSummaries } from "@suss/behavioral-ir";
+import {
+  type DispatchTable,
+  diffSummaries,
+  dispatchByType,
+  safeParseSummaries,
+} from "@suss/behavioral-ir";
 import { pairSummaries } from "@suss/checker";
 
 import type {
@@ -32,20 +37,6 @@ import type {
 // error here at definition time, not a silent default-case fallback at
 // runtime. dispatchByType is the one place we cast back to the union type
 // — the caller only sees a typed result.
-
-type DispatchTable<T extends { type: string }, R> = {
-  [K in T["type"]]: (variant: Extract<T, { type: K }>) => R;
-};
-
-function dispatchByType<T extends { type: string }, R>(
-  table: DispatchTable<T, R>,
-  value: T,
-): R {
-  // The double cast is the deliberate seam between the well-typed table
-  // (per-variant narrowing) and the runtime lookup (one cast, one place).
-  const handler = (table as unknown as Record<string, (v: T) => R>)[value.type];
-  return handler(value);
-}
 
 // ---------------------------------------------------------------------------
 // Body shape rendering

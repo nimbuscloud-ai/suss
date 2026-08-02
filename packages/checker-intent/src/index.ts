@@ -28,7 +28,7 @@
 // Findings against `source: "inferred"` (not-yet-curated) intent are
 // downgraded one level by `withProvenance`; curation restores full severity.
 
-import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
+import { BOUNDARY_ROLE, summaryRef } from "@suss/behavioral-ir";
 import {
   applySuppressionsToFindings,
   bodyShapesMatch,
@@ -237,7 +237,7 @@ function checkBoundaryIntent(
 }
 
 function codeRef(impl: BehavioralSummary): string {
-  return `${impl.location.file}::${impl.identity.name}`;
+  return summaryRef(impl);
 }
 
 // ---------------------------------------------------------------------------

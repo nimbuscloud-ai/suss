@@ -1,6 +1,8 @@
 import { statusAccessorsFor } from "../contract/declaredContract.js";
 import {
   consumerExpectedStatuses,
+  extractResponseStatus,
+  hasOpaqueStatus,
   makeBoundary,
   makeSide,
 } from "../coverage/responseMatch.js";
@@ -17,13 +19,10 @@ export function checkConsumerSatisfaction(
   const providerStatuses = new Set<number>();
   let providerHasOpaqueStatus = false;
   for (const pt of provider.transitions) {
-    if (pt.output.type !== "response") {
-      continue;
-    }
-    const sc = pt.output.statusCode;
-    if (sc?.type === "literal" && typeof sc.value === "number") {
-      providerStatuses.add(sc.value);
-    } else if (sc != null && sc.type !== "literal") {
+    const status = extractResponseStatus(pt);
+    if (status !== null) {
+      providerStatuses.add(status);
+    } else if (hasOpaqueStatus(pt)) {
       providerHasOpaqueStatus = true;
     }
   }

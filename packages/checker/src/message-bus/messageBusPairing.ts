@@ -34,6 +34,8 @@
 // the comparison is skipped — absence of the finding doesn't imply
 // agreement.
 
+import { summaryRef } from "@suss/behavioral-ir";
+
 import {
   buildInteractionIndex,
   type InteractionIndex,
@@ -537,7 +539,7 @@ function makeSide(
   transitionId?: string;
 } {
   return {
-    summary: `${summary.location.file}::${summary.identity.name}`,
+    summary: summaryRef(summary),
     location: summary.location,
     ...(transitionId !== undefined ? { transitionId } : {}),
   };

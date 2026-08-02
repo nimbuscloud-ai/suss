@@ -96,6 +96,30 @@ export function bodyAccessorsFor(consumer: BehavioralSummary): string[] {
 }
 
 /**
+ * Reach past the envelope a consumer wraps its response body in, so a
+ * shape read off the consumer compares against the shape the provider
+ * returns rather than against the client library's wrapper.
+ *
+ * A shape that carries none of the consumer's accessors is already the
+ * body, so it comes back untouched.
+ */
+export function unwrapBodyField(
+  shape: TypeShape,
+  consumer: BehavioralSummary,
+): TypeShape {
+  if (shape.type !== "record") {
+    return shape;
+  }
+  for (const accessor of bodyAccessorsFor(consumer)) {
+    const wrapped = shape.properties[accessor];
+    if (wrapped !== undefined) {
+      return wrapped;
+    }
+  }
+  return shape;
+}
+
+/**
  * Names of properties that a consumer summary uses to read the HTTP
  * status code from a response. Adapter writes these from the pack's
  * `responseSemantics`; falls back to the historical names for
