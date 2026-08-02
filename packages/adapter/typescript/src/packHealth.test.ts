@@ -8,10 +8,13 @@ const funnel = (over: Partial<PackFunnel> = {}): PackFunnel => ({
   pack: "demo",
   version: "1.0.0",
   discovers: true,
+  recognizes: false,
   gates: ["@scope/lib"],
   unresolvedGates: [],
   candidateFiles: 4,
   unitsDiscovered: 3,
+  unitsInGatedFiles: 0,
+  effectsRecognized: 0,
   unitsClaimed: 3,
   selfCollisions: 0,
   summariesProduced: 3,
@@ -65,12 +68,70 @@ describe("the funnel-drop check", () => {
     expect(found[0]?.detail).toContain("discovery matched nothing");
   });
 
-  it("says nothing about a pack made only of recognisers", () => {
+  it("does not hold a pack made only of recognisers to the discovery pair", () => {
+    const found = drops([
+      funnel({
+        discovers: false,
+        recognizes: true,
+        unitsDiscovered: 0,
+        unitsInGatedFiles: 0,
+        unitsClaimed: 0,
+        summariesProduced: 0,
+        summariesBound: 0,
+        providerSummaries: 0,
+        summariesWithBehavior: 0,
+      }),
+    ]);
+    expect(found).toEqual([]);
+  });
+
+  it("measures a recogniser pack against the bodies it had to look at", () => {
+    const found = drops([
+      funnel({
+        discovers: false,
+        recognizes: true,
+        unitsDiscovered: 0,
+        unitsInGatedFiles: 12,
+        effectsRecognized: 0,
+        unitsClaimed: 0,
+        summariesProduced: 0,
+        summariesBound: 0,
+        providerSummaries: 0,
+        summariesWithBehavior: 0,
+      }),
+    ]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.detail).toContain("matched nothing");
+  });
+
+  it("stays quiet when a recogniser pack had no body to look at", () => {
     expect(
       drops([
         funnel({
           discovers: false,
+          recognizes: true,
           unitsDiscovered: 0,
+          unitsInGatedFiles: 0,
+          effectsRecognized: 0,
+          unitsClaimed: 0,
+          summariesProduced: 0,
+          summariesBound: 0,
+          providerSummaries: 0,
+          summariesWithBehavior: 0,
+        }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("stays quiet when a recogniser pack matched something", () => {
+    expect(
+      drops([
+        funnel({
+          discovers: false,
+          recognizes: true,
+          unitsDiscovered: 0,
+          unitsInGatedFiles: 12,
+          effectsRecognized: 4,
           unitsClaimed: 0,
           summariesProduced: 0,
           summariesBound: 0,
@@ -122,7 +183,9 @@ describe("the funnel-drop check", () => {
       }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("bound none of them");
+    expect(found[0]?.detail).toContain(
+      "turned none of them into a bound summary",
+    );
   });
 
   it("stays quiet when an earlier pack claimed every unit", () => {

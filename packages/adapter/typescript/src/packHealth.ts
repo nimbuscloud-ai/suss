@@ -46,10 +46,15 @@ export interface HealthCheck {
 /**
  * A pack's funnel, as the ordered stages a health check walks.
  *
- * `discovery` is only comparable against `candidateFiles` when the pack
- * gated itself, since an ungated pack is handed every file in the
- * project and so its candidate count says nothing about whether the
- * project uses it.
+ * The two gated pairs come first, and neither is comparable unless the
+ * pack gated itself: an ungated pack is handed every file in the
+ * project, so its candidate count says only that the project has files.
+ *
+ * The two ways a pack can contribute get a pair each. A pack that finds
+ * units of its own is measured on what its gate selected; a pack made
+ * of recognisers is measured on the unit bodies other packs walked in
+ * the files its gate selected, since a recogniser never runs anywhere
+ * else. A pack doing both, as the Node runtime pack does, gets both.
  */
 function stagesOf(funnel: PackFunnel): Array<{
   from: { name: string; count: number };
@@ -57,12 +62,10 @@ function stagesOf(funnel: PackFunnel): Array<{
   meaning: string;
 }> {
   const stages = [];
+  const gateSaysSomething =
+    funnel.gates.length > 0 && funnel.unresolvedGates.length === 0;
 
-  if (
-    funnel.discovers &&
-    funnel.gates.length > 0 &&
-    funnel.unresolvedGates.length === 0
-  ) {
+  if (funnel.discovers && gateSaysSomething) {
     stages.push({
       from: { name: "candidate files", count: funnel.candidateFiles },
       to: { name: "units discovered", count: funnel.unitsDiscovered },
@@ -71,11 +74,23 @@ function stagesOf(funnel: PackFunnel): Array<{
     });
   }
 
+  if (funnel.recognizes && gateSaysSomething) {
+    stages.push({
+      from: {
+        name: "unit bodies in the files it gated into",
+        count: funnel.unitsInGatedFiles,
+      },
+      to: { name: "effects", count: funnel.effectsRecognized },
+      meaning:
+        "its recognisers ran over unit bodies importing its library and matched nothing",
+    });
+  }
+
   stages.push(
     {
       from: { name: "units claimed", count: funnel.unitsClaimed },
       to: { name: "summaries bound", count: funnel.summariesBound },
-      meaning: "it recognised units and bound none of them to a boundary",
+      meaning: "it claimed units and turned none of them into a bound summary",
     },
     {
       from: { name: "provider summaries", count: funnel.providerSummaries },

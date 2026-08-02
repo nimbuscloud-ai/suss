@@ -42,6 +42,12 @@ export interface PackFunnel {
    */
   discovers: boolean;
   /**
+   * Whether the pack carries recognisers. Those fire inside units other
+   * packs discovered, so a pack made only of them contributes effects
+   * and never a summary.
+   */
+  recognizes: boolean;
+  /**
    * Import specifiers that make a file relevant to this pack. Empty
    * for an ungated pack, which walks every file.
    */
@@ -58,6 +64,17 @@ export interface PackFunnel {
   candidateFiles: number;
   /** Units discovered across those files. */
   unitsDiscovered: number;
+  /**
+   * Unit bodies any pack walked in the files this pack's gate selected.
+   *
+   * This is what a recogniser pack had the chance to fire on. Its own
+   * discovery count says nothing, since it discovers nothing by design,
+   * and its candidate-file count says nothing either, because a
+   * recogniser only runs where some pack found a unit to walk.
+   */
+  unitsInGatedFiles: number;
+  /** Effects this pack's recognisers returned. */
+  effectsRecognized: number;
   /**
    * Units this pack kept. A unit an earlier pack already claimed is
    * dropped here, so a pack can discover plenty and keep none when it
@@ -114,6 +131,8 @@ export type EmptyStage =
 export interface PackTally {
   candidateFiles: number;
   unitsDiscovered: number;
+  unitsInGatedFiles: number;
+  effectsRecognized: number;
   unitsClaimed: number;
   selfCollisions: number;
   summariesProduced: number;
@@ -122,6 +141,8 @@ export interface PackTally {
 const emptyTally = (): PackTally => ({
   candidateFiles: 0,
   unitsDiscovered: 0,
+  unitsInGatedFiles: 0,
+  effectsRecognized: 0,
   unitsClaimed: 0,
   selfCollisions: 0,
   summariesProduced: 0,
@@ -322,6 +343,9 @@ export function buildExtractionReport(args: {
       pack: pack.name,
       version: pack.version ?? null,
       discovers: pack.discovery.length > 0 || pack.discoverUnits !== undefined,
+      recognizes:
+        (pack.invocationRecognizers?.length ?? 0) > 0 ||
+        (pack.accessRecognizers?.length ?? 0) > 0,
       gates,
       unresolvedGates: unresolvedGatesFor(gates, {
         tsConfigFilePath: args.tsConfigFilePath,
@@ -329,6 +353,8 @@ export function buildExtractionReport(args: {
       }),
       candidateFiles: tally.candidateFiles,
       unitsDiscovered: tally.unitsDiscovered,
+      unitsInGatedFiles: tally.unitsInGatedFiles,
+      effectsRecognized: tally.effectsRecognized,
       unitsClaimed: tally.unitsClaimed,
       selfCollisions: tally.selfCollisions,
       summariesProduced: tally.summariesProduced,

@@ -117,6 +117,8 @@ function report(
   for (const [name, c] of Object.entries(counts)) {
     tallies.set(name, {
       ...c,
+      unitsInGatedFiles: 0,
+      effectsRecognized: 0,
       unitsClaimed: c.unitsDiscovered,
       selfCollisions: 0,
     });
