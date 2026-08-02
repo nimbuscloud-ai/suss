@@ -652,11 +652,13 @@ written out rather than pointed at. Serialized, a 128-bit reference is
 `{"type":"literal","value":"success"}` is 36. Pointing at either one
 loses on size before anything else is considered.
 
-**Primitives and literals always inline.** Literals matter most. The
-extractor works to keep a literal narrow, so a summary says `"success"`
-rather than `string`, and that is the most legible thing in the file.
-Turning it into a digest would trade the clearest part of a summary for
-four bytes.
+**Primitives and literals always inline.** A reference to `{"type":
+"text"}` costs 40 bytes to avoid writing 15, so pointing at one makes
+the file bigger and adds a hop to reconstruct a value that was already
+in hand. Literals are the same arithmetic: the extractor works to keep
+them narrow, so a summary says `"success"` rather than `string`, and
+`{"type":"literal","value":"success"}` is 36 bytes against a 40-byte
+reference. Nothing smaller than a digest should be pointed at.
 
 **Composites are the decision, and it turns out to be a small one.**
 Because the whole program is extracted before anything is written, how
@@ -675,27 +677,18 @@ fully inline form:
 
 Every rule lands within 0.3% of every other. Going from fully inline to
 sharing anything at all saves 11% on Saleor and 10% on Twenty, and after
-that the threshold does not matter. So the threshold should be chosen
-for what it does to a reader, not for bytes.
+that the threshold stops mattering. Since size does not decide it, take
+the rule with the fewest moving parts: **a composite becomes a node when
+it occurs more than once in the run, and everything else inlines.** It
+produces the smallest output of any rule measured and the fewest nodes
+of the rules that tie with it, so it also costs the fewest hops to walk.
 
-The rule to take is the simplest one that captures the saving: **a
-composite becomes a node when it occurs more than once in the run, and
-everything else inlines.** It gives the smallest output of any rule
-measured, and it produces the fewest nodes of the rules that do, which
-is the same thing as saying it keeps the most structure where a person
-can see it.
-
-**Top-level shapes inline too.** A summary's own body shape can be a
-reference, and allowing it saves a further 59,268 bytes on Saleor and
-45,959 on Twenty, which is 0.8% and 0.3%. Refusing it means the shape a
-person looks at first is written out. That is the place to be less
-efficient than optimal, and the price is under 1%.
-
-The effect on reading is small either way, which is worth saying because
-it was the main worry. Under the recommended rule the median summary
-follows zero references and the average is 0.2, because most shapes are
-shallow and narrow. A summary full of hash references was never what
-this produces.
+Top-level shapes can be references too, which saves a further 59,268
+bytes on Saleor and 45,959 on Twenty, or 0.8% and 0.3%. Take it. The
+earlier draft of this section kept them inline so a person opening the
+file would find the shape written out, and that reasoning does not hold:
+a summaries file is a machine artifact, and the next section is about
+where a person actually reads this data.
 
 ### Two things the rule must not break
 
@@ -719,22 +712,100 @@ member tree, rather than over the JSON that was written. Saying it
 explicitly is worth the sentence, because computing the hash over the
 serialized form would let the format's own layout decide the answer.
 
-### What sharing costs to read
+### Display is a separate step
 
-The worry going in was that a summary would turn into a wall of hash
-references, and the measurement says it does not. Under the recommended
-rule the median summary follows no references at all and the average is
-0.2, because the types that qualify as nodes are the widely reused ones
-and most shapes are neither wide nor reused.
+A summaries file is something machines read. `suss inspect` is where a
+person meets the data, and it already exists for that reason. So the
+stored form should be chosen for what it costs and what it can answer,
+and legibility is `inspect`'s job.
 
-Where a cost remains, spend bytes rather than legibility. Inlining
-top-level shapes costs under 1% and keeps the thing a person opens the
-file to read written out in full. And `suss inspect` already exists as
-the view meant for people, so it can resolve references before showing
-anything. What should not happen is the stored format drifting toward
-unreadable on the assumption that nobody opens it.
+That changes what `inspect` does under this model, in two ways worth
+having.
 
-### Two things ruled out
+**`inspect` resolves references and expands only what is in use.** That
+is the participating-members idea again, pointed at display instead of
+at checking. A concept that answers two different questions is more
+likely to be the right concept, and it means the reader sees the members
+a boundary depends on rather than a type's whole surface.
+
+**`inspect --diff` stops printing both structures.** Today a shape
+difference means rendering both sides and leaving the reader to find it.
+With member hashes, the diff compares roots, descends only into branches
+whose hashes differ, and prints those.
+
+The sizes say what that is worth. The largest summary Saleor produces
+today is `useExtensions` at 241,646 bytes. A diff of it against a
+changed version currently renders both copies, so a reader looks at
+roughly half a megabyte to find one changed field. Descent renders the
+branch that changed. The median summary is 1,323 bytes and would barely
+notice, which is the usual shape of this: the change is invisible where
+things are small and decisive where they are not.
+
+## Getting a summary to another repository
+
+Once a summary holds references it is no longer self-contained, and
+reading one needs the nodes it points at. Inside a run that costs
+nothing. Travelling to another repository, which is the case this design
+exists for, it is the whole question.
+
+Two shapes. The file can carry its own shape table, the way a packfile
+bundles the objects it needs, which is self-contained and larger and
+duplicated between files that share types. Or a summary can become an
+index into a store the tooling fetches, which is smaller and shared and
+introduces a resolution step that can fail.
+
+**Bundle the table with the file.** The measurement is one-sided.
+
+Two unrelated codebases share almost nothing. Of Saleor's 433 shared
+nodes and Twenty's 804, exactly 15 appear in both, worth 975 bytes. A
+store shared across the two saves 0.07%. Whatever a fetchable store is
+for, it is not for saving bytes between repositories, which is precisely
+where its resolution step would be most likely to fail.
+
+Inside one codebase the answer depends on how finely the output is
+split, and the split that matters is the one projects publish at:
+
+| split | units | bundled | one shared table | duplication |
+| --- | ---: | ---: | ---: | ---: |
+| saleor, by top area | 44 | 450,721 | 420,047 | 7.3% |
+| saleor, per directory | 315 | 548,069 | 400,575 | 36.8% |
+| saleor, per subdirectory | 710 | 614,493 | 398,720 | 54.1% |
+| twenty, by top area | 7 | 931,073 | 899,272 | 3.5% |
+| twenty, per directory | 109 | 1,393,176 | 876,696 | 58.9% |
+| twenty, per subdirectory | 359 | 1,821,925 | 814,647 | 123.6% |
+
+A project publishes one summary file per package or per service, which
+is the top row for each corpus, and there a bundled table costs 3.5% to
+7.3% in duplication. Splitting per source file would cost more than the
+sharing saves, so the rule is to bundle at the granularity something is
+actually published at and not below it.
+
+The in-run benefits survive this untouched. Deduplication, pointer
+equality and skipping subtrees whose hash has not moved all happen while
+the program is alive, and none of them require the published artifact to
+depend on a store it does not carry.
+
+### When a reference cannot be resolved
+
+A bundled table makes this rare rather than impossible. A file can be
+truncated, hand-edited, or produced by a version that wrote nodes a
+reader does not understand.
+
+An unresolved reference reads as a shape we could not read. Not an empty
+record, not a missing field, and not silence. The repo already keeps
+"we could not read this" apart from "there is nothing here", and this is
+squarely the first, so it surfaces as `unknown` carrying the hash it
+could not resolve, the checker treats it the way it treats every other
+`unknown`, and `inspect` shows the name and says the structure is
+missing.
+
+The alternative failure, where an unresolvable node silently reads as a
+type with no members, would make a provider look like it produces
+nothing and a consumer look like it requires nothing. Both pair with
+anything. That is the direction this project refuses, so the degradation
+has to be written down rather than left to whoever implements it.
+
+## Two things ruled out
 
 **Bloom filters** for membership, to test whether a provider has a field
 without enumerating its members. A Bloom positive is a maybe that has to
@@ -1052,6 +1123,13 @@ is measurable without the ones after it.
    better argument is the two questions it answers rather than the bytes
    it saves, which are what else depends on a changed subtree, and what
    does not need re-deriving.
+
+   Each published file carries its own shape table. Two unrelated
+   codebases share 15 nodes worth 975 bytes, so a fetchable store saves
+   nothing across repositories and would add a step that can fail
+   exactly where failing is worst. A reference the reader cannot resolve
+   has to read as a shape we could not read, never as a type with no
+   members.
 
 The two claims this proposal makes should not be allowed to borrow each
 other's evidence. The library-type fix is what did the work on size.
