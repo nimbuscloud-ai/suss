@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
+      "total": 191,
+      "covered": 191,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
       "total": 194,
       "covered": 194,
       "skipped": 0,
       "pct": 100
     },
-    "statements": {
-      "total": 197,
-      "covered": 197,
-      "skipped": 0,
-      "pct": 100
-    },
     "functions": {
-      "total": 31,
-      "covered": 31,
+      "total": 30,
+      "covered": 30,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 199,
-      "covered": 197,
+      "total": 193,
+      "covered": 191,
       "skipped": 0,
-      "pct": 98.99
+      "pct": 98.96
     },
     "branchesTrue": {
       "total": 0,
@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "src/boundaryKey.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/ir-core/src/boundaryKey.ts": {
     "lines": {
       "total": 25,
       "covered": 25,
@@ -57,7 +57,7 @@
       "pct": 100
     }
   },
-  "src/channel.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/ir-core/src/channel.ts": {
     "lines": {
       "total": 8,
       "covered": 8,
@@ -83,33 +83,7 @@
       "pct": 100
     }
   },
-  "src/deployableUnit.ts": {
-    "lines": {
-      "total": 3,
-      "covered": 3,
-      "skipped": 0,
-      "pct": 100
-    },
-    "functions": {
-      "total": 1,
-      "covered": 1,
-      "skipped": 0,
-      "pct": 100
-    },
-    "statements": {
-      "total": 3,
-      "covered": 3,
-      "skipped": 0,
-      "pct": 100
-    },
-    "branches": {
-      "total": 6,
-      "covered": 6,
-      "skipped": 0,
-      "pct": 100
-    }
-  },
-  "src/index.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/ir-core/src/index.ts": {
     "lines": {
       "total": 8,
       "covered": 8,
@@ -135,7 +109,7 @@
       "pct": 100
     }
   },
-  "src/schemas.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/ir-core/src/schemas.ts": {
     "lines": {
       "total": 17,
       "covered": 17,
@@ -161,7 +135,7 @@
       "pct": 100
     }
   },
-  "src/suppressions.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/ir-core/src/suppressions.ts": {
     "lines": {
       "total": 43,
       "covered": 43,
@@ -187,7 +161,7 @@
       "pct": 100
     }
   },
-  "src/typeShapeMatch.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/ir-core/src/typeShapeMatch.ts": {
     "lines": {
       "total": 90,
       "covered": 90,

@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "src/index.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/openapi/src/index.ts": {
     "lines": {
       "total": 10,
       "covered": 10,
@@ -57,7 +57,7 @@
       "pct": 100
     }
   },
-  "src/schemaToShape.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/openapi/src/schemaToShape.ts": {
     "lines": {
       "total": 99,
       "covered": 87,
@@ -83,7 +83,7 @@
       "pct": 79.54
     }
   },
-  "src/spec.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/openapi/src/spec.ts": {
     "lines": {
       "total": 2,
       "covered": 2,
@@ -109,7 +109,7 @@
       "pct": 100
     }
   },
-  "src/summaryBuilder.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/openapi/src/summaryBuilder.ts": {
     "lines": {
       "total": 85,
       "covered": 80,

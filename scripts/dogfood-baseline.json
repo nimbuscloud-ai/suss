@@ -2,9 +2,9 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "providers": 966,
-    "consumers": 260,
-    "pairs": 252
+    "providers": 967,
+    "consumers": 266,
+    "pairs": 258
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -29,8 +29,8 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "providers": 69,
-      "consumers": 90
+      "providers": 70,
+      "consumers": 96
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",

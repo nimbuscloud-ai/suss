@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "src/index.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/behavioral-ir/src/index.ts": {
     "lines": {
       "total": 21,
       "covered": 21,
@@ -57,7 +57,7 @@
       "pct": 100
     }
   },
-  "src/interpret.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/behavioral-ir/src/interpret.ts": {
     "lines": {
       "total": 94,
       "covered": 94,
@@ -83,7 +83,7 @@
       "pct": 100
     }
   },
-  "src/schemas.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/behavioral-ir/src/schemas.ts": {
     "lines": {
       "total": 26,
       "covered": 26,
