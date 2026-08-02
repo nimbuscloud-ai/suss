@@ -25,6 +25,7 @@
 // to consumers.
 
 import { messageBusBinding } from "@suss/behavioral-ir";
+import { codeScopePath } from "@suss/ir-core";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -220,7 +221,7 @@ function buildLambdaConsumerSummary(
   const codeUri = opts.lambdaResource.Properties?.CodeUri;
   const codeScope =
     typeof codeUri === "string"
-      ? { kind: "codeUri", path: normalizeCodeUri(codeUri) }
+      ? { kind: "codeUri", path: codeScopePath(codeUri) }
       : { kind: "unknown" };
   return {
     kind: "consumer",
@@ -637,7 +638,7 @@ function buildEventBridgeConsumerSummary(
   const codeUri = opts.lambdaResource.Properties?.CodeUri;
   const codeScope =
     typeof codeUri === "string"
-      ? { kind: "codeUri", path: normalizeCodeUri(codeUri) }
+      ? { kind: "codeUri", path: codeScopePath(codeUri) }
       : { kind: "unknown" };
   const nameSuffix =
     opts.detailType !== undefined
@@ -884,17 +885,4 @@ function refTarget(value: unknown): string | null {
     }
   }
   return null;
-}
-
-function normalizeCodeUri(raw: string): string {
-  // Match runtime-config's logic — strip ./ prefix, ensure trailing /
-  // for directory-style paths.
-  let path = raw;
-  if (path.startsWith("./")) {
-    path = path.slice(2);
-  }
-  if (!path.endsWith("/")) {
-    path = `${path}/`;
-  }
-  return path;
 }

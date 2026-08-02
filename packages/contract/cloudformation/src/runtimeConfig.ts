@@ -18,6 +18,7 @@
 // judged across the document rather than function by function.
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
+import { codeScopePath } from "@suss/ir-core";
 
 import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
 
@@ -349,26 +350,14 @@ function readCodeScope(resource: CloudFormationResource): {
   // objects can't be statically resolved to a path.
   const codeUri = resource.Properties?.CodeUri;
   if (typeof codeUri === "string" && codeUri.length > 0) {
-    return { kind: "codeUri", path: normalizeCodeUri(codeUri) };
+    return { kind: "codeUri", path: codeScopePath(codeUri) };
   }
   // Escape hatch for raw CFN / authored projects without CodeUri:
   // a `Metadata.SussCodeScope` annotation lets the user tell the
   // stub which source directory backs this runtime.
   const metaScope = resource.Metadata?.SussCodeScope;
   if (typeof metaScope === "string" && metaScope.length > 0) {
-    return { kind: "codeUri", path: normalizeCodeUri(metaScope) };
+    return { kind: "codeUri", path: codeScopePath(metaScope) };
   }
   return { kind: "unknown" };
-}
-
-function normalizeCodeUri(raw: string): string {
-  // Trim leading "./" so the path matches summary location.file paths
-  // (which are project-relative without a leading slash). Trailing
-  // slash is preserved when present so prefix-match in the checker
-  // keeps "src/foo/" from matching "src/foobar/".
-  let p = raw.trim();
-  if (p.startsWith("./")) {
-    p = p.slice(2);
-  }
-  return p;
 }

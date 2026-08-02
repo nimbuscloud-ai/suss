@@ -92,6 +92,7 @@ export {
   type ParsedChannel,
   parseChannel,
 } from "./channel.js";
+export { codeScopePath, fileInCodeScope } from "./codeScope.js";
 export {
   applySuppressionsToFindings,
   countsForThreshold,

@@ -10,6 +10,8 @@
 // Globals, Api vs HttpApi Events) stay owned here rather than being
 // reconstructed inside a framework pack.
 
+import { codeScopePath } from "@suss/ir-core";
+
 import { resourcesWithGlobals } from "./globals.js";
 import { type CloudFormationTemplate, refTarget } from "./templateLoader.js";
 
@@ -79,20 +81,17 @@ export function parseHandler(handler: string): ParsedHandler | null {
   };
 }
 
-/** Strip a leading `./` and any trailing slash from a CodeUri directory. */
-function normalizeCodeUri(raw: string): string {
-  const trimmed = raw.replace(/^\.\//, "").replace(/\/+$/, "");
-  return trimmed === "" ? "." : trimmed;
-}
-
 function readCodeUri(resource: {
   Properties?: Record<string, unknown>;
 }): string {
   const codeUri = resource.Properties?.CodeUri;
-  if (typeof codeUri === "string") {
-    return normalizeCodeUri(codeUri);
+  if (typeof codeUri !== "string") {
+    return ".";
   }
-  return ".";
+  // This one is joined onto the template directory rather than tested
+  // as a prefix, and a join needs a directory to name, so the project
+  // root reads back as "." instead of the empty string.
+  return codeScopePath(codeUri) || ".";
 }
 
 function classifyEvents(events: Record<string, unknown>): {

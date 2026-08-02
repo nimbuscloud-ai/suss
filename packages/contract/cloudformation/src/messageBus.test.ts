@@ -122,7 +122,7 @@ describe("buildMessageBusSummaries", () => {
     const consumer = pickConsumers(out)[0] ?? raise("no consumer");
     expect(consumer.metadata?.codeScope).toEqual({
       kind: "codeUri",
-      path: "src/order-processor/",
+      path: "src/order-processor",
     });
   });
 
@@ -351,7 +351,7 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     });
     expect(consumer.metadata?.codeScope).toEqual({
       kind: "codeUri",
-      path: "src/order-consumer/",
+      path: "src/order-consumer",
     });
     expect(consumer.identity.deployableUnit).toEqual({
       deploymentTarget: "lambda",

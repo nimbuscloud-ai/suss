@@ -23,6 +23,8 @@
 // directory answers as before, so a pack that stamps nothing pairs as
 // it always has.
 
+import { fileInCodeScope } from "@suss/ir-core";
+
 import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
 
 /** The unit each file's code is deployed as, where its summaries agree. */
@@ -31,8 +33,8 @@ export type UnitsByFile = ReadonlyMap<string, DeployableUnit>;
 export interface UnitScope {
   /** The unit the declaring side speaks for, when it names one. */
   unit: DeployableUnit | undefined;
-  /** Which files count as in scope when neither side names a unit. */
-  fileInScope: (file: string) => boolean;
+  /** The source directory that answers when neither side names a unit. */
+  codeScope: string;
 }
 
 /**
@@ -76,7 +78,7 @@ export function runsIn(
   if (codeUnit !== undefined && scope.unit !== undefined) {
     return sameUnit(codeUnit, scope.unit);
   }
-  return scope.fileInScope(code.location.file);
+  return fileInCodeScope(code.location.file, scope.codeScope);
 }
 
 /** Whether two units name the same thing to deploy. */

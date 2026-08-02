@@ -156,6 +156,53 @@ describe("checkRuntimeConfig", () => {
     expect(checkRuntimeConfig([runtime, code])).toEqual([]);
   });
 
+  it("scopes the same way however the template spelled the trailing slash", () => {
+    for (const path of ["src/ok", "src/ok/", "./src/ok/"]) {
+      const runtime = makeRuntimeProvider({
+        instanceName: "ok",
+        envVars: ["A"],
+        codeScope: { kind: "codeUri", path },
+      });
+      const code = makeCodeSummary({
+        name: "okHandler",
+        file: "src/ok/index.ts",
+        envReads: ["A"],
+      });
+      expect(checkRuntimeConfig([runtime, code])).toEqual([]);
+    }
+  });
+
+  it("keeps a scope of src/foo from reaching code in src/foobar", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "foo",
+      envVars: ["A"],
+      codeScope: { kind: "codeUri", path: "src/foo" },
+    });
+    const code = makeCodeSummary({
+      name: "neighbour",
+      file: "src/foobar/index.ts",
+      envReads: ["A"],
+    });
+    const findings = checkRuntimeConfig([runtime, code]);
+    // The neighbour is out of scope, so its read cannot answer for A and
+    // A reads as declared but never used.
+    expect(findings.map((f) => f.kind)).toEqual(["boundaryFieldUnused"]);
+  });
+
+  it("lets a scope of . cover the whole project", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "wholeService",
+      envVars: ["A"],
+      codeScope: { kind: "codeUri", path: "." },
+    });
+    const code = makeCodeSummary({
+      name: "handler",
+      file: "src/handlers/index.ts",
+      envReads: ["A"],
+    });
+    expect(checkRuntimeConfig([runtime, code])).toEqual([]);
+  });
+
   it("emits runtimeScopeUnknown when codeScope.kind is unknown", () => {
     const runtime = makeRuntimeProvider({
       instanceName: "noScope",

@@ -128,7 +128,7 @@ describe("buildRuntimeConfigSummaries — Lambda", () => {
       path?: string;
     };
     expect(codeScope.kind).toBe("codeUri");
-    expect(codeScope.path).toBe("src/handlers/myFn/");
+    expect(codeScope.path).toBe("src/handlers/myFn");
   });
 
   it("emits codeScope.kind=unknown when neither CodeUri nor SussCodeScope is set", () => {
