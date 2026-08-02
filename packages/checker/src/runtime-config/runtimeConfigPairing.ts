@@ -8,9 +8,11 @@
 //   - envVarUnused       (warning) — runtime supplies X, no code reads
 //   - runtimeScopeUnknown (info)   — runtime has no codeScope; can't pair
 //
-// Soundness: pairing is keyed on file-path prefix matching against the
-// runtime's `metadata.codeScope.path`. Multi-attribution is intentional
-// — a shared util file included in two Lambdas pairs against both.
+// Soundness: a read pairs against the runtime it runs in, which the
+// deployable unit on each side says. Code that names no unit falls back
+// to file-path prefix matching against the runtime's
+// `metadata.codeScope.path`, and multi-attribution is intentional
+// there: a shared util file included in two Lambdas pairs against both.
 //
 // The runtime-config boundary collapses two links of a chain — the
 // CFN/SAM service ↔ runtime contract, and the runtime ↔ process
@@ -22,6 +24,7 @@
 // process actually receives, not just the template-declared subset.
 
 import { makeSide } from "../coverage/responseMatch.js";
+import { runsIn, unitsByFile } from "../scope/unitScope.js";
 
 import type {
   BehavioralSummary,
@@ -77,6 +80,7 @@ export function checkRuntimeConfig(
   const findings: Finding[] = [];
 
   const runtimes = summaries.filter(isRuntimeConfigProvider);
+  const byFile = unitsByFile(summaries);
   // Index the read sites once so each provider doesn't re-scan the
   // full summary set. Code summaries are everything that ISN'T a
   // runtime-config provider; runtime-config providers don't read env
@@ -102,9 +106,12 @@ export function checkRuntimeConfig(
       continue;
     }
 
-    const inScope = codeReads.filter((r) =>
-      r.summary.location.file.startsWith(codeScope.path ?? ""),
-    );
+    const scopePath = codeScope.path;
+    const scope = {
+      unit: runtime.identity.deployableUnit,
+      fileInScope: (file: string) => file.startsWith(scopePath),
+    };
+    const inScope = codeReads.filter((r) => runsIn(r.summary, scope, byFile));
     const readNames = new Set(inScope.map((r) => r.name));
     const providedSet = new Set(provided);
     const sources = readEnvVarSources(runtime);
