@@ -22,6 +22,13 @@
 // stays inside the semi-naive resume that makes a store evaluating after
 // every wave of facts affordable. And demand is a fact like any other, so
 // asking a new question is a fact arriving, not a fresh fixpoint.
+//
+// Demand being a fact is also what lets a caller take it back. A
+// database that keeps every question ever asked derives over all of them
+// each time a file's facts arrive, so the tenth question costs ten
+// questions and the thousandth costs a thousand. `demandDriven` names
+// the relations that hold nothing until somebody asks, and
+// `clearRelations` empties them once an answer has been read.
 
 import type { Literal, Rule, Term } from "./index.js";
 
@@ -53,6 +60,20 @@ const positiveLiteral = (relation: string, terms: Term[]): Literal => ({
   negated: false,
 });
 
+/** A rewritten rule set, and which of its relations demand restricts. */
+export interface OnDemandRules {
+  /** The rewritten rules, ready to evaluate. */
+  rules: Rule[];
+  /**
+   * The relations derived only where a demand fact reaches them, the
+   * demand relations included. Every one of these is empty until
+   * somebody asks, and only the complete relations are derived from
+   * them, so a caller between questions can clear the lot and keep the
+   * answers.
+   */
+  demandDriven: string[];
+}
+
 /**
  * Rewrite `rules` so the relations named in `complete` still come out
  * whole and everything else is derived only where those relations reach.
@@ -71,7 +92,7 @@ const positiveLiteral = (relation: string, terms: Term[]): Literal => ({
 export function deriveOnDemand(
   rules: Rule[],
   complete: readonly string[],
-): Rule[] {
+): OnDemandRules {
   const negated = rules.find((r) => r.body.some((l) => l.negated));
   if (negated !== undefined) {
     throw new Error(
@@ -145,6 +166,7 @@ export function deriveOnDemand(
     `wanted:${nameOf(relation, adornment)}`;
 
   const rewritten: Rule[] = [];
+  const demandDriven = new Set<string>();
   const already = new Set<string>();
   const emit = (r: Rule): void => {
     const key = JSON.stringify(r);
@@ -155,6 +177,10 @@ export function deriveOnDemand(
   };
 
   for (const adorned of asked.values()) {
+    if (anyBound(adorned.adornment)) {
+      demandDriven.add(nameOf(adorned.relation, adorned.adornment));
+      demandDriven.add(demandOn(adorned.relation, adorned.adornment));
+    }
     for (const r of rulesByHead.get(adorned.relation) ?? []) {
       const guard = anyBound(adorned.adornment)
         ? [
@@ -196,7 +222,7 @@ export function deriveOnDemand(
     }
   }
 
-  return rewritten;
+  return { rules: rewritten, demandDriven: [...demandDriven] };
 }
 
 /**

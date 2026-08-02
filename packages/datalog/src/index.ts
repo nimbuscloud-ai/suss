@@ -30,7 +30,7 @@ import {
   isProfiling,
 } from "./profile.js";
 
-export { deriveOnDemand } from "./onDemand.js";
+export { deriveOnDemand, type OnDemandRules } from "./onDemand.js";
 export {
   type EvaluationProfile,
   formatProfile,
@@ -581,13 +581,84 @@ export function evaluate(db: Database, rules: Rule[]): Database {
   }
 }
 
-function runRules(db: Database, rules: Rule[]): Database {
+/**
+ * Empty these relations, and leave `rules` able to carry on from where
+ * it got to.
+ *
+ * `retract` cannot do this. A fact leaving the database can take away a
+ * conclusion drawn anywhere, so it sends the next run back to the base
+ * facts. A caller here is saying something stronger than "these facts
+ * are gone": nothing outside `relations` was derived from them, so what
+ * is left is already the fixpoint and the next run has only the facts
+ * that arrive after this to work through.
+ *
+ * That is what a demand-driven rule set gives a caller between
+ * questions. Every relation `deriveOnDemand` restricts is derived under
+ * a demand fact, so clearing the demand together with everything under
+ * it costs one question's worth of derivation rather than every
+ * question asked so far. The relations named as complete keep what they
+ * hold, which is the answers a caller has already read.
+ *
+ * Any other rule set over the same database does start over, since a
+ * relation it derived from may be one of these.
+ */
+export function clearRelations(
+  db: Database,
+  rules: Rule[],
+  relations: readonly string[],
+): void {
+  for (const relation of relations) {
+    db.retract(relation, [...db.facts(relation)]);
+  }
+  const state = statesFor(db).get(signatureOf(rules));
+  if (state !== undefined) {
+    state.marks = currentMarks(db);
+  }
+}
+
+/**
+ * What a rule set is called and how it stratifies, worked out once. A
+ * store evaluating after every wave of facts runs the same array
+ * thousands of times, and re-deriving these each time charges every
+ * question for the size of the rule set.
+ */
+interface RuleSetShape {
+  signature: string;
+  name: string;
+  derivedRelations: string[];
+  strata: Rule[][];
+}
+
+const signatureOf = (rules: Rule[]): string => shapeOf(rules).signature;
+
+const shapes = new WeakMap<Rule[], RuleSetShape>();
+
+function shapeOf(rules: Rule[]): RuleSetShape {
+  const known = shapes.get(rules);
+  if (known !== undefined) {
+    return known;
+  }
   // The relations a rule set derives name it well enough to tell two apart
   // in a report, and stay readable in a way the rule JSON does not.
   const derivedRelations = [...new Set(rules.map((r) => r.head.relation))];
-  const ruleSetName = [...derivedRelations].sort().join(", ");
+  const shape: RuleSetShape = {
+    signature: JSON.stringify(rules),
+    name: [...derivedRelations].sort().join(", "),
+    derivedRelations,
+    strata: stratify(rules),
+  };
+  shapes.set(rules, shape);
+  return shape;
+}
+
+function runRules(db: Database, rules: Rule[]): Database {
+  const {
+    signature,
+    name: ruleSetName,
+    derivedRelations,
+    strata,
+  } = shapeOf(rules);
   chargeEvaluation(ruleSetName);
-  const signature = JSON.stringify(rules);
   const states = statesFor(db);
   const state: RuleSetState = states.get(signature) ?? {
     marks: null,
@@ -611,7 +682,7 @@ function runRules(db: Database, rules: Rule[]): Database {
   // what the strata below it just derived.
   const marks = canResume(rules, state) ? state.marks : undefined;
 
-  for (const stratum of stratify(rules)) {
+  for (const stratum of strata) {
     let delta = new Map<string, Tuple[]>();
     const derivedHere = new Set(stratum.map((r) => r.head.relation));
 
