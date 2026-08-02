@@ -6,7 +6,7 @@ A handler's declared subject is not participation in any of that. It is a contra
 
 ## Why this exists
 
-A shared subject fans out. Five Lambdas subscribe to one subject and five handlers answer it, so the pair list carries twenty-five combinations. Sixteen of the twenty other lines on a four-subject service have the same shape.
+A shared subject fans out. When several Lambdas subscribe to one subject and each has a handler answering it, the pair list carries every combination of handler and subscription, and only the ones naming the same Lambda describe a delivery that can happen. The fan-out fixture in this repo is the smallest version of it: two Lambdas give four lines, and two of the four cannot happen. A service where a dozen functions share a handful of subjects spends most of its pair list this way.
 
 An earlier change modelled the deployable unit each summary runs in, stamped it from the aws-lambda pack and the CloudFormation contract reader, and required the two sides of a pair to name the same one. That collapsed the fan-out, but it was wrong for every binding kind other than message-bus, and it worked by adding a condition on top of a key rather than by fixing what the key names. It shipped with the field stamped and the condition removed. This proposal is the change that uses the field.
 
