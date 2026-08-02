@@ -2,15 +2,15 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "providers": 982,
-    "consumers": 275,
-    "pairs": 267
+    "providers": 985,
+    "consumers": 278,
+    "pairs": 270
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "providers": 374,
-      "consumers": 21
+      "providers": 377,
+      "consumers": 22
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -30,7 +30,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "providers": 70,
-      "consumers": 105
+      "consumers": 107
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
