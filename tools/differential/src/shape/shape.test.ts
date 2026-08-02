@@ -15,6 +15,7 @@ import { nestjsRestFramework } from "@suss/framework-nestjs-rest";
 import { reactFramework } from "@suss/framework-react";
 
 import {
+  ANNOUNCEMENTS,
   type AnnounceShapeSpec,
   SIMPLEST_ANNOUNCEMENT,
 } from "./announceShape.js";
@@ -22,7 +23,12 @@ import {
   type ComponentShapeSpec,
   repairComponentShape,
 } from "./componentShape.js";
-import { ANNOUNCEMENT_BUGS, COMPONENT_BUGS } from "./knownBugs.js";
+import {
+  ANNOUNCEMENT_BUGS,
+  COMPONENT_BUGS,
+  REACH_BUGS,
+  SOUND_REACH_PATHS,
+} from "./knownBugs.js";
 import { findingSignature, signaturesOf } from "./minimize.js";
 import {
   formatShapeFailure,
@@ -36,7 +42,11 @@ import {
   arbShapeSpec,
   BINDING_FORMS,
 } from "./shapeGenerators.js";
-import { type ShapeSpec, SIMPLEST_SHAPE } from "./shapeProgram.js";
+import {
+  type ReachPath,
+  type ShapeSpec,
+  SIMPLEST_SHAPE,
+} from "./shapeProgram.js";
 import { ALL_SHAPE_TARGETS } from "./shapeTargets.js";
 
 const envInt = (name: string, fallback: number): number => {
@@ -202,34 +212,54 @@ describe("shape fuzzer, bugs that are still in the tree", () => {
 // The registration gap, which the reach dimension is entirely inside
 // ---------------------------------------------------------------------------
 
-describe("shape fuzzer, a registered handler reached by name", () => {
-  it(
-    "still broken: a handler that is not written at the registration call loses its boundary",
-    { timeout: 120_000 },
-    async () => {
-      const body = {
-        guards: [],
-        final: {
-          type: "respond" as const,
-          terminal: { status: 200, key: "ok", value: "yes" },
-        },
-      };
-      for (const reach of [
-        "throughName",
-        "throughProperty",
-        "throughImport",
-      ] as const) {
+const RESPOND_BODY = {
+  guards: [],
+  final: {
+    type: "respond" as const,
+    terminal: { status: 200, key: "ok", value: "yes" },
+  },
+};
+
+describe("shape fuzzer, sound tier (a handler reached by name)", () => {
+  for (const reach of SOUND_REACH_PATHS) {
+    it(
+      `a handler reached ${reach} summarizes the same way as one written at the call`,
+      { timeout: 120_000 },
+      async () => {
         const result = await runShapeDifferential(
-          { ...SIMPLEST_SHAPE, reach, form: "blockArrow", body },
+          { ...SIMPLEST_SHAPE, reach, form: "blockArrow", body: RESPOND_BODY },
+          ALL_SHAPE_TARGETS[0],
+        );
+        if (shapeFailed(result)) {
+          throw new Error(formatShapeFailure(result));
+        }
+      },
+    );
+  }
+});
+
+describe("shape fuzzer, reach paths still in the tree", () => {
+  for (const bug of REACH_BUGS) {
+    it(
+      `still broken, reach=${bug.value}: ${bug.wrong}`,
+      { timeout: 120_000 },
+      async () => {
+        const result = await runShapeDifferential(
+          {
+            ...SIMPLEST_SHAPE,
+            reach: bug.value as ReachPath,
+            form: "blockArrow",
+            body: RESPOND_BODY,
+          },
           ALL_SHAPE_TARGETS[0],
         );
         expect(
           result.findings.map(findingSignature),
-          `reach=${reach} may have been fixed. If it was, fold the reach dimension into the sound tier.\n${formatShapeFailure(result)}`,
-        ).toContain("invariant:everyAnnouncedBoundaryIsSummarized");
-      }
-    },
-  );
+          `${bug.wrong}: the fuzzer no longer finds this, so it looks fixed. Move reach=${bug.value} into SOUND_REACH_PATHS and take it out of knownBugs.ts.\n${formatShapeFailure(result)}`,
+        ).toContain(bug.signature);
+      },
+    );
+  }
 });
 
 describe("shape fuzzer, a response typed by a library type", () => {
@@ -273,6 +303,26 @@ describe("shape fuzzer, sound tier (nestjs-rest)", () => {
       async () => {
         const result = await runAnnounceShapeDifferential(
           { ...SIMPLEST_ANNOUNCEMENT, method, bodyKey: "ok" },
+          NEST_PACK,
+        );
+        if (shapeFailed(result)) {
+          throw new Error(formatShapeFailure(result));
+        }
+      },
+    );
+  }
+
+  // Every way of announcing a controller, including the four a project
+  // reaches for when it wants its own decorator. Each has to agree with
+  // the plainest spelling on the route path as well as on the boundary,
+  // since a controller mounted at the root pairs with the wrong thing.
+  for (const announcement of ANNOUNCEMENTS) {
+    it(
+      `a controller announced by ${announcement} summarizes the same way`,
+      { timeout: 60_000 },
+      async () => {
+        const result = await runAnnounceShapeDifferential(
+          { ...SIMPLEST_ANNOUNCEMENT, announcement, bodyKey: "ok" },
           NEST_PACK,
         );
         if (shapeFailed(result)) {

@@ -84,15 +84,59 @@ export const COMPONENT_BUGS: ReproducedBug[] = [
   },
 ];
 
-/** Wrong behaviour at an HTTP registration call. */
-export const HANDLER_BUGS: ReproducedBug[] = [
+/**
+ * The reach paths a registration call follows to the handler behind it.
+ * Everything not listed below resolves, and the sound tier asserts it.
+ */
+export const SOUND_REACH_PATHS = [
+  "direct",
+  "throughName",
+  "throughProperty",
+  "throughIndex",
+  "throughAlias",
+  "throughImport",
+  "throughBarrel",
+  "throughTwoBarrels",
+] as const;
+
+/**
+ * The three that do not, each for its own reason rather than for want
+ * of a rule. A call's return would need the rule to ask whether the
+ * callee unwraps, which is negation over a relation derived from the
+ * rule doing the asking, and that does not stratify. A factory's object
+ * argument is the `unwrapsProperty` rule that was tried and taken out,
+ * because a wrapper reading several callbacks off one config made each
+ * of them a candidate. A parameter is supplied by whoever calls the
+ * registering function, so no chain reaches it from here; that one
+ * should read as a boundary whose handler is unknown rather than as no
+ * boundary at all.
+ */
+export const REACH_BUGS: ReproducedBug[] = [
   {
     dimension: "reach",
-    value: "throughName",
+    value: "throughCallReturn",
+    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
+    wrong: "a handler a call returns loses its boundary",
+  },
+  {
+    dimension: "reach",
+    value: "throughFactoryArg",
     signature: "invariant:everyAnnouncedBoundaryIsSummarized",
     wrong:
-      "a handler that is not written at the registration call loses its boundary",
+      "a handler handed to a factory in an object argument loses its boundary",
   },
+  {
+    dimension: "reach",
+    value: "throughParameter",
+    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
+    wrong:
+      "a handler arriving as a parameter loses its boundary, where it should read as one whose handler is unknown",
+  },
+];
+
+/** Wrong behaviour at an HTTP registration call. */
+export const HANDLER_BUGS: ReproducedBug[] = [
+  ...REACH_BUGS,
   {
     dimension: "result",
     value: "wideNamedType",
@@ -103,41 +147,12 @@ export const HANDLER_BUGS: ReproducedBug[] = [
 ];
 
 /**
- * Wrong behaviour where a decorator announces the boundary. The pack
- * takes a list of class decorator names through its config, so naming
- * one project wrapper there is the path today. What the fuzzer adds is
- * the size of the space that config has to cover, and one case config
- * should not be needed for: `applyDecorators` is the framework's own
- * composition helper, not a project convention.
+ * Every way a class can announce a controller now resolves, so the
+ * sound tier carries the announcement dimension and nothing is listed
+ * here. What is left is on the class's inside rather than its outside:
+ * which members the walk reads once the class is recognized.
  */
 export const ANNOUNCEMENT_BUGS: ReproducedBug[] = [
-  {
-    dimension: "announcement",
-    value: "aliasedImport",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "importing Controller under another name loses the boundary, though it is the same decorator",
-  },
-  {
-    dimension: "announcement",
-    value: "wrappedDecorator",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong: "a project decorator that calls Controller loses the boundary",
-  },
-  {
-    dimension: "announcement",
-    value: "wrappedWithArgument",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a project decorator that hands its argument to Controller loses the boundary and the route path with it",
-  },
-  {
-    dimension: "announcement",
-    value: "composedDecorator",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "applyDecorators(Controller(...)), which NestJS documents as the way to compose, loses the boundary",
-  },
   {
     dimension: "method",
     value: "arrowProperty",

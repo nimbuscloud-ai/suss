@@ -27,6 +27,14 @@ export interface AnnounceShapeSpec {
   bodyKey: string;
 }
 
+export const ANNOUNCEMENTS: Announcement[] = [
+  "bareDecorator",
+  "aliasedImport",
+  "wrappedDecorator",
+  "wrappedWithArgument",
+  "composedDecorator",
+];
+
 export const SIMPLEST_ANNOUNCEMENT: Omit<AnnounceShapeSpec, "bodyKey"> = {
   announcement: "bareDecorator",
   method: "method",
