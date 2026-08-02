@@ -30,7 +30,7 @@ import {
   isProfiling,
 } from "./profile.js";
 
-export { deriveOnDemand } from "./onDemand.js";
+export { deriveOnDemand, type OnDemandRules } from "./onDemand.js";
 export {
   type EvaluationProfile,
   formatProfile,
@@ -581,13 +581,47 @@ export function evaluate(db: Database, rules: Rule[]): Database {
   }
 }
 
-function runRules(db: Database, rules: Rule[]): Database {
+/**
+ * What a rule set is called and how it stratifies, worked out once. A
+ * store evaluating after every wave of facts runs the same array
+ * thousands of times, and re-deriving these each time charges every
+ * question for the size of the rule set.
+ */
+interface RuleSetShape {
+  signature: string;
+  name: string;
+  derivedRelations: string[];
+  strata: Rule[][];
+}
+
+const shapes = new WeakMap<Rule[], RuleSetShape>();
+
+function shapeOf(rules: Rule[]): RuleSetShape {
+  const known = shapes.get(rules);
+  if (known !== undefined) {
+    return known;
+  }
   // The relations a rule set derives name it well enough to tell two apart
   // in a report, and stay readable in a way the rule JSON does not.
   const derivedRelations = [...new Set(rules.map((r) => r.head.relation))];
-  const ruleSetName = [...derivedRelations].sort().join(", ");
+  const shape: RuleSetShape = {
+    signature: JSON.stringify(rules),
+    name: [...derivedRelations].sort().join(", "),
+    derivedRelations,
+    strata: stratify(rules),
+  };
+  shapes.set(rules, shape);
+  return shape;
+}
+
+function runRules(db: Database, rules: Rule[]): Database {
+  const {
+    signature,
+    name: ruleSetName,
+    derivedRelations,
+    strata,
+  } = shapeOf(rules);
   chargeEvaluation(ruleSetName);
-  const signature = JSON.stringify(rules);
   const states = statesFor(db);
   const state: RuleSetState = states.get(signature) ?? {
     marks: null,
@@ -611,7 +645,7 @@ function runRules(db: Database, rules: Rule[]): Database {
   // what the strata below it just derived.
   const marks = canResume(rules, state) ? state.marks : undefined;
 
-  for (const stratum of stratify(rules)) {
+  for (const stratum of strata) {
     let delta = new Map<string, Tuple[]>();
     const derivedHere = new Set(stratum.map((r) => r.head.relation));
 
