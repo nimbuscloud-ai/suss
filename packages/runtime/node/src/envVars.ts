@@ -5,7 +5,15 @@
 // Pattern:
 //   process.env.STRIPE_API_KEY     → config-read for "STRIPE_API_KEY"
 //   process.env["FOO"]             → config-read for "FOO"
+//   const { FOO } = process.env     → config-read for "FOO"
 //   process.env.X ?? "default"     → config-read for "X" with defaulted=true
+//
+// The adapter hands access recognizers property accesses and nothing
+// else, so the three spellings are recognized from the one node they
+// all share, `process.env`, by asking what encloses it. A dotted read
+// is enclosed by the property access naming the variable, a bracket
+// read by an element access, and a destructuring by the declaration it
+// initializes.
 //
 // `process.env` is Node-defined behavior — the env-var channel is part
 // of the deployable unit's runtime-config contract — so this lives
@@ -25,10 +33,13 @@
 // declarations, ECS env blocks, etc.).
 
 import {
+  type BindingElement,
+  type ElementAccessExpression,
   Node as N,
   type Node,
   type PropertyAccessExpression,
   type SourceFile,
+  type VariableDeclaration,
 } from "ts-morph";
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
@@ -55,68 +66,137 @@ export interface EnvVarRecognizerOptions {
   instanceName?: string;
 }
 
-function recognizeProcessEnvRead(
-  access: unknown,
-  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
-  instanceName: string,
-): Effect[] | null {
-  const node = access as PropertyAccessExpression;
-  if (!N.isPropertyAccessExpression(node)) {
-    return null;
-  }
-  // The shape we want: process.env.X (a chain of two property accesses
-  // where the inner is `process.env` and the outer is the var name).
-  const envExpr = node.getExpression();
-  if (!N.isPropertyAccessExpression(envExpr)) {
-    return null;
-  }
-  if (envExpr.getName() !== "env") {
-    return null;
-  }
-  const root = envExpr.getExpression();
-  if (!N.isIdentifier(root) || root.getText() !== "process") {
-    return null;
-  }
+/** One variable a program reads, before it becomes an effect. */
+interface EnvRead {
+  name: string;
+  defaulted: boolean;
+  /** The node the read is anchored to, for line numbers. */
+  node: Node;
+}
 
-  const varName = node.getName();
-  if (varName.length === 0) {
-    return null;
+/**
+ * How an effect names the read. All three spellings reach the same
+ * variable, so all three are named the same way: a consumer grouping
+ * reads of one variable should not have to parse an index argument or
+ * a binding pattern to see that it is looking at one channel.
+ */
+const readName = (name: string): string => `process.env.${name}`;
+
+/** Whether a node is the `process.env` object itself. */
+function isProcessEnv(node: Node): node is PropertyAccessExpression {
+  if (!N.isPropertyAccessExpression(node) || node.getName() !== "env") {
+    return false;
   }
+  const root = node.getExpression();
+  return N.isIdentifier(root) && root.getText() === "process";
+}
 
-  // Detect the `?? "fallback"` pattern to mark defaulted reads. The
-  // node's parent is the BinaryExpression when this applies.
-  const parent = node.getParent();
-  const defaulted =
-    parent !== undefined && isNullishCoalescingWith(parent, node);
+/** `process.env.NAME`, where the property names the variable. */
+function dottedRead(node: PropertyAccessExpression): EnvRead[] {
+  if (!isProcessEnv(node.getExpression())) {
+    return [];
+  }
+  return [{ name: node.getName(), defaulted: isDefaultedAt(node), node }];
+}
 
+/**
+ * `process.env["NAME"]`, where the index names the variable. An index
+ * the pack cannot read back as a literal names a variable nothing can
+ * pair against, so it reports nothing rather than a guess.
+ */
+function bracketRead(access: ElementAccessExpression): EnvRead[] {
+  const argument = access.getArgumentExpression();
+  if (
+    argument === undefined ||
+    !(
+      N.isStringLiteral(argument) || N.isNoSubstitutionTemplateLiteral(argument)
+    )
+  ) {
+    return [];
+  }
+  const name = argument.getLiteralValue();
+  if (name.length === 0) {
+    return [];
+  }
+  return [{ name, defaulted: isDefaultedAt(access), node: access }];
+}
+
+/** The variable one element of `const { A, B: c } = process.env` names. */
+function bindingRead(element: BindingElement): EnvRead[] {
+  if (element.getDotDotDotToken() !== undefined) {
+    return [];
+  }
+  const named = element.getPropertyNameNode() ?? element.getNameNode();
+  if (!(N.isIdentifier(named) || N.isStringLiteral(named))) {
+    return [];
+  }
+  const name = N.isIdentifier(named)
+    ? named.getText()
+    : named.getLiteralValue();
+  if (name.length === 0) {
+    return [];
+  }
   return [
     {
-      type: "interaction",
-      binding: runtimeConfigBinding({
-        recognition: "@suss/runtime-node",
-        deploymentTarget,
-        instanceName,
-      }),
-      callee: node.getText(),
-      interaction: {
-        class: "config-read",
-        name: varName,
-        defaulted,
-      },
+      name,
+      // A binding default supplies the value the variable is missing,
+      // which is what `??` does for the other two spellings.
+      defaulted: element.getInitializer() !== undefined,
+      node: element,
     },
   ];
+}
+
+/** Every variable `const { ... } = process.env` names. */
+function destructuredReads(declaration: VariableDeclaration): EnvRead[] {
+  const pattern = declaration.getNameNode();
+  if (!N.isObjectBindingPattern(pattern)) {
+    return [];
+  }
+  return pattern.getElements().flatMap(bindingRead);
+}
+
+/**
+ * The reads spelled through the `process.env` object rather than
+ * through a property of it. Both put the variable name somewhere the
+ * dotted form does not: in an index argument, or in a binding pattern.
+ */
+function readsThroughEnvObject(envNode: PropertyAccessExpression): EnvRead[] {
+  const parent = envNode.getParent();
+  if (N.isElementAccessExpression(parent)) {
+    return bracketRead(parent);
+  }
+  if (N.isVariableDeclaration(parent)) {
+    return destructuredReads(parent);
+  }
+  return [];
+}
+
+/**
+ * Every variable a property access reads off `process.env`. The walk
+ * visits both nodes of `process.env.NAME`, so each spelling is
+ * recognized from exactly one of them and the dotted read is reported
+ * once.
+ */
+function envReadsAt(node: Node): EnvRead[] {
+  if (!N.isPropertyAccessExpression(node)) {
+    return [];
+  }
+  return isProcessEnv(node) ? readsThroughEnvObject(node) : dottedRead(node);
+}
+
+function isDefaultedAt(node: Node): boolean {
+  const parent = node.getParent();
+  return parent !== undefined && isNullishCoalescingWith(parent, node);
 }
 
 function isNullishCoalescingWith(parent: Node, child: Node): boolean {
   if (!N.isBinaryExpression(parent)) {
     return false;
   }
-  const op = parent.getOperatorToken().getKind();
-  // SyntaxKind.QuestionQuestionToken === 61 in TS 5.x. Avoid importing
-  // the SyntaxKind enum just for this — string-equality on the token
-  // text is robust to TS version drift and clearer for readers.
+  // String-equality on the token text rather than the SyntaxKind enum,
+  // which renumbers between TypeScript releases.
   if (parent.getOperatorToken().getText() !== "??") {
-    void op;
     return false;
   }
   // Make sure WE are on the left of the ?? (the env read), not the
@@ -126,40 +206,59 @@ function isNullishCoalescingWith(parent: Node, child: Node): boolean {
   return parent.getLeft() === child;
 }
 
+function configReadEffect(
+  read: EnvRead,
+  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
+  instanceName: string,
+): Effect {
+  return {
+    type: "interaction",
+    binding: runtimeConfigBinding({
+      recognition: "@suss/runtime-node",
+      deploymentTarget,
+      instanceName,
+    }),
+    callee: readName(read.name),
+    interaction: {
+      class: "config-read",
+      name: read.name,
+      defaulted: read.defaulted,
+    },
+  };
+}
+
+function recognizeProcessEnvRead(
+  access: unknown,
+  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
+  instanceName: string,
+): Effect[] | null {
+  const reads = envReadsAt(access as Node);
+  if (reads.length === 0) {
+    return null;
+  }
+  return reads.map((read) =>
+    configReadEffect(read, deploymentTarget, instanceName),
+  );
+}
+
 /**
- * Walk PropertyAccessExpression nodes for `process.env.X` reads
- * inside a source file. Used by tests and by downstream consumers
- * that want to enumerate env-var reads outside the recognizer
- * dispatch (rare). Most consumers should let the adapter wire the
- * recognizer via the pack.
+ * Walk a source file for every `process.env` read, in all three
+ * spellings. Used by tests and by downstream consumers that want to
+ * enumerate env-var reads outside the recognizer dispatch (rare). Most
+ * consumers should let the adapter wire the recognizer via the pack.
  */
 export function findProcessEnvReads(
   sourceFile: SourceFile,
 ): Array<{ name: string; defaulted: boolean; line: number }> {
   const out: Array<{ name: string; defaulted: boolean; line: number }> = [];
   sourceFile.forEachDescendant((node) => {
-    if (!N.isPropertyAccessExpression(node)) {
-      return;
+    for (const read of envReadsAt(node)) {
+      out.push({
+        name: read.name,
+        defaulted: read.defaulted,
+        line: read.node.getStartLineNumber(),
+      });
     }
-    const envExpr = node.getExpression();
-    if (!N.isPropertyAccessExpression(envExpr)) {
-      return;
-    }
-    if (envExpr.getName() !== "env") {
-      return;
-    }
-    const root = envExpr.getExpression();
-    if (!N.isIdentifier(root) || root.getText() !== "process") {
-      return;
-    }
-    const parent = node.getParent();
-    const defaulted =
-      parent !== undefined && isNullishCoalescingWith(parent, node);
-    out.push({
-      name: node.getName(),
-      defaulted,
-      line: node.getStartLineNumber(),
-    });
   });
   return out;
 }

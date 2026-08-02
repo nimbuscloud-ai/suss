@@ -21,7 +21,8 @@
           "client",
           "worker",
           "library",
-          "caller"
+          "caller",
+          "module-init"
         ]
       },
       "location": {

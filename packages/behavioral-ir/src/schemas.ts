@@ -50,6 +50,15 @@ export const CodeUnitKindSchema = z.enum([
    * `library`-kind provider summaries by `package + exportPath`.
    */
   "caller",
+  /**
+   * What a module does when it is first imported, rather than what any
+   * function in it does when called. One per source file, produced when
+   * the module's top-level statements carry behavior a pack recognized
+   * — most often a service reading its configuration once at load.
+   * Consumer side: it reads channels other units declare, and offers
+   * none of its own.
+   */
+  "module-init",
 ]);
 
 export const ComparisonOpSchema = z.enum([

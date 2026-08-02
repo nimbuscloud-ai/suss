@@ -77,10 +77,12 @@ import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { ResolutionStore } from "./facts/store.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
 import { endLineOf, startLineOf } from "./lines.js";
+import { moduleInitSummary } from "./moduleInit.js";
 import {
   type ClosureFacts,
   deriveBoundaryEffects,
 } from "./resolve/boundaryEffects.js";
+import { runAccessRecognizersAtModuleScope } from "./resolve/invocationEffects.js";
 import { expandReachableClosure } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
@@ -1300,6 +1302,21 @@ function extractFromSourceFile(
 
   for (const tally of gatedIn) {
     tally.unitsInGatedFiles += unitsWalkedHere;
+  }
+
+  // What the module itself does when it loads, which no unit body
+  // contains. Run once per file rather than per pack, from the same
+  // aggregated recognizers the unit bodies use, because module scope
+  // belongs to the module and not to whichever pack got there first.
+  const moduleScope = moduleInitSummary(
+    sourceFile,
+    runAccessRecognizersAtModuleScope(sourceFile, allAccessRecognizers).map(
+      (recognized) => recognized.effect,
+    ),
+    options,
+  );
+  if (moduleScope !== null) {
+    summaries.push(moduleScope);
   }
 
   return summaries;

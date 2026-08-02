@@ -65,6 +65,31 @@ export function isDescentStop(
 }
 
 /**
+ * Should a walk of the module's own initialization treat `node` as a
+ * hard stop?
+ *
+ * The rule is stricter than `isDescentStop` because the question is
+ * different. Inside a unit, a nested arrow is a callback the unit
+ * itself runs, so its behavior is the unit's. At module scope, a
+ * function is a value being defined rather than code being run: the
+ * body of `const read = () => process.env.PORT` executes when somebody
+ * calls `read`, not when the module loads. So does a class member. Both
+ * are summarized where they run, by discovery or by the
+ * reachable-closure pass, and stopping here keeps the module from
+ * claiming behavior that is not its own.
+ */
+export function isModuleScopeStop(node: Node): boolean {
+  return (
+    Node.isFunctionDeclaration(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isArrowFunction(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isClassDeclaration(node) ||
+    Node.isClassExpression(node)
+  );
+}
+
+/**
  * Does reaching `node` from `func` cross (or land on) a nested
  * function-expression / arrow scope?
  *
