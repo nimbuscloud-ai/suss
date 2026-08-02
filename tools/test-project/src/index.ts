@@ -1,16 +1,21 @@
-// The ts-morph Project tests parse fixture source with.
+// The ts-morph Projects tests parse fixture source with.
 //
 // Tests used to construct their own, and 28 different option sets grew up
 // across the suite. A test whose target or module resolution differs from
 // what the adapter configures is reading a language the tool never sees,
 // so a divergence in the adapter can pass every test. The options below
 // are the ones the adapter picks for a codebase that ships no tsconfig,
-// which is the only set suss itself chooses; a test in the adapter
-// asserts the two still agree.
+// which is the only set suss itself chooses; a test in the adapter fails
+// when the two stop agreeing.
 //
-// The project is reused across calls because a fresh one costs about
-// 70ms, almost all of it parsing lib.d.ts, and the suite asked for one
-// per test.
+// There are two projects because suss reads two kinds of codebase: one
+// that hands it no tsconfig, and one whose tsconfig turns strictness on.
+// What the checker says a declared value holds differs between them, so a
+// test about nullability has to say which it means.
+//
+// Each project is reused across calls. A fresh one costs about 70ms,
+// nearly all of it parsing the default libraries, and the suite created
+// one per test.
 
 import {
   ModuleKind,
@@ -35,51 +40,68 @@ export const testCompilerOptions: CompilerOptions = {
   jsx: 4, // ReactJSX, so .jsx and .tsx parse without configuration
 };
 
-let recycled: Project | undefined;
+let lenient: Project | undefined;
+let strict: Project | undefined;
 
 /**
  * An empty in-memory Project reading fixture source the way suss reads a
- * codebase. Everything an earlier caller wrote is gone, including files
- * written straight to the file system, so a caller sees what a fresh
- * project would give it. A caller that keeps its project past the next
- * call gets a ts-morph error off the removed source file rather than a
- * wrong answer.
+ * codebase that ships no tsconfig. Everything an earlier caller wrote is
+ * gone, including files written straight to the file system, so a caller
+ * sees what a fresh project would give it. A caller that keeps its
+ * project past the next call gets a ts-morph error off the removed source
+ * file rather than a wrong answer.
  */
 export function createTestProject(): Project {
-  if (recycled === undefined) {
-    recycled = new Project({
-      useInMemoryFileSystem: true,
-      compilerOptions: testCompilerOptions,
-    });
-    makeTypesRoot(recycled);
-    return recycled;
-  }
+  lenient = lenient ?? newProject({});
+  return empty(lenient);
+}
 
-  for (const sourceFile of recycled.getSourceFiles()) {
-    recycled.removeSourceFile(sourceFile);
+/**
+ * The same, for a codebase whose own tsconfig turns strictness on. Reach
+ * for it when the test is about what the checker says a value holds,
+ * since only strictNullChecks makes it say `undefined`.
+ */
+export function createStrictTestProject(): Project {
+  strict = strict ?? newProject({ strict: true });
+  return empty(strict);
+}
+
+function newProject(overrides: CompilerOptions): Project {
+  const project = new Project({
+    useInMemoryFileSystem: true,
+    compilerOptions: { ...testCompilerOptions, ...overrides },
+  });
+  makeTypesRoot(project);
+  return project;
+}
+
+/** Take a project back to how it looked before anybody wrote to it. */
+function empty(project: Project): Project {
+  for (const sourceFile of project.getSourceFiles()) {
+    project.removeSourceFile(sourceFile);
   }
-  const host = recycled.getFileSystem();
+  const host = project.getFileSystem();
   // The default libraries live outside the enumerable file system, so
   // emptying the root does not cost the reuse.
   for (const entry of host.readDirSync("/")) {
     host.deleteSync(entry.name);
   }
-  makeTypesRoot(recycled);
+  makeTypesRoot(project);
   // Removing a file and writing a new one at the same path resets its
   // version to zero, and the language service then reads the version as
-  // "unchanged" and answers off the file that is gone. Callers name
-  // their fixtures the same handful of paths, so this happens
-  // constantly; without the flush, `user.id` resolves against the
-  // previous test's `user`.
-  recycled.getLanguageService().compilerObject.cleanupSemanticCache();
-  return recycled;
+  // "unchanged" and answers off the file that is gone. Callers name their
+  // fixtures the same handful of paths, so this happens constantly;
+  // without the flush, `user.id` resolves against the previous test's
+  // `user`.
+  project.getLanguageService().compilerObject.cleanupSemanticCache();
+  return project;
 }
 
 /**
  * The compiler enumerates the @types root while resolving a package that
  * ships its declarations separately, and an in-memory directory only
- * exists once something makes it. A checkout has this directory, so
- * every project here has it too.
+ * exists once something makes it. A checkout has this directory, so every
+ * project here has it too.
  */
 function makeTypesRoot(project: Project): void {
   project.getFileSystem().mkdirSync("/node_modules/@types");

@@ -1,7 +1,7 @@
 import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { createTestProject } from "@suss/test-project";
+import { createStrictTestProject, createTestProject } from "@suss/test-project";
 
 import { extractShape } from "./shapes.js";
 
@@ -29,7 +29,9 @@ function parseExpression(src: string): Expression {
  * Returns the initializer of the final `const _ = <src>;` line.
  */
 function parseExpressionWithPrelude(prelude: string, src: string): Expression {
-  const project = createTestProject();
+  // A prelude declares the values the expression reads, and what the
+  // checker says a declared value holds turns on strictNullChecks.
+  const project = createStrictTestProject();
   const sf = project.createSourceFile("in.ts", `${prelude}\nconst _ = ${src};`);
   const statements = sf.getVariableStatements();
   const decl = statements[statements.length - 1].getDeclarations()[0];
