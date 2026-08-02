@@ -1,0 +1,12 @@
+{
+  "fetch": "WHATWG Fetch: the global request function",
+  "method": "WHATWG Fetch: RequestInit key naming the HTTP method",
+  "ok": "WHATWG Fetch: Response field, true for a 2xx status",
+  "status": "WHATWG Fetch: Response field holding the status code",
+  "json": "WHATWG Fetch: Response method reading the body as JSON",
+  "text": "WHATWG Fetch: Response method reading the body as text",
+  "body": "WHATWG Fetch: Response field holding the body stream",
+  "headers": "WHATWG Fetch: Response field holding the headers",
+  "global": "suss: marker for a name that is not imported from a module",
+  "statusCode": "suss: response field the binding carries"
+}

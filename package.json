@@ -60,7 +60,8 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "check:diagrams": "node scripts/checkDiagrams.mjs",
-    "check:style": "node scripts/checkStyle.mjs"
+    "check:style": "node scripts/checkStyle.mjs",
+    "check:vocabulary": "node scripts/checkPackVocabulary.mjs"
   },
   "lint-staged": {
     "*": [

@@ -1,0 +1,11 @@
+{
+  "express": "express: the default export, called to build an app",
+  "Router": "express: the router factory",
+  "status": "express: response method setting the status code",
+  "json": "express: response method sending a JSON body",
+  "send": "express: response method sending a body",
+  "sendStatus": "express: response method sending a bare status",
+  "redirect": "express: response method sending a redirect",
+  "request": "suss: input role",
+  "next": "suss: input role"
+}

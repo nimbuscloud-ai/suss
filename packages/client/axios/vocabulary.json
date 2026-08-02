@@ -1,0 +1,16 @@
+{
+  "axios": "axios: the default export",
+  "create": "axios: factory method building a configured instance",
+  "get": "axios: instance method, HTTP GET",
+  "post": "axios: instance method, HTTP POST",
+  "put": "axios: instance method, HTTP PUT",
+  "delete": "axios: instance method, HTTP DELETE",
+  "patch": "axios: instance method, HTTP PATCH",
+  "head": "axios: instance method, HTTP HEAD",
+  "options": "axios: instance method, HTTP OPTIONS",
+  "data": "axios: AxiosResponse field holding the body",
+  "status": "axios: AxiosResponse field holding the status code",
+  "headers": "axios: AxiosResponse field holding the headers",
+  "body": "suss: response field the binding carries",
+  "statusCode": "suss: response field the binding carries"
+}

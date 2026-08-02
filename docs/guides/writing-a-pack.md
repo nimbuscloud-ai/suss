@@ -62,6 +62,28 @@ export default myPack;
 
 Export both a named function and a default for dynamic imports from the CLI.
 
+**Only name what your library defines.** Every identifier a pack hardcodes has to be one the library the pack is about declares. A project's own wrapper goes in the pack's options instead, which the CLI fills from `-f <pack>=config.json`:
+
+```typescript
+export interface MyPackOptions {
+  /** Decorators this project composes the library's own into. */
+  classDecorators?: string[];
+}
+
+export function myPack(options: MyPackOptions = {}): PatternPack {
+  return {
+    // ...
+    classDecorators: ["Controller", ...(options.classDecorators ?? [])],
+  };
+}
+```
+
+A name a specific codebase chose gives every other user false matches, and it inflates coverage measured against that codebase, because discovery finds those units by name rather than by pattern. Declare each identifier the pack names in `vocabulary.json` at the package root, mapped to where in the library it comes from, and `npm run check:vocabulary` will hold you to it:
+
+```json
+{ "Controller": "@nestjs/common: class decorator marking a REST controller" }
+```
+
 **Shared discovery shape for HTTP servers.** Most Node HTTP frameworks register handlers the same way (`app.get(path, handler)` / `router.post(...)`) with variation only in the library name, the method list, and whether the library exports a default or named factory. `@suss/extractor` exposes `httpRouteDiscovery` so packs don't have to hand-write the repeated `registrationCall` + `bindingExtraction` shape per import name:
 
 ```typescript

@@ -1,0 +1,5 @@
+{
+  "putEvents": "AWS SDK v3: EventBridgeClient operation name",
+  "send": "AWS SDK v3: the client method a command is dispatched through",
+  "eventbridge": "AWS transport name, Amazon EventBridge"
+}

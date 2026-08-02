@@ -1,0 +1,9 @@
+{
+  "apigateway": "pack name, Amazon API Gateway",
+  "apiGateway": "API Gateway: extension namespace on an OpenAPI document",
+  "v2": "API Gateway: payload format version 2.0",
+  "$default": "API Gateway: catch-all route key on an HTTP API",
+  "authorization": "API Gateway: authorizer configuration key",
+  "throttle": "API Gateway: stage throttling configuration key",
+  "mock": "API Gateway: integration type answering without a backend"
+}

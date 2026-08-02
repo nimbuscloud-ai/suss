@@ -1,0 +1,9 @@
+{
+  "apollo": "pack name, Apollo Server",
+  "ApolloServer": "@apollo/server: the server constructor",
+  "resolvers": "@apollo/server: ApolloServer config key holding the resolver map",
+  "parent": "graphql-js: first positional argument of a resolver",
+  "args": "graphql-js: second positional argument of a resolver",
+  "context": "graphql-js: third positional argument of a resolver",
+  "info": "graphql-js: fourth positional argument of a resolver"
+}

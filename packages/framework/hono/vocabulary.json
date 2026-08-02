@@ -1,0 +1,14 @@
+{
+  "hono": "pack name, Hono",
+  "Hono": "hono: the app constructor",
+  "OpenAPIHono": "@hono/zod-openapi: the app constructor",
+  "createRoute": "@hono/zod-openapi: the route definition helper",
+  "method": "@hono/zod-openapi: createRoute config key",
+  "path": "@hono/zod-openapi: createRoute config key",
+  "json": "hono: context method sending a JSON body",
+  "text": "hono: context method sending a text body",
+  "body": "hono: context method sending a raw body",
+  "redirect": "hono: context method sending a redirect",
+  "notFound": "hono: context method sending a 404",
+  "context": "suss: input role"
+}
