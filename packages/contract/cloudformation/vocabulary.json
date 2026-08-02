@@ -33,6 +33,7 @@
   "Ref": "CloudFormation: intrinsic resolving a logical id",
   "ref": "CloudFormation: the Ref intrinsic, lower cased",
   "template": "suss: marker for a value the template states",
+  "globals": "suss: marker for a value the SAM Globals section states",
   "library": "suss: marker for a value a library states",
   "container": "AWS deployment target, a container runtime",
   "platform": "suss: marker for a value the platform states",

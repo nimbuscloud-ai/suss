@@ -45,9 +45,11 @@ import { openApiToSummaries } from "@suss/contract-openapi";
 import {
   type CloudFormationResource,
   type CloudFormationTemplate,
+  inheritedEnvVars,
   loadCloudFormationTemplate,
   parseHandler,
   refTarget,
+  resourcesWithGlobals,
 } from "@suss/manifest-aws";
 
 import { buildMessageBusSummaries } from "./messageBus.js";
@@ -93,7 +95,9 @@ export function cloudFormationToSummaries(
   options: CloudFormationToSummariesOptions = {},
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
-  const resources = template.Resources ?? {};
+  // Every walk below reads properties, and a SAM section can supply any
+  // of them, so the section is applied once here rather than per walk.
+  const resources = resourcesWithGlobals(template);
 
   // 1. Inline OpenAPI walk.
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -134,7 +138,13 @@ export function cloudFormationToSummaries(
   //    injection) an env block emits one runtime-config provider
   //    summary. The pairing checker scopes code reads to these
   //    runtimes via metadata.codeScope.
-  summaries.push(...buildRuntimeConfigSummaries(resources, sourceFile));
+  summaries.push(
+    ...buildRuntimeConfigSummaries(
+      resources,
+      sourceFile,
+      inheritedEnvVars(template),
+    ),
+  );
 
   // 5. Message-bus walk: AWS::SQS::Queue resources emit queue provider
   //    summaries; Lambdas with SAM Events:SQS or AWS::Lambda::EventSourceMapping

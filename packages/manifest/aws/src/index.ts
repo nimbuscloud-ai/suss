@@ -15,6 +15,7 @@ export {
   type AppSyncResolverBinding,
   readAppSyncResolvers,
 } from "./appsyncResolvers.js";
+export { inheritedEnvVars, resourcesWithGlobals } from "./globals.js";
 export {
   type ParsedHandler,
   parseHandler,

@@ -19,6 +19,7 @@ Runs in `checkAll()` after pairing. Consumes runtime-config providers (with `met
 - **File-path matching is prefix, not equality.** A shared utility file under multiple Lambdas pairs against all of them — multi-attribution. Same-file env-var reads are correctly attributed to every runtime that includes the file in scope.
 - **Config-read effects are the v0 preferred form.** `@suss/runtime-node`'s env-var recognizer emits them. The checker falls back to legacy invocation-arg scanning (looking for the literal pattern `process.env.X` in call arguments) only when no `config-read` effects exist anywhere in the summary set. The fallback is increasingly rare as more code is re-extracted with the node runtime pack.
 - **`envVarUnused` only fires for template-declared vars.** Vars marked `source: "platform"` (auto-injected by the runtime — `AWS_REGION`, `LAMBDA_TASK_ROOT`) are part of the runtime contract and never flagged as unused, even when no code reads them. The stub layer must populate `envVarSources` for this to work.
+- **A var marked `source: "globals"` is judged once for the document that declares it.** A SAM `Globals` section hands the same variable to every function in the template, so a function that does not read it is not a defect; the question is whether anything in the document reads it. One warning comes out per (document, variable) when nothing does, and none at all when no runtime in the document matched any code, since a document that paired nothing cannot say a variable goes unread.
 
 ## Sibling modules
 
