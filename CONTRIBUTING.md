@@ -27,9 +27,9 @@ npm run dogfood    # run suss over its own 38 packages
 
 CI runs the same checks on every PR — they must pass before merge.
 
-`npm run dogfood` is the widest check here: it runs discovery, extraction, resolution and the checker over the whole monorepo rather than a fixture. It fails when an export a package declares produces no summary, and it writes the per-package counts to `scripts/dogfood-baseline.json`, which is committed. CI then runs `npm run check:dogfood`, which fails when a count came out below the committed one.
+`npm run dogfood` is the widest check here: it runs discovery, extraction, resolution and the checker over the whole monorepo rather than a fixture. It fails when an export a package declares produces no summary, and it writes the per-package counts to `scripts/dogfood-baseline.json`, which is committed. CI then runs `npm run check:dogfood`, which fails when a count came out below the committed one. Each package gets three counts: `exports` for the summaries describing its declared public surface, `internal` for the ones behind that surface, and `consumers` for its calls into other packages.
 
-So if your change deletes exports, moves them between packages, or narrows a recognizer that was over-firing, run `npm run dogfood` and commit the refreshed baseline. The drop shows up in your pull request diff, which is where a reviewer agrees it was meant. Counts going up need no refresh. `docs/internal/dogfooding.md` has the full table of what fails and what to do.
+So if your change deletes exports, moves them between packages, inlines a private helper, or narrows a recognizer that was over-firing, run `npm run dogfood` and commit the refreshed baseline. The drop shows up in your pull request diff, which is where a reviewer agrees it was meant. Counts going up need no refresh. `docs/internal/dogfooding.md` has the full table of what fails and what to do.
 
 A pre-commit hook (husky + lint-staged) runs `biome check --write` on staged files. A pre-push hook runs the full test suite with coverage. Don't bypass either with `--no-verify` unless you've coordinated with a maintainer.
 

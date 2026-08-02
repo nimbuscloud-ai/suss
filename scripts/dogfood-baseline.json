@@ -2,199 +2,238 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "providers": 987,
+    "exports": 202,
+    "internal": 785,
     "consumers": 278,
     "pairs": 270
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "providers": 379,
+      "exports": 25,
+      "internal": 354,
       "consumers": 22
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "providers": 18,
+      "exports": 18,
+      "internal": 0,
       "consumers": 0
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "providers": 160,
+      "exports": 26,
+      "internal": 134,
       "consumers": 31
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
-      "providers": 14,
+      "exports": 2,
+      "internal": 12,
       "consumers": 7
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "providers": 70,
+      "exports": 10,
+      "internal": 60,
       "consumers": 107
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
-      "providers": 3,
+      "exports": 2,
+      "internal": 1,
       "consumers": 8
     },
     "packages/client/axios": {
       "name": "@suss/client-axios",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 10
     },
     "packages/client/web": {
       "name": "@suss/client-web",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 6
     },
     "packages/contract/appsync": {
       "name": "@suss/contract-appsync",
-      "providers": 48,
+      "exports": 2,
+      "internal": 46,
       "consumers": 2
     },
     "packages/contract/aws-apigateway": {
       "name": "@suss/contract-aws-apigateway",
-      "providers": 18,
+      "exports": 2,
+      "internal": 16,
       "consumers": 3
     },
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
-      "providers": 40,
+      "exports": 5,
+      "internal": 35,
       "consumers": 18
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
-      "providers": 25,
+      "exports": 6,
+      "internal": 19,
       "consumers": 2
     },
     "packages/contract/intent": {
       "name": "@suss/contract-intent",
-      "providers": 4,
+      "exports": 3,
+      "internal": 1,
       "consumers": 2
     },
     "packages/contract/openapi": {
       "name": "@suss/contract-openapi",
-      "providers": 21,
+      "exports": 2,
+      "internal": 19,
       "consumers": 1
     },
     "packages/contract/prisma": {
       "name": "@suss/contract-prisma",
-      "providers": 8,
+      "exports": 2,
+      "internal": 6,
       "consumers": 1
     },
     "packages/contract/storybook": {
       "name": "@suss/contract-storybook",
-      "providers": 5,
+      "exports": 1,
+      "internal": 4,
       "consumers": 1
     },
     "packages/datalog": {
       "name": "@suss/datalog",
-      "providers": 48,
+      "exports": 17,
+      "internal": 31,
       "consumers": 0
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "providers": 11,
+      "exports": 8,
+      "internal": 3,
       "consumers": 0
     },
     "packages/framework/apollo": {
       "name": "@suss/framework-apollo",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 6
     },
     "packages/framework/aws-eventbridge": {
       "name": "@suss/framework-aws-eventbridge",
-      "providers": 6,
+      "exports": 2,
+      "internal": 4,
       "consumers": 3
     },
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
-      "providers": 6,
+      "exports": 4,
+      "internal": 2,
       "consumers": 7
     },
     "packages/framework/aws-sqs": {
       "name": "@suss/framework-aws-sqs",
-      "providers": 8,
+      "exports": 2,
+      "internal": 6,
       "consumers": 4
     },
     "packages/framework/drizzle": {
       "name": "@suss/framework-drizzle",
-      "providers": 17,
+      "exports": 2,
+      "internal": 15,
       "consumers": 1
     },
     "packages/framework/express": {
       "name": "@suss/framework-express",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 3
     },
     "packages/framework/fastify": {
       "name": "@suss/framework-fastify",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 3
     },
     "packages/framework/hono": {
       "name": "@suss/framework-hono",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 5
     },
     "packages/framework/nestjs-graphql": {
       "name": "@suss/framework-nestjs-graphql",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 2
     },
     "packages/framework/nestjs-rest": {
       "name": "@suss/framework-nestjs-rest",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 2
     },
     "packages/framework/nextjs": {
       "name": "@suss/framework-nextjs",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 2
     },
     "packages/framework/prisma": {
       "name": "@suss/framework-prisma",
-      "providers": 8,
+      "exports": 2,
+      "internal": 6,
       "consumers": 1
     },
     "packages/framework/react": {
       "name": "@suss/framework-react",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 2
     },
     "packages/framework/react-router": {
       "name": "@suss/framework-react-router",
-      "providers": 2,
+      "exports": 2,
+      "internal": 0,
       "consumers": 2
     },
     "packages/framework/ts-rest": {
       "name": "@suss/framework-ts-rest",
-      "providers": 3,
+      "exports": 2,
+      "internal": 1,
       "consumers": 4
     },
     "packages/intent-ir": {
       "name": "@suss/intent-ir",
-      "providers": 1,
+      "exports": 1,
+      "internal": 0,
       "consumers": 2
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "providers": 19,
+      "exports": 19,
+      "internal": 0,
       "consumers": 0
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
-      "providers": 5,
+      "exports": 5,
+      "internal": 0,
       "consumers": 0
     },
     "packages/resolution": {
       "name": "@suss/resolution",
-      "providers": 0,
+      "exports": 0,
+      "internal": 0,
       "consumers": 3
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
-      "providers": 20,
+      "exports": 10,
+      "internal": 10,
       "consumers": 5
     }
   }
