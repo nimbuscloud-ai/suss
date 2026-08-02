@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/ir-core/src/boundaryKey.ts": {
+  "src/boundaryKey.ts": {
     "lines": {
       "total": 25,
       "covered": 25,
@@ -57,7 +57,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/ir-core/src/channel.ts": {
+  "src/channel.ts": {
     "lines": {
       "total": 8,
       "covered": 8,
@@ -83,7 +83,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/ir-core/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 8,
       "covered": 8,
@@ -109,7 +109,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/ir-core/src/schemas.ts": {
+  "src/schemas.ts": {
     "lines": {
       "total": 16,
       "covered": 16,
@@ -135,7 +135,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/ir-core/src/suppressions.ts": {
+  "src/suppressions.ts": {
     "lines": {
       "total": 43,
       "covered": 43,
@@ -161,7 +161,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/ir-core/src/typeShapeMatch.ts": {
+  "src/typeShapeMatch.ts": {
     "lines": {
       "total": 90,
       "covered": 90,

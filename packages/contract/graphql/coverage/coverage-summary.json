@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/contract/graphql/src/documents.ts": {
+  "src/documents.ts": {
     "lines": {
       "total": 146,
       "covered": 141,
@@ -57,7 +57,7 @@
       "pct": 87.65
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/contract/graphql/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 47,
       "covered": 44,
@@ -83,7 +83,7 @@
       "pct": 76.92
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/contract/graphql/src/typeShape.ts": {
+  "src/typeShape.ts": {
     "lines": {
       "total": 8,
       "covered": 8,

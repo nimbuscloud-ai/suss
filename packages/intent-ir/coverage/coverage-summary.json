@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/intent-ir/src/findings.ts": {
+  "src/findings.ts": {
     "lines": {
       "total": 5,
       "covered": 5,
@@ -57,7 +57,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/intent-ir/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 0,
       "covered": 0,
@@ -83,7 +83,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/intent-ir/src/schema.ts": {
+  "src/schema.ts": {
     "lines": {
       "total": 18,
       "covered": 18,
@@ -109,7 +109,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/intent-ir/src/summary.ts": {
+  "src/summary.ts": {
     "lines": {
       "total": 30,
       "covered": 30,

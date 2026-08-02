@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/contract/cloudformation/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 334,
       "covered": 291,
@@ -57,7 +57,7 @@
       "pct": 79.41
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/contract/cloudformation/src/messageBus.ts": {
+  "src/messageBus.ts": {
     "lines": {
       "total": 222,
       "covered": 204,
@@ -83,7 +83,7 @@
       "pct": 87.04
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/contract/cloudformation/src/runtimeConfig.ts": {
+  "src/runtimeConfig.ts": {
     "lines": {
       "total": 93,
       "covered": 81,

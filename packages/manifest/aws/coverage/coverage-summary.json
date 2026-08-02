@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/manifest/aws/src/appsyncResolvers.ts": {
+  "src/appsyncResolvers.ts": {
     "lines": {
       "total": 99,
       "covered": 95,
@@ -57,7 +57,7 @@
       "pct": 76.11
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/manifest/aws/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 0,
       "covered": 0,
@@ -83,7 +83,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/manifest/aws/src/serverlessFunctions.ts": {
+  "src/serverlessFunctions.ts": {
     "lines": {
       "total": 54,
       "covered": 47,
@@ -109,7 +109,7 @@
       "pct": 68.62
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/manifest/aws/src/templateLoader.ts": {
+  "src/templateLoader.ts": {
     "lines": {
       "total": 24,
       "covered": 24,
