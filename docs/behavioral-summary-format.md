@@ -97,7 +97,7 @@ A boundary binding connects a code unit to an API endpoint. It has three layers,
 {
   "transport": "http",
   "semantics": { "name": "rest", "method": "GET", "path": "/users/:id" },
-  "recognition": "core"
+  "recognition": "ts-rest"
 }
 ```
 

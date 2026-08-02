@@ -34,6 +34,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
+import { evaluatePackHealth } from "../packages/adapter/typescript/dist/index.js";
 import { pairSummaries } from "../packages/checker/dist/index.js";
 import { evaluateInvariants } from "./dogfoodInvariants.mjs";
 import {
@@ -159,7 +160,14 @@ async function extractOne(pkg) {
   if (result.kind === "error") {
     return { kind: "error", name, message: result.message };
   }
-  return { kind: "ok", name, pkg, tsconfig, summaries: result.summaries };
+  return {
+    kind: "ok",
+    name,
+    pkg,
+    tsconfig,
+    summaries: result.summaries,
+    report: result.report,
+  };
 }
 
 const concurrency = Math.max(2, Math.min(packages.length, os.cpus().length));
@@ -366,6 +374,31 @@ if (failed.length > 0) {
 // These hold for any source suss runs over, so the run itself is where
 // they belong: anyone refreshing the baseline after deleting an export
 // finds out here, without needing a git ref to compare against.
+
+// Pack health is the same idea aimed one level down. The invariants
+// ask whether the run lost track of something it can see; these ask
+// whether any one pack in it stopped working, which a total hides. They
+// report and never fail, because a pack that finds nothing is often a
+// package that has nothing of that kind in it.
+
+console.log("\n=== Pack health ===");
+const unhealthy = extractResults
+  .filter((r) => r.kind === "ok" && r.report !== null)
+  .flatMap((r) =>
+    evaluatePackHealth(r.report)
+      .filter((check) => check.violations.length > 0)
+      .map((check) => ({ pkg: r.name, check })),
+  );
+
+if (unhealthy.length === 0) {
+  console.log("  ✓ every pack produced what its own counts say it should");
+} else {
+  for (const { pkg, check } of unhealthy) {
+    for (const violation of check.violations) {
+      console.log(`  ${pkg}: ${check.name}: ${violation.detail}`);
+    }
+  }
+}
 
 console.log("\n=== Invariants ===");
 const invariants = evaluateInvariants({

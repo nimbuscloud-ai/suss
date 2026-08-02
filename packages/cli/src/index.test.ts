@@ -95,7 +95,7 @@ describe("extract — ts-rest", () => {
     expect(getUser.identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "GET", path: "/users/:id" },
-      recognition: "core",
+      recognition: "ts-rest",
     });
 
     // Inputs: single destructured {params} mapped to pathParams
@@ -195,7 +195,7 @@ describe("extract — ts-rest", () => {
     // Declared contract preserved in metadata (under the HTTP namespace)
     const http = getUser.metadata?.http as Record<string, unknown> | undefined;
     expect(http?.declaredContract).toMatchObject({
-      framework: "core",
+      framework: "ts-rest",
       responses: expect.arrayContaining([
         expect.objectContaining({ statusCode: 200 }),
         expect.objectContaining({ statusCode: 404 }),

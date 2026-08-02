@@ -13,11 +13,21 @@ import type { ExtractionReport, PackFunnel } from "@suss/adapter-typescript";
 function pack(overrides: Partial<PackFunnel> = {}): PackFunnel {
   return {
     pack: "express",
+    version: "1.0.0",
+    discovers: true,
+    recognizes: false,
     gates: ["express"],
     unresolvedGates: [],
     candidateFiles: 3,
     unitsDiscovered: 2,
+    unitsInGatedFiles: 0,
+    effectsRecognized: 0,
+    unitsClaimed: 2,
+    selfCollisions: 0,
     summariesProduced: 2,
+    summariesBound: 2,
+    providerSummaries: 2,
+    summariesWithBehavior: 2,
     ...overrides,
   };
 }
@@ -83,6 +93,68 @@ describe("formatExtractionReport", () => {
     expect(output).toContain("102 files import @apollo/client");
     expect(output).toContain("not installed here");
     expect(output).toContain("Install this project's dependencies");
+  });
+
+  // A project that does not use a package has that package missing from
+  // node_modules too, so an unresolved gate on its own is evidence of
+  // nothing. `firstEmptyStage` requires a candidate file before it
+  // blames resolution; this is the copy that choice selects, and the
+  // advice it must not give.
+  it("does not blame a missing package when no file asked for it", () => {
+    const output = formatExtractionReport(
+      report({
+        summaries: 0,
+        emptyStage: "candidateFiles",
+        packs: [
+          pack({
+            gates: ["express"],
+            unresolvedGates: ["express"],
+            candidateFiles: 0,
+            unitsDiscovered: 0,
+            summariesProduced: 0,
+          }),
+        ],
+      }),
+    );
+
+    expect(output).toContain("No file imports anything");
+    expect(output).not.toContain("not installed here");
+    expect(output).not.toContain("Install this project's dependencies");
+  });
+
+  // A recogniser pack finds no boundary and writes no summary, so the
+  // discovery rows would print three zeros against its name and read as
+  // a pack that had failed. What it did is attach effects to units
+  // other packs found.
+  it("shows what a recogniser pack contributed", () => {
+    const output = formatExtractionReport(
+      report({
+        summaries: 1,
+        emptyStage: null,
+        packs: [
+          pack({
+            pack: "prisma",
+            discovers: false,
+            recognizes: true,
+            gates: ["@prisma/client"],
+            candidateFiles: 4,
+            unitsDiscovered: 0,
+            unitsInGatedFiles: 7,
+            effectsRecognized: 3,
+            summariesProduced: 0,
+            summariesBound: 0,
+            providerSummaries: 0,
+            summariesWithBehavior: 0,
+          }),
+        ],
+      }),
+    );
+
+    expect(output).toContain("7  unit bodies prisma could look inside");
+    expect(output).toContain("3  effects prisma recognized");
+    // The rows that would read as a broken pack stay out.
+    expect(output).not.toContain("boundaries recognized by prisma");
+    expect(output).not.toContain("summaries from prisma");
   });
 
   it("says no file imported anything the pack looks for", () => {

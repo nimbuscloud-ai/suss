@@ -54,6 +54,7 @@ import {
 import { readContract, readContractForClientCall } from "./contract.js";
 import {
   buildExtractionReport,
+  commonDirectoryOf,
   createPackTallies,
   type ExtractionReport,
   type PackTally,
@@ -86,6 +87,7 @@ import type {
   BehavioralSummary,
   BoundaryBinding,
   CodeUnitKind,
+  Effect,
   Predicate,
   ValueRef,
 } from "@suss/behavioral-ir";
@@ -751,6 +753,7 @@ function resolveContractField(
     callSite.callExpression,
     callSite.methodName,
     pack.contractReading,
+    pack.name,
   );
   if (result === null || result.boundaryBinding === null) {
     return undefined;
@@ -773,28 +776,59 @@ function resolveContractField(
  * top-level and sub-unit extraction so a recognizer fires regardless
  * of which pack discovered the enclosing function.
  */
+/**
+ * A recognizer that reports what it found to its owner's tally.
+ *
+ * Aggregation flattens every pack's recognizers into one list and the
+ * pack name is gone by the time one fires, so the only place the owner
+ * is still known is here. Without this a pack made only of recognizers
+ * has no count of its own anywhere in the run, and a pack that quietly
+ * stopped matching looks exactly like one whose library the project
+ * does not use.
+ */
+function reportingTo<TCtx>(
+  recognize: (node: unknown, ctx: TCtx) => Effect[] | null,
+  tally: PackTally,
+): (node: unknown, ctx: TCtx) => Effect[] | null {
+  return (node, ctx) => {
+    const effects = recognize(node, ctx);
+    if (effects !== null) {
+      tally.effectsRecognized += effects.length;
+    }
+    return effects;
+  };
+}
+
 function collectInvocationRecognizers(
   frameworks: PatternPack[],
+  tallies?: Map<string, PackTally>,
 ): InvocationRecognizer[] {
   const out: InvocationRecognizer[] = [];
   for (const pack of frameworks) {
     if (pack.invocationRecognizers === undefined) {
       continue;
     }
-    out.push(...pack.invocationRecognizers);
+    const tally = tallies?.get(pack.name);
+    for (const recognize of pack.invocationRecognizers) {
+      out.push(tally === undefined ? recognize : reportingTo(recognize, tally));
+    }
   }
   return out;
 }
 
 function collectAccessRecognizers(
   frameworks: PatternPack[],
+  tallies?: Map<string, PackTally>,
 ): AccessRecognizer[] {
   const out: AccessRecognizer[] = [];
   for (const pack of frameworks) {
     if (pack.accessRecognizers === undefined) {
       continue;
     }
-    out.push(...pack.accessRecognizers);
+    const tally = tallies?.get(pack.name);
+    for (const recognize of pack.accessRecognizers) {
+      out.push(tally === undefined ? recognize : reportingTo(recognize, tally));
+    }
   }
   return out;
 }
@@ -852,8 +886,18 @@ function extractFromSourceFile(
   // on Prisma calls inside an Express handler regardless of which pack
   // discovered the handler. Same threading model as the cross-pack
   // claim dedup below.
-  const allInvocationRecognizers = collectInvocationRecognizers(frameworks);
-  const allAccessRecognizers = collectAccessRecognizers(frameworks);
+  const allInvocationRecognizers = collectInvocationRecognizers(
+    frameworks,
+    tallies,
+  );
+  const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
+  // Packs whose gate selected this file. A recognizer only ever runs
+  // inside a unit some pack discovered, so the number of unit bodies
+  // walked in this file is what a recognizer pack had the chance to
+  // match against, and that is the count its own result is worth
+  // comparing to.
+  const gatedIn: PackTally[] = [];
+  let unitsWalkedHere = 0;
   // Shared context for the discovering pack's `subUnits` hook, used here
   // only to compute descent barriers (which nested functions are
   // sub-units). Sub-unit *summaries* are synthesized later in
@@ -867,7 +911,11 @@ function extractFromSourceFile(
   // gives React components; `-f react-router -f react` gives RR-labeled
   // components. Without this the same source function would produce two
   // independent summaries at different recognition labels.
-  const claimed = new Set<string>();
+  //
+  // Which pack claimed a key is kept too. A later pack losing a unit to
+  // an earlier one is precedence working; a pack losing a unit to
+  // itself is two of its own patterns reading the same code.
+  const claimed = new Map<string, string>();
 
   for (const pack of frameworks) {
     // Funnel accounting: this pack was applicable to this file, and
@@ -879,6 +927,7 @@ function extractFromSourceFile(
     const summariesBefore = summaries.length;
     if (tally !== undefined) {
       tally.candidateFiles += 1;
+      gatedIn.push(tally);
     }
 
     const units = discoverUnits(sourceFile, pack.discovery, resolution);
@@ -929,10 +978,18 @@ function extractFromSourceFile(
       // The same identity discovery deduped on. One pack claiming a
       // unit keeps a later pack from claiming it again.
       const claimKey = unitDedupKey(unit);
-      if (claimed.has(claimKey)) {
+      const claimant = claimed.get(claimKey);
+      if (claimant !== undefined) {
+        if (claimant === pack.name && tally !== undefined) {
+          tally.selfCollisions += 1;
+        }
         continue;
       }
-      claimed.add(claimKey);
+      claimed.set(claimKey, pack.name);
+      unitsWalkedHere += 1;
+      if (tally !== undefined) {
+        tally.unitsClaimed += 1;
+      }
       const barriers = computeSubUnitBarriers(unit, pack, subUnitCtx);
       const raw = extractCodeStructure(
         unit,
@@ -1110,7 +1167,7 @@ function extractFromSourceFile(
         }
       } else if (pack.contractReading !== undefined) {
         // Provider: attempt contract reading
-        const contract = readContract(unit, pack.contractReading);
+        const contract = readContract(unit, pack.contractReading, pack.name);
         if (contract !== null) {
           raw.declaredContract = contract.declaredContract;
           if (contract.boundaryBinding !== null) {
@@ -1167,6 +1224,10 @@ function extractFromSourceFile(
       tally.unitsDiscovered += units.length;
       tally.summariesProduced += summaries.length - summariesBefore;
     }
+  }
+
+  for (const tally of gatedIn) {
+    tally.unitsInGatedFiles += unitsWalkedHere;
   }
 
   return summaries;
@@ -1839,6 +1900,7 @@ export function createTypeScriptAdapter(
           project,
           config.frameworks,
           config.extractorOptions,
+          tallies,
         ),
       );
       // Transitive-closure pass: every function reachable through a static
@@ -1870,8 +1932,11 @@ export function createTypeScriptAdapter(
                 projectFileSet,
                 closureFacts,
                 {
-                  invocation: collectInvocationRecognizers(config.frameworks),
-                  access: collectAccessRecognizers(config.frameworks),
+                  invocation: collectInvocationRecognizers(
+                    config.frameworks,
+                    tallies,
+                  ),
+                  access: collectAccessRecognizers(config.frameworks, tallies),
                 },
               ),
             )
@@ -1927,8 +1992,11 @@ export function createTypeScriptAdapter(
             tallies,
             filesInProject: tsconfigFileList?.length ?? null,
             filesWalked: sourceFiles.length,
-            summaries: enriched.length,
+            summaries: enriched,
             tsConfigFilePath: config.tsConfigFilePath,
+            projectRoot: commonDirectoryOf(
+              sourceFiles.map((f) => f.getFilePath()),
+            ),
           }),
         );
       }
@@ -1960,6 +2028,7 @@ function synthesizeSubUnits(
   project: Project,
   frameworks: PatternPack[],
   options?: ExtractorOptions,
+  tallies?: Map<string, PackTally>,
 ): BehavioralSummary[] {
   const packByRecognition = new Map<string, PatternPack>();
   for (const pack of frameworks) {
@@ -1968,8 +2037,11 @@ function synthesizeSubUnits(
   // Sub-units run through the same recognizer set as top-level
   // discovered units — a Prisma call inside a React useEffect body
   // should still emit interaction(class: "storage-access").
-  const allInvocationRecognizers = collectInvocationRecognizers(frameworks);
-  const allAccessRecognizers = collectAccessRecognizers(frameworks);
+  const allInvocationRecognizers = collectInvocationRecognizers(
+    frameworks,
+    tallies,
+  );
+  const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
 
   const synthesized: BehavioralSummary[] = [];
   const subUnitCtx = createTsSubUnitContext();

@@ -9,7 +9,9 @@ import {
   computeContentHash,
   createProjectWithoutTsconfig,
   createTypeScriptAdapter,
+  evaluatePackHealth,
   findNearestTsconfig,
+  formatPackHealth,
 } from "@suss/adapter-typescript";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 
@@ -400,6 +402,18 @@ export async function extract(
     if (options.explain === true || report.summaries === 0) {
       process.stderr.write(formatExtractionReport(report));
     }
+
+    // A run that produced plenty can still have one pack in it that
+    // produced nothing, and that pack is invisible in a total. What
+    // the person running this can act on prints whenever it fires;
+    // what only a pack's author can fix waits for `--explain`. Neither
+    // changes the exit code.
+    process.stderr.write(
+      formatPackHealth(
+        evaluatePackHealth(report),
+        options.explain === true ? ["run", "pack"] : ["run"],
+      ),
+    );
   }
 
   if (options.failOnEmpty === true && summaries.length === 0) {
@@ -499,8 +513,26 @@ export function formatExtractionReport(report: ExtractionReport): string {
         ? `files importing ${listOf(pack.gates)}`
         : `files ${pack.pack} looked at`;
     rows.push([pack.candidateFiles, imports]);
+
+    // A pack made only of recognisers finds no boundary of its own and
+    // writes no summary, so the discovery rows below would print three
+    // zeros and read as a broken pack. What it contributes is effects
+    // attached to units other packs found, which is what to show.
+    if (!pack.discovers && pack.recognizes) {
+      rows.push([
+        pack.unitsInGatedFiles,
+        `unit bodies ${pack.pack} could look inside`,
+      ]);
+      rows.push([pack.effectsRecognized, `effects ${pack.pack} recognized`]);
+      continue;
+    }
+
     rows.push([pack.unitsDiscovered, `boundaries recognized by ${pack.pack}`]);
     rows.push([pack.summariesProduced, `summaries from ${pack.pack}`]);
+    rows.push([
+      pack.summariesWithBehavior,
+      `of those, summaries saying what ${pack.pack} does`,
+    ]);
   }
 
   const width = Math.max(...rows.map(([count]) => String(count).length));

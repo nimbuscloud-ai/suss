@@ -351,6 +351,7 @@ function extractEndpointContract(
 export function readContract(
   unit: DiscoveredUnit,
   pattern: ContractPattern,
+  framework: string,
 ): ContractReadResult | null {
   // Step 1: Find the .router() call enclosing this handler
   const routerInfo = findRouterCall(unit);
@@ -379,11 +380,7 @@ export function readContract(
       continue;
     }
 
-    return extractEndpointContract(
-      endpointInit,
-      pattern,
-      pattern.discovery.importModule.split("/").pop() ?? "unknown",
-    );
+    return extractEndpointContract(endpointInit, pattern, framework);
   }
 
   return null;
@@ -404,6 +401,7 @@ export function readContractForClientCall(
   callExpression: Node,
   methodName: string,
   pattern: ContractPattern,
+  framework: string,
 ): ContractReadResult | null {
   // Walk from client.getUser() → client → find the variable declaration
   const callee = Node.isCallExpression(callExpression)
@@ -465,11 +463,7 @@ export function readContractForClientCall(
       continue;
     }
 
-    return extractEndpointContract(
-      endpointInit,
-      pattern,
-      pattern.discovery.importModule.split("/").pop() ?? "unknown",
-    );
+    return extractEndpointContract(endpointInit, pattern, framework);
   }
 
   return null;

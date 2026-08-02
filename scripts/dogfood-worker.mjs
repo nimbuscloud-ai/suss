@@ -2,6 +2,7 @@
 // and posts back the summaries. One worker per @suss/* package, scheduled
 // by the parent with a CPU-core-sized concurrency cap.
 
+import { createHash } from "node:crypto";
 import { parentPort, workerData } from "node:worker_threads";
 
 import { createTypeScriptAdapter } from "../packages/adapter/typescript/dist/index.js";
@@ -44,13 +45,26 @@ const pack = {
   },
 };
 
+// This pack is written here rather than published, so there is no
+// release to take a version from. Its own definition is the thing that
+// changes, so hashing that gives the cache a stamp that moves whenever
+// editing this file would change what a run produces.
+pack.version = createHash("sha256")
+  .update(JSON.stringify(pack))
+  .digest("hex")
+  .slice(0, 12);
+
 try {
+  let report = null;
   const adapter = createTypeScriptAdapter({
     tsConfigFilePath: pkg.tsconfig,
     frameworks: [pack],
+    onExtractionReport: (r) => {
+      report = r;
+    },
   });
   const summaries = await adapter.extractAll();
-  parentPort.postMessage({ kind: "ok", summaries });
+  parentPort.postMessage({ kind: "ok", summaries, report });
 } catch (err) {
   parentPort.postMessage({ kind: "error", message: err.message });
 }
