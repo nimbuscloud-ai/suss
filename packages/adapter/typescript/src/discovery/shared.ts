@@ -196,9 +196,38 @@ export function isFunctionRoot(node: Node): boolean {
   );
 }
 
-/** Extract FunctionRoot from something that might be a function or wrap one. */
+/**
+ * The declaration that is the function, for a name the language lets be
+ * written more than once.
+ *
+ * An overload signature is the same function written again with its
+ * body left off, and TypeScript hands back every spelling under one
+ * name. Putting facts down under each of them leaves two candidates
+ * where the language has one function, and the store answers with
+ * neither.
+ *
+ * A function a declaration file declares has no body anywhere, and the
+ * declaration is all there is of the function, so it speaks for itself.
+ */
+export function declarationCarryingTheBody(declaration: Node): Node {
+  if (
+    !Node.isFunctionDeclaration(declaration) &&
+    !Node.isMethodDeclaration(declaration)
+  ) {
+    return declaration;
+  }
+  return declaration.getImplementation() ?? declaration;
+}
+
+/**
+ * The function root this node is, or null when it is not one. A name
+ * written more than once answers with the one declaration that carries
+ * the body, so two spellings of one function do not become two units.
+ */
 export function toFunctionRoot(node: Node): FunctionRoot | null {
-  return isFunctionRoot(node) ? (node as FunctionRoot) : null;
+  return isFunctionRoot(node)
+    ? (declarationCarryingTheBody(node) as FunctionRoot)
+    : null;
 }
 
 /** Walk to the nearest enclosing function-shaped node, or null if none. */

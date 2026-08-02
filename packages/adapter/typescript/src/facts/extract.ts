@@ -10,9 +10,20 @@
 // to ts-morph Node so a resolved answer comes back as a Node the rest
 // of the adapter can use.
 
-import { type Expression, Node, type SourceFile, SyntaxKind } from "ts-morph";
+import {
+  type BindingElement,
+  type Expression,
+  Node,
+  type ObjectBindingPattern,
+  type SourceFile,
+  SyntaxKind,
+  type Symbol as TsSymbol,
+} from "ts-morph";
 
-import { isFunctionRoot } from "../discovery/shared.js";
+import {
+  declarationCarryingTheBody,
+  isFunctionRoot,
+} from "../discovery/shared.js";
 import { isWrittenAgain, writesToBinding } from "./assignments.js";
 
 import type { Database } from "@suss/datalog";
@@ -27,10 +38,12 @@ export interface NodeTable {
   byId: Map<string, Node>;
   /** Functions whose facts are already emitted, per store. */
   seenFunctions: Set<Node>;
+  /** Binding elements whose facts are already emitted, per store. */
+  seenBindings: Set<Node>;
 }
 
 export function createNodeTable(): NodeTable {
-  return { byId: new Map(), seenFunctions: new Set() };
+  return { byId: new Map(), seenFunctions: new Set(), seenBindings: new Set() };
 }
 
 export function nodeId(node: Node): string {
@@ -420,6 +433,87 @@ function emitBindingValues(
 }
 
 /**
+ * What a name taken off a container by destructuring holds.
+ *
+ * `const { handler } = holder` reads a property off a container, which
+ * is what `holder.handler` says, so it is written down the same way and
+ * the property rule answers for both unchanged.
+ *
+ * A default (`const { handler = fallback } = holder`) is a second value
+ * the name can hold, and the code says nothing about which one it will
+ * be. Both go down. Where the container does hold the property and it
+ * is a different function, two candidates reach the name and the store
+ * answers with neither, which is the answer.
+ *
+ * Only an object pattern is written down. An array pattern binds by
+ * position, and no recognizer asks about one yet.
+ */
+function emitBindingElementFacts(
+  db: Database,
+  table: NodeTable,
+  element: BindingElement,
+): string {
+  const id = nodeId(element);
+  table.byId.set(id, element);
+  // One pattern is read from every name it binds, and the container
+  // behind it would be walked whole each time it is asked about.
+  if (table.seenBindings.has(element)) {
+    return id;
+  }
+  table.seenBindings.add(element);
+
+  const pattern = element.getParent();
+  const container = Node.isObjectBindingPattern(pattern)
+    ? containerOfBindingPattern(pattern)
+    : undefined;
+  if (container !== undefined) {
+    const property = element.getPropertyNameNode() ?? element.getNameNode();
+    fact(
+      db,
+      "readsProperty",
+      id,
+      emitValue(db, table, container),
+      property.getText(),
+    );
+  }
+
+  const fallback = element.getInitializer();
+  if (fallback !== undefined) {
+    fact(db, "binds", id, emitValue(db, table, fallback));
+  }
+  return id;
+}
+
+/** The expression an object pattern takes its properties apart from. */
+function containerOfBindingPattern(
+  pattern: ObjectBindingPattern,
+): Expression | undefined {
+  const declaration = pattern.getParent();
+  return Node.isVariableDeclaration(declaration)
+    ? declaration.getInitializer()
+    : undefined;
+}
+
+/**
+ * What a name refers to. `{ Panel }` writes one identifier where two
+ * things meet: the property the object holds, and the local the value
+ * comes from. Asking the name for its symbol answers with the property,
+ * and following that arrives back where it started, so a shorthand is
+ * asked for the local instead.
+ */
+function referencedSymbol(nameNode: Node): TsSymbol | undefined {
+  const parent = nameNode.getParent();
+  if (
+    parent !== undefined &&
+    Node.isShorthandPropertyAssignment(parent) &&
+    parent.getNameNode() === nameNode
+  ) {
+    return parent.getValueSymbol();
+  }
+  return nameNode.getSymbol();
+}
+
+/**
  * binds(reference, declaration) for an identifier or property access.
  * The declaration may be an import specifier (rules follow it through
  * the imports relation), a variable declaration, or a function.
@@ -436,12 +530,13 @@ function emitReferenceFacts(
     ? reference.getNameNode()
     : reference;
 
-  const symbol = nameNode.getSymbol();
+  const symbol = referencedSymbol(nameNode);
   if (symbol === undefined) {
     return;
   }
 
-  for (const declaration of symbol.getDeclarations()) {
+  for (const spelling of symbol.getDeclarations()) {
+    const declaration = declarationCarryingTheBody(spelling);
     const declarationId = nodeId(declaration);
     table.byId.set(declarationId, declaration);
 
@@ -478,6 +573,12 @@ function emitReferenceFacts(
 
     if (Node.isParameterDeclaration(declaration)) {
       fact(db, "binds", referenceId, declarationId);
+      continue;
+    }
+
+    if (Node.isBindingElement(declaration)) {
+      fact(db, "binds", referenceId, declarationId);
+      emitBindingElementFacts(db, table, declaration);
       continue;
     }
 
@@ -702,7 +803,8 @@ export function extractFileFacts(
   const filePath = sourceFile.getFilePath();
 
   for (const [name, declarations] of sourceFile.getExportedDeclarations()) {
-    for (const declaration of declarations) {
+    for (const spelling of declarations) {
+      const declaration = declarationCarryingTheBody(spelling);
       if (isFunctionRoot(declaration)) {
         const id = nodeId(declaration);
         table.byId.set(id, declaration);
@@ -717,6 +819,17 @@ export function extractFileFacts(
         table.byId.set(declarationId, declaration);
         fact(db, "exportsAs", filePath, name, declarationId);
         emitBindingValues(db, table, declaration);
+        continue;
+      }
+
+      if (Node.isBindingElement(declaration)) {
+        fact(
+          db,
+          "exportsAs",
+          filePath,
+          name,
+          emitBindingElementFacts(db, table, declaration),
+        );
         continue;
       }
 

@@ -600,6 +600,144 @@ describe("resolveCallable", () => {
   });
 });
 
+describe("a name a destructuring pattern binds", () => {
+  it("reads the name off the container the pattern took it apart from", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        const impl = async () => "destructured";
+        const holder = { handler: impl };
+        const { handler } = holder;
+        export const route = handler;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "route")),
+    ).toContain('"destructured"');
+  });
+
+  it("follows a name the pattern renamed on the way out", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        const impl = async () => "renamed";
+        const { handler: local } = { handler: impl };
+        export const route = local;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "route")),
+    ).toContain('"renamed"');
+  });
+
+  it("takes the default where the container holds nothing under the name", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        const fallback = async () => "the default";
+        const holder: { handler?: () => Promise<string> } = {};
+        const { handler = fallback } = holder;
+        export const route = handler;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "route")),
+    ).toContain("the default");
+  });
+
+  it("answers with neither where a default sits beside a value the container holds", () => {
+    // Which of the two the name ends up holding is a run-time
+    // question, and the code says nothing about it.
+    const project = projectOf({
+      "/mod.ts": `
+        const fallback = async () => "the default";
+        const supplied = async () => "the supplied one";
+        const holder = { handler: supplied };
+        const { handler = fallback } = holder;
+        export const route = handler;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      store.resolveCallable(exportValue(project, "/mod.ts", "route")),
+    ).toBeNull();
+  });
+
+  it("follows a name a pattern bound in another module", () => {
+    const project = projectOf({
+      "/impl.ts": `
+        const built = { handler: async () => "across modules" };
+        export const { handler } = built;
+      `,
+      "/mod.ts": `
+        import { handler } from "./impl";
+        export const route = handler;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "route")),
+    ).toContain('"across modules"');
+  });
+});
+
+describe("a function written more than once", () => {
+  it("follows an overloaded function to the declaration carrying the body", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        async function impl(): Promise<string>;
+        async function impl(arg: number): Promise<string>;
+        async function impl(arg?: number): Promise<string> {
+          return "overloaded";
+        }
+        export const handler = impl;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+    ).toContain('"overloaded"');
+  });
+
+  it("reads a function a declaration file declares, which has no body anywhere", () => {
+    const project = projectOf({
+      "/impl.d.ts": "export declare function handler(): Promise<string>;",
+      "/mod.ts": `
+        import { handler } from "./impl";
+        export const route = handler;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      store.resolveCallable(exportValue(project, "/mod.ts", "route")),
+    ).not.toBeNull();
+  });
+});
+
+describe("a shorthand property", () => {
+  it("reads the shorthand back to the function the local name holds", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        const handler = async () => "shorthand";
+        const routes = { handler };
+        export const route = routes.handler;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "route")),
+    ).toContain('"shorthand"');
+  });
+});
+
 describe("a query rooted at a wrapped value", () => {
   /** The argument at `position` of the first call to `callee` in `file`. */
   function argumentOf(
