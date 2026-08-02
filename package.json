@@ -46,6 +46,7 @@
     "typecheck": "turbo typecheck",
     "check:self": "turbo check:self",
     "check:publish": "node scripts/preparePublish.mjs --check",
+    "check:coverage": "node scripts/checkCoverageBaseline.mjs",
     "check:coverage-packages": "node scripts/checkCoveragePackages.mjs",
     "dogfood": "node scripts/dogfood.mjs",
     "check:dogfood": "node scripts/checkDogfoodBaseline.mjs",

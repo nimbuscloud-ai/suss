@@ -13,15 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # fetch-depth: 0 gives the threshold check access to the
-          # main-branch coverage baselines via `git show origin/main:...`.
           # The default GITHUB_TOKEN has contents: write for same-repo
-          # pushes (main + same-repo PR branches).
+          # pushes, which is what the dogfood baseline refresh on main
+          # needs. fetch-depth: 0 gives that refresh a history to rebase
+          # onto when a concurrent push beats it to the remote.
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           # For pull_request events, checkout defaults to a detached
-          # merge commit; we need the real head ref so the auto-commit
-          # pushes back to the PR branch instead of a dangling SHA.
+          # merge commit, whose tree is the branch merged into main. Both
+          # baseline gates ask whether a tree holds up the numbers
+          # committed alongside it, so they have to run on the tree the
+          # author committed rather than on a merge nobody wrote.
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
       - uses: actions/setup-node@v4
@@ -109,78 +111,71 @@ jobs:
       - name: Dogfood count check
         run: npm run check:dogfood
 
-      - name: Regenerate coverage badges
-        run: node scripts/generate-coverage-badges.mjs
+      # vitest writes coverage keyed by absolute path and minified. This
+      # step rewrites it into the form the repo commits, so the check
+      # below reads the same shape on both sides of the comparison.
+      - name: Normalize coverage and regenerate badges
+        run: npm run badges
 
-      # On PRs: enforce no coverage degradation vs main. Drift in the
-      # committed coverage files is NOT failed — the auto-commit step
-      # below will push the refresh back to the PR branch. Regressions
-      # (line-coverage % below main's baseline) fail the build here.
-      - name: Coverage regression check (PRs)
-        if: github.event_name == 'pull_request'
-        run: node scripts/check-coverage-threshold.mjs
+      # Fail when a package's line coverage came out below the figure
+      # committed in this tree. Same comparison as the dogfood count
+      # check above, against the same ref, so neither gate can fail on a
+      # package the branch never touched.
+      - name: Coverage floor check
+        run: npm run check:coverage
 
-      # Auto-commit refreshed coverage on any same-repo push (main or
-      # same-repo PR branch). Fork PRs lack write permission; the step
-      # no-ops silently in that case. The `[skip` `ci]` marker in the
-      # commit body suppresses the follow-on CI run — safe because the
-      # regen is deterministic, so a second run would produce no diff
-      # anyway.
+      # Raise the dogfood floor on main so it keeps up with the source.
+      # Counts only ever act as a floor, so a merge that adds exports
+      # leaves the committed number below what a run now sees, and
+      # nothing on a branch refreshes it: the baseline belongs to the
+      # author, because lowering it is how they say a drop was meant.
       #
-      # HUSKY=0 disables the local pre-commit / pre-push hooks the repo
-      # uses for developers; CI has already run its own equivalents
-      # (typecheck, test, lint) earlier in this workflow. Without this,
-      # the bot's `git push` would re-run the full test suite inside the
-      # pre-push hook (wasting ~2 minutes).
+      # This is the only file CI writes back. Coverage summaries and
+      # badges belong to whoever changed the code they measure, and a
+      # bot that rewrote them on main both raced the merge button and
+      # overwrote a figure a reviewer had already read.
       #
-      # The push is non-fast-forward-safe: a concurrent commit from
-      # another workflow could land between our checkout and our push.
-      # We rebase against the remote tip and retry once; if it still
-      # races, we skip silently so the next legitimate push picks up
-      # the drift.
-      - name: Auto-commit refreshed coverage and dogfood baseline
-        if: |
-          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-          (github.event_name == 'pull_request' &&
-           github.event.pull_request.head.repo.full_name == github.repository)
+      # Nothing reads this file from main, so a branch that has not
+      # picked up the raise still passes: `check:dogfood` compares
+      # against the branch's own HEAD.
+      #
+      # HUSKY=0 disables the local pre-commit and pre-push hooks the repo
+      # uses for developers. CI has already run their equivalents
+      # earlier in this workflow, and without it the bot's `git push`
+      # would run the whole test suite again.
+      #
+      # A concurrent push can land between the checkout and the push, so
+      # rebase against the remote tip and retry once. If it still races,
+      # skip: the next push to main picks the raise up.
+      - name: Raise the dogfood floor on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           HUSKY: "0"
         run: |
-          PATHS=(.github/badges/ '**/coverage/coverage-summary.json')
+          BASELINE=scripts/dogfood-baseline.json
 
-          # On main the bot raises the dogfood floor so it keeps up with
-          # the source. On a pull request the baseline belongs to the
-          # author, because lowering it is how they say a drop was meant,
-          # and a bot that refreshed it would erase the thing a reviewer
-          # is supposed to see.
-          if [ "${{ github.event_name }}" = "push" ]; then
-            PATHS+=(scripts/dogfood-baseline.json)
-          else
-            git checkout -- scripts/dogfood-baseline.json
-          fi
-
-          if git diff --quiet "${PATHS[@]}"; then
-            echo "No coverage or dogfood drift, skipping auto-commit."
+          if git diff --quiet "$BASELINE"; then
+            echo "Dogfood counts match the committed baseline, nothing to push."
             exit 0
           fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "${PATHS[@]}"
-          git commit -m "chore: refresh coverage summaries, badges, and dogfood baseline [skip ci]"
-          TARGET="${{ github.event.pull_request.head.ref || github.ref_name }}"
+          git add "$BASELINE"
+          git commit -m "chore: raise the dogfood baseline to what a run on main sees [skip ci]"
 
           for attempt in 1 2; do
-            if git push origin "HEAD:$TARGET"; then
-              echo "Pushed refresh on attempt $attempt."
+            if git push origin HEAD:main; then
+              echo "Pushed the raise on attempt $attempt."
               exit 0
             fi
-            echo "Push rejected on attempt $attempt — rebasing and retrying."
-            git fetch origin "$TARGET"
-            git rebase "origin/$TARGET" || {
-              echo "Rebase failed; skipping refresh. The next push will re-trigger."
+            echo "Push rejected on attempt $attempt, rebasing and retrying."
+            git fetch origin main
+            git rebase origin/main || {
+              echo "Rebase failed, skipping. The next push to main re-triggers this."
               exit 0
             }
           done
 
-          echo "Push still rejected after rebase + retry; skipping refresh."
+          echo "Push still rejected after a rebase and a retry, skipping."
           exit 0

@@ -12,7 +12,10 @@
 //   2. generate-coverage-badges.mjs: imported as a function.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
  * Given an absolute path to a coverage-summary.json (vitest's raw
@@ -22,6 +25,31 @@ import { dirname, resolve } from "node:path";
  */
 function packageRootFor(summaryPath) {
   return dirname(dirname(summaryPath));
+}
+
+/**
+ * Turn one of vitest's absolute path keys into a path relative to the
+ * package root.
+ *
+ * The key usually sits under this checkout, so stripping the package
+ * root off the front is enough. It does not when the file came out of a
+ * turbo cache entry that another checkout wrote, because turbo keys its
+ * cache on the source and restores whatever bytes that hash produced,
+ * wherever it was produced. Matching on the package's repo-relative
+ * path catches the key wherever the checkout that wrote it lived.
+ */
+function pathRelativeToPackage(key, pkgAbsPath) {
+  if (key.startsWith(`${pkgAbsPath}${sep}`)) {
+    return key.slice(pkgAbsPath.length + 1);
+  }
+
+  const marker = `${sep}${relative(repoRoot, pkgAbsPath)}${sep}`;
+  const at = key.indexOf(marker);
+  if (at !== -1) {
+    return key.slice(at + marker.length);
+  }
+
+  return key;
 }
 
 export function normalizeSummaryFile(summaryPath) {
@@ -36,12 +64,9 @@ export function normalizeSummaryFile(summaryPath) {
 
   const normalized = {};
   for (const [key, value] of Object.entries(data)) {
-    // Replace absolute paths with relative-to-package-root paths.
-    // "total" and any other non-path keys are kept as-is.
-    const rel = key.startsWith(pkgAbsPath)
-      ? key.slice(pkgAbsPath.length + 1) // strip leading slash
-      : key;
-    normalized[rel] = value;
+    // "total" and any other non-path key has no separator in it, so it
+    // falls through unchanged.
+    normalized[pathRelativeToPackage(key, pkgAbsPath)] = value;
   }
 
   const serialized = `${JSON.stringify(normalized, null, 2)}\n`;

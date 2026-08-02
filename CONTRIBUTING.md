@@ -31,7 +31,11 @@ CI runs the same checks on every PR — they must pass before merge.
 
 So if your change deletes exports, moves them between packages, inlines a private helper, or narrows a recognizer that was over-firing, run `npm run dogfood` and commit the refreshed baseline. The drop shows up in your pull request diff, which is where a reviewer agrees it was meant. Counts going up need no refresh. `docs/internal/dogfooding.md` has the full table of what fails and what to do.
 
-A pre-commit hook (husky + lint-staged) runs `biome check --write` on staged files. A pre-push hook runs the full test suite with coverage. Don't bypass either with `--no-verify` unless you've coordinated with a maintainer.
+Line coverage works the same way. Each package under the coverage gate commits a `coverage/coverage-summary.json`, and CI runs `npm run check:coverage`, which fails when a package's line coverage came out below the figure your commit carries. So if your change lowers coverage on purpose, run `npm run test:badges` and commit the refreshed summaries and badges, and the drop shows up in your diff. Coverage going up needs no refresh, though the pre-push hook asks for one so the badges stay current.
+
+Neither check reads `main`. Both compare a fresh run against the tree it ran on, so a merge landing on `main` while your branch is open cannot fail your build on a package you never opened.
+
+A pre-commit hook (husky + lint-staged) runs `biome check --write` on staged files. A pre-push hook typechecks, runs the full test suite with coverage, and refuses the push when the coverage files no longer match what you committed. Don't bypass either with `--no-verify` unless you've coordinated with a maintainer.
 
 ## Scope of a PR
 
