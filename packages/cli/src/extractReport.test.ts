@@ -92,6 +92,33 @@ describe("formatExtractionReport", () => {
     expect(output).toContain("Install this project's dependencies");
   });
 
+  // A project that does not use a package has that package missing from
+  // node_modules too, so an unresolved gate on its own is evidence of
+  // nothing. `firstEmptyStage` requires a candidate file before it
+  // blames resolution; this is the copy that choice selects, and the
+  // advice it must not give.
+  it("does not blame a missing package when no file asked for it", () => {
+    const output = formatExtractionReport(
+      report({
+        summaries: 0,
+        emptyStage: "candidateFiles",
+        packs: [
+          pack({
+            gates: ["express"],
+            unresolvedGates: ["express"],
+            candidateFiles: 0,
+            unitsDiscovered: 0,
+            summariesProduced: 0,
+          }),
+        ],
+      }),
+    );
+
+    expect(output).toContain("No file imports anything");
+    expect(output).not.toContain("not installed here");
+    expect(output).not.toContain("Install this project's dependencies");
+  });
+
   it("says no file imported anything the pack looks for", () => {
     const output = formatExtractionReport(
       report({

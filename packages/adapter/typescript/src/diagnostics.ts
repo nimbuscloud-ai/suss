@@ -355,7 +355,16 @@ function firstEmptyStage(
   if (args.filesInProject === 0) {
     return "tsconfig";
   }
-  if (packs.some((p) => p.unresolvedGates.length > 0)) {
+  // An uninstalled dependency only explains an empty run when something
+  // in the project asked for it. The pre-filter is what tells the two
+  // apart: it matches on import text, so a file importing a missing
+  // package still counts as a candidate. No candidates and a missing
+  // package together mean the project does not use it, and telling
+  // someone to install it would be advice they cannot act on.
+  const gateFailed = packs.some(
+    (p) => p.unresolvedGates.length > 0 && p.candidateFiles > 0,
+  );
+  if (gateFailed) {
     return "gateResolution";
   }
   if (args.filesWalked === 0 || packs.every((p) => p.candidateFiles === 0)) {

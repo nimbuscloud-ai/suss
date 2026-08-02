@@ -106,7 +106,11 @@ function report(
       summariesProduced: number;
     }
   >,
-  overrides: { filesInProject?: number | null; filesWalked?: number } = {},
+  overrides: {
+    filesInProject?: number | null;
+    filesWalked?: number;
+    projectRoot?: string;
+  } = {},
 ) {
   const tallies = createPackTallies(packs);
   const summaries: BehavioralSummary[] = [];
@@ -127,8 +131,37 @@ function report(
     filesWalked: overrides.filesWalked ?? 5,
     summaries,
     tsConfigFilePath: undefined,
-    projectRoot: undefined,
+    projectRoot: overrides.projectRoot,
   });
+}
+
+/** A throwaway project, with or without `@scope/lib` installed in it. */
+async function tempProject(withDependency: boolean): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "suss-diag-"));
+  await fs.writeFile(
+    path.join(dir, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "bundler",
+      },
+      include: ["**/*.ts"],
+    }),
+  );
+  if (withDependency) {
+    const pkgDir = path.join(dir, "node_modules", "@scope", "lib");
+    await fs.mkdir(pkgDir, { recursive: true });
+    await fs.writeFile(
+      path.join(pkgDir, "package.json"),
+      JSON.stringify({ name: "@scope/lib", types: "index.d.ts" }),
+    );
+    await fs.writeFile(
+      path.join(pkgDir, "index.d.ts"),
+      "export declare const x: number;",
+    );
+  }
+  return path.join(dir, "tsconfig.json");
 }
 
 describe("buildExtractionReport", () => {
@@ -155,6 +188,37 @@ describe("buildExtractionReport", () => {
     const r = report([gatedPack], {
       gated: { candidateFiles: 0, unitsDiscovered: 0, summariesProduced: 0 },
     });
+    expect(r.emptyStage).toBe("candidateFiles");
+  });
+
+  // A missing dependency and a project that never wanted it look the
+  // same from the gate alone, and blaming the gate for the second tells
+  // someone to install a package they do not need. What separates them
+  // is whether any file matched the gate, since the pre-filter matches
+  // on import text and does not care whether the package is there.
+  it("blames the gate when a file asked for a package that is missing", async () => {
+    const root = path.dirname(await tempProject(false));
+    const r = report(
+      [gatedPack],
+      {
+        gated: { candidateFiles: 2, unitsDiscovered: 0, summariesProduced: 0 },
+      },
+      { projectRoot: root },
+    );
+    expect(r.packs[0]?.unresolvedGates).toEqual(["@scope/lib"]);
+    expect(r.emptyStage).toBe("gateResolution");
+  });
+
+  it("blames the gate for nothing when no file asked for the package", async () => {
+    const root = path.dirname(await tempProject(false));
+    const r = report(
+      [gatedPack],
+      {
+        gated: { candidateFiles: 0, unitsDiscovered: 0, summariesProduced: 0 },
+      },
+      { projectRoot: root },
+    );
+    expect(r.packs[0]?.unresolvedGates).toEqual(["@scope/lib"]);
     expect(r.emptyStage).toBe("candidateFiles");
   });
 
@@ -188,34 +252,6 @@ describe("buildExtractionReport", () => {
 });
 
 describe("unresolvedGatesFor", () => {
-  async function tempProject(withDependency: boolean): Promise<string> {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "suss-diag-"));
-    await fs.writeFile(
-      path.join(dir, "tsconfig.json"),
-      JSON.stringify({
-        compilerOptions: {
-          target: "ES2022",
-          module: "ESNext",
-          moduleResolution: "bundler",
-        },
-        include: ["**/*.ts"],
-      }),
-    );
-    if (withDependency) {
-      const pkgDir = path.join(dir, "node_modules", "@scope", "lib");
-      await fs.mkdir(pkgDir, { recursive: true });
-      await fs.writeFile(
-        path.join(pkgDir, "package.json"),
-        JSON.stringify({ name: "@scope/lib", types: "index.d.ts" }),
-      );
-      await fs.writeFile(
-        path.join(pkgDir, "index.d.ts"),
-        "export declare const x: number;",
-      );
-    }
-    return path.join(dir, "tsconfig.json");
-  }
-
   const from = (tsConfigFilePath?: string, projectRoot?: string) =>
     unresolvedGatesFor(["@scope/lib"], { tsConfigFilePath, projectRoot });
 
