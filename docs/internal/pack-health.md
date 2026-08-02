@@ -11,7 +11,9 @@ nothing was looking:
 - A checker pass produced 1,874 findings that were all wrong, because
   a scope match compared everything to everything.
 - A stale cache answered with a previous pack's results, because packs
-  carry no version.
+  carry no version. The CLI now hashes each pack's source into its
+  stamp, so this one is fixed at the loader; what remains is a caller
+  that drives the adapter itself and stamps nothing.
 
 Each of those is a number the run already had. The checks here read
 those numbers back and say when one of them looks like a pack that
@@ -121,18 +123,25 @@ exported by a separate statement. Dedup keeps the first, and the
 surviving summary is named `default` rather than `Panel`. The
 AWS Lambda pack collides with itself the same way.
 
-**No declared version.** Eighteen of the nineteen built-in packs
-declare none. Only `@suss/runtime-node` does.
+**No declared version.** Quiet on any run started through the CLI,
+because the CLI hashes the file each pack was loaded from and folds
+that hash into the pack's stamp. Eighteen of the nineteen built-in
+packs still declare nothing of their own, and only
+`@suss/runtime-node` does, but the loader covers for them.
 
-That last one is correct every time it fires, and it would still be
-the check most likely to get the whole report ignored. Someone running
-`suss extract` cannot version a pack we ship, so printing it on every
-run teaches them to skim past the lines above it. Each check therefore
-says who can act on it. A `run` check found something about the code in
-front of it and prints whenever it fires; a `pack` check found
-something about how a pack was built and waits for `--explain`. The
-dogfood run prints both, because there the pack author is the person
-reading.
+What is left is the case the loader cannot cover: a caller that builds
+the adapter itself and hands it a pack nobody stamped. The dogfood
+worker was doing exactly that, which is how it got caught, and it now
+stamps its synthetic pack with a hash of the pack's own definition.
+
+Even quiet, this is the check most likely to get the whole report
+ignored if it came back. Someone running `suss extract` cannot version
+a pack we ship, so printing it on every run would teach them to skim
+past the lines above it. Each check therefore says who can act on it. A
+`run` check found something about the code in front of it and prints
+whenever it fires; a `pack` check found something about how a pack was
+built and waits for `--explain`. The dogfood run prints both, because
+there the pack author is the person reading.
 
 ## What was measured and dropped
 
