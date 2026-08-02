@@ -49,6 +49,7 @@
     "check:coverage": "node scripts/checkCoverageBaseline.mjs",
     "check:coverage-packages": "node scripts/checkCoveragePackages.mjs",
     "bench": "node scripts/benchmark.mjs",
+    "profile": "node scripts/profile.mjs",
     "dogfood": "node scripts/dogfood.mjs",
     "check:dogfood": "node scripts/checkDogfoodBaseline.mjs",
     "prepare:publish": "node scripts/preparePublish.mjs",

@@ -12,6 +12,7 @@ import {
   type ReturnStatement,
 } from "ts-morph";
 
+import { endLineOf, startLineOf } from "../lines.js";
 import { extractShape } from "../shapes/shapes.js";
 import {
   type ExtractionContext,
@@ -263,8 +264,8 @@ function terminalFromReturnedObject(
       emitEvent: null,
       renderTree: null,
       location: {
-        start: anchor.getStartLineNumber(),
-        end: anchor.getEndLineNumber(),
+        start: startLineOf(anchor),
+        end: endLineOf(anchor),
       },
     },
   };
@@ -315,8 +316,8 @@ export function tryMatchParameterMethodCall(
     emitEvent: null,
     renderTree: null,
     location: {
-      start: node.getStartLineNumber(),
-      end: node.getEndLineNumber(),
+      start: startLineOf(node),
+      end: endLineOf(node),
     },
   };
 
@@ -450,8 +451,8 @@ function buildReturnTerminal(
     emitEvent: null,
     renderTree: null,
     location: {
-      start: locationNode.getStartLineNumber(),
-      end: locationNode.getEndLineNumber(),
+      start: startLineOf(locationNode),
+      end: endLineOf(locationNode),
     },
   };
   // The caller passes either the return statement or the body of a
@@ -515,8 +516,8 @@ function unresolvedTerminal(
     emitEvent: null,
     renderTree: null,
     location: {
-      start: node.getStartLineNumber(),
-      end: node.getEndLineNumber(),
+      start: startLineOf(node),
+      end: endLineOf(node),
     },
   };
 }
@@ -598,8 +599,8 @@ export function tryMatchFunctionCall(
     emitEvent: null,
     renderTree: null,
     location: {
-      start: node.getStartLineNumber(),
-      end: node.getEndLineNumber(),
+      start: startLineOf(node),
+      end: endLineOf(node),
     },
   };
 

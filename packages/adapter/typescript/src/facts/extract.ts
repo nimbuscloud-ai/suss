@@ -24,6 +24,7 @@ import {
   declarationCarryingTheBody,
   isFunctionRoot,
 } from "../discovery/shared.js";
+import { exportedDeclarationsOf } from "../moduleExports.js";
 import { isWrittenAgain, writesToBinding } from "./assignments.js";
 
 import type { Database } from "@suss/datalog";
@@ -802,7 +803,7 @@ export function extractFileFacts(
   extractModuleFacts(db, sourceFile);
   const filePath = sourceFile.getFilePath();
 
-  for (const [name, declarations] of sourceFile.getExportedDeclarations()) {
+  for (const [name, declarations] of exportedDeclarationsOf(sourceFile)) {
     for (const spelling of declarations) {
       const declaration = declarationCarryingTheBody(spelling);
       if (isFunctionRoot(declaration)) {

@@ -51,6 +51,10 @@ import {
 } from "./bootstrap/lazyProjectInit.js";
 import { computePackApplicability } from "./bootstrap/preFilter.js";
 import {
+  createSourceFileLookup,
+  type SourceFileLookup,
+} from "./bootstrap/sourceFileLookup.js";
+import {
   type CacheDiagnostic,
   type CacheLayer,
   createCacheLayer,
@@ -72,6 +76,7 @@ import {
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { ResolutionStore } from "./facts/store.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
+import { endLineOf, startLineOf } from "./lines.js";
 import {
   type ClosureFacts,
   deriveBoundaryEffects,
@@ -346,8 +351,8 @@ function extractDependencyCalls(func: FunctionRoot): RawDependencyCall[] {
       async: isAsync,
       returnType: null,
       location: {
-        start: locationNode.getStartLineNumber(),
-        end: locationNode.getEndLineNumber(),
+        start: startLineOf(locationNode),
+        end: endLineOf(locationNode),
       },
     });
   });
@@ -567,8 +572,8 @@ export function extractCodeStructure(
       // then misses the module the body is in.
       file: func.getSourceFile().getFilePath(),
       range: {
-        start: func.getStartLineNumber(),
-        end: func.getEndLineNumber(),
+        start: startLineOf(func),
+        end: endLineOf(func),
       },
       exportName: name,
       exportPath: [name],
@@ -1301,6 +1306,10 @@ function expandWrapperCallers(
   options?: ExtractorOptions,
 ): BehavioralSummary[] {
   const wrappers: WrapperInfo[] = [];
+  // Most projects have no wrapper-shaped clients at all, and building the
+  // lookup costs a walk of the project's directory tree, so it waits for
+  // the first summary that needs it.
+  let lookup: SourceFileLookup | null = null;
 
   for (const s of summaries) {
     if (s.kind !== "client") {
@@ -1318,7 +1327,8 @@ function expandWrapperCallers(
     ) {
       continue;
     }
-    const located = findWrapperPathParam(s, project);
+    lookup ??= createSourceFileLookup(project);
+    const located = findWrapperPathParam(s, lookup);
     if (located === null) {
       continue;
     }
@@ -1342,12 +1352,9 @@ function expandWrapperCallers(
 
 function findWrapperPathParam(
   summary: BehavioralSummary,
-  project: Project,
+  lookup: SourceFileLookup,
 ): { func: FunctionRoot; pathParamPosition: number } | null {
-  // Find the function in the project. summary.location.file is project-
-  // relative for portability; ts-morph stores absolute paths so we have to
-  // match by suffix.
-  const func = locateFunction(summary, project);
+  const func = lookup.functionAt(summary.location);
   if (func === null) {
     return null;
   }
@@ -1361,37 +1368,6 @@ function findWrapperPathParam(
     return null;
   }
   return { func, pathParamPosition: 0 };
-}
-
-function locateFunction(
-  summary: BehavioralSummary,
-  project: Project,
-): FunctionRoot | null {
-  for (const sf of project.getSourceFiles()) {
-    if (!sf.getFilePath().endsWith(summary.location.file)) {
-      continue;
-    }
-    const candidates: FunctionRoot[] = [];
-    sf.forEachDescendant((node) => {
-      if (
-        Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node)
-      ) {
-        if (
-          node.getStartLineNumber() === summary.location.range.start &&
-          node.getEndLineNumber() === summary.location.range.end
-        ) {
-          candidates.push(node as FunctionRoot);
-        }
-      }
-    });
-    if (candidates.length > 0) {
-      return candidates[0];
-    }
-  }
-  return null;
 }
 
 function synthesizeCallerSummaries(
@@ -2078,6 +2054,9 @@ function synthesizeSubUnits(
 
   const synthesized: BehavioralSummary[] = [];
   const subUnitCtx = createTsSubUnitContext();
+  // Only packs that declare `subUnits` reach the locate below, so the
+  // lookup's directory walk waits for the first parent that needs it.
+  let lookup: SourceFileLookup | null = null;
 
   for (const parent of summaries) {
     const binding = parent.identity.boundaryBinding;
@@ -2089,7 +2068,8 @@ function synthesizeSubUnits(
       continue;
     }
 
-    const parentFunc = locateFunction(parent, project);
+    lookup ??= createSourceFileLookup(project);
+    const parentFunc = lookup.functionAt(parent.location);
     if (parentFunc === null) {
       continue;
     }

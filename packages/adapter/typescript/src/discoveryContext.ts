@@ -15,6 +15,7 @@ import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 
 import { couldStillNameAFunction, toFunctionRoot } from "./discovery/shared.js";
 import { isWrittenAgain } from "./facts/assignments.js";
+import { exportedDeclarationsOf } from "./moduleExports.js";
 
 import type { FunctionRoot } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
@@ -105,7 +106,7 @@ function exportedFunctions(
     [];
   const seen = new Set<string>();
 
-  for (const [name, declarations] of sourceFile.getExportedDeclarations()) {
+  for (const [name, declarations] of exportedDeclarationsOf(sourceFile)) {
     if (seen.has(name)) {
       continue;
     }
@@ -174,7 +175,7 @@ function exportedCallConfigString(
   spec: { callees?: string[]; argIndex?: number; property: string },
   resolution?: ResolutionStore,
 ): string | null {
-  const declarations = sourceFile.getExportedDeclarations().get(exportName);
+  const declarations = exportedDeclarationsOf(sourceFile).get(exportName);
   if (declarations === undefined) {
     return null;
   }

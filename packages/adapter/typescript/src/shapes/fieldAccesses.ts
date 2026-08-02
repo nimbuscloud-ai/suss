@@ -12,6 +12,7 @@ import {
   type ParameterDeclaration,
 } from "ts-morph";
 
+import { endLineOf, startLineOf } from "../lines.js";
 import {
   callbackReturnExpression,
   thenLikeCall,
@@ -504,6 +505,23 @@ function buildShapeFromPaths(paths: AccessPath[]): TypeShape | null {
 // Per-branch field access extraction
 // ---------------------------------------------------------------------------
 
+function lineRangeKey(start: number, end: number): string {
+  return `${start}:${end}`;
+}
+
+/**
+ * The last descendant of `func` occupying each line range. Every branch of
+ * one function looks its terminal up here, so the walk happens once rather
+ * than once per branch.
+ */
+function nodesByLineRange(func: Node): Map<string, Node> {
+  const byRange = new Map<string, Node>();
+  func.forEachDescendant((node) => {
+    byRange.set(lineRangeKey(startLineOf(node), endLineOf(node)), node);
+  });
+  return byRange;
+}
+
 /**
  * Find the AST subtree for a given branch by matching the terminal's source
  * location back to the AST. Returns the nearest containing if-branch or
@@ -511,18 +529,12 @@ function buildShapeFromPaths(paths: AccessPath[]): TypeShape | null {
  */
 function findBranchSubtree(
   func: Node,
+  byLineRange: Map<string, Node>,
   terminalStartLine: number,
   terminalEndLine: number,
 ): Node {
-  // Walk down to find the terminal node by line range
-  let terminalNode: Node | null = null;
-  func.forEachDescendant((node) => {
-    const start = node.getStartLineNumber();
-    const end = node.getEndLineNumber();
-    if (start === terminalStartLine && end === terminalEndLine) {
-      terminalNode = node;
-    }
-  });
+  const terminalNode =
+    byLineRange.get(lineRangeKey(terminalStartLine, terminalEndLine)) ?? null;
 
   if (terminalNode === null) {
     return func;
@@ -594,6 +606,10 @@ export function collectClientFieldAccesses(
   branchLocations: Array<{ start: number; end: number }>,
   responseSemantics?: ResponsePropertyMapping[],
 ): BranchFieldAccesses[] {
+  if (branchLocations.length === 0) {
+    return [];
+  }
+
   // Prefer the variable-binding accessor (`const res = await fetch(...)`);
   // fall back to the `.then` chain accessor when the response never binds
   // to a variable (`fetch(url).then(res => res.json()).then(...)`).
@@ -611,8 +627,10 @@ export function collectClientFieldAccesses(
   // is filtered out; body-typed and unknown properties pass through.
   const nonBodyProps = buildNonBodyPropertySet(responseSemantics);
 
+  const byLineRange = nodesByLineRange(func);
+
   return branchLocations.map((loc) => {
-    const subtree = findBranchSubtree(func, loc.start, loc.end);
+    const subtree = findBranchSubtree(func, byLineRange, loc.start, loc.end);
     const accesses = collectPropertyAccesses(subtree, accessor);
 
     const bodyAccesses = accesses.filter(
