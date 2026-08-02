@@ -3,7 +3,7 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 202,
-    "internal": 854,
+    "internal": 857,
     "consumers": 279,
     "pairs": 271
   },
@@ -11,7 +11,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 25,
-      "internal": 394,
+      "internal": 395,
       "consumers": 23
     },
     "packages/behavioral-ir": {
@@ -113,7 +113,7 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 8,
-      "internal": 3,
+      "internal": 5,
       "consumers": 0
     },
     "packages/framework/apollo": {
