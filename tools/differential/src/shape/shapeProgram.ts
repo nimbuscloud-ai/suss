@@ -412,9 +412,11 @@ export function renderShape(options: RenderShapeOptions): RenderedShape {
       : [];
 
   const entry = [
-    ...syntax.preamble,
+    // Imports first, so a minimized program reads the way somebody
+    // would have written it.
     ...reach.imports,
     ...wideImport,
+    ...syntax.preamble,
     "",
     ...declarationLines,
     ...bindingLines,
