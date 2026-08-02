@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "src/index.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-ad7f0dc4d229e2ade/packages/contract/storybook/src/index.ts": {
     "lines": {
       "total": 89,
       "covered": 76,
