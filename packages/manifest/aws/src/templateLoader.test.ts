@@ -91,6 +91,11 @@ describe("refTarget", () => {
     );
   });
 
+  it("reads the logical id from a dotted Fn::GetAtt string", () => {
+    expect(refTarget({ "Fn::GetAtt": "OrdersQueue.Arn" })).toBe("OrdersQueue");
+    expect(refTarget({ "Fn::GetAtt": "OrdersQueue" })).toBe("OrdersQueue");
+  });
+
   it("returns null for unresolvable shapes", () => {
     expect(refTarget(null)).toBeNull();
     expect(refTarget(42)).toBeNull();

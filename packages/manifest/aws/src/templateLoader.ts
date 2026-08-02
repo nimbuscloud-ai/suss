@@ -96,10 +96,16 @@ export function loadCloudFormationTemplate(
 }
 
 /**
- * CloudFormation references show up in three shapes after parsing:
+ * CloudFormation references show up in four shapes after parsing:
  *   - { Ref: "LogicalId" }
  *   - { "Fn::GetAtt": ["LogicalId", "Attr"] }
+ *   - { "Fn::GetAtt": "LogicalId.Attr" }, the full-form spelling of the
+ *     `!GetAtt` short form, which templates written by hand still use
  *   - the bare logical id when the parser doesn't recognise the YAML tag
+ *
+ * Every CloudFormation property that names another resource accepts all
+ * of them, so anything reading such a property should come through here
+ * rather than matching one shape.
  */
 export function refTarget(value: unknown): string | null {
   if (typeof value === "string") {
@@ -115,6 +121,10 @@ export function refTarget(value: unknown): string | null {
   const getAtt = obj["Fn::GetAtt"];
   if (Array.isArray(getAtt) && typeof getAtt[0] === "string") {
     return getAtt[0];
+  }
+  if (typeof getAtt === "string") {
+    const dot = getAtt.indexOf(".");
+    return dot === -1 ? getAtt : getAtt.slice(0, dot);
   }
   return null;
 }

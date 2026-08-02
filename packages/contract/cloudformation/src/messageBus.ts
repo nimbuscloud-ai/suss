@@ -26,6 +26,7 @@
 
 import { messageBusBinding } from "@suss/behavioral-ir";
 import { codeScopePath } from "@suss/ir-core";
+import { refTarget } from "@suss/manifest-aws";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -743,7 +744,7 @@ function resolveEventBusToken(
     return "default";
   }
   if (typeof value === "object") {
-    const logicalId = resolveLogicalId(value);
+    const logicalId = refTarget(value);
     // Prefer the logical id even when the referenced resource isn't in
     // this template — the producer side chain-collapses to the same id.
     return logicalId ?? "default";
@@ -757,37 +758,6 @@ function resolveEventBusToken(
   }
   void resources;
   return "default";
-}
-
-/**
- * Resolve a `Ref` / `Fn::GetAtt` reference (or bare logical-id string)
- * to the CFN logical id it names. Unlike the local `refTarget` used by
- * the SQS paths, this also unwraps `Fn::GetAtt` — EventBridge rule
- * targets reference Lambdas by `!GetAtt Fn.Arn`.
- */
-function resolveLogicalId(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value !== "object") {
-    return null;
-  }
-  const obj = value as Record<string, unknown>;
-  if ("Ref" in obj && typeof obj.Ref === "string") {
-    return obj.Ref;
-  }
-  const att = obj["Fn::GetAtt"];
-  if (Array.isArray(att) && typeof att[0] === "string") {
-    return att[0];
-  }
-  if (typeof att === "string") {
-    const dot = att.indexOf(".");
-    return dot !== -1 ? att.slice(0, dot) : att;
-  }
-  return null;
 }
 
 /**
@@ -808,7 +778,7 @@ function readRuleTargets(
       continue;
     }
     const arn = (target as { Arn?: unknown }).Arn;
-    const lambdaId = resolveLogicalId(arn);
+    const lambdaId = refTarget(arn);
     if (lambdaId === null) {
       continue;
     }
@@ -849,40 +819,5 @@ function resolveQueueChannel(value: unknown): string | null {
     }
     return value;
   }
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    if ("Ref" in obj && typeof obj.Ref === "string") {
-      return obj.Ref;
-    }
-    if ("Fn::GetAtt" in obj) {
-      const att = obj["Fn::GetAtt"];
-      if (Array.isArray(att) && typeof att[0] === "string") {
-        return att[0];
-      }
-      if (typeof att === "string") {
-        // Short-form: "Resource.Attribute"
-        const dot = att.indexOf(".");
-        if (dot !== -1) {
-          return att.slice(0, dot);
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function refTarget(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    if ("Ref" in obj && typeof obj.Ref === "string") {
-      return obj.Ref;
-    }
-  }
-  return null;
+  return refTarget(value);
 }

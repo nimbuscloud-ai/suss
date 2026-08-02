@@ -19,6 +19,7 @@
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { codeScopePath } from "@suss/ir-core";
+import { refTarget } from "@suss/manifest-aws";
 
 import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
 
@@ -297,27 +298,16 @@ function readEnvVarTargets(
   return out;
 }
 
+/**
+ * A bare string env-var value is data rather than wiring, so resolving
+ * it would invent a reference the template never made. Every other
+ * reference shape is the shared one.
+ */
 function readRefTarget(value: unknown): string | null {
-  if (value === null || typeof value !== "object") {
+  if (typeof value === "string") {
     return null;
   }
-  const obj = value as Record<string, unknown>;
-  if ("Ref" in obj && typeof obj.Ref === "string") {
-    return obj.Ref;
-  }
-  if ("Fn::GetAtt" in obj) {
-    const att = obj["Fn::GetAtt"];
-    if (Array.isArray(att) && typeof att[0] === "string") {
-      return att[0];
-    }
-    if (typeof att === "string") {
-      const dot = att.indexOf(".");
-      if (dot !== -1) {
-        return att.slice(0, dot);
-      }
-    }
-  }
-  return null;
+  return refTarget(value);
 }
 
 function readEcsEnvironmentList(raw: unknown): string[] {

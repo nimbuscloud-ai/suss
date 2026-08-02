@@ -30,7 +30,6 @@
   "ScheduleV2": "SAM: event source type on a Serverless::Function",
   "schedule": "suss: effect class for a scheduled invocation",
   "codeUri": "SAM: AWS::Serverless::Function property naming the code location",
-  "Ref": "CloudFormation: intrinsic resolving a logical id",
   "ref": "CloudFormation: the Ref intrinsic, lower cased",
   "template": "suss: marker for a value the template states",
   "globals": "suss: marker for a value the SAM Globals section states",
