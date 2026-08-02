@@ -3,16 +3,16 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 211,
-    "internal": 1030,
-    "consumers": 332,
-    "pairs": 324
+    "internal": 1042,
+    "consumers": 334,
+    "pairs": 326
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 25,
-      "internal": 477,
-      "consumers": 24
+      "internal": 480,
+      "consumers": 26
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -233,7 +233,7 @@
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 10,
-      "internal": 8,
+      "internal": 17,
       "consumers": 5
     }
   }
