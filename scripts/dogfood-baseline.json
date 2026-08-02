@@ -2,10 +2,10 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "exports": 205,
-    "internal": 864,
-    "consumers": 295,
-    "pairs": 287
+    "exports": 207,
+    "internal": 860,
+    "consumers": 300,
+    "pairs": 292
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -23,8 +23,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 26,
-      "internal": 137,
-      "consumers": 31
+      "internal": 136,
+      "consumers": 32
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -71,8 +71,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 35,
-      "consumers": 20
+      "internal": 32,
+      "consumers": 23
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -214,7 +214,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 19,
+      "exports": 21,
       "internal": 0,
       "consumers": 0
     },
@@ -222,7 +222,7 @@
       "name": "@suss/manifest-aws",
       "exports": 7,
       "internal": 0,
-      "consumers": 0
+      "consumers": 1
     },
     "packages/resolution": {
       "name": "@suss/resolution",

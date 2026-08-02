@@ -28,6 +28,10 @@ pack that never stamps the field keeps pairing exactly as it did.
 
 - `unitScope.ts:runsIn` is the predicate both passes call. It takes a
   `UnitScope` carrying the declaring side's unit and its directory fallback.
+  The directory is the path itself rather than a test over it, so the two
+  passes cannot disagree about what counts as inside. `fileInCodeScope` in
+  `@suss/ir-core` owns that comparison, and it stops at a segment boundary,
+  so a scope of `src/foo` never reaches `src/foobar`.
 - `unitScope.ts:unitsByFile` reads the units off a summary set and groups them
   by file, dropping any file whose summaries disagree.
 - `unitScope.ts:sameUnit` compares two units on deployment target and instance

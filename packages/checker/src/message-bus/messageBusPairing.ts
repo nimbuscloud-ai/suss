@@ -402,12 +402,11 @@ function runtimeRunning(
     if (scope?.kind !== "codeUri" || scope.path === undefined) {
       continue;
     }
-    const scopePath = scope.path;
     const inUnit = runsIn(
       producer,
       {
         unit: runtime.identity.deployableUnit,
-        fileInScope: (file) => file.startsWith(scopePath),
+        codeScope: scope.path,
       },
       byFile,
     );
@@ -590,7 +589,7 @@ function checkBodyShapes(opts: {
       opts.allSummaries,
       {
         unit: cfnConsumer.identity.deployableUnit,
-        fileInScope: (file) => file.includes(codeScope),
+        codeScope,
       },
       opts.byFile,
     );

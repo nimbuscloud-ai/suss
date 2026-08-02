@@ -45,6 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@suss/ir-core": "0.1.0",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
