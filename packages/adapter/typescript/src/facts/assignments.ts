@@ -19,6 +19,8 @@
 
 import { Node, SyntaxKind, VariableDeclarationKind } from "ts-morph";
 
+import { createPerFileCache } from "../perFileCache.js";
+
 import type {
   Expression,
   SourceFile,
@@ -48,7 +50,7 @@ export interface BindingWrites {
   inOrder: boolean;
 }
 
-const byFile = new WeakMap<SourceFile, Map<VariableDeclaration, Write[]>>();
+const byFile = createPerFileCache<Map<VariableDeclaration, Write[]>>();
 const byDeclaration = new WeakMap<VariableDeclaration, BindingWrites>();
 
 /**

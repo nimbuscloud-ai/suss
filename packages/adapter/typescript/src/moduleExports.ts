@@ -1,3 +1,5 @@
+import { createPerFileCache } from "./perFileCache.js";
+
 import type { SourceFile } from "ts-morph";
 
 type ExportedDeclarationMap = ReturnType<SourceFile["getExportedDeclarations"]>;
@@ -8,9 +10,8 @@ type ExportedDeclarationMap = ReturnType<SourceFile["getExportedDeclarations"]>;
  * ts-morph rebuilds this map from scratch on every `getExportedDeclarations`
  * call, walking the file's export symbols and following each alias through
  * the type checker. Callee resolution asks the same file the same question
- * once per import site, so the answer is kept for the life of the source
- * file. A source file's exports do not change during an extract, and a new
- * project builds new source files, so nothing carries over between runs.
+ * once per import site, so the answer is kept for as long as the parse it
+ * was read out of.
  */
 export function exportedDeclarationsOf(
   sourceFile: SourceFile,
@@ -24,4 +25,4 @@ export function exportedDeclarationsOf(
   return declarations;
 }
 
-const exportsByFile = new WeakMap<SourceFile, ExportedDeclarationMap>();
+const exportsByFile = createPerFileCache<ExportedDeclarationMap>();
