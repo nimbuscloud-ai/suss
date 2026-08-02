@@ -1839,18 +1839,18 @@ describe("decoratedMethod discovery", () => {
   });
 
   it("accepts wrapper class decorators imported from project paths", () => {
-    // Match the Twenty pattern: project-internal `@MetadataResolver`
-    // factory composed from `@Resolver()` from `@nestjs/graphql`. The
-    // gate accepts the wrapper because at least one method decorator
+    // A project-internal decorator factory composed from `@Resolver()`
+    // in `@nestjs/graphql`, named through the pack's options. The gate
+    // accepts the wrapper because at least one method decorator
     // (`Query`) is imported from the framework module.
     const project = createProject();
     const file = project.createSourceFile(
       "src/foo.resolver.ts",
       `
       import { Query } from "@nestjs/graphql";
-      import { MetadataResolver } from "src/internal/metadata-resolver.decorator";
+      import { InternalResolver } from "src/internal/internal-resolver.decorator";
 
-      @MetadataResolver(() => Foo)
+      @InternalResolver(() => Foo)
       class FooResolver {
         @Query()
         all(): Foo[] { return []; }
@@ -1860,7 +1860,7 @@ describe("decoratedMethod discovery", () => {
     );
     const units = discoverUnits(file, [
       makeDecoratedMethodPattern({
-        classDecorators: ["Resolver", "MetadataResolver"],
+        classDecorators: ["Resolver", "InternalResolver"],
       }),
     ]);
     expect(units).toHaveLength(1);

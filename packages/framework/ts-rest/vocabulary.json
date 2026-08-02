@@ -1,0 +1,12 @@
+{
+  "initServer": "@ts-rest/core: builds the router a server registers through",
+  "initClient": "@ts-rest/core: builds the typed client",
+  "initContract": "@ts-rest/core: builds the contract",
+  "responses": "@ts-rest/core: contract route key holding the response schemas",
+  "status": "@ts-rest/core: response envelope field",
+  "body": "@ts-rest/core: response envelope field",
+  "params": "@ts-rest/core: handler argument key holding the path parameters",
+  "query": "@ts-rest/core: handler argument key holding the query parameters",
+  "headers": "@ts-rest/core: handler argument key holding the headers",
+  "statusCode": "suss: response field the binding carries"
+}

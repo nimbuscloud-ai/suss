@@ -79,6 +79,13 @@ jobs:
       - name: Style conventions
         run: npm run check:style
 
+      # A pack that names an identifier its own library does not define
+      # gives every other user false matches, and inflates coverage
+      # measured against the codebase the name came from. Three packs
+      # shipped one project's wrapper names before this ran.
+      - name: Pack vocabulary
+        run: npm run check:vocabulary
+
       - name: Test
         run: npm run test:coverage
 

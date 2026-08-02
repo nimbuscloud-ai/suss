@@ -1,0 +1,20 @@
+{
+  "prisma": "pack name, Prisma Client",
+  "findUnique": "@prisma/client: delegate read method",
+  "findFirst": "@prisma/client: delegate read method",
+  "findMany": "@prisma/client: delegate read method",
+  "count": "@prisma/client: delegate read method",
+  "aggregate": "@prisma/client: delegate read method",
+  "groupBy": "@prisma/client: delegate read method",
+  "create": "@prisma/client: delegate write method",
+  "update": "@prisma/client: delegate write method",
+  "delete": "@prisma/client: delegate write method",
+  "upsert": "@prisma/client: delegate write method",
+  "createMany": "@prisma/client: delegate write method",
+  "updateMany": "@prisma/client: delegate write method",
+  "deleteMany": "@prisma/client: delegate write method",
+  "data": "@prisma/client: write argument key holding the row values",
+  "postgres": "storage system the pack reports for a Postgres datasource",
+  "read": "suss: access kind",
+  "write": "suss: access kind"
+}

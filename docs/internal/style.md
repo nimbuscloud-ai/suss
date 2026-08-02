@@ -49,6 +49,14 @@ Prefer `import type` for type-only imports — Biome enforces this and it keeps 
 - **Object arguments for 4+ params.** Functions that take four or more parameters should accept a single options object so call sites are self-documenting. `extractStatusCode({ extraction, exceptionType, calls })` beats `extractStatusCode(extraction, null, null, calls, null)`. Three-or-fewer params is fine positional when the order follows a standard pattern (input → filter → label, left → op → right). Callback-style functions (`map`, reducers) are exempt — they have a conventional positional contract.
 - **No if-else chains assigning to a variable.** `let x; if (...) { x = a } else if (...) { x = b } else { x = c }` is a code smell — extract a helper function that returns the value directly per branch. The assign-in-branches shape hides the "one of several results" intent, loses per-branch type narrowing, and makes `x` mutable for no reason. This complements the DispatchTable rule above: DispatchTable for discriminated-union dispatch, early-return helpers for everything else (boolean conditions, string-compare chains, heterogeneous predicates). Two-branch cases that reduce to a ternary are fine to leave inline.
 
+## Identifiers a pack names
+
+A pack may hardcode an identifier only when the library that pack is about defines it. Anything a specific codebase names goes in per-project configuration, through the pack's options and `-f <pack>=config.json`.
+
+Two things go wrong when a project's name ships as a default. Every other user gets false matches, because any class called `WidgetController` or any function called `makeWidgetHandler` matches whatever it actually does. And coverage measured against the codebase the name came from is inflated, because discovery found those units by name rather than by pattern.
+
+Each pack declares its vocabulary in `vocabulary.json` at the package root: every identifier the pack's shipped source names, mapped to where in the library it comes from. `npm run check:vocabulary` fails when a pack names something that file does not declare, so a reviewer sees the claim in the diff. Names suss itself defines (IR kinds, roles, grammar tags) live once in `packages/extractor/vocabulary.json`. A name a project supplies through pack config never appears as a literal in the pack's source, so only the shipped defaults are policed.
+
 ## Naming
 
 A name should say what the thing is for, so someone who has never opened the file can guess what it does before reading it.

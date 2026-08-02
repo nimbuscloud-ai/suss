@@ -1,0 +1,23 @@
+{
+  "openapi": "pack name, the OpenAPI spec",
+  "get": "OpenAPI: path item operation, HTTP GET",
+  "post": "OpenAPI: path item operation, HTTP POST",
+  "put": "OpenAPI: path item operation, HTTP PUT",
+  "delete": "OpenAPI: path item operation, HTTP DELETE",
+  "patch": "OpenAPI: path item operation, HTTP PATCH",
+  "head": "OpenAPI: path item operation, HTTP HEAD",
+  "options": "OpenAPI: path item operation, HTTP OPTIONS",
+  "trace": "OpenAPI: path item operation, HTTP TRACE",
+  "path": "OpenAPI: parameter location",
+  "query": "OpenAPI: parameter location",
+  "header": "OpenAPI: parameter location",
+  "cookie": "OpenAPI: parameter location",
+  "body": "suss: input role",
+  "headers": "suss: input role",
+  "cookies": "suss: input role",
+  "integer": "JSON Schema: instance type",
+  "text": "suss: shape kind for a scalar the schema does not type",
+  "ref": "suss: marker for a schema the document refers to",
+  "range": "suss: status code stated as a range, such as 2XX",
+  "anonymous": "suss: name for a schema declared inline rather than in components"
+}

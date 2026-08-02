@@ -1,12 +1,12 @@
-import { createEventHandler } from "../lib/createEventHandler";
+import { makeWidgetHandler } from "../lib/makeWidgetHandler";
 
 // SQS consumer built by the subject-naming factory. The config's
-// `expected` property is the channel subject, so the unit carries a
+// `subject` property is the channel subject, so the unit carries a
 // message-bus binding on it and pairs with whoever publishes it.
-export const handler = createEventHandler(
+export const handler = makeWidgetHandler(
   {
     name: "subject-worker",
-    expected: "billing.invoicePaid" as const,
+    subject: "billing.invoicePaid" as const,
     createLogger: (name) => ({
       info: (msg: string) => {
         process.stdout.write(`${name}: ${msg}\n`);

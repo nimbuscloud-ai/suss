@@ -23,7 +23,7 @@ bus:sqs order.placed  OrderNotifierFunction.handler <-> OrderNotifierFunction.Or
 
 Neither side of any of those lines is a publisher, and the two sides are not two descriptions of one thing either. They are different kinds of statement about the same function.
 
-`OrderIndexerFunction.handler` comes from the code. `createEventHandler({ expected: "order.placed" })` says this function accepts messages shaped like `order.placed`. It says nothing about a subscription existing, because code has no way to know what is wired to it.
+`OrderIndexerFunction.handler` comes from the code. `makeWidgetHandler({ subject: "order.placed" })` says this function accepts messages shaped like `order.placed`. It says nothing about a subscription existing, because code has no way to know what is wired to it.
 
 `OrderIndexerFunction.Orders` comes from the template. It says function `OrderIndexerFunction` is attached to queue `OrderIndexerQueue`, and a rule routes `order.placed` into that queue.
 

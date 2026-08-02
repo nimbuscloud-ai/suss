@@ -959,23 +959,23 @@ describe("throwExpression — matching", () => {
     expect(terminalsB[0].terminal.message).toBeNull();
   });
 
-  it("matches throw httpErrorJson(404, { message: 'Not found' }) with constructorPattern 'httpErrorJson'", () => {
+  it("matches throw widgetError(404, { message: 'Not found' }) with constructorPattern 'widgetError'", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
       `
-      declare function httpErrorJson(status: number, body: unknown): never;
+      declare function widgetError(status: number, body: unknown): never;
       async function handler() {
-        throw httpErrorJson(404, { message: "Not found" });
+        throw widgetError(404, { message: "Not found" });
       }
     `,
     );
 
     const func = file.getFunctions()[1] as FunctionRoot;
-    const terminals = findTerminals(func, [makeThrowPattern("httpErrorJson")]);
+    const terminals = findTerminals(func, [makeThrowPattern("widgetError")]);
 
     expect(terminals).toHaveLength(1);
-    expect(terminals[0].terminal.exceptionType).toBe("httpErrorJson");
+    expect(terminals[0].terminal.exceptionType).toBe("widgetError");
     expect(terminals[0].terminal.statusCode).toEqual({
       type: "literal",
       value: 404,
@@ -989,20 +989,20 @@ describe("throwExpression — matching", () => {
     });
   });
 
-  it("matches throw httpErrorJson(statusCode, body) → dynamic statusCode", () => {
+  it("matches throw widgetError(statusCode, body) → dynamic statusCode", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
       `
-      declare function httpErrorJson(status: number, body: unknown): never;
+      declare function widgetError(status: number, body: unknown): never;
       async function handler(statusCode: number, body: unknown) {
-        throw httpErrorJson(statusCode, body);
+        throw widgetError(statusCode, body);
       }
     `,
     );
 
     const func = file.getFunctions()[1] as FunctionRoot;
-    const terminals = findTerminals(func, [makeThrowPattern("httpErrorJson")]);
+    const terminals = findTerminals(func, [makeThrowPattern("widgetError")]);
 
     expect(terminals).toHaveLength(1);
     expect(terminals[0].terminal.statusCode).toEqual({
@@ -1054,7 +1054,7 @@ describe("throwExpression — matching", () => {
 // ---------------------------------------------------------------------------
 
 describe("throwExpression — non-match cases", () => {
-  it("does NOT match throw new Error() with constructorPattern 'httpErrorJson'", () => {
+  it("does NOT match throw new Error() with constructorPattern 'widgetError'", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
@@ -1066,7 +1066,7 @@ describe("throwExpression — non-match cases", () => {
     );
 
     const func = file.getFunctions()[0] as FunctionRoot;
-    const terminals = findTerminals(func, [makeThrowPattern("httpErrorJson")]);
+    const terminals = findTerminals(func, [makeThrowPattern("widgetError")]);
 
     expect(terminals).toHaveLength(0);
   });
@@ -1084,7 +1084,7 @@ describe("throwExpression — non-match cases", () => {
     );
 
     const func = file.getFunctions()[0] as FunctionRoot;
-    const terminals = findTerminals(func, [makeThrowPattern("httpErrorJson")]);
+    const terminals = findTerminals(func, [makeThrowPattern("widgetError")]);
 
     expect(terminals).toHaveLength(0);
   });
@@ -1980,10 +1980,10 @@ describe("extraction — from: 'argumentConstructor'", () => {
     const file = project.createSourceFile(
       "test.ts",
       `
-      declare function httpErrorJson(e: unknown): never;
+      declare function widgetError(e: unknown): never;
       declare const HttpError: { NotFound: new (msg: string) => Error };
       function handler() {
-        throw httpErrorJson(new HttpError.NotFound("missing"));
+        throw widgetError(new HttpError.NotFound("missing"));
       }
     `,
     );
@@ -1993,7 +1993,7 @@ describe("extraction — from: 'argumentConstructor'", () => {
       .find((f) => f.getName() === "handler") as FunctionRoot;
     const pattern: TerminalPattern = {
       kind: "throw",
-      match: { type: "throwExpression", constructorPattern: "httpErrorJson" },
+      match: { type: "throwExpression", constructorPattern: "widgetError" },
       extraction: {
         statusCode: {
           from: "argumentConstructor",
@@ -2016,10 +2016,10 @@ describe("extraction — from: 'argumentConstructor'", () => {
     const file = project.createSourceFile(
       "test.ts",
       `
-      declare function httpErrorJson(e: unknown): never;
+      declare function widgetError(e: unknown): never;
       declare const HttpError: { BadRequest: new () => Error };
       function handler() {
-        throw httpErrorJson(new HttpError.BadRequest());
+        throw widgetError(new HttpError.BadRequest());
       }
     `,
     );
@@ -2029,7 +2029,7 @@ describe("extraction — from: 'argumentConstructor'", () => {
       .find((f) => f.getName() === "handler") as FunctionRoot;
     const pattern: TerminalPattern = {
       kind: "throw",
-      match: { type: "throwExpression", constructorPattern: "httpErrorJson" },
+      match: { type: "throwExpression", constructorPattern: "widgetError" },
       extraction: {
         statusCode: {
           from: "argumentConstructor",
@@ -2052,10 +2052,10 @@ describe("extraction — from: 'argumentConstructor'", () => {
     const file = project.createSourceFile(
       "test.ts",
       `
-      declare function httpErrorJson(e: unknown): never;
+      declare function widgetError(e: unknown): never;
       declare const err: Error;
       function handler() {
-        throw httpErrorJson(err);
+        throw widgetError(err);
       }
     `,
     );
@@ -2065,7 +2065,7 @@ describe("extraction — from: 'argumentConstructor'", () => {
       .find((f) => f.getName() === "handler") as FunctionRoot;
     const pattern: TerminalPattern = {
       kind: "throw",
-      match: { type: "throwExpression", constructorPattern: "httpErrorJson" },
+      match: { type: "throwExpression", constructorPattern: "widgetError" },
       extraction: {
         statusCode: {
           from: "argumentConstructor",
@@ -2078,7 +2078,7 @@ describe("extraction — from: 'argumentConstructor'", () => {
     const terminals = findTerminals(func, [pattern]);
     expect(terminals).toHaveLength(1);
     expect(terminals[0].terminal.statusCode).toBeNull();
-    expect(terminals[0].terminal.exceptionType).toBe("httpErrorJson");
+    expect(terminals[0].terminal.exceptionType).toBe("widgetError");
   });
 });
 
@@ -2088,9 +2088,9 @@ describe("extraction edge cases", () => {
     const file = project.createSourceFile(
       "test.ts",
       `
-      declare function httpErrorJson(status: number, body: unknown): never;
+      declare function widgetError(status: number, body: unknown): never;
       function handler() {
-        throw httpErrorJson(404, { message: "nope" });
+        throw widgetError(404, { message: "nope" });
       }
     `,
     );
@@ -2098,7 +2098,7 @@ describe("extraction edge cases", () => {
     const func = file.getFunctions()[1] as FunctionRoot;
     const pattern: TerminalPattern = {
       kind: "throw",
-      match: { type: "throwExpression", constructorPattern: "httpErrorJson" },
+      match: { type: "throwExpression", constructorPattern: "widgetError" },
       extraction: {
         statusCode: { from: "property", name: "status" }, // not valid for throws, returns null
       },

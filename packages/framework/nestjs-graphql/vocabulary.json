@@ -1,0 +1,15 @@
+{
+  "Resolver": "@nestjs/graphql: class decorator marking a resolver",
+  "Query": "@nestjs/graphql: method decorator marking a query field",
+  "Mutation": "@nestjs/graphql: method decorator marking a mutation field",
+  "ResolveField": "@nestjs/graphql: method decorator marking a field resolver",
+  "Subscription": "@nestjs/graphql: method decorator marking a subscription field",
+  "Args": "@nestjs/graphql: parameter decorator injecting the field arguments",
+  "Parent": "@nestjs/graphql: parameter decorator injecting the parent value",
+  "Context": "@nestjs/graphql: parameter decorator injecting the context",
+  "Info": "@nestjs/graphql: parameter decorator injecting the resolve info",
+  "args": "suss: input role",
+  "parent": "suss: input role",
+  "context": "suss: input role",
+  "info": "suss: input role"
+}

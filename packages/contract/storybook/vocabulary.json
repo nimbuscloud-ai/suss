@@ -1,0 +1,5 @@
+{
+  "react": "pack name applies to React stories",
+  "args": "Storybook CSF: story key holding the props a story renders with",
+  "ref": "suss: marker for a component the story refers to"
+}

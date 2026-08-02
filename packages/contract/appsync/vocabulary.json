@@ -1,0 +1,20 @@
+{
+  "appsync": "pack name, AWS AppSync",
+  "Query": "GraphQL spec: operation root type",
+  "Mutation": "GraphQL spec: operation root type",
+  "Subscription": "GraphQL spec: operation root type",
+  "UNIT": "AppSync: resolver kind",
+  "PIPELINE": "AppSync: resolver kind",
+  "UNKNOWN": "AppSync: fallback when a resolver kind is not stated",
+  "lambda": "AppSync: data source type",
+  "dynamodb": "AppSync: data source type",
+  "elasticsearch": "AppSync: data source type",
+  "opensearch": "AppSync: data source type",
+  "relational": "AppSync: data source type",
+  "eventbridge": "AppSync: data source type",
+  "inline": "AppSync: schema stated in the template rather than a file",
+  "location": "AppSync: schema given as an S3 location",
+  "ref": "CloudFormation: the Ref intrinsic, lower cased",
+  "remote": "suss: marker for a value the template does not resolve",
+  "args": "suss: input role"
+}

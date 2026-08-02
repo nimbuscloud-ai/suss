@@ -78,6 +78,23 @@ describe("nestjsRestFramework — pack shape", () => {
     expect(pack.discovery[0].match.type).toBe("decoratedRoute");
     expect(pack.inputMapping.type).toBe("decoratedParams");
   });
+
+  it("ships only the decorator @nestjs/common declares", () => {
+    const match = nestjsRestFramework().discovery[0].match;
+    expect(match.type).toBe("decoratedRoute");
+    if (match.type === "decoratedRoute") {
+      expect(match.classDecorators).toEqual(["Controller"]);
+    }
+  });
+
+  it("adds the wrapper decorators a project names", () => {
+    const match = nestjsRestFramework({
+      classDecorators: ["WidgetController"],
+    }).discovery[0].match;
+    if (match.type === "decoratedRoute") {
+      expect(match.classDecorators).toEqual(["Controller", "WidgetController"]);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

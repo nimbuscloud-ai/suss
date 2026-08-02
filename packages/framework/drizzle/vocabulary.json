@@ -1,0 +1,23 @@
+{
+  "drizzle": "pack name, Drizzle ORM",
+  "findMany": "drizzle-orm: relational query API method",
+  "findFirst": "drizzle-orm: relational query API method",
+  "pgTable": "drizzle-orm: Postgres table factory",
+  "mysqlTable": "drizzle-orm: MySQL table factory",
+  "sqliteTable": "drizzle-orm: SQLite table factory",
+  "postgres": "storage system the pack reports for a Postgres dialect",
+  "from": "drizzle-orm: query builder method",
+  "insert": "drizzle-orm: query builder method",
+  "update": "drizzle-orm: query builder method",
+  "delete": "drizzle-orm: query builder method",
+  "select": "drizzle-orm: query builder method",
+  "selectDistinct": "drizzle-orm: query builder method",
+  "where": "drizzle-orm: query builder method",
+  "values": "drizzle-orm: query builder method",
+  "set": "drizzle-orm: query builder method",
+  "query": "drizzle-orm: relational query entry point on the db object",
+  "columns": "drizzle-orm: relational query option key",
+  "with": "drizzle-orm: relational query option key",
+  "read": "suss: access kind",
+  "write": "suss: access kind"
+}

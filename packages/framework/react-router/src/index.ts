@@ -21,9 +21,9 @@ const RESPONSE_MODULES = [
 ];
 
 /**
- * Status codes for the `http-errors` package's named constructors.
- * React Router loaders / actions throw `httpErrorJson(new HttpError.X())`
- * and the arg's class name is the status source. Kept as a module-scope
+ * Status codes for the `http-errors` package's named constructors. A
+ * loader that throws through a project wrapper passes one of these, and
+ * the argument's class name is the status source. Kept as a module-scope
  * constant so pack consumers can inspect / extend the mapping.
  */
 const HTTP_ERRORS_CODES: Record<string, number> = {
@@ -49,7 +49,21 @@ const HTTP_ERRORS_CODES: Record<string, number> = {
   GatewayTimeout: 504,
 };
 
-export function reactRouterFramework(): PatternPack {
+export interface ReactRouterPackOptions {
+  /**
+   * Helpers this project throws HTTP errors through, as
+   * `throw myHelper(new HttpError.NotFound(), body)`. React Router
+   * declares no such helper, so nothing is assumed by default and a
+   * project that installs this pack never matches a call on a name some
+   * other codebase happened to use. The thrown argument's class name
+   * carries the status, read against the `http-errors` constructors.
+   */
+  errorHelpers?: string[];
+}
+
+export function reactRouterFramework(
+  options: ReactRouterPackOptions = {},
+): PatternPack {
   return {
     name: "react-router",
     protocol: "http",
@@ -150,25 +164,24 @@ export function reactRouterFramework(): PatternPack {
           body: { from: "argument", position: 0 },
         },
       },
-      {
-        // Loaders throw `httpErrorJson(new HttpError.NotFound("…"))` from
-        // the `http-errors` package. The arg's class name carries the
-        // status: resolve through `argumentConstructor` rather than taking
-        // the arg's raw source text as a status value.
-        kind: "throw",
+      // A project's error helper carries the status in the class name of
+      // its argument, so resolve through `argumentConstructor` rather
+      // than taking the argument's raw source text as a status value.
+      ...(options.errorHelpers ?? []).map((helper) => ({
+        kind: "throw" as const,
         match: {
-          type: "throwExpression",
-          constructorPattern: "httpErrorJson",
+          type: "throwExpression" as const,
+          constructorPattern: helper,
         },
         extraction: {
           statusCode: {
-            from: "argumentConstructor",
+            from: "argumentConstructor" as const,
             position: 0,
             codes: HTTP_ERRORS_CODES,
           },
-          body: { from: "argument", position: 1 },
+          body: { from: "argument" as const, position: 1 },
         },
-      },
+      })),
     ],
 
     inputMapping: {

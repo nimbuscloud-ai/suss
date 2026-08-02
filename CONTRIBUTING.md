@@ -70,6 +70,8 @@ Name a thing for the job it does, and let a package's directory spell out the na
 
 Framework packs are declarative pattern configurations. See [`docs/packs.md`](docs/packs.md) for the full guide. The existing packs under `packages/framework/` and `packages/client/` are the best reference.
 
+A pack may hardcode an identifier only when the library that pack is about defines it. Anything a specific codebase names goes in per-project configuration, because other users get false matches on it, and coverage measured against the codebase the name came from is inflated when discovery finds those units by name rather than by pattern. Declare every identifier the pack names in its `vocabulary.json`; `npm run check:vocabulary` fails otherwise. [`docs/internal/style.md#identifiers-a-pack-names`](docs/internal/style.md#identifiers-a-pack-names) has the detail.
+
 ## Reporting bugs and proposing features
 
 Open an issue using the templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/). For a bug, include a minimal repro (tsconfig + a handful of TS files is usually enough). For a feature, describe the real problem first — "what I'm trying to do" — before jumping to a proposed API.

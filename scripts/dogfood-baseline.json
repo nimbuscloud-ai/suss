@@ -3,7 +3,7 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 202,
-    "internal": 785,
+    "internal": 798,
     "consumers": 278,
     "pairs": 270
   },
@@ -131,7 +131,7 @@
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
       "exports": 4,
-      "internal": 2,
+      "internal": 15,
       "consumers": 7
     },
     "packages/framework/aws-sqs": {

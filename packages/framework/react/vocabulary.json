@@ -1,0 +1,9 @@
+{
+  "react": "pack name, React",
+  "useEffect": "react: the effect hook",
+  "event": "suss: sub-unit kind for a JSX event handler",
+  "A": "upper-case range bound, testing whether a prop name is capitalised",
+  "Z": "upper-case range bound, testing whether a prop name is capitalised",
+  "o": "the leading character of the `on` prefix React event props carry",
+  "n": "the second character of the `on` prefix React event props carry"
+}

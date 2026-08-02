@@ -244,17 +244,18 @@ export type DiscoveryMatch =
       /**
        * The module a pack-recognised decorator must be imported from
        * for discovery to fire. Codebases sometimes wrap framework
-       * decorators in their own re-exports (NestJS apps frequently
-       * declare `MetadataResolver` / `CoreResolver` factories that
-       * compose `@Resolver()` with extra metadata). When that happens,
-       * the import-module gate would miss them; pass an array of
-       * accepted modules and any one match suffices.
+       * decorators in their own re-exports, composing the framework's
+       * decorator with extra metadata. When that happens, the
+       * import-module gate would miss them; pass an array of accepted
+       * modules and any one match suffices.
        */
       importModule: string | string[];
       /**
        * Class decorator names to recognise. The first entry that
        * appears on a class wins for typeName extraction (the rest are
-       * fallbacks for codebases with multiple wrapper styles).
+       * fallbacks for codebases with multiple wrapper styles). A pack
+       * ships only what its own framework declares here and takes a
+       * project's wrappers through its options.
        */
       classDecorators: string[];
       methodDecorators: string[];
@@ -272,10 +273,9 @@ export type DiscoveryMatch =
        * Same wrapper-decorator tolerance as `decoratedMethod`: the
        * import-module gate fires on at least one method-route
        * decorator from the framework module, but class decorators
-       * match by name only so project-internal wrappers
-       * (`@PublicController` / `@AuthedController` factories
-       * composing `@Controller()`) work without per-project pack
-       * config.
+       * match by name only, so a project-internal wrapper composing
+       * the framework's decorator matches once the project names it
+       * in the pack's options.
        *
        * The adapter populates `DiscoveredUnit.routeInfo` so the
        * produced binding carries `rest(method, path)`.
@@ -502,7 +502,7 @@ export type TerminalMatch =
     }
   | {
       type: "throwExpression";
-      constructorPattern?: string; // e.g. "httpErrorJson", "HttpError"
+      constructorPattern?: string; // e.g. "HttpError"
     }
   | {
       type: "functionCall";
@@ -568,9 +568,9 @@ export interface TerminalExtraction {
     | {
         // throw wrap(new NotFound(...)) → peek into the arg at `position` and
         // match its constructor name against `codes`. Covers wrapper patterns
-        // like React Router's `httpErrorJson(new HttpError.NotFound("…"))`,
-        // where the class of the arg — not the top-level thrown expression —
-        // carries the status.
+        // like a project helper wrapping `new HttpError.NotFound("…")`,
+        // where the class of the arg, rather than the top-level thrown
+        // expression, carries the status.
         from: "argumentConstructor";
         position: number;
         codes: Record<string, number>;

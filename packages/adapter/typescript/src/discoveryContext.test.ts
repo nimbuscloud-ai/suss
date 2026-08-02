@@ -71,16 +71,16 @@ describe("createTsDiscoveryContext", () => {
 
 describe("exportedCallConfigString", () => {
   const spec = {
-    callees: ["createEventHandler"],
+    callees: ["makeWidgetHandler"],
     argIndex: 0,
-    property: "expected",
+    property: "subject",
   };
 
   it("reads the subject through an as-const cast", () => {
     const file = sourceFile(`
-      declare function createEventHandler(c: unknown, b: unknown): unknown;
-      export const handler = createEventHandler(
-        { name: "w", expected: "billing.invoicePaid" as const },
+      declare function makeWidgetHandler(c: unknown, b: unknown): unknown;
+      export const handler = makeWidgetHandler(
+        { name: "w", subject: "billing.invoicePaid" as const },
         async () => undefined,
       );
     `);
@@ -91,10 +91,10 @@ describe("exportedCallConfigString", () => {
 
   it("answers null for a computed subject", () => {
     const file = sourceFile(`
-      declare function createEventHandler(c: unknown, b: unknown): unknown;
+      declare function makeWidgetHandler(c: unknown, b: unknown): unknown;
       const source = "billing";
-      export const handler = createEventHandler(
-        { expected: \`\${source}.refundIssued\` },
+      export const handler = makeWidgetHandler(
+        { subject: \`\${source}.refundIssued\` },
         async () => undefined,
       );
     `);
@@ -105,7 +105,7 @@ describe("exportedCallConfigString", () => {
     const file = sourceFile(`
       declare function otherFactory(c: unknown, b: unknown): unknown;
       export const handler = otherFactory(
-        { expected: "billing.invoicePaid" },
+        { subject: "billing.invoicePaid" },
         async () => undefined,
       );
     `);
@@ -120,9 +120,9 @@ describe("exportedCallConfigString", () => {
   it("follows a config variable to the object literal it names", () => {
     const rctx = createTsDiscoveryContext(new ResolutionStore());
     const file = sourceFile(`
-      declare function createEventHandler(c: unknown, b: unknown): unknown;
-      const config = { expected: "user.deleted" as const };
-      export const handler = createEventHandler(config, async () => undefined);
+      declare function makeWidgetHandler(c: unknown, b: unknown): unknown;
+      const config = { subject: "user.deleted" as const };
+      export const handler = makeWidgetHandler(config, async () => undefined);
     `);
     expect(rctx.exportedCallConfigString(file, "handler", spec)).toBe(
       "user.deleted",

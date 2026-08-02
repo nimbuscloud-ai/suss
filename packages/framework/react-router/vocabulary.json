@@ -1,0 +1,10 @@
+{
+  "loader": "react-router: the export name a route's data loader takes",
+  "action": "react-router: the export name a route's mutation takes",
+  "json": "react-router: response helper",
+  "data": "react-router: response helper",
+  "redirect": "react-router: response helper",
+  "request": "suss: input role",
+  "params": "react-router: loader argument key holding the path parameters",
+  "context": "suss: input role"
+}

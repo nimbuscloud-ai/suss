@@ -42,9 +42,9 @@ export interface TsDiscoveryContext {
   /**
    * For an export whose declaration is a call to one of `callees`,
    * read the string a property of the call's config object holds:
-   * `export const handler = createEventHandler({ expected: "a.b" }, ...)`
-   * with `{ callees: ["createEventHandler"], argIndex: 0, property:
-   * "expected" }` answers `"a.b"`.
+   * `export const handler = makeWidgetHandler({ subject: "a.b" }, ...)`
+   * with `{ callees: ["makeWidgetHandler"], argIndex: 0, property:
+   * "subject" }` answers `"a.b"`.
    *
    * The config argument is usually an object literal at the call site;
    * a variable or import is followed to the literal it resolves to.

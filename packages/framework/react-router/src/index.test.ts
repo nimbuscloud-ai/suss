@@ -55,6 +55,21 @@ describe("reactRouterFramework — pack shape", () => {
     expect(pack.inputMapping.type).toBe("singleObjectParam");
     expect(pack.contractReading).toBeUndefined();
   });
+
+  it("ships no throw terminal, since React Router declares no error helper", () => {
+    const kinds = reactRouterFramework().terminals.map((t) => t.kind);
+    expect(kinds).not.toContain("throw");
+  });
+
+  it("adds a throw terminal for each error helper a project names", () => {
+    const pack = reactRouterFramework({ errorHelpers: ["widgetError"] });
+    const thrown = pack.terminals.filter((t) => t.kind === "throw");
+    expect(thrown).toHaveLength(1);
+    expect(thrown[0].match).toMatchObject({
+      type: "throwExpression",
+      constructorPattern: "widgetError",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,13 @@
+{
+  "nextjs": "pack name, Next.js",
+  "app": "Next.js: App Router source directory",
+  "pages": "Next.js: Pages Router source directory",
+  "route": "Next.js: App Router route handler file basename",
+  "page": "Next.js: App Router page file basename",
+  "index": "Next.js: Pages Router index route basename",
+  "Response": "WHATWG Fetch: the global response constructor Next.js returns",
+  "status": "Next.js: NextResponse.json option key, and the Pages res method",
+  "json": "Next.js: NextResponse.json, and the Pages res method",
+  "request": "suss: input role",
+  "context": "suss: input role"
+}

@@ -79,7 +79,7 @@ findTerminals(func, patterns):
 
 - **`returnShape`**: the node is a `ReturnStatement` returning an object literal, optionally with required properties. For ts-rest: `requiredProperties: ["status", "body"]` means the return must be `return { status: ..., body: ... }`.
 - **`parameterMethodCall`**: the node is a call expression on a specific parameter, with a specific method chain. For Express: `parameterPosition: 1, methodChain: ["status", "json"]` matches `res.status(X).json(Y)`.
-- **`throwExpression`**: the node is a `ThrowStatement`, optionally requiring the thrown expression text to match a constructor pattern. For React Router: `constructorPattern: "httpErrorJson"` matches `throw httpErrorJson(...)`.
+- **`throwExpression`**: the node is a `ThrowStatement`, optionally requiring the thrown expression text to match a constructor pattern. A project names its own helper, and `constructorPattern: "widgetError"` then matches `throw widgetError(...)`.
 
 **Extraction:**
 

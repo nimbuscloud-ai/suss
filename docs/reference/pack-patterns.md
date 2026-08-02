@@ -179,7 +179,7 @@ Match method calls on a specific parameter. Used by Express (`res.status(200).js
 ```typescript
 { type: "throwExpression"; constructorPattern?: string }
 ```
-Match `throw` statements. If `constructorPattern` is set, the thrown expression must match it textually. Used by React Router (`throw httpErrorJson(...)`) and custom HTTP error libraries.
+Match `throw` statements. If `constructorPattern` is set, the thrown expression must match it textually. Used for a project's own error helper and for custom HTTP error libraries.
 
 ### `functionCall`
 ```typescript
@@ -232,7 +232,7 @@ The **`{ from: "constructor"; codes }`** case maps constructor names to status c
 
 Only `throwExpression` matchers carry an exception type, so `from: "constructor"` is a no-op for other matcher types (it returns null rather than guessing).
 
-The **`{ from: "argumentConstructor"; position; codes }`** case is the wrapper-shaped variant: when the thrown expression wraps a constructed error (`throw httpErrorJson(new HttpError.NotFound("..."))`), the status sits on the *arg's* class, not the top-level thrown function. Set `position` to the arg's index in the wrapper call. Resolution uses the same full-text-first / last-segment fallback as `from: "constructor"`. Only `throwExpression` matchers reach this source, for other terminals it returns null.
+The **`{ from: "argumentConstructor"; position; codes }`** case is the wrapper-shaped variant: when the thrown expression wraps a constructed error (`throw wrap(new HttpError.NotFound("..."))`), the status sits on the *arg's* class, not the top-level thrown function. Set `position` to the arg's index in the wrapper call. Resolution uses the same full-text-first / last-segment fallback as `from: "constructor"`. Only `throwExpression` matchers reach this source, for other terminals it returns null.
 
 For a returnShape terminal where no extraction explicitly selects a property, the body defaults to the full returned object's shape, the natural reading of "the returned object IS the body." Configure `body: { from: "property", name: "..." }` only when the body is one named property of a `{ status, body }` -style return object.
 

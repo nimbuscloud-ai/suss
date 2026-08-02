@@ -1,0 +1,15 @@
+{
+  "useQuery": "@apollo/client: React hook running a query",
+  "useLazyQuery": "@apollo/client: React hook running a query on demand",
+  "useSuspenseQuery": "@apollo/client: React hook running a query under Suspense",
+  "useBackgroundQuery": "@apollo/client: React hook starting a query early",
+  "useLoadableQuery": "@apollo/client: React hook running a query on demand",
+  "useMutation": "@apollo/client: React hook running a mutation",
+  "useSubscription": "@apollo/client: React hook running a subscription",
+  "ApolloClient": "@apollo/client: the client constructor",
+  "query": "@apollo/client: client method, and the document key it takes",
+  "mutate": "@apollo/client: client method running a mutation",
+  "subscribe": "@apollo/client: client method running a subscription",
+  "mutation": "@apollo/client: document key on the mutate options",
+  "subscription": "@apollo/client: document key on the subscribe options"
+}
