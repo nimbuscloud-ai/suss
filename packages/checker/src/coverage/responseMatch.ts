@@ -32,6 +32,21 @@ export function isSuccessStatus(status: number): boolean {
   return status >= 200 && status < 300;
 }
 
+/**
+ * Whether a summary says nothing about behaviour because nothing was
+ * read, rather than because there was nothing to read. A boundary
+ * announced with a handler nobody could follow comes through as a
+ * summary with no transitions and a gap saying why, and every check
+ * that reasons from what a side does has to stop short of concluding
+ * that it does nothing.
+ */
+export function nothingWasRead(summary: BehavioralSummary): boolean {
+  return (
+    summary.transitions.length === 0 &&
+    summary.gaps.some((gap) => gap.type === "unreadOutcome")
+  );
+}
+
 export function hasOpaqueStatus(t: Transition): boolean {
   if (t.output.type !== "response") {
     return false;

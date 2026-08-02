@@ -3,13 +3,9 @@
 // `@Put` / `@Patch` / `@Delete` methods). Emits units with `routeInfo`
 // that the adapter turns into a REST binding directly.
 
-import {
-  type ClassDeclaration,
-  type MethodDeclaration,
-  Node,
-  type SourceFile,
-} from "ts-morph";
+import { type ClassDeclaration, Node, type SourceFile } from "ts-morph";
 
+import { decoratedCallablesOf } from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -105,30 +101,15 @@ export function discoverDecoratedRoutes(
     const pathPrefix = routePathOf(marker.args);
 
     const className = cls.getName() ?? "<anon-class>";
-    for (const method of cls.getMethods()) {
-      let matchedDecoratorName: string | null = null;
-      let matchedDecorator: Node | null = null;
-      for (const candidate of routeDecoratorNames) {
-        const decorator = method.getDecorator(candidate);
-        if (decorator !== undefined) {
-          matchedDecoratorName = candidate;
-          matchedDecorator = decorator;
-          break;
-        }
-      }
-      if (matchedDecoratorName === null || matchedDecorator === null) {
-        continue;
-      }
-
-      const httpMethod = match.methodDecoratorRouteMap[matchedDecoratorName];
-      const pathSuffix = resolveRoutePathArg(matchedDecorator);
+    for (const handler of decoratedCallablesOf(cls, routeDecoratorNames)) {
+      const httpMethod = match.methodDecoratorRouteMap[handler.standsFor];
+      const pathSuffix = resolveRoutePathArg(handler.decorator);
       const routePath = joinRoutePath(pathPrefix, pathSuffix);
 
-      const methodName = method.getName();
       results.push({
-        func: method as MethodDeclaration,
+        func: handler.func,
         kind,
-        name: `${className}.${methodName}`,
+        name: `${className}.${handler.name}`,
         routeInfo: { method: httpMethod, path: routePath },
       });
     }

@@ -68,16 +68,24 @@ export const SOUND_REACH_PATHS = [
 ] as const;
 
 /**
- * The three that do not, each for its own reason rather than for want
- * of a rule. A call's return would need the rule to ask whether the
- * callee unwraps, which is negation over a relation derived from the
- * rule doing the asking, and that does not stratify. A factory's object
- * argument is the `unwrapsProperty` rule that was tried and taken out,
- * because a wrapper reading several callbacks off one config made each
- * of them a candidate. A parameter is supplied by whoever calls the
- * registering function, so no chain reaches it from here; that one
- * should read as a boundary whose handler is unknown rather than as no
- * boundary at all.
+ * The reach path where the handler is supplied by whoever calls the
+ * registering function. No chain reaches it from the file the route is
+ * written in, so the summary carries the route and says the handler was
+ * not read, rather than agreeing with a spelling that does state a
+ * body. Comparing it against the plainest spelling would report the one
+ * difference it is meant to have, so the differential asserts the shape
+ * it should be instead.
+ */
+export const REACH_PATHS_FROM_A_CALLER = ["throughParameter"] as const;
+
+/**
+ * The two that resolve to nothing at all, each for its own reason rather
+ * than for want of a rule. A call's return would need the rule to ask
+ * whether the callee unwraps, which is negation over a relation derived
+ * from the rule doing the asking, and that does not stratify. A
+ * factory's object argument is the `unwrapsProperty` rule that was tried
+ * and taken out, because a wrapper reading several callbacks off one
+ * config made each of them a candidate.
  */
 export const REACH_BUGS: ReproducedBug[] = [
   {
@@ -92,13 +100,6 @@ export const REACH_BUGS: ReproducedBug[] = [
     signature: "invariant:everyAnnouncedBoundaryIsSummarized",
     wrong:
       "a handler handed to a factory in an object argument loses its boundary",
-  },
-  {
-    dimension: "reach",
-    value: "throughParameter",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a handler arriving as a parameter loses its boundary, where it should read as one whose handler is unknown",
   },
 ];
 
@@ -120,15 +121,7 @@ export const HANDLER_BUGS: ReproducedBug[] = [
  * here. What is left is on the class's inside rather than its outside:
  * which members the walk reads once the class is recognized.
  */
-export const ANNOUNCEMENT_BUGS: ReproducedBug[] = [
-  {
-    dimension: "method",
-    value: "arrowProperty",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a handler written as a decorated arrow property, rather than a method, loses the boundary",
-  },
-];
+export const ANNOUNCEMENT_BUGS: ReproducedBug[] = [];
 
 /**
  * Wrong behaviour where a GraphQL field says which function answers
@@ -294,3 +287,14 @@ export const KNOWN_SIGNATURES: ReadonlySet<string> = new Set([
   "equivalence:summaries[0].inputs",
   "invariant:noEmptySummaryAtHighConfidence",
 ]);
+
+/**
+ * How a class writes the handler the framework calls. A method, an
+ * async method, and a property holding an arrow are one callable as far
+ * as the framework is concerned, and the walk reads all three.
+ */
+export const SOUND_METHOD_FORMS = [
+  "method",
+  "asyncMethod",
+  "arrowProperty",
+] as const;

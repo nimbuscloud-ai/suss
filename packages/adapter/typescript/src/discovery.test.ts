@@ -242,7 +242,7 @@ describe("namedExport — export default function", () => {
     );
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("panel");
-    expect(units[0].func.getText()).toContain("panelImpl");
+    expect(units[0].func?.getText()).toContain("panelImpl");
   });
 
   it("names the unit after the property the default export reads", () => {
@@ -400,7 +400,7 @@ describe("namedExport, an overload set", () => {
 
     const units = discoverUnits(file, [makeNamedExportPattern(["handler"])]);
     expect(units).toHaveLength(1);
-    expect(units[0].func.getText()).toContain("return args");
+    expect(units[0].func?.getText()).toContain("return args");
   });
 });
 
@@ -1241,7 +1241,7 @@ describe("resolverMap discovery, a map assembled across modules", () => {
       new ResolutionStore(),
     );
     expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
-    expect(units[0]?.func.getText()).toContain("pong");
+    expect(units[0]?.func?.getText()).toContain("pong");
   });
 
   it("reads the schema off a constant another module exports", () => {
@@ -2380,6 +2380,29 @@ describe("decoratedMethod discovery", () => {
     });
   });
 
+  it("reads a resolver written as a property holding an arrow", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { Query, Resolver } from "@nestjs/graphql";
+      @Resolver(() => Pet)
+      class PetResolver {
+        @Query(() => [Pet])
+        all = () => [];
+      }
+      declare class Pet { id: string; }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("PetResolver.all");
+    expect(units[0].resolverInfo).toEqual({
+      typeName: "Pet",
+      fieldName: "all",
+    });
+  });
+
   it("ignores methods without a recognised method-level decorator", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -2506,6 +2529,46 @@ describe("decoratedRoute discovery", () => {
     );
     const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
     expect(units[0].routeInfo).toEqual({ method: "GET", path: "/" });
+  });
+
+  it("reads a handler written as a property holding an arrow", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "users.controller.ts",
+      `
+      import { Controller, Get } from "@nestjs/common";
+      @Controller("users")
+      class UsersController {
+        @Get(":id")
+        one = () => null;
+
+        @Get()
+        list = function () { return []; };
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
+    const byName = Object.fromEntries(units.map((u) => [u.name, u.routeInfo]));
+    expect(byName).toEqual({
+      "UsersController.one": { method: "GET", path: "/users/:id" },
+      "UsersController.list": { method: "GET", path: "/users" },
+    });
+  });
+
+  it("ignores a decorated property that holds something other than a function", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "users.controller.ts",
+      `
+      import { Controller, Get } from "@nestjs/common";
+      @Controller("users")
+      class UsersController {
+        @Get()
+        options = { cache: true };
+      }
+    `,
+    );
+    expect(discoverUnits(file, [makeDecoratedRoutePattern()])).toHaveLength(0);
   });
 
   it("ignores methods without a recognised verb decorator", () => {
@@ -2899,7 +2962,7 @@ describe("namedExport of a binding written more than once", () => {
       store,
     );
     expect(units).toHaveLength(1);
-    expect(units[0].func.getText()).toContain("later");
+    expect(units[0].func?.getText()).toContain("later");
   });
 
   it("finds nothing when a branch decides which write runs", () => {

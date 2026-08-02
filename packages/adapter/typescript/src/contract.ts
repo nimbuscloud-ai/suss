@@ -85,7 +85,7 @@ function findRouterCall(unit: DiscoveredUnit): {
   handlerName: string;
 } | null {
   const func = unit.func;
-  const propNode = resolveHandlerPropNode(func);
+  const propNode = func === null ? null : resolveHandlerPropNode(func);
   if (propNode === null) {
     return null;
   }

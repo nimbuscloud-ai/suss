@@ -2,13 +2,9 @@
 // resolvers / handlers (`@Resolver()` class with `@Query` / `@Mutation`
 // / `@ResolveField` / `@Subscription` methods).
 
-import {
-  type ClassDeclaration,
-  type MethodDeclaration,
-  Node,
-  type SourceFile,
-} from "ts-morph";
+import { type ClassDeclaration, Node, type SourceFile } from "ts-morph";
 
+import { decoratedCallablesOf } from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -138,34 +134,19 @@ export function discoverDecoratedMethods(
         : null;
 
     const className = cls.getName() ?? "<anon-class>";
-    for (const method of cls.getMethods()) {
-      let matchedDecoratorName: string | null = null;
-      let matchedDecorator: Node | null = null;
-      for (const candidate of match.methodDecorators) {
-        const decorator = method.getDecorator(candidate);
-        if (decorator !== undefined) {
-          matchedDecoratorName = candidate;
-          matchedDecorator = decorator;
-          break;
-        }
-      }
-      if (matchedDecoratorName === null || matchedDecorator === null) {
-        continue;
-      }
-
-      const methodName = method.getName();
+    for (const handler of decoratedCallablesOf(cls, match.methodDecorators)) {
       const fieldName =
-        resolveOperationNameOverride(matchedDecorator) ?? methodName;
+        resolveOperationNameOverride(handler.decorator) ?? handler.name;
       const typeName =
-        classTypeName ?? defaultTypeNameForDecorator(matchedDecoratorName);
+        classTypeName ?? defaultTypeNameForDecorator(handler.standsFor);
 
       results.push({
-        func: method as MethodDeclaration,
+        func: handler.func,
         kind,
-        // `<ClassName>.<methodName>` keeps the summary identity
+        // `<ClassName>.<memberName>` keeps the summary identity
         // unique within the file and meaningful when read out of
         // context. Same shape as React sub-units (`Comp.handler`).
-        name: `${className}.${methodName}`,
+        name: `${className}.${handler.name}`,
         resolverInfo: { typeName, fieldName },
       });
     }

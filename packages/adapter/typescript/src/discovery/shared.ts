@@ -23,7 +23,18 @@ export interface ClientCallSite {
 }
 
 export interface DiscoveredUnit {
-  func: FunctionRoot;
+  /**
+   * The function this unit is. Null when a registration announced a
+   * boundary and the handler it names comes from outside everything
+   * this run reads, in which case `announcedAt` is where the unit is
+   * and the summary describes a boundary with nothing behind it.
+   */
+  func: FunctionRoot | null;
+  /**
+   * The registration that announced a boundary whose handler was never
+   * reached. Set exactly when `func` is null, and the unit's location.
+   */
+  announcedAt?: Node;
   kind: string;
   name: string;
   callSite?: ClientCallSite;
@@ -145,6 +156,15 @@ export interface DiscoveredUnit {
 }
 
 /**
+ * Where a unit sits in source: the function it is, or the registration
+ * that announced a boundary whose handler was never reached. Null when
+ * a caller handed over neither, which nothing downstream can place.
+ */
+export function unitNode(unit: DiscoveredUnit): Node | null {
+  return unit.func ?? unit.announcedAt ?? null;
+}
+
+/**
  * What makes two units the same unit. The enclosing function and the
  * kind start it off, and then everything that lets one function be more
  * than one boundary is added on: the package export a caller consumes,
@@ -165,11 +185,14 @@ export interface DiscoveredUnit {
  * the same unit whichever module's surface it was reached through.
  */
 export function unitDedupKey(unit: DiscoveredUnit): string {
+  const at = unitNode(unit);
   const parts = [
     // Offsets are positions within one file, so the file is part of
     // saying which function this is once the question is asked across
     // a whole run.
-    `${unit.func.getSourceFile().getFilePath()}:${unit.func.getStart()}-${unit.func.getEnd()}`,
+    at === null
+      ? ""
+      : `${at.getSourceFile().getFilePath()}:${at.getStart()}-${at.getEnd()}`,
     unit.kind,
     unit.packageExportInfo === undefined
       ? ""
@@ -275,6 +298,24 @@ export function couldStillNameAFunction(value: Node): boolean {
     isFunctionRoot(written) ||
     couldResolveToFunction(written)
   );
+}
+
+/**
+ * Whether this name is one the surrounding function was handed. A
+ * registering function's own parameter holds whatever its callers
+ * passed, so no chain from here reaches a function, however many rules
+ * are added.
+ *
+ * The one-hop reading of the fact layer's `flowsToParam`: a name bound
+ * to a parameter. A value that arrives at a parameter through a wrapper
+ * call answers false here.
+ */
+export function namesAParameter(value: Node): boolean {
+  if (!Node.isIdentifier(value)) {
+    return false;
+  }
+  const declaration = value.getSymbol()?.getDeclarations()?.[0];
+  return declaration !== undefined && Node.isParameterDeclaration(declaration);
 }
 
 export function toFunctionRoot(node: Node): FunctionRoot | null {

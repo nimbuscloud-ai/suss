@@ -484,6 +484,37 @@ function tryResolveStatusRange(
 // Code structure extraction (per unit)
 // ---------------------------------------------------------------------------
 
+/**
+ * What a boundary announced without a handler behind it comes to. The
+ * registration says where it is and the binding branches downstream say
+ * what it pairs on; there is no body to read, and `bodyContent` says so
+ * rather than leaving a summary that reads like a handler doing nothing.
+ */
+function announcedBoundaryStructure(unit: DiscoveredUnit): RawCodeStructure {
+  const at = unit.announcedAt;
+  if (at === undefined) {
+    throw new Error(
+      `discovery produced the unit "${unit.name}" with neither a function nor the registration that announced it`,
+    );
+  }
+  return {
+    identity: {
+      name: unit.name,
+      kind: unit.kind as CodeUnitKind,
+      file: at.getSourceFile().getFilePath(),
+      range: { start: at.getStartLineNumber(), end: at.getEndLineNumber() },
+      exportName: unit.name,
+      exportPath: [unit.name],
+    },
+    boundaryBinding: null,
+    parameters: [],
+    branches: [],
+    bodyContent: "elsewhere",
+    dependencyCalls: [],
+    declaredContract: null,
+  };
+}
+
 export function extractCodeStructure(
   unit: DiscoveredUnit,
   pack: PatternPack,
@@ -492,6 +523,9 @@ export function extractCodeStructure(
   barriers: DescentBarriers = NO_BARRIERS,
 ): RawCodeStructure {
   const { func, kind, name } = unit;
+  if (func === null) {
+    return announcedBoundaryStructure(unit);
+  }
   // A discoverUnits callback can attach terminals or an input mapping to
   // one unit, for a pack whose units follow more than one output
   // convention. The pack-level declaration is the default.
@@ -862,7 +896,9 @@ function computeSubUnitBarriers(
   pack: PatternPack,
   ctx: TsSubUnitContext,
 ): DescentBarriers {
-  if (pack.subUnits === undefined) {
+  // A boundary announced without a handler behind it has no body for a
+  // sub-unit to sit in.
+  if (pack.subUnits === undefined || unit.func === null) {
     return NO_BARRIERS;
   }
   const parentHandle: DiscoveredSubUnitParent = {
