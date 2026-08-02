@@ -2,9 +2,9 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "providers": 970,
-    "consumers": 273,
-    "pairs": 265
+    "providers": 982,
+    "consumers": 275,
+    "pairs": 267
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -30,7 +30,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "providers": 70,
-      "consumers": 103
+      "consumers": 105
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -89,7 +89,7 @@
     },
     "packages/datalog": {
       "name": "@suss/datalog",
-      "providers": 36,
+      "providers": 48,
       "consumers": 0
     },
     "packages/extractor": {
