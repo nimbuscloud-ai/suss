@@ -173,10 +173,6 @@
                       {
                         "type": "object",
                         "properties": {
-                          "name": {
-                            "type": "string",
-                            "const": "runtime-config"
-                          },
                           "deploymentTarget": {
                             "type": "string",
                             "enum": [
@@ -187,13 +183,18 @@
                             ]
                           },
                           "instanceName": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "name": {
+                            "type": "string",
+                            "const": "runtime-config"
                           }
                         },
                         "required": [
-                          "name",
                           "deploymentTarget",
-                          "instanceName"
+                          "instanceName",
+                          "name"
                         ],
                         "additionalProperties": false
                       },
@@ -255,6 +256,21 @@
                 "type": "null"
               }
             ]
+          },
+          "deployableUnit": {
+            "type": "object",
+            "properties": {
+              "deploymentTarget": {
+                "type": "string",
+                "enum": ["lambda", "ecs-task", "container", "k8s-deployment"]
+              },
+              "instanceName": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["deploymentTarget", "instanceName"],
+            "additionalProperties": false
           }
         },
         "required": ["name", "exportPath", "boundaryBinding"],
@@ -739,10 +755,6 @@
                               {
                                 "type": "object",
                                 "properties": {
-                                  "name": {
-                                    "type": "string",
-                                    "const": "runtime-config"
-                                  },
                                   "deploymentTarget": {
                                     "type": "string",
                                     "enum": [
@@ -753,13 +765,18 @@
                                     ]
                                   },
                                   "instanceName": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "const": "runtime-config"
                                   }
                                 },
                                 "required": [
-                                  "name",
                                   "deploymentTarget",
-                                  "instanceName"
+                                  "instanceName",
+                                  "name"
                                 ],
                                 "additionalProperties": false
                               },

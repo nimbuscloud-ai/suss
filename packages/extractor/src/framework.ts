@@ -3,7 +3,11 @@
 // Pattern packs are declarative data that tell the language adapter WHAT to look for.
 // The adapter knows HOW to look for it in the language's AST.
 
-import type { Effect, MessageBusSemantics } from "@suss/behavioral-ir";
+import type {
+  DeployableUnit,
+  Effect,
+  MessageBusSemantics,
+} from "@suss/behavioral-ir";
 
 // =============================================================================
 // Discovery
@@ -1043,6 +1047,8 @@ export interface DiscoveredCustomUnit {
     messageBus: MessageBusSemantics["messageBus"];
     channel: string;
   };
+  /** The thing that gets deployed and runs this unit, when known. */
+  deployableUnit?: DeployableUnit;
   /**
    * Metadata merged onto the resulting summary's `metadata` field.
    */

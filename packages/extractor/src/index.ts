@@ -7,6 +7,7 @@ import type {
   BoundaryBinding,
   CodeUnitKind,
   ConfidenceInfo,
+  DeployableUnit,
   Effect,
   Gap,
   Input,
@@ -253,6 +254,8 @@ export interface RawCodeStructure {
    * helpers, pure utilities, and anything the adapter can't place.
    */
   boundaryBinding: BoundaryBinding | null;
+  /** The thing that gets deployed and runs this code, when known. */
+  deployableUnit?: DeployableUnit;
   parameters: RawParameter[];
   branches: RawBranch[];
   /**
@@ -430,6 +433,9 @@ export function assembleSummary(
       name: raw.identity.name,
       exportPath: raw.identity.exportPath,
       boundaryBinding: raw.boundaryBinding ?? null,
+      ...(raw.deployableUnit !== undefined
+        ? { deployableUnit: raw.deployableUnit }
+        : {}),
     },
     inputs,
     transitions,

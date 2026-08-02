@@ -14,6 +14,7 @@ import { z } from "zod";
 import {
   BoundaryBindingSchema,
   ConfidenceInfoSchema,
+  DeployableUnitSchema,
   SourceLocationSchema,
   TypeShapeSchema,
 } from "@suss/ir-core/schemas";
@@ -293,6 +294,8 @@ export const CodeUnitIdentitySchema = z.object({
   name: z.string(),
   exportPath: z.array(z.string()).nullable(),
   boundaryBinding: BoundaryBindingSchema.nullable(),
+  /** The thing that gets deployed and runs this unit, when known. */
+  deployableUnit: DeployableUnitSchema.optional(),
 });
 
 export const LiteralSchema = z.object({

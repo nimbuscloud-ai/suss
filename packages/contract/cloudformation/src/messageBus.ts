@@ -239,6 +239,10 @@ function buildLambdaConsumerSummary(
         messageBus: "sqs",
         channel: opts.routed?.channel ?? opts.channel,
       }),
+      deployableUnit: {
+        deploymentTarget: "lambda",
+        instanceName: opts.lambdaId,
+      },
     },
     inputs: [],
     transitions: [],
@@ -247,7 +251,6 @@ function buildLambdaConsumerSummary(
     metadata: {
       codeScope,
       messageBus: {
-        consumerLambda: opts.lambdaId,
         eventName: opts.eventName,
         ...(opts.routed !== null
           ? {
@@ -655,6 +658,10 @@ function buildEventBridgeConsumerSummary(
         messageBus: "eventbridge",
         channel: opts.channel,
       }),
+      deployableUnit: {
+        deploymentTarget: "lambda",
+        instanceName: opts.lambdaId,
+      },
     },
     inputs: [],
     transitions: [],
@@ -663,7 +670,6 @@ function buildEventBridgeConsumerSummary(
     metadata: {
       codeScope,
       messageBus: {
-        consumerLambda: opts.lambdaId,
         rule: opts.ruleLabel,
         eventBus: opts.eventBus,
         patternResolution: opts.patternResolution,

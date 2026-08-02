@@ -13,6 +13,7 @@ import type {
   ConfidenceLevelSchema,
   ConfidenceSourceSchema,
   CorroborationSchema,
+  DeployableUnitSchema,
   SemanticsSchema,
   SourceLocationSchema,
 } from "./schemas.js";
@@ -23,6 +24,7 @@ export {
   ConfidenceLevelSchema,
   ConfidenceSourceSchema,
   CorroborationSchema,
+  DeployableUnitSchema,
   FunctionCallSemanticsSchema,
   GraphqlOperationSemanticsSchema,
   GraphqlResolverSemanticsSchema,
@@ -68,6 +70,7 @@ export type StorageRelationalSemantics = Extract<
   { name: "storage-relational" }
 >;
 export type MessageBusSemantics = Extract<Semantics, { name: "message-bus" }>;
+export type DeployableUnit = z.infer<typeof DeployableUnitSchema>;
 
 // TypeShape is a hand-written named recursive type in ./schemas (re-exported
 // here) rather than a `z.infer`, so cross-package declarations reference it

@@ -8,7 +8,7 @@
 
 import { type CallExpression, Node } from "ts-morph";
 
-import type { MessageBusSemantics } from "@suss/behavioral-ir";
+import type { DeployableUnit, MessageBusSemantics } from "@suss/behavioral-ir";
 import type {
   DiscoveryPattern,
   InputMappingPattern,
@@ -133,6 +133,8 @@ export interface DiscoveredUnit {
     messageBus: MessageBusSemantics["messageBus"];
     channel: string;
   };
+  /** The thing that gets deployed and runs this unit, when known. */
+  deployableUnit?: DeployableUnit;
   /**
    * Metadata merged onto the assembled summary's `metadata` field.
    * Populated when a pack's `discoverUnits` callback stamps provenance

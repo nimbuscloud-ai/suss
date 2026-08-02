@@ -20,11 +20,17 @@ import type {
   FunctionRoot,
   TsDiscoveryContext,
 } from "@suss/adapter-typescript";
+import type { DeployableUnit } from "@suss/behavioral-ir";
 import type { DiscoveredCustomUnit, PatternPack } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 
 /** Metadata namespace stamped on every unit this pack discovers. */
 export const METADATA_NAMESPACE = "awsLambda";
+
+/** The Lambda a template entry deploys. */
+function deployableUnit(entry: HandlerEntry): DeployableUnit {
+  return { deploymentTarget: "lambda", instanceName: entry.functionLogicalId };
+}
 
 function httpRouteUnits(
   entry: HandlerEntry,
@@ -43,9 +49,9 @@ function httpRouteUnits(
       kind: "handler",
       name: `${entry.functionLogicalId}.${entry.exportName}`,
       routeInfo: { method: route.method, path: route.path },
+      deployableUnit: deployableUnit(entry),
       metadata: {
         [METADATA_NAMESPACE]: {
-          functionLogicalId: entry.functionLogicalId,
           handler: entry.handler,
           eventId: route.eventId,
           apiEventType: route.eventType,
@@ -98,9 +104,9 @@ function graphqlResolverUnits(
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
     resolverInfo: { typeName: field.typeName, fieldName: field.fieldName },
+    deployableUnit: deployableUnit(entry),
     metadata: {
       [METADATA_NAMESPACE]: {
-        functionLogicalId: entry.functionLogicalId,
         handler: entry.handler,
         recognition: "appsync-resolver",
       },
@@ -138,9 +144,9 @@ function accountingUnit(
     ...(channel !== null
       ? { channelInfo: { messageBus: "sqs" as const, channel } }
       : {}),
+    deployableUnit: deployableUnit(entry),
     metadata: {
       [METADATA_NAMESPACE]: {
-        functionLogicalId: entry.functionLogicalId,
         handler: entry.handler,
         recognition: "recognized-not-http",
         eventTypes,

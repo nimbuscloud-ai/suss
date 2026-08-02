@@ -220,12 +220,9 @@ describe("awsLambdaDiscovery — edge cases", () => {
 
   it("accounts for an ANY-only function as recognized-not-http", async () => {
     const summaries = await run();
-    const anyOnly = summaries.find((s) => {
-      const meta = s.metadata?.awsLambda as
-        | { functionLogicalId?: string; recognition?: string }
-        | undefined;
-      return meta?.functionLogicalId === "AnyOnlyFn";
-    });
+    const anyOnly = summaries.find(
+      (s) => s.identity.deployableUnit?.instanceName === "AnyOnlyFn",
+    );
     expect(anyOnly).toBeDefined();
     const meta = (anyOnly as BehavioralSummary).metadata?.awsLambda as {
       recognition: string;
@@ -237,12 +234,9 @@ describe("awsLambdaDiscovery — edge cases", () => {
 
   it("skips a template handler whose export the file doesn't provide", async () => {
     const summaries = await run();
-    const ghost = summaries.find((s) => {
-      const meta = s.metadata?.awsLambda as
-        | { functionLogicalId?: string }
-        | undefined;
-      return meta?.functionLogicalId === "GhostFn";
-    });
+    const ghost = summaries.find(
+      (s) => s.identity.deployableUnit?.instanceName === "GhostFn",
+    );
     expect(ghost).toBeUndefined();
   });
 });

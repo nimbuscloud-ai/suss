@@ -912,6 +912,9 @@ function extractFromSourceFile(
             ...(cu.channelInfo !== undefined
               ? { channelInfo: cu.channelInfo }
               : {}),
+            ...(cu.deployableUnit !== undefined
+              ? { deployableUnit: cu.deployableUnit }
+              : {}),
             ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
           });
         }
@@ -939,6 +942,13 @@ function extractFromSourceFile(
         allAccessRecognizers,
         barriers,
       );
+
+      // Which deployable unit runs this code is independent of the
+      // boundary it sits on, so it is set once here rather than inside
+      // any one binding branch below.
+      if (unit.deployableUnit !== undefined) {
+        raw.deployableUnit = unit.deployableUnit;
+      }
 
       // The discovery pattern that produced this unit is attached by
       // discoverUnits — fall back to the first kind-match if missing so older

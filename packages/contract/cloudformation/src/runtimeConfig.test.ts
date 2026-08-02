@@ -139,6 +139,24 @@ describe("buildRuntimeConfigSummaries — Lambda", () => {
       "CheckoutHandler",
     );
   });
+
+  it("says the same deployable unit on the identity as on the binding", () => {
+    const summaries = pickRuntimeConfig(
+      cloudFormationToSummaries({
+        Resources: {
+          CheckoutHandler: { Type: "AWS::Lambda::Function", Properties: {} },
+        },
+      }),
+    );
+    const semantics = summaries[0].identity.boundaryBinding?.semantics;
+    if (semantics?.name !== "runtime-config") {
+      throw new Error("expected runtime-config semantics");
+    }
+    expect(summaries[0].identity.deployableUnit).toEqual({
+      deploymentTarget: semantics.deploymentTarget,
+      instanceName: semantics.instanceName,
+    });
+  });
 });
 
 describe("buildRuntimeConfigSummaries — ECS task", () => {
