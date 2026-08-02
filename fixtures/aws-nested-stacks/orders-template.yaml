@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Orders child stack — its own Globals, its own namespace.
+
+Parameters:
+  TableName:
+    Type: String
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    CodeUri: .
+    Environment:
+      Variables:
+        ORDERS_ONLY: declared-by-the-orders-document
+
+Resources:
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: widget-orders
+
+  HandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/orders/handler.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+      Events:
+        Orders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+Outputs:
+  QueueName:
+    Value: !GetAtt OrdersQueue.QueueName

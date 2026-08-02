@@ -2,8 +2,9 @@
 // file and index its Serverless::Function handlers by resolved module
 // path.
 //
-// The manifest parse (loading the template, reading function
-// resources + Events) comes from @suss/manifest-aws — this module only
+// The manifest parse (loading the template and the children it embeds,
+// reading function resources + Events) comes from @suss/manifest-aws —
+// this module only
 // does the filesystem discovery (walk up to the template) and the
 // code-path resolution (CodeUri + Handler → an absolute module path)
 // that a framework pack needs to map a handler export back to the
@@ -14,15 +15,22 @@ import path from "node:path";
 
 import {
   type AppSyncResolverBinding,
-  loadCloudFormationTemplate,
+  loadTemplateTree,
+  qualifiedLogicalId,
   readAppSyncResolvers,
   readServerlessFunctions,
   type ServerlessHttpRoute,
   type ServerlessNonHttpEvent,
+  unfollowedStackMessage,
 } from "@suss/manifest-aws";
 
 /** One Serverless::Function's handler + the Events that reach it. */
 export interface HandlerEntry {
+  /**
+   * The function's logical id, qualified by the stack path that reaches
+   * its document, so a function declared in a nested stack names the
+   * same deployed Lambda the declared side names.
+   */
   functionLogicalId: string;
   /**
    * GraphQL fields this handler serves, when the same template declares
@@ -108,27 +116,39 @@ function indexForTemplate(templatePath: string): HandlerIndex {
 
   const index: HandlerIndex = new Map();
   try {
-    const template = loadCloudFormationTemplate(templatePath);
-    const templateDir = path.dirname(templatePath);
-    const fieldsByFunction = groupFieldsByFunction(
-      readAppSyncResolvers(template),
-    );
-    for (const fn of readServerlessFunctions(template)) {
-      const resolvedModule = path.resolve(
-        templateDir,
-        fn.codeUri,
-        fn.modulePath,
+    const tree = loadTemplateTree(templatePath);
+    for (const stack of tree.unfollowed) {
+      process.stderr.write(
+        `[suss] aws-lambda: ${unfollowedStackMessage(stack)}\n`,
       );
-      const list = index.get(resolvedModule) ?? [];
-      list.push({
-        functionLogicalId: fn.logicalId,
-        graphqlFields: fieldsByFunction.get(fn.logicalId) ?? [],
-        handler: fn.handler,
-        exportName: fn.exportName,
-        httpRoutes: fn.httpRoutes,
-        nonHttpEvents: fn.nonHttpEvents,
-      });
-      index.set(resolvedModule, list);
+    }
+    for (const document of tree.documents) {
+      // A child's CodeUri is written relative to the child's own file,
+      // and its AppSync graph names resources in its own document.
+      const templateDir = path.dirname(document.path);
+      const fieldsByFunction = groupFieldsByFunction(
+        readAppSyncResolvers(document.template),
+      );
+      for (const fn of readServerlessFunctions(document.template)) {
+        const resolvedModule = path.resolve(
+          templateDir,
+          fn.codeUri,
+          fn.modulePath,
+        );
+        const list = index.get(resolvedModule) ?? [];
+        list.push({
+          functionLogicalId: qualifiedLogicalId(
+            document.stackPath,
+            fn.logicalId,
+          ),
+          graphqlFields: fieldsByFunction.get(fn.logicalId) ?? [],
+          handler: fn.handler,
+          exportName: fn.exportName,
+          httpRoutes: fn.httpRoutes,
+          nonHttpEvents: fn.nonHttpEvents,
+        });
+        index.set(resolvedModule, list);
+      }
     }
   } catch (err) {
     process.stderr.write(

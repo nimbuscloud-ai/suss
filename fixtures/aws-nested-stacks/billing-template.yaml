@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Billing child stack. It declares HandlerFunction too, which is legal:
+  a logical id is unique inside one document and nowhere else.
+
+Parameters:
+  TableName:
+    Type: String
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    CodeUri: .
+    Environment:
+      Variables:
+        BILLING_ONLY: declared-by-the-billing-document
+
+Resources:
+  BillingHttpApi:
+    Type: AWS::Serverless::HttpApi
+
+  HandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/billing/handler.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+      Events:
+        Invoices:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref BillingHttpApi
+            Method: GET
+            Path: /invoices

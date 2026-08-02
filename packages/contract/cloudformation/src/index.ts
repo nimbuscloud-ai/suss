@@ -22,6 +22,11 @@
 // SAM AWS::Serverless::Function.Events { Api | HttpApi } blocks are
 // expanded into synthetic Method / Route entries in the appropriate
 // API's config — that's the dominant SAM authoring idiom.
+//
+// Reading a template from disk reads the templates it embeds too. Each
+// document is walked on its own, because a logical id, a SAM `Globals`
+// section and a relative path all mean something only inside the
+// document that writes them.
 
 import path from "node:path";
 
@@ -46,10 +51,12 @@ import {
   type CloudFormationResource,
   type CloudFormationTemplate,
   inheritedEnvVars,
-  loadCloudFormationTemplate,
+  loadTemplateTree,
   parseHandler,
+  qualifiedLogicalId,
   refTarget,
   resourcesWithGlobals,
+  unfollowedStackMessage,
 } from "@suss/manifest-aws";
 
 import { buildMessageBusSummaries } from "./messageBus.js";
@@ -74,6 +81,13 @@ export {
 export interface CloudFormationToSummariesOptions {
   /** Override the logical source file recorded on each summary. */
   source?: string;
+  /**
+   * Logical ids of the stack resources leading from the root template
+   * down to this document. Empty (the default) for a template nothing
+   * embeds. A logical id is unique inside one document, so the stack
+   * path is what tells two nested documents' resources apart.
+   */
+  stackPath?: string[];
 }
 
 /**
@@ -152,7 +166,63 @@ export function cloudFormationToSummaries(
   //    interaction effects from @suss/framework-aws-sqs pair against these.
   summaries.push(...buildMessageBusSummaries(resources, sourceFile));
 
-  return summaries;
+  const stackPath = options.stackPath ?? [];
+  return stackPath.length === 0
+    ? summaries
+    : summaries.map((summary) => deployedWithinStack(summary, stackPath));
+}
+
+/**
+ * The same summary with the deployed thing it names qualified by the
+ * stack path that reaches its document.
+ *
+ * A logical id is unique within one document and nowhere else, so two
+ * nested documents can each declare `HandlerFunction` and mean two
+ * different Lambdas. The deployed instance is the identity the checker
+ * joins the code side against, so it is the one that has to carry the
+ * path. A channel keeps the name its document writes, because a queue
+ * name is what the code says and the code cannot know which document
+ * declared the queue.
+ */
+function deployedWithinStack(
+  summary: BehavioralSummary,
+  stackPath: string[],
+): BehavioralSummary {
+  const unit = summary.identity.deployableUnit;
+  const binding = summary.identity.boundaryBinding;
+  if (unit === undefined && binding?.semantics.name !== "runtime-config") {
+    return summary;
+  }
+  return {
+    ...summary,
+    identity: {
+      ...summary.identity,
+      ...(unit !== undefined
+        ? {
+            deployableUnit: {
+              ...unit,
+              instanceName: qualifiedLogicalId(stackPath, unit.instanceName),
+            },
+          }
+        : {}),
+      // A runtime-config boundary is keyed on the instance, so the
+      // binding holds its own copy of the name and both have to move.
+      ...(binding !== null && binding?.semantics.name === "runtime-config"
+        ? {
+            boundaryBinding: {
+              ...binding,
+              semantics: {
+                ...binding.semantics,
+                instanceName: qualifiedLogicalId(
+                  stackPath,
+                  binding.semantics.instanceName,
+                ),
+              },
+            },
+          }
+        : {}),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -963,19 +1033,44 @@ function parseStatus(value: unknown): number | null {
 }
 
 /**
- * Load a CloudFormation template from disk and convert it into behavioral
- * summaries. Format is detected by extension; `.json` is parsed as JSON,
- * everything else (including `.yaml`/`.yml`/`.template`) goes through the
- * YAML parser.
+ * Load a CloudFormation template from disk, along with every template
+ * it embeds through a stack resource, and convert them all into
+ * behavioral summaries. Format is detected by extension; `.json` is
+ * parsed as JSON, everything else (including `.yaml`/`.yml`/`.template`)
+ * goes through the YAML parser.
+ *
+ * A child the reader could not open is reported on stderr and named,
+ * so it reads as a template we did not get to rather than a template
+ * that declares nothing.
  */
 export function cloudFormationFileToSummaries(
   templatePath: string,
   options: CloudFormationToSummariesOptions = {},
 ): BehavioralSummary[] {
-  const template = loadCloudFormationTemplate(templatePath);
-  return cloudFormationToSummaries(template, {
-    source:
-      options.source ??
-      `cloudformation:${path.basename(path.resolve(templatePath))}`,
-  });
+  const tree = loadTemplateTree(templatePath);
+  for (const stack of tree.unfollowed) {
+    process.stderr.write(
+      `[suss] cloudformation: ${unfollowedStackMessage(stack)}\n`,
+    );
+  }
+  const rootLabel =
+    options.source ??
+    `cloudformation:${path.basename(path.resolve(templatePath))}`;
+  return tree.documents.flatMap((document) =>
+    cloudFormationToSummaries(document.template, {
+      source: documentLabel(rootLabel, document.stackPath),
+      stackPath: document.stackPath,
+    }),
+  );
+}
+
+/**
+ * The label summaries from one document carry. The root keeps the label
+ * the caller asked for, and a child adds the path that reaches it,
+ * which stays distinct even when two stack resources embed one file.
+ */
+function documentLabel(rootLabel: string, stackPath: string[]): string {
+  return stackPath.length === 0
+    ? rootLabel
+    : `${rootLabel}#${stackPath.join("/")}`;
 }

@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Root template of an invented service split across nested stacks.
+  Two children declare a function under the same logical id, one child
+  is named by a URL nothing in this repository can open, and one names a
+  file that is not here.
+
+Parameters:
+  TableName:
+    Type: String
+    Default: widgets
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    CodeUri: .
+    Environment:
+      Variables:
+        ROOT_ONLY: declared-by-the-root-document
+
+Resources:
+  RootFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/root/handler.handler
+
+  OrdersStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./orders-template.yaml
+      Parameters:
+        TableName: !Ref TableName
+
+  BillingStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./billing-template.yaml
+      Parameters:
+        TableName: !Ref TableName
+
+  # Packaged elsewhere: the template lives in a bucket, so reading this
+  # repository cannot reach it.
+  PackagedStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: s3://widget-artifacts/packaged-template.yaml
+
+  # Names a file that is not in this repository.
+  DashboardStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./dashboard-template.yaml
+
+  # The parent reads a value the Orders child publishes.
+  OrdersAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !GetAtt OrdersStack.Outputs.QueueName
+      Namespace: Widgets
