@@ -736,14 +736,18 @@ export interface TransparentWrapper {
 export interface PatternPack {
   name: string;
   /**
-   * Pack version stamp — feeds the cache invalidation key. Bump on
+   * Pack version stamp, which feeds the cache invalidation key. Bump on
    * any change that affects discovered units / extracted summaries.
-   * Format is opaque to the adapter; semver is the obvious choice
-   * but a content hash, build SHA, or monotonic integer works too.
-   * Optional — packs that omit it use the literal string `"unset"`,
-   * which means cache entries from one process to the next aren't
-   * meaningfully versioned (suitable for development; production
-   * packs should declare a version).
+   * Format is opaque to the adapter, so semver or a content hash both
+   * work.
+   *
+   * Optional, because whoever loads the pack knows more about it than
+   * the pack does. The CLI folds a hash of the file it loaded and of
+   * the config it passed into this stamp, so a pack run through the CLI
+   * invalidates on an edit whether or not it declares a version. A host
+   * that builds packs some other way carries that responsibility
+   * itself. A pack with nothing to stamp reads as `"unset"`, and warm
+   * caches will answer for code that has since changed.
    */
   version?: string;
   languages: string[];

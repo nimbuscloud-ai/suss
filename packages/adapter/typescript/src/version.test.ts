@@ -5,7 +5,7 @@
 // same packs in any order produce the same digest, and a pack without a
 // version says so rather than disappearing.
 
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
   ADAPTER_VERSION,
   computeAdapterPacksDigest,
+  computeContentHash,
   computeDistHashFrom,
 } from "./version.js";
 
@@ -50,6 +51,47 @@ describe("computeAdapterPacksDigest", () => {
   });
 });
 
+describe("computeContentHash", () => {
+  it("changes when a file changes", () => {
+    const file = path.join(
+      mkdtempSync(path.join(tmpdir(), "pack-")),
+      "pack.js",
+    );
+    writeFileSync(file, "one");
+    const before = computeContentHash([file]);
+    writeFileSync(file, "two");
+    expect(computeContentHash([file])).not.toBe(before);
+  });
+
+  it("answers the same for the same files", () => {
+    const file = path.join(
+      mkdtempSync(path.join(tmpdir(), "pack-")),
+      "pack.js",
+    );
+    writeFileSync(file, "same");
+    expect(computeContentHash([file])).toBe(computeContentHash([file]));
+  });
+
+  it("tells two files apart by what is in them", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "pack-"));
+    writeFileSync(path.join(dir, "one.js"), "one");
+    writeFileSync(path.join(dir, "two.js"), "two");
+    expect(computeContentHash([path.join(dir, "one.js")])).not.toBe(
+      computeContentHash([path.join(dir, "two.js")]),
+    );
+  });
+
+  it("answers empty when it was given nothing to hash", () => {
+    expect(computeContentHash([])).toBe("");
+  });
+
+  it("answers empty when a file is not there to read", () => {
+    expect(
+      computeContentHash([path.join(tmpdir(), "suss-absent-file.js")]),
+    ).toBe("");
+  });
+});
+
 describe("computeDistHashFrom", () => {
   it("answers empty for a directory with no bundle in it", () => {
     expect(computeDistHashFrom(mkdtempSync(path.join(tmpdir(), "no-")))).toBe(
@@ -65,6 +107,17 @@ describe("computeDistHashFrom", () => {
     const second = computeDistHashFrom(dir);
     expect(first).not.toBe("");
     expect(first).not.toBe(second);
+  });
+
+  it("answers empty for a bundle it can see but cannot read", () => {
+    // A bundle it cannot read used to throw out of here, and the caller
+    // turned that into the empty stamp one level up. Answering empty
+    // directly is the same answer to the caller, and this is the path
+    // that says so.
+    const dir = mkdtempSync(path.join(tmpdir(), "dist-"));
+    mkdirSync(path.join(dir, "index.js"));
+
+    expect(computeDistHashFrom(dir)).toBe("");
   });
 
   it("answers the same for the same bundle", () => {

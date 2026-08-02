@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
+
+import { computeContentHash } from "@suss/adapter-typescript";
 
 import {
   BUILTIN_FRAMEWORKS,
@@ -77,6 +80,55 @@ describe("resolveFramework", () => {
     expect(other.version).not.toBe(configured.version);
   });
 
+  it("stamps a pack with a hash of the code it loaded", async () => {
+    const pack = await resolveFramework("apollo-client");
+    const loaded = fileURLToPath(import.meta.resolve("@suss/client-apollo"));
+
+    // Editing a pack has to invalidate warm caches, and the version
+    // stamp is the only thing about a pack the cache key sees. Almost
+    // no pack declares a version, so without the hash of what was
+    // loaded, a pack edit would be answered from the previous code.
+    expect(pack.version).toContain(computeContentHash([loaded]));
+    expect(pack.version).not.toContain(
+      computeContentHash([
+        fileURLToPath(import.meta.resolve("@suss/client-web")),
+      ]),
+    );
+  });
+
+  it("gives two packs resolved in one process their own code hash", async () => {
+    // One hash per pack is kept for the life of the process, so a
+    // second pack must not be answered with the first pack's hash.
+    const apollo = await resolveFramework("apollo-client");
+    const web = await resolveFramework("fetch");
+
+    expect(apollo.version).toContain(
+      computeContentHash([
+        fileURLToPath(import.meta.resolve("@suss/client-apollo")),
+      ]),
+    );
+    expect(web.version).toContain(
+      computeContentHash([
+        fileURLToPath(import.meta.resolve("@suss/client-web")),
+      ]),
+    );
+  });
+
+  it("keeps the config in the stamp alongside the code", async () => {
+    const configured = await resolveFramework(
+      `aws-sqs=${writeConfig('{"producers":[{"module":"@acme/async","receiver":"CommandDispatcher","method":"dispatch","subjectArg":0}]}')}`,
+    );
+    const plain = await resolveFramework("aws-sqs");
+    const loaded = fileURLToPath(
+      import.meta.resolve("@suss/framework-aws-sqs"),
+    );
+    const code = computeContentHash([loaded]);
+
+    expect(plain.version).toContain(code);
+    expect(configured.version).toContain(code);
+    expect(configured.version).not.toBe(plain.version);
+  });
+
   it("stamps the same config the same way whatever order it is written in", async () => {
     const one = await resolveFramework(
       `aws-sqs=${writeConfig('{"producers":[{"module":"@acme/async","receiver":"D","method":"send","subjectArg":0}]}')}`,
@@ -109,6 +161,30 @@ describe("resolveFramework", () => {
     for (const pack of packs) {
       expect(pack.name).toBeTruthy();
     }
+  });
+
+  it("points every name it takes at a package the CLI depends on", async () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { dependencies: Record<string, string> };
+
+    // The record holds package names as plain strings, so a typo or a
+    // pack that stopped being a dependency reaches the user as a failed
+    // run rather than a failed build. Four of these names sit outside
+    // the `@suss/framework-` family the test above walks.
+    for (const [name, specifier] of Object.entries(BUILTIN_FRAMEWORKS)) {
+      expect(
+        { name, declared: specifier in manifest.dependencies },
+        `-f ${name} names ${specifier}`,
+      ).toEqual({ name, declared: true });
+    }
+
+    const packs = await Promise.all(
+      Object.keys(BUILTIN_FRAMEWORKS).map(resolveFramework),
+    );
+    expect(packs.map((pack) => pack.name).filter(Boolean)).toHaveLength(
+      Object.keys(BUILTIN_FRAMEWORKS).length,
+    );
   });
 });
 

@@ -68,13 +68,34 @@ export function computeDistHashFrom(dir: string): string {
     if (!fs.existsSync(candidate)) {
       continue;
     }
-    const hash = createHash("sha256").update(fs.readFileSync(candidate));
-    for (const bundle of analysisBundles()) {
-      hash.update(fs.readFileSync(bundle));
-    }
-    return hash.digest("hex").slice(0, 16);
+    return computeContentHash([candidate, ...analysisBundles()]);
   }
   return "";
+}
+
+/**
+ * Content hash of the given files, in the order they arrive. Empty when
+ * the list is empty or a file cannot be read, so a caller that could not
+ * place a file gets the same "no stamp" answer as a run from source
+ * rather than a hash of a shorter list.
+ *
+ * The caller resolves the paths, because who a specifier resolves to
+ * depends on which package is asking.
+ */
+export function computeContentHash(paths: readonly string[]): string {
+  if (paths.length === 0) {
+    return "";
+  }
+
+  const hash = createHash("sha256");
+  for (const file of paths) {
+    try {
+      hash.update(fs.readFileSync(file));
+    } catch {
+      return "";
+    }
+  }
+  return hash.digest("hex").slice(0, 16);
 }
 
 /**
@@ -100,8 +121,13 @@ function analysisBundles(): string[] {
 /**
  * Compute a cache-friendly identity for an adapter+packs combination.
  * Stable across processes given the same inputs; bumps when any pack
- * declares a new version, the adapter version changes, or the loaded
- * adapter dist file changes (dev-mode rebuild auto-invalidation).
+ * arrives with a new version stamp, the adapter version changes, or the
+ * loaded adapter dist file changes (dev-mode rebuild auto-invalidation).
+ *
+ * A pack's stamp is whatever the caller that loaded the pack put there.
+ * The adapter takes packs as plain objects and cannot tell where one
+ * came from, so folding the config and the code into the stamp is the
+ * loader's job.
  */
 export function computeAdapterPacksDigest(
   packVersions: ReadonlyArray<{ name: string; version?: string }>,

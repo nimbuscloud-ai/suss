@@ -8,9 +8,11 @@ Reference for the `PatternPack` interface and every pattern variant a pack can u
 interface PatternPack {
   name: string;
   /**
-   * Pack version stamp — feeds the cache invalidation key. Bump on
+   * Pack version stamp, which feeds the cache invalidation key. Bump on
    * any change that affects discovered units / extracted summaries.
-   * Optional — packs that omit it use the literal string "unset".
+   * Optional: the CLI folds a hash of the pack file it loaded, and of
+   * any config it passed, into this stamp, so a pack run through the
+   * CLI invalidates warm caches on an edit either way.
    */
   version?: string;
   languages: string[];
