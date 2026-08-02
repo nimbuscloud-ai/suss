@@ -20,6 +20,8 @@
 //      structured data.
 //   5. Writes a consolidated roll-up to `scripts/dogfood-report.json`,
 //      and the per-package counts to `scripts/dogfood-baseline.json`.
+//      Library summaries are counted on two lines: the ones that sit on
+//      the package's declared export surface, and the ones behind it.
 //      The roll-up is megabytes and stays out of git; the baseline is
 //      committed, and `checkDogfoodBaseline.mjs` compares a fresh run
 //      against the copy the author committed.
@@ -36,6 +38,10 @@ import { Worker } from "node:worker_threads";
 
 import { evaluatePackHealth } from "../packages/adapter/typescript/dist/index.js";
 import { pairSummaries } from "../packages/checker/dist/index.js";
+import {
+  declaredExports,
+  librarySummariesBySurface,
+} from "./declaredSurface.mjs";
 import { evaluateInvariants } from "./dogfoodInvariants.mjs";
 import {
   BASELINE_PATH,
@@ -112,7 +118,8 @@ const report = {
   packages: [],
 };
 
-let totalProviders = 0;
+let totalExports = 0;
+let totalInternal = 0;
 let totalConsumers = 0;
 let totalPackagesWithExports = 0;
 const sussPackageNames = packages.map((p) => p.packageJson.name);
@@ -194,13 +201,19 @@ for (const result of extractResults) {
   }
 
   const { name, pkg, tsconfig, summaries } = result;
-  const providers = summaries.filter((s) => s.kind === "library");
+  const declaredPaths = new Set(
+    declaredExports(pkg.packageJson, pkg.dir).map((e) => e.path),
+  );
+  const { exported, internal } = librarySummariesBySurface(
+    summaries,
+    declaredPaths,
+  );
   const consumers = summaries.filter((s) => s.kind === "caller");
 
   console.log(
-    `  providers: ${providers.length}  |  consumers: ${consumers.length}`,
+    `  exports: ${exported.length}  |  internal: ${internal.length}  |  consumers: ${consumers.length}`,
   );
-  for (const s of providers.slice(0, 4)) {
+  for (const s of exported.slice(0, 4)) {
     const exportPath =
       s.identity.boundaryBinding?.semantics?.exportPath?.join(".") ??
       s.identity.name;
@@ -208,8 +221,8 @@ for (const result of extractResults) {
       `    library ${exportPath}  (${s.transitions.length} trans, ${s.inputs.length} in)`,
     );
   }
-  if (providers.length > 4) {
-    console.log(`    … +${providers.length - 4} more providers`);
+  if (exported.length > 4) {
+    console.log(`    … +${exported.length - 4} more exports`);
   }
   for (const s of consumers.slice(0, 4)) {
     const key =
@@ -230,10 +243,11 @@ for (const result of extractResults) {
     .flatMap((s) => s.transitions)
     .flatMap((t) => t.conditions).length;
 
-  if (providers.length > 0) {
+  if (exported.length > 0) {
     totalPackagesWithExports += 1;
   }
-  totalProviders += providers.length;
+  totalExports += exported.length;
+  totalInternal += internal.length;
   totalConsumers += consumers.length;
   allSummaries.push(...summaries);
 
@@ -250,7 +264,8 @@ for (const result of extractResults) {
     dir: path.relative(repoRoot, pkg.dir).split(path.sep).join("/"),
     packageJson: path.relative(repoRoot, pkg.packageJsonPath),
     tsconfig: path.relative(repoRoot, tsconfig),
-    providerCount: providers.length,
+    exportCount: exported.length,
+    internalCount: internal.length,
     consumerCount: consumers.length,
     opaqueRatio: totalConditions === 0 ? null : opaqueCount / totalConditions,
     summaries: summaries.map((s) => ({
@@ -307,7 +322,8 @@ for (const [key, consumers] of ranked.slice(0, 10)) {
 
 report.totalPackages = packages.length;
 report.totalPackagesWithExports = totalPackagesWithExports;
-report.totalProviders = totalProviders;
+report.totalExports = totalExports;
+report.totalInternal = totalInternal;
 report.totalConsumers = totalConsumers;
 report.pairing = {
   pairs: pairing.pairs.length,
@@ -329,11 +345,21 @@ fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 // reads as one package whose count changed, which is what it is, instead
 // of one package vanishing and an unrelated one appearing with no
 // history to compare against.
+//
+// Library summaries are counted on two lines because they answer two
+// questions and move for different reasons. `exports` counts the
+// package's public surface, so it only moves when what callers can reach
+// moves. `internal` counts how far the closure got behind that surface,
+// so it moves on a refactor as well as on an extraction change. Mixed
+// into one number, adding a private helper reads the same as widening
+// the API, and most of what the gate would then be guarding is nobody's
+// contract.
 const baseline = {
   totals: {
     packages: packages.length,
     packagesWithExports: totalPackagesWithExports,
-    providers: totalProviders,
+    exports: totalExports,
+    internal: totalInternal,
     consumers: totalConsumers,
     pairs: pairing.pairs.length,
   },
@@ -344,7 +370,8 @@ const baseline = {
         p.dir,
         {
           name: p.name,
-          providers: p.providerCount,
+          exports: p.exportCount,
+          internal: p.internalCount,
           consumers: p.consumerCount,
         },
       ]),
@@ -353,7 +380,7 @@ const baseline = {
 fs.writeFileSync(BASELINE_PATH, `${JSON.stringify(baseline, null, 2)}\n`);
 
 console.log(
-  `\nSummary: ${totalProviders} provider + ${totalConsumers} consumer summaries across ${packages.length} @suss/* packages. ${pairing.pairs.length} cross-package edges paired.`,
+  `\nSummary: ${totalExports} export + ${totalInternal} internal + ${totalConsumers} consumer summaries across ${packages.length} @suss/* packages. ${pairing.pairs.length} cross-package edges paired.`,
 );
 console.log(`Report written to ${path.relative(repoRoot, reportPath)}`);
 console.log(`Baseline written to ${path.relative(repoRoot, BASELINE_PATH)}`);

@@ -22,10 +22,16 @@
 // recognizer that stops firing at some call sites while still firing at
 // others. Every declared export still has a summary, every boundary
 // still has a key, and the count is the only thing that moved. That is
-// most of what a dogfood run measures: 753 of today's 949 provider
-// summaries come from the transitive closure, and no invariant counts
-// those. So the counts stay a hard failure, with a way to declare a drop
-// rather than a tolerance that guesses at one.
+// most of what a dogfood run measures: 785 of today's 987 library
+// summaries sit behind the export surface, reached by the transitive
+// closure, and no invariant counts those. So the counts stay a hard
+// failure, with a way to declare a drop rather than a tolerance that
+// guesses at one.
+//
+// This is also why the internal count is compared and not only printed.
+// A closure that stops expanding leaves every declared export summarised
+// and every invariant passing, and the internal line is the only place
+// it shows up.
 //
 // Usage: `node scripts/checkDogfoodBaseline.mjs`, after
 // `node scripts/dogfood.mjs`. Set DOGFOOD_BASELINE_REF to compare
@@ -69,13 +75,24 @@ if (!committed.found) {
 const baseline = committed.value;
 const regressions = [];
 
-/** Print the line, and record it when the number fell. */
+/**
+ * Print the line, and record it when the number fell. A field the two
+ * sides do not both carry is skipped: that happens when the baseline on
+ * the ref predates a change to which counts a run produces, and there is
+ * nothing to compare rather than a drop to report.
+ */
 function compareFloor(label, before, after) {
+  if (typeof before !== "number" || typeof after !== "number") {
+    return;
+  }
   printDelta(label, before, after);
   if (after < before) {
     regressions.push({ label, detail: `${before} → ${after}` });
   }
 }
+
+/** The per-package counts a baseline carries, in the order they print. */
+const COUNTED_FIELDS = ["exports", "internal", "consumers"];
 
 console.log(`Totals against ${BASELINE_REF}:`);
 for (const field of Object.keys(baseline.totals)) {
@@ -95,8 +112,9 @@ for (const [dir, before] of Object.entries(baseline.packages)) {
     after.name === before.name
       ? after.name
       : `${dir} (${before.name} → ${after.name})`;
-  compareFloor(`${label} providers`, before.providers, after.providers);
-  compareFloor(`${label} consumers`, before.consumers, after.consumers);
+  for (const field of COUNTED_FIELDS) {
+    compareFloor(`${label} ${field}`, before[field], after[field]);
+  }
 }
 
 for (const dir of Object.keys(current.packages)) {
