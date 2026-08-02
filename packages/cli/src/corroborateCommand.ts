@@ -8,7 +8,6 @@
 // around it — source resolution, the human report, and the optional
 // annotated-summaries output.
 
-import fs from "node:fs";
 import path from "node:path";
 
 import {
@@ -18,6 +17,7 @@ import {
 
 import { corroborateSummary } from "./corroborate.js";
 import { resolveFramework, resolveSource } from "./extract.js";
+import { writeJson } from "./jsonStream.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -199,8 +199,7 @@ export async function corroborate(
 
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
-    fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, `${JSON.stringify(summaries, null, 2)}\n`);
+    await writeJson({ value: summaries, indent: 2, file: outPath });
     process.stderr.write(`Wrote annotated summaries to ${outPath}\n`);
   }
 

@@ -10,6 +10,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { writeJson } from "./jsonStream.js";
+
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 export type ContractSource =
@@ -179,19 +181,16 @@ export async function contract(
     resolved.cleanup?.();
   }
 
-  const json = JSON.stringify(summaries, null, 2);
-
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
-    fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, `${json}\n`);
+    await writeJson({ value: summaries, indent: 2, file: outPath });
     process.stderr.write(
       summaries.length === 0
         ? `${options.spec} declares no boundaries suss could read.\n`
         : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}\n`,
     );
   } else {
-    process.stdout.write(`${json}\n`);
+    await writeJson({ value: summaries, indent: 2 });
   }
 
   return summaries;

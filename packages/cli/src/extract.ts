@@ -15,6 +15,8 @@ import {
 } from "@suss/adapter-typescript";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 
+import { writeJson } from "./jsonStream.js";
+
 import type {
   CacheDiagnostic,
   EmptyStage,
@@ -365,12 +367,9 @@ export async function extract(
   }
 
   // Output
-  const json = JSON.stringify(summaries, null, 2);
-
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
-    fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, `${json}\n`);
+    await writeJson({ value: summaries, indent: 2, file: outPath });
     // An empty run gets its own line. "Wrote 0 summaries" announces an
     // empty file as if it were an accomplishment, and the funnel that
     // follows explains what actually happened.
@@ -380,7 +379,7 @@ export async function extract(
         : `Wrote ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} to ${outPath}${formatTimingTotal(timingReport)}\n`,
     );
   } else {
-    process.stdout.write(`${json}\n`);
+    await writeJson({ value: summaries, indent: 2 });
   }
 
   if (options.timing === true && timingReport !== null) {
