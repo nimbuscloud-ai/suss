@@ -315,3 +315,23 @@ Runs via `turbo test`.
     Two things the measurement said that the proposal did not. The magic bookkeeping is the whole story on the corpus that queries most broadly: counting only the relations the rewrite covers, saleor-dashboard still derives 8.9% of what it used to, and 7012 of those 8723 tuples are bookkeeping rather than answers. That is the figure the proposal's gate predicted, to the decimal, and it is why the gate was worth running. The second is that one asking fact was not enough. A single `wanted(x)` covering all five questions made directus/api four times slower in datalog, because "where did this name come from" pulls demand through every call the value's function makes and almost nothing on that corpus asks it; splitting the origin question onto its own fact turned that into a ten times speedup. A demand relation that answers more questions than the caller asked is not demand.
 
     What this does not do: it leaves the transitive-import gate alone, which is a bigger share of twenty-server than everything here; it does nothing for a corpus where the resolution rules barely fire; it does not touch the reachable-closure or rethrow rule sets, which have no keyed question to restrict them to; and it does not reduce peak memory. Interning atoms, ranked second in the proposal, still stands and still composes: datalog is 32% of twenty-front and 41% of saleor-dashboard after this.
+
+65. **A query in the resolution store costs its own question, not every question asked before it.** Demand entered the database as a fact and stayed there. The store marks itself stale when it asks, so the next file's facts were derived over all the demand accumulated so far, and the thousandth question cost a thousand questions. `deriveOnDemand` now hands back `demandDriven` alongside the rules, naming the relations the rewrite restricts, and `clearRelations(db, rules, relations)` empties them without sending the rule set back to the base facts. `retract` cannot do that, since a fact leaving the database can take away a conclusion drawn anywhere; a caller passing these relations is saying nothing outside them was derived from them, which is what the rewrite guarantees. The store clears its asking fact and the chain that answered it when a query returns, keeps the files it extracted, and reads the five answer relations through the database's own column index instead of five maps rebuilt after every evaluation.
+
+    Three interleaved pairs per corpus, medians, `--no-cache` throughout, one build against the other. Wall clock, then CPU seconds, then datalog:
+
+    | corpus | wall | CPU | datalog |
+    | --- | --- | --- | --- |
+    | twenty-front | 50.1s → 33.8s | 68.9s → 46.4s | 15.2s → 1.0s (30% → 3%) |
+    | saleor-dashboard | 22.1s → 12.9s | 29.8s → 20.5s | 9.3s → 0.2s (42% → 2%) |
+    | twenty-server | 13.4s → 13.2s | 22.5s → 22.5s | 510ms → 348ms |
+    | directus/api | 4.45s → 4.45s | 9.03s → 9.02s | 72ms → 56ms |
+    | saleor-storefront | 2.16s → 2.10s | 4.20s → 4.15s | 21ms → 11ms |
+
+    The change exists for the branch that resolves what an export is, which asks about every default export. On saleor-dashboard that branch ran 70.1s wall and 80.9s CPU, with 48.3s of datalog over 2,794 evaluations. With the questions scoped it runs 20.7s wall and 29.7s CPU, with 630ms of datalog, and asking the questions stops being what the branch costs. Summaries are byte identical on both.
+
+    Evaluations go up rather than down, because a question asked twice now derives twice: saleor-dashboard runs 2,029 where it ran 2,003, and rounds go from 5,453 to 9,885. More rounds, each of them small, is the shape being aimed at. The answer relations are the one thing a query leaves behind, so a caller that asks about a value it already asked about reads the answer rather than paying for the chain again.
+
+    Correctness is checked the same way the rewrite was. Property tests in both packages ask a question, read what a caller would read, clear, and compare against a database that kept every question ever asked; `@suss/resolution` compares per question, since the two asking facts reach different answer relations. Summaries are byte identical on all five corpora and on all 30 fixtures with every pack, and the dogfood counts are unmoved.
+
+    What this does not do: it makes a repeated question about the same value derive again rather than cheaper; it leaves the transitive-import gate alone, which is now the largest share of twenty-server; and it does nothing for a corpus where the resolution rules barely fire. Datalog is 3% of twenty-front and 2% of saleor-dashboard after this, so interning atoms has almost nothing left to win on the public corpora.
