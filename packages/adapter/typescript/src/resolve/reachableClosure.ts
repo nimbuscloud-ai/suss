@@ -29,6 +29,7 @@ import { extractCodeStructure } from "../adapter.js";
 import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
+import { exportedDeclarationsOf } from "../moduleExports.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type {
@@ -151,7 +152,7 @@ function resolveDecl(
     if (sf === undefined || isInExternalCode(sf)) {
       return null;
     }
-    const exported = sf.getExportedDeclarations().get(decl.getName());
+    const exported = exportedDeclarationsOf(sf).get(decl.getName());
     if (exported === undefined) {
       return null;
     }

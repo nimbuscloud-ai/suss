@@ -7,6 +7,7 @@ import { Node } from "ts-morph";
 
 import { restBinding } from "@suss/behavioral-ir";
 
+import { exportedDeclarationsOf } from "./moduleExports.js";
 import { shapeFromNodeType } from "./shapes/typeShapes.js";
 
 import type { BoundaryBinding, TypeShape } from "@suss/behavioral-ir";
@@ -193,7 +194,7 @@ function resolveContractObject(contractArg: Node): Node | null {
     const sourceFile = importDecl.getModuleSpecifierSourceFile();
     if (sourceFile !== undefined) {
       // Use the original (non-aliased) name to find the export
-      const exported = sourceFile.getExportedDeclarations().get(decl.getName());
+      const exported = exportedDeclarationsOf(sourceFile).get(decl.getName());
       if (exported !== undefined && exported.length > 0) {
         const exportedDecl = exported[0];
         if (Node.isVariableDeclaration(exportedDecl)) {
