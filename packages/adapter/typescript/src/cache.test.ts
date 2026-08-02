@@ -5,7 +5,7 @@ import path from "node:path";
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { createCacheLayer } from "./cache.js";
+import { createCacheLayer, MAX_ENTRIES } from "./cache.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -120,6 +120,134 @@ describe("createCacheLayer", () => {
     expect(result).toBeNull();
   });
 
+  describe("one directory per key", () => {
+    it("leaves another key's entry alone instead of overwriting it", async () => {
+      const cacheDir = await makeTempDir();
+      const { project } = await makeProjectWith({
+        "a.ts": "export const a = 1;",
+      });
+      const cache = createCacheLayer(cacheDir);
+      const first = { project, adapterPacksDigest: "test@1" };
+      const second = { project, adapterPacksDigest: "test@2" };
+      await cache.write(first, [fakeSummary]);
+      await cache.write(second, []);
+
+      expect(await cache.tryHit(first)).toEqual([fakeSummary]);
+    });
+
+    it("keeps only the most recently used keys", async () => {
+      const cacheDir = await makeTempDir();
+      const { project } = await makeProjectWith({
+        "a.ts": "export const a = 1;",
+      });
+      const cache = createCacheLayer(cacheDir);
+      for (const digest of ["test@1", "test@2", "test@3"]) {
+        await cache.write({ project, adapterPacksDigest: digest }, [
+          fakeSummary,
+        ]);
+        // Eviction orders entries by timestamp, so the writes have to
+        // land in different milliseconds for the order to mean anything.
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      expect((await fs.readdir(cacheDir)).length).toBe(MAX_ENTRIES);
+      expect(
+        await cache.tryHit({ project, adapterPacksDigest: "test@1" }),
+      ).toBeNull();
+      expect(
+        await cache.tryHit({ project, adapterPacksDigest: "test@3" }),
+      ).toEqual([fakeSummary]);
+    });
+
+    it("spares an entry a hit said was still wanted", async () => {
+      const cacheDir = await makeTempDir();
+      const { project } = await makeProjectWith({
+        "a.ts": "export const a = 1;",
+      });
+      const cache = createCacheLayer(cacheDir);
+      const oldest = { project, adapterPacksDigest: "test@1" };
+      // Eviction orders entries by timestamp, so the steps have to land
+      // in different milliseconds for the order to mean anything.
+      const tick = () => new Promise((r) => setTimeout(r, 10));
+      await cache.write(oldest, [fakeSummary]);
+      await tick();
+      await cache.write({ project, adapterPacksDigest: "test@2" }, [
+        fakeSummary,
+      ]);
+      await tick();
+      // Reading it is the only thing that can move it back to the front
+      // of the eviction order, because a run that hits never writes.
+      expect(await cache.tryHit(oldest)).toEqual([fakeSummary]);
+      await tick();
+      await cache.write({ project, adapterPacksDigest: "test@3" }, [
+        fakeSummary,
+      ]);
+
+      expect(await cache.tryHit(oldest)).toEqual([fakeSummary]);
+    });
+
+    it("clears out the single manifest older versions wrote", async () => {
+      const cacheDir = await makeTempDir();
+      const { project } = await makeProjectWith({
+        "a.ts": "export const a = 1;",
+      });
+      const legacy = path.join(cacheDir, "manifest.json");
+      await fs.writeFile(legacy, "{}");
+      const cache = createCacheLayer(cacheDir);
+      await cache.write({ project, adapterPacksDigest: "test@1" }, [
+        fakeSummary,
+      ]);
+
+      await expect(fs.stat(legacy)).rejects.toThrow();
+    });
+
+    it("leaves a directory it did not write alone", async () => {
+      const cacheDir = await makeTempDir();
+      const { project } = await makeProjectWith({
+        "a.ts": "export const a = 1;",
+      });
+      const theirs = path.join(cacheDir, "somebody-elses-work");
+      await fs.mkdir(theirs);
+      const cache = createCacheLayer(cacheDir);
+      for (const digest of ["test@1", "test@2", "test@3"]) {
+        await cache.write({ project, adapterPacksDigest: digest }, [
+          fakeSummary,
+        ]);
+      }
+
+      expect((await fs.stat(theirs)).isDirectory()).toBe(true);
+    });
+
+    it("says a key changed when another build has cached here", async () => {
+      const cacheDir = await makeTempDir();
+      const { project } = await makeProjectWith({
+        "a.ts": "export const a = 1;",
+      });
+      const cache = createCacheLayer(cacheDir);
+      await cache.write({ project, adapterPacksDigest: "test@1" }, [
+        fakeSummary,
+      ]);
+
+      const result = await cache.lookup({
+        project,
+        adapterPacksDigest: "test@2",
+      });
+      expect(result.diagnostic.missReason).toBe("key-changed");
+    });
+
+    it("says no manifest when nothing has cached here at all", async () => {
+      const cacheDir = await makeTempDir();
+      const { project } = await makeProjectWith({
+        "a.ts": "export const a = 1;",
+      });
+      const result = await createCacheLayer(cacheDir).lookup({
+        project,
+        adapterPacksDigest: "test@1",
+      });
+      expect(result.diagnostic.missReason).toBe("no-manifest");
+    });
+  });
+
   describe("lookup", () => {
     it("returns kind=hit with the full summary list when fresh", async () => {
       const cacheDir = await makeTempDir();
@@ -150,7 +278,7 @@ describe("createCacheLayer", () => {
       expect(result.diagnostic.missReason).toBe("no-manifest");
     });
 
-    it("returns kind=partial-hit with kept and filesToExtract on file change", async () => {
+    it("misses whole when one file in the include set changed", async () => {
       const cacheDir = await makeTempDir();
       const { project, dir } = await makeProjectWith({
         "a.ts": "export const a = 1;",
@@ -172,132 +300,56 @@ describe("createCacheLayer", () => {
       const input = { project, adapterPacksDigest: "test@1" };
       await cache.write(input, [summaryA, summaryB]);
 
-      // Touch only a.ts — only summaryA gets invalidated; summaryB carries over.
+      // Touching a.ts alone used to hand back b.ts's summary and leave
+      // the run to re-extract a.ts by itself. What a walk of a.ts finds
+      // is not what a walk of the whole project finds, so summaryA came
+      // back short or not at all.
       await new Promise((r) => setTimeout(r, 20));
       await fs.writeFile(path.join(dir, "a.ts"), "export const a = 1;");
 
       const result = await cache.lookup(input);
-      expect(result.kind).toBe("partial-hit");
-      if (result.kind === "partial-hit") {
-        expect(result.kept).toEqual([summaryB]);
-        expect(result.filesToExtract).toEqual([path.join(dir, "a.ts")]);
-        expect(result.diagnostic.kind).toBe("partial-hit");
-        expect(result.diagnostic.partial).toEqual({
-          reusedSummaries: 1,
-          filesToReExtract: 1,
-          addedFiles: 0,
-          removedFiles: 0,
-          changedFiles: 1,
-        });
-      }
+      expect(result.kind).toBe("miss");
+      expect(result.diagnostic.missReason).toBe("files-changed");
     });
 
-    it("keeps library-kind summaries from unchanged files (closure dedups against them)", async () => {
-      const cacheDir = await makeTempDir();
-      const { project, dir } = await makeProjectWith({
-        "entry.ts": "export const e = 1;",
-        "lib.ts": "export const l = 2;",
-      });
-      const entrySummary: BehavioralSummary = {
-        ...fakeSummary,
-        kind: "handler",
-        location: { ...fakeSummary.location, file: path.join(dir, "entry.ts") },
-        identity: { ...fakeSummary.identity, name: "entryFn" },
-      };
-      const librarySummary: BehavioralSummary = {
-        ...fakeSummary,
-        kind: "library",
-        location: { ...fakeSummary.location, file: path.join(dir, "lib.ts") },
-        identity: { ...fakeSummary.identity, name: "libFn" },
-      };
-      const cache = createCacheLayer(cacheDir);
-      const input = { project, adapterPacksDigest: "test@1" };
-      await cache.write(input, [entrySummary, librarySummary]);
-
-      await new Promise((r) => setTimeout(r, 20));
-      await fs.writeFile(path.join(dir, "entry.ts"), "export const e = 1;");
-
-      const result = await cache.lookup(input);
-      expect(result.kind).toBe("partial-hit");
-      if (result.kind === "partial-hit") {
-        // lib.ts is unchanged — the library summary's body description
-        // is still valid, so we keep it. entry.ts goes to re-extract.
-        expect(result.kept).toEqual([librarySummary]);
-        expect(result.filesToExtract).toEqual([path.join(dir, "entry.ts")]);
-      }
-    });
-
-    it("counts removed files and drops their summaries from the kept set", async () => {
+    it("misses when a file left the include set", async () => {
       const cacheDir = await makeTempDir();
       const { project, dir } = await makeProjectWith({
         "keep.ts": "export const k = 1;",
         "gone.ts": "export const g = 2;",
       });
-      const keepSummary: BehavioralSummary = {
-        ...fakeSummary,
-        kind: "handler",
-        location: { ...fakeSummary.location, file: path.join(dir, "keep.ts") },
-        identity: { ...fakeSummary.identity, name: "keepFn" },
-      };
-      const goneSummary: BehavioralSummary = {
-        ...fakeSummary,
-        kind: "handler",
-        location: { ...fakeSummary.location, file: path.join(dir, "gone.ts") },
-        identity: { ...fakeSummary.identity, name: "goneFn" },
-      };
       const cache = createCacheLayer(cacheDir);
       const input = { project, adapterPacksDigest: "test@1" };
-      await cache.write(input, [keepSummary, goneSummary]);
+      await cache.write(input, [fakeSummary]);
 
-      // Remove gone.ts from the project + delete it on disk
       project.removeSourceFile(
         project.getSourceFileOrThrow(path.join(dir, "gone.ts")),
       );
       await fs.unlink(path.join(dir, "gone.ts"));
 
       const result = await cache.lookup(input);
-      expect(result.kind).toBe("partial-hit");
-      if (result.kind === "partial-hit") {
-        expect(result.kept).toEqual([keepSummary]);
-        expect(result.filesToExtract).toEqual([]);
-        expect(result.diagnostic.partial).toEqual({
-          reusedSummaries: 1,
-          filesToReExtract: 0,
-          addedFiles: 0,
-          removedFiles: 1,
-          changedFiles: 0,
-        });
-      }
+      expect(result.kind).toBe("miss");
+      expect(result.diagnostic.missReason).toBe("files-changed");
     });
 
-    it("returns added files in filesToExtract", async () => {
+    it("misses when a file joined the include set", async () => {
       const cacheDir = await makeTempDir();
       const { project, dir } = await makeProjectWith({
         "a.ts": "export const a = 1;",
       });
-      const summaryA: BehavioralSummary = {
-        ...fakeSummary,
-        kind: "handler",
-        location: { ...fakeSummary.location, file: path.join(dir, "a.ts") },
-        identity: { ...fakeSummary.identity, name: "summaryA" },
-      };
       const cache = createCacheLayer(cacheDir);
       const input = { project, adapterPacksDigest: "test@1" };
-      await cache.write(input, [summaryA]);
+      await cache.write(input, [fakeSummary]);
 
       await fs.writeFile(path.join(dir, "b.ts"), "export const b = 2;");
       project.addSourceFileAtPath(path.join(dir, "b.ts"));
 
       const result = await cache.lookup(input);
-      expect(result.kind).toBe("partial-hit");
-      if (result.kind === "partial-hit") {
-        expect(result.kept).toEqual([summaryA]);
-        expect(result.filesToExtract).toEqual([path.join(dir, "b.ts")]);
-        expect(result.diagnostic.partial?.addedFiles).toBe(1);
-      }
+      expect(result.kind).toBe("miss");
+      expect(result.diagnostic.missReason).toBe("files-changed");
     });
 
-    it("kind=miss when packs digest changes (no partial)", async () => {
+    it("misses when the packs digest changes", async () => {
       const cacheDir = await makeTempDir();
       const { project } = await makeProjectWith({
         "a.ts": "export const a = 1;",
@@ -311,7 +363,7 @@ describe("createCacheLayer", () => {
         adapterPacksDigest: "test@2",
       });
       expect(result.kind).toBe("miss");
-      expect(result.diagnostic.missReason).toBe("packs-changed");
+      expect(result.diagnostic.missReason).toBe("key-changed");
     });
   });
 });

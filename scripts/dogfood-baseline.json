@@ -3,16 +3,16 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 211,
-    "internal": 1042,
-    "consumers": 334,
-    "pairs": 326
+    "internal": 1030,
+    "consumers": 332,
+    "pairs": 324
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 25,
-      "internal": 480,
-      "consumers": 26
+      "internal": 478,
+      "consumers": 24
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -23,7 +23,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 26,
-      "internal": 112,
+      "internal": 111,
       "consumers": 41
     },
     "packages/checker-intent": {
@@ -233,7 +233,7 @@
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 10,
-      "internal": 17,
+      "internal": 8,
       "consumers": 5
     }
   }

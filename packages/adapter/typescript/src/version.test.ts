@@ -1,9 +1,9 @@
 // The digest that names an adapter+packs combination in cache keys.
 //
-// Run from source there is no dist file to hash, so the stamp is the
-// bare version. What these pin is the part that must not wobble: the
-// same packs in any order produce the same digest, and a pack without a
-// version says so rather than disappearing.
+// These tests run from source, where there is no bundle to hash, so the
+// stamp names the mode instead. What they pin is the part that must not
+// wobble: the same packs in any order produce the same digest, and a
+// pack without a version says so rather than disappearing.
 
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ADAPTER_VERSION,
+  adapterCodeStamp,
   computeAdapterPacksDigest,
   computeContentHash,
   computeDistHashFrom,
@@ -22,7 +23,7 @@ describe("computeAdapterPacksDigest", () => {
   it("names the adapter and every pack", () => {
     expect(
       computeAdapterPacksDigest([{ name: "express", version: "1.2.0" }]),
-    ).toBe(`adapter@${ADAPTER_VERSION}|express@1.2.0`);
+    ).toBe(`adapter@${ADAPTER_VERSION}+source|express@1.2.0`);
   });
 
   it("does not care what order the packs arrive in", () => {
@@ -48,6 +49,16 @@ describe("computeAdapterPacksDigest", () => {
     expect(computeAdapterPacksDigest(packs)).toBe(
       computeAdapterPacksDigest(packs),
     );
+  });
+});
+
+describe("adapterCodeStamp", () => {
+  it("says source when nothing can find a bundle to hash", () => {
+    expect(adapterCodeStamp()).toEqual({ kind: "source" });
+  });
+
+  it("answers the same thing twice", () => {
+    expect(adapterCodeStamp()).toBe(adapterCodeStamp());
   });
 });
 

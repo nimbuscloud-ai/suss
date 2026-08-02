@@ -556,25 +556,10 @@ export function formatExtractionReport(report: ExtractionReport): string {
   return `${lines.join("\n")}\n`;
 }
 
-/**
- * One-line cache diagnostic emitted under `--timing`. Reports the
- * three outcomes the cache can produce: full hit, partial hit (some
- * summaries reused, some files re-extracted), or full miss.
- */
+/** One-line cache diagnostic emitted under `--timing`. */
 export function formatCacheDiagnostic(diag: CacheDiagnostic): string {
   if (diag.kind === "hit") {
     return "  cache: hit (returned all summaries from manifest)\n";
-  }
-  if (diag.kind === "partial-hit" && diag.partial !== undefined) {
-    const p = diag.partial;
-    const churn = [
-      p.changedFiles > 0 ? `${p.changedFiles} changed` : null,
-      p.addedFiles > 0 ? `${p.addedFiles} added` : null,
-      p.removedFiles > 0 ? `${p.removedFiles} removed` : null,
-    ]
-      .filter((s): s is string => s !== null)
-      .join(", ");
-    return `  cache: partial-hit (${churn}) — reused ${p.reusedSummaries} summaries, re-extracted ${p.filesToReExtract} files\n`;
   }
   return `  cache: miss (${diag.missReason ?? "unknown"})\n`;
 }

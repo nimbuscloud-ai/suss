@@ -91,7 +91,7 @@ import {
   type TsSubUnitContext,
 } from "./subUnitContext.js";
 import { createTimer, type TimingReport } from "./timing.js";
-import { computeAdapterPacksDigest } from "./version.js";
+import { adapterCodeStamp, computeAdapterPacksDigest } from "./version.js";
 import { type DescentBarriers, NO_BARRIERS } from "./walk/descent.js";
 
 import type {
@@ -1682,13 +1682,15 @@ export interface TypeScriptAdapterConfig {
    */
   onExtractionReport?: (report: ExtractionReport) => void;
   /**
-   * On-disk cache directory for the coarse-key extraction cache.
-   * Pass an absolute path; defaults to `.suss/cache/` next to the
-   * tsconfig (or under cwd when no tsconfig path is supplied).
-   * Pass `null` to disable caching entirely. The cache stores one
-   * `manifest.json` keyed against (adapter version, pack versions,
-   * sorted file mtime/size stamps); on a warm run with no changes
-   * the lookup is stat-only and skips extraction.
+   * On-disk cache directory for the extraction cache. Pass an absolute
+   * path; defaults to `.suss/cache/` next to the tsconfig, and to no
+   * cache at all when no tsconfig path is supplied. Pass `null` to turn
+   * caching off. A warm run with nothing changed costs one stat per
+   * file and returns the previous run's summaries whole.
+   *
+   * A process that loaded the adapter from source gets no cache
+   * whatever this says, because a key made there cannot tell one build
+   * of the adapter from another.
    */
   cacheDir?: string | null;
 }
@@ -1704,6 +1706,28 @@ export interface TypeScriptAdapter {
   extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]>;
   /** Extract summaries from every (non-declaration) file the Project knows about. */
   extractAll(): Promise<BehavioralSummary[]>;
+}
+
+let saidWhyNoCache = false;
+
+/**
+ * Turn off the cache for a run that cannot see the adapter's own code.
+ * Under vitest, ts-node or tsx there is no bundle to hash, so a key
+ * built in that mode says nothing about the code producing the answers
+ * and an edit to the adapter leaves the previous run's answers in
+ * place. A slower run is the better trade against a wrong one.
+ */
+function declineWhenRunFromSource(cacheDir: string | null): string | null {
+  if (cacheDir === null || adapterCodeStamp().kind === "bundle") {
+    return cacheDir;
+  }
+  if (!saidWhyNoCache) {
+    saidWhyNoCache = true;
+    process.stderr.write(
+      "[suss] extraction cache off: this process loaded the adapter from source, where nothing can tell one build of it from another. Run the built adapter to cache.\n",
+    );
+  }
+  return null;
 }
 
 export function createTypeScriptAdapter(
@@ -1746,13 +1770,14 @@ export function createTypeScriptAdapter(
   //     fixtures) get no disk cache by default — the manifest
   //     would have nowhere meaningful to live and the stat
   //     check against in-memory paths would always miss.
-  const cacheDir =
+  const cacheDir = declineWhenRunFromSource(
     config.cacheDir === null
       ? null
       : (config.cacheDir ??
-        (config.tsConfigFilePath !== undefined
-          ? path.join(path.dirname(config.tsConfigFilePath), ".suss", "cache")
-          : null));
+          (config.tsConfigFilePath !== undefined
+            ? path.join(path.dirname(config.tsConfigFilePath), ".suss", "cache")
+            : null)),
+  );
   const cache: CacheLayer = createCacheLayer(cacheDir);
   const adapterPacksDigest = computeAdapterPacksDigest(
     config.frameworks.map((p) =>
@@ -1857,16 +1882,9 @@ export function createTypeScriptAdapter(
         }
         return lookup.summaries;
       }
-      const partial = lookup.kind === "partial-hit" ? lookup : null;
 
-      // Cache miss / partial hit: run the lazy bootstrap so the rest
-      // of the pipeline has the candidate set loaded. On a partial
-      // hit we additionally pull in:
-      //   - filesToExtract (per-file extract needs them loaded)
-      //   - every kept summary's location.file (closure pass needs to
-      //     locate kept summaries' AST nodes by file+range; if a file
-      //     isn't loaded the locate fails and closure re-emits the
-      //     summary as a duplicate).
+      // A miss runs the lazy bootstrap so the rest of the pipeline has
+      // the candidate set loaded.
       if (lazyEligible) {
         const lazy = await timer.timeAsync("lazyProjectInit", () =>
           createLazyProject(
@@ -1881,27 +1899,11 @@ export function createTypeScriptAdapter(
           // for downstream consumers.
           project.addSourceFileAtPath(sf.getFilePath());
         }
-        if (partial !== null) {
-          const partialFiles = new Set<string>(partial.filesToExtract);
-          for (const summary of partial.kept) {
-            partialFiles.add(summary.location.file);
-          }
-          for (const fp of partialFiles) {
-            try {
-              project.addSourceFileAtPath(fp);
-            } catch {
-              // File listed in tsconfig but disappeared between the
-              // cache-list collection and addSourceFileAtPath — skip
-              // silently; subsequent phases tolerate missing files.
-            }
-          }
-        }
         projectFileSet = lazy.projectFileSet;
         lazyBootstrapped = true;
       }
 
-      const summaries: BehavioralSummary[] =
-        partial !== null ? [...partial.kept] : [];
+      const summaries: BehavioralSummary[] = [];
 
       // One project enumeration, reused across phases. `getSourceFiles`
       // walks the directory tree internally — calling it per-phase
@@ -1922,20 +1924,9 @@ export function createTypeScriptAdapter(
         computePackApplicability(sourceFiles, config.frameworks, resolution),
       );
 
-      // Per-file extract: the FULL pass walks every source file; the
-      // partial-hit pass walks only the changed/added subset and
-      // merges them with the kept summaries above.
-      const filesToExtractSet =
-        partial !== null ? new Set(partial.filesToExtract) : null;
       const claimedUnits = new Map<string, ClaimedUnit>();
       timer.time("extract per-file", () => {
         for (const sourceFile of sourceFiles) {
-          if (
-            filesToExtractSet !== null &&
-            !filesToExtractSet.has(sourceFile.getFilePath())
-          ) {
-            continue;
-          }
           const applicablePacks = packsByFile.get(sourceFile);
           if (applicablePacks === undefined) {
             continue;

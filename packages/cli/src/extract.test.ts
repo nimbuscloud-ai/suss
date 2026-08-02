@@ -248,46 +248,19 @@ describe("formatCacheDiagnostic", () => {
     expect(out).toContain("no-manifest");
   });
 
-  it("renders a partial-hit with the file-churn breakdown", () => {
+  it("renders a miss on a changed file", () => {
     const diag: CacheDiagnostic = {
-      kind: "partial-hit",
-      partial: {
-        reusedSummaries: 2585,
-        filesToReExtract: 1,
-        addedFiles: 0,
-        removedFiles: 0,
-        changedFiles: 1,
-      },
+      kind: "miss",
+      missReason: "files-changed",
     };
-    const out = formatCacheDiagnostic(diag);
-    expect(out).toContain("partial-hit");
-    expect(out).toContain("1 changed");
-    expect(out).toContain("reused 2585");
-    expect(out).toContain("re-extracted 1");
+    expect(formatCacheDiagnostic(diag)).toContain("files-changed");
   });
 
-  it("includes added / removed counts in the partial-hit breakdown", () => {
-    const diag: CacheDiagnostic = {
-      kind: "partial-hit",
-      partial: {
-        reusedSummaries: 100,
-        filesToReExtract: 6,
-        addedFiles: 3,
-        removedFiles: 2,
-        changedFiles: 1,
-      },
-    };
-    const out = formatCacheDiagnostic(diag);
-    expect(out).toContain("1 changed");
-    expect(out).toContain("3 added");
-    expect(out).toContain("2 removed");
-  });
-
-  it("falls back when missReason is set without a partial breakdown", () => {
+  it("names the reason a key that moved missed", () => {
     const out = formatCacheDiagnostic({
       kind: "miss",
-      missReason: "schema-mismatch",
+      missReason: "key-changed",
     });
-    expect(out).toContain("schema-mismatch");
+    expect(out).toContain("key-changed");
   });
 });
