@@ -198,6 +198,176 @@ describe("namedExport — export default function", () => {
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("default");
   });
+
+  it("names the unit after the function the default export states", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function panel(args: any) {
+        return args;
+      }
+
+      export default panel;
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeNamedExportPattern(["default"])],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("panel");
+  });
+
+  it("names the unit after the binding the default export states", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function panelImpl(args: any) {
+        return args;
+      }
+      const panel = panelImpl;
+
+      export default panel;
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeNamedExportPattern(["default"])],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("panel");
+    expect(units[0].func.getText()).toContain("panelImpl");
+  });
+
+  it("names the unit after the property the default export reads", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      function panelImpl(args: any) {
+        return args;
+      }
+      const views = { panel: panelImpl };
+
+      export default views.panel;
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeNamedExportPattern(["default"])],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("panel");
+  });
+
+  it("leaves a function with no name of its own as the default", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `export default (args: any) => args;`,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeNamedExportPattern(["default"])],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("default");
+  });
+});
+
+describe("namedExport, a name bound by taking a container apart", () => {
+  it("finds a handler destructured off an object", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      const impl = (args: any) => args;
+      const { handler } = { handler: impl };
+
+      export { handler };
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeNamedExportPattern(["handler"])],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("handler");
+  });
+
+  it("finds a handler bound with a default the container does not hold", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      const impl = (args: any) => args;
+      const holder: { handler?: (args: any) => any } = {};
+      const { handler = impl } = holder;
+
+      export { handler };
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeNamedExportPattern(["handler"])],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+  });
+
+  it("finds nothing when a default sits beside a value the container holds", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      const supplied = (args: any) => args;
+      const fallback = (args: any) => args;
+      const holder = { handler: supplied };
+      const { handler = fallback } = holder;
+
+      export { handler };
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeNamedExportPattern(["handler"])],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(0);
+  });
+});
+
+describe("namedExport, an overload set", () => {
+  it("reads the declaration carrying the body, once", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      export function handler(args: any): any;
+      export function handler(args: any): any {
+        return args;
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, [makeNamedExportPattern(["handler"])]);
+    expect(units).toHaveLength(1);
+    expect(units[0].func.getText()).toContain("return args");
+  });
 });
 
 // ---------------------------------------------------------------------------

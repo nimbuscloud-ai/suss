@@ -19,6 +19,21 @@ import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
 /**
+ * The name an expression states, when it states one. `export default
+ * Panel` and `export default views.Panel` both say `Panel`, and a
+ * function literal written at the export says nothing.
+ */
+function nameWrittenAt(expression: Node): string | null {
+  if (Node.isIdentifier(expression)) {
+    return expression.getText();
+  }
+  if (Node.isPropertyAccessExpression(expression)) {
+    return expression.getName();
+  }
+  return null;
+}
+
+/**
  * Name a code unit discovered via `export default`. Prefers the
  * function's own identifier (`export default function UserCard() {}`
  * → `"UserCard"`) so component / handler identity survives. Falls
@@ -58,6 +73,10 @@ export function discoverNamedExports(
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
   const names = new Set(match.names);
+  // Which of the requested export names something was found under. The
+  // unit's own name can differ from the name it was exported under, so
+  // the last pass cannot ask the results what it still has to look for.
+  const satisfied = new Set<string>();
 
   // 1. export function loader() {}
   for (const fn of sourceFile.getFunctions()) {
@@ -71,7 +90,12 @@ export function discoverNamedExports(
     if (!names.has(name)) {
       continue;
     }
-    results.push({ func: fn as FunctionDeclaration, kind, name });
+    const func = toFunctionRoot(fn);
+    if (func === null) {
+      continue;
+    }
+    results.push({ func, kind, name });
+    satisfied.add(name);
   }
 
   // 2. export const loader = () => {} / export const loader = function() {}
@@ -115,6 +139,7 @@ export function discoverNamedExports(
         kind,
         name,
       });
+      satisfied.add(name);
       continue;
     }
 
@@ -126,6 +151,7 @@ export function discoverNamedExports(
       const fn = resolved === null ? null : toFunctionRoot(resolved);
       if (fn !== null) {
         results.push({ func: fn, kind, name });
+        satisfied.add(name);
       }
     }
   }
@@ -140,24 +166,17 @@ export function discoverNamedExports(
   // it to "default" would collapse every file's default export into
   // the same name across the workspace.
   if (names.has("default")) {
-    const defaultExport = sourceFile.getDefaultExportSymbol();
-    if (defaultExport !== undefined) {
-      const decls = defaultExport.getDeclarations();
-      for (const decl of decls) {
-        const fn = toFunctionRoot(decl);
-        if (fn !== null) {
-          const resolvedName = resolveDefaultExportName(decl, fn);
-          results.push({ func: fn, kind, name: resolvedName });
-        }
-      }
+    const units = defaultExportUnits(sourceFile, kind, resolution);
+    results.push(...units);
+    if (units.length > 0) {
+      satisfied.add("default");
     }
   }
 
   // 4. export { loader } re-export or any other form
   // Use getExportedDeclarations for names we haven't already found
-  const alreadyFound = new Set(results.map((r) => r.name));
   for (const targetName of names) {
-    if (alreadyFound.has(targetName)) {
+    if (satisfied.has(targetName)) {
       continue;
     }
 
@@ -167,13 +186,88 @@ export function discoverNamedExports(
     }
 
     for (const decl of exported) {
-      const fn = toFunctionRoot(decl);
+      // A name whose declaration is not itself a function is a name
+      // standing for one somewhere else, so the fact layer is asked
+      // which. Taking a container apart is the shape that arrives here:
+      // `const { handler } = holder` declares the name on a binding
+      // element and there is no function written at it.
+      const fn =
+        toFunctionRoot(decl) ??
+        (resolution === undefined
+          ? null
+          : resolutionToFunctionRoot(resolution, decl));
       if (fn !== null) {
-        results.push({ func: fn, kind, name: targetName });
+        results.push({
+          func: fn,
+          kind,
+          name:
+            targetName === "default"
+              ? resolveDefaultExportName(decl, fn)
+              : targetName,
+        });
         break;
       }
     }
   }
 
   return results;
+}
+
+/**
+ * The units `export default` puts on the module's surface.
+ *
+ * A default export names its unit twice over: `default` is the route
+ * out of the module, and the expression written at it says what left.
+ * The unit takes its name from the expression, so `export default
+ * Panel` and `export default views.Panel` both report `Panel`, and only
+ * a function written at the export with no name of its own falls back
+ * to `default`.
+ */
+function defaultExportUnits(
+  sourceFile: SourceFile,
+  kind: string,
+  resolution?: ResolutionStore,
+): DiscoveredUnit[] {
+  for (const assignment of sourceFile.getExportAssignments()) {
+    if (assignment.isExportEquals()) {
+      continue;
+    }
+    const expression = assignment.getExpression();
+    const written = toFunctionRoot(expression);
+    const resolved =
+      written ??
+      (resolution === undefined
+        ? null
+        : resolutionToFunctionRoot(resolution, expression));
+    if (resolved === null) {
+      return [];
+    }
+    const name =
+      nameWrittenAt(expression) ??
+      resolveDefaultExportName(expression, resolved);
+    return [{ func: resolved, kind, name }];
+  }
+
+  // No `export default <expression>`, so the default is a declaration
+  // carrying the modifier, or a name re-exported from another module.
+  const defaultExport = sourceFile.getDefaultExportSymbol();
+  if (defaultExport === undefined) {
+    return [];
+  }
+  const units: DiscoveredUnit[] = [];
+  for (const decl of defaultExport.getDeclarations()) {
+    const fn = toFunctionRoot(decl);
+    if (fn !== null) {
+      units.push({ func: fn, kind, name: resolveDefaultExportName(decl, fn) });
+    }
+  }
+  return units;
+}
+
+function resolutionToFunctionRoot(
+  resolution: ResolutionStore,
+  value: Node,
+): FunctionRoot | null {
+  const resolved = resolution.resolveCallable(value);
+  return resolved === null ? null : toFunctionRoot(resolved);
 }
