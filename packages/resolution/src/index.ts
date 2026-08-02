@@ -100,15 +100,38 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
-  // Reading a property comes to what the object holds under that name.
-  // `comesTo` in the middle is what lets the object arrive through an
-  // alias, an import, or a factory call.
+  // The object an expression stands for. A name arrives at one by
+  // following `comesTo` through aliases and imports. A factory call
+  // arrives at one through what the function it calls returns; the
+  // call itself is given no `comesTo`, since a factory call usually IS
+  // the wrapper and answering with the raw returned function would
+  // fight the unwraps answer.
+  rule(
+    "objectOf",
+    [v("o"), v("obj")],
+    [lit("comesTo", v("o"), v("obj")), lit("objectValue", v("obj"))],
+  ),
+  rule(
+    "objectOf",
+    [v("r"), v("obj")],
+    [
+      lit("call", v("r"), v("c")),
+      lit("comesTo", v("c"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+      lit("comesTo", v("ret"), v("obj")),
+      lit("objectValue", v("obj")),
+    ],
+  ),
+
+  // Reading a property comes to what the object holds under that name,
+  // whichever way the object arrived: `routes.list` off a name, or
+  // `make(body).handle` off a call.
   rule(
     "comesTo",
     [v("x"), v("z")],
     [
       lit("readsProperty", v("x"), v("o"), v("n")),
-      lit("comesTo", v("o"), v("obj")),
+      lit("objectOf", v("o"), v("obj")),
       lit("holdsProperty", v("obj"), v("n"), v("held")),
       lit("comesTo", v("held"), v("z")),
     ],
@@ -186,24 +209,6 @@ export const RESOLUTION_RULES = [
       lit("unwraps", v("f"), v("k")),
       lit("callArg", v("r"), v("k"), v("a")),
       lit("comesTo", v("a"), v("h")),
-    ],
-  ),
-
-  // A property read off a call: `make(body).handle`. The call itself is
-  // not given a `comesTo`, since a factory call usually IS the wrapper
-  // and answering with the raw returned function would fight the
-  // unwraps answer. Only the property read narrows enough to be safe.
-  rule(
-    "comesTo",
-    [v("x"), v("z")],
-    [
-      lit("readsProperty", v("x"), v("r"), v("n")),
-      lit("call", v("r"), v("c")),
-      lit("comesTo", v("c"), v("f")),
-      lit("returnsValue", v("f"), v("ret")),
-      lit("comesTo", v("ret"), v("obj")),
-      lit("holdsProperty", v("obj"), v("n"), v("held")),
-      lit("comesTo", v("held"), v("z")),
     ],
   ),
 
