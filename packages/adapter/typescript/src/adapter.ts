@@ -886,6 +886,7 @@ function computeSubUnitBarriers(
 function extractFromSourceFile(
   sourceFile: SourceFile,
   frameworks: PatternPack[],
+  claimedUnits: Map<string, string>,
   options?: ExtractorOptions,
   tallies?: Map<string, PackTally>,
   resolution?: ResolutionStore,
@@ -924,7 +925,12 @@ function extractFromSourceFile(
   // Which pack claimed a key is kept too. A later pack losing a unit to
   // an earlier one is precedence working; a pack losing a unit to
   // itself is two of its own patterns reading the same code.
-  const claimed = new Map<string, string>();
+  //
+  // The map is the run's, not this file's. A barrel re-exporting a
+  // component reaches the same function the file declaring it reaches,
+  // and one function on one boundary is one unit however many modules
+  // name it.
+  const claimed = claimedUnits;
 
   for (const pack of frameworks) {
     // Funnel accounting: this pack was applicable to this file, and
@@ -1720,6 +1726,7 @@ export function createTypeScriptAdapter(
     async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
       const summaries: BehavioralSummary[] = [];
       const resolution = new ResolutionStore(packWrappers);
+      const claimedUnits = new Map<string, string>();
 
       for (const fp of filePaths) {
         // Project may have skipped initial loading (lazy
@@ -1738,6 +1745,7 @@ export function createTypeScriptAdapter(
           ...extractFromSourceFile(
             sourceFile,
             config.frameworks,
+            claimedUnits,
             config.extractorOptions,
             undefined,
             resolution,
@@ -1873,6 +1881,7 @@ export function createTypeScriptAdapter(
       // merges them with the kept summaries above.
       const filesToExtractSet =
         partial !== null ? new Set(partial.filesToExtract) : null;
+      const claimedUnits = new Map<string, string>();
       timer.time("extract per-file", () => {
         for (const sourceFile of sourceFiles) {
           if (
@@ -1889,6 +1898,7 @@ export function createTypeScriptAdapter(
             ...extractFromSourceFile(
               sourceFile,
               applicablePacks,
+              claimedUnits,
               config.extractorOptions,
               tallies,
               resolution,

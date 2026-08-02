@@ -159,10 +159,17 @@ export interface DiscoveredUnit {
  * which never went through discovery at all. Both passes are asking
  * whether they have seen this unit already, so both ask it the same
  * way.
+ *
+ * Nothing here mentions the file the question was asked from. A barrel
+ * puts a name on a function it does not contain, and the function is
+ * the same unit whichever module's surface it was reached through.
  */
 export function unitDedupKey(unit: DiscoveredUnit): string {
   const parts = [
-    `${unit.func.getStart()}-${unit.func.getEnd()}`,
+    // Offsets are positions within one file, so the file is part of
+    // saying which function this is once the question is asked across
+    // a whole run.
+    `${unit.func.getSourceFile().getFilePath()}:${unit.func.getStart()}-${unit.func.getEnd()}`,
     unit.kind,
     unit.packageExportInfo === undefined
       ? ""
