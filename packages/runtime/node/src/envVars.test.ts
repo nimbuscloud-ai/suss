@@ -1,11 +1,7 @@
-import {
-  Node,
-  Project,
-  type PropertyAccessExpression,
-  ScriptTarget,
-  type SourceFile,
-} from "ts-morph";
+import { Node, type PropertyAccessExpression, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { envVarRecognizer, findProcessEnvReads } from "./envVars.js";
 import nodeRuntimePack from "./index.js";
@@ -18,14 +14,7 @@ const raise = (msg: string): never => {
 };
 
 function makeProject(userSource: string): SourceFile {
-  const project = new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      strict: true,
-      moduleResolution: 100,
-    },
-    useInMemoryFileSystem: true,
-  });
+  const project = createTestProject();
   return project.createSourceFile("user.ts", userSource);
 }
 

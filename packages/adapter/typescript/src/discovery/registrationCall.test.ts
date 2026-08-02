@@ -1,5 +1,6 @@
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { discoverRegistrationCalls } from "./registrationCall.js";
 
@@ -11,7 +12,7 @@ type RegistrationMatch = Extract<
 >;
 
 function sourceFile(code: string) {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = createTestProject();
   return project.createSourceFile("test.ts", code);
 }
 

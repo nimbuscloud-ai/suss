@@ -4,6 +4,7 @@ import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { testCompilerOptions } from "@suss/test-project";
 
 import { nestjsGraphqlFramework } from "./index.js";
 
@@ -22,13 +23,9 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
-      strict: true,
-      target: 99, // ESNext
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
+      ...testCompilerOptions,
       experimentalDecorators: true,
       emitDecoratorMetadata: true,
-      skipLibCheck: true,
     },
   });
   // `@nestjs/graphql` isn't installed in the fixture; create a stub

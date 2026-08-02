@@ -20,7 +20,6 @@
 // field access — terminal synthesis for void callbacks is a separate gap,
 // orthogonal to the field-flow this test exercises.
 
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
@@ -28,8 +27,10 @@ import { checkAll } from "@suss/checker";
 import { webFetchPack } from "@suss/client-web";
 import { type OpenApiSpec, openApiToSummaries } from "@suss/contract-openapi";
 import { expressFramework } from "@suss/framework-express";
+import { createTestProject } from "@suss/test-project";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type { Project } from "ts-morph";
 
 const BACKEND = `
 import express from "express";
@@ -125,16 +126,7 @@ const OPENAPI: OpenApiSpec = {
 };
 
 function inMemoryProject(): Project {
-  return new Project({
-    useInMemoryFileSystem: true,
-    compilerOptions: {
-      strict: true,
-      target: 9, // ES2022
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
-      skipLibCheck: true,
-    },
-  });
+  return createTestProject();
 }
 
 async function extractAll(): Promise<BehavioralSummary[]> {

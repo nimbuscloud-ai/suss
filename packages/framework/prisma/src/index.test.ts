@@ -1,11 +1,7 @@
-import {
-  type CallExpression,
-  Node,
-  Project,
-  ScriptTarget,
-  type SourceFile,
-} from "ts-morph";
+import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { prismaFramework } from "./index.js";
 
@@ -24,14 +20,7 @@ const raise = (msg: string): never => {
  * to the right delegate symbol.
  */
 function makeProject(userSource: string): SourceFile {
-  const project = new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      strict: true,
-      moduleResolution: 100, // ts.ModuleResolutionKind.Bundler
-    },
-    useInMemoryFileSystem: true,
-  });
+  const project = createTestProject();
 
   // Minimal @prisma/client surface — enough to give the symbol a
   // declaration in a file path containing "/@prisma/client/".

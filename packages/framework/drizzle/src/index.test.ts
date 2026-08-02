@@ -1,5 +1,7 @@
-import { type CallExpression, Node, Project, ScriptTarget } from "ts-morph";
+import { type CallExpression, Node } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { drizzleFramework } from "./index.js";
 
@@ -17,14 +19,7 @@ const raise = (msg: string): never => {
  * via `pgTable("...")` the way real Drizzle projects do.
  */
 function makeProject(userSource: string): SourceFile {
-  const project = new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      strict: true,
-      moduleResolution: 100, // ts.ModuleResolutionKind.Bundler
-    },
-    useInMemoryFileSystem: true,
-  });
+  const project = createTestProject();
 
   project.createSourceFile(
     "node_modules/drizzle-orm/index.d.ts",

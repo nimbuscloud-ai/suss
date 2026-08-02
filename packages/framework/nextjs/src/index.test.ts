@@ -4,6 +4,7 @@ import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { testCompilerOptions } from "@suss/test-project";
 
 import { nextjsFramework } from "./index.js";
 
@@ -14,13 +15,7 @@ const fixturesDir = path.resolve(__dirname, "../../../../fixtures/nextjs");
 async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99, // ESNext
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
-      skipLibCheck: true,
-    },
+    compilerOptions: { ...testCompilerOptions },
   });
   project.addSourceFilesAtPaths(path.join(fixturesDir, "**/*.ts"));
 

@@ -3,15 +3,20 @@ import path from "node:path";
 import { Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { createTestProject, testCompilerOptions } from "@suss/test-project";
+
 import { parseConditionExpression } from "./predicates.js";
 
 import type { Expression } from "ts-morph";
 
 const FIXTURES_DIR = path.resolve(__dirname, "../../../../fixtures/predicates");
 
+// One project for every fixture in this file. Each fixture has its own
+// path, so nothing here collides.
+const fixtures = new Project({ compilerOptions: testCompilerOptions });
+
 function loadFixture(filename: string) {
-  const project = new Project({ useInMemoryFileSystem: false });
-  return project.addSourceFileAtPath(path.join(FIXTURES_DIR, filename));
+  return fixtures.addSourceFileAtPath(path.join(FIXTURES_DIR, filename));
 }
 
 /**
@@ -363,7 +368,7 @@ describe("parseConditionExpression — compound", () => {
   });
 
   it("x && new Error() → compound with opaque right operand (wrapOpaque fallback)", () => {
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_opaque_compound.ts",
       "export function f(x: any) { if (x && new Error()) return 1; }",
@@ -435,7 +440,7 @@ describe("parseConditionExpression — call", () => {
 
 describe("parseConditionExpression — typeof standalone returns null", () => {
   it("standalone typeof expression → null", () => {
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_typeof_standalone.ts",
       "export function f(x: any) { if (typeof x) return 1; }",
@@ -582,7 +587,7 @@ describe("parseConditionExpression — deeply nested compound", () => {
 
 describe("parseConditionExpression — unknown nodes return null", () => {
   it("new expression condition → null", () => {
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_newexpr.ts",
       "export function f(x: any) { if (new Error()) return 1; }",
@@ -596,7 +601,7 @@ describe("parseConditionExpression — unknown nodes return null", () => {
   });
 
   it("non-! prefix unary operator (-x) → null", () => {
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_negnum.ts",
       "export function f(x: number) { if (-x) return 1; }",
@@ -610,7 +615,7 @@ describe("parseConditionExpression — unknown nodes return null", () => {
   });
 
   it("instanceof now produces typeCheck (no longer opaque)", () => {
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_instanceof.ts",
       "export function f(x: any) { if (x instanceof Error) return 1; }",

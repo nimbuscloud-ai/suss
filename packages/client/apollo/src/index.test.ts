@@ -4,6 +4,7 @@ import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
 import { apolloClientPack } from "./index.js";
 
@@ -17,14 +18,7 @@ const fixturesDir = path.resolve(
 function makeProject() {
   return new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-      jsx: 4,
-    },
+    compilerOptions: { ...testCompilerOptions },
   });
 }
 
@@ -55,17 +49,7 @@ async function runCodegenAdapter(): Promise<BehavioralSummary[]> {
 }
 
 async function runInMemory(source: string): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-    },
-  });
+  const project = createTestProject();
   project.createSourceFile("consumer.ts", source);
   const adapter = createTypeScriptAdapter({
     project,

@@ -5,8 +5,10 @@
 // the argument order from the name gets it wrong half the time. These
 // cover reading the helper instead of guessing.
 
-import { Project, SyntaxKind } from "ts-morph";
+import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { findTerminals } from "./index.js";
 
@@ -27,7 +29,7 @@ function terminalsFor(
   source: string,
   patterns: TerminalPattern[] = [RESPONSE_SHAPE],
 ) {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = createTestProject();
   const file = project.createSourceFile("handler.ts", source);
   const handler = file
     .getDescendantsOfKind(SyntaxKind.FunctionDeclaration)

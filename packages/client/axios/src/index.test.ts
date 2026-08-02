@@ -1,7 +1,7 @@
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createTestProject } from "@suss/test-project";
 
 import { axiosPack } from "./index.js";
 
@@ -32,7 +32,7 @@ describe("axiosPack — pack shape", () => {
 
 describe("axiosPack — integration", () => {
   it("discovers axios.get(url) and extracts GET + path from arg 0", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -61,7 +61,7 @@ describe("axiosPack — integration", () => {
   });
 
   it("distinguishes verbs by the called method name", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -102,7 +102,7 @@ describe("axiosPack — integration", () => {
   });
 
   it("produces transitions for branches in the consumer function", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -131,7 +131,7 @@ describe("axiosPack — integration", () => {
     // The dominant production pattern: per-service axios instances created
     // with a baseURL. The pack declares factoryMethods: ["create"] so the
     // adapter treats `api` as a client subject.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -160,7 +160,7 @@ describe("axiosPack — integration", () => {
   });
 
   it("matches multiple verbs called on the same axios.create() instance", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `

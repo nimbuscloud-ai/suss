@@ -4,6 +4,7 @@ import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { testCompilerOptions } from "@suss/test-project";
 
 import { nestjsRestFramework } from "./index.js";
 
@@ -19,13 +20,9 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
+      ...testCompilerOptions,
       experimentalDecorators: true,
       emitDecoratorMetadata: true,
-      skipLibCheck: true,
     },
   });
   // Stub `@nestjs/common` so ts-morph import resolution succeeds.

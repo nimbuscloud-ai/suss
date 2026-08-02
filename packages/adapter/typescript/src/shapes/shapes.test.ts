@@ -1,5 +1,7 @@
-import { Project, SyntaxKind } from "ts-morph";
+import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { extractShape } from "./shapes.js";
 
@@ -10,7 +12,7 @@ import type { Expression } from "ts-morph";
  * Expression node without loading a fixture file.
  */
 function parseExpression(src: string): Expression {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = createTestProject();
   const sf = project.createSourceFile("in.ts", `const _ = ${src};`);
   const stmt = sf.getFirstDescendantByKindOrThrow(SyntaxKind.VariableStatement);
   const decl = stmt.getDeclarations()[0];
@@ -27,10 +29,7 @@ function parseExpression(src: string): Expression {
  * Returns the initializer of the final `const _ = <src>;` line.
  */
 function parseExpressionWithPrelude(prelude: string, src: string): Expression {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    compilerOptions: { strict: true, noEmit: true },
-  });
+  const project = createTestProject();
   const sf = project.createSourceFile("in.ts", `${prelude}\nconst _ = ${src};`);
   const statements = sf.getVariableStatements();
   const decl = statements[statements.length - 1].getDeclarations()[0];

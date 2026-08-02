@@ -1,20 +1,15 @@
-import { Project, ScriptTarget, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
 import { discoverUnits } from "./index.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
+import type { Project, SourceFile } from "ts-morph";
 
 function makeProject(): Project {
-  return new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      strict: true,
-      moduleResolution: 100,
-    },
-    useInMemoryFileSystem: true,
-  });
+  return createTestProject();
 }
 
 function makeFile(source: string): SourceFile {

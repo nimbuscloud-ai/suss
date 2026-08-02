@@ -19,6 +19,7 @@ import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { checkAll } from "@suss/checker";
 import { generateSummariesFromStories } from "@suss/contract-storybook";
 import { reactFramework } from "@suss/framework-react";
+import { testCompilerOptions } from "@suss/test-project";
 
 const repoRoot = path.resolve(__dirname, "../../..");
 const reactFixtures = path.join(repoRoot, "fixtures/react");
@@ -108,14 +109,7 @@ async function runPipeline() {
   // Extract React component + sub-unit summaries from the fixture set.
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-      jsx: 4,
-    },
+    compilerOptions: { ...testCompilerOptions },
   });
   project.addSourceFilesAtPaths(path.join(reactFixtures, "*.tsx"));
   const adapter = createTypeScriptAdapter({

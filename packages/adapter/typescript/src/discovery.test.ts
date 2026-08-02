@@ -1,7 +1,8 @@
 // discovery.test.ts — exhaustive tests for discoverUnits (Task 2.4)
 
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { discoverUnits } from "./discovery/index.js";
 import { ResolutionStore } from "./facts/store.js";
@@ -13,7 +14,7 @@ import type { DiscoveryPattern } from "@suss/extractor";
 // ---------------------------------------------------------------------------
 
 function createProject() {
-  return new Project({ useInMemoryFileSystem: true });
+  return createTestProject();
 }
 
 function makeNamedExportPattern(
@@ -269,10 +270,7 @@ describe("namedExport — export default function", () => {
   });
 
   it("names a bound arrow reached as a default after its binding", () => {
-    const project = new Project({
-      useInMemoryFileSystem: true,
-      compilerOptions: { moduleResolution: 100 },
-    });
+    const project = createTestProject();
     const file = project.createSourceFile(
       "/panel.ts",
       `

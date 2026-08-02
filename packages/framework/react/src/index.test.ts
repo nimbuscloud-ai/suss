@@ -4,6 +4,7 @@ import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
 import { reactFramework } from "./index.js";
 
@@ -22,16 +23,7 @@ const fixturesDir = path.resolve(__dirname, "../../../../fixtures/react");
 async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99, // ESNext
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
-      skipLibCheck: true,
-      // React 17+ automatic runtime; adapter doesn't actually render, just
-      // parses JSX, but the compiler needs a JSX mode configured.
-      jsx: 4, // ReactJSX
-    },
+    compilerOptions: { ...testCompilerOptions },
   });
   project.addSourceFilesAtPaths(path.join(fixturesDir, "*.tsx"));
 
@@ -662,16 +654,7 @@ describe("reactFramework — integration", () => {
 async function summariesOf(
   files: Record<string, string>,
 ): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      jsx: 4,
-    },
-  });
+  const project = createTestProject();
   for (const [filePath, contents] of Object.entries(files)) {
     project.createSourceFile(filePath, contents);
   }

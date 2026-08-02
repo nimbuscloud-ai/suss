@@ -3,6 +3,8 @@ import path from "node:path";
 import { Node, Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { testCompilerOptions } from "@suss/test-project";
+
 import { collectAncestorBranches } from "./conditions.js";
 import { computePathConditions } from "./paths/pathConditions.js";
 
@@ -14,12 +16,12 @@ import type { FunctionRoot } from "./conditions.js";
 
 const FIXTURES_DIR = path.resolve(__dirname, "../../../../fixtures/conditions");
 
+// One project for every fixture in this file. Each fixture has its own
+// path, so nothing here collides.
+const fixtures = new Project({ compilerOptions: testCompilerOptions });
+
 function loadFixture(filename: string) {
-  const project = new Project({ useInMemoryFileSystem: false });
-  const sourceFile = project.addSourceFileAtPath(
-    path.join(FIXTURES_DIR, filename),
-  );
-  return sourceFile;
+  return fixtures.addSourceFileAtPath(path.join(FIXTURES_DIR, filename));
 }
 
 /** Find a function (declaration or arrow) by its name in the source file. */

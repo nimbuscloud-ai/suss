@@ -3,8 +3,9 @@
 // no transitions and no gaps, which reads as a function that does
 // nothing rather than one nobody read.
 
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { countUnmatchedReturns } from "./assembly.js";
 import { findTerminals } from "./terminals/index.js";
@@ -21,7 +22,7 @@ const HTTP_TERMINALS: TerminalPattern[] = [
 ];
 
 function countIn(source: string, name: string): number {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = createTestProject();
   const file = project.createSourceFile("/mod.ts", source);
   const decl = file.getVariableDeclarationOrThrow(name);
   const func = decl.getInitializerOrThrow() as unknown as FunctionRoot;
@@ -34,7 +35,7 @@ describe("a value reached through a wrapper", () => {
   }`;
 
   function readsFrom(source: string): { terminals: number; unread: number } {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const file = project.createSourceFile("/mod.ts", source);
     const func = file
       .getVariableDeclarationOrThrow("handler")
@@ -190,7 +191,7 @@ describe("countUnmatchedReturns", () => {
 
 describe("countUnmatchedReturns across terminal shapes", () => {
   it("sees through an await around a returned call", () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const file = project.createSourceFile(
       "/mod.ts",
       `declare function json(body: unknown): { statusCode: number };
@@ -214,10 +215,7 @@ describe("countUnmatchedReturns across terminal shapes", () => {
   });
 
   it("says nothing is unread when the whole function is the terminal", () => {
-    const project = new Project({
-      useInMemoryFileSystem: true,
-      compilerOptions: { jsx: 2 },
-    });
+    const project = createTestProject();
     const file = project.createSourceFile(
       "/mod.tsx",
       "export const Card = () => <div />;",

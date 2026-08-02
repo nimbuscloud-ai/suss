@@ -1,14 +1,12 @@
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { ResolutionStore } from "./facts/store.js";
 
 function sourceFile(code: string) {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    compilerOptions: { jsx: 4 /* ReactJSX */ },
-  });
+  const project = createTestProject();
   return project.createSourceFile("Comp.tsx", code);
 }
 

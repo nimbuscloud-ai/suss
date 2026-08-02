@@ -20,6 +20,7 @@ import {
   awsLambdaFramework,
   clearTemplateCache,
 } from "@suss/framework-aws-lambda";
+import { testCompilerOptions } from "@suss/test-project";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -30,13 +31,7 @@ async function extractCode(): Promise<BehavioralSummary[]> {
   clearTemplateCache();
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99, // ESNext
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
-      skipLibCheck: true,
-    },
+    compilerOptions: { ...testCompilerOptions },
   });
   project.addSourceFilesAtPaths(path.join(fixtureRoot, "src/**/*.ts"));
   const adapter = createTypeScriptAdapter({

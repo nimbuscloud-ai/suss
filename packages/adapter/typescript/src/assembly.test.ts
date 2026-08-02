@@ -1,11 +1,13 @@
 // assembly.test.ts — Tests for extractRawBranches (Task 2.5)
 
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { extractRawBranches } from "./assembly.js";
 
 import type { TerminalPattern } from "@suss/extractor";
+import type { Project } from "ts-morph";
 import type { FunctionRoot } from "./conditions.js";
 
 // ---------------------------------------------------------------------------
@@ -13,7 +15,7 @@ import type { FunctionRoot } from "./conditions.js";
 // ---------------------------------------------------------------------------
 
 function createProject() {
-  return new Project({ useInMemoryFileSystem: true });
+  return createTestProject();
 }
 
 /** Get the first exported function from the source file. */

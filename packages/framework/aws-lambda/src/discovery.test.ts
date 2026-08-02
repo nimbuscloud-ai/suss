@@ -6,6 +6,7 @@ import { Project } from "ts-morph";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { testCompilerOptions } from "@suss/test-project";
 
 import { awsLambdaFramework, clearTemplateCache } from "./index.js";
 import { handlersForFile } from "./templateIndex.js";
@@ -184,13 +185,7 @@ async function run(): Promise<BehavioralSummary[]> {
   clearTemplateCache();
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-    },
+    compilerOptions: { ...testCompilerOptions },
   });
   project.addSourceFilesAtPaths(path.join(root, "src/*.ts"));
   const adapter = createTypeScriptAdapter({

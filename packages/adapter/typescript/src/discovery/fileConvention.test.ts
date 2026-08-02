@@ -1,8 +1,9 @@
 // A pack that finds units by where a file sits, and what the adapter
 // does with a file that sits somewhere else.
 
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { createTypeScriptAdapter } from "./../adapter.js";
 import { discoverFileConventions } from "./fileConvention.js";
@@ -45,7 +46,7 @@ async function bindingFor(
   filePath: string,
   pack: PatternPack,
 ): Promise<unknown> {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = createTestProject();
   project.createSourceFile(filePath, SOURCE);
   const adapter = createTypeScriptAdapter({ project, frameworks: [pack] });
   const summaries = await adapter.extractAll();
@@ -54,7 +55,7 @@ async function bindingFor(
 
 describe("discoverFileConventions", () => {
   it("skips a file the pattern does not name", () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const file = project.createSourceFile("/src/lib/helpers.ts", SOURCE);
     expect(
       discoverFileConventions(
@@ -70,7 +71,7 @@ describe("discoverFileConventions", () => {
   });
 
   it("finds the exports in a file the pattern names", () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const file = project.createSourceFile("/src/app/api/route.ts", SOURCE);
     const found = discoverFileConventions(
       file,
@@ -85,7 +86,7 @@ describe("discoverFileConventions", () => {
   });
 
   it("reuses the matcher it compiled for a pattern it has seen", () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const match = {
       type: "fileConvention" as const,
       filePattern: ROUTE_FILES,

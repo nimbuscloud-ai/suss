@@ -1,7 +1,7 @@
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createTestProject } from "@suss/test-project";
 
 import { webFetchPack } from "./index.js";
 
@@ -19,7 +19,7 @@ describe("webFetchPack — pack shape", () => {
 
 describe("webFetchPack — integration", () => {
   it("discovers a function that calls fetch() with literal URL", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -49,7 +49,7 @@ describe("webFetchPack — integration", () => {
   });
 
   it("extracts method from options object", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -75,7 +75,7 @@ describe("webFetchPack — integration", () => {
   });
 
   it("produces transitions from branches in the consumer function", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `

@@ -1,5 +1,7 @@
-import { Node, Project } from "ts-morph";
+import { Node, type Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { createTypeScriptAdapter } from "../adapter.js";
 import { findResponseVariable } from "./fieldAccesses.js";
@@ -11,7 +13,7 @@ import type { PatternPack } from "@suss/extractor";
 // ---------------------------------------------------------------------------
 
 function createProject() {
-  return new Project({ useInMemoryFileSystem: true });
+  return createTestProject();
 }
 
 function getFirstCallExpression(project: Project, fileName: string) {

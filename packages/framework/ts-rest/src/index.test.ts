@@ -4,6 +4,7 @@ import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { testCompilerOptions } from "@suss/test-project";
 
 import { tsRestFramework } from "./index.js";
 
@@ -22,13 +23,7 @@ const composedFixturesDir = path.resolve(
 function makeProject(): Project {
   return new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99, // ESNext
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
-      skipLibCheck: true,
-    },
+    compilerOptions: { ...testCompilerOptions },
   });
 }
 

@@ -1,5 +1,7 @@
-import { Node, Project, ScriptTarget, type SourceFile } from "ts-morph";
+import { Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import {
   fileLocationRecognizer,
@@ -10,15 +12,7 @@ import {
 import type { Effect } from "@suss/behavioral-ir";
 
 function makeFile(source: string): SourceFile {
-  const project = new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      strict: true,
-      moduleResolution: 100,
-      module: 99, // ESNext
-    },
-    useInMemoryFileSystem: true,
-  });
+  const project = createTestProject();
   return project.createSourceFile("user.ts", source);
 }
 

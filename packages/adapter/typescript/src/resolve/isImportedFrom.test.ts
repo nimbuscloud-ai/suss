@@ -2,16 +2,16 @@
 // matched came from the library it cares about, or from something local
 // that happens to share the name. Each test lays out one import shape.
 
-import { type Node, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { isImportedFrom } from "./invocationEffects.js";
 
+import type { Node } from "ts-morph";
+
 function identifierNamed(files: Record<string, string>, name: string): Node {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    compilerOptions: { allowJs: true },
-  });
+  const project = createTestProject();
   for (const [path, contents] of Object.entries(files)) {
     project.createSourceFile(path, contents);
   }

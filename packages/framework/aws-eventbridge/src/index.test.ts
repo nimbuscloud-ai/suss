@@ -1,13 +1,8 @@
-import {
-  type CallExpression,
-  Node,
-  Project,
-  ScriptTarget,
-  type SourceFile,
-} from "ts-morph";
+import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { isImportedFrom } from "@suss/adapter-typescript";
+import { createTestProject } from "@suss/test-project";
 
 import { eventBridgeFramework } from "./index.js";
 
@@ -24,14 +19,7 @@ const raise = (msg: string): never => {
  * check (`isImportedFrom`) has symbols to resolve against.
  */
 function makeProject(userSource: string): SourceFile {
-  const project = new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      strict: true,
-      moduleResolution: 100, // ts.ModuleResolutionKind.Bundler
-    },
-    useInMemoryFileSystem: true,
-  });
+  const project = createTestProject();
 
   project.createSourceFile(
     "node_modules/@aws-sdk/client-eventbridge/index.d.ts",

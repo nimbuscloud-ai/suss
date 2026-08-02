@@ -2,8 +2,9 @@
 // adapter can see which: a declaration with no body behind it, or a
 // body with nothing in it.
 
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { bodyContentOf } from "./assembly.js";
 
@@ -11,7 +12,7 @@ import type { BodyContent } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
 
 function ofVariable(source: string, name = "handler"): BodyContent {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = createTestProject();
   const file = project.createSourceFile("/mod.ts", source);
   const func = file
     .getVariableDeclarationOrThrow(name)
@@ -20,7 +21,7 @@ function ofVariable(source: string, name = "handler"): BodyContent {
 }
 
 function ofFunction(source: string, name = "handler"): BodyContent {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = createTestProject();
   const file = project.createSourceFile("/mod.ts", source);
   const func = file.getFunctionOrThrow(name) as unknown as FunctionRoot;
   return bodyContentOf(func);
@@ -46,7 +47,7 @@ describe("bodyContentOf", () => {
   it("says an overload signature has no body behind it", () => {
     // The signature and the implementation are separate declarations,
     // and whoever discovers the signature reads no body at all.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const file = project.createSourceFile(
       "/mod.ts",
       `export function handler(a: number): void;

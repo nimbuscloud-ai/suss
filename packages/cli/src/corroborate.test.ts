@@ -1,26 +1,19 @@
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import expressFramework from "@suss/framework-express";
+import { createTestProject } from "@suss/test-project";
 
 import { corroborateSummary } from "./corroborate.js";
 
 import type { BehavioralSummary, Corroboration } from "@suss/behavioral-ir";
+import type { Project } from "ts-morph";
 
 async function extractHandler(): Promise<{
   summary: BehavioralSummary;
   project: Project;
 }> {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      skipLibCheck: true,
-    },
-  });
+  const project = createTestProject();
   project.createSourceFile(
     "/gen/handler.ts",
     `import { Router } from "express";

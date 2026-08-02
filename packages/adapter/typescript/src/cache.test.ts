@@ -5,6 +5,8 @@ import path from "node:path";
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { testCompilerOptions } from "@suss/test-project";
+
 import { createCacheLayer, MAX_ENTRIES } from "./cache.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -25,7 +27,7 @@ async function makeProjectWith(files: Record<string, string>): Promise<{
   }
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: { strict: true, target: 99, module: 99 },
+    compilerOptions: { ...testCompilerOptions },
   });
   for (const rel of Object.keys(files)) {
     project.addSourceFileAtPath(path.join(dir, rel));

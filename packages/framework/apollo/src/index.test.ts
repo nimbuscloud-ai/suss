@@ -4,6 +4,7 @@ import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
 import { apolloFramework } from "./index.js";
 
@@ -18,13 +19,7 @@ const fixturesDir = path.resolve(__dirname, "../../../../fixtures/apollo");
 async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99, // ESNext
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
-      skipLibCheck: true,
-    },
+    compilerOptions: { ...testCompilerOptions },
   });
   project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
 
@@ -163,17 +158,7 @@ describe("apolloFramework — integration", () => {
 // ---------------------------------------------------------------------------
 
 async function runInMemory(source: string): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-    },
-  });
+  const project = createTestProject();
   project.createSourceFile("server.ts", source);
   const adapter = createTypeScriptAdapter({
     project,
@@ -211,17 +196,7 @@ describe("apolloFramework — discovery shapes", () => {
   });
 
   it("excludeTypes skips the listed types", async () => {
-    const project = new Project({
-      useInMemoryFileSystem: true,
-      skipAddingFilesFromTsConfig: true,
-      compilerOptions: {
-        strict: true,
-        target: 99,
-        module: 99,
-        moduleResolution: 100,
-        skipLibCheck: true,
-      },
-    });
+    const project = createTestProject();
     project.createSourceFile(
       "server.ts",
       `
