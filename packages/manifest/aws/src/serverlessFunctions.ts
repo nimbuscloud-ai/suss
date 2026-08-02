@@ -10,6 +10,7 @@
 // Globals, Api vs HttpApi Events) stay owned here rather than being
 // reconstructed inside a framework pack.
 
+import { resourcesWithGlobals } from "./globals.js";
 import { type CloudFormationTemplate, refTarget } from "./templateLoader.js";
 
 /** A route-bearing SAM Event (`Type: Api` or `Type: HttpApi`). */
@@ -84,24 +85,14 @@ function normalizeCodeUri(raw: string): string {
   return trimmed === "" ? "." : trimmed;
 }
 
-function readGlobalsCodeUri(template: CloudFormationTemplate): string | null {
-  const fnGlobals = template.Globals?.Function;
-  if (fnGlobals === undefined) {
-    return null;
-  }
-  const codeUri = fnGlobals.CodeUri;
-  return typeof codeUri === "string" ? normalizeCodeUri(codeUri) : null;
-}
-
-function readCodeUri(
-  resource: { Properties?: Record<string, unknown> },
-  globalsCodeUri: string | null,
-): string {
+function readCodeUri(resource: {
+  Properties?: Record<string, unknown>;
+}): string {
   const codeUri = resource.Properties?.CodeUri;
   if (typeof codeUri === "string") {
     return normalizeCodeUri(codeUri);
   }
-  return globalsCodeUri ?? ".";
+  return ".";
 }
 
 function classifyEvents(events: Record<string, unknown>): {
@@ -160,8 +151,7 @@ function classifyEvents(events: Record<string, unknown>): {
 export function readServerlessFunctions(
   template: CloudFormationTemplate,
 ): ServerlessFunctionInfo[] {
-  const resources = template.Resources ?? {};
-  const globalsCodeUri = readGlobalsCodeUri(template);
+  const resources = resourcesWithGlobals(template);
   const out: ServerlessFunctionInfo[] = [];
 
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -191,7 +181,7 @@ export function readServerlessFunctions(
       handler: handlerRaw,
       modulePath: parsed.modulePath,
       exportName: parsed.exportName,
-      codeUri: readCodeUri(resource, globalsCodeUri),
+      codeUri: readCodeUri(resource),
       httpRoutes,
       nonHttpEvents,
     });
