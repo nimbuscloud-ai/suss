@@ -15,13 +15,15 @@
 //   2. Not every type is worth expanding. `Date`, `Buffer`, `RegExp`, DOM
 //      classes — their structural shape doesn't match how callers actually
 //      use them. We keep those as `ref` with the declared type name and stop.
+//      The same goes for every other type the project did not write: the
+//      name is what a reader wants, and the fields belong to the library.
 //
 // The public entry point takes a `Node` so we can resolve types at a specific
 // location (generic type params depend on use-site context) without forcing
 // callers to plumb Types through themselves.
 
 import type { TypeShape } from "@suss/behavioral-ir";
-import type { Node, Symbol as TsSymbol, Type } from "ts-morph";
+import type { Node, SourceFile, Symbol as TsSymbol, Type } from "ts-morph";
 
 /**
  * Maximum recursion depth when expanding object properties. Beyond this we
@@ -218,6 +220,17 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
     return namedRef;
   }
 
+  // A named type the project did not declare stops at its name. Its
+  // property set describes the library rather than this codebase, and a
+  // reader who sees `HTMLElement` already knows what came back. Expanding
+  // one is also what produced gigabyte summaries: the DOM is a dense graph,
+  // and `seen` only guards a single path, so the same type reached through
+  // two properties expands twice all the way down to MAX_DEPTH.
+  const outsideRef = outsideProjectRef(type, ctx);
+  if (outsideRef !== null) {
+    return outsideRef;
+  }
+
   if (type.isObject() || type.isClassOrInterface()) {
     return objectToShape(type, ctx);
   }
@@ -392,6 +405,58 @@ function opaqueNamedRef(type: Type, ctx: ConvertContext): TypeShape | null {
   // getText() produces noise.
   const text = type.getText(ctx.enclosing);
   return { type: "ref", name: text && text.length > 0 ? text : name };
+}
+
+/**
+ * A `ref` for a named type that every one of its declarations places
+ * outside the project, or `null` when the type is one the project wrote and
+ * is worth expanding.
+ *
+ * Anonymous types are expanded whatever file they were written in. The
+ * compiler names a type literal or a mapped type `__type`, so `Partial<T>`
+ * and the object type behind a schema builder land here with no name to
+ * report, and a `ref` would say less than their fields do.
+ */
+function outsideProjectRef(type: Type, ctx: ConvertContext): TypeShape | null {
+  const symbol = type.getSymbol();
+  if (!symbol) {
+    return null;
+  }
+  const name = symbol.getName();
+  if (!name || name === "__type" || name === "__object") {
+    return null;
+  }
+  const declarations = symbol.getDeclarations();
+  if (declarations.length === 0) {
+    return null;
+  }
+  const outside = declarations.every((d) =>
+    isOutsideProject(d.getSourceFile()),
+  );
+  return outside ? refFromType(type, ctx) : null;
+}
+
+/** One answer per file: a run asks about the same library files constantly. */
+const outsideProjectByFile = new WeakMap<object, boolean>();
+
+/**
+ * Whether a file belongs to something other than the code being read: the
+ * default library, or a dependency. The compiler already tracks both, so
+ * this asks it rather than matching paths.
+ */
+function isOutsideProject(file: SourceFile): boolean {
+  const key = file.compilerNode;
+  const memoised = outsideProjectByFile.get(key);
+  if (memoised !== undefined) {
+    return memoised;
+  }
+  const program = file.getProject().getProgram().compilerObject;
+  const outside =
+    program.isSourceFileDefaultLibrary(key) ||
+    file.isFromExternalLibrary() ||
+    file.isInNodeModules();
+  outsideProjectByFile.set(key, outside);
+  return outside;
 }
 
 function refFromType(type: Type, ctx: ConvertContext): TypeShape {
