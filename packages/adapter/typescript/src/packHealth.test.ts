@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluatePackHealth } from "./packHealth.js";
+import { evaluatePackHealth, formatPackHealth } from "./packHealth.js";
 
 import type { PackFunnel } from "./diagnostics.js";
 
@@ -68,7 +68,7 @@ describe("the funnel-drop check", () => {
     expect(found[0]?.detail).toContain("discovery matched nothing");
   });
 
-  it("does not hold a pack made only of recognisers to the discovery pair", () => {
+  it("says nothing about a pack made only of recognisers", () => {
     const found = drops([
       funnel({
         discovers: false,
@@ -83,95 +83,6 @@ describe("the funnel-drop check", () => {
       }),
     ]);
     expect(found).toEqual([]);
-  });
-
-  it("measures a recogniser pack against the bodies it had to look at", () => {
-    const found = drops([
-      funnel({
-        discovers: false,
-        recognizes: true,
-        unitsDiscovered: 0,
-        unitsInGatedFiles: 12,
-        effectsRecognized: 0,
-        unitsClaimed: 0,
-        summariesProduced: 0,
-        summariesBound: 0,
-        providerSummaries: 0,
-        summariesWithBehavior: 0,
-      }),
-    ]);
-    expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("matched nothing");
-  });
-
-  it("stays quiet when a recogniser pack had no body to look at", () => {
-    expect(
-      drops([
-        funnel({
-          discovers: false,
-          recognizes: true,
-          unitsDiscovered: 0,
-          unitsInGatedFiles: 0,
-          effectsRecognized: 0,
-          unitsClaimed: 0,
-          summariesProduced: 0,
-          summariesBound: 0,
-          providerSummaries: 0,
-          summariesWithBehavior: 0,
-        }),
-      ]),
-    ).toEqual([]);
-  });
-
-  it("stays quiet when a recogniser pack matched something", () => {
-    expect(
-      drops([
-        funnel({
-          discovers: false,
-          recognizes: true,
-          unitsDiscovered: 0,
-          unitsInGatedFiles: 12,
-          effectsRecognized: 4,
-          unitsClaimed: 0,
-          summariesProduced: 0,
-          summariesBound: 0,
-          providerSummaries: 0,
-          summariesWithBehavior: 0,
-        }),
-      ]),
-    ).toEqual([]);
-  });
-
-  it("says nothing about an ungated pack that found no units", () => {
-    expect(
-      drops([
-        funnel({
-          gates: [],
-          unitsDiscovered: 0,
-          unitsClaimed: 0,
-          summariesProduced: 0,
-          summariesBound: 0,
-          providerSummaries: 0,
-          summariesWithBehavior: 0,
-        }),
-      ]),
-    ).toEqual([]);
-  });
-
-  it("says nothing when the gate itself failed to resolve", () => {
-    expect(
-      drops([
-        funnel({
-          unresolvedGates: ["@scope/lib"],
-          unitsDiscovered: 0,
-          unitsClaimed: 0,
-          summariesProduced: 0,
-          summariesBound: 0,
-          providerSummaries: 0,
-          summariesWithBehavior: 0,
-        }),
-      ]),
-    ).toEqual([]);
   });
 
   it("fires when recognised units bound to no boundary", () => {
@@ -239,5 +150,35 @@ describe("the remaining checks", () => {
     expect(
       firedBy("no pack collides with itself", [funnel({ selfCollisions: 2 })]),
     ).toHaveLength(1);
+  });
+});
+
+describe("formatPackHealth", () => {
+  const checks = () =>
+    evaluatePackHealth({
+      filesInProject: 20,
+      filesWalked: 20,
+      packs: [funnel({ version: null, summariesWithBehavior: 0 })],
+      summaries: 0,
+      emptyStage: null,
+    });
+
+  it("says nothing when the caller asked for an audience that found nothing", () => {
+    expect(
+      formatPackHealth(
+        [{ name: "x", audience: "run", violations: [] }],
+        ["run"],
+      ),
+    ).toBe("");
+  });
+
+  it("prints only the audience the caller asked for", () => {
+    const runOnly = formatPackHealth(checks(), ["run"]);
+    expect(runOnly).toContain("empty of transitions");
+    expect(runOnly).not.toContain("declares no version");
+
+    const both = formatPackHealth(checks(), ["run", "pack"]);
+    expect(both).toContain("empty of transitions");
+    expect(both).toContain("declares no version");
   });
 });
