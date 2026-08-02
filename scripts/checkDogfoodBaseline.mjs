@@ -76,13 +76,28 @@ const baseline = committed.value;
 const regressions = [];
 
 /**
- * Print the line, and record it when the number fell. A field the two
- * sides do not both carry is skipped: that happens when the baseline on
- * the ref predates a change to which counts a run produces, and there is
- * nothing to compare rather than a drop to report.
+ * Print the line, and record it when the number fell or stopped being
+ * produced at all.
+ *
+ * The two ways a number can be missing are not the same thing. A
+ * baseline that does not carry the field was written before the field
+ * existed, and there is nothing to compare; that is the only case worth
+ * passing over, and it is a migration affordance that can go once no
+ * open branch predates the field. A baseline that carries the field
+ * while the run no longer produces it means whatever computed that count
+ * stopped working, which the gate has to fail on for the same reason it
+ * fails on a drop.
  */
 function compareFloor(label, before, after) {
-  if (typeof before !== "number" || typeof after !== "number") {
+  if (typeof before !== "number") {
+    return;
+  }
+  if (typeof after !== "number") {
+    console.log(`  ${label}: ${before} → missing`);
+    regressions.push({
+      label,
+      detail: `${before} on ${BASELINE_REF}, and this run produced no such count`,
+    });
     return;
   }
   printDelta(label, before, after);
@@ -91,12 +106,50 @@ function compareFloor(label, before, after) {
   }
 }
 
-/** The per-package counts a baseline carries, in the order they print. */
-const COUNTED_FIELDS = ["exports", "internal", "consumers"];
+/** Compare one count, saying so when the baseline has never seen it. */
+function compareField(label, before, after) {
+  if (before === undefined && typeof after === "number") {
+    console.log(
+      `  ${label}: ${after}, new since ${BASELINE_REF}, no baseline to compare`,
+    );
+    return;
+  }
+  compareFloor(label, before, after);
+}
+
+/** The counts this file knows about, in the order they read best. */
+const FIELD_ORDER = [
+  "packages",
+  "packagesWithExports",
+  "exports",
+  "internal",
+  "consumers",
+  "pairs",
+];
+
+/**
+ * The counts to compare on a pair of records.
+ *
+ * Taken from both sides rather than from a fixed list, so a count added
+ * to a run gets compared from the next baseline on, and a count that
+ * stops being produced is reported rather than dropping out of the loop.
+ * A count neither side has a name for prints last.
+ */
+function countedFields(before, after) {
+  const found = new Set(
+    [...Object.keys(before), ...Object.keys(after)].filter(
+      (field) => field !== "name",
+    ),
+  );
+  return [
+    ...FIELD_ORDER.filter((field) => found.has(field)),
+    ...[...found].filter((field) => !FIELD_ORDER.includes(field)),
+  ];
+}
 
 console.log(`Totals against ${BASELINE_REF}:`);
-for (const field of Object.keys(baseline.totals)) {
-  compareFloor(field, baseline.totals[field], current.totals[field]);
+for (const field of countedFields(baseline.totals, current.totals)) {
+  compareField(field, baseline.totals[field], current.totals[field]);
 }
 
 console.log("\nPer package:");
@@ -112,8 +165,8 @@ for (const [dir, before] of Object.entries(baseline.packages)) {
     after.name === before.name
       ? after.name
       : `${dir} (${before.name} → ${after.name})`;
-  for (const field of COUNTED_FIELDS) {
-    compareFloor(`${label} ${field}`, before[field], after[field]);
+  for (const field of countedFields(before, after)) {
+    compareField(`${label} ${field}`, before[field], after[field]);
   }
 }
 
@@ -126,7 +179,7 @@ for (const dir of Object.keys(current.packages)) {
 const failed = reportRegressions({
   title: `suss sees less of this tree than ${BASELINE_REL_PATH} says it should:`,
   regressions,
-  hint: `Either a recognizer stopped firing, or the code these counted was deleted. If it was deleted, run \`npm run dogfood\` and commit the refreshed ${BASELINE_REL_PATH} on this branch. The drop then lands in the pull request diff, where a reviewer can see what went and agree it should have.`,
+  hint: `Either a recognizer stopped firing, or the code these counted was deleted. If it was deleted, run \`npm run dogfood\` and commit the refreshed ${BASELINE_REL_PATH} on this branch. The drop then lands in the pull request diff, where a reviewer can see what went and agree it should have. A count reported as missing rather than lower means the run no longer produces a number the baseline has, which is either the same refresh or a bug in what computes it.`,
 });
 
 if (failed) {
