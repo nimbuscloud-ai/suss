@@ -605,8 +605,14 @@ The occurrence weighting says otherwise. Saleor's 1,262 types occur
 minority carries most of the mass. The tail is long: the 99th percentile
 type appears at 20 boundaries on Saleor and 31 on Twenty, and the most
 reused appears at 135 and 202. Storing each distinct type once rather
-than at every occurrence is 34.5% of the inline bytes on both corpora,
-which is the same figure to three digits on two unrelated codebases.
+than at every occurrence is 34.5% of the shape bytes on both corpora,
+the same figure to three digits on two unrelated codebases.
+
+That is a claim about shapes rather than about files, and the two are
+easy to confuse. Shapes are about a fifth of a summary's bytes now that
+#66 has landed, so a 65% saving on them is 11% of Saleor's output and
+10% of Twenty's, measured end to end below. Worth having and not worth
+overselling.
 
 **Where the two designs cross.** Writing `f` for the share of a type's
 members one site touches, with each design charged for what it has to
@@ -638,14 +644,95 @@ know its consumers. With sharing, a provider recording its full produced
 structure is much less costly, because a widely reused type is stored
 once rather than once per boundary.
 
+### What becomes a node and what stays inline
+
+A reference costs a hash, so anything smaller than a digest should be
+written out rather than pointed at. Serialized, a 128-bit reference is
+40 bytes. `{"type":"text"}` is 15 and
+`{"type":"literal","value":"success"}` is 36. Pointing at either one
+loses on size before anything else is considered.
+
+**Primitives and literals always inline.** Literals matter most. The
+extractor works to keep a literal narrow, so a summary says `"success"`
+rather than `string`, and that is the most legible thing in the file.
+Turning it into a digest would trade the clearest part of a summary for
+four bytes.
+
+**Composites are the decision, and it turns out to be a small one.**
+Because the whole program is extracted before anything is written, how
+often a type occurs is known at write time, so the rule can be measured
+rather than guessed. Total bytes for each threshold, against today's
+fully inline form:
+
+| rule | saleor | twenty | nodes (saleor / twenty) |
+| --- | ---: | ---: | ---: |
+| everything inline, as today | 7,163,231 | 20,048,335 | 0 / 0 |
+| node if it occurs more than once | 6,371,771 | 18,132,683 | 353 / 682 |
+| node if reused or 4+ members | 6,377,491 | 18,147,443 | 496 / 1,051 |
+| node if reused or 8+ members | 6,373,371 | 18,140,443 | 393 / 876 |
+| node at 3+ occurrences or 8+ members | 6,378,016 | 18,147,790 | 289 / 674 |
+| every composite is a node | 6,388,291 | 18,179,243 | 766 / 1,846 |
+
+Every rule lands within 0.3% of every other. Going from fully inline to
+sharing anything at all saves 11% on Saleor and 10% on Twenty, and after
+that the threshold does not matter. So the threshold should be chosen
+for what it does to a reader, not for bytes.
+
+The rule to take is the simplest one that captures the saving: **a
+composite becomes a node when it occurs more than once in the run, and
+everything else inlines.** It gives the smallest output of any rule
+measured, and it produces the fewest nodes of the rules that do, which
+is the same thing as saying it keeps the most structure where a person
+can see it.
+
+**Top-level shapes inline too.** A summary's own body shape can be a
+reference, and allowing it saves a further 59,268 bytes on Saleor and
+45,959 on Twenty, which is 0.8% and 0.3%. Refusing it means the shape a
+person looks at first is written out. That is the place to be less
+efficient than optimal, and the price is under 1%.
+
+The effect on reading is small either way, which is worth saying because
+it was the main worry. Under the recommended rule the median summary
+follows zero references and the average is 0.2, because most shapes are
+shallow and narrow. A summary full of hash references was never what
+this produces.
+
+### Two things the rule must not break
+
+**Participation does not need a node to point at.** A participating set
+records member paths by name, so `[["user", "id"]]` resolves against an
+inline shape as readily as against a stored one. What needs a node is
+the question "which sites depend on this subtree", and only a type that
+occurs more than once is a node, which is exactly the set that question
+is about. A type used once has one dependent site and the answer is
+already in hand.
+
+A Merkle descent also survives inlining, because an inlined composite
+carries its structure, so its hash can be recomputed on the spot rather
+than looked up. Nothing is lost by not storing it.
+
+**Granularity must not change what comparison concludes.** Whether a
+type is inlined or referenced is a decision about layout, so two
+summaries that make it differently have to compare equal. That falls out
+as long as the hash is computed over the type, meaning its normalized
+member tree, rather than over the JSON that was written. Saying it
+explicitly is worth the sentence, because computing the hash over the
+serialized form would let the format's own layout decide the answer.
+
 ### What sharing costs to read
 
-A summary full of hash references reads worse than one with the shape
-inline, and that cost is worth naming rather than waving past. The
-mitigation is that `suss inspect` already exists as the view meant for
-people, so the stored form can be addressed and the reader can resolve
-references before showing anything. What should not happen is the wire
-format becoming unreadable on the assumption that nobody opens it.
+The worry going in was that a summary would turn into a wall of hash
+references, and the measurement says it does not. Under the recommended
+rule the median summary follows no references at all and the average is
+0.2, because the types that qualify as nodes are the widely reused ones
+and most shapes are neither wide nor reused.
+
+Where a cost remains, spend bytes rather than legibility. Inlining
+top-level shapes costs under 1% and keeps the thing a person opens the
+file to read written out in full. And `suss inspect` already exists as
+the view meant for people, so it can resolve references before showing
+anything. What should not happen is the stored format drifting toward
+unreadable on the assumption that nobody opens it.
 
 ### Two things ruled out
 
@@ -907,7 +994,9 @@ hash and calling it a fingerprint in one place and a hash in another
 would cost every later reader a lookup. `touches` for participation, and
 `from` for provenance, both reading as the answer they give back.
 `hashOf(shape)` and `touchesOf(unit, value)` as the functions, not
-`computeHash` or `getParticipation`.
+`computeHash` or `getParticipation`. The shared store holds `nodes`, and
+a reference is a node's hash, so neither "Merkle" nor "content-addressed"
+needs to appear in a field name.
 
 **Verified against code somebody wrote.** Saleor Dashboard and Twenty's
 frontend, both public, both measured on current main with `--no-cache`,
@@ -955,9 +1044,14 @@ is measurable without the ones after it.
    module-declared dependency and not for an ambient type, so it ships
    with the run-level compiler header that covers the second case. The
    cache has to gain a lockfile stamp in the same change or summaries
-   will carry stale versions forever. Sharing comes last because its
-   case rests on the crossover measurement, and because it is the only
-   part that changes how a summary reads.
+   will carry stale versions forever.
+
+   Sharing comes last, and it is the smallest of the four: 11% of
+   Saleor's bytes and 10% of Twenty's, with the threshold making almost
+   no difference and a node earned by occurring more than once. Its
+   better argument is the two questions it answers rather than the bytes
+   it saves, which are what else depends on a changed subtree, and what
+   does not need re-deriving.
 
 The two claims this proposal makes should not be allowed to borrow each
 other's evidence. The library-type fix is what did the work on size.
