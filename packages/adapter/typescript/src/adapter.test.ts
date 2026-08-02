@@ -151,7 +151,7 @@ describe("extractCodeStructure", () => {
 
     expect(units).toHaveLength(1);
 
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     expect(raw.parameters).toEqual([
       { name: "params", position: 0, role: "pathParams", typeText: null },
@@ -183,7 +183,7 @@ describe("extractCodeStructure", () => {
     const units = discoverUnits(file, allPositionalPack.discovery);
     expect(units).toHaveLength(1);
 
-    const raw = extractCodeStructure(units[0], allPositionalPack, "test.ts");
+    const raw = extractCodeStructure(units[0], allPositionalPack);
     expect(raw.parameters).toEqual([
       { name: "state", position: 0, role: "state", typeText: null },
       { name: "setState", position: 0, role: "setState", typeText: null },
@@ -207,7 +207,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     expect(raw.dependencyCalls).toHaveLength(1);
     expect(raw.dependencyCalls[0].name).toBe("db.findById");
@@ -231,7 +231,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     expect(raw.branches).toHaveLength(2);
 
@@ -280,7 +280,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, expressPack.discovery);
-    const raw = extractCodeStructure(units[0], expressPack, "test.ts");
+    const raw = extractCodeStructure(units[0], expressPack);
 
     expect(raw.parameters).toEqual([
       { name: "req", position: 0, role: "request", typeText: null },
@@ -302,7 +302,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     expect(raw.parameters).toEqual([
       { name: "ctx", position: 0, role: "request", typeText: null },
@@ -320,7 +320,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     expect(raw.dependencyCalls).toHaveLength(0);
     expect(raw.branches).toHaveLength(1);
@@ -345,7 +345,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     expect(raw.dependencyCalls).toHaveLength(2);
     expect(raw.dependencyCalls[0].name).toBe("validate");
@@ -367,7 +367,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     expect(raw.parameters).toEqual([]);
   });
@@ -397,7 +397,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     // Should find all 3 dep calls: top-level validate, nested db.findById, nested db.log
     expect(raw.dependencyCalls).toHaveLength(3);
@@ -427,7 +427,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     expect(raw.branches).toHaveLength(2);
 
@@ -463,7 +463,7 @@ describe("extractCodeStructure", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
     const units = discoverUnits(file, tsRestPack.discovery);
-    const raw = extractCodeStructure(units[0], tsRestPack, "test.ts");
+    const raw = extractCodeStructure(units[0], tsRestPack);
 
     expect(raw.dependencyCalls).toHaveLength(1);
     expect(raw.dependencyCalls[0].name).toBe("db.find");
@@ -3442,7 +3442,7 @@ describe("walker descent", () => {
     `;
     const file = project.createSourceFile("handler.ts", source);
     const units = discoverUnits(file, expressResPack.discovery);
-    const raw = extractCodeStructure(units[0], expressResPack, "handler.ts");
+    const raw = extractCodeStructure(units[0], expressResPack);
 
     // The terminal `res.json({ name })` lives inside the executor arrow;
     // descent finds it because `res` is the handler's own parameter.
@@ -3489,7 +3489,7 @@ describe("walker descent", () => {
       kind: "handler",
       name: "UserController.getUser",
     };
-    const raw = extractCodeStructure(unit, expressResPack, "controller.ts");
+    const raw = extractCodeStructure(unit, expressResPack);
 
     // Class-method body is walked exactly like a function body; the
     // `res.json(...)` terminal inside the `.then` callback is found.
@@ -3524,7 +3524,7 @@ describe("walker descent", () => {
     `;
     const file = project.createSourceFile("handler.ts", source);
     const units = discoverUnits(file, expressResPack.discovery);
-    const raw = extractCodeStructure(units[0], expressResPack, "handler.ts");
+    const raw = extractCodeStructure(units[0], expressResPack);
 
     // `audit.record(...)` is a bare expression-statement call inside the
     // `.then` callback; descent captures it as an invocation effect on

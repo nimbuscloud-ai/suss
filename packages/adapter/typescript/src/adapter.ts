@@ -482,7 +482,6 @@ function tryResolveStatusRange(
 export function extractCodeStructure(
   unit: DiscoveredUnit,
   pack: PatternPack,
-  filePath: string,
   invocationRecognizers: InvocationRecognizer[] = [],
   accessRecognizers: AccessRecognizer[] = [],
   barriers: DescentBarriers = NO_BARRIERS,
@@ -560,7 +559,13 @@ export function extractCodeStructure(
     identity: {
       name,
       kind: kind as CodeUnitKind,
-      file: filePath,
+      // The range below is the function's own, so the path has to be
+      // too. Discovery can walk a barrel and land on a declaration
+      // re-exported from another module, and naming the walked file
+      // there gives a location whose path and lines point at different
+      // files. Every later pass that looks a summary back up by path
+      // then misses the module the body is in.
+      file: func.getSourceFile().getFilePath(),
       range: {
         start: func.getStartLineNumber(),
         end: func.getEndLineNumber(),
@@ -886,7 +891,6 @@ function extractFromSourceFile(
   resolution?: ResolutionStore,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
-  const filePath = sourceFile.getFilePath();
   // Aggregate recognizers from EVERY pack — a Prisma recognizer fires
   // on Prisma calls inside an Express handler regardless of which pack
   // discovered the handler. Same threading model as the cross-pack
@@ -999,7 +1003,6 @@ function extractFromSourceFile(
       const raw = extractCodeStructure(
         unit,
         pack,
-        filePath,
         allInvocationRecognizers,
         allAccessRecognizers,
         barriers,
@@ -1510,8 +1513,6 @@ function buildCallerSummary(
   path: string,
   options?: ExtractorOptions,
 ): BehavioralSummary {
-  const sf = callerFunc.getSourceFile();
-  const file = sf.getFilePath();
   const wrapperBinding = wrapper.summary.identity.boundaryBinding;
   const wrapperRest =
     wrapperBinding?.semantics.name === "rest" ? wrapperBinding.semantics : null;
@@ -1557,7 +1558,7 @@ function buildCallerSummary(
     },
   };
 
-  const raw = extractCodeStructure(unit, syntheticPack, file);
+  const raw = extractCodeStructure(unit, syntheticPack);
   raw.boundaryBinding = restBinding({
     transport: wrapperBinding?.transport ?? "http",
     method: wrapperRest?.method ?? "",
@@ -2073,13 +2074,11 @@ function synthesizeSubUnits(
     };
 
     const subUnits = pack.subUnits(parentHandle, subUnitCtx);
-    const filePath = parentFunc.getSourceFile().getFilePath();
 
     for (const subUnit of subUnits) {
       const summary = buildSubUnitSummary(
         subUnit,
         parent,
-        filePath,
         allInvocationRecognizers,
         allAccessRecognizers,
         options,
@@ -2119,7 +2118,6 @@ const DEFAULT_SUB_UNIT_INPUT_MAPPING: InputMappingPattern = {
 function buildSubUnitSummary(
   subUnit: DiscoveredSubUnit,
   parent: BehavioralSummary,
-  filePath: string,
   invocationRecognizers: InvocationRecognizer[],
   accessRecognizers: AccessRecognizer[],
   options?: ExtractorOptions,
@@ -2150,7 +2148,6 @@ function buildSubUnitSummary(
   const raw = extractCodeStructure(
     unit,
     scaffoldPack,
-    filePath,
     invocationRecognizers,
     accessRecognizers,
   );

@@ -298,7 +298,6 @@ function extractReachableSummary(
   const raw = extractCodeStructure(
     unit,
     reachablePack,
-    candidate.func.getSourceFile().getFilePath(),
     recognizers.invocation,
     recognizers.access,
   );
