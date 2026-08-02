@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: One service whose functions take most of their environment from the
+  Globals section. LOG_LEVEL is declared there and read by one of the two
+  functions, TABLE_NAME is declared in both places, SENTRY_DSN is declared for
+  both functions and read by neither, and RETRY_LIMIT is declared nowhere.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    CodeUri: ./
+    Timeout: 10
+    Environment:
+      Variables:
+        LOG_LEVEL: info
+        SENTRY_DSN: https://sentry.invalid/1
+        TABLE_NAME: !Ref SharedTable
+
+Resources:
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/ingest.handler
+      Environment:
+        Variables:
+          # Overrides the section's table for this function only.
+          TABLE_NAME: !Ref IngestTable
+
+  NotifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/notify.handler
+
+  SharedTable:
+    Type: AWS::DynamoDB::Table
+
+  IngestTable:
+    Type: AWS::DynamoDB::Table

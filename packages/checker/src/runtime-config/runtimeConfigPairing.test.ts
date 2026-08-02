@@ -11,6 +11,7 @@ function makeRuntimeProvider(opts: {
   envVars: string[];
   codeScope: { kind: "codeUri" | "unknown"; path?: string };
   namesUnit?: boolean;
+  envVarSources?: Record<string, "template" | "globals" | "platform">;
 }): BehavioralSummary {
   return {
     kind: "library",
@@ -41,7 +42,12 @@ function makeRuntimeProvider(opts: {
     gaps: [],
     confidence: { source: "declared", level: "high" },
     metadata: {
-      runtimeContract: { envVars: opts.envVars },
+      runtimeContract: {
+        envVars: opts.envVars,
+        ...(opts.envVarSources !== undefined
+          ? { envVarSources: opts.envVarSources }
+          : {}),
+      },
       codeScope: opts.codeScope,
     },
   };
@@ -428,6 +434,87 @@ describe("checkRuntimeConfig", () => {
       const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
       expect(unknown).toHaveLength(1);
       expect(unknown[0].description).toContain("NotifierFunction");
+    });
+  });
+
+  describe("a variable the document supplies to every runtime", () => {
+    const documentRuntimes = () => [
+      makeRuntimeProvider({
+        instanceName: "IndexerFunction",
+        envVars: ["LOG_LEVEL", "SENTRY_DSN"],
+        envVarSources: { LOG_LEVEL: "globals", SENTRY_DSN: "globals" },
+        codeScope: { kind: "codeUri", path: "src/" },
+        namesUnit: true,
+      }),
+      makeRuntimeProvider({
+        instanceName: "NotifierFunction",
+        envVars: ["LOG_LEVEL", "SENTRY_DSN"],
+        envVarSources: { LOG_LEVEL: "globals", SENTRY_DSN: "globals" },
+        codeScope: { kind: "codeUri", path: "src/" },
+        namesUnit: true,
+      }),
+    ];
+
+    it("stays quiet for the runtimes that do not read it", () => {
+      const findings = checkRuntimeConfig([
+        ...documentRuntimes(),
+        makeCodeSummary({
+          name: "indexer",
+          file: "src/handlers/indexer.ts",
+          envReads: ["LOG_LEVEL"],
+          runsInUnit: "IndexerFunction",
+        }),
+      ]);
+      const unused = findings.filter(
+        (f) =>
+          f.kind === "boundaryFieldUnused" &&
+          f.description.includes("LOG_LEVEL"),
+      );
+      expect(unused).toEqual([]);
+    });
+
+    it("reports it once when no runtime in the document reads it", () => {
+      const findings = checkRuntimeConfig([
+        ...documentRuntimes(),
+        makeCodeSummary({
+          name: "indexer",
+          file: "src/handlers/indexer.ts",
+          envReads: ["LOG_LEVEL"],
+          runsInUnit: "IndexerFunction",
+        }),
+      ]);
+      const unused = findings.filter(
+        (f) =>
+          f.kind === "boundaryFieldUnused" &&
+          f.description.includes("SENTRY_DSN"),
+      );
+      expect(unused).toHaveLength(1);
+      expect(unused[0].description).toContain("template.yaml");
+    });
+
+    it("says nothing when no runtime in the document matched any code", () => {
+      const findings = checkRuntimeConfig(documentRuntimes());
+      expect(findings.filter((f) => f.kind === "boundaryFieldUnused")).toEqual(
+        [],
+      );
+    });
+
+    it("still reports a variable the resource declares for itself", () => {
+      const findings = checkRuntimeConfig([
+        makeRuntimeProvider({
+          instanceName: "IndexerFunction",
+          envVars: ["LOG_LEVEL", "INDEX_TABLE_NAME"],
+          envVarSources: {
+            LOG_LEVEL: "globals",
+            INDEX_TABLE_NAME: "template",
+          },
+          codeScope: { kind: "codeUri", path: "src/" },
+          namesUnit: true,
+        }),
+      ]);
+      const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
+      expect(unused).toHaveLength(1);
+      expect(unused[0].description).toContain("INDEX_TABLE_NAME");
     });
   });
 });
