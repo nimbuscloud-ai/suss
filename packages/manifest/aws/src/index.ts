@@ -17,6 +17,16 @@ export {
 } from "./appsyncResolvers.js";
 export { inheritedEnvVars, resourcesWithGlobals } from "./globals.js";
 export {
+  loadTemplateTree,
+  MAX_STACK_DEPTH,
+  qualifiedLogicalId,
+  type TemplateDocument,
+  type TemplateTree,
+  type UnfollowedReason,
+  type UnfollowedStack,
+  unfollowedStackMessage,
+} from "./nestedStacks.js";
+export {
   type ParsedHandler,
   parseHandler,
   readServerlessFunctions,
