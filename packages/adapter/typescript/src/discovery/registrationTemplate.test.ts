@@ -1,12 +1,13 @@
 import { Project, ScriptTarget, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { ResolutionStore } from "../facts/store.js";
 import { discoverUnits } from "./index.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 
-function makeFile(source: string): SourceFile {
-  const project = new Project({
+function makeProject(): Project {
+  return new Project({
     compilerOptions: {
       target: ScriptTarget.ES2022,
       strict: true,
@@ -14,7 +15,10 @@ function makeFile(source: string): SourceFile {
     },
     useInMemoryFileSystem: true,
   });
-  return project.createSourceFile("user.ts", source);
+}
+
+function makeFile(source: string): SourceFile {
+  return makeProject().createSourceFile("user.ts", source);
 }
 
 const CRUD_PATTERN: DiscoveryPattern = {
@@ -43,7 +47,7 @@ describe("registrationTemplate discovery", () => {
         remove() {},
       });
     `);
-    const units = discoverUnits(file, [CRUD_PATTERN]);
+    const units = discoverUnits(file, [CRUD_PATTERN], new ResolutionStore());
     const routes = units
       .map((u) => u.routeInfo)
       .filter((r): r is { method: string; path: string } => r !== undefined)
@@ -69,7 +73,7 @@ describe("registrationTemplate discovery", () => {
       };
       registerCrud(app, "orders", userHandlers);
     `);
-    const units = discoverUnits(file, [CRUD_PATTERN]);
+    const units = discoverUnits(file, [CRUD_PATTERN], new ResolutionStore());
     const routes = units
       .map((u) => u.routeInfo)
       .filter((r): r is { method: string; path: string } => r !== undefined)
@@ -91,7 +95,7 @@ describe("registrationTemplate discovery", () => {
       const dynamicResource = "users";
       registerCrud(app, dynamicResource, handlers);
     `);
-    const units = discoverUnits(file, [CRUD_PATTERN]);
+    const units = discoverUnits(file, [CRUD_PATTERN], new ResolutionStore());
     expect(units).toHaveLength(0);
   });
 
@@ -103,7 +107,7 @@ describe("registrationTemplate discovery", () => {
       // Handler arg is a call result — out of v0 scope.
       registerCrud(app, "users", getHandlers());
     `);
-    const units = discoverUnits(file, [CRUD_PATTERN]);
+    const units = discoverUnits(file, [CRUD_PATTERN], new ResolutionStore());
     expect(units).toHaveLength(0);
   });
 
@@ -126,7 +130,7 @@ describe("registrationTemplate discovery", () => {
       const handlers = { list() {} };
       registerCrud(app, "users", handlers);
     `);
-    const units = discoverUnits(file, [matchingPattern]);
+    const units = discoverUnits(file, [matchingPattern], new ResolutionStore());
     expect(units).toHaveLength(0);
   });
 
@@ -147,8 +151,47 @@ describe("registrationTemplate discovery", () => {
       function myHandler() {}
       registerSimple(app, "/health", myHandler);
     `);
-    const units = discoverUnits(file, [pattern]);
+    const units = discoverUnits(file, [pattern], new ResolutionStore());
     expect(units).toHaveLength(1);
     expect(units[0]?.routeInfo).toEqual({ method: "GET", path: "/health" });
+  });
+});
+
+describe("registrationTemplate discovery, a handler the call names", () => {
+  it("reads handlers off an object another module exports", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      export const userHandlers = {
+        list() {},
+        create() {},
+        update() {},
+        remove() {},
+      };
+    `,
+    );
+    const file = project.createSourceFile(
+      "user.ts",
+      `
+      import { userHandlers } from "./handlers.js";
+      function registerCrud(_app: unknown, _resource: string, _handlers: unknown) {}
+      const app = {};
+      registerCrud(app, "users", userHandlers);
+    `,
+    );
+
+    const units = discoverUnits(file, [CRUD_PATTERN], new ResolutionStore());
+    const routes = units
+      .map((u) => u.routeInfo)
+      .filter((r): r is { method: string; path: string } => r !== undefined)
+      .map((r) => `${r.method} ${r.path}`)
+      .sort();
+    expect(routes).toEqual([
+      "DELETE /users/:id",
+      "GET /users",
+      "POST /users",
+      "PUT /users/:id",
+    ]);
   });
 });

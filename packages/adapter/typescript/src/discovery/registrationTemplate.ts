@@ -5,30 +5,24 @@
 // `routeInfo` so the adapter pipeline picks up the REST binding
 // directly (same path the decoratedRoute handler uses).
 //
-// Recognized handler-arg shapes for v0:
-//
-//   - `{N}` where the argument is a literal function expression
-//   - `{N}` where the argument is an identifier referencing a
-//     locally-declared function (function declaration or `const fn = () => {...}`)
-//   - `{N}.prop` where the argument is a literal object literal with
-//     `prop: <function>` or `prop() {}` shorthand
-//   - `{N}.prop` where the argument is an identifier referencing a
-//     locally-declared object literal with `prop: <function>`
-//
-// Other shapes (call-result handlers, computed property names, deeply
-// chained access) are out of v0 scope. Skipped registrations do not
-// emit a unit — silent for now; a tombstone surface would be its own
-// follow-up.
+// A handler argument is written `{N}` or `{N}.prop`. Which function
+// sits there is asked of the fact layer, so a helper handed a name, an
+// imported object or a re-exported one reads the same as one handed a
+// function written at the call. A computed property name and a chain
+// deeper than one property are still unread, and a registration whose
+// handler nothing reaches emits no unit.
+
+import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import {
-  type CallExpression,
-  Node,
-  type ObjectLiteralExpression,
-  type SourceFile,
-} from "ts-morph";
+  functionValueOf,
+  objectLiteralOf,
+  propertyValueOf,
+} from "./resolveValue.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
+import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 type TemplateMatch = Extract<
@@ -40,6 +34,7 @@ export function discoverRegistrationTemplates(
   sourceFile: SourceFile,
   match: TemplateMatch,
   kind: string,
+  resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   const localName = resolveImportedLocalName(sourceFile, match);
   if (localName === null) {
@@ -65,7 +60,7 @@ export function discoverRegistrationTemplates(
         // skip entirely so the report stays clean.
         continue;
       }
-      const handler = resolveHandler(reg.handlerArg, args);
+      const handler = resolveHandler(reg.handlerArg, args, resolution);
       if (handler === null) {
         continue;
       }
@@ -165,6 +160,7 @@ function readStringLiteral(node: Node): string | null {
 function resolveHandler(
   template: string,
   args: Node[],
+  resolution: ResolutionStore | undefined,
 ): { func: FunctionRoot; name: string } | null {
   // Parse the template: either `{N}` or `{N}.prop` (single property).
   // Multi-property chains and call-result handlers are out of v0.
@@ -180,130 +176,63 @@ function resolveHandler(
   }
 
   if (prop === null) {
-    return resolveArgAsFunction(arg);
+    const func = functionValueOf(arg, resolution);
+    return func === null ? null : { func, name: handlerName(arg) };
   }
-  return readPropertyAsFunction(arg, prop);
+  return readPropertyAsFunction(arg, prop, resolution);
 }
 
-function resolveArgAsFunction(
-  arg: Node,
-): { func: FunctionRoot; name: string } | null {
-  if (Node.isArrowFunction(arg) || Node.isFunctionExpression(arg)) {
-    return {
-      func: arg as FunctionRoot,
-      name: arg.getKindName(),
-    };
-  }
-  if (Node.isIdentifier(arg)) {
-    const name = arg.getText();
-    const decl = findLocalFunctionDecl(arg);
-    if (decl === null) {
-      return null;
-    }
-    return { func: decl, name };
-  }
-  return null;
+/**
+ * What to call the handler an argument names. A name is the answer
+ * where there is one; a function written out at the call has none, and
+ * the kind is what a unit discovered here has carried since this
+ * handler was written.
+ */
+function handlerName(value: Node): string {
+  return Node.isIdentifier(value) ? value.getText() : value.getKindName();
 }
 
+/**
+ * The function a named property of an argument holds. The argument is
+ * an object literal at the call site, a name bound to one, or one built
+ * in another module, and the fact layer answers for all three.
+ */
 function readPropertyAsFunction(
   arg: Node,
   prop: string,
+  resolution: ResolutionStore | undefined,
 ): { func: FunctionRoot; name: string } | null {
-  // Object literal at the call site: `registerCrud(app, 'users', { list: getUsers })`.
-  if (Node.isObjectLiteralExpression(arg)) {
-    return readPropertyFromObjectLiteral(arg, prop);
+  const obj = objectLiteralOf(arg, resolution);
+  if (obj === null) {
+    return null;
   }
-  // Identifier resolving to a local object-literal binding.
-  if (Node.isIdentifier(arg)) {
-    const obj = findLocalObjectLiteral(arg);
-    if (obj === null) {
+  for (const property of obj.getProperties()) {
+    if (propertyName(property) !== prop) {
+      continue;
+    }
+    if (Node.isMethodDeclaration(property)) {
+      return { func: property, name: prop };
+    }
+    const held = propertyValueOf(property);
+    if (held === null) {
       return null;
     }
-    return readPropertyFromObjectLiteral(obj, prop);
+    const func = functionValueOf(held, resolution);
+    return func === null
+      ? null
+      : { func, name: Node.isIdentifier(held) ? held.getText() : prop };
   }
   return null;
 }
 
-function readPropertyFromObjectLiteral(
-  obj: ObjectLiteralExpression,
-  prop: string,
-): { func: FunctionRoot; name: string } | null {
-  for (const property of obj.getProperties()) {
-    if (Node.isMethodDeclaration(property) && property.getName() === prop) {
-      return { func: property as FunctionRoot, name: prop };
-    }
-    if (Node.isPropertyAssignment(property) && property.getName() === prop) {
-      const init = property.getInitializer();
-      if (init === undefined) {
-        return null;
-      }
-      if (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) {
-        return { func: init as FunctionRoot, name: prop };
-      }
-      if (Node.isIdentifier(init)) {
-        const decl = findLocalFunctionDecl(init);
-        if (decl === null) {
-          return null;
-        }
-        return { func: decl, name: init.getText() };
-      }
-    }
-    if (
-      Node.isShorthandPropertyAssignment(property) &&
-      property.getName() === prop
-    ) {
-      // `{ list }` shorthand — equivalent to `{ list: list }`. Resolve
-      // the same-named local binding to its function declaration.
-      const decl = findLocalFunctionDecl(property.getNameNode());
-      if (decl === null) {
-        return null;
-      }
-      return { func: decl, name: prop };
-    }
-  }
-  return null;
-}
-
-function findLocalFunctionDecl(idNode: Node): FunctionRoot | null {
-  if (!Node.isIdentifier(idNode)) {
-    return null;
-  }
-  const symbol = idNode.getSymbol();
-  if (symbol === undefined) {
-    return null;
-  }
-  for (const decl of symbol.getDeclarations()) {
-    if (Node.isFunctionDeclaration(decl)) {
-      return decl;
-    }
-    if (Node.isVariableDeclaration(decl)) {
-      const init = decl.getInitializer();
-      if (init === undefined) {
-        continue;
-      }
-      if (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) {
-        return init as FunctionRoot;
-      }
-    }
-  }
-  return null;
-}
-
-function findLocalObjectLiteral(idNode: Node): ObjectLiteralExpression | null {
-  if (!Node.isIdentifier(idNode)) {
-    return null;
-  }
-  const symbol = idNode.getSymbol();
-  if (symbol === undefined) {
-    return null;
-  }
-  for (const decl of symbol.getDeclarations()) {
-    if (Node.isVariableDeclaration(decl)) {
-      const init = decl.getInitializer();
-      if (init !== undefined && Node.isObjectLiteralExpression(init)) {
-        return init;
-      }
-    }
+/** The name an object literal holds a property under. */
+function propertyName(property: Node): string | null {
+  if (
+    Node.isPropertyAssignment(property) ||
+    Node.isShorthandPropertyAssignment(property) ||
+    Node.isMethodDeclaration(property)
+  ) {
+    return property.getName();
   }
   return null;
 }

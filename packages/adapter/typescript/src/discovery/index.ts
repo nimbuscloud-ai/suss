@@ -56,10 +56,16 @@ function runPattern(
       sourceFile,
       pattern.match,
       pattern.kind,
+      resolution,
     );
   }
   if (pattern.match.type === "registrationLoop") {
-    return discoverRegistrationLoops(sourceFile, pattern.match, pattern.kind);
+    return discoverRegistrationLoops(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
   }
   if (pattern.match.type === "clientCall") {
     return discoverClientCalls(sourceFile, pattern.match, pattern.kind);
@@ -81,7 +87,12 @@ function runPattern(
     );
   }
   if (pattern.match.type === "resolverMap") {
-    return discoverResolverMaps(sourceFile, pattern.match, pattern.kind);
+    return discoverResolverMaps(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
   }
   if (pattern.match.type === "packageExports") {
     return discoverPackageExports(sourceFile, pattern.match, pattern.kind);

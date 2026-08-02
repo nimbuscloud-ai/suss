@@ -298,18 +298,15 @@ function couldResolveToFunction(value: Node): boolean {
     Node.isPropertyAccessExpression(value) ||
     Node.isExportSpecifier(value) ||
     Node.isImportSpecifier(value) ||
-    Node.isImportClause(value)
+    Node.isImportClause(value) ||
+    Node.isBindingElement(value)
   );
 }
 
 function resolveDeclarationToFunction(decl: Node): FunctionRoot | null {
-  if (
-    Node.isFunctionDeclaration(decl) ||
-    Node.isFunctionExpression(decl) ||
-    Node.isArrowFunction(decl) ||
-    Node.isMethodDeclaration(decl)
-  ) {
-    return decl as FunctionRoot;
+  const fn = toFunctionRoot(decl);
+  if (fn !== null) {
+    return fn;
   }
   if (Node.isVariableDeclaration(decl)) {
     const init = decl.getInitializer();

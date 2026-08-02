@@ -87,6 +87,7 @@ const SOUND_COMPONENT_FORMS = new Set([
   "conciseArrow",
   "blockArrow",
   "asyncDeclaration",
+  "overloaded",
   "method",
 ]);
 const SOUND_COMPONENT_BINDINGS = new Set([
@@ -94,6 +95,8 @@ const SOUND_COMPONENT_BINDINGS = new Set([
   "letOnce",
   "letReassigned",
   "var",
+  "destructured",
+  "withDefault",
 ]);
 const SOUND_COMPONENT_ROUTES = new Set([
   "namedDeclaration",

@@ -24,26 +24,12 @@ export interface ReproducedBug {
   wrong: string;
 }
 
-/** Wrong behaviour at the render boundary, one dimension value each. */
+/**
+ * Wrong behaviour at the render boundary. How a component is written
+ * and how its name is bound both resolve now, so the sound tier carries
+ * those two dimensions. What is left is the route out of the module.
+ */
 export const COMPONENT_BUGS: ReproducedBug[] = [
-  {
-    dimension: "form",
-    value: "overloaded",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong: "a component with overload signatures is not discovered at all",
-  },
-  {
-    dimension: "binding",
-    value: "destructured",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong: "a component bound by destructuring is not discovered",
-  },
-  {
-    dimension: "binding",
-    value: "withDefault",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong: "a component bound with a default is not discovered",
-  },
   {
     dimension: "route",
     value: "defaultOfName",
