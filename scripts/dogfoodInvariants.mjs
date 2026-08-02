@@ -10,12 +10,10 @@
 // The export check reads each package's declared entry points out of its
 // own manifest and asks the TypeScript compiler which of them are
 // callable. That is a second opinion on the export surface, arrived at
-// without suss, which is what makes it worth asserting.
+// without suss, which is what makes it worth asserting. The dogfood
+// count reads the same surface from the same place.
 
-import fs from "node:fs";
-import path from "node:path";
-
-import ts from "typescript";
+import { declaredExports } from "./declaredSurface.mjs";
 
 /**
  * How many consumers may go unpaired while their provider sits in the
@@ -27,57 +25,6 @@ import ts from "typescript";
  * explanation in the same place.
  */
 const KNOWN_UNPAIRED_CONSUMERS = 8;
-
-/**
- * Each export surface a manifest declares, as the sub-path it is reached
- * by and the declaration file that describes it. A sub-path export shows
- * up in a boundary key with its own segment, so `./schemas` carries the
- * prefix `["schemas"]` and the root carries none.
- */
-function declaredEntryPoints(pkg, dir) {
-  const entries = [];
-  for (const [subpath, target] of Object.entries(pkg.exports ?? {})) {
-    const types = typeof target === "string" ? null : target?.types;
-    if (typeof types !== "string") {
-      continue;
-    }
-
-    const declarationFile = path.join(dir, types);
-    if (!fs.existsSync(declarationFile)) {
-      continue;
-    }
-
-    entries.push({
-      subpath,
-      declarationFile,
-      prefix: subpath === "." ? [] : subpath.replace(/^\.\//, "").split("/"),
-    });
-  }
-  return entries;
-}
-
-/** Every callable export of a declaration file, by name. */
-function callableExports(declarationFile) {
-  const program = ts.createProgram([declarationFile], {
-    target: ts.ScriptTarget.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-  });
-  const checker = program.getTypeChecker();
-  const source = program.getSourceFile(declarationFile);
-  const moduleSymbol = source && checker.getSymbolAtLocation(source);
-  if (!moduleSymbol) {
-    return [];
-  }
-
-  return checker
-    .getExportsOfModule(moduleSymbol)
-    .filter(
-      (symbol) =>
-        checker.getTypeOfSymbolAtLocation(symbol, source).getCallSignatures()
-          .length > 0,
-    )
-    .map((symbol) => symbol.getName());
-}
 
 /**
  * Every function a package says it exports has a provider summary.
@@ -100,16 +47,14 @@ function missingProviders(packages) {
         .filter((key) => key !== undefined),
     );
 
-    for (const entry of declaredEntryPoints(pkg.packageJson, pkg.dir)) {
-      for (const name of callableExports(entry.declarationFile)) {
-        if (provided.has([...entry.prefix, name].join("."))) {
-          continue;
-        }
-        violations.push({
-          label: `${pkg.name}${entry.subpath === "." ? "" : entry.subpath.slice(1)}::${name}`,
-          detail: "declared as a callable export but produced no summary",
-        });
+    for (const declared of declaredExports(pkg.packageJson, pkg.dir)) {
+      if (!declared.callable || provided.has(declared.path)) {
+        continue;
       }
+      violations.push({
+        label: declared.label,
+        detail: "declared as a callable export but produced no summary",
+      });
     }
   }
   return violations;
