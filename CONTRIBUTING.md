@@ -33,6 +33,8 @@ So if your change deletes exports, moves them between packages, inlines a privat
 
 Line coverage works the same way. Each package under the coverage gate commits a `coverage/coverage-summary.json`, and CI runs `npm run check:coverage`, which fails when a package's line coverage came out below the figure your commit carries. So if your change lowers coverage on purpose, run `npm run test:badges` and commit the refreshed summaries and badges, and the drop shows up in your diff. Coverage going up needs no refresh, though the pre-push hook asks for one so the badges stay current.
 
+Timing a change is `npm run bench`, which runs `suss extract` over the five public corpora under `dogfood-targets/` and reports wall clock, the datalog share, and the spread across repeats. `npm run bench -- --against <commit>` compares two builds, alternating between them so a busy stretch cannot land on one side. It refuses to report at all when the machine is busy, because load moves these numbers by more than most changes do. Five targets at three repeats takes about five minutes, and `--subset` takes about a minute and a half over saleor-dashboard, saleor-storefront and directus/api. Nothing in CI enforces a budget yet.
+
 Neither check reads `main`. Both compare a fresh run against the tree it ran on, so a merge landing on `main` while your branch is open cannot fail your build on a package you never opened.
 
 A pre-commit hook (husky + lint-staged) runs `biome check --write` on staged files. A pre-push hook typechecks, runs the full test suite with coverage, and refuses the push when the coverage files no longer match what you committed. Don't bypass either with `--no-verify` unless you've coordinated with a maintainer.
