@@ -29,6 +29,7 @@ import {
   factKeyOf,
   type NodeTable,
   nodeId,
+  packagesDeclaring,
 } from "./extract.js";
 
 import type { TransparentWrapper } from "@suss/extractor";
@@ -56,16 +57,26 @@ const RESOLUTION_RULES = [...SHARED_RULES, ...JS_RULES];
  */
 const MAX_MODULE_HOPS = 6;
 
+/**
+ * Joins the two trailing columns of a three-column relation into one
+ * index key. A NUL cannot appear in a module specifier or an
+ * identifier, so the halves come back apart intact.
+ */
+const PAIR_SEPARATOR = "\0";
+
 export class ResolutionStore {
   private readonly db = new Database();
   private readonly table: NodeTable = createNodeTable();
   private readonly fullyExtracted = new Set<string>();
   private readonly seededValues = new Set<string>();
   private readonly gateAnswers = new Map<string, Map<string, boolean>>();
+  private readonly importedNames = new Map<string, string[]>();
 
   private resolvedBySource = new Map<string, string[]>();
   private comesToBySource = new Map<string, string[]>();
   private writtenAsBySource = new Map<string, string[]>();
+  private callsIntoBySource = new Map<string, string[]>();
+  private comesFromBySource = new Map<string, string[]>();
   private stale = true;
 
   constructor(wrappers: TransparentWrapper[] = []) {
@@ -116,7 +127,73 @@ export class ResolutionStore {
     return this.resolveByWaves(target, () => this.lookupWritten(target));
   }
 
-  private resolveByWaves(value: Node, ask: () => Node | null): Node | null {
+  /**
+   * The names from `modules` this value stands for. A value stands for
+   * a library name two ways, and a caller asking which library concept
+   * something is wants both:
+   *
+   *   - it is that name, under whatever local spelling. `import
+   *     { Controller as Resource }` makes `Resource` the library's
+   *     `Controller`.
+   *   - calling it calls that name. A project decorator written as
+   *     `(path) => Controller(path)` marks a controller, and so does
+   *     one written as `applyDecorators(Controller(path))`.
+   *
+   * Several names is the normal answer rather than an ambiguity, since
+   * a wrapper composing two library decorators applies both. The caller
+   * asks whether the name it cares about is among them.
+   *
+   * One wrapper is applied across hundreds of files, so the answer is
+   * memoized against the declaration it was asked about. Without that,
+   * every use site seeds a fresh value and pays another fixpoint.
+   */
+  importedNamesOf(value: Node, modules: string[]): string[] {
+    const declaration = `${nodeId(declarationOf(value))}|${modules.join(",")}`;
+    const cached = this.importedNames.get(declaration);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const target = factKeyOf(value);
+    const found =
+      this.resolveByWaves(target, () =>
+        this.lookupImportedNames(target, modules),
+      ) ?? [];
+    this.importedNames.set(declaration, found);
+    return found;
+  }
+
+  /**
+   * The names from `modules` this value stands for, or null while the
+   * walk should keep widening.
+   *
+   * The distinction is what keeps the cost down. A value that has
+   * arrived at a package has nothing more to give, because a library's
+   * own body is not here to read, so a decorator from a library the
+   * caller did not ask about stops on the first wave rather than
+   * running out the import closure looking for a match it will never
+   * find. A value that has only arrived at another file in the project
+   * keeps going, since the wrapper it names is declared somewhere the
+   * walk has not reached yet.
+   */
+  private lookupImportedNames(value: Node, modules: string[]): string[] | null {
+    this.derive();
+
+    const origins = this.comesFromBySource.get(nodeId(value)) ?? [];
+    const reached = new Set(origins);
+    for (const target of this.comesToBySource.get(nodeId(value)) ?? []) {
+      for (const entry of this.callsIntoBySource.get(target) ?? []) {
+        reached.add(entry);
+      }
+    }
+
+    const names = namesFrom([...reached], modules);
+    if (names.length > 0) {
+      return names;
+    }
+    return origins.some((pair) => namesAPackage(moduleOf(pair))) ? [] : null;
+  }
+
+  private resolveByWaves<T>(value: Node, ask: () => T | null): T | null {
     this.seedValue(value);
 
     // Where the walk has been on this query, which is separate from
@@ -302,6 +379,8 @@ export class ResolutionStore {
     this.resolvedBySource = indexBySource(this.db.facts("resolves"));
     this.comesToBySource = indexBySource(this.db.facts("comesTo"));
     this.writtenAsBySource = indexBySource(this.db.facts("isWrittenAs"));
+    this.callsIntoBySource = indexPairsBySource(this.db.facts("callsInto"));
+    this.comesFromBySource = indexPairsBySource(this.db.facts("comesFrom"));
   }
 
   /** Emit a file's facts, unless some earlier query already did. */
@@ -356,6 +435,53 @@ function referencedProjectFiles(sourceFile: SourceFile): SourceFile[] {
   return referenced;
 }
 
+/** The names among these module-and-name pairs that come from `packages`. */
+function namesFrom(pairs: string[], packages: string[]): string[] {
+  const names = new Set<string>();
+  for (const pair of pairs) {
+    if (namesPackage(moduleOf(pair), packages)) {
+      names.add(pair.slice(pair.indexOf(PAIR_SEPARATOR) + 1));
+    }
+  }
+  return [...names].sort();
+}
+
+/** The module half of a joined module-and-name pair. */
+function moduleOf(pair: string): string {
+  return pair.slice(0, pair.indexOf(PAIR_SEPARATOR));
+}
+
+/**
+ * Whether a module key names a package rather than a file in the
+ * project. A specifier that did not resolve stays as written, and one
+ * that resolved into a dependency is an absolute path through
+ * node_modules.
+ */
+function namesAPackage(moduleKey: string): boolean {
+  return !moduleKey.startsWith("/") || moduleKey.includes("/node_modules/");
+}
+
+/**
+ * Whether an `imports` module key names one of these packages. The key
+ * is a resolved file path when the package is installed and the raw
+ * specifier when it is not, so both readings have to answer.
+ */
+function namesPackage(moduleKey: string, packages: string[]): boolean {
+  return matchesAnyGate([moduleKey, ...packagesDeclaring(moduleKey)], packages);
+}
+
+/**
+ * The declaration a value refers to, so one wrapper applied across a
+ * hundred files is asked about once. A value that refers to nothing
+ * speaks for itself.
+ */
+function declarationOf(value: Node): Node {
+  const nameNode = Node.isPropertyAccessExpression(value)
+    ? value.getNameNode()
+    : value;
+  return nameNode.getSymbol()?.getDeclarations()[0] ?? value;
+}
+
 /** One relation's tuples, grouped by their first column. */
 function indexBySource(
   tuples: ReadonlyArray<ReadonlyArray<string | number>>,
@@ -371,4 +497,19 @@ function indexBySource(
     }
   }
   return index;
+}
+
+/**
+ * A three-column relation grouped by its first column, with the other
+ * two joined so one lookup carries the pair.
+ */
+function indexPairsBySource(
+  tuples: ReadonlyArray<ReadonlyArray<string | number>>,
+): Map<string, string[]> {
+  return indexBySource(
+    tuples.map((tuple) => [
+      tuple[0] as string,
+      `${tuple[1]}${PAIR_SEPARATOR}${tuple[2]}`,
+    ]),
+  );
 }

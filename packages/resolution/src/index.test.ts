@@ -11,22 +11,47 @@ import { Database, evaluate } from "@suss/datalog";
 
 import { RESOLUTION_RULES } from "./index.js";
 
-/** Feed facts in, run the rules, and ask what a value comes down to. */
+/** Feed facts in, run the rules, and read one relation back. */
+function derive(
+  facts: Array<[string, ...string[]]>,
+  relation: string,
+  subject: string,
+): ReadonlyArray<ReadonlyArray<string | number>> {
+  const db = new Database();
+  for (const [name, ...tuple] of facts) {
+    db.add(name, tuple);
+  }
+  return evaluate(db, RESOLUTION_RULES)
+    .facts(relation)
+    .filter((t) => t[0] === subject);
+}
+
+/** What a value comes down to. */
 function resolutionsOf(
   facts: Array<[string, ...string[]]>,
   value: string,
 ): string[] {
-  const db = new Database();
-  for (const [relation, ...tuple] of facts) {
-    db.add(relation, tuple);
-  }
-  const derived = evaluate(db, RESOLUTION_RULES);
-  return derived
-    .facts("resolves")
-    .filter((t) => t[0] === value)
+  return derive(facts, "resolves", value)
     .map((t) => String(t[1]))
     .sort();
 }
+
+/** The (module, name) pairs a value's chain arrives at. */
+function originsOf(
+  facts: Array<[string, ...string[]]>,
+  value: string,
+): string[] {
+  return pairs(derive(facts, "comesFrom", value));
+}
+
+/** The (module, name) pairs calling a function ends up reaching. */
+function callsOf(facts: Array<[string, ...string[]]>, fn: string): string[] {
+  return pairs(derive(facts, "callsInto", fn));
+}
+
+const pairs = (
+  tuples: ReadonlyArray<ReadonlyArray<string | number>>,
+): string[] => tuples.map((t) => `${t[1]}:${t[2]}`).sort();
 
 describe("following a name to a function", () => {
   it("stops at a function, which resolves to itself", () => {
@@ -249,6 +274,103 @@ describe("a wrapper the caller declared transparent", () => {
           ["callArg", "handler", "0", "body"],
         ],
         "handler",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("where a name comes from", () => {
+  it("answers with the module an import names", () => {
+    expect(
+      originsOf([["imports", "here", "@nestjs/graphql", "Resolver"]], "here"),
+    ).toEqual(["@nestjs/graphql:Resolver"]);
+  });
+
+  it("follows aliases to the import underneath", () => {
+    expect(
+      originsOf(
+        [
+          ["imports", "spec", "@nestjs/graphql", "Resolver"],
+          ["binds", "use", "spec"],
+        ],
+        "use",
+      ),
+    ).toEqual(["@nestjs/graphql:Resolver"]);
+  });
+
+  it("follows a project barrel to the package behind it", () => {
+    // Both hops are true and both are reported. A caller asks whether
+    // the module it cares about is among them, so the barrel's own
+    // answer costs it nothing.
+    expect(
+      originsOf(
+        [
+          ["imports", "here", "barrel", "Resolver"],
+          ["exportsAs", "barrel", "Resolver", "local"],
+          ["imports", "local", "@nestjs/graphql", "Resolver"],
+        ],
+        "here",
+      ),
+    ).toEqual(["@nestjs/graphql:Resolver", "barrel:Resolver"]);
+  });
+});
+
+describe("what calling a project wrapper reaches", () => {
+  // `const Wrapped = (t) => compose(Resolver(t), SetMetadata(k, v))`,
+  // as facts: a function whose body calls three imported names.
+  const wrapper: Array<[string, ...string[]]> = [
+    ["func", "wrapped"],
+    ["binds", "Wrapped", "wrapped"],
+    ["bodyCalls", "wrapped", "composeRef"],
+    ["bodyCalls", "wrapped", "resolverRef"],
+    ["bodyCalls", "wrapped", "metadataRef"],
+    ["imports", "composeRef", "@nestjs/common", "applyDecorators"],
+    ["imports", "resolverRef", "@nestjs/graphql", "Resolver"],
+    ["imports", "metadataRef", "@nestjs/common", "SetMetadata"],
+  ];
+
+  it("answers with every library name the wrapper applies", () => {
+    expect(callsOf(wrapper, "wrapped")).toEqual([
+      "@nestjs/common:SetMetadata",
+      "@nestjs/common:applyDecorators",
+      "@nestjs/graphql:Resolver",
+    ]);
+  });
+
+  it("reaches through a wrapper of a wrapper", () => {
+    expect(
+      callsOf(
+        [...wrapper, ["func", "outer"], ["bodyCalls", "outer", "Wrapped"]],
+        "outer",
+      ),
+    ).toContain("@nestjs/graphql:Resolver");
+  });
+
+  it("reaches a call made from a closure the wrapper declares", () => {
+    expect(
+      callsOf(
+        [
+          ["func", "outer"],
+          ["func", "inner"],
+          ["containsFn", "outer", "inner"],
+          ["bodyCalls", "inner", "resolverRef"],
+          ["imports", "resolverRef", "@nestjs/graphql", "Resolver"],
+        ],
+        "outer",
+      ),
+    ).toEqual(["@nestjs/graphql:Resolver"]);
+  });
+
+  it("says nothing about a wrapper that calls only project code", () => {
+    expect(
+      callsOf(
+        [
+          ["func", "outer"],
+          ["func", "helper"],
+          ["bodyCalls", "outer", "helperRef"],
+          ["binds", "helperRef", "helper"],
+        ],
+        "outer",
       ),
     ).toEqual([]);
   });

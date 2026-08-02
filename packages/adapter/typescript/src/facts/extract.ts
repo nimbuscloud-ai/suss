@@ -169,7 +169,7 @@ function declaresAValue(declaration: Node): boolean {
  * `@types/foo` is how `foo` describes itself, and a pack names the
  * package people import, so both answer.
  */
-function packagesDeclaring(filePath: string): string[] {
+export function packagesDeclaring(filePath: string): string[] {
   const marker = "/node_modules/";
   const at = filePath.lastIndexOf(marker);
   if (at === -1) {
@@ -210,6 +210,23 @@ function packagesDescribedByTypes(owner: string): string[] {
  */
 export function factKeyOf(value: Node): Node {
   return Node.isExpression(value) ? unwrapExpression(value) : value;
+}
+
+/** The name an index expression states, when it states one at all. */
+function literalIndexOf(index: Expression | undefined): string | null {
+  if (index === undefined) {
+    return null;
+  }
+  if (Node.isNumericLiteral(index)) {
+    return String(index.getLiteralValue());
+  }
+  if (
+    Node.isStringLiteral(index) ||
+    Node.isNoSubstitutionTemplateLiteral(index)
+  ) {
+    return index.getLiteralValue();
+  }
+  return null;
 }
 
 /** Peel await, parentheses, satisfies, and as-casts. */
@@ -274,6 +291,47 @@ export function emitValue(
 
   if (Node.isIdentifier(expression)) {
     emitReferenceFacts(db, table, expression);
+    return id;
+  }
+
+  if (Node.isElementAccessExpression(expression)) {
+    // `routes[0]` and `routes["list"]` say the same thing as
+    // `routes.list`: the value the container holds under a name. A
+    // computed index names nothing the rules can join on, so it is left
+    // as an expression that refers no further.
+    const index = literalIndexOf(expression.getArgumentExpression());
+    if (index !== null) {
+      fact(
+        db,
+        "readsProperty",
+        id,
+        emitValue(db, table, expression.getExpression()),
+        index,
+      );
+      return id;
+    }
+    fact(db, "writtenValue", id);
+    return id;
+  }
+
+  if (Node.isArrayLiteralExpression(expression)) {
+    // An array holds its elements under their positions, which is what
+    // lets the property rule answer for `routes[0]` unchanged.
+    fact(db, "objectValue", id);
+    const elements = expression.getElements();
+    for (let position = 0; position < elements.length; position++) {
+      const element = elements[position];
+      if (element === undefined) {
+        continue;
+      }
+      fact(
+        db,
+        "holdsProperty",
+        id,
+        String(position),
+        emitValue(db, table, element),
+      );
+    }
     return id;
   }
 

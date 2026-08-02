@@ -159,16 +159,22 @@ the handler that names the same subject. A subject the source does not
 state as a string yields no effect at all: pairing on a guessed channel
 would name the wrong consumer.
 
-Several other packs take a project's own wrapper names the same way. A
-pack ships only what its own library defines, so a wrapper composing the
-library's shape is invisible until the project names it.
+Several other packs take a project's own wrappers the same way. A pack
+ships only what its own library defines, and these options are what a
+project uses when the adapter cannot follow the wrapper itself.
+
+Reach for them second. A NestJS decorator written in the project is
+already recognized without being named, because the adapter resolves it
+to the function behind it and sees that calling it calls `@Resolver()`
+or `@Controller()`. What is left for these options is a wrapper whose
+body is not in the project, so there is nothing to read.
 
 | Pack | Option | What it names |
 | --- | --- | --- |
-| `nestjs-rest` | `classDecorators` | Decorators composing `@Controller()` |
-| `nestjs-graphql` | `classDecorators` | Decorators composing `@Resolver()` |
+| `nestjs-rest` | `classDecorators` | Decorators composing `@Controller()` the adapter cannot follow |
+| `nestjs-graphql` | `classDecorators` | Decorators composing `@Resolver()` the adapter cannot follow |
 | `react-router` | `errorHelpers` | Helpers a loader throws HTTP errors through |
-| `aws-lambda` | `subjectFactories` | Factories building an SQS consumer, and the config property holding the subject |
+| `aws-lambda` | `subjectFactories` | The config property a project's handler factory states its subject under |
 
 ```json
 { "classDecorators": ["WidgetController", "InternalController"] }
@@ -176,15 +182,16 @@ library's shape is invisible until the project names it.
 
 ```json
 {
-  "subjectFactories": [
-    { "callees": ["makeWidgetHandler"], "argIndex": 0, "property": "subject" }
-  ]
+  "subjectFactories": [{ "property": "subject" }]
 }
 ```
 
-`callees` are the factory functions, `argIndex` is the argument holding
-the config object, and `property` is the key on it that names the
-subject.
+`property` is the key the factory's config object states the subject
+under. Which function was called and which argument carried the config
+are questions the adapter answers by following the export back to the
+call that built it, so neither has to be named. Add `callees` or
+`argIndex` when two factories in one service put different things under
+the same property.
 
 ### Exit codes
 

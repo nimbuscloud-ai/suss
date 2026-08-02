@@ -40,6 +40,34 @@ judgment instead:
 transparentWrappers: [{ callee: "Sentry.wrapHandler", argument: 0 }]
 ```
 
+## What a decorator stands for
+
+`unwraps` answers what a factory hands back. The other question a
+wrapper raises is what it is. A class carrying `@MetadataResolver()` is
+a resolver, and nothing about the class says `Resolver`.
+
+`importedNamesOf(value, modules)` answers that, and it answers for the
+two ways a value can stand for a library name. It is that name, under
+whatever local spelling, which covers `import { Controller as
+Resource }`. Or calling it calls that name, which covers a project
+decorator written as `(path) => Controller(path)` and one written as
+`applyDecorators(Controller(path))`. The pack asks whether the
+framework's own decorator is among the names that come back.
+
+Several names is the normal answer. A wrapper composing two library
+decorators applies both, so a caller asks about the one it cares about
+rather than expecting a single answer.
+
+Two things keep the cost down. The answer is memoized against the
+declaration, since one wrapper is applied across hundreds of files and
+the question is about the wrapper rather than about any use of it. And
+the walk stops as soon as the value reaches a package, because a
+library's body is not here to read. Without that second rule, a
+decorator from a library the pack never asked about ran the whole
+import closure looking for a match it would never find, and the files
+that arrived changed what the type checker reported for shapes read
+later.
+
 ## Cost
 
 Facts arrive in waves. A query extracts the file its value lives in and
@@ -49,6 +77,46 @@ file costs one file of extraction. The gate question does not go through
 the rules at all: it is a walk over module specifiers, memoized per gate
 set, because deriving every file's reachable-module set to answer one
 boolean is far more work than the question is worth.
+
+## How a value reaches the place it is used
+
+Discovery asks the fact layer what a value at a given position is,
+rather than reading the syntax sitting there. `router.get("/users",
+listUsers)` is the ordinary spelling in an Express codebase, and the
+syntax at the argument is an identifier.
+
+Eleven ways a handler can reach its registration turned up in
+generation. These resolve:
+
+| How it reaches | Example |
+| --- | --- |
+| written there | `router.get("/p", (req, res) => {})` |
+| a name | `router.get("/p", handler)` |
+| a property read | `router.get("/p", routes.list)` |
+| an array index | `router.get("/p", routes[0])` |
+| an alias | `const alias = handler` |
+| an import | `import { handler } from "./unit.js"` |
+| a barrel | one re-export in between |
+| two barrels | two |
+
+An index resolves because an array holds its elements under their
+positions, which is the same fact an object literal emits, so the
+property rule answers both without knowing about arrays.
+
+Three do not:
+
+- **A call's return.** `const pick = () => handler; router.get("/p",
+  pick())`. A rule saying a call comes to what the callee returns would
+  give a wrapper factory a second answer alongside the one `unwraps`
+  gives, and two answers is nothing. Telling the two apart needs the
+  rule to ask whether the callee unwraps, which is negation over a
+  relation derived from the rule itself, and that does not stratify.
+- **A factory's object argument.** `const built = build({ handle:
+  handler })`, where `build` returns `options.handle`. This is the rule
+  that was tried and taken out, described above.
+- **A parameter.** `const register = (handle) => router.get("/p",
+  handle)`. Whoever calls `register` supplies the function, and this
+  file cannot see where it came from.
 
 ## What it over-approximates
 

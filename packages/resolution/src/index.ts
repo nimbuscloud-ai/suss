@@ -40,6 +40,12 @@
 // `list` holds. `resolves(x, z)` is `comesTo` narrowed to functions,
 // and is the question callers ask.
 //
+// `comesFrom(x, m, n)` answers the other direction, for a name whose
+// value lives in a library nobody here can read: following x arrives
+// at the name n that module m exports. `callsInto(f, m, n)` puts that
+// together with the calls a function makes, so a project wrapper
+// answers with the library names calling it reaches.
+//
 // `isWrittenAs(x, z)` follows the same names to the expression the
 // value is written as, whatever kind of expression that is. A GraphQL
 // document is neither a function nor an object, so `comesTo` never
@@ -226,6 +232,59 @@ export const RESOLUTION_RULES = [
       lit("calleeOrigin", v("r"), v("m")),
       lit("callArg", v("r"), v("k"), v("a")),
       lit("comesTo", v("a"), v("h")),
+    ],
+  ),
+
+  // Where a name comes from, when what it names lives outside the
+  // source being read. `comesTo` ends at something written out, so it
+  // never reaches a library's own function, and a project's alias of a
+  // library name has no answer at all. This follows the same aliases
+  // and barrels in the other direction and answers with the module and
+  // the name that module exports.
+  rule(
+    "comesFrom",
+    [v("x"), v("m"), v("n")],
+    [lit("imports", v("x"), v("m"), v("n"))],
+  ),
+  rule(
+    "comesFrom",
+    [v("x"), v("m"), v("n")],
+    [lit("binds", v("x"), v("y")), lit("comesFrom", v("y"), v("m"), v("n"))],
+  ),
+  rule(
+    "comesFrom",
+    [v("x"), v("m"), v("n")],
+    [
+      lit("imports", v("x"), v("m2"), v("n2")),
+      lit("moduleExport", v("m2"), v("n2"), v("value")),
+      lit("comesFrom", v("value"), v("m"), v("n")),
+    ],
+  ),
+
+  // Calling f ends up calling the name n that module m exports. One hop
+  // is f's own body, including the closures it declares; the other hop
+  // is a function f's body calls, so a wrapper of a wrapper answers
+  // with what the innermost one reaches.
+  //
+  // Several answers for one function is the normal case, not an
+  // ambiguity: a project decorator that composes two library decorators
+  // applies both. A caller asks whether a particular (m, n) is among
+  // them.
+  rule(
+    "callsInto",
+    [v("f"), v("m"), v("n")],
+    [
+      lit("bodyCallsDeep", v("f"), v("c")),
+      lit("comesFrom", v("c"), v("m"), v("n")),
+    ],
+  ),
+  rule(
+    "callsInto",
+    [v("f"), v("m"), v("n")],
+    [
+      lit("bodyCallsDeep", v("f"), v("c")),
+      lit("comesTo", v("c"), v("g")),
+      lit("callsInto", v("g"), v("m"), v("n")),
     ],
   ),
 
