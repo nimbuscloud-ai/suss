@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/appsync/src/cfn.ts": {
+  "src/cfn.ts": {
     "lines": {
       "total": 75,
       "covered": 72,
@@ -57,7 +57,7 @@
       "pct": 78.84
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/appsync/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 25,
       "covered": 25,
@@ -83,7 +83,7 @@
       "pct": 94.44
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/appsync/src/refs.ts": {
+  "src/refs.ts": {
     "lines": {
       "total": 16,
       "covered": 15,
@@ -109,7 +109,7 @@
       "pct": 95
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/appsync/src/sam.ts": {
+  "src/sam.ts": {
     "lines": {
       "total": 71,
       "covered": 71,
@@ -135,7 +135,7 @@
       "pct": 88.63
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/appsync/src/schema.ts": {
+  "src/schema.ts": {
     "lines": {
       "total": 25,
       "covered": 24,
@@ -161,7 +161,7 @@
       "pct": 80
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/appsync/src/schemaSource.ts": {
+  "src/schemaSource.ts": {
     "lines": {
       "total": 23,
       "covered": 22,
@@ -187,7 +187,7 @@
       "pct": 94.44
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/contract/appsync/src/summaryBuilder.ts": {
+  "src/summaryBuilder.ts": {
     "lines": {
       "total": 36,
       "covered": 36,

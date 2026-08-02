@@ -31,7 +31,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/dedupe.ts": {
+  "src/dedupe.ts": {
     "lines": {
       "total": 26,
       "covered": 24,
@@ -57,7 +57,7 @@
       "pct": 91.66
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/index.ts": {
+  "src/index.ts": {
     "lines": {
       "total": 44,
       "covered": 28,
@@ -83,7 +83,7 @@
       "pct": 13.63
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/match.ts": {
+  "src/match.ts": {
     "lines": {
       "total": 37,
       "covered": 36,
@@ -109,7 +109,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/suppressions.ts": {
+  "src/suppressions.ts": {
     "lines": {
       "total": 11,
       "covered": 9,
@@ -135,7 +135,7 @@
       "pct": 88.23
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/__fixtures__/pairs.ts": {
+  "src/__fixtures__/pairs.ts": {
     "lines": {
       "total": 15,
       "covered": 15,
@@ -161,7 +161,7 @@
       "pct": 82.6
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/body/bodyCompatibility.ts": {
+  "src/body/bodyCompatibility.ts": {
     "lines": {
       "total": 99,
       "covered": 96,
@@ -187,7 +187,7 @@
       "pct": 96.42
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/body/bodyMatch.ts": {
+  "src/body/bodyMatch.ts": {
     "lines": {
       "total": 0,
       "covered": 0,
@@ -213,7 +213,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/consumer/consumerContract.ts": {
+  "src/consumer/consumerContract.ts": {
     "lines": {
       "total": 39,
       "covered": 35,
@@ -239,7 +239,7 @@
       "pct": 83.33
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/consumer/consumerSatisfaction.ts": {
+  "src/consumer/consumerSatisfaction.ts": {
     "lines": {
       "total": 23,
       "covered": 22,
@@ -265,7 +265,7 @@
       "pct": 85.71
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/contract/contractAgreement.ts": {
+  "src/contract/contractAgreement.ts": {
     "lines": {
       "total": 70,
       "covered": 66,
@@ -291,7 +291,7 @@
       "pct": 81.57
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/contract/contractConsistency.ts": {
+  "src/contract/contractConsistency.ts": {
     "lines": {
       "total": 54,
       "covered": 51,
@@ -317,7 +317,7 @@
       "pct": 87.5
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/contract/declaredContract.ts": {
+  "src/contract/declaredContract.ts": {
     "lines": {
       "total": 27,
       "covered": 27,
@@ -343,7 +343,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/contract/graphqlContract.ts": {
+  "src/contract/graphqlContract.ts": {
     "lines": {
       "total": 25,
       "covered": 23,
@@ -369,7 +369,7 @@
       "pct": 76.47
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/contract/graphqlContractAgreement.ts": {
+  "src/contract/graphqlContractAgreement.ts": {
     "lines": {
       "total": 53,
       "covered": 49,
@@ -395,7 +395,7 @@
       "pct": 79.41
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/coverage/providerCoverage.ts": {
+  "src/coverage/providerCoverage.ts": {
     "lines": {
       "total": 63,
       "covered": 43,
@@ -421,7 +421,7 @@
       "pct": 56.81
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/coverage/responseMatch.ts": {
+  "src/coverage/responseMatch.ts": {
     "lines": {
       "total": 47,
       "covered": 45,
@@ -447,7 +447,7 @@
       "pct": 93.18
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/interactions/dispatcher.ts": {
+  "src/interactions/dispatcher.ts": {
     "lines": {
       "total": 44,
       "covered": 29,
@@ -473,7 +473,7 @@
       "pct": 56
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/message-bus/channelPairing.ts": {
+  "src/message-bus/channelPairing.ts": {
     "lines": {
       "total": 12,
       "covered": 12,
@@ -499,7 +499,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/message-bus/messageBusPairing.ts": {
+  "src/message-bus/messageBusPairing.ts": {
     "lines": {
       "total": 186,
       "covered": 175,
@@ -525,7 +525,7 @@
       "pct": 78.04
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/pairing/graphqlPairing.ts": {
+  "src/pairing/graphqlPairing.ts": {
     "lines": {
       "total": 139,
       "covered": 130,
@@ -551,7 +551,7 @@
       "pct": 82.14
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/pairing/pairing.ts": {
+  "src/pairing/pairing.ts": {
     "lines": {
       "total": 51,
       "covered": 51,
@@ -577,7 +577,7 @@
       "pct": 100
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/pairing/semanticBridging.ts": {
+  "src/pairing/semanticBridging.ts": {
     "lines": {
       "total": 156,
       "covered": 141,
@@ -603,7 +603,7 @@
       "pct": 85.47
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/runtime-config/runtimeConfigPairing.ts": {
+  "src/runtime-config/runtimeConfigPairing.ts": {
     "lines": {
       "total": 91,
       "covered": 74,
@@ -629,7 +629,7 @@
       "pct": 70
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/storage/relationalPairing.ts": {
+  "src/storage/relationalPairing.ts": {
     "lines": {
       "total": 61,
       "covered": 58,
@@ -655,7 +655,7 @@
       "pct": 87.17
     }
   },
-  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/agent-a58601fa42cbd16fa/packages/checker/src/story/componentStoryAgreement.ts": {
+  "src/story/componentStoryAgreement.ts": {
     "lines": {
       "total": 100,
       "covered": 83,
