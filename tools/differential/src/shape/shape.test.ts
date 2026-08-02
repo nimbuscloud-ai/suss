@@ -89,7 +89,12 @@ const SOUND_COMPONENT_FORMS = new Set([
   "asyncDeclaration",
   "method",
 ]);
-const SOUND_COMPONENT_BINDINGS = new Set(["const", "letOnce", "var"]);
+const SOUND_COMPONENT_BINDINGS = new Set([
+  "const",
+  "letOnce",
+  "letReassigned",
+  "var",
+]);
 const SOUND_COMPONENT_ROUTES = new Set([
   "namedDeclaration",
   "namedBinding",
