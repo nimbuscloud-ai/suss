@@ -16,7 +16,7 @@ const fixturesDir = path.resolve(__dirname, "../../../../fixtures/aws-lambda");
 // The fixture handlers are built by a factory the fixture project owns,
 // so the pack only sees it when the project names it.
 const FIXTURE_SUBJECT_FACTORIES = [
-  { callees: ["createEventHandler"], argIndex: 0, property: "expected" },
+  { callees: ["makeWidgetHandler"], argIndex: 0, property: "subject" },
 ];
 
 async function runAdapter(

@@ -82,7 +82,7 @@ const reactRouterTerminals: TerminalPattern[] = [
     kind: "throw",
     match: {
       type: "throwExpression",
-      constructorPattern: "httpErrorJson",
+      constructorPattern: "widgetError",
     },
     extraction: {
       statusCode: { from: "argument", position: 0 },
@@ -330,7 +330,7 @@ describe("React Router style — returnShape + throwExpression", () => {
       export async function loader({ params }: any) {
         const user = await db.findById(params.id);
         if (!user) {
-          throw httpErrorJson(404, { error: "not found" });
+          throw widgetError(404, { error: "not found" });
         }
         return { name: user.name };
       }

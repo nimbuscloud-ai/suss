@@ -1,11 +1,11 @@
-import { createEventHandler } from "../lib/createEventHandler";
+import { makeWidgetHandler } from "../lib/makeWidgetHandler";
 
 // The second consumer of `order.placed`, in its own Lambda behind its
 // own queue.
-export const handler = createEventHandler(
+export const handler = makeWidgetHandler(
   {
     name: "order-notifier",
-    expected: "order.placed" as const,
+    subject: "order.placed" as const,
     createLogger: (name) => ({
       info: (msg: string) => {
         process.stdout.write(`${name}: ${msg}\n`);

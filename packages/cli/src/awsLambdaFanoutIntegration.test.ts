@@ -48,9 +48,9 @@ async function extractCode(): Promise<BehavioralSummary[]> {
         // through `-f aws-lambda=config.json`.
         subjectFactories: [
           {
-            callees: ["createEventHandler"],
+            callees: ["makeWidgetHandler"],
             argIndex: 0,
-            property: "expected",
+            property: "subject",
           },
         ],
       }),

@@ -53,7 +53,7 @@ Prefer `import type` for type-only imports — Biome enforces this and it keeps 
 
 A pack may hardcode an identifier only when the library that pack is about defines it. Anything a specific codebase names goes in per-project configuration, through the pack's options and `-f <pack>=config.json`.
 
-Two things go wrong when a project's name ships as a default. Every other user gets false matches, because any class called `ApiController` or any function called `createEventHandler` matches whatever it actually does. And coverage measured against the codebase the name came from is inflated, because discovery found those units by name rather than by pattern.
+Two things go wrong when a project's name ships as a default. Every other user gets false matches, because any class called `WidgetController` or any function called `makeWidgetHandler` matches whatever it actually does. And coverage measured against the codebase the name came from is inflated, because discovery found those units by name rather than by pattern.
 
 Each pack declares its vocabulary in `vocabulary.json` at the package root: every identifier the pack's shipped source names, mapped to where in the library it comes from. `npm run check:vocabulary` fails when a pack names something that file does not declare, so a reviewer sees the claim in the diff. Names suss itself defines (IR kinds, roles, grammar tags) live once in `packages/extractor/vocabulary.json`. A name a project supplies through pack config never appears as a literal in the pack's source, so only the shipped defaults are policed.
 

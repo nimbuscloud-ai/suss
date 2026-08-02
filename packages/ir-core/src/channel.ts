@@ -15,7 +15,7 @@
 // precision, because two buses routing the same detail-type are
 // different destinations and the CloudFormation contract goes out of
 // its way to tell them apart. A side that cannot know the bus is not
-// forced to invent one: the code pack reads `expected: 'order.placed'`
+// forced to invent one: the code pack reads `subject: 'order.placed'`
 // off a handler's config, while which bus reaches that handler is
 // deployment configuration the code never names.
 //

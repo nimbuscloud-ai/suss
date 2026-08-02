@@ -31,7 +31,7 @@
       "pct": "Unknown"
     }
   },
-  "src/index.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/pack-health/packages/datalog/src/index.ts": {
     "lines": {
       "total": 257,
       "covered": 252,
@@ -57,7 +57,7 @@
       "pct": 90.71
     }
   },
-  "src/profile.ts": {
+  "/Users/mattkindy/code/nimbuscloud-ai/suss/.claude/worktrees/pack-health/packages/datalog/src/profile.ts": {
     "lines": {
       "total": 84,
       "covered": 84,

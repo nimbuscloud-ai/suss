@@ -83,10 +83,10 @@ describe("nestjsGraphqlFramework — pack shape", () => {
 
   it("adds the wrapper decorators a project names", () => {
     const match = nestjsGraphqlFramework({
-      classDecorators: ["AuditedResolver"],
+      classDecorators: ["InternalResolver"],
     }).discovery[0].match;
     if (match.type === "decoratedMethod") {
-      expect(match.classDecorators).toEqual(["Resolver", "AuditedResolver"]);
+      expect(match.classDecorators).toEqual(["Resolver", "InternalResolver"]);
     }
   });
 });

@@ -62,12 +62,12 @@ describe("reactRouterFramework — pack shape", () => {
   });
 
   it("adds a throw terminal for each error helper a project names", () => {
-    const pack = reactRouterFramework({ errorHelpers: ["notFound"] });
+    const pack = reactRouterFramework({ errorHelpers: ["widgetError"] });
     const thrown = pack.terminals.filter((t) => t.kind === "throw");
     expect(thrown).toHaveLength(1);
     expect(thrown[0].match).toMatchObject({
       type: "throwExpression",
-      constructorPattern: "notFound",
+      constructorPattern: "widgetError",
     });
   });
 });

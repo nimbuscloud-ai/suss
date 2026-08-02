@@ -1848,9 +1848,9 @@ describe("decoratedMethod discovery", () => {
       "src/foo.resolver.ts",
       `
       import { Query } from "@nestjs/graphql";
-      import { AuditedResolver } from "src/internal/audited-resolver.decorator";
+      import { InternalResolver } from "src/internal/internal-resolver.decorator";
 
-      @AuditedResolver(() => Foo)
+      @InternalResolver(() => Foo)
       class FooResolver {
         @Query()
         all(): Foo[] { return []; }
@@ -1860,7 +1860,7 @@ describe("decoratedMethod discovery", () => {
     );
     const units = discoverUnits(file, [
       makeDecoratedMethodPattern({
-        classDecorators: ["Resolver", "AuditedResolver"],
+        classDecorators: ["Resolver", "InternalResolver"],
       }),
     ]);
     expect(units).toHaveLength(1);

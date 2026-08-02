@@ -1,14 +1,14 @@
-import { createEventHandler } from "../lib/createEventHandler";
+import { makeWidgetHandler } from "../lib/makeWidgetHandler";
 
 const source = "billing";
 
 // Same factory, but the subject is computed. Nothing readable names
 // the channel, so the unit keeps its fallback binding rather than
 // carrying a guessed one.
-export const handler = createEventHandler(
+export const handler = makeWidgetHandler(
   {
     name: "computed-subject",
-    expected: `${source}.refundIssued`,
+    subject: `${source}.refundIssued`,
     createLogger: () => ({
       info: () => {
         return;

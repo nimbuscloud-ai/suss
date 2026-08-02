@@ -171,13 +171,13 @@ library's shape is invisible until the project names it.
 | `aws-lambda` | `subjectFactories` | Factories building an SQS consumer, and the config property holding the subject |
 
 ```json
-{ "classDecorators": ["AuthedController", "PublicController"] }
+{ "classDecorators": ["WidgetController", "InternalController"] }
 ```
 
 ```json
 {
   "subjectFactories": [
-    { "callees": ["createEventHandler"], "argIndex": 0, "property": "expected" }
+    { "callees": ["makeWidgetHandler"], "argIndex": 0, "property": "subject" }
   ]
 }
 ```

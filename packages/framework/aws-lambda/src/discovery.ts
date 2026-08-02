@@ -158,7 +158,7 @@ function accountingUnit(
 
 /**
  * A handler factory whose config names the subject the consumer
- * expects, as `myFactory({ expected: "widget.created" }, async
+ * expects, as `myFactory({ subject: "widget.created" }, async
  * ({ parsed }) => ...)`. The subject is the channel a producer
  * publishes on, so it becomes the unit's message-bus binding.
  *

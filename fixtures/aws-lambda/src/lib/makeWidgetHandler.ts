@@ -2,9 +2,9 @@
 // consumers use: the config names the subject the consumer expects,
 // and the second argument is the body run per message.
 
-export interface EventHandlerConfig<S extends string> {
+export interface WidgetHandlerConfig<S extends string> {
   name: string;
-  expected: S;
+  subject: S;
   createLogger: (name: string) => { info: (msg: string) => void };
 }
 
@@ -12,8 +12,8 @@ interface SqsEvent {
   Records: Array<{ body: string }>;
 }
 
-export function createEventHandler<S extends string>(
-  config: EventHandlerConfig<S>,
+export function makeWidgetHandler<S extends string>(
+  config: WidgetHandlerConfig<S>,
   body: (args: { parsed: { subject: S; data: unknown } }) => Promise<void>,
 ) {
   return async (event: SqsEvent): Promise<void> => {

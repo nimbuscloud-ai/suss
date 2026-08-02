@@ -89,10 +89,10 @@ describe("nestjsRestFramework — pack shape", () => {
 
   it("adds the wrapper decorators a project names", () => {
     const match = nestjsRestFramework({
-      classDecorators: ["AuthedController"],
+      classDecorators: ["WidgetController"],
     }).discovery[0].match;
     if (match.type === "decoratedRoute") {
-      expect(match.classDecorators).toEqual(["Controller", "AuthedController"]);
+      expect(match.classDecorators).toEqual(["Controller", "WidgetController"]);
     }
   });
 });
