@@ -40,26 +40,33 @@ judgment instead:
 transparentWrappers: [{ callee: "Sentry.wrapHandler", argument: 0 }]
 ```
 
-## What a wrapper stands for
+## What a decorator stands for
 
 `unwraps` answers what a factory hands back. The other question a
-wrapper raises is what it is: a project decorator that calls
-`@Resolver()` marks a resolver, whatever it is called.
+wrapper raises is what it is. A class carrying `@MetadataResolver()` is
+a resolver, and nothing about the class says `Resolver`.
 
-`importedCallsOf(value, modules)` answers that. It follows the value to
-the function behind it, then reports the names that function ends up
-calling from those modules, through the closures it declares and through
-another wrapper it delegates to. The pack asks whether the framework's
-own decorator is among them.
+`importedNamesOf(value, modules)` answers that, and it answers for the
+two ways a value can stand for a library name. It is that name, under
+whatever local spelling, which covers `import { Controller as
+Resource }`. Or calling it calls that name, which covers a project
+decorator written as `(path) => Controller(path)` and one written as
+`applyDecorators(Controller(path))`. The pack asks whether the
+framework's own decorator is among the names that come back.
 
-The answer is memoized against the declaration, since one wrapper is
-applied across hundreds of files and the question is about the wrapper
-rather than about any use of it. The caller also has to be sure the
-value is worth asking about: a query that finds nothing still walks the
-import closure, which pulls files into the program and changes what the
-type checker reports for shapes read later. Decorator discovery asks
-only about a decorator the project itself declares, which is the only
-kind that can have a readable body.
+Several names is the normal answer. A wrapper composing two library
+decorators applies both, so a caller asks about the one it cares about
+rather than expecting a single answer.
+
+Two things keep the cost down. The answer is memoized against the
+declaration, since one wrapper is applied across hundreds of files and
+the question is about the wrapper rather than about any use of it. And
+the walk stops as soon as the value reaches a package, because a
+library's body is not here to read. Without that second rule, a
+decorator from a library the pack never asked about ran the whole
+import closure looking for a match it would never find, and the files
+that arrived changed what the type checker reported for shapes read
+later.
 
 ## Cost
 
