@@ -272,7 +272,7 @@ describe("namedExport — export default function", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
-      `export default (args: any) => args;`,
+      "export default (args: any) => args;",
     );
 
     const units = discoverUnits(
