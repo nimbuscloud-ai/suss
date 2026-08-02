@@ -132,9 +132,10 @@ export function discoverDecoratedMethods(
     if (marker === null) {
       continue;
     }
-    const classArgs = marker.decorator.getArguments();
     const classTypeName =
-      classArgs.length > 0 ? resolveResolverClassTypeName(classArgs[0]) : null;
+      marker.args.length > 0
+        ? resolveResolverClassTypeName(marker.args[0] as Node)
+        : null;
 
     const className = cls.getName() ?? "<anon-class>";
     for (const method of cls.getMethods()) {

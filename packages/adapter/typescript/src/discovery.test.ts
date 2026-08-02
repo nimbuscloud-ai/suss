@@ -1914,6 +1914,79 @@ describe("decoratedMethod discovery", () => {
     });
   });
 
+  it("reads the type from the wrapper when the class states none", () => {
+    // The class says nothing, so what the wrapper hands the framework
+    // is what the class means.
+    const project = createProject();
+    project.createSourceFile(
+      "src/scoped.ts",
+      `
+      import { Resolver } from "@nestjs/graphql";
+      export const ScopedResolver = () => Resolver(() => Foo);
+      declare class Foo {}
+    `,
+    );
+    const file = project.createSourceFile(
+      "src/foo.resolver.ts",
+      `
+      import { Query } from "@nestjs/graphql";
+      import { ScopedResolver } from "./scoped";
+
+      @ScopedResolver()
+      class FooResolver {
+        @Query()
+        all(): unknown[] { return []; }
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeDecoratedMethodPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].resolverInfo).toEqual({
+      typeName: "Foo",
+      fieldName: "all",
+    });
+  });
+
+  it("takes no type from a wrapper that forwards its own parameter", () => {
+    // `@Scoped()` with nothing in the parentheses means a bare
+    // `@Resolver()`, and the parameter the wrapper passes along names
+    // no type at all. Reading it would report the resolver against a
+    // type called `typeFunc`.
+    const project = createProject();
+    project.createSourceFile(
+      "src/scoped.ts",
+      `
+      import { Resolver } from "@nestjs/graphql";
+      export const Scoped = (typeFunc?: () => unknown) => Resolver(typeFunc);
+    `,
+    );
+    const file = project.createSourceFile(
+      "src/foo.resolver.ts",
+      `
+      import { Mutation } from "@nestjs/graphql";
+      import { Scoped } from "./scoped";
+
+      @Scoped()
+      class FooResolver {
+        @Mutation()
+        signOut(): boolean { return true; }
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeDecoratedMethodPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].resolverInfo).toEqual({
+      typeName: "Mutation",
+      fieldName: "signOut",
+    });
+  });
+
   it("ignores a project decorator that reaches no framework decorator", () => {
     const project = createProject();
     project.createSourceFile(

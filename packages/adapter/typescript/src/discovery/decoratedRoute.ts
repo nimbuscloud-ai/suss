@@ -27,7 +27,11 @@ function resolveRoutePathArg(decorator: Node): string {
   if (!Node.isDecorator(decorator)) {
     return "";
   }
-  const args = decorator.getArguments();
+  return routePathOf(decorator.getArguments());
+}
+
+/** The path a decorator's argument list states, when it states one. */
+function routePathOf(args: Node[]): string {
   if (args.length === 0) {
     return "";
   }
@@ -98,7 +102,7 @@ export function discoverDecoratedRoutes(
     if (marker === null) {
       continue;
     }
-    const pathPrefix = resolveRoutePathArg(marker.decorator);
+    const pathPrefix = routePathOf(marker.args);
 
     const className = cls.getName() ?? "<anon-class>";
     for (const method of cls.getMethods()) {
