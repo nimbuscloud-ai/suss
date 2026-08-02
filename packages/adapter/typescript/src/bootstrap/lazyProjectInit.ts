@@ -26,6 +26,7 @@ import path from "node:path";
 
 import { Project, type SourceFile, ts } from "ts-morph";
 
+import { namesAnyPackage } from "../facts/moduleGraph.js";
 import { collectPackGates, packIsUngated } from "./preFilter.js";
 
 import type { PatternPack } from "@suss/extractor";
@@ -161,7 +162,7 @@ async function selectCandidateFiles(
   const fileImports = await readImportsConcurrently(allFiles);
   const matched: string[] = [];
   for (const { path: p, importedModules } of fileImports) {
-    if (anyImportMatchesGate(importedModules, gates)) {
+    if (namesAnyPackage(importedModules, gates)) {
       matched.push(p);
     }
   }
@@ -176,20 +177,6 @@ function collectAllGates(packs: ReadonlyArray<PatternPack>): string[] {
     }
   }
   return [...gates];
-}
-
-function anyImportMatchesGate(
-  importedModules: ReadonlyArray<string>,
-  gates: ReadonlyArray<string>,
-): boolean {
-  for (const mod of importedModules) {
-    for (const gate of gates) {
-      if (mod === gate || mod.startsWith(`${gate}/`)) {
-        return true;
-      }
-    }
-  }
-  return false;
 }
 
 const READ_CONCURRENCY = 32;
