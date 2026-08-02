@@ -33,6 +33,7 @@ import { startLineOf } from "../lines.js";
 import {
   type DescentBarriers,
   isDescentStop,
+  isModuleScopeStop,
   NO_BARRIERS,
 } from "../walk/descent.js";
 
@@ -352,14 +353,37 @@ export function runAccessRecognizers(
   recognizers: AccessRecognizer[],
   barriers: DescentBarriers = NO_BARRIERS,
 ): RecognizedEffectLocation[] {
+  return dispatchAccessRecognizers(func, recognizers, (node) =>
+    isDescentStop(node, func, barriers),
+  );
+}
+
+/**
+ * The same dispatch over a module's own top-level statements, for
+ * reads that happen when the module loads rather than when any unit
+ * runs. `isModuleScopeStop` keeps the walk out of every function and
+ * class, so nothing another pass summarizes is counted twice.
+ */
+export function runAccessRecognizersAtModuleScope(
+  sourceFile: SourceFile,
+  recognizers: AccessRecognizer[],
+): RecognizedEffectLocation[] {
+  return dispatchAccessRecognizers(sourceFile, recognizers, isModuleScopeStop);
+}
+
+function dispatchAccessRecognizers(
+  root: Node,
+  recognizers: AccessRecognizer[],
+  isStop: (node: Node) => boolean,
+): RecognizedEffectLocation[] {
   if (recognizers.length === 0) {
     return [];
   }
   const out: RecognizedEffectLocation[] = [];
-  const sourceFile = func.getSourceFile();
+  const sourceFile = root.getSourceFile();
 
-  func.forEachDescendant((node, traversal) => {
-    if (isDescentStop(node, func, barriers)) {
+  root.forEachDescendant((node, traversal) => {
+    if (isStop(node)) {
       traversal.skip();
       return;
     }

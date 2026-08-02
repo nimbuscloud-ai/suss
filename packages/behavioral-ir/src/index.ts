@@ -149,6 +149,7 @@ export const BOUNDARY_ROLE: Record<CodeUnitKind, BoundaryRole> = {
   client: "consumer",
   consumer: "consumer",
   caller: "consumer",
+  "module-init": "consumer",
 };
 
 // ---------------------------------------------------------------------------
