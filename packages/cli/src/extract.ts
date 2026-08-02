@@ -11,6 +11,7 @@ import {
   createTypeScriptAdapter,
   findNearestTsconfig,
 } from "@suss/adapter-typescript";
+import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 
 import type {
   CacheDiagnostic,
@@ -243,6 +244,12 @@ export interface ExtractOptions {
   /** Print the per-phase wall-clock breakdown to stderr. */
   timing?: boolean;
   /**
+   * Print where datalog evaluation spent the run: time and tuples per
+   * rule, tuples per relation, rounds to fixpoint. Off by default, since
+   * collecting it costs a timestamp per rule attempt.
+   */
+  datalogProfile?: boolean;
+  /**
    * Skip the on-disk extraction cache for this run. Mostly useful
    * for debugging when cache invalidation isn't keeping up with
    * intentional changes — normal runs benefit from the cache.
@@ -336,13 +343,17 @@ export async function extract(
     },
   });
 
-  // Extract
-  const summaries =
+  const runExtraction = (): Promise<BehavioralSummary[]> =>
     options.files !== undefined && options.files.length > 0
-      ? await adapter.extractFromFiles(
-          options.files.map((f) => path.resolve(f)),
-        )
-      : await adapter.extractAll();
+      ? adapter.extractFromFiles(options.files.map((f) => path.resolve(f)))
+      : adapter.extractAll();
+
+  // Extract
+  const profiled =
+    options.datalogProfile === true
+      ? await profileEvaluationAsync(runExtraction)
+      : null;
+  const summaries = profiled === null ? await runExtraction() : profiled.result;
 
   // Make file paths relative to the project root so summaries are portable.
   // Absolute paths leak filesystem structure and break on other machines.
@@ -372,6 +383,9 @@ export async function extract(
 
   if (options.timing === true && timingReport !== null) {
     process.stderr.write(formatTimingBreakdown(timingReport));
+  }
+  if (profiled !== null) {
+    process.stderr.write(`${formatProfile(profiled.profile)}\n`);
   }
   if (options.timing === true && cacheDiagnostic !== null) {
     process.stderr.write(formatCacheDiagnostic(cacheDiagnostic));
