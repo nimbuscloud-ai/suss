@@ -165,34 +165,13 @@ export const NEST_RESOLVER_BUGS: ReproducedBug[] = [
 ];
 
 /**
- * Wrong behaviour where a unit reads its runtime configuration. Two
- * spellings the node pack does not read at all, and one place it never
- * looks: a read above the unit, where a service puts the configuration
- * it wants read once.
+ * Every place a unit can read its runtime configuration and every way
+ * the read can be spelled now resolve, so the sound tier carries both
+ * dimensions whole and nothing is listed here. A read at module scope
+ * is reported against the module that performs it rather than against
+ * any unit the module declares.
  */
-export const ENV_BUGS: ReproducedBug[] = [
-  {
-    dimension: "form",
-    value: "bracket",
-    signature: "invariant:everyConfigReadIsReported",
-    wrong:
-      'a read written as process.env["NAME"] is reported by nothing, though the pack documents that spelling as recognized',
-  },
-  {
-    dimension: "form",
-    value: "destructured",
-    signature: "invariant:everyConfigReadIsReported",
-    wrong:
-      "a variable destructured off process.env is reported by nothing, so the unit looks like it needs no configuration",
-  },
-  {
-    dimension: "site",
-    value: "atModuleScope",
-    signature: "invariant:everyConfigReadIsReported",
-    wrong:
-      "a read at module scope, above every unit, is reported by nothing however it is spelled",
-  },
-];
+export const ENV_BUGS: ReproducedBug[] = [];
 
 /**
  * Wrong behaviour at a queue consumer. Every one is the same shape:

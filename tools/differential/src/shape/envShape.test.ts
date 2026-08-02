@@ -1,17 +1,13 @@
 // envShape.test.ts: the properties for runtime configuration reads.
 //
-// The sound tier is every place a read can sit that the pack does look
-// in, crossed with the two spellings it does read. The pinned tests
-// below hold the three it misses.
+// The sound tier is every place a read can sit crossed with every way
+// it can be spelled, and nothing is pinned: the pack reads all of them.
 //
 // Knobs: SUSS_FUZZ_RUNS (default 150), SUSS_FUZZ_SEED.
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { type EnvShapeSpec, SIMPLEST_ENV_SHAPE } from "./envShape.js";
-import { ENV_BUGS } from "./knownBugs.js";
-import { findingSignature } from "./minimize.js";
 import {
   formatShapeFailure,
   runEnvShapeDifferential,
@@ -31,20 +27,13 @@ const envInt = (name: string, fallback: number): number => {
 const NUM_RUNS = envInt("SUSS_FUZZ_RUNS", 150);
 const SEED = envInt("SUSS_FUZZ_SEED", 20260801);
 
-const arbSoundEnvShape: fc.Arbitrary<EnvShapeSpec> = arbEnvShapeSpec.filter(
-  (spec) =>
-    spec.site !== "atModuleScope" &&
-    spec.form !== "bracket" &&
-    spec.form !== "destructured",
-);
-
 describe("shape fuzzer, sound tier (runtime configuration)", () => {
   it(
-    "wherever inside the unit the read sits, the variable it names is reported",
+    "wherever in the module the read sits, however it is spelled, the variable it names is reported",
     { timeout: 300_000 },
     async () => {
       await fc.assert(
-        fc.asyncProperty(arbSoundEnvShape, async (spec) => {
+        fc.asyncProperty(arbEnvShapeSpec, async (spec) => {
           const result = await runEnvShapeDifferential(spec);
           if (shapeFailed(result)) {
             throw new Error(formatShapeFailure(result));
@@ -56,27 +45,26 @@ describe("shape fuzzer, sound tier (runtime configuration)", () => {
   );
 });
 
-describe("shape fuzzer, config reads that are still missed", () => {
-  for (const bug of ENV_BUGS) {
-    it(
-      `still broken, ${bug.dimension}=${bug.value}: ${bug.wrong}`,
-      { timeout: 60_000 },
-      async () => {
-        const spec: EnvShapeSpec = {
-          ...SIMPLEST_ENV_SHAPE,
-          varName: "SERVICE_URL",
-          ...bug.alongside,
-          [bug.dimension]: bug.value,
-        } as EnvShapeSpec;
-        const result = await runEnvShapeDifferential(spec);
-        // Asserting the broken behaviour on purpose: this fails the
-        // moment the read is picked up, which is when the dimension
-        // value belongs in the sound tier instead.
-        expect(
-          result.findings.map(findingSignature),
-          `${bug.wrong}: the fuzzer no longer finds this, so it looks fixed. Move ${bug.dimension}=${bug.value} into the sound tier above and take it out of knownBugs.ts.\n${formatShapeFailure(result)}`,
-        ).toContain(bug.signature);
-      },
-    );
-  }
+describe("shape fuzzer, config reads at the module's own load", () => {
+  it(
+    "reports the read against the module, not against a handler that never performs it",
+    { timeout: 60_000 },
+    async () => {
+      const result = await runEnvShapeDifferential({
+        site: "atModuleScope",
+        form: "dotted",
+        varName: "SERVICE_URL",
+      });
+      const reading = result.summaries.filter((summary) =>
+        summary.transitions.some((transition) =>
+          (transition.effects ?? []).some(
+            (effect) =>
+              effect.type === "interaction" &&
+              effect.interaction.class === "config-read",
+          ),
+        ),
+      );
+      expect(reading.map((summary) => summary.kind)).toEqual(["module-init"]);
+    },
+  );
 });
