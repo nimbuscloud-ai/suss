@@ -12,9 +12,18 @@
 //   the other two, because the program still runs and the summary that
 //   survives is well-formed.
 
+import { apolloFramework } from "@suss/framework-apollo";
+import {
+  awsLambdaFramework,
+  clearTemplateCache,
+} from "@suss/framework-aws-lambda";
+import { expressFramework } from "@suss/framework-express";
+import { nestjsGraphqlFramework } from "@suss/framework-nestjs-graphql";
+import { nodeRuntimePack } from "@suss/runtime-node";
+
 import { judgeObservation } from "../differential.js";
 import { executeHandler } from "../execute.js";
-import { extractAllSummaries } from "../extract.js";
+import { extractAllSummaries, extractFromDisk } from "../extract.js";
 import { requestBattery } from "../requests.js";
 import {
   type AnnounceShapeSpec,
@@ -26,8 +35,35 @@ import {
   renderComponentShape,
   SIMPLEST_COMPONENT_SHAPE,
 } from "./componentShape.js";
+import {
+  type EnvShapeSpec,
+  renderEnvShape,
+  SIMPLEST_ENV_SHAPE,
+} from "./envShape.js";
 import { summarySetDifferences } from "./equivalence.js";
 import { checkInvariants } from "./invariants.js";
+import {
+  type PackageShapeSpec,
+  type RenderedPackageShape,
+  renderPackageShape,
+  writePackageShape,
+} from "./packageShape.js";
+import {
+  type QueueShapeSpec,
+  type RenderedQueueShape,
+  renderQueueShape,
+  SIMPLEST_QUEUE_SHAPE,
+  writeQueueShape,
+} from "./queueShape.js";
+import {
+  type ApolloResolverSpec,
+  type NestResolverSpec,
+  type RenderedResolverShape,
+  renderApolloResolverShape,
+  renderNestResolverShape,
+  SIMPLEST_APOLLO_RESOLVER,
+  SIMPLEST_NEST_RESOLVER,
+} from "./resolverShape.js";
 import { renderShape, type ShapeSpec, SIMPLEST_SHAPE } from "./shapeProgram.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -50,7 +86,15 @@ export interface ShapeHarnessFailure {
 }
 
 export interface ShapeResult {
-  spec: ShapeSpec | ComponentShapeSpec | AnnounceShapeSpec;
+  spec:
+    | ShapeSpec
+    | ComponentShapeSpec
+    | AnnounceShapeSpec
+    | EnvShapeSpec
+    | ApolloResolverSpec
+    | NestResolverSpec
+    | QueueShapeSpec
+    | PackageShapeSpec;
   /** The dimension values this shape was drawn at, for the failure line. */
   label: string;
   files: Record<string, string>;
@@ -280,6 +324,373 @@ export async function runAnnounceShapeDifferential(
     label: `${spec.announcement} / ${spec.method}`,
     files,
     baselineFiles,
+    summaries,
+    findings,
+    harnessFailures: [],
+    requestsRun: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// GraphQL resolvers, where the pair a query names is what has to survive
+// ---------------------------------------------------------------------------
+
+/**
+ * Both resolver frameworks are read the same way: render the program,
+ * render the plainest spelling of the same field, and require the two
+ * to agree. What differs is which spellings mean the same field, so
+ * each caller says which of its own it wants compared.
+ */
+interface ResolverRun<S> {
+  spec: S;
+  label: string;
+  pack: PatternPack;
+  render: (spec: S) => RenderedResolverShape;
+  /** The spelling to compare against, or null when there is none. */
+  baseline: S | null;
+}
+
+async function runResolverShape<
+  S extends ApolloResolverSpec | NestResolverSpec,
+>(run: ResolverRun<S>): Promise<ShapeResult> {
+  const rendered = run.render(run.spec);
+  const summaries = await extractAllSummaries({
+    files: rendered.files,
+    pack: run.pack,
+  });
+
+  const findings: ShapeFinding[] = checkInvariants(summaries, {
+    kind: "resolver",
+    boundaryCount: 1,
+    unitName: rendered.unitName,
+    resolver: {
+      typeName: rendered.typeName,
+      fieldName: rendered.fieldName,
+    },
+  }).map((violation) => ({
+    oracle: "invariant" as const,
+    detail: `${violation.invariant}: ${violation.detail}`,
+  }));
+
+  const baselineFiles =
+    run.baseline === null ? rendered.files : run.render(run.baseline).files;
+  if (run.baseline !== null) {
+    const baselineSummaries = await extractAllSummaries({
+      files: baselineFiles,
+      pack: run.pack,
+    });
+    for (const difference of summarySetDifferences(
+      baselineSummaries,
+      summaries,
+    )) {
+      findings.push({
+        oracle: "equivalence",
+        detail: `${difference.path}: the plainest spelling says ${difference.baseline}, this spelling says ${difference.variant}`,
+      });
+    }
+  }
+
+  return {
+    spec: run.spec,
+    label: run.label,
+    files: rendered.files,
+    baselineFiles,
+    summaries,
+    findings,
+    harnessFailures: [],
+    requestsRun: 0,
+  };
+}
+
+const APOLLO_PACK = apolloFramework();
+const NEST_GRAPHQL_PACK = nestjsGraphqlFramework();
+
+export async function runApolloResolverDifferential(
+  spec: ApolloResolverSpec,
+): Promise<ShapeResult> {
+  const baseline = { ...SIMPLEST_APOLLO_RESOLVER, owner: spec.owner };
+  const isBaseline =
+    spec.route === baseline.route && spec.field === baseline.field;
+  return runResolverShape({
+    spec,
+    label: `${spec.route} / ${spec.field} / ${spec.owner}`,
+    pack: APOLLO_PACK,
+    render: renderApolloResolverShape,
+    baseline: isBaseline ? null : baseline,
+  });
+}
+
+/**
+ * A class that names no type resolves for a different type than one
+ * that names it, and a method that renames its field answers a
+ * different field, so neither has a plainest spelling to compare
+ * against and the invariants carry them.
+ */
+function nestResolverBaseline(spec: NestResolverSpec): NestResolverSpec | null {
+  if (
+    spec.announcement === "noTypeArgument" ||
+    spec.method === "renamedField"
+  ) {
+    return null;
+  }
+  const baseline: NestResolverSpec = {
+    ...SIMPLEST_NEST_RESOLVER,
+    operation: spec.operation,
+    method: spec.method,
+  };
+  return baseline.announcement === spec.announcement ? null : baseline;
+}
+
+export async function runNestResolverDifferential(
+  spec: NestResolverSpec,
+): Promise<ShapeResult> {
+  return runResolverShape({
+    spec,
+    label: `${spec.announcement} / ${spec.operation} / ${spec.method}`,
+    pack: NEST_GRAPHQL_PACK,
+    render: renderNestResolverShape,
+    baseline: nestResolverBaseline(spec),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Runtime configuration, where the read is what has to survive
+// ---------------------------------------------------------------------------
+
+/**
+ * The packs a unit reading its configuration needs: one that finds the
+ * unit and one that reads what happens inside it.
+ */
+export function envPacks(): PatternPack[] {
+  return [expressFramework(), nodeRuntimePack()];
+}
+
+/**
+ * A read in a helper only shows up when the extraction follows the call
+ * into it, which is what a project run does, so this family asks for
+ * the same.
+ */
+const ENV_EXTRACT = { includeReachable: true } as const;
+
+/**
+ * Where the read sits and how it is spelled are two different
+ * questions. Two spellings of a read in the same place mean the same
+ * program, so those compare against each other. Two places do not: a
+ * read at module scope runs when the module loads and one in the
+ * handler runs per request, so there is no plainest spelling across
+ * sites and the invariants carry that dimension alone.
+ */
+function envBaselineOf(spec: EnvShapeSpec): EnvShapeSpec | null {
+  if (spec.form === SIMPLEST_ENV_SHAPE.form || spec.form === "defaulted") {
+    return null;
+  }
+  return { ...spec, form: SIMPLEST_ENV_SHAPE.form };
+}
+
+export async function runEnvShapeDifferential(
+  spec: EnvShapeSpec,
+): Promise<ShapeResult> {
+  const rendered = renderEnvShape(spec);
+  const packs = envPacks();
+  const summaries = await extractAllSummaries({
+    files: rendered.files,
+    pack: packs,
+    ...ENV_EXTRACT,
+  });
+
+  const findings: ShapeFinding[] = checkInvariants(summaries, {
+    kind: "handler",
+    boundaryCount: 1,
+    unitName: null,
+    configReads: rendered.reads,
+  }).map((violation) => ({
+    oracle: "invariant" as const,
+    detail: `${violation.invariant}: ${violation.detail}`,
+  }));
+
+  const baseline = envBaselineOf(spec);
+  const baselineFiles =
+    baseline === null ? rendered.files : renderEnvShape(baseline).files;
+  if (baseline !== null) {
+    const baselineSummaries = await extractAllSummaries({
+      files: baselineFiles,
+      pack: packs,
+      ...ENV_EXTRACT,
+    });
+    for (const difference of summarySetDifferences(
+      baselineSummaries,
+      summaries,
+    )) {
+      findings.push({
+        oracle: "equivalence",
+        detail: `${difference.path}: the plainest spelling says ${difference.baseline}, this spelling says ${difference.variant}`,
+      });
+    }
+  }
+
+  return {
+    spec,
+    label: `${spec.site} / ${spec.form}`,
+    files: rendered.files,
+    baselineFiles,
+    summaries,
+    findings,
+    harnessFailures: [],
+    requestsRun: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Queue consumers, where the program and its configuration are one thing
+// ---------------------------------------------------------------------------
+
+/** The TypeScript files a rendered queue program spans. */
+const typeScriptFiles = (
+  files: Record<string, string>,
+): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(files).filter(([filePath]) => filePath.endsWith(".ts")),
+  );
+
+async function extractQueueShape(
+  rendered: RenderedQueueShape,
+): Promise<BehavioralSummary[]> {
+  writeQueueShape(rendered);
+  // The template is read off disk and memoized per directory, and the
+  // generator rewrites that directory per program.
+  clearTemplateCache();
+  return extractFromDisk({
+    files: typeScriptFiles(rendered.files),
+    pack: awsLambdaFramework({ subjectFactories: rendered.subjectFactories }),
+  });
+}
+
+export async function runQueueShapeDifferential(
+  spec: QueueShapeSpec,
+): Promise<ShapeResult> {
+  const rendered = renderQueueShape(spec);
+  const summaries = await extractQueueShape(rendered);
+
+  const findings: ShapeFinding[] = checkInvariants(summaries, {
+    kind: "handler",
+    boundaryCount: 1,
+    unitName: null,
+    channel: rendered.channel,
+  }).map((violation) => ({
+    oracle: "invariant" as const,
+    detail: `${violation.invariant}: ${violation.detail}`,
+  }));
+
+  // A consumer built by no factory names no subject, so it is a
+  // different program rather than another spelling of this one.
+  const baseline =
+    spec.build === "bareFunction" ||
+    (spec.build === SIMPLEST_QUEUE_SHAPE.build &&
+      spec.config === SIMPLEST_QUEUE_SHAPE.config)
+      ? null
+      : SIMPLEST_QUEUE_SHAPE;
+  const baselineRendered = renderQueueShape(baseline ?? spec);
+  if (baseline !== null) {
+    const baselineSummaries = await extractQueueShape(baselineRendered);
+    for (const difference of summarySetDifferences(
+      baselineSummaries,
+      summaries,
+    )) {
+      findings.push({
+        oracle: "equivalence",
+        detail: `${difference.path}: the plainest spelling says ${difference.baseline}, this spelling says ${difference.variant}`,
+      });
+    }
+  }
+
+  return {
+    spec,
+    label: `${spec.build} / ${spec.config}`,
+    files: rendered.files,
+    baselineFiles: baselineRendered.files,
+    summaries,
+    findings,
+    harnessFailures: [],
+    requestsRun: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Package exports, where both sides of the boundary are generated
+// ---------------------------------------------------------------------------
+
+/**
+ * The pack a project points at its own package, the same one the
+ * dogfood run builds: the manifest names the provider side, and the
+ * package name names the call sites.
+ */
+function packageBoundaryPack(rendered: RenderedPackageShape): PatternPack {
+  return {
+    name: "package-exports:generated",
+    languages: ["typescript"],
+    protocol: "in-process",
+    discovery: [
+      {
+        kind: "library",
+        match: {
+          type: "packageExports",
+          packageJsonPath: rendered.packageJsonPath,
+        },
+      },
+      {
+        kind: "caller",
+        match: { type: "packageImport", packages: [rendered.importSpecifier] },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+    ],
+    inputMapping: {
+      type: "positionalParams",
+      params: [{ position: 0, role: "arg0" }],
+    },
+  };
+}
+
+export async function runPackageShapeDifferential(
+  spec: PackageShapeSpec,
+): Promise<ShapeResult> {
+  const rendered = renderPackageShape(spec);
+  writePackageShape(rendered);
+  const summaries = await extractFromDisk({
+    files: typeScriptFiles(rendered.files),
+    pack: packageBoundaryPack(rendered),
+  });
+
+  // Two sides, two expectations: the package publishes one function
+  // and the calling package calls it once.
+  const findings: ShapeFinding[] = [
+    ...checkInvariants(summaries, {
+      kind: "library",
+      boundaryCount: 1,
+      unitName: null,
+      exportPath: rendered.exportPath,
+    }),
+    ...checkInvariants(summaries, {
+      kind: "caller",
+      boundaryCount: 1,
+      unitName: null,
+    }),
+  ].map((violation) => ({
+    oracle: "invariant" as const,
+    detail: `${violation.invariant}: ${violation.detail}`,
+  }));
+
+  return {
+    spec,
+    label: `${spec.route} / ${spec.form}`,
+    files: rendered.files,
+    // Two ways of publishing put the export under different paths, and
+    // two ways of importing are two call sites, so no pair of these
+    // programs is the same program written twice. The invariants are
+    // the whole oracle.
+    baselineFiles: rendered.files,
     summaries,
     findings,
     harnessFailures: [],

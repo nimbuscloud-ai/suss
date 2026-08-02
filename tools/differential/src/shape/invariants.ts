@@ -9,6 +9,7 @@
 // program never enters into it.
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { ExpectedConfigRead } from "./envShape.js";
 
 export interface InvariantViolation {
   invariant: string;
@@ -22,6 +23,24 @@ export interface ShapeExpectation {
   boundaryCount: number;
   /** The name the unit carries in source, when it has one. */
   unitName: string | null;
+  /**
+   * The runtime configuration the program reads. Left out by families
+   * that read none, and then the config invariants say nothing.
+   */
+  configReads?: ExpectedConfigRead[];
+  /**
+   * The subject a message consumer answers to, when the program states
+   * one. A consumer whose subject nothing reports pairs with no
+   * producer.
+   */
+  channel?: string | null;
+  /** The GraphQL field the program says this resolver answers. */
+  resolver?: { typeName: string; fieldName: string };
+  /**
+   * The path a package publishes the unit under. Nothing pairs a call
+   * site with a provider that has no path to name it by.
+   */
+  exportPath?: string[];
 }
 
 /**
@@ -123,17 +142,83 @@ const everyBoundaryCanPair: Invariant = (summaries, expectation) =>
         `${summary.identity.name} is a ${summary.kind} with no boundary binding, so nothing can pair with it`,
       );
     }
-    if (binding.semantics.name !== "rest") {
-      return [];
+    if (binding.semantics.name === "rest") {
+      const { method, path } = binding.semantics;
+      return method === "" || path === ""
+        ? violation(
+            "everyBoundaryCanPair",
+            `${summary.identity.name} binds to rest with method ${JSON.stringify(method)} and path ${JSON.stringify(path)}, which pairs with nothing`,
+          )
+        : [];
     }
-    const { method, path } = binding.semantics;
-    return method === "" || path === ""
-      ? violation(
-          "everyBoundaryCanPair",
-          `${summary.identity.name} binds to rest with method ${JSON.stringify(method)} and path ${JSON.stringify(path)}, which pairs with nothing`,
-        )
-      : [];
+    if (binding.semantics.name === "graphql-resolver") {
+      const { typeName, fieldName } = binding.semantics;
+      return typeName === "" || fieldName === ""
+        ? violation(
+            "everyBoundaryCanPair",
+            `${summary.identity.name} binds to graphql-resolver with type ${JSON.stringify(typeName)} and field ${JSON.stringify(fieldName)}, which pairs with nothing`,
+          )
+        : [];
+    }
+    return [];
   });
+
+const aResolverBindsToTheFieldItAnswers: Invariant = (
+  summaries,
+  expectation,
+) => {
+  const wanted = expectation.resolver;
+  if (wanted === undefined) {
+    return [];
+  }
+  const matching = ofKind(summaries, expectation);
+  const named = matching.filter((summary) => {
+    const binding = summary.identity.boundaryBinding;
+    return (
+      binding !== null &&
+      binding.semantics.name === "graphql-resolver" &&
+      binding.semantics.typeName === wanted.typeName &&
+      binding.semantics.fieldName === wanted.fieldName
+    );
+  });
+  return named.length > 0
+    ? []
+    : violation(
+        "aResolverBindsToTheFieldItAnswers",
+        `the program answers ${wanted.typeName}.${wanted.fieldName} and nothing binds to that field, so a query for it pairs with nothing (bindings: ${
+          matching
+            .map((s) => JSON.stringify(s.identity.boundaryBinding?.semantics))
+            .join(", ") || "none"
+        })`,
+      );
+};
+
+const everyExportKeepsItsPath: Invariant = (summaries, expectation) => {
+  const wanted = expectation.exportPath;
+  if (wanted === undefined) {
+    return [];
+  }
+  const matching = ofKind(summaries, expectation);
+  const carrying = matching.filter((summary) => {
+    const binding = summary.identity.boundaryBinding;
+    return (
+      binding !== null &&
+      binding.semantics.name === "function-call" &&
+      JSON.stringify(binding.semantics.exportPath ?? []) ===
+        JSON.stringify(wanted)
+    );
+  });
+  return carrying.length > 0
+    ? []
+    : violation(
+        "everyExportKeepsItsPath",
+        `the package publishes ${wanted.join(".")} and nothing binds under that path, so a call site pairs with nothing (bindings: ${
+          matching
+            .map((s) => JSON.stringify(s.identity.boundaryBinding?.semantics))
+            .join(", ") || "none"
+        })`,
+      );
+};
 
 const noRunawaySummary: Invariant = (summaries) =>
   summaries.flatMap((summary) => {
@@ -165,6 +250,78 @@ const aNamedUnitKeepsItsName: Invariant = (summaries, expectation) => {
   );
 };
 
+/** Every config-read interaction any summary in the set carries. */
+const configReadsIn = (
+  summaries: BehavioralSummary[],
+): Array<{ name: string; defaulted: boolean }> =>
+  summaries.flatMap((summary) =>
+    summary.transitions.flatMap((transition) =>
+      (transition.effects ?? []).flatMap((effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "config-read"
+          ? [
+              {
+                name: effect.interaction.name,
+                defaulted: effect.interaction.defaulted === true,
+              },
+            ]
+          : [],
+      ),
+    ),
+  );
+
+const everyConfigReadIsReported: Invariant = (summaries, expectation) => {
+  const reported = configReadsIn(summaries);
+  return (expectation.configReads ?? []).flatMap((expected) =>
+    reported.some((read) => read.name === expected.name)
+      ? []
+      : violation(
+          "everyConfigReadIsReported",
+          `the program reads ${expected.name} off process.env and no summary reports it, so nothing deploying this unit learns it needs the variable (reported: ${
+            reported.map((read) => read.name).join(", ") || "nothing"
+          })`,
+        ),
+  );
+};
+
+const aDefaultedReadSaysSo: Invariant = (summaries, expectation) => {
+  const reported = configReadsIn(summaries);
+  return (expectation.configReads ?? []).flatMap((expected) => {
+    const found = reported.find((read) => read.name === expected.name);
+    if (found === undefined || found.defaulted === expected.defaulted) {
+      return [];
+    }
+    return violation(
+      "aDefaultedReadSaysSo",
+      `the program ${expected.defaulted ? "defaults" : "does not default"} ${expected.name} and the summary says defaulted=${found.defaulted}`,
+    );
+  });
+};
+
+const everyConsumerNamesItsChannel: Invariant = (summaries, expectation) => {
+  const channel = expectation.channel;
+  if (channel === undefined || channel === null) {
+    return [];
+  }
+  const matching = ofKind(summaries, expectation);
+  const bound = matching.filter((summary) => {
+    const binding = summary.identity.boundaryBinding;
+    return (
+      binding !== null &&
+      binding.semantics.name === "message-bus" &&
+      binding.semantics.channel === channel
+    );
+  });
+  return bound.length > 0
+    ? []
+    : violation(
+        "everyConsumerNamesItsChannel",
+        `the program says this consumer answers to ${JSON.stringify(channel)} and no summary binds to that channel, so it pairs with no producer (bindings: ${matching
+          .map((s) => JSON.stringify(s.identity.boundaryBinding?.semantics))
+          .join(", ")})`,
+      );
+};
+
 export const INVARIANTS: Record<string, Invariant> = {
   everyAnnouncedBoundaryIsSummarized,
   noBoundarySummarizedTwice,
@@ -173,6 +330,11 @@ export const INVARIANTS: Record<string, Invariant> = {
   everyBoundaryCanPair,
   noRunawaySummary,
   aNamedUnitKeepsItsName,
+  aResolverBindsToTheFieldItAnswers,
+  everyExportKeepsItsPath,
+  everyConfigReadIsReported,
+  aDefaultedReadSaysSo,
+  everyConsumerNamesItsChannel,
 };
 
 export function checkInvariants(

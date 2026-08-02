@@ -13,10 +13,21 @@ import {
   repairComponentShape,
   SIMPLEST_COMPONENT_SHAPE,
 } from "./componentShape.js";
+import { SIMPLEST_ENV_SHAPE } from "./envShape.js";
+import { SIMPLEST_PACKAGE_SHAPE } from "./packageShape.js";
+import { SIMPLEST_QUEUE_SHAPE } from "./queueShape.js";
+import {
+  SIMPLEST_APOLLO_RESOLVER,
+  SIMPLEST_NEST_RESOLVER,
+} from "./resolverShape.js";
 import { type ShapeSpec, SIMPLEST_SHAPE } from "./shapeProgram.js";
 
 import type { ComponentProgram } from "../jsx/componentProgram.js";
 import type { HandlerProgram } from "../program.js";
+import type { EnvShapeSpec } from "./envShape.js";
+import type { PackageShapeSpec } from "./packageShape.js";
+import type { QueueShapeSpec } from "./queueShape.js";
+import type { ApolloResolverSpec, NestResolverSpec } from "./resolverShape.js";
 import type { ShapeFinding, ShapeResult } from "./shapeDifferential.js";
 
 /**
@@ -122,6 +133,102 @@ const componentCandidates = (spec: ComponentShapeSpec): ComponentShapeSpec[] =>
       : [{ ...spec, route: SIMPLEST_COMPONENT_SHAPE.route }]),
     ...componentBodyCandidates(spec.body).map((body) => ({ ...spec, body })),
   ].map(repairComponentShape);
+
+const apolloCandidates = (spec: ApolloResolverSpec): ApolloResolverSpec[] => [
+  ...(spec.route === SIMPLEST_APOLLO_RESOLVER.route
+    ? []
+    : [{ ...spec, route: SIMPLEST_APOLLO_RESOLVER.route }]),
+  ...(spec.field === SIMPLEST_APOLLO_RESOLVER.field
+    ? []
+    : [{ ...spec, field: SIMPLEST_APOLLO_RESOLVER.field }]),
+  ...(spec.owner === SIMPLEST_APOLLO_RESOLVER.owner
+    ? []
+    : [{ ...spec, owner: SIMPLEST_APOLLO_RESOLVER.owner }]),
+];
+
+const nestResolverCandidates = (spec: NestResolverSpec): NestResolverSpec[] => [
+  ...(spec.announcement === SIMPLEST_NEST_RESOLVER.announcement
+    ? []
+    : [{ ...spec, announcement: SIMPLEST_NEST_RESOLVER.announcement }]),
+  ...(spec.operation === SIMPLEST_NEST_RESOLVER.operation
+    ? []
+    : [{ ...spec, operation: SIMPLEST_NEST_RESOLVER.operation }]),
+  ...(spec.method === SIMPLEST_NEST_RESOLVER.method
+    ? []
+    : [{ ...spec, method: SIMPLEST_NEST_RESOLVER.method }]),
+];
+
+/** The smallest Apollo resolver shape that still shows the finding. */
+export async function minimizeApolloResolverShape(
+  spec: ApolloResolverSpec,
+  target: string,
+  run: Runner<ApolloResolverSpec>,
+): Promise<ApolloResolverSpec> {
+  return reduce(spec, target, apolloCandidates, run);
+}
+
+/** The smallest NestJS resolver shape that still shows the finding. */
+export async function minimizeNestResolverShape(
+  spec: NestResolverSpec,
+  target: string,
+  run: Runner<NestResolverSpec>,
+): Promise<NestResolverSpec> {
+  return reduce(spec, target, nestResolverCandidates, run);
+}
+
+const envCandidates = (spec: EnvShapeSpec): EnvShapeSpec[] => [
+  ...(spec.site === SIMPLEST_ENV_SHAPE.site
+    ? []
+    : [{ ...spec, site: SIMPLEST_ENV_SHAPE.site }]),
+  ...(spec.form === SIMPLEST_ENV_SHAPE.form
+    ? []
+    : [{ ...spec, form: SIMPLEST_ENV_SHAPE.form }]),
+];
+
+/** The smallest env shape that still shows the given finding. */
+export async function minimizeEnvShape(
+  spec: EnvShapeSpec,
+  target: string,
+  run: Runner<EnvShapeSpec>,
+): Promise<EnvShapeSpec> {
+  return reduce(spec, target, envCandidates, run);
+}
+
+const queueCandidates = (spec: QueueShapeSpec): QueueShapeSpec[] => [
+  ...(spec.build === SIMPLEST_QUEUE_SHAPE.build
+    ? []
+    : [{ ...spec, build: SIMPLEST_QUEUE_SHAPE.build }]),
+  ...(spec.config === SIMPLEST_QUEUE_SHAPE.config
+    ? []
+    : [{ ...spec, config: SIMPLEST_QUEUE_SHAPE.config }]),
+];
+
+/** The smallest queue-consumer shape that still shows the finding. */
+export async function minimizeQueueShape(
+  spec: QueueShapeSpec,
+  target: string,
+  run: Runner<QueueShapeSpec>,
+): Promise<QueueShapeSpec> {
+  return reduce(spec, target, queueCandidates, run);
+}
+
+const packageCandidates = (spec: PackageShapeSpec): PackageShapeSpec[] => [
+  ...(spec.route === SIMPLEST_PACKAGE_SHAPE.route
+    ? []
+    : [{ ...spec, route: SIMPLEST_PACKAGE_SHAPE.route }]),
+  ...(spec.form === SIMPLEST_PACKAGE_SHAPE.form
+    ? []
+    : [{ ...spec, form: SIMPLEST_PACKAGE_SHAPE.form }]),
+];
+
+/** The smallest package-boundary shape that still shows the finding. */
+export async function minimizePackageShape(
+  spec: PackageShapeSpec,
+  target: string,
+  run: Runner<PackageShapeSpec>,
+): Promise<PackageShapeSpec> {
+  return reduce(spec, target, packageCandidates, run);
+}
 
 /** The smallest shape that still shows the given finding. */
 export async function minimizeShape(

@@ -22,19 +22,44 @@ import { reactFramework } from "@suss/framework-react";
 import {
   ALL_SHAPE_TARGETS,
   ANNOUNCEMENT_BUGS,
+  APOLLO_RESOLVER_BUGS,
+  arbApolloResolverSpec,
   arbComponentShapeSpec,
+  arbEnvShapeSpec,
+  arbNestResolverSpec,
+  arbPackageShapeSpec,
+  arbQueueShapeSpec,
   arbShapeSpec,
   COMPONENT_BUGS,
+  ENV_BUGS,
   findingSignature,
   formatShapeFailure,
   KNOWN_SIGNATURES,
+  minimizeApolloResolverShape,
   minimizeComponentShape,
+  minimizeEnvShape,
+  minimizeNestResolverShape,
+  minimizePackageShape,
+  minimizeQueueShape,
   minimizeShape,
+  NEST_RESOLVER_BUGS,
+  PACKAGE_BUGS,
+  QUEUE_BUGS,
   repairComponentShape,
   runAnnounceShapeDifferential,
+  runApolloResolverDifferential,
   runComponentShapeDifferential,
+  runEnvShapeDifferential,
+  runNestResolverDifferential,
+  runPackageShapeDifferential,
+  runQueueShapeDifferential,
   runShapeDifferential,
   SIMPLEST_ANNOUNCEMENT,
+  SIMPLEST_APOLLO_RESOLVER,
+  SIMPLEST_ENV_SHAPE,
+  SIMPLEST_NEST_RESOLVER,
+  SIMPLEST_PACKAGE_SHAPE,
+  SIMPLEST_QUEUE_SHAPE,
   shapeFailed,
 } from "./dist/index.js";
 
@@ -81,10 +106,59 @@ const families = [
         runComponentShapeDifferential(candidate, pack),
       ),
   },
+  {
+    name: "apollo",
+    arb: arbApolloResolverSpec,
+    run: runApolloResolverDifferential,
+    minimize: (spec, signature) =>
+      minimizeApolloResolverShape(
+        spec,
+        signature,
+        runApolloResolverDifferential,
+      ),
+  },
+  {
+    name: "nestjs-graphql",
+    arb: arbNestResolverSpec,
+    run: runNestResolverDifferential,
+    minimize: (spec, signature) =>
+      minimizeNestResolverShape(spec, signature, runNestResolverDifferential),
+  },
+  {
+    name: "runtime-config",
+    arb: arbEnvShapeSpec,
+    run: runEnvShapeDifferential,
+    minimize: (spec, signature) =>
+      minimizeEnvShape(spec, signature, runEnvShapeDifferential),
+  },
+  {
+    // Two packages and a manifest on disk per program, and thirty-five
+    // combinations to cover.
+    name: "package",
+    arb: arbPackageShapeSpec,
+    programs: Math.max(50, Math.round(programs / 8)),
+    run: runPackageShapeDifferential,
+    minimize: (spec, signature) =>
+      minimizePackageShape(spec, signature, runPackageShapeDifferential),
+  },
+  {
+    // Writes a template and reads it back, so a program here costs
+    // several times what an in-memory one does. The space is also
+    // smaller: two dimensions, thirty-six combinations.
+    name: "queue",
+    arb: arbQueueShapeSpec,
+    programs: Math.max(50, Math.round(programs / 8)),
+    run: runQueueShapeDifferential,
+    minimize: (spec, signature) =>
+      minimizeQueueShape(spec, signature, runQueueShapeDifferential),
+  },
 ];
 
 for (const family of families) {
-  const specs = fc.sample(family.arb, { numRuns: programs, seed });
+  const specs = fc.sample(family.arb, {
+    numRuns: family.programs ?? programs,
+    seed,
+  });
   const started = performance.now();
   const unknown = new Map();
   for (const spec of specs) {
@@ -147,6 +221,53 @@ for (const bug of COMPONENT_BUGS) {
     problems.push(
       `${bug.dimension}=${bug.value} no longer reports ${bug.signature}, so "${bug.wrong}" looks fixed. Promote it into the sound tier and take it out of knownBugs.ts`,
     );
+  }
+}
+
+// The families whose pinned bugs are one spec each: start from the
+// plainest spelling, apply the bug's dimension, and require the same
+// finding the pinned test requires.
+const pinnedFamilies = [
+  {
+    bugs: APOLLO_RESOLVER_BUGS,
+    simplest: SIMPLEST_APOLLO_RESOLVER,
+    run: runApolloResolverDifferential,
+  },
+  {
+    bugs: NEST_RESOLVER_BUGS,
+    simplest: SIMPLEST_NEST_RESOLVER,
+    run: runNestResolverDifferential,
+  },
+  {
+    bugs: ENV_BUGS,
+    simplest: { ...SIMPLEST_ENV_SHAPE, varName: "SERVICE_URL" },
+    run: runEnvShapeDifferential,
+  },
+  {
+    bugs: QUEUE_BUGS,
+    simplest: SIMPLEST_QUEUE_SHAPE,
+    run: runQueueShapeDifferential,
+  },
+  {
+    bugs: PACKAGE_BUGS,
+    simplest: SIMPLEST_PACKAGE_SHAPE,
+    run: runPackageShapeDifferential,
+  },
+];
+
+for (const family of pinnedFamilies) {
+  for (const bug of family.bugs) {
+    const spec = {
+      ...family.simplest,
+      ...bug.alongside,
+      [bug.dimension]: bug.value,
+    };
+    const result = await family.run(spec);
+    if (!result.findings.map(findingSignature).includes(bug.signature)) {
+      problems.push(
+        `${bug.dimension}=${bug.value} no longer reports ${bug.signature}, so "${bug.wrong}" looks fixed. Promote it into the sound tier and take it out of knownBugs.ts`,
+      );
+    }
   }
 }
 
