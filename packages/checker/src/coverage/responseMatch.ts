@@ -1,3 +1,5 @@
+import { summaryRef } from "@suss/behavioral-ir";
+
 import type {
   BehavioralSummary,
   BoundaryBinding,
@@ -16,6 +18,18 @@ export function extractResponseStatus(t: Transition): number | null {
     return sc.value;
   }
   return null;
+}
+
+/**
+ * Whether a status code is in the 2xx class.
+ *
+ * Several checks ask this to decide whether a consumer's default branch
+ * covers a provider status, so they have to agree on where the class
+ * ends. Writing the range out at each of them is how one of them ends up
+ * treating 300 as a success.
+ */
+export function isSuccessStatus(status: number): boolean {
+  return status >= 200 && status < 300;
 }
 
 export function hasOpaqueStatus(t: Transition): boolean {
@@ -128,7 +142,7 @@ export function makeSide(
   transitionId?: string,
 ): FindingSide {
   const side: FindingSide = {
-    summary: `${summary.location.file}::${summary.identity.name}`,
+    summary: summaryRef(summary),
     location: summary.location,
   };
   if (transitionId) {

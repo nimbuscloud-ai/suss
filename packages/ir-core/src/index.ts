@@ -85,6 +85,14 @@ export type { TypeShape } from "./schemas.js";
 // needs and must agree on. They live here so neither the behavioural
 // checker nor the intent checker owns them (and so the two can't drift).
 
+// ---------------------------------------------------------------------------
+// Shared comparison primitives
+// ---------------------------------------------------------------------------
+//
+// Pure operations over the primitives above that more than one checker
+// needs and must agree on. They live here so neither the behavioural
+// checker nor the intent checker owns them (and so the two can't drift).
+
 export { boundaryKey, normalizePath } from "./boundaryKey.js";
 export {
   busesAgree,
@@ -93,6 +101,7 @@ export {
   parseChannel,
 } from "./channel.js";
 export { codeScopePath, fileInCodeScope } from "./codeScope.js";
+export { type DispatchTable, dispatchByType } from "./dispatch.js";
 export {
   applySuppressionsToFindings,
   countsForThreshold,

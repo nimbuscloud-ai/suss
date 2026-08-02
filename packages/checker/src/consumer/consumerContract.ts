@@ -8,12 +8,13 @@
 
 import { providerCoversConsumerFields } from "../body/bodyCompatibility.js";
 import {
-  bodyAccessorsFor,
   readDeclaredContract,
   statusAccessorsFor,
+  unwrapBodyField,
 } from "../contract/declaredContract.js";
 import {
   consumerExpectedStatuses,
+  isSuccessStatus,
   makeBoundary,
   makeSide,
 } from "../coverage/responseMatch.js";
@@ -57,7 +58,7 @@ export function checkConsumerContract(
     }
 
     const consumerBodyShape = unwrapBodyField(expectedInput, consumer);
-    if (consumerBodyShape === null || consumerBodyShape.type !== "record") {
+    if (consumerBodyShape.type !== "record") {
       continue;
     }
 
@@ -66,7 +67,7 @@ export function checkConsumerContract(
       statuses.length > 0
         ? statuses
         : ct.isDefault
-          ? [...declaredBodies.keys()].filter((s) => s >= 200 && s < 300)
+          ? [...declaredBodies.keys()].filter(isSuccessStatus)
           : [];
 
     for (const status of statusesToCheck) {
@@ -103,20 +104,4 @@ export function checkConsumerContract(
   }
 
   return findings;
-}
-
-function unwrapBodyField(
-  shape: TypeShape,
-  consumer: BehavioralSummary,
-): TypeShape | null {
-  if (shape.type !== "record") {
-    return shape;
-  }
-  for (const accessor of bodyAccessorsFor(consumer)) {
-    const wrapped = shape.properties[accessor];
-    if (wrapped !== undefined) {
-      return wrapped;
-    }
-  }
-  return shape;
 }

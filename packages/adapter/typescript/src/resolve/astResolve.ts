@@ -14,6 +14,8 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { peelSyntax } from "../walk/unwrap.js";
+
 import type { TypeShape } from "@suss/behavioral-ir";
 import type {
   ArrowFunction,
@@ -329,7 +331,7 @@ function dedupe(shapes: TypeShape[]): TypeShape[] {
  * narrowing would have tightened; we defer those to the type checker.
  */
 function isInformativeInitializer(node: Node): boolean {
-  const unwrapped = unwrapInitializer(node);
+  const unwrapped = peelSyntax(node);
 
   if (
     Node.isStringLiteral(unwrapped) ||
@@ -357,41 +359,6 @@ function isInformativeInitializer(node: Node): boolean {
     kind === SyntaxKind.FalseKeyword ||
     kind === SyntaxKind.NullKeyword
   );
-}
-
-/**
- * Peel the same shape-preserving wrappers `extractShape` peels, so we judge
- * informativeness on the underlying expression. Must mirror `shapes.ts`'s
- * `unwrap` — but we don't unwrap `await`, since await's declared type is the
- * call's return type (still widened at declaration), and we want to bail out
- * there.
- */
-function unwrapInitializer(node: Node): Node {
-  let current = node;
-  for (let i = 0; i < 16; i++) {
-    if (Node.isAsExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isTypeAssertion(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isParenthesizedExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isNonNullExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isSatisfiesExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    break;
-  }
-  return current;
 }
 
 /**

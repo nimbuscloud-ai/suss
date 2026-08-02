@@ -184,12 +184,9 @@ export function collectAncestorBranches(
   );
 }
 
-/** True if `maybeAncestor` is the same node as `node` or contains `node` as a descendant. */
-function isAncestorOrSelf(maybeAncestor: Node, node: Node): boolean {
-  if (maybeAncestor === node) {
-    return true;
-  }
-  let current: Node | undefined = node.getParent();
+/** True if `maybeAncestor` is `node` itself or contains it as a descendant. */
+export function isAncestorOrSelf(maybeAncestor: Node, node: Node): boolean {
+  let current: Node | undefined = node;
   while (current !== undefined) {
     if (current === maybeAncestor) {
       return true;

@@ -15,6 +15,8 @@
 // Emits `contractDisagreement` findings. No IR or checker change is
 // required for Layer 1; this is additive.
 
+import { summaryRef } from "@suss/behavioral-ir";
+
 import { bodyShapesMatch } from "../body/bodyMatch.js";
 import { makeSide } from "../coverage/responseMatch.js";
 import { boundaryKey } from "../pairing/pairing.js";
@@ -126,9 +128,7 @@ function compareSources(
     const representative =
       sources.find((s) => declaringSources.has(s.summary.identity.name)) ??
       sources[0];
-    const sortedSources = [...sources].map(
-      (s) => `${s.summary.location.file}::${s.summary.identity.name}`,
-    );
+    const sortedSources = [...sources].map((s) => summaryRef(s.summary));
     sortedSources.sort();
 
     findings.push({
@@ -194,8 +194,8 @@ function compareSources(
         description: `Sources disagree on body shape for status ${status} at ${boundaryKey(boundary) ?? "this boundary"}: ${baseline.summary.identity.name} and ${other.summary.identity.name} declare incompatible schemas`,
         severity: "warning",
         sources: [
-          `${baseline.summary.location.file}::${baseline.summary.identity.name}`,
-          `${other.summary.location.file}::${other.summary.identity.name}`,
+          summaryRef(baseline.summary),
+          summaryRef(other.summary),
         ].sort(),
       });
     }

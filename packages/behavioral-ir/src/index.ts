@@ -39,6 +39,8 @@ import type { z } from "zod";
 // binding constructors so existing `@suss/behavioral-ir` consumers reach
 // them unchanged; behaviour-specific types are derived from schemas.ts below.
 export {
+  type DispatchTable,
+  dispatchByType,
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
@@ -105,6 +107,23 @@ export type SummaryDiff = z.infer<typeof SummaryDiffSchema>;
 
 export type FindingSide = z.infer<typeof FindingSideSchema>;
 export type Finding = z.infer<typeof FindingSchema>;
+
+// ---------------------------------------------------------------------------
+// Naming a summary
+// ---------------------------------------------------------------------------
+
+/**
+ * Name a summary the way a finding refers to it.
+ *
+ * The string this returns is read back as well as printed: the checker
+ * deduplicates findings by it, and a `.sussignore` rule matches against
+ * it. Both sides therefore have to agree on the separator and on which
+ * two fields go into it, which is why one function owns the format
+ * rather than each caller writing the template literal out.
+ */
+export function summaryRef(summary: BehavioralSummary): string {
+  return `${summary.location.file}::${summary.identity.name}`;
+}
 
 // ---------------------------------------------------------------------------
 // Boundary role (provider vs consumer)

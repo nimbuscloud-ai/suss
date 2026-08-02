@@ -30,6 +30,8 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { peelParens } from "../walk/unwrap.js";
+
 import type {
   CallExpression,
   Expression,
@@ -381,7 +383,7 @@ function returnedObjects(fn: FunctionLike): ObjectLiteralExpression[] {
   // Expression-bodied arrow: `(s, p) => ({ statusCode: s, body: p })`.
   // The parentheses are required by the grammar, so unwrap them.
   if (!Node.isBlock(body)) {
-    const expression = unwrapParens(body);
+    const expression = peelParens(body);
     return Node.isObjectLiteralExpression(expression) ? [expression] : [];
   }
 
@@ -398,18 +400,12 @@ function returnedObjects(fn: FunctionLike): ObjectLiteralExpression[] {
     if (expression === undefined) {
       continue;
     }
-    const unwrapped = unwrapParens(expression);
+    const unwrapped = peelParens(expression);
     if (Node.isObjectLiteralExpression(unwrapped)) {
       found.push(unwrapped);
     }
   }
   return found;
-}
-
-function unwrapParens(node: TsNode): TsNode {
-  return Node.isParenthesizedExpression(node)
-    ? unwrapParens(node.getExpression())
-    : node;
 }
 
 /**

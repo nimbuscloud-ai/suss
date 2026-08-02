@@ -12,6 +12,7 @@ import { statusAccessorsFor } from "../contract/declaredContract.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
+  isSuccessStatus,
   makeBoundary,
   makeSide,
 } from "../coverage/responseMatch.js";
@@ -406,7 +407,7 @@ export function checkSemanticBridging(
 
     // Find consumer transitions that handle this status
     const consumerForStatus = consumer.transitions.filter((ct) => {
-      if (ct.isDefault && status >= 200 && status < 300) {
+      if (ct.isDefault && isSuccessStatus(status)) {
         return true;
       }
       return consumerExpectedStatuses(ct, statusAccessors).includes(status);

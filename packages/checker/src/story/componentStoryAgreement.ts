@@ -24,7 +24,7 @@
 // (snapshot reader, play parsing) — they're the direction this file
 // grows.
 
-import { functionCallBinding } from "@suss/behavioral-ir";
+import { functionCallBinding, summaryRef } from "@suss/behavioral-ir";
 
 import type {
   BehavioralSummary,
@@ -281,11 +281,11 @@ function makeUnknownArgFinding(
     aspect: "construct",
     boundary: component.identity.boundaryBinding ?? fallbackReactBinding(),
     provider: {
-      summary: `${component.location.file}::${component.identity.name}`,
+      summary: summaryRef(component),
       location: component.location,
     },
     consumer: {
-      summary: `${story.location.file}::${story.identity.name}`,
+      summary: summaryRef(story),
       location: story.location,
     },
     description: `Story "${meta.story ?? story.identity.name}" provides arg "${argName}" but component "${component.identity.name}" does not declare it as an input.`,
@@ -309,11 +309,11 @@ function makeCoverageGapFinding(
     kind: "scenarioCoverageGap",
     boundary: component.identity.boundaryBinding ?? fallbackReactBinding(),
     provider: {
-      summary: `${component.location.file}::${component.identity.name}`,
+      summary: summaryRef(component),
       location: component.location,
     },
     consumer: {
-      summary: `${representative.location.file}::${representative.identity.name}`,
+      summary: summaryRef(representative),
       location: representative.location,
     },
     description: `Component "${component.identity.name}" has a conditional branch on prop "${prop}" but no story supplies it (stories: ${storyNames}). The branches depending on "${prop}" have no declared scenario exercising them.`,

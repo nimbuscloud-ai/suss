@@ -17,6 +17,8 @@
 // comparison). Cross-source comparison still runs even when one side
 // is `derived` — that's the point.
 
+import { summaryRef } from "@suss/behavioral-ir";
+
 import { bodyShapesMatch } from "../body/bodyMatch.js";
 import { makeSide } from "../coverage/responseMatch.js";
 import { boundaryKey } from "../pairing/pairing.js";
@@ -133,8 +135,8 @@ function compareGraphqlSources(
         description: `GraphQL sources disagree on return type at ${key}: ${baseline.summary.identity.name} and ${other.summary.identity.name} declare incompatible types`,
         severity: "warning",
         sources: [
-          `${baseline.summary.location.file}::${baseline.summary.identity.name}`,
-          `${other.summary.location.file}::${other.summary.identity.name}`,
+          summaryRef(baseline.summary),
+          summaryRef(other.summary),
         ].sort(),
       });
     }
@@ -159,8 +161,8 @@ function compareGraphqlSources(
             description: `GraphQL sources disagree on argument "${name}" type at ${key}: ${baseline.summary.identity.name} and ${other.summary.identity.name} declare incompatible argument types`,
             severity: "warning",
             sources: [
-              `${baseline.summary.location.file}::${baseline.summary.identity.name}`,
-              `${other.summary.location.file}::${other.summary.identity.name}`,
+              summaryRef(baseline.summary),
+              summaryRef(other.summary),
             ].sort(),
           });
         }
@@ -184,8 +186,8 @@ function compareGraphqlSources(
           description: `GraphQL sources disagree on argument set at ${key}: ${declaring.summary.identity.name} declares argument "${name}" but ${missing.summary.identity.name} omits it`,
           severity: "warning",
           sources: [
-            `${baseline.summary.location.file}::${baseline.summary.identity.name}`,
-            `${other.summary.location.file}::${other.summary.identity.name}`,
+            summaryRef(baseline.summary),
+            summaryRef(other.summary),
           ].sort(),
         });
       }

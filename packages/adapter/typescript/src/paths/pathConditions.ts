@@ -46,6 +46,7 @@ import {
   type ConditionInfo,
   collectAncestorConditionInfosBelow,
   type FunctionRoot,
+  isAncestorOrSelf,
 } from "../conditions.js";
 
 /** Paths for one terminal: each entry is one path's condition list. */
@@ -197,17 +198,6 @@ function classify(path: PathCond[], terminal: Node | null): ConditionInfo[] {
     const source = cond.oppositeExit === "throw" ? "earlyThrow" : "earlyReturn";
     return { ...cond.info, source };
   });
-}
-
-function isAncestorOrSelf(maybeAncestor: Node, node: Node): boolean {
-  let current: Node | undefined = node;
-  while (current !== undefined) {
-    if (current === maybeAncestor) {
-      return true;
-    }
-    current = current.getParent();
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------

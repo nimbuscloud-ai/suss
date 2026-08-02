@@ -4,6 +4,8 @@
 
 import { Node } from "ts-morph";
 
+import { peelParens } from "../walk/unwrap.js";
+
 import type { RenderNode } from "@suss/behavioral-ir";
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { JsxOpeningElement, JsxSelfClosingElement } from "ts-morph";
@@ -215,7 +217,7 @@ function jsxExpressionToRenderNode(expr: Node): RenderNode {
   if (Node.isBinaryExpression(expr)) {
     const op = expr.getOperatorToken().getText();
     if (op === "&&") {
-      const right = renderAlternative(unwrapParens(expr.getRight()));
+      const right = renderAlternative(peelParens(expr.getRight()));
       if (right.kind === "jsx") {
         return {
           type: "conditional",
@@ -228,8 +230,8 @@ function jsxExpressionToRenderNode(expr: Node): RenderNode {
   }
 
   if (Node.isConditionalExpression(expr)) {
-    const truthy = renderAlternative(unwrapParens(expr.getWhenTrue()));
-    const falsy = renderAlternative(unwrapParens(expr.getWhenFalse()));
+    const truthy = renderAlternative(peelParens(expr.getWhenTrue()));
+    const falsy = renderAlternative(peelParens(expr.getWhenFalse()));
 
     if (truthy.kind === "jsx") {
       return {
@@ -288,10 +290,4 @@ function renderAlternative(node: Node): AlternativeResult {
     }
   }
   return { kind: "notStatic" };
-}
-
-function unwrapParens(node: Node): Node {
-  return Node.isParenthesizedExpression(node)
-    ? unwrapParens(node.getExpression())
-    : node;
 }

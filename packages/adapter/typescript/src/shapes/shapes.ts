@@ -34,6 +34,7 @@ import {
 } from "ts-morph";
 
 import { resolveNodeFromAst } from "../resolve/astResolve.js";
+import { peelSyntax } from "../walk/unwrap.js";
 import { shapeFromNodeType } from "./typeShapes.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -94,7 +95,7 @@ export function extractShapeWithArguments(
 }
 
 function extractShapeInner(node: Node): TypeShape | null {
-  const unwrapped = unwrap(node);
+  const unwrapped = peelSyntax(node);
 
   if (boundArguments !== null && Node.isIdentifier(unwrapped)) {
     const argument = boundArguments.get(unwrapped.getText());
@@ -199,44 +200,6 @@ function extractShapeInner(node: Node): TypeShape | null {
     return astShape;
   }
   return shapeFromNodeType(unwrapped);
-}
-
-/**
- * Strip wrappers that don't affect the value's shape: `as` / angle-bracket
- * type assertions, `!` non-null assertions, parentheses, `await`, and
- * satisfies clauses.
- */
-function unwrap(node: Node): Node {
-  let current = node;
-  // Each pass peels one layer; loop until we hit something with semantic
-  // weight. Explicit bound to avoid pathological depth via odd ASTs.
-  for (let i = 0; i < 16; i++) {
-    if (Node.isAsExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isTypeAssertion(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isParenthesizedExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isNonNullExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    if (Node.isSatisfiesExpression(current)) {
-      current = current.getExpression();
-      continue;
-    }
-    // Don't unwrap AwaitExpression: TypeScript's inferred type for the
-    // await node itself is the resolved value (Promise unwrapping). Peeling
-    // to the operand would hand us `Promise<T>` instead of `T`.
-    break;
-  }
-  return current;
 }
 
 /**
