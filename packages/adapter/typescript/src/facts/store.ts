@@ -7,10 +7,11 @@
 // resolveWrittenValue: which expression is this value written as, for
 // callers after something that is neither a function nor an object.
 //
-// importsTransitively: does this file reach any of these packages
-// through its imports, following project-local re-export chains. The
-// per-file import check is defeated by a barrel package that
-// re-exports an SDK; this one is not.
+// filesImportingTransitively: for each set of files and packages, which
+// of those files reach any of those packages through their imports,
+// following project-local re-export chains. The per-file import check
+// is defeated by a barrel package that re-exports an SDK; this one is
+// not.
 //
 // Facts are extracted per file on demand and only along the module
 // edges a query follows, so cost tracks the indirection present, not
@@ -31,6 +32,11 @@ import {
   nodeId,
   packagesDeclaring,
 } from "./extract.js";
+import {
+  type FileSetQuery,
+  ModuleGraph,
+  namesAnyPackage,
+} from "./moduleGraph.js";
 
 import type { TransparentWrapper } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
@@ -69,8 +75,8 @@ export class ResolutionStore {
   private readonly table: NodeTable = createNodeTable();
   private readonly fullyExtracted = new Set<string>();
   private readonly seededValues = new Set<string>();
-  private readonly gateAnswers = new Map<string, Map<string, boolean>>();
   private readonly importedNames = new Map<string, string[]>();
+  private readonly graph = new ModuleGraph();
 
   private resolvedBySource = new Map<string, string[]>();
   private comesToBySource = new Map<string, string[]>();
@@ -211,7 +217,7 @@ export class ResolutionStore {
         }
         walked.add(sourceFile.getFilePath());
         this.extractFile(sourceFile);
-        next.push(...referencedProjectFiles(sourceFile));
+        next.push(...this.graph.importedFilesOf(sourceFile));
       }
       const found = ask();
       if (found !== null) {
@@ -288,54 +294,14 @@ export class ResolutionStore {
   }
 
   /**
-   * Whether `file` reaches any of `packages` through its imports,
-   * following project-local re-export chains.
-   *
-   * A walk rather than a rule: the answer is one boolean per file, and
-   * deriving the full reachable-module relation for every file in a
-   * large repo costs far more than the question is worth.
+   * For each set of files and packages, which of those files reach any
+   * of those packages through their imports, following project-local
+   * re-export chains.
    */
-  importsTransitively(sourceFile: SourceFile, packages: string[]): boolean {
-    const gateKey = JSON.stringify(packages);
-    let answers = this.gateAnswers.get(gateKey);
-    if (answers === undefined) {
-      answers = new Map();
-      this.gateAnswers.set(gateKey, answers);
-    }
-
-    const cached = answers.get(sourceFile.getFilePath());
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    const visited = new Set<string>();
-    const queue = [sourceFile];
-    while (queue.length > 0) {
-      const current = queue.pop() as SourceFile;
-      const currentPath = current.getFilePath();
-      if (visited.has(currentPath)) {
-        continue;
-      }
-      visited.add(currentPath);
-
-      if (answers.get(currentPath) === true) {
-        answers.set(sourceFile.getFilePath(), true);
-        return true;
-      }
-      if (matchesAnyGate(moduleSpecifiers(current), packages)) {
-        answers.set(currentPath, true);
-        answers.set(sourceFile.getFilePath(), true);
-        return true;
-      }
-      queue.push(...referencedProjectFiles(current));
-    }
-
-    // Nothing in the closure reaches a gate, so every file walked has
-    // the same answer: its own reachable set is a subset of this one.
-    for (const walked of visited) {
-      answers.set(walked, false);
-    }
-    return false;
+  filesImportingTransitively(
+    fileSets: ReadonlyArray<FileSetQuery>,
+  ): ReadonlyArray<ReadonlySet<SourceFile>> {
+    return this.graph.filesReachingAnyPackage(fileSets);
   }
 
   /**
@@ -395,46 +361,6 @@ export class ResolutionStore {
   }
 }
 
-function moduleSpecifiers(sourceFile: SourceFile): string[] {
-  const specifiers: string[] = [];
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    specifiers.push(importDecl.getModuleSpecifierValue());
-  }
-  for (const exportDecl of sourceFile.getExportDeclarations()) {
-    const specifier = exportDecl.getModuleSpecifierValue();
-    if (specifier !== undefined) {
-      specifiers.push(specifier);
-    }
-  }
-  return specifiers;
-}
-
-/** A gate matches the package itself and any of its subpaths. */
-function matchesAnyGate(specifiers: string[], gates: string[]): boolean {
-  return specifiers.some((specifier) =>
-    gates.some(
-      (gate) => specifier === gate || specifier.startsWith(`${gate}/`),
-    ),
-  );
-}
-
-function referencedProjectFiles(sourceFile: SourceFile): SourceFile[] {
-  const referenced: SourceFile[] = [];
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    const resolved = importDecl.getModuleSpecifierSourceFile();
-    if (resolved !== undefined) {
-      referenced.push(resolved);
-    }
-  }
-  for (const exportDecl of sourceFile.getExportDeclarations()) {
-    const resolved = exportDecl.getModuleSpecifierSourceFile();
-    if (resolved !== undefined) {
-      referenced.push(resolved);
-    }
-  }
-  return referenced;
-}
-
 /** The names among these module-and-name pairs that come from `packages`. */
 function namesFrom(pairs: string[], packages: string[]): string[] {
   const names = new Set<string>();
@@ -467,7 +393,10 @@ function namesAPackage(moduleKey: string): boolean {
  * specifier when it is not, so both readings have to answer.
  */
 function namesPackage(moduleKey: string, packages: string[]): boolean {
-  return matchesAnyGate([moduleKey, ...packagesDeclaring(moduleKey)], packages);
+  return namesAnyPackage(
+    [moduleKey, ...packagesDeclaring(moduleKey)],
+    packages,
+  );
 }
 
 /**

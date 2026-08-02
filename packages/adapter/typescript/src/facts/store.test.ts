@@ -3,7 +3,7 @@
 // matters: which function does this export resolve to, or which
 // packages does this file reach.
 
-import { type Node, Project, SyntaxKind } from "ts-morph";
+import { type Node, Project, type SourceFile, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { ResolutionStore } from "./store.js";
@@ -650,7 +650,18 @@ describe("a query rooted at a wrapped value", () => {
   });
 });
 
-describe("importsTransitively", () => {
+describe("filesImportingTransitively", () => {
+  /** Whether one file on its own reaches any of `packages`. */
+  function reaches(
+    store: ResolutionStore,
+    file: SourceFile,
+    packages: string[],
+  ): boolean {
+    return store
+      .filesImportingTransitively([{ sourceFiles: [file], packages }])[0]
+      .has(file);
+  }
+
   it("sees a direct import", () => {
     const project = projectOf({
       "/mod.ts": `import { SendMessageCommand } from "@aws-sdk/client-sqs";`,
@@ -658,7 +669,7 @@ describe("importsTransitively", () => {
     const store = new ResolutionStore();
 
     expect(
-      store.importsTransitively(project.getSourceFileOrThrow("/mod.ts"), [
+      reaches(store, project.getSourceFileOrThrow("/mod.ts"), [
         "@aws-sdk/client-sqs",
       ]),
     ).toBe(true);
@@ -677,7 +688,7 @@ describe("importsTransitively", () => {
     const store = new ResolutionStore();
 
     expect(
-      store.importsTransitively(project.getSourceFileOrThrow("/service.ts"), [
+      reaches(store, project.getSourceFileOrThrow("/service.ts"), [
         "@aws-sdk/client-sqs",
       ]),
     ).toBe(true);
@@ -692,7 +703,7 @@ describe("importsTransitively", () => {
     const store = new ResolutionStore();
 
     expect(
-      store.importsTransitively(project.getSourceFileOrThrow("/service.ts"), [
+      reaches(store, project.getSourceFileOrThrow("/service.ts"), [
         "@aws-sdk/client-sqs",
       ]),
     ).toBe(true);
@@ -705,7 +716,7 @@ describe("importsTransitively", () => {
     const store = new ResolutionStore();
 
     expect(
-      store.importsTransitively(project.getSourceFileOrThrow("/mod.ts"), [
+      reaches(store, project.getSourceFileOrThrow("/mod.ts"), [
         "@aws-sdk/client-sqs",
       ]),
     ).toBe(true);
@@ -719,13 +730,34 @@ describe("importsTransitively", () => {
     const store = new ResolutionStore();
 
     expect(
-      store.importsTransitively(project.getSourceFileOrThrow("/mod.ts"), [
+      reaches(store, project.getSourceFileOrThrow("/mod.ts"), [
         "@aws-sdk/client-sqs",
       ]),
     ).toBe(false);
   });
 
-  it("answers the same file twice from the cache", () => {
+  it("answers every file in the set from one pass", () => {
+    const project = projectOf({
+      "/aws/sqs.ts": `export { SendMessageCommand } from "@aws-sdk/client-sqs";`,
+      "/mid.ts": `export { SendMessageCommand } from "./aws/sqs";`,
+      "/service.ts": `import { SendMessageCommand } from "./mid";`,
+      "/unrelated.ts": "export const x = 1;",
+    });
+    const store = new ResolutionStore();
+    const files = project.getSourceFiles();
+
+    const [reaching] = store.filesImportingTransitively([
+      { sourceFiles: files, packages: ["@aws-sdk/client-sqs"] },
+    ]);
+
+    expect([...reaching].map((f) => f.getFilePath()).sort()).toEqual([
+      "/aws/sqs.ts",
+      "/mid.ts",
+      "/service.ts",
+    ]);
+  });
+
+  it("answers the same file twice the same way", () => {
     const project = projectOf({
       "/aws/sqs.ts": `export { SendMessageCommand } from "@aws-sdk/client-sqs";`,
       "/service.ts": `import { SendMessageCommand } from "./aws/sqs";`,
@@ -733,11 +765,11 @@ describe("importsTransitively", () => {
     const store = new ResolutionStore();
     const file = project.getSourceFileOrThrow("/service.ts");
 
-    expect(store.importsTransitively(file, ["@aws-sdk/client-sqs"])).toBe(true);
-    expect(store.importsTransitively(file, ["@aws-sdk/client-sqs"])).toBe(true);
+    expect(reaches(store, file, ["@aws-sdk/client-sqs"])).toBe(true);
+    expect(reaches(store, file, ["@aws-sdk/client-sqs"])).toBe(true);
   });
 
-  it("reuses a yes it learned about a file deeper in the graph", () => {
+  it("carries an answer up to a file asked about later", () => {
     const project = projectOf({
       "/aws/sqs.ts": `export { SendMessageCommand } from "@aws-sdk/client-sqs";`,
       "/mid.ts": `export { SendMessageCommand } from "./aws/sqs";`,
@@ -746,20 +778,17 @@ describe("importsTransitively", () => {
     const store = new ResolutionStore();
     const gates = ["@aws-sdk/client-sqs"];
 
-    // Walking from /mid.ts records the answer for /mid.ts itself, which
-    // the walk from /service.ts then hits instead of walking further.
+    // The first ask reads /mid.ts and everything below it. The second
+    // stops at /mid.ts, and the rules carry its answer up to /service.ts.
+    expect(reaches(store, project.getSourceFileOrThrow("/mid.ts"), gates)).toBe(
+      true,
+    );
     expect(
-      store.importsTransitively(project.getSourceFileOrThrow("/mid.ts"), gates),
-    ).toBe(true);
-    expect(
-      store.importsTransitively(
-        project.getSourceFileOrThrow("/service.ts"),
-        gates,
-      ),
+      reaches(store, project.getSourceFileOrThrow("/service.ts"), gates),
     ).toBe(true);
   });
 
-  it("caches a no for every file the walk covered", () => {
+  it("keeps a no for every file the earlier ask covered", () => {
     const project = projectOf({
       "/leaf.ts": "export const x = 1;",
       "/mid.ts": `export { x } from "./leaf";`,
@@ -769,14 +798,23 @@ describe("importsTransitively", () => {
     const gates = ["@aws-sdk/client-sqs"];
 
     expect(
-      store.importsTransitively(
-        project.getSourceFileOrThrow("/service.ts"),
-        gates,
-      ),
+      reaches(store, project.getSourceFileOrThrow("/service.ts"), gates),
     ).toBe(false);
-    expect(
-      store.importsTransitively(project.getSourceFileOrThrow("/mid.ts"), gates),
-    ).toBe(false);
+    expect(reaches(store, project.getSourceFileOrThrow("/mid.ts"), gates)).toBe(
+      false,
+    );
+  });
+
+  it("answers a package nobody asked about until now", () => {
+    const project = projectOf({
+      "/mid.ts": `export { Client } from "@aws-sdk/client-s3";`,
+      "/service.ts": `import { Client } from "./mid";`,
+    });
+    const store = new ResolutionStore();
+    const service = project.getSourceFileOrThrow("/service.ts");
+
+    expect(reaches(store, service, ["@aws-sdk/client-sqs"])).toBe(false);
+    expect(reaches(store, service, ["@aws-sdk/client-s3"])).toBe(true);
   });
 
   it("walks a cycle without looping", () => {
@@ -787,7 +825,7 @@ describe("importsTransitively", () => {
     const store = new ResolutionStore();
 
     expect(
-      store.importsTransitively(project.getSourceFileOrThrow("/a.ts"), [
+      reaches(store, project.getSourceFileOrThrow("/a.ts"), [
         "@aws-sdk/client-sqs",
       ]),
     ).toBe(false);

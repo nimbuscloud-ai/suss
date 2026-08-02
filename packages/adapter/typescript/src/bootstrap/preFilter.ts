@@ -14,6 +14,8 @@
 // from `"@foo/bar"` AND `"@foo/bar/sub-path"`. Empty array (or
 // undefined) means "no gate" — the pattern applies to every file.
 
+import { namesAnyPackage } from "../facts/moduleGraph.js";
+
 import type { PatternPack } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
@@ -45,24 +47,47 @@ export function computePackApplicability(
     }
   }
 
+  const importsByFile = new Map<SourceFile, string[]>();
+  if (gatedPacks.length > 0) {
+    for (const sf of sourceFiles) {
+      importsByFile.set(
+        sf,
+        sf.getImportDeclarations().map((d) => d.getModuleSpecifierValue()),
+      );
+    }
+  }
+  const importsOf = (sf: SourceFile): string[] => importsByFile.get(sf) ?? [];
+
+  // The scan above misses a project-local barrel that re-exports the
+  // gated package. The fact layer follows re-export chains, and it
+  // answers for a whole set of files in one pass, so the files the scan
+  // ruled out go to it together rather than one at a time. Files the
+  // scan already settled stay out of it: reading their import closure
+  // would be work for an answer nobody needs.
+  const reachingByPack = new Map<PatternPack, ReadonlySet<SourceFile>>();
+  if (resolution !== undefined && gatedPacks.length > 0) {
+    const answers = resolution.filesImportingTransitively(
+      gatedPacks.map(({ gates }) => ({
+        sourceFiles: sourceFiles.filter(
+          (sf) => !namesAnyPackage(importsOf(sf), gates),
+        ),
+        packages: gates,
+      })),
+    );
+    gatedPacks.forEach(({ pack }, i) => {
+      reachingByPack.set(pack, answers[i]);
+    });
+  }
+
   const result = new Map<SourceFile, PatternPack[]>();
   for (const sf of sourceFiles) {
     const applicable: PatternPack[] = [...ungatedPacks];
-    if (gatedPacks.length > 0) {
-      const importedModules = sf
-        .getImportDeclarations()
-        .map((d) => d.getModuleSpecifierValue());
-      for (const { pack, gates } of gatedPacks) {
-        if (anyImportMatchesGate(importedModules, gates)) {
-          applicable.push(pack);
-          continue;
-        }
-        // The direct scan misses a project-local barrel that
-        // re-exports the gated package. The fact layer follows
-        // re-export chains, so ask it before ruling the pack out.
-        if (resolution?.importsTransitively(sf, gates) === true) {
-          applicable.push(pack);
-        }
+    for (const { pack, gates } of gatedPacks) {
+      if (
+        namesAnyPackage(importsOf(sf), gates) ||
+        reachingByPack.get(pack)?.has(sf) === true
+      ) {
+        applicable.push(pack);
       }
     }
     if (applicable.length > 0) {
@@ -138,22 +163,4 @@ export function collectPackGates(pack: PatternPack): string[] {
     }
   }
   return [...gates];
-}
-
-/**
- * Prefix match — `@foo/bar` matches `@foo/bar` AND `@foo/bar/sub`.
- * Mirrors how npm packages export sub-paths.
- */
-function anyImportMatchesGate(
-  importedModules: ReadonlyArray<string>,
-  gates: ReadonlyArray<string>,
-): boolean {
-  for (const mod of importedModules) {
-    for (const gate of gates) {
-      if (mod === gate || mod.startsWith(`${gate}/`)) {
-        return true;
-      }
-    }
-  }
-  return false;
 }

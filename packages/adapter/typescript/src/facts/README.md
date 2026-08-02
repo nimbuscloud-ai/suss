@@ -6,8 +6,9 @@ alias, a name re-exported through a barrel, or a `.bind`. Two functions
 follow those chains:
 
 - `resolveCallable(value)` gives the function a value ends up being.
-- `importsTransitively(file, packages)` says whether a file reaches any
-  of those packages, following re-exports through project files.
+- `filesImportingTransitively(files, packages)` gives the subset of
+  those files that reach any of those packages, following re-exports
+  through project files.
 
 ## How it works
 
@@ -73,10 +74,15 @@ later.
 Facts arrive in waves. A query extracts the file its value lives in and
 asks; only if the answer is missing does it widen to the files that file
 imports, up to six hops. A value that resolves without leaving its own
-file costs one file of extraction. The gate question does not go through
-the rules at all: it is a walk over module specifiers, memoized per gate
-set, because deriving every file's reachable-module set to answer one
-boolean is far more work than the question is worth.
+file costs one file of extraction.
+
+The gate question is asked about nearly every file in the project, so it
+is answered for all of them at once. `moduleGraph.ts` resolves each
+module specifier once, keeps the edge, and derives `reachesPackage` over
+those edges with the same engine everything else here runs on. Asking
+file by file used to walk the same subtree once per file that reached
+it: on a NestJS monorepo of 6,400 files that came to three million
+specifier resolutions for 35,000 distinct edges.
 
 ## How a value reaches the place it is used
 
