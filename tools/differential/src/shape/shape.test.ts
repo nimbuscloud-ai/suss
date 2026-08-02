@@ -22,6 +22,7 @@ import {
 import {
   COMPONENT_BUGS,
   REACH_BUGS,
+  REACH_PATHS_FROM_A_CALLER,
   SOUND_METHOD_FORMS,
   SOUND_REACH_PATHS,
 } from "./knownBugs.js";
@@ -233,6 +234,24 @@ describe("shape fuzzer, sound tier (a handler reached by name)", () => {
   for (const reach of SOUND_REACH_PATHS) {
     it(
       `a handler reached ${reach} summarizes the same way as one written at the call`,
+      { timeout: 120_000 },
+      async () => {
+        const result = await runShapeDifferential(
+          { ...SIMPLEST_SHAPE, reach, form: "blockArrow", body: RESPOND_BODY },
+          ALL_SHAPE_TARGETS[0],
+        );
+        if (shapeFailed(result)) {
+          throw new Error(formatShapeFailure(result));
+        }
+      },
+    );
+  }
+});
+
+describe("shape fuzzer, a handler reached from a caller", () => {
+  for (const reach of REACH_PATHS_FROM_A_CALLER) {
+    it(
+      `a handler reached ${reach} keeps its route and says the handler went unread`,
       { timeout: 120_000 },
       async () => {
         const result = await runShapeDifferential(

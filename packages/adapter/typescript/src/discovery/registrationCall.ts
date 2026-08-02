@@ -12,6 +12,7 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import { functionValueOf, objectLiteralOf } from "./resolveValue.js";
+import { namesAParameter } from "./shared.js";
 
 import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -201,21 +202,42 @@ export function discoverRegistrationCalls(
       const lastArg = args[args.length - 1] as Node | undefined;
       const handler =
         lastArg === undefined ? null : functionValueOf(lastArg, resolution);
+      const routeInfo =
+        bindingExtraction !== undefined
+          ? extractRouteInfoFromBinding(
+              node,
+              methodName,
+              bindingExtraction,
+              resolution,
+            )
+          : null;
       if (handler !== null) {
-        const routeInfo =
-          bindingExtraction !== undefined
-            ? extractRouteInfoFromBinding(
-                node,
-                methodName,
-                bindingExtraction,
-                resolution,
-              )
-            : null;
         results.push({
           func: handler,
           kind,
           name: methodName,
           ...(routeInfo !== null ? { routeInfo } : {}),
+        });
+        return;
+      }
+      // A route this call states, registered with a handler its own
+      // caller supplies. The route is a fact about the code and the
+      // handler is a limit on the reading, so the boundary is reported
+      // and the summary says what was not read. Every other unresolved
+      // argument is a chain that could still be followed, and reporting
+      // those the same way would call a missing rule a fact about the
+      // code.
+      if (
+        routeInfo !== null &&
+        lastArg !== undefined &&
+        namesAParameter(lastArg)
+      ) {
+        results.push({
+          func: null,
+          announcedAt: node,
+          kind,
+          name: methodName,
+          routeInfo,
         });
       }
     }

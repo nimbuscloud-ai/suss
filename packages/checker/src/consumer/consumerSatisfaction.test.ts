@@ -7,6 +7,7 @@ import {
   response,
   statusEq,
   transition,
+  unreadOutcomeGap,
 } from "../__fixtures__/pairs.js";
 import { checkConsumerSatisfaction } from "./consumerSatisfaction.js";
 
@@ -51,6 +52,23 @@ describe("checkConsumerSatisfaction", () => {
     expect(findings[0].severity).toBe("warning");
     expect(findings[0].description).toContain("410");
     expect(findings[0].consumer.transitionId).toBe("ct-410");
+  });
+
+  it("reports the reading, not a dead branch, when nothing about the provider was read", () => {
+    const p = {
+      ...provider("getUser", []),
+      gaps: [unreadOutcomeGap("the handler comes from outside this file")],
+    };
+    const c = consumer("UserPage", [
+      transition("ct-404", {
+        conditions: [statusEq(404)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    const findings = checkConsumerSatisfaction(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].kind).toBe("lowConfidence");
+    expect(findings[0].severity).toBe("info");
   });
 
   it("emits lowConfidence instead of deadConsumerBranch when provider has an opaque status", () => {

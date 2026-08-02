@@ -249,8 +249,12 @@ export interface RawDeclaredContract {
  *   - "statements": a body with work in it, including a concise
  *     arrow's expression. A summary that says nothing about it has
  *     described none of it.
+ *   - "elsewhere": the unit's body is not in what this run read. A
+ *     route registered with a handler the caller supplies announces a
+ *     boundary and names no function to look in, and the boundary is
+ *     worth reporting with nothing behind it.
  */
-export type BodyContent = "absent" | "empty" | "statements";
+export type BodyContent = "absent" | "empty" | "statements" | "elsewhere";
 
 export interface RawCodeStructure {
   identity: {
@@ -622,7 +626,7 @@ export function detectGaps(
  * nothing in that work matched a shape the pack looks for.
  */
 function bodyWentUnread(raw: RawCodeStructure): boolean {
-  if (raw.bodyContent === "absent") {
+  if (raw.bodyContent === "absent" || raw.bodyContent === "elsewhere") {
     return true;
   }
   return raw.bodyContent === "statements" && raw.branches.length === 0;
@@ -640,6 +644,9 @@ function describeUnreadBody(raw: RawCodeStructure): string | null {
   }
   if (raw.bodyContent === "absent") {
     return "This unit is a declaration with no body behind it, so nothing about what it does was read here";
+  }
+  if (raw.bodyContent === "elsewhere") {
+    return "The handler on this boundary comes from outside the code that registers it, so nothing about what it does was read here";
   }
   // Unmatched returns already say this, in more detail, about the same
   // body.

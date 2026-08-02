@@ -78,6 +78,72 @@ describe("discoverRegistrationCalls — handler discovery", () => {
     expect(units[0].routeInfo).toBeUndefined();
   });
 
+  it("keeps the route when the handler comes from a parameter", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const r = Router();
+      const register = (handle: any) => { r.get("/users", handle); };
+      register((req, res) => { res.json({}); });
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].func).toBeNull();
+    expect(units[0].announcedAt?.getText()).toBe('r.get("/users", handle)');
+    expect(units[0].routeInfo).toEqual({ method: "GET", path: "/users" });
+  });
+
+  it("announces nothing for a registration that names no handler", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const r = Router();
+      r.get("/users");
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+    );
+    expect(units).toHaveLength(0);
+  });
+
+  it("announces nothing for an argument a chain could still be followed to", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const r = Router();
+      const pick = () => (req, res) => {};
+      r.get("/users", pick());
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+    );
+    expect(units).toHaveLength(0);
+  });
+
+  it("announces nothing when the call states no route to pair on", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const r = Router();
+      const register = (handle: any) => { r.get(dynamicPath, handle); };
+      declare const dynamicPath: string;
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+    );
+    expect(units).toHaveLength(0);
+  });
+
   it("omits routeInfo when no bindingExtraction is supplied", () => {
     const sf = sourceFile(`
       import { Router } from "express";

@@ -42,6 +42,7 @@ import {
 } from "./envShape.js";
 import { summarySetDifferences } from "./equivalence.js";
 import { checkInvariants } from "./invariants.js";
+import { REACH_PATHS_FROM_A_CALLER } from "./knownBugs.js";
 import {
   type PackageShapeSpec,
   type RenderedPackageShape,
@@ -124,6 +125,55 @@ const EXPECTATION: Omit<ShapeExpectation, "kind"> = {
   unitName: null,
 };
 
+const handlerComesFromACaller = (spec: ShapeSpec): boolean =>
+  (REACH_PATHS_FROM_A_CALLER as readonly string[]).includes(spec.reach);
+
+/**
+ * Where the summaries fall short of what a route registered with a
+ * handler nobody here can follow should say: the route is a fact about
+ * the code, so the boundary is there, and the handler is a limit on the
+ * reading, so the summary says nothing about behaviour and says why.
+ * Silence on any of the three is what this is watching for.
+ */
+function unreadHandlerComplaints(
+  baseline: BehavioralSummary[],
+  summaries: BehavioralSummary[],
+): string[] {
+  const handlers = summaries.filter((summary) => summary.kind === "handler");
+  if (handlers.length !== 1) {
+    return [
+      `summaries.length: a route whose handler comes from a caller should produce one handler summary, this produced ${handlers.length}`,
+    ];
+  }
+  const summary = handlers[0];
+  const complaints: string[] = [];
+  const route = JSON.stringify(summary.identity.boundaryBinding);
+  const baselineRoute = JSON.stringify(
+    baseline.find((s) => s.kind === "handler")?.identity.boundaryBinding,
+  );
+  if (route !== baselineRoute) {
+    complaints.push(
+      `summaries[0].identity.boundaryBinding: the plainest spelling says ${baselineRoute}, this spelling says ${route}`,
+    );
+  }
+  if (summary.transitions.length > 0) {
+    complaints.push(
+      `summaries[0].transitions: nothing about the handler was read, so the summary should claim no behaviour, and it claims ${summary.transitions.length} transitions`,
+    );
+  }
+  if (!summary.gaps.some((gap) => gap.type === "unreadOutcome")) {
+    complaints.push(
+      "summaries[0].gaps: nothing about the handler was read, and no gap says so",
+    );
+  }
+  if (summary.confidence.level !== "low") {
+    complaints.push(
+      `summaries[0].confidence: nothing about the handler was read, at confidence ${summary.confidence.level}`,
+    );
+  }
+  return complaints;
+}
+
 export async function runShapeDifferential(
   spec: ShapeSpec,
   shapeTarget: ShapeTarget,
@@ -150,7 +200,18 @@ export async function runShapeDifferential(
     syntax: shapeTarget.syntax,
     wideType: WIDE_TYPE_SIZE,
   });
-  if (!sameShape(spec, baseline)) {
+  if (handlerComesFromACaller(spec)) {
+    const baselineSummaries = await extractAllSummaries({
+      files: baselineRendered.files,
+      pack,
+    });
+    for (const detail of unreadHandlerComplaints(
+      baselineSummaries,
+      summaries,
+    )) {
+      findings.push({ oracle: "equivalence", detail });
+    }
+  } else if (!sameShape(spec, baseline)) {
     const baselineSummaries = await extractAllSummaries({
       files: baselineRendered.files,
       pack,

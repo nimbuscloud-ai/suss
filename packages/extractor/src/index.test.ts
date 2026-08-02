@@ -1014,6 +1014,13 @@ describe("assessConfidence", () => {
     });
   });
 
+  it("returns 'low' when the body is not in what was read", () => {
+    expect(assessConfidence({ ...baseRaw, bodyContent: "elsewhere" })).toEqual({
+      source: "inferred_static",
+      level: "low",
+    });
+  });
+
   it("returns 'low' when a body full of work produced no transition", () => {
     expect(assessConfidence({ ...baseRaw, bodyContent: "statements" })).toEqual(
       { source: "inferred_static", level: "low" },
@@ -1139,6 +1146,20 @@ describe("detectGaps", () => {
     expect(gaps).toHaveLength(1);
     expect(gaps[0]?.type).toBe("unreadOutcome");
     expect(gaps[0]?.description).toContain("no body");
+  });
+
+  it("says so when the body is not in what was read", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      branches: [],
+      bodyContent: "elsewhere",
+    };
+    const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.type).toBe("unreadOutcome");
+    expect(gaps[0]?.description).toContain("comes from outside");
   });
 
   it("says so when nothing in a body full of work matched", () => {
