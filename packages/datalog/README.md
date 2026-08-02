@@ -106,7 +106,8 @@ db.add("edge", ["b", "c"]);
 db.add("edge", ["m", "n"]);
 db.add("asked", ["a"]);
 
-evaluate(db, deriveOnDemand(rules, ["answer"]));
+const program = deriveOnDemand(rules, ["answer"]);
+evaluate(db, program.rules);
 db.facts("answer"); // [["a", "b"], ["a", "c"]]
 db.facts("reaches"); // the chain from a, and nothing from m
 ```
@@ -123,6 +124,34 @@ most of a program derives more rather than less. And negation is
 refused: a relation derived only where somebody asked is smaller than
 the one a negated literal was written against, which would make `not
 p(x)` match where it did not.
+
+### Taking a question back
+
+Demand is a fact, and a fact stays until somebody removes it. A caller
+that asks a thousand questions of one database derives over all thousand
+every time new facts arrive, so the last question costs a thousand
+questions.
+
+`program.demandDriven` names the relations the rewrite restricts, and
+`clearRelations` empties them once an answer has been read:
+
+```ts
+clearRelations(db, program.rules, [...program.demandDriven, "asked"]);
+
+db.add("asked", ["m"]);
+evaluate(db, program.rules);
+db.facts("reaches"); // the chain from m, and nothing from a
+db.facts("answer"); // a's answers, which nothing took away, plus m's
+```
+
+`retract` would send the next run back to the base facts, since a fact
+leaving the database can take away a conclusion drawn anywhere.
+`clearRelations` keeps the resume, because a caller passing these
+relations is saying nothing outside them was derived from them. That
+holds for the relations `deriveOnDemand` restricts: every one of them is
+derived under a demand fact, and only the relations you named as
+complete read from them. Those keep what they hold, which is the answers
+you already read.
 
 Keep the facts you add and the facts rules derive in separate relations.
 Taking a conclusion back cannot tell one from the other, and the

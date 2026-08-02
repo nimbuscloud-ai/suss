@@ -20,10 +20,12 @@
 import { Node } from "ts-morph";
 
 import {
+  clearRelations,
   Database,
   deriveOnDemand,
   evaluate,
   lit,
+  type OnDemandRules,
   rule,
   variable as v,
 } from "@suss/datalog";
@@ -71,9 +73,12 @@ const JS_RULES = [
  * runs the same rules unrestricted. Both settings answer every question
  * the same way, and the difference is how much never gets derived.
  */
-const RESOLUTION_RULES =
+const RESOLUTION_PROGRAM: OnDemandRules =
   process.env.SUSS_RESOLUTION_ON_DEMAND === "0"
-    ? [...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS]
+    ? {
+        rules: [...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS],
+        demandDriven: [],
+      }
     : deriveOnDemand(
         [...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS],
         ANSWER_RELATIONS,
@@ -84,6 +89,23 @@ const RESOLUTION_RULES =
  * name came from. Each one is a fact the rules read.
  */
 type Question = "wanted" | "wantedOrigin";
+
+/**
+ * What one query brings into the database, and what goes again once its
+ * answer has been read: the asking fact, the chain the rules followed
+ * from it, and the demand that made them follow it.
+ *
+ * Without this a query pays for every question asked before it. Asking
+ * marks the store stale, so the next file's facts are derived over all
+ * the demand accumulated so far, and a pack that asks about every
+ * export turns a run into the square of what it asks. The answer
+ * relations are not in here: they hold one row per value asked about,
+ * which is what a repeated query reads back instead of asking again.
+ */
+const QUERY_FACTS: readonly string[] =
+  RESOLUTION_PROGRAM.demandDriven.length === 0
+    ? []
+    : [...RESOLUTION_PROGRAM.demandDriven, "wanted", "wantedOrigin"];
 
 /**
  * How many module hops a query follows when pulling in facts. Deep
@@ -107,11 +129,6 @@ export class ResolutionStore {
   private readonly importedNames = new Map<string, string[]>();
   private readonly graph = new ModuleGraph();
 
-  private resolvedBySource = new Map<string, string[]>();
-  private comesToBySource = new Map<string, string[]>();
-  private writtenAsBySource = new Map<string, string[]>();
-  private callsIntoBySource = new Map<string, string[]>();
-  private comesFromBySource = new Map<string, string[]>();
   private stale = true;
 
   constructor(wrappers: TransparentWrapper[] = []) {
@@ -217,10 +234,10 @@ export class ResolutionStore {
   private lookupImportedNames(value: Node, modules: string[]): string[] | null {
     this.derive();
 
-    const origins = this.comesFromBySource.get(nodeId(value)) ?? [];
+    const origins = this.answerPairsFor("wantedComesFrom", nodeId(value));
     const reached = new Set(origins);
-    for (const target of this.comesToBySource.get(nodeId(value)) ?? []) {
-      for (const entry of this.callsIntoBySource.get(target) ?? []) {
+    for (const target of this.answersFor("wantedComesTo", nodeId(value))) {
+      for (const entry of this.answerPairsFor("wantedCallsInto", target)) {
         reached.add(entry);
       }
     }
@@ -233,6 +250,18 @@ export class ResolutionStore {
   }
 
   private resolveByWaves<T>(
+    value: Node,
+    question: Question,
+    ask: () => T | null,
+  ): T | null {
+    try {
+      return this.walkForAnswer(value, question, ask);
+    } finally {
+      this.forgetQuery();
+    }
+  }
+
+  private walkForAnswer<T>(
     value: Node,
     question: Question,
     ask: () => T | null,
@@ -270,6 +299,24 @@ export class ResolutionStore {
   }
 
   /**
+   * The answer has been read, so the question and the chain that
+   * answered it can go. What the query extracted stays: files are the
+   * expensive part and the next query reads the same facts.
+   *
+   * Nothing is owed after this. The rules have seen every fact the
+   * database holds and concluded what the demand still present asks
+   * for, which is none, so the next query starts from its own asking
+   * fact.
+   */
+  private forgetQuery(): void {
+    if (QUERY_FACTS.length === 0) {
+      return;
+    }
+    clearRelations(this.db, RESOLUTION_PROGRAM.rules, QUERY_FACTS);
+    this.stale = false;
+  }
+
+  /**
    * Somebody asked about this value, which is what the rules follow
    * chains for. Separate from `seedValue`, which only speaks for values
    * that are expressions; a caller can ask about a declaration too, and
@@ -304,7 +351,7 @@ export class ResolutionStore {
     this.derive();
 
     const candidates = new Set<Node>();
-    for (const target of this.comesToBySource.get(nodeId(value)) ?? []) {
+    for (const target of this.answersFor("wantedComesTo", nodeId(value))) {
       const node = this.table.byId.get(target);
       if (node === undefined || isFunctionRoot(node)) {
         continue;
@@ -329,7 +376,7 @@ export class ResolutionStore {
     this.derive();
 
     const candidates = new Set<Node>();
-    for (const target of this.writtenAsBySource.get(nodeId(value)) ?? []) {
+    for (const target of this.answersFor("wantedIsWrittenAs", nodeId(value))) {
       const node = this.table.byId.get(target);
       if (node === undefined || node === value) {
         continue;
@@ -365,7 +412,7 @@ export class ResolutionStore {
     this.derive();
 
     const candidates = new Set<Node>();
-    for (const target of this.resolvedBySource.get(nodeId(value)) ?? []) {
+    for (const target of this.answersFor("wantedResolves", nodeId(value))) {
       const resolved = this.table.byId.get(target);
       if (resolved === undefined) {
         continue;
@@ -381,26 +428,30 @@ export class ResolutionStore {
     return [...candidates][0] as Node;
   }
 
-  /**
-   * Run the rules to fixpoint and index `resolves` by its source, so
-   * a lookup is a map hit rather than a scan of every derived tuple.
-   */
+  /** Run the rules to fixpoint. */
   private derive(): void {
     if (!this.stale) {
       return;
     }
     this.stale = false;
-    evaluate(this.db, RESOLUTION_RULES);
+    evaluate(this.db, RESOLUTION_PROGRAM.rules);
+  }
 
-    this.resolvedBySource = indexBySource(this.db.facts("wantedResolves"));
-    this.comesToBySource = indexBySource(this.db.facts("wantedComesTo"));
-    this.writtenAsBySource = indexBySource(this.db.facts("wantedIsWrittenAs"));
-    this.callsIntoBySource = indexPairsBySource(
-      this.db.facts("wantedCallsInto"),
-    );
-    this.comesFromBySource = indexPairsBySource(
-      this.db.facts("wantedComesFrom"),
-    );
+  /**
+   * The second column of an answer relation, for the value asked about.
+   * The database indexes a column the first time somebody looks it up
+   * and keeps that index as facts arrive, so this is a map hit and the
+   * answers a query never asks about cost nothing.
+   */
+  private answersFor(relation: string, value: string): string[] {
+    return this.db.lookup(relation, 0, value).map((tuple) => String(tuple[1]));
+  }
+
+  /** The trailing pair of a three-column answer relation, joined. */
+  private answerPairsFor(relation: string, value: string): string[] {
+    return this.db
+      .lookup(relation, 0, value)
+      .map((tuple) => `${tuple[1]}${PAIR_SEPARATOR}${tuple[2]}`);
   }
 
   /** Emit a file's facts, unless some earlier query already did. */
@@ -463,36 +514,4 @@ function declarationOf(value: Node): Node {
     ? value.getNameNode()
     : value;
   return nameNode.getSymbol()?.getDeclarations()[0] ?? value;
-}
-
-/** One relation's tuples, grouped by their first column. */
-function indexBySource(
-  tuples: ReadonlyArray<ReadonlyArray<string | number>>,
-): Map<string, string[]> {
-  const index = new Map<string, string[]>();
-  for (const tuple of tuples) {
-    const source = String(tuple[0]);
-    const targets = index.get(source);
-    if (targets === undefined) {
-      index.set(source, [String(tuple[1])]);
-    } else {
-      targets.push(String(tuple[1]));
-    }
-  }
-  return index;
-}
-
-/**
- * A three-column relation grouped by its first column, with the other
- * two joined so one lookup carries the pair.
- */
-function indexPairsBySource(
-  tuples: ReadonlyArray<ReadonlyArray<string | number>>,
-): Map<string, string[]> {
-  return indexBySource(
-    tuples.map((tuple) => [
-      tuple[0] as string,
-      `${tuple[1]}${PAIR_SEPARATOR}${tuple[2]}`,
-    ]),
-  );
 }
