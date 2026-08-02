@@ -11,19 +11,27 @@ import { Database, evaluate } from "@suss/datalog";
 
 import { RESOLUTION_RULES } from "./index.js";
 
-/** Feed facts in, run the rules, and ask what a value comes down to. */
+/** Feed facts in, run the rules, and read one relation back. */
+function derive(
+  facts: Array<[string, ...string[]]>,
+  relation: string,
+  subject: string,
+): ReadonlyArray<ReadonlyArray<string | number>> {
+  const db = new Database();
+  for (const [name, ...tuple] of facts) {
+    db.add(name, tuple);
+  }
+  return evaluate(db, RESOLUTION_RULES)
+    .facts(relation)
+    .filter((t) => t[0] === subject);
+}
+
+/** What a value comes down to. */
 function resolutionsOf(
   facts: Array<[string, ...string[]]>,
   value: string,
 ): string[] {
-  const db = new Database();
-  for (const [relation, ...tuple] of facts) {
-    db.add(relation, tuple);
-  }
-  const derived = evaluate(db, RESOLUTION_RULES);
-  return derived
-    .facts("resolves")
-    .filter((t) => t[0] === value)
+  return derive(facts, "resolves", value)
     .map((t) => String(t[1]))
     .sort();
 }
@@ -33,29 +41,17 @@ function originsOf(
   facts: Array<[string, ...string[]]>,
   value: string,
 ): string[] {
-  return tuplesOf(facts, "comesFrom", value);
+  return pairs(derive(facts, "comesFrom", value));
 }
 
 /** The (module, name) pairs calling a function ends up reaching. */
 function callsOf(facts: Array<[string, ...string[]]>, fn: string): string[] {
-  return tuplesOf(facts, "callsInto", fn);
+  return pairs(derive(facts, "callsInto", fn));
 }
 
-function tuplesOf(
-  facts: Array<[string, ...string[]]>,
-  relation: string,
-  subject: string,
-): string[] {
-  const db = new Database();
-  for (const [name, ...tuple] of facts) {
-    db.add(name, tuple);
-  }
-  return evaluate(db, RESOLUTION_RULES)
-    .facts(relation)
-    .filter((t) => t[0] === subject)
-    .map((t) => `${t[1]}:${t[2]}`)
-    .sort();
-}
+const pairs = (
+  tuples: ReadonlyArray<ReadonlyArray<string | number>>,
+): string[] => tuples.map((t) => `${t[1]}:${t[2]}`).sort();
 
 describe("following a name to a function", () => {
   it("stops at a function, which resolves to itself", () => {
