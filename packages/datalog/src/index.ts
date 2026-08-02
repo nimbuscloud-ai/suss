@@ -30,6 +30,7 @@ import {
   isProfiling,
 } from "./profile.js";
 
+export { deriveOnDemand } from "./onDemand.js";
 export {
   type EvaluationProfile,
   formatProfile,

@@ -75,6 +75,55 @@ re-run with negated rules takes back what the previous pass derived and
 works the answer out again from the base facts. Both paths leave the
 database holding the answer for the facts it has now.
 
+## Deriving only what somebody asked for
+
+A rule set written for a whole program derives every conclusion its
+facts support, and a caller asking about one value reads a handful of
+them. `deriveOnDemand` rewrites the rules so the ones nobody is waiting
+on are never derived.
+
+Name the relations that have to come out whole, and give each of them a
+rule that starts at a base relation you assert:
+
+```ts
+const rules = [
+  rule("reaches", [v("x"), v("y")], [lit("edge", v("x"), v("y"))]),
+  rule(
+    "reaches",
+    [v("x"), v("z")],
+    [lit("edge", v("x"), v("y")), lit("reaches", v("y"), v("z"))],
+  ),
+  rule(
+    "answer",
+    [v("x"), v("y")],
+    [lit("asked", v("x")), lit("reaches", v("x"), v("y"))],
+  ),
+];
+
+const db = new Database();
+db.add("edge", ["a", "b"]);
+db.add("edge", ["b", "c"]);
+db.add("edge", ["m", "n"]);
+db.add("asked", ["a"]);
+
+evaluate(db, deriveOnDemand(rules, ["answer"]));
+db.facts("answer"); // [["a", "b"], ["a", "c"]]
+db.facts("reaches"); // the chain from a, and nothing from m
+```
+
+The rewrite is magic sets. Each derived relation gains a companion
+relation saying which of its rows something is waiting on, that
+companion becomes a literal in the rule body, and demand travels down
+each body the way the join binds variables. A relation nothing asks for
+is not derived at all, so read back only the relations you named.
+
+Two things this costs. The companion relations are stored like any
+other, at a few tuples per value asked about, so a caller asking about
+most of a program derives more rather than less. And negation is
+refused: a relation derived only where somebody asked is smaller than
+the one a negated literal was written against, which would make `not
+p(x)` match where it did not.
+
 Keep the facts you add and the facts rules derive in separate relations.
 Taking a conclusion back cannot tell one from the other, and the
 separation is how Datalog is normally written anyway.
