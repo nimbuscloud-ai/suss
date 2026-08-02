@@ -2,16 +2,16 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "exports": 204,
-    "internal": 862,
-    "consumers": 289,
-    "pairs": 281
+    "exports": 205,
+    "internal": 864,
+    "consumers": 295,
+    "pairs": 287
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 25,
-      "internal": 395,
+      "internal": 396,
       "consumers": 23
     },
     "packages/behavioral-ir": {
@@ -106,7 +106,7 @@
     },
     "packages/datalog": {
       "name": "@suss/datalog",
-      "exports": 17,
+      "exports": 18,
       "internal": 31,
       "consumers": 0
     },
@@ -227,8 +227,8 @@
     "packages/resolution": {
       "name": "@suss/resolution",
       "exports": 0,
-      "internal": 0,
-      "consumers": 3
+      "internal": 1,
+      "consumers": 9
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",

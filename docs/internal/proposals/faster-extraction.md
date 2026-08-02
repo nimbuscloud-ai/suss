@@ -1,7 +1,10 @@
 # Proposal: derive what somebody asked for
 
-Status: draft, seeking alignment. The only thing implemented is the
-measurement described below.
+Status: the recommendation landed. `deriveOnDemand` in `@suss/datalog`
+and `RESOLUTION_QUESTIONS` in `@suss/resolution` are what came of it,
+and status entry 64 records what they measured. What follows is the
+case as it was argued, with one correction at the end where the
+implementation contradicted it.
 
 Numbers from the public dogfood targets are given in full. Runs against a
 production monorepo are described as ratios, since those figures would
@@ -324,3 +327,34 @@ that build instead.
    summaries compared byte for byte on every corpus.
 3. Re-run the gate. It is cheap, and it is the check that bookkeeping
    has not eaten the win on a corpus that queries broadly.
+
+## What building it said that this did not
+
+**The gate was right about the tuples.** Counting only the relations the
+rewrite covers, saleor-dashboard derives 8.9% of what it used to, which
+is what the gate predicted, and 7012 of the 8723 tuples it still derives
+are magic bookkeeping. twenty-front comes to 2.8% and directus/api to
+3.8%. Two candidates in this document were rejected because measurement
+contradicted a prediction; this one was promoted because measurement
+matched one.
+
+**One `wanted(x)` was not enough.** The recommendation above describes a
+single asking fact seeding every question, and that made directus/api
+four times slower in the engine rather than faster. Following a name
+back to the library it came from goes through every call the value's
+function makes, so a single asking fact demanded the whole call graph
+for values whose caller only wanted to know what a handler resolves to.
+Almost nothing on that corpus asks the origin question. Splitting it
+onto its own fact, `wantedOrigin(x)`, turned a four times slowdown into
+a ten times speedup on the same corpus, and cost nothing on the two
+where the win was already large.
+
+The general shape of that: a demand relation that answers more questions
+than the caller asked is not demand. Which questions a caller asks is
+part of the rewrite's input, not a detail below it.
+
+**Rounds go up while time goes down.** A demand-driven run takes about
+half again as many semi-naive rounds to reach fixpoint, because demand
+has to travel down before answers travel back up. Rounds are the wrong
+thing to watch here; the tuple counts and the clock agree with each
+other and disagree with the round count.

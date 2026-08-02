@@ -48,6 +48,11 @@
 // together with the calls a function makes, so a project wrapper
 // answers with the library names calling it reaches.
 //
+// A caller says which values it is asking about, with `wanted(x)` and
+// `wantedOrigin(x)`, and reads its answers out of the relations
+// `RESOLUTION_QUESTIONS` derives. Writing the questions down is what
+// lets the engine follow a chain only where somebody is waiting on it.
+//
 // `isWrittenAs(x, z)` follows the same names to the expression the
 // value is written as, whatever kind of expression that is. A GraphQL
 // document is neither a function nor an object, so `comesTo` never
@@ -340,4 +345,63 @@ export const RESOLUTION_RULES = [
       lit("isWrittenAs", v("value"), v("z")),
     ],
   ),
+];
+
+/**
+ * The questions a caller asks, written as rules. Two facts say somebody
+ * is asking: `wanted(x)` for what a value is, and `wantedOrigin(x)` for
+ * where a name came from. Each answer relation holds the pairs for the
+ * values somebody asked about, keyed by the value asked about, which is
+ * the key the caller looks up by anyway.
+ *
+ * Written down rather than left to each caller because the engine reads
+ * them. `deriveOnDemand` follows a chain only as far as one of these
+ * questions reaches it, and a caller that answered its own questions by
+ * scanning a relation would give the engine nothing to work from.
+ *
+ * The two asking facts are kept apart because they pull on different
+ * rules. Following a name back to its library goes through every call
+ * the value's function makes, so a caller that only wants to know what a
+ * handler resolves to should not pay for that.
+ */
+export const RESOLUTION_QUESTIONS = [
+  rule(
+    "wantedResolves",
+    [v("x"), v("z")],
+    [lit("wanted", v("x")), lit("resolves", v("x"), v("z"))],
+  ),
+  rule(
+    "wantedComesTo",
+    [v("x"), v("z")],
+    [lit("wanted", v("x")), lit("comesTo", v("x"), v("z"))],
+  ),
+  rule(
+    "wantedComesTo",
+    [v("x"), v("z")],
+    [lit("wantedOrigin", v("x")), lit("comesTo", v("x"), v("z"))],
+  ),
+  rule(
+    "wantedIsWrittenAs",
+    [v("x"), v("z")],
+    [lit("wanted", v("x")), lit("isWrittenAs", v("x"), v("z"))],
+  ),
+  rule(
+    "wantedComesFrom",
+    [v("x"), v("m"), v("n")],
+    [lit("wantedOrigin", v("x")), lit("comesFrom", v("x"), v("m"), v("n"))],
+  ),
+  rule(
+    "wantedCallsInto",
+    [v("g"), v("m"), v("n")],
+    [
+      lit("wantedOrigin", v("x")),
+      lit("comesTo", v("x"), v("g")),
+      lit("callsInto", v("g"), v("m"), v("n")),
+    ],
+  ),
+];
+
+/** The relations `RESOLUTION_QUESTIONS` answers into. */
+export const ANSWER_RELATIONS = [
+  ...new Set(RESOLUTION_QUESTIONS.map((r) => r.head.relation)),
 ];
