@@ -2,9 +2,17 @@
 // resolvers / handlers (`@Resolver()` class with `@Query` / `@Mutation`
 // / `@ResolveField` / `@Subscription` methods).
 
-import { type MethodDeclaration, Node, type SourceFile } from "ts-morph";
+import {
+  type ClassDeclaration,
+  type MethodDeclaration,
+  Node,
+  type SourceFile,
+} from "ts-morph";
+
+import { classDecoratorStandingFor } from "./decoratorComposition.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 /**
@@ -86,14 +94,12 @@ export function discoverDecoratedMethods(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "decoratedMethod" }>,
   kind: string,
+  resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   // Gate on at least one method decorator (e.g. `@Query`, `@Mutation`)
   // being imported from one of the pack-declared modules — that's the
   // signal that this file is operating in the target framework's
-  // semantics. Class decorators are matched by name only: codebases
-  // commonly wrap the framework's class decorator in their own
-  // factory, and those wrappers are imported from project-internal
-  // paths the pack can't enumerate.
+  // semantics.
   // Method decorators stay strict to avoid false positives — without
   // an import from the framework module, this file isn't a target.
   const acceptedModules = Array.isArray(match.importModule)
@@ -117,17 +123,16 @@ export function discoverDecoratedMethods(
 
   const results: DiscoveredUnit[] = [];
   for (const cls of sourceFile.getClasses()) {
-    let classDecorator: ReturnType<typeof cls.getDecorator> | undefined;
-    for (const candidate of match.classDecorators) {
-      classDecorator = cls.getDecorator(candidate);
-      if (classDecorator !== undefined) {
-        break;
-      }
-    }
-    if (classDecorator === undefined) {
+    const marker = classDecoratorStandingFor(
+      cls as ClassDeclaration,
+      match.classDecorators,
+      acceptedModules,
+      resolution,
+    );
+    if (marker === null) {
       continue;
     }
-    const classArgs = classDecorator.getArguments();
+    const classArgs = marker.decorator.getArguments();
     const classTypeName =
       classArgs.length > 0 ? resolveResolverClassTypeName(classArgs[0]) : null;
 

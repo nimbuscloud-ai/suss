@@ -1870,6 +1870,80 @@ describe("decoratedMethod discovery", () => {
     });
   });
 
+  it("accepts a project decorator built from the framework's own", () => {
+    // Nothing names the wrapper. It is recognized because calling it
+    // calls `Resolver` from `@nestjs/graphql`, which is what makes the
+    // class a resolver in the first place.
+    const project = createProject();
+    project.createSourceFile(
+      "src/audited.ts",
+      `
+      import { applyDecorators, SetMetadata } from "@nestjs/common";
+      import { Resolver } from "@nestjs/graphql";
+
+      export const AuditedResolver = (typeFunc?: () => unknown) =>
+        applyDecorators(
+          typeFunc ? Resolver(typeFunc) : Resolver(),
+          SetMetadata("audited", true),
+        );
+    `,
+    );
+    const file = project.createSourceFile(
+      "src/foo.resolver.ts",
+      `
+      import { Query } from "@nestjs/graphql";
+      import { AuditedResolver } from "./audited";
+
+      @AuditedResolver(() => Foo)
+      class FooResolver {
+        @Query()
+        all(): Foo[] { return []; }
+      }
+      declare class Foo {}
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeDecoratedMethodPattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].resolverInfo).toEqual({
+      typeName: "Foo",
+      fieldName: "all",
+    });
+  });
+
+  it("ignores a project decorator that reaches no framework decorator", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "src/logged.ts",
+      `
+      import { SetMetadata } from "@nestjs/common";
+      export const Logged = () => SetMetadata("logged", true);
+    `,
+    );
+    const file = project.createSourceFile(
+      "src/foo.resolver.ts",
+      `
+      import { Query } from "@nestjs/graphql";
+      import { Logged } from "./logged";
+
+      @Logged()
+      class NotAResolver {
+        @Query()
+        all(): unknown[] { return []; }
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeDecoratedMethodPattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(0);
+  });
+
   it("falls back to the operation kind for typeName when @Resolver() is bare", () => {
     const project = createProject();
     const file = project.createSourceFile(

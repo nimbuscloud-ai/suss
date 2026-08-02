@@ -3,9 +3,17 @@
 // `@Put` / `@Patch` / `@Delete` methods). Emits units with `routeInfo`
 // that the adapter turns into a REST binding directly.
 
-import { type MethodDeclaration, Node, type SourceFile } from "ts-morph";
+import {
+  type ClassDeclaration,
+  type MethodDeclaration,
+  Node,
+  type SourceFile,
+} from "ts-morph";
+
+import { classDecoratorStandingFor } from "./decoratorComposition.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 /**
@@ -55,10 +63,10 @@ export function discoverDecoratedRoutes(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "decoratedRoute" }>,
   kind: string,
+  resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   // Same gate as decoratedMethod: at least one method-route decorator
-  // must be imported from the framework module. Class decorators
-  // match by name only (project wrappers welcome).
+  // must be imported from the framework module.
   const acceptedModules = Array.isArray(match.importModule)
     ? match.importModule
     : [match.importModule];
@@ -81,17 +89,16 @@ export function discoverDecoratedRoutes(
 
   const results: DiscoveredUnit[] = [];
   for (const cls of sourceFile.getClasses()) {
-    let classDecorator: ReturnType<typeof cls.getDecorator> | undefined;
-    for (const candidate of match.classDecorators) {
-      classDecorator = cls.getDecorator(candidate);
-      if (classDecorator !== undefined) {
-        break;
-      }
-    }
-    if (classDecorator === undefined) {
+    const marker = classDecoratorStandingFor(
+      cls as ClassDeclaration,
+      match.classDecorators,
+      acceptedModules,
+      resolution,
+    );
+    if (marker === null) {
       continue;
     }
-    const pathPrefix = resolveRoutePathArg(classDecorator);
+    const pathPrefix = resolveRoutePathArg(marker.decorator);
 
     const className = cls.getName() ?? "<anon-class>";
     for (const method of cls.getMethods()) {

@@ -41,12 +41,14 @@ import type { PatternPack } from "@suss/extractor";
 
 export interface NestjsRestPackOptions {
   /**
-   * Class decorators this project composes `@Controller()` into. Each
-   * one joins the framework's own decorator as a controller marker.
-   * Naming a wrapper here is what makes it discoverable; the shipped
-   * default carries only what `@nestjs/common` declares, so a project
-   * that installs this pack never matches a class on a name some other
-   * codebase happened to use.
+   * Class decorators this project composes `@Controller()` into, for
+   * the cases the adapter cannot follow on its own.
+   *
+   * A wrapper written in the project needs no entry here: the adapter
+   * resolves a class decorator to the function behind it and accepts it
+   * when calling that function calls `Controller` from
+   * `@nestjs/common`. What is left for this option is a wrapper whose
+   * body is not in the project, so there is nothing to read.
    */
   classDecorators?: string[];
 }

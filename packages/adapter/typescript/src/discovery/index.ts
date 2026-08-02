@@ -90,10 +90,20 @@ function runPattern(
     return discoverPackageImports(sourceFile, pattern.match, pattern.kind);
   }
   if (pattern.match.type === "decoratedMethod") {
-    return discoverDecoratedMethods(sourceFile, pattern.match, pattern.kind);
+    return discoverDecoratedMethods(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
   }
   if (pattern.match.type === "decoratedRoute") {
-    return discoverDecoratedRoutes(sourceFile, pattern.match, pattern.kind);
+    return discoverDecoratedRoutes(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
   }
   if (pattern.match.type === "fileConvention") {
     return discoverFileConventions(
