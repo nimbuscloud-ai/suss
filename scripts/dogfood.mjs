@@ -395,7 +395,7 @@ if (unhealthy.length === 0) {
 } else {
   for (const { pkg, check } of unhealthy) {
     for (const violation of check.violations) {
-      console.log(`  ${pkg} — ${check.name}: ${violation.detail}`);
+      console.log(`  ${pkg}: ${check.name}: ${violation.detail}`);
     }
   }
 }

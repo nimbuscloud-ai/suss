@@ -218,12 +218,12 @@ describe("who a check is addressed to", () => {
       summaries: 0,
       emptyStage: null,
     });
-    const scopeOf = (name: string) =>
-      checks.find((check) => check.name === name)?.scope;
+    const audienceOf = (name: string) =>
+      checks.find((check) => check.name === name)?.audience;
 
-    expect(scopeOf("no pack drops everything it was holding")).toBe("run");
-    expect(scopeOf("no pack collides with itself")).toBe("run");
-    expect(scopeOf("every pack declares a version")).toBe("pack");
+    expect(audienceOf("no pack drops everything it was holding")).toBe("run");
+    expect(audienceOf("no pack collides with itself")).toBe("run");
+    expect(audienceOf("every pack declares a version")).toBe("pack");
   });
 });
 

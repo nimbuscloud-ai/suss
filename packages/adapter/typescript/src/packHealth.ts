@@ -1,4 +1,4 @@
-// packHealth.ts — when a pack is probably not working.
+// packHealth.ts: when a pack is probably not working.
 //
 // The funnel says where a run's counts reached zero. This asks a
 // narrower question of each pack on its own: did this pack drop
@@ -10,14 +10,15 @@
 // of zero is never the signal. What makes zero a signal is the count
 // before it. The pack's own import gate selecting forty files and its
 // discovery finding no unit in any of them is the pack saying "look
-// here" and then failing to look. The same shape repeats one stage
-// later, and again one stage after that, which is why the checks below
-// are one function applied to adjacent pairs rather than a check per
-// stage.
+// here" and then failing to look. The same shape repeats at every
+// later stage, which is why the checks below are one comparison
+// applied to a list of pairs rather than a check written per stage.
 //
 // Everything here reports. Nothing here fails a run, because a
 // threshold nobody has watched fire is a threshold nobody should be
-// blocked by.
+// blocked by. That also means one count above zero anywhere silences
+// the pair holding it, which the notes next to `stagesOf` say more
+// about.
 
 import type { ExtractionReport, PackFunnel } from "./diagnostics.js";
 
@@ -30,7 +31,7 @@ export interface HealthViolation {
 export interface HealthCheck {
   name: string;
   /**
-   * Who can act on this.
+   * Who the finding is addressed to.
    *
    * A `run` check found something about the code in front of it, and
    * the person who started the run can do something about it: drop a
@@ -39,7 +40,7 @@ export interface HealthCheck {
    * which only whoever ships that pack can fix. Printing the second
    * kind on every run would teach people to skim past the first.
    */
-  scope: "run" | "pack";
+  audience: "run" | "pack";
   violations: HealthViolation[];
 }
 
@@ -105,12 +106,7 @@ function stagesOf(funnel: PackFunnel): Array<{
   return stages;
 }
 
-/**
- * A stage went to zero while the stage feeding it did not.
- *
- * This is heuristics 1 through 4 of the original list, which turned out
- * to be one property stated at four points along the same pipeline.
- */
+/** A stage went to zero while the stage feeding it did not. */
 function funnelDrops(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
   const violations: HealthViolation[] = [];
   for (const funnel of packs) {
@@ -173,17 +169,17 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
   return [
     {
       name: "no pack drops everything it was holding",
-      scope: "run",
+      audience: "run",
       violations: funnelDrops(report.packs),
     },
     {
       name: "no pack collides with itself",
-      scope: "run",
+      audience: "run",
       violations: selfCollisions(report.packs),
     },
     {
       name: "every pack declares a version",
-      scope: "pack",
+      audience: "pack",
       violations: unversionedPacks(report.packs),
     },
   ];
@@ -192,16 +188,18 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
 /**
  * The health checks that fired, as lines for a terminal.
  *
- * `scopes` is who the caller is printing for. A CLI run prints what
- * the person who started it can act on; the dogfood run, where a pack
- * author is reading, asks for both.
+ * `audiences` is who the caller is printing for, and it is required
+ * because there is no answer that suits every caller: a CLI run prints
+ * what the person who started it can act on, and a run whose reader is
+ * a pack author wants both.
  */
 export function formatPackHealth(
   checks: ReadonlyArray<HealthCheck>,
-  scopes: ReadonlyArray<HealthCheck["scope"]> = ["run", "pack"],
+  audiences: ReadonlyArray<HealthCheck["audience"]>,
 ): string {
   const fired = checks.filter(
-    (check) => check.violations.length > 0 && scopes.includes(check.scope),
+    (check) =>
+      check.violations.length > 0 && audiences.includes(check.audience),
   );
   if (fired.length === 0) {
     return "";
