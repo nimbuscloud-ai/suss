@@ -22,6 +22,22 @@
 // millions; if that changes, the rule data model is the stable seam
 // and the evaluator is the replaceable part.
 
+import {
+  chargeEvaluation,
+  chargeRelationSizes,
+  chargeRound,
+  chargeRule,
+  isProfiling,
+} from "./profile.js";
+
+export {
+  type EvaluationProfile,
+  formatProfile,
+  profileEvaluation,
+  profileEvaluationAsync,
+  type RuleCost,
+} from "./profile.js";
+
 /** Tuple values. Callers intern richer identities (AST nodes, summaries) to atoms. */
 export type Atom = string | number;
 
@@ -565,6 +581,11 @@ export function evaluate(db: Database, rules: Rule[]): Database {
 }
 
 function runRules(db: Database, rules: Rule[]): Database {
+  // The relations a rule set derives name it well enough to tell two apart
+  // in a report, and stay readable in a way the rule JSON does not.
+  const derivedRelations = [...new Set(rules.map((r) => r.head.relation))];
+  const ruleSetName = [...derivedRelations].sort().join(", ");
+  chargeEvaluation(ruleSetName);
   const signature = JSON.stringify(rules);
   const states = statesFor(db);
   const state: RuleSetState = states.get(signature) ?? {
@@ -605,6 +626,34 @@ function runRules(db: Database, rules: Rule[]): Database {
       }
     };
 
+    // One rule against one delta. Profiling charges the rule here, where
+    // both the time and the tuples it won are in scope; the head relation's
+    // size before and after is what "this rule found something new" means.
+    const runOneRule = (
+      r: Rule,
+      seed: Map<string, readonly Tuple[]>,
+      deltaIndex: number,
+    ): void => {
+      if (!isProfiling()) {
+        for (const tuple of evaluateRule(db, seed, r, deltaIndex)) {
+          record(r.head.relation, tuple);
+        }
+        return;
+      }
+      const startedAt = performance.now();
+      const before = db.size(r.head.relation);
+      for (const tuple of evaluateRule(db, seed, r, deltaIndex)) {
+        record(r.head.relation, tuple);
+      }
+      chargeRule(
+        ruleSetName,
+        r.head.relation,
+        r.body.map((l) => (l.negated ? `!${l.relation}` : l.relation)),
+        performance.now() - startedAt,
+        db.size(r.head.relation) - before,
+      );
+    };
+
     const applyDelta = (
       seed: Map<string, readonly Tuple[]>,
       derivedOnly: boolean,
@@ -623,9 +672,7 @@ function runRules(db: Database, rules: Rule[]): Database {
           if ((seed.get(literal.relation) ?? []).length === 0) {
             continue;
           }
-          for (const tuple of evaluateRule(db, seed, r, i)) {
-            record(r.head.relation, tuple);
-          }
+          runOneRule(r, seed, i);
         }
       }
     };
@@ -640,12 +687,12 @@ function runRules(db: Database, rules: Rule[]): Database {
             all.set(l.relation, db.facts(l.relation));
           }
         }
-        for (const tuple of evaluateRule(db, all, r, -1)) {
-          record(r.head.relation, tuple);
-        }
+        runOneRule(r, all, -1);
       }
+      chargeRound(ruleSetName);
     } else {
       applyDelta(factsSince(db, marks), false);
+      chargeRound(ruleSetName);
     }
 
     // Semi-naïve rounds.
@@ -653,10 +700,17 @@ function runRules(db: Database, rules: Rule[]): Database {
       const lastDelta: Map<string, readonly Tuple[]> = delta;
       delta = new Map();
       applyDelta(lastDelta, true);
+      chargeRound(ruleSetName);
     }
   }
 
   state.marks = currentMarks(db);
+  if (isProfiling()) {
+    chargeRelationSizes(
+      db.relationNames().map((name) => [name, db.size(name)]),
+      derivedRelations,
+    );
+  }
   return db;
 }
 

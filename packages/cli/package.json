@@ -2,7 +2,7 @@
   "name": "@suss/cli",
   "version": "0.1.0",
   "type": "module",
-  "description": "Command-line interface for suss — extract, inspect, diff, and check TypeScript behavioral summaries.",
+  "description": "Command-line interface for suss: extract, inspect, diff, and check TypeScript behavioral summaries.",
   "keywords": [
     "suss",
     "cli",
@@ -70,6 +70,7 @@
     "@suss/contract-openapi": "0.1.0",
     "@suss/contract-prisma": "0.1.0",
     "@suss/contract-storybook": "0.1.0",
+    "@suss/datalog": "0.1.0",
     "@suss/extractor": "0.1.0",
     "@suss/framework-apollo": "0.1.0",
     "@suss/framework-aws-eventbridge": "0.1.0",
