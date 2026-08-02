@@ -126,32 +126,44 @@ const GUARD_RENDERERS: DispatchTable<ComponentGuard, string[]> = {
   ],
 };
 
-/** The TSX module — what the extraction pipeline sees (and, transpiled, what runs). */
-export function renderComponentModule(program: ComponentProgram): string {
-  const propsInterface =
-    program.props.length === 0
-      ? "interface Props {}"
-      : [
-          "interface Props {",
-          ...program.props.map((prop) => `  ${prop}: string;`),
-          "}",
-        ].join("\n");
-  const destructured =
-    program.props.length === 0 ? "" : `{ ${program.props.join(", ")} }`;
-  const params = program.props.length === 0 ? "" : `${destructured}: Props`;
-  const body = [
+/** The `interface Props { … }` declaration the component's params refer to. */
+export function renderPropsInterface(program: ComponentProgram): string {
+  return program.props.length === 0
+    ? "interface Props {}"
+    : [
+        "interface Props {",
+        ...program.props.map((prop) => `  ${prop}: string;`),
+        "}",
+      ].join("\n");
+}
+
+/** The component's parameter list, destructuring the props it reads. */
+export function renderComponentParams(program: ComponentProgram): string {
+  return program.props.length === 0
+    ? ""
+    : `{ ${program.props.join(", ")} }: Props`;
+}
+
+/** The component body's statements, without the function that holds them. */
+export function componentBodyLines(program: ComponentProgram): string[] {
+  return [
     ...program.guards.flatMap((guard) =>
       dispatchByType(GUARD_RENDERERS, guard),
     ),
     `return ${renderJsxNode(program.root)};`,
-  ]
+  ];
+}
+
+/** The TSX module — what the extraction pipeline sees (and, transpiled, what runs). */
+export function renderComponentModule(program: ComponentProgram): string {
+  const body = componentBodyLines(program)
     .map((line) => `  ${line}`)
     .join("\n");
 
   return [
-    propsInterface,
+    renderPropsInterface(program),
     "",
-    `export default function Generated(${params}) {`,
+    `export default function Generated(${renderComponentParams(program)}) {`,
     body,
     "}",
     "",

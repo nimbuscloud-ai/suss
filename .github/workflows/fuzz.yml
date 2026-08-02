@@ -1,0 +1,40 @@
+name: Fuzz
+
+# The fixed-seed suites run on every pull request under CI's test step.
+# This one runs the same generators for longer and at random seeds, so
+# it reaches shapes a fixed seed never draws. Nightly, plus on demand.
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      programs:
+        description: Programs per family
+        default: "2000"
+
+jobs:
+  fuzz:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Every bug the fuzzer knows about is written down in
+      # src/shape/knownBugs.ts. This run fails on a finding that is not
+      # in that list, and on a pinned bug that stopped reproducing,
+      # which is a fix somebody landed without promoting the dimension
+      # value. Either way the log carries the minimized program.
+      - name: Property suites and shapes, at a seed from the clock
+        run: npm run fuzz:long
+        env:
+          FUZZ_PROGRAMS: ${{ inputs.programs || '4000' }}

@@ -22,7 +22,9 @@
     "test:coverage": "vitest run --coverage",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:fuzz": "vitest run",
+    "fuzz:long": "node longFuzz.mjs"
   },
   "dependencies": {
     "@suss/adapter-typescript": "*",
@@ -32,7 +34,8 @@
     "@suss/framework-fastify": "*",
     "@suss/framework-react": "*",
     "fast-check": "^3.23.1",
-    "ts-morph": "^23.0.0"
+    "ts-morph": "^23.0.0",
+    "@suss/framework-nestjs-rest": "*"
   },
   "devDependencies": {
     "tsup": "*",

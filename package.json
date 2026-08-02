@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Static behavioral analysis for TypeScript — extract, compare, and publish summaries of what your code does.",
+  "description": "Static behavioral analysis for TypeScript \u2014 extract, compare, and publish summaries of what your code does.",
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
   "homepage": "https://github.com/nimbuscloud-ai/suss#readme",
@@ -62,6 +62,8 @@
     "docs:preview": "vitepress preview docs",
     "check:diagrams": "node scripts/checkDiagrams.mjs",
     "check:style": "node scripts/checkStyle.mjs",
+    "check:fuzz": "npm run -w @suss/differential check:fuzz",
+    "fuzz:long": "npm run -w @suss/differential fuzz:long",
     "check:vocabulary": "node scripts/checkPackVocabulary.mjs"
   },
   "lint-staged": {

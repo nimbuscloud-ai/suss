@@ -88,6 +88,14 @@ jobs:
       - name: Pack vocabulary
         run: npm run check:vocabulary
 
+      # The fixed-seed fuzz run: a few thousand generated programs
+      # through the pipeline itself, in about twenty seconds. A shape
+      # that works today and stops working fails the build the day it
+      # lands, and the failure prints the minimized program rather than
+      # whatever the sample happened to draw.
+      - name: Fuzz (fixed seed)
+        run: npm run check:fuzz
+
       - name: Test
         run: npm run test:coverage
 

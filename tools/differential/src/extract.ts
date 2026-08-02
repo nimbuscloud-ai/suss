@@ -69,6 +69,37 @@ export async function extractSummary(
   return found;
 }
 
+export interface ExtractAllOptions {
+  /** In-memory path to source, for every file the program spans. */
+  files: Record<string, string>;
+  pack: PatternPack;
+}
+
+/**
+ * Every summary a multi-file program produces. A shape can span a
+ * module, a barrel, and an entry file, and what the oracles check is
+ * often the set itself (how many summaries, what they are named,
+ * whether two of them collapse), so nothing is filtered here.
+ */
+export async function extractAllSummaries(
+  options: ExtractAllOptions,
+): Promise<BehavioralSummary[]> {
+  const project = getProject("__multiFile__");
+  for (const existing of project.getSourceFiles()) {
+    project.removeSourceFile(existing);
+  }
+  for (const [filePath, content] of Object.entries(options.files)) {
+    project.createSourceFile(filePath, content, { overwrite: true });
+  }
+
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: [options.pack],
+    includeReachable: false,
+  });
+  return adapter.extractAll();
+}
+
 export async function extractHandlerSummary(
   moduleSource: string,
   pack: PatternPack,
