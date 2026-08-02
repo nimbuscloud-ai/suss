@@ -72,6 +72,23 @@ describe("nestjsGraphqlFramework — pack shape", () => {
     expect(pack.discovery[0].match.type).toBe("decoratedMethod");
     expect(pack.inputMapping.type).toBe("decoratedParams");
   });
+
+  it("ships only the decorator @nestjs/graphql declares", () => {
+    const match = nestjsGraphqlFramework().discovery[0].match;
+    expect(match.type).toBe("decoratedMethod");
+    if (match.type === "decoratedMethod") {
+      expect(match.classDecorators).toEqual(["Resolver"]);
+    }
+  });
+
+  it("adds the wrapper decorators a project names", () => {
+    const match = nestjsGraphqlFramework({
+      classDecorators: ["AuditedResolver"],
+    }).discovery[0].match;
+    if (match.type === "decoratedMethod") {
+      expect(match.classDecorators).toEqual(["Resolver", "AuditedResolver"]);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

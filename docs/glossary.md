@@ -10,7 +10,7 @@ One canonical definition per term. Other docs link here rather than redefining. 
 
 **Code unit**, a callable piece of code (handler, loader, component, resolver, consumer, library function). The atomic unit of analysis. Every code unit has a **kind** ([`CodeUnitKind`](/ir-reference#codeunitkind)) that determines its behavioral model. `getUser` is a code unit of kind `"handler"`.
 
-**Terminal**, a point in a code unit where observable output is produced. Each `return` in `getUser` is a terminal; other shapes are `res.status(400).json(...)` in Express, `throw httpErrorJson(404)` in React Router, a JSX return in a React component.
+**Terminal**, a point in a code unit where observable output is produced. Each `return` in `getUser` is a terminal; other shapes are `res.status(400).json(...)` in Express, `throw notFound(404)` through a project's own error helper, a JSX return in a React component.
 
 **[Transition](/ir-reference#transition)**, `(conditions → output, effects)` with a stable `id`. The atomic unit of behavioral description; a code unit's full behavior is its set of transitions. Matching between boundaries happens at the transition level.
 

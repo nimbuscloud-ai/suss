@@ -9,10 +9,21 @@ import { awsLambdaFramework, clearTemplateCache } from "./index.js";
 import { HTTP_TERMINALS, NON_HTTP_TERMINALS } from "./terminals.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type { AwsLambdaPackOptions } from "./index.js";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/aws-lambda");
 
-async function runAdapter(): Promise<BehavioralSummary[]> {
+// The fixture handlers are built by a factory the fixture project owns,
+// so the pack only sees it when the project names it.
+const FIXTURE_SUBJECT_FACTORIES = [
+  { callees: ["createEventHandler"], argIndex: 0, property: "expected" },
+];
+
+async function runAdapter(
+  options: AwsLambdaPackOptions = {
+    subjectFactories: FIXTURE_SUBJECT_FACTORIES,
+  },
+): Promise<BehavioralSummary[]> {
   clearTemplateCache();
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
@@ -30,7 +41,7 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
 
   const adapter = createTypeScriptAdapter({
     project,
-    frameworks: [awsLambdaFramework()],
+    frameworks: [awsLambdaFramework(options)],
   });
 
   return await adapter.extractAll();
@@ -333,5 +344,13 @@ describe("awsLambdaFramework — extraction", () => {
     expect(computed).toBeDefined();
     const binding = (computed as BehavioralSummary).identity.boundaryBinding;
     expect(binding?.semantics.name).not.toBe("message-bus");
+  });
+
+  it("attaches no channel until the project names its factory", async () => {
+    const defaults = await runAdapter({});
+    const worker = byFunction(defaults, "SubjectWorkerFunction");
+    expect(worker).toBeDefined();
+    const binding = (worker as BehavioralSummary).identity.boundaryBinding;
+    expect(binding?.semantics.name).toBe("function-call");
   });
 });

@@ -39,7 +39,21 @@
 
 import type { PatternPack } from "@suss/extractor";
 
-export function nestjsRestFramework(): PatternPack {
+export interface NestjsRestPackOptions {
+  /**
+   * Class decorators this project composes `@Controller()` into. Each
+   * one joins the framework's own decorator as a controller marker.
+   * Naming a wrapper here is what makes it discoverable; the shipped
+   * default carries only what `@nestjs/common` declares, so a project
+   * that installs this pack never matches a class on a name some other
+   * codebase happened to use.
+   */
+  classDecorators?: string[];
+}
+
+export function nestjsRestFramework(
+  options: NestjsRestPackOptions = {},
+): PatternPack {
   return {
     name: "nestjs-rest",
     languages: ["typescript"],
@@ -51,17 +65,9 @@ export function nestjsRestFramework(): PatternPack {
         match: {
           type: "decoratedRoute",
           importModule: "@nestjs/common",
-          // Bare `@Controller(...)` is the canonical NestJS shape;
-          // project-internal wrappers compose it for cross-cutting
-          // concerns (auth, logging, etc.). Listed here so common
-          // codebase conventions discover without per-project pack
-          // config.
-          classDecorators: [
-            "Controller",
-            "PublicController",
-            "AuthedController",
-            "ApiController",
-          ],
+          // First match wins, so the framework's own decorator is
+          // tried before any wrapper a project names.
+          classDecorators: ["Controller", ...(options.classDecorators ?? [])],
           methodDecoratorRouteMap: {
             Get: "GET",
             Post: "POST",

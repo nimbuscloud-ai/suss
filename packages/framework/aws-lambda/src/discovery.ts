@@ -157,41 +157,52 @@ function accountingUnit(
 }
 
 /**
- * Handler factories whose config names the subject the consumer
- * expects: `createEventHandler({ expected: "widget.created" as const,
- * ... }, async ({ parsed }) => ...)`. The subject is the channel a
- * producer publishes on, so it becomes the unit's message-bus binding.
+ * A handler factory whose config names the subject the consumer
+ * expects, as `myFactory({ expected: "widget.created" }, async
+ * ({ parsed }) => ...)`. The subject is the channel a producer
+ * publishes on, so it becomes the unit's message-bus binding.
  *
- * The queue itself stays with the declared side (the message-bus pass
- * in @suss/contract-cloudformation reads the template's SQS wiring);
- * what the code adds is which subject this consumer answers to.
+ * AWS declares no such factory, so a project names its own. The queue
+ * itself stays with the declared side (the message-bus pass in
+ * @suss/contract-cloudformation reads the template's SQS wiring); what
+ * the code adds is which subject this consumer answers to.
  */
-const SUBJECT_FACTORIES = {
-  callees: ["createEventHandler", "createCommandHandler"],
-  argIndex: 0,
-  property: "expected",
-};
+export interface SubjectFactory {
+  /** Factory functions the project builds its consumers with. */
+  callees: string[];
+  /** Argument position carrying the config object. */
+  argIndex: number;
+  /** Property on that object holding the subject. */
+  property: string;
+}
 
 /**
  * The subject a handler's factory config names, when the template
  * routes SQS to it and the subject is a readable string. Anything
- * else (no factory call, computed subject) answers null and the unit
- * keeps its default binding.
+ * else (no configured factory, no factory call, computed subject)
+ * answers null and the unit keeps its default binding.
  */
 function subjectChannel(
   entry: HandlerEntry,
   sf: SourceFile,
   tsCtx: TsDiscoveryContext,
+  factories: SubjectFactory[],
 ): string | null {
   const consumesSqs = entry.nonHttpEvents.some((e) => e.eventType === "SQS");
   if (!consumesSqs) {
     return null;
   }
-  return tsCtx.exportedCallConfigString(
-    sf,
-    entry.exportName,
-    SUBJECT_FACTORIES,
-  );
+  for (const factory of factories) {
+    const subject = tsCtx.exportedCallConfigString(
+      sf,
+      entry.exportName,
+      factory,
+    );
+    if (subject !== null) {
+      return subject;
+    }
+  }
+  return null;
 }
 
 /** Events that reach a handler but do not bind to a route of their own. */
@@ -212,52 +223,59 @@ function hasBindableRoute(entry: HandlerEntry): boolean {
   return entry.httpRoutes.some((r) => r.method !== "ANY");
 }
 
-export const awsLambdaDiscovery: NonNullable<PatternPack["discoverUnits"]> = (
-  sourceFile,
-  ctx,
-) => {
-  const sf = sourceFile as SourceFile;
-  const tsCtx = ctx as TsDiscoveryContext;
-  const filePath = tsCtx.getFilePath(sf);
+export function awsLambdaDiscovery(
+  subjectFactories: SubjectFactory[] = [],
+): NonNullable<PatternPack["discoverUnits"]> {
+  return (sourceFile, ctx) => {
+    const sf = sourceFile as SourceFile;
+    const tsCtx = ctx as TsDiscoveryContext;
+    const filePath = tsCtx.getFilePath(sf);
 
-  const entries = handlersForFile(filePath);
-  if (entries.length === 0) {
-    return [];
-  }
-
-  // Map exported function names to their bodies once per file.
-  const exported = new Map<string, FunctionRoot>();
-  for (const { name, func } of tsCtx.exportedFunctions(sf)) {
-    exported.set(name, func);
-  }
-
-  const units: DiscoveredCustomUnit[] = [];
-  for (const entry of entries) {
-    const func = exported.get(entry.exportName);
-    if (func === undefined) {
-      // The template names an export this file doesn't provide (renamed
-      // handler, build artifact mismatch). Nothing to extract; the
-      // declared route still exists on the contract side.
-      continue;
+    const entries = handlersForFile(filePath);
+    if (entries.length === 0) {
+      return [];
     }
-    // A route and a GraphQL field are independent boundaries, and one
-    // handler can serve both.
-    units.push(...httpRouteUnits(entry, func));
-    units.push(...graphqlResolverUnits(entry, func));
-    // The accounting unit covers a handler that bound to nothing, and
-    // also the events that reach a bound handler without a boundary of
-    // their own. A queue that feeds a resolver was reported before the
-    // resolver binding existed, and has to keep being reported.
-    // Events that reach a handler without a boundary of their own get
-    // reported whatever else that handler bound to, so a queue feeding
-    // a route or an operation stays visible. A handler that bound to
-    // nothing at all gets one too, so nothing recognized is dropped.
-    const unaccountedEvents = accountedEventTypes(entry);
-    const boundToNothing =
-      !hasBindableRoute(entry) && operationFields(entry).length === 0;
-    if (unaccountedEvents.length > 0 || boundToNothing) {
-      units.push(accountingUnit(entry, func, subjectChannel(entry, sf, tsCtx)));
+
+    // Map exported function names to their bodies once per file.
+    const exported = new Map<string, FunctionRoot>();
+    for (const { name, func } of tsCtx.exportedFunctions(sf)) {
+      exported.set(name, func);
     }
-  }
-  return units;
-};
+
+    const units: DiscoveredCustomUnit[] = [];
+    for (const entry of entries) {
+      const func = exported.get(entry.exportName);
+      if (func === undefined) {
+        // The template names an export this file doesn't provide (renamed
+        // handler, build artifact mismatch). Nothing to extract; the
+        // declared route still exists on the contract side.
+        continue;
+      }
+      // A route and a GraphQL field are independent boundaries, and one
+      // handler can serve both.
+      units.push(...httpRouteUnits(entry, func));
+      units.push(...graphqlResolverUnits(entry, func));
+      // The accounting unit covers a handler that bound to nothing, and
+      // also the events that reach a bound handler without a boundary of
+      // their own. A queue that feeds a resolver was reported before the
+      // resolver binding existed, and has to keep being reported.
+      // Events that reach a handler without a boundary of their own get
+      // reported whatever else that handler bound to, so a queue feeding
+      // a route or an operation stays visible. A handler that bound to
+      // nothing at all gets one too, so nothing recognized is dropped.
+      const unaccountedEvents = accountedEventTypes(entry);
+      const boundToNothing =
+        !hasBindableRoute(entry) && operationFields(entry).length === 0;
+      if (unaccountedEvents.length > 0 || boundToNothing) {
+        units.push(
+          accountingUnit(
+            entry,
+            func,
+            subjectChannel(entry, sf, tsCtx, subjectFactories),
+          ),
+        );
+      }
+    }
+    return units;
+  };
+}

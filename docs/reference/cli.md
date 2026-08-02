@@ -159,6 +159,33 @@ the handler that names the same subject. A subject the source does not
 state as a string yields no effect at all: pairing on a guessed channel
 would name the wrong consumer.
 
+Several other packs take a project's own wrapper names the same way. A
+pack ships only what its own library defines, so a wrapper composing the
+library's shape is invisible until the project names it.
+
+| Pack | Option | What it names |
+| --- | --- | --- |
+| `nestjs-rest` | `classDecorators` | Decorators composing `@Controller()` |
+| `nestjs-graphql` | `classDecorators` | Decorators composing `@Resolver()` |
+| `react-router` | `errorHelpers` | Helpers a loader throws HTTP errors through |
+| `aws-lambda` | `subjectFactories` | Factories building an SQS consumer, and the config property holding the subject |
+
+```json
+{ "classDecorators": ["AuthedController", "PublicController"] }
+```
+
+```json
+{
+  "subjectFactories": [
+    { "callees": ["createEventHandler"], "argIndex": 0, "property": "expected" }
+  ]
+}
+```
+
+`callees` are the factory functions, `argIndex` is the argument holding
+the config object, and `property` is the key on it that names the
+subject.
+
 ### Exit codes
 
 - `0`: extraction succeeded (regardless of how many summaries emerged).

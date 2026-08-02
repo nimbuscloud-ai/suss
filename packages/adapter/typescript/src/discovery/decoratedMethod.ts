@@ -92,9 +92,8 @@ export function discoverDecoratedMethods(
   // signal that this file is operating in the target framework's
   // semantics. Class decorators are matched by name only: codebases
   // commonly wrap the framework's class decorator in their own
-  // factory (NestJS apps frequently declare `MetadataResolver` /
-  // `CoreResolver` that re-emit `@Resolver()`), and those wrappers
-  // are imported from project-internal paths the pack can't enumerate.
+  // factory, and those wrappers are imported from project-internal
+  // paths the pack can't enumerate.
   // Method decorators stay strict to avoid false positives — without
   // an import from the framework module, this file isn't a target.
   const acceptedModules = Array.isArray(match.importModule)

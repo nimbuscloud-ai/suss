@@ -41,7 +41,20 @@ async function extractCode(): Promise<BehavioralSummary[]> {
   project.addSourceFilesAtPaths(path.join(fixtureRoot, "src/**/*.ts"));
   const adapter = createTypeScriptAdapter({
     project,
-    frameworks: [awsLambdaFramework()],
+    frameworks: [
+      awsLambdaFramework({
+        // The fixture service owns this factory, so the pack only reads
+        // the subject once the service names it, the way a project does
+        // through `-f aws-lambda=config.json`.
+        subjectFactories: [
+          {
+            callees: ["createEventHandler"],
+            argIndex: 0,
+            property: "expected",
+          },
+        ],
+      }),
+    ],
   });
   return await adapter.extractAll();
 }

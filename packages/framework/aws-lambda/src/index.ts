@@ -31,11 +31,28 @@ import { awsLambdaDiscovery } from "./discovery.js";
 import { HTTP_TERMINALS } from "./terminals.js";
 
 import type { PatternPack } from "@suss/extractor";
+import type { SubjectFactory } from "./discovery.js";
 
 export { awsLambdaDiscovery, METADATA_NAMESPACE } from "./discovery.js";
 export { clearTemplateCache } from "./templateIndex.js";
 
-export function awsLambdaFramework(): PatternPack {
+export type { SubjectFactory } from "./discovery.js";
+
+export interface AwsLambdaPackOptions {
+  /**
+   * Factories this project builds its SQS consumers with, whose config
+   * names the subject the consumer expects. A handler built by one gets
+   * a message-bus binding on that subject instead of the fallback.
+   * AWS declares no such factory, so nothing is assumed by default and
+   * a project that installs this pack never matches a call on a name
+   * some other codebase happened to use.
+   */
+  subjectFactories?: SubjectFactory[];
+}
+
+export function awsLambdaFramework(
+  options: AwsLambdaPackOptions = {},
+): PatternPack {
   return {
     name: "aws-lambda",
     protocol: "http",
@@ -55,7 +72,7 @@ export function awsLambdaFramework(): PatternPack {
     // No data-driven discovery: routing lives in the SAM/CFN template,
     // not in code. The callback resolves handlers against the template.
     discovery: [],
-    discoverUnits: awsLambdaDiscovery,
+    discoverUnits: awsLambdaDiscovery(options.subjectFactories ?? []),
 
     // No import gate, on purpose.
     //

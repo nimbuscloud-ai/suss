@@ -37,7 +37,21 @@
 
 import type { PatternPack } from "@suss/extractor";
 
-export function nestjsGraphqlFramework(): PatternPack {
+export interface NestjsGraphqlPackOptions {
+  /**
+   * Class decorators this project composes `@Resolver()` into. Each one
+   * joins the framework's own decorator as a resolver marker. Naming a
+   * wrapper here is what makes it discoverable; the shipped default
+   * carries only what `@nestjs/graphql` declares, so a project that
+   * installs this pack never matches a class on a name some other
+   * codebase happened to use.
+   */
+  classDecorators?: string[];
+}
+
+export function nestjsGraphqlFramework(
+  options: NestjsGraphqlPackOptions = {},
+): PatternPack {
   return {
     name: "nestjs-graphql",
     languages: ["typescript"],
@@ -53,16 +67,9 @@ export function nestjsGraphqlFramework(): PatternPack {
         match: {
           type: "decoratedMethod",
           importModule: "@nestjs/graphql",
-          // First-match-wins. Bare `@Resolver()` is the canonical
-          // NestJS shape; the `*Resolver` aliases cover the dominant
-          // wrapper convention seen in NestJS codebases that compose
-          // the bare decorator with project-specific metadata.
-          classDecorators: [
-            "Resolver",
-            "MetadataResolver",
-            "CoreResolver",
-            "AdminResolver",
-          ],
+          // First match wins, so the framework's own decorator is
+          // tried before any wrapper a project names.
+          classDecorators: ["Resolver", ...(options.classDecorators ?? [])],
           methodDecorators: [
             "Query",
             "Mutation",
