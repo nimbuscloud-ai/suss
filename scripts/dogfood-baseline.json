@@ -2,14 +2,14 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "providers": 985,
+    "providers": 987,
     "consumers": 278,
     "pairs": 270
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "providers": 377,
+      "providers": 379,
       "consumers": 22
     },
     "packages/behavioral-ir": {

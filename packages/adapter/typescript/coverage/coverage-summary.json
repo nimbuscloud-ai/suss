@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 6009,
-      "covered": 5003,
+      "total": 6033,
+      "covered": 5001,
       "skipped": 0,
-      "pct": 83.25
+      "pct": 82.89
     },
     "statements": {
-      "total": 6064,
-      "covered": 5056,
+      "total": 6088,
+      "covered": 5054,
       "skipped": 0,
-      "pct": 83.37
+      "pct": 83.01
     },
     "functions": {
-      "total": 663,
-      "covered": 611,
+      "total": 666,
+      "covered": 613,
       "skipped": 0,
-      "pct": 92.15
+      "pct": 92.04
     },
     "branches": {
-      "total": 4668,
+      "total": 4686,
       "covered": 3481,
       "skipped": 0,
-      "pct": 74.57
+      "pct": 74.28
     },
     "branchesTrue": {
       "total": 0,
@@ -1204,9 +1204,9 @@
   "src/resolve/astResolve.ts": {
     "lines": {
       "total": 193,
-      "covered": 137,
+      "covered": 139,
       "skipped": 0,
-      "pct": 70.98
+      "pct": 72.02
     },
     "functions": {
       "total": 20,
@@ -1216,15 +1216,15 @@
     },
     "statements": {
       "total": 195,
-      "covered": 139,
+      "covered": 141,
       "skipped": 0,
-      "pct": 71.28
+      "pct": 72.3
     },
     "branches": {
       "total": 150,
-      "covered": 106,
+      "covered": 108,
       "skipped": 0,
-      "pct": 70.66
+      "pct": 72
     }
   },
   "src/resolve/boundaryEffects.ts": {
@@ -1385,28 +1385,28 @@
   },
   "src/shapes/typeShapes.ts": {
     "lines": {
-      "total": 183,
-      "covered": 147,
+      "total": 207,
+      "covered": 143,
       "skipped": 0,
-      "pct": 80.32
+      "pct": 69.08
     },
     "functions": {
-      "total": 17,
-      "covered": 14,
+      "total": 20,
+      "covered": 16,
       "skipped": 0,
-      "pct": 82.35
+      "pct": 80
     },
     "statements": {
-      "total": 184,
-      "covered": 148,
+      "total": 208,
+      "covered": 144,
       "skipped": 0,
-      "pct": 80.43
+      "pct": 69.23
     },
     "branches": {
-      "total": 159,
-      "covered": 113,
+      "total": 177,
+      "covered": 111,
       "skipped": 0,
-      "pct": 71.06
+      "pct": 62.71
     }
   },
   "src/terminals/extract.ts": {
