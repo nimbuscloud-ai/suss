@@ -169,7 +169,7 @@ function declaresAValue(declaration: Node): boolean {
  * `@types/foo` is how `foo` describes itself, and a pack names the
  * package people import, so both answer.
  */
-function packagesDeclaring(filePath: string): string[] {
+export function packagesDeclaring(filePath: string): string[] {
   const marker = "/node_modules/";
   const at = filePath.lastIndexOf(marker);
   if (at === -1) {

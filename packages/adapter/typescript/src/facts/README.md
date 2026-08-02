@@ -40,6 +40,27 @@ judgment instead:
 transparentWrappers: [{ callee: "Sentry.wrapHandler", argument: 0 }]
 ```
 
+## What a wrapper stands for
+
+`unwraps` answers what a factory hands back. The other question a
+wrapper raises is what it is: a project decorator that calls
+`@Resolver()` marks a resolver, whatever it is called.
+
+`importedCallsOf(value, modules)` answers that. It follows the value to
+the function behind it, then reports the names that function ends up
+calling from those modules, through the closures it declares and through
+another wrapper it delegates to. The pack asks whether the framework's
+own decorator is among them.
+
+The answer is memoized against the declaration, since one wrapper is
+applied across hundreds of files and the question is about the wrapper
+rather than about any use of it. The caller also has to be sure the
+value is worth asking about: a query that finds nothing still walks the
+import closure, which pulls files into the program and changes what the
+type checker reports for shapes read later. Decorator discovery asks
+only about a decorator the project itself declares, which is the only
+kind that can have a readable body.
+
 ## Cost
 
 Facts arrive in waves. A query extracts the file its value lives in and
