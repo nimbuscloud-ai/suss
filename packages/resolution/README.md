@@ -62,6 +62,19 @@ written as, whatever kind of expression that turns out to be. A GraphQL
 document is neither a function nor an object, so `comesTo` never
 reaches one.
 
+One relation comes out for the rules' own use rather than for callers:
+
+```
+objectOf(x, obj)            x stands for the object literal obj
+```
+
+An object arrives two ways, through a name or as what a factory call
+returns, and `objectOf` names that step so the rule for `routes.list`
+and the rule for `make(body).handle` are the same rule. A factory call
+gets an `objectOf` answer without getting a `comesTo` answer, since a
+factory call usually is the wrapper and answering with the function it
+returns would fight the unwrapping answer.
+
 ## Why rules and not a walker
 
 Each rule describes one hop. The chains people write are longer than
