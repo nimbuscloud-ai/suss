@@ -2326,3 +2326,136 @@ describe("unit identity", () => {
     ]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// registrationCall: how the handler reaches the registration
+// ---------------------------------------------------------------------------
+
+describe("a handler named at the registration rather than written there", () => {
+  const HANDLER = "(req: any, res: any) => { res.json({ ok: true }); }";
+
+  /** One entry file plus whatever other files the shape needs. */
+  function discoverIn(
+    entry: string,
+    others: Record<string, string> = {},
+  ): ReturnType<typeof discoverUnits> {
+    const project = createProject();
+    for (const [name, text] of Object.entries(others)) {
+      project.createSourceFile(name, text);
+    }
+    const file = project.createSourceFile(
+      "entry.ts",
+      `import { Router } from "express";\nconst router = Router();\n${entry}`,
+    );
+    return discoverUnits(file, [makeExpressPattern()], new ResolutionStore());
+  }
+
+  const unitFile = `export const handler = ${HANDLER};\n`;
+
+  const reaches: Array<[string, string, Record<string, string>]> = [
+    ["written at the call", `router.get("/p", ${HANDLER});`, {}],
+    ["a name", `const handler = ${HANDLER};\nrouter.get("/p", handler);`, {}],
+    [
+      "a property read",
+      `const routes = { list: ${HANDLER} };\nrouter.get("/p", routes.list);`,
+      {},
+    ],
+    [
+      "an array index",
+      `const routes = [${HANDLER}];\nrouter.get("/p", routes[0]);`,
+      {},
+    ],
+    [
+      "an alias of a name",
+      `const handler = ${HANDLER};\nconst alias = handler;\nrouter.get("/p", alias);`,
+      {},
+    ],
+    [
+      "an import",
+      `import { handler } from "./unit.js";\nrouter.get("/p", handler);`,
+      { "unit.ts": unitFile },
+    ],
+    [
+      "a barrel",
+      `import { handler } from "./barrel.js";\nrouter.get("/p", handler);`,
+      {
+        "unit.ts": unitFile,
+        "barrel.ts": `export { handler } from "./unit.js";\n`,
+      },
+    ],
+    [
+      "two barrels",
+      `import { handler } from "./second.js";\nrouter.get("/p", handler);`,
+      {
+        "unit.ts": unitFile,
+        "barrel.ts": `export { handler } from "./unit.js";\n`,
+        "second.ts": `export { handler } from "./barrel.js";\n`,
+      },
+    ],
+  ];
+
+  for (const [how, entry, others] of reaches) {
+    it(`finds a handler that reaches the call through ${how}`, () => {
+      const units = discoverIn(entry, others);
+      expect(units).toHaveLength(1);
+      expect(units[0].name).toBe("get");
+    });
+  }
+
+  it("keeps both routes when one function serves two of them", () => {
+    // The same function now reaches two registrations. Each route is
+    // its own boundary even though the body behind them is shared, and
+    // the route the pack lifts out of the call is what tells them
+    // apart.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "entry.ts",
+      [
+        'import { Router } from "express";',
+        "const router = Router();",
+        `const handler = ${HANDLER};`,
+        'router.get("/a", handler);',
+        'router.get("/b", handler);',
+      ].join("\n"),
+    );
+    const routed: DiscoveryPattern = {
+      ...makeExpressPattern(),
+      bindingExtraction: {
+        method: { type: "fromRegistration", position: "methodName" },
+        path: { type: "fromRegistration", position: 0 },
+      },
+    };
+    const units = discoverUnits(file, [routed], new ResolutionStore());
+    expect(units.map((u) => u.routeInfo?.path).sort()).toEqual(["/a", "/b"]);
+  });
+
+  it("finds nothing when two candidates both look valid", () => {
+    // Reporting a route's behaviour from the wrong one of two functions
+    // is worse than reporting nothing.
+    const units = discoverIn(
+      [
+        `const first = ${HANDLER};`,
+        "const second = (req: any, res: any) => { res.status(500).send(); };",
+        "const routes: any = { pick: first };",
+        "const other: any = { pick: second };",
+        "const chosen: any = Math.random() ? routes : other;",
+        'router.get("/p", chosen.pick);',
+      ].join("\n"),
+    );
+    expect(units).toHaveLength(0);
+  });
+
+  it("finds nothing when the handler arrives as a parameter", () => {
+    // Whoever calls `register` supplies the function, and this file
+    // cannot see where it came from.
+    const units = discoverIn(
+      [
+        "const register = (handle: any) => {",
+        '  router.get("/p", handle);',
+        "};",
+        `register(${HANDLER});`,
+      ].join("\n"),
+    );
+    expect(units).toHaveLength(0);
+  });
+});

@@ -71,6 +71,46 @@ the rules at all: it is a walk over module specifiers, memoized per gate
 set, because deriving every file's reachable-module set to answer one
 boolean is far more work than the question is worth.
 
+## How a value reaches the place it is used
+
+Discovery asks the fact layer what a value at a given position is,
+rather than reading the syntax sitting there. `router.get("/users",
+listUsers)` is the ordinary spelling in an Express codebase, and the
+syntax at the argument is an identifier.
+
+Eleven ways a handler can reach its registration turned up in
+generation. These resolve:
+
+| How it reaches | Example |
+| --- | --- |
+| written there | `router.get("/p", (req, res) => {})` |
+| a name | `router.get("/p", handler)` |
+| a property read | `router.get("/p", routes.list)` |
+| an array index | `router.get("/p", routes[0])` |
+| an alias | `const alias = handler` |
+| an import | `import { handler } from "./unit.js"` |
+| a barrel | one re-export in between |
+| two barrels | two |
+
+An index resolves because an array holds its elements under their
+positions, which is the same fact an object literal emits, so the
+property rule answers both without knowing about arrays.
+
+Three do not:
+
+- **A call's return.** `const pick = () => handler; router.get("/p",
+  pick())`. A rule saying a call comes to what the callee returns would
+  give a wrapper factory a second answer alongside the one `unwraps`
+  gives, and two answers is nothing. Telling the two apart needs the
+  rule to ask whether the callee unwraps, which is negation over a
+  relation derived from the rule itself, and that does not stratify.
+- **A factory's object argument.** `const built = build({ handle:
+  handler })`, where `build` returns `options.handle`. This is the rule
+  that was tried and taken out, described above.
+- **A parameter.** `const register = (handle) => router.get("/p",
+  handle)`. Whoever calls `register` supplies the function, and this
+  file cannot see where it came from.
+
 ## What it over-approximates
 
 `unwraps` asks whether the returned function calls a parameter, not
