@@ -58,9 +58,9 @@ const positiveLiteral = (relation: string, terms: Term[]): Literal => ({
  * whole and everything else is derived only where those relations reach.
  *
  * Demand enters as ordinary facts. Give a complete relation a rule whose
- * first literal is a base relation the caller asserts — `answer(x, z) <-
- * asked(x), comesTo(x, z)` — and the rewrite turns each `asked` fact into
- * demand for one value's chain.
+ * first literal is a base relation the caller asserts, as in `answer(x,
+ * z) <- asked(x), comesTo(x, z)`, and the rewrite turns each `asked`
+ * fact into demand for one value's chain.
  *
  * Relations no complete relation reaches are dropped, so a caller reading
  * a relation it did not name gets nothing. Negation is rejected: a
