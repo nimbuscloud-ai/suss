@@ -37,9 +37,15 @@ by `fn:<package>::<exportPath>`.
 
 ## What the run produces
 
-**949 provider + 254 consumer summaries across 38/38 `@suss/*` packages. 246 cross-package edges paired.**
+**202 export + 785 internal + 278 consumer summaries across 38/38 `@suss/*` packages. 270 cross-package edges paired.**
 
-753 of the 949 provider summaries come from the transitive-closure pass. Every internal helper a pack-recognised entry point reaches through a static call chain gets its own summary, with `recognition: "reachable"` telling them apart from the 196 pack-discovered units. A reachable helper is not on a boundary, so it carries no package and export path and cannot pair, and `pairSummaries` reports all 753 under `unmatched.noBinding`.
+Library summaries are counted on two lines because they move for different reasons.
+
+The 202 export summaries describe what the packages promise callers. Each one carries a package and an export path that a pairing key is built from, and the path is one a manifest declares, or a method reached through one. That number only moves when a package's public surface moves.
+
+The 785 internal summaries come from the transitive-closure pass. Every helper a pack-recognised entry point reaches through a static call chain gets its own summary, with `recognition: "reachable"` telling them apart. A reached helper sits inside a package rather than on its edge, so it carries no export path and cannot pair, and `pairSummaries` reports all 785 under `unmatched.noBinding`. That number moves when extraction changes, and also when someone adds or removes a private helper.
+
+Mixed into one number they hid each other. `@suss/cli` declares ten exports, and adding one module of five module-private helpers to it moved the old provider count from 70 to 75, which read as the package having grown its API when no caller could reach any of the five.
 
 `scripts/dogfood.mjs` writes these counts to `scripts/dogfood-baseline.json`, which is committed, and CI runs the script on every push. [What CI enforces](#what-ci-enforces) covers what happens when a number moves.
 
@@ -48,12 +54,12 @@ suss monorepo):
 
 | Export | Callers |
 |--------|--------:|
-| `@suss/adapter-typescript::createTypeScriptAdapter` | 40 |
-| `@suss/adapter-typescript::createTypeScriptAdapter.extractAll` | 40 |
-| `@suss/behavioral-ir::restBinding` | 21 |
+| `@suss/adapter-typescript::createTypeScriptAdapter` | 43 |
+| `@suss/adapter-typescript::createTypeScriptAdapter.extractAll` | 43 |
+| `@suss/behavioral-ir::restBinding` | 22 |
 | `@suss/behavioral-ir::functionCallBinding` | 13 |
 | `@suss/behavioral-ir::messageBusBinding` | 12 |
-| `@suss/checker::checkAll` | 10 |
+| `@suss/checker::checkAll` | 11 |
 | `@suss/manifest-aws::refTarget` | 8 |
 | `@suss/behavioral-ir::runtimeConfigBinding` | 6 |
 | `@suss/extractor::assembleSummary` | 6 |
@@ -207,7 +213,10 @@ no git ref involved:
 1. Every function a package declares as a callable export has a
    provider summary. The declared set comes from each manifest's
    `exports` map, read through the TypeScript compiler, so it is
-   a second opinion arrived at without suss.
+   a second opinion arrived at without suss. The export count in
+   the baseline reads the same set from the same place, so the
+   count and the invariant cannot disagree about what a package
+   exposes.
 2. Every summary a pack recognised carries the package and export
    path a pairing key is built from. The transitive closure is
    the exception, since a reachable helper is not on a boundary.
@@ -229,9 +238,18 @@ The counts are there because the invariants cannot see a
 recognizer that stops firing at some call sites while still
 firing at others. Every declared export still has its summary,
 every boundary still has its key, and the only thing that moved
-is how much of the closure suss reached. That closure is 753 of
-the 949 provider summaries, so leaving it unguarded would leave
-most of the run unguarded.
+is how much of the closure suss reached. That closure is 785 of
+the 987 library summaries, so leaving it unguarded would leave
+most of the run unguarded. The internal line is where it shows
+up: stop the closure expanding and internal falls to nothing
+while every export and every invariant holds.
+
+A refactor moves the internal line too, and that is the reason it
+is its own line rather than folded into the export count. Pulling
+a helper out of a function raises it, inlining one lowers it, and
+a reviewer reading "internal fell, exports held" knows to ask
+which of the two happened. When both counts sat in one number
+there was nothing to ask.
 
 ### What this blocks, and what to do about it
 
@@ -241,6 +259,7 @@ means these ordinary changes fail until you do something:
 | What you did | What to do |
 |---|---|
 | Deleted an export or folded two helpers into one | `npm run dogfood`, commit the refreshed baseline |
+| Inlined a private helper, or moved one behind a call the closure cannot follow | Same. The internal line drops and the export line holds |
 | Moved an export from one package to another | Same. The losing package's line drops and the gaining package's rises, both in the diff |
 | Narrowed a recognizer that was over-firing | Same. This is the case worth being careful about, since the diff looks identical to a regression |
 | Renamed a package in place | Nothing. Packages are keyed by directory, so the rename reads as one package whose name changed |
