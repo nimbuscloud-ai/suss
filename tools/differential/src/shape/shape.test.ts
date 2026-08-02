@@ -14,19 +14,15 @@ import { describe, expect, it } from "vitest";
 import { nestjsRestFramework } from "@suss/framework-nestjs-rest";
 import { reactFramework } from "@suss/framework-react";
 
-import {
-  ANNOUNCEMENTS,
-  type AnnounceShapeSpec,
-  SIMPLEST_ANNOUNCEMENT,
-} from "./announceShape.js";
+import { ANNOUNCEMENTS, SIMPLEST_ANNOUNCEMENT } from "./announceShape.js";
 import {
   type ComponentShapeSpec,
   repairComponentShape,
 } from "./componentShape.js";
 import {
-  ANNOUNCEMENT_BUGS,
   COMPONENT_BUGS,
   REACH_BUGS,
+  SOUND_METHOD_FORMS,
   SOUND_REACH_PATHS,
 } from "./knownBugs.js";
 import { findingSignature, signaturesOf } from "./minimize.js";
@@ -308,10 +304,16 @@ describe("shape fuzzer, a response typed by a library type", () => {
 
 const NEST_PACK = nestjsRestFramework();
 
+const METHOD_FORM_PROSE: Record<(typeof SOUND_METHOD_FORMS)[number], string> = {
+  method: "a method",
+  asyncMethod: "an async method",
+  arrowProperty: "a property holding an arrow",
+};
+
 describe("shape fuzzer, sound tier (nestjs-rest)", () => {
-  for (const method of ["method", "asyncMethod"] as const) {
+  for (const method of SOUND_METHOD_FORMS) {
     it(
-      `a controller whose handler is written as ${method === "method" ? "a method" : "an async method"} summarizes the same way`,
+      `a controller whose handler is written as ${METHOD_FORM_PROSE[method]} summarizes the same way`,
       { timeout: 60_000 },
       async () => {
         const result = await runAnnounceShapeDifferential(
@@ -341,29 +343,6 @@ describe("shape fuzzer, sound tier (nestjs-rest)", () => {
         if (shapeFailed(result)) {
           throw new Error(formatShapeFailure(result));
         }
-      },
-    );
-  }
-});
-
-describe("shape fuzzer, decorator bugs that are still in the tree", () => {
-  for (const bug of ANNOUNCEMENT_BUGS) {
-    it(
-      `still broken, ${bug.dimension}=${bug.value}: ${bug.wrong}`,
-      { timeout: 60_000 },
-      async () => {
-        const spec: AnnounceShapeSpec = {
-          ...SIMPLEST_ANNOUNCEMENT,
-          bodyKey: "ok",
-          [bug.dimension]: bug.value,
-        };
-        const result = await runAnnounceShapeDifferential(spec, NEST_PACK);
-        // Asserting the broken behaviour on purpose, so that fixing it
-        // breaks this test and the value moves into the sound tier.
-        expect(
-          [...signaturesOf(result)],
-          `${bug.wrong}: the fuzzer no longer finds this, so it looks fixed. Move ${bug.dimension}=${bug.value} into the sound tier above and take it out of knownBugs.ts.\n${formatShapeFailure(result)}`,
-        ).toContain(bug.signature);
       },
     );
   }

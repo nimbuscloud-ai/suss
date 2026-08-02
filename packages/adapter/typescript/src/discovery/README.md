@@ -11,6 +11,7 @@ Runs after the bootstrap pre-filter has decided which files each pack applies to
 - `index.ts:discoverUnits` — public API. Runs every pattern, then dedupes results by `(func, kind, packageExportInfo, routeInfo)`.
 - `index.ts:runPattern` — dispatch table from `match.type` to the per-handler module.
 - `shared.ts:DiscoveredUnit` — the result type. Carries `func`, `kind`, `name`, plus optional pattern-specific payloads (`callSite`, `operationInfo`, `resolverInfo`, `packageExportInfo`, `routeInfo`).
+- `decoratedMembers.ts:decoratedCallablesOf`: the decorated callables a class declares, whether written as methods or as properties holding a function. Both decorator-driven handlers read a class through this.
 - `shared.ts:findEnclosingFunction` / `toFunctionRoot` — AST helpers most handlers need.
 - `resolveValue.ts:functionValueOf` / `objectLiteralOf` / `arrayLiteralOf` — the value a handler is looking at, whether it was written out at the position or named there. Every handler that reads an argument, a property or an iterable goes through these.
 - `factoryTracking.ts:trackFactoryBindings` — scope-aware binding tracker used by `packageImport` to follow factory results through one syntactic hop.

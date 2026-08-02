@@ -121,14 +121,7 @@ export const HANDLER_BUGS: ReproducedBug[] = [
  * which members the walk reads once the class is recognized.
  */
 export const ANNOUNCEMENT_BUGS: ReproducedBug[] = [
-  {
-    dimension: "method",
-    value: "arrowProperty",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a handler written as a decorated arrow property, rather than a method, loses the boundary",
-  },
-];
+  ];
 
 /**
  * Wrong behaviour where a GraphQL field says which function answers
