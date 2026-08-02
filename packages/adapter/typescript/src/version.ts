@@ -13,15 +13,17 @@
 // release. In dev (rebuilt dist), the hash changes on every rebuild
 // and invalidates the cache automatically.
 //
-// Tests run from src (no dist sibling); the hash falls through to an
-// empty string, so test-time cache keys stay deterministic across
-// runs.
-//
 // The hash covers the packages the analysis runs through, not only
 // this one. The extractor turns what the adapter reads into summaries
 // and the resolution rules decide what an export comes down to, and
 // both ship separately, so a release changing only one of them would
 // otherwise keep serving summaries the previous one produced.
+//
+// Under vitest, ts-node or tsx there is no bundle beside this module,
+// so nothing here can see the adapter's own code and the stamp says
+// "source" instead of naming a hash. A run in that mode does not get
+// to cache: every edit to the adapter would otherwise be invisible to
+// the key and the previous run's answers would come back unchanged.
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -34,26 +36,43 @@ export const ADAPTER_VERSION = "0.2.0";
 /** Packages whose behaviour shapes extraction output. */
 const ANALYSIS_PACKAGES = ["@suss/extractor", "@suss/resolution"];
 
-let cachedDistHash: string | null = null;
+/**
+ * Whether this process can see the adapter's own code. `bundle` carries
+ * a hash that moves whenever the code does; `source` means nothing here
+ * could find it, so no cache key built from this stamp describes the
+ * code that will produce the answers.
+ */
+export type AdapterCodeStamp =
+  | { kind: "bundle"; hash: string }
+  | { kind: "source" };
 
-function computeDistHash(): string {
-  if (cachedDistHash !== null) {
-    return cachedDistHash;
+const SOURCE_STAMP: AdapterCodeStamp = { kind: "source" };
+
+let cachedCodeStamp: AdapterCodeStamp | null = null;
+
+/**
+ * The stamp for the running adapter. Computed once per process; the
+ * files behind it cannot change under a process that has already loaded
+ * them.
+ */
+export function adapterCodeStamp(): AdapterCodeStamp {
+  if (cachedCodeStamp !== null) {
+    return cachedCodeStamp;
   }
+  cachedCodeStamp = readAdapterCodeStamp();
+  return cachedCodeStamp;
+}
+
+function readAdapterCodeStamp(): AdapterCodeStamp {
   try {
     // At runtime under ESM, `import.meta.url` points at this module's
     // file. In a published package that's `dist/index.js` (tsup bundles
     // version.ts into the same file). Hash that file.
-    //
-    // In ts-node / vitest the URL points at `src/version.ts`; the
-    // sibling `index.js` does not exist, so we fall through to the
-    // empty stamp. Test-time cache keys stay stable across processes.
     const selfPath = fileURLToPath(import.meta.url);
-    cachedDistHash = computeDistHashFrom(path.dirname(selfPath));
-    return cachedDistHash;
+    const hash = computeDistHashFrom(path.dirname(selfPath));
+    return hash.length > 0 ? { kind: "bundle", hash } : SOURCE_STAMP;
   } catch {
-    cachedDistHash = "";
-    return cachedDistHash;
+    return SOURCE_STAMP;
   }
 }
 
@@ -128,6 +147,10 @@ function analysisBundles(): string[] {
  * The adapter takes packs as plain objects and cannot tell where one
  * came from, so folding the config and the code into the stamp is the
  * loader's job.
+ *
+ * A source run says so in the digest rather than leaving the adapter
+ * out of it. Nothing writes under that digest today, and a key that
+ * names the mode cannot be mistaken for a key that named the code.
  */
 export function computeAdapterPacksDigest(
   packVersions: ReadonlyArray<{ name: string; version?: string }>,
@@ -135,10 +158,10 @@ export function computeAdapterPacksDigest(
   const sortedPacks = [...packVersions]
     .map((p) => `${p.name}@${p.version ?? "unset"}`)
     .sort();
-  const distHash = computeDistHash();
+  const stamp = adapterCodeStamp();
   const adapterStamp =
-    distHash.length > 0
-      ? `adapter@${ADAPTER_VERSION}+${distHash}`
-      : `adapter@${ADAPTER_VERSION}`;
+    stamp.kind === "bundle"
+      ? `adapter@${ADAPTER_VERSION}+${stamp.hash}`
+      : `adapter@${ADAPTER_VERSION}+source`;
   return `${adapterStamp}|${sortedPacks.join(",")}`;
 }
