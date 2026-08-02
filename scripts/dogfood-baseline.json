@@ -3,27 +3,27 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 210,
-    "internal": 850,
-    "consumers": 319,
-    "pairs": 311
+    "internal": 1005,
+    "consumers": 324,
+    "pairs": 316
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 25,
-      "internal": 394,
+      "internal": 457,
       "consumers": 23
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
       "exports": 20,
-      "internal": 7,
+      "internal": 5,
       "consumers": 3
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 26,
-      "internal": 126,
+      "internal": 111,
       "consumers": 41
     },
     "packages/checker-intent": {
@@ -35,7 +35,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 74,
+      "internal": 144,
       "consumers": 121
     },
     "packages/client/apollo": {
@@ -65,19 +65,19 @@
     "packages/contract/aws-apigateway": {
       "name": "@suss/contract-aws-apigateway",
       "exports": 2,
-      "internal": 16,
+      "internal": 19,
       "consumers": 3
     },
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 32,
-      "consumers": 23
+      "internal": 25,
+      "consumers": 28
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
       "exports": 6,
-      "internal": 19,
+      "internal": 25,
       "consumers": 2
     },
     "packages/contract/intent": {
@@ -107,7 +107,7 @@
     "packages/datalog": {
       "name": "@suss/datalog",
       "exports": 18,
-      "internal": 31,
+      "internal": 47,
       "consumers": 0
     },
     "packages/extractor": {
@@ -131,7 +131,7 @@
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
       "exports": 4,
-      "internal": 15,
+      "internal": 13,
       "consumers": 7
     },
     "packages/framework/aws-sqs": {
@@ -209,19 +209,19 @@
     "packages/intent-ir": {
       "name": "@suss/intent-ir",
       "exports": 1,
-      "internal": 0,
+      "internal": 2,
       "consumers": 2
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
       "exports": 22,
-      "internal": 0,
+      "internal": 4,
       "consumers": 0
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
       "exports": 7,
-      "internal": 0,
+      "internal": 19,
       "consumers": 1
     },
     "packages/resolution": {
@@ -233,7 +233,7 @@
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 10,
-      "internal": 10,
+      "internal": 8,
       "consumers": 5
     }
   }

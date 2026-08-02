@@ -149,6 +149,52 @@ describe("buildMessageBusSummaries", () => {
     expect(consumer.identity.name).toBe("OrderProcessor.EventSourceMapping");
   });
 
+  it("resolves an EventSourceMapping FunctionName given as Fn::GetAtt", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/order-processor/" },
+        },
+        OrderEventMapping: {
+          Type: "AWS::Lambda::EventSourceMapping",
+          Properties: {
+            EventSourceArn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
+            FunctionName: { "Fn::GetAtt": ["OrderProcessor", "Arn"] },
+          },
+        },
+      },
+    });
+    const consumers = pickConsumers(out);
+    expect(consumers).toHaveLength(1);
+    const consumer = consumers[0] ?? raise("no consumer");
+    expect(consumer.identity.name).toBe("OrderProcessor.EventSourceMapping");
+    expect(channelsOf(consumers)).toEqual(["OrdersQueue"]);
+  });
+
+  it("resolves an EventSourceMapping FunctionName given as a dotted Fn::GetAtt string", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/order-processor/" },
+        },
+        OrderEventMapping: {
+          Type: "AWS::Lambda::EventSourceMapping",
+          Properties: {
+            EventSourceArn: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
+            FunctionName: { "Fn::GetAtt": "OrderProcessor.Arn" },
+          },
+        },
+      },
+    });
+    const consumers = pickConsumers(out);
+    expect(consumers).toHaveLength(1);
+    expect(channelsOf(consumers)).toEqual(["OrdersQueue"]);
+  });
+
   it("resolves a plain SQS ARN string to the queue's logical id segment", () => {
     const out = cloudFormationToSummaries({
       Resources: {
