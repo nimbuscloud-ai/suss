@@ -47,15 +47,18 @@ export interface HealthCheck {
 /**
  * A pack's funnel, as the ordered stages a health check walks.
  *
- * The two gated pairs come first, and neither is comparable unless the
+ * The discovery pair comes first, and it is comparable only when the
  * pack gated itself: an ungated pack is handed every file in the
  * project, so its candidate count says only that the project has files.
  *
- * The two ways a pack can contribute get a pair each. A pack that finds
- * units of its own is measured on what its gate selected; a pack made
- * of recognisers is measured on the unit bodies other packs walked in
- * the files its gate selected, since a recogniser never runs anywhere
- * else. A pack doing both, as the Node runtime pack does, gets both.
+ * Every count compared here is the pack's own work. That rules out the
+ * one thing a pack made of recognisers could be measured against,
+ * because a recogniser fires inside units some other pack discovered,
+ * so any count of what it had to look at is a count of what its
+ * companions found. Measuring against it made the same pack read as
+ * working or broken depending on which unrelated pack was passed
+ * alongside it. Those packs are counted, in `effectsRecognized`, and
+ * not judged.
  */
 function stagesOf(funnel: PackFunnel): Array<{
   from: { name: string; count: number };
@@ -72,18 +75,6 @@ function stagesOf(funnel: PackFunnel): Array<{
       to: { name: "units discovered", count: funnel.unitsDiscovered },
       meaning:
         "its import gate selected files and discovery matched nothing in them",
-    });
-  }
-
-  if (funnel.recognizes && gateSaysSomething) {
-    stages.push({
-      from: {
-        name: "unit bodies in the files it gated into",
-        count: funnel.unitsInGatedFiles,
-      },
-      to: { name: "effects", count: funnel.effectsRecognized },
-      meaning:
-        "its recognisers ran over unit bodies importing its library and matched nothing",
     });
   }
 
