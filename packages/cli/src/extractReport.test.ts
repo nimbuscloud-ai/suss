@@ -122,6 +122,41 @@ describe("formatExtractionReport", () => {
     expect(output).not.toContain("Install this project's dependencies");
   });
 
+  // A recogniser pack finds no boundary and writes no summary, so the
+  // discovery rows would print three zeros against its name and read as
+  // a pack that had failed. What it did is attach effects to units
+  // other packs found.
+  it("shows what a recogniser pack contributed", () => {
+    const output = formatExtractionReport(
+      report({
+        summaries: 1,
+        emptyStage: null,
+        packs: [
+          pack({
+            pack: "prisma",
+            discovers: false,
+            recognizes: true,
+            gates: ["@prisma/client"],
+            candidateFiles: 4,
+            unitsDiscovered: 0,
+            unitsInGatedFiles: 7,
+            effectsRecognized: 3,
+            summariesProduced: 0,
+            summariesBound: 0,
+            providerSummaries: 0,
+            summariesWithBehavior: 0,
+          }),
+        ],
+      }),
+    );
+
+    expect(output).toContain("7  unit bodies prisma could look inside");
+    expect(output).toContain("3  effects prisma recognized");
+    // The rows that would read as a broken pack stay out.
+    expect(output).not.toContain("boundaries recognized by prisma");
+    expect(output).not.toContain("summaries from prisma");
+  });
+
   it("says no file imported anything the pack looks for", () => {
     const output = formatExtractionReport(
       report({
