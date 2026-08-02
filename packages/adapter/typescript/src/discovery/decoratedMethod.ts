@@ -12,22 +12,22 @@ import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 /**
- * Map a method-decorator name to the `graphql-resolver` typeName that
- * should be used when the class decorator carries no explicit type
- * argument. NestJS allows `@Resolver()` (no arg) on classes that only
- * declare top-level operations; the operation kind picks the type.
+ * The type whose field this method answers, or the empty string when
+ * the source does not say.
+ *
+ * A class decorator naming a type answers for every method under it.
+ * Without one, the answer is the pack's own: a decorator that puts its
+ * field on a root operation type is in the pack's map, and one that
+ * needs the class to name a type is not. The second kind, on a class
+ * that names none, has nowhere left to read the type from, and the
+ * empty string carries that through to a binding nothing pairs with.
  */
-function defaultTypeNameForDecorator(decoratorName: string): string {
-  if (decoratorName === "Mutation") {
-    return "Mutation";
-  }
-  if (decoratorName === "Subscription") {
-    return "Subscription";
-  }
-  // ResolveField on a class without `@Resolver(() => Foo)` is an
-  // error in real NestJS. We surface it as "Query" with the field
-  // name preserved — the pairing layer will record a no-match.
-  return "Query";
+function resolverTypeName(args: {
+  classTypeName: string | null;
+  decoratorName: string;
+  typeMap: Record<string, string>;
+}): string {
+  return args.classTypeName ?? args.typeMap[args.decoratorName] ?? "";
 }
 
 /**
@@ -137,8 +137,11 @@ export function discoverDecoratedMethods(
     for (const handler of decoratedCallablesOf(cls, match.methodDecorators)) {
       const fieldName =
         resolveOperationNameOverride(handler.decorator) ?? handler.name;
-      const typeName =
-        classTypeName ?? defaultTypeNameForDecorator(handler.standsFor);
+      const typeName = resolverTypeName({
+        classTypeName,
+        decoratorName: handler.standsFor,
+        typeMap: match.methodDecoratorTypeMap,
+      });
 
       results.push({
         func: handler.func,

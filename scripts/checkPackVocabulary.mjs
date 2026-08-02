@@ -46,6 +46,7 @@ const VOCABULARY_BASENAME = "vocabulary.json";
 const KEYED_BY_IDENTIFIER = new Set([
   "decoratorRoleMap",
   "methodDecoratorRouteMap",
+  "methodDecoratorTypeMap",
   "knownProperties",
   "codes",
 ]);

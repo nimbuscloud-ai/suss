@@ -354,6 +354,17 @@ export interface RawCodeStructure {
    * explains what defeated static resolution.
    */
   graphqlUnresolvedDocument?: { reference: string; reason: string };
+  /**
+   * Set when the source does not state part of the boundary this unit
+   * sits on. The binding still goes out with that part left empty, so
+   * the unit pairs with nothing rather than with whatever a guess named,
+   * and this sentence tells a reader which part is missing and why.
+   *
+   * A statement about the reading rather than about the code, so it
+   * lands as an `unreadOutcome` gap and no checker holds it against the
+   * unit.
+   */
+  unreadBinding?: string;
 }
 
 // =============================================================================
@@ -557,6 +568,15 @@ export function detectGaps(
         count === 1
           ? "One return in this function matches none of the terminal shapes this pack looks for, so what it produces is not described here"
           : `${count} returns in this function match none of the terminal shapes this pack looks for, so what they produce is not described here`,
+    });
+  }
+
+  if (raw.unreadBinding !== undefined) {
+    gaps.push({
+      type: "unreadOutcome",
+      conditions: [],
+      consequence: "unknown",
+      description: raw.unreadBinding,
     });
   }
 

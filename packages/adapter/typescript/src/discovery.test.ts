@@ -2201,6 +2201,11 @@ function makeDecoratedMethodPattern(
       importModule: "@nestjs/graphql",
       classDecorators: ["Resolver"],
       methodDecorators: ["Query", "Mutation", "ResolveField", "Subscription"],
+      methodDecoratorTypeMap: {
+        Query: "Query",
+        Mutation: "Mutation",
+        Subscription: "Subscription",
+      },
       ...overrides,
     },
   };
@@ -2422,7 +2427,7 @@ describe("decoratedMethod discovery", () => {
     expect(units).toHaveLength(0);
   });
 
-  it("falls back to the operation kind for typeName when @Resolver() is bare", () => {
+  it("reads typeName off the operation decorator when @Resolver() is bare", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "stub.ts",
@@ -2462,6 +2467,44 @@ describe("decoratedMethod discovery", () => {
     expect(units[0].resolverInfo).toEqual({
       typeName: "Pet",
       fieldName: "all",
+    });
+  });
+
+  it("names no type for a field resolver on a class that names none", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { ResolveField, Resolver } from "@nestjs/graphql";
+      @Resolver()
+      class Bare {
+        @ResolveField(() => String)
+        label() { return "widget"; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units[0].resolverInfo).toEqual({ typeName: "", fieldName: "label" });
+  });
+
+  it("keeps the class's type for a field resolver that has one", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { ResolveField, Resolver } from "@nestjs/graphql";
+      @Resolver(() => Widget)
+      class WidgetResolver {
+        @ResolveField(() => String)
+        label() { return "widget"; }
+      }
+      declare class Widget { id: string; }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units[0].resolverInfo).toEqual({
+      typeName: "Widget",
+      fieldName: "label",
     });
   });
 

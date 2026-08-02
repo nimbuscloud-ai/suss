@@ -1097,6 +1097,13 @@ function extractFromSourceFile(
           typeName: unit.resolverInfo.typeName,
           fieldName: unit.resolverInfo.fieldName,
         });
+        // A resolver whose owning type the source never states. Saying
+        // so beats picking a type, because a picked one is a root field
+        // no schema has and a query for it would pair against a
+        // function that answers something else.
+        if (unit.resolverInfo.typeName === "") {
+          raw.unreadBinding = `The type whose field ${unit.resolverInfo.fieldName} belongs to is not stated where this resolver is written, so the binding names no type and nothing pairs with it`;
+        }
         // When the pack captured typeDefs alongside the resolver
         // map (Apollo code-first), carry the SDL through so the
         // checker can walk nested selections against the return

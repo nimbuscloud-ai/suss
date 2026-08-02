@@ -133,10 +133,7 @@ export const APOLLO_RESOLVER_BUGS: ReproducedBug[] = [];
 
 /**
  * Wrong behaviour on a decorated resolver class. The arrow property is
- * the same shape the REST pack loses, in the pack next to it. The
- * second one is a claim rather than a loss: a field resolver on a class
- * that names no type is reported as a root query field, which is a
- * field no schema has.
+ * the same shape the REST pack loses, in the pack next to it.
  */
 export const NEST_RESOLVER_BUGS: ReproducedBug[] = [
   {
@@ -145,14 +142,6 @@ export const NEST_RESOLVER_BUGS: ReproducedBug[] = [
     signature: "invariant:everyAnnouncedBoundaryIsSummarized",
     wrong:
       "a resolver written as a decorated arrow property, rather than a method, loses the boundary",
-  },
-  {
-    dimension: "operation",
-    value: "ResolveField",
-    alongside: { announcement: "noTypeArgument" },
-    signature: "invariant:aResolverBindsToTheFieldItAnswers",
-    wrong:
-      "a field resolver on a class that names no type binds to Query, so it claims a root operation field the schema does not have",
   },
 ];
 
@@ -250,6 +239,9 @@ export const KNOWN_SIGNATURES: ReadonlySet<string> = new Set([
   "equivalence:summaries[0].identity.boundaryBinding.semantics.name",
   "equivalence:summaries[0].identity.boundaryBinding.semantics.messageBus",
   "equivalence:summaries[0].identity.boundaryBinding.semantics.channel",
+  // A resolver whose boundary was lost has nothing left to bind the
+  // field it answers, so every lost resolver reports twice.
+  "invariant:aResolverBindsToTheFieldItAnswers",
   // A lost or duplicated boundary always shows up a second time as a
   // count that differs from the plainest spelling.
   "equivalence:summaries.length",

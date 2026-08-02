@@ -34,8 +34,13 @@ export interface ShapeExpectation {
    * producer.
    */
   channel?: string | null;
-  /** The GraphQL field the program says this resolver answers. */
-  resolver?: { typeName: string; fieldName: string };
+  /**
+   * The GraphQL field the program says this resolver answers. A null
+   * `typeName` is a program that names the field but not the type it
+   * belongs to, where the answer is a binding that names no type and a
+   * gap saying why, rather than a type nothing in the source supports.
+   */
+  resolver?: { typeName: string | null; fieldName: string };
   /**
    * The path a package publishes the unit under. Nothing pairs a call
    * site with a provider that has no path to name it by.
@@ -153,15 +158,49 @@ const everyBoundaryCanPair: Invariant = (summaries, expectation) =>
     }
     if (binding.semantics.name === "graphql-resolver") {
       const { typeName, fieldName } = binding.semantics;
-      return typeName === "" || fieldName === ""
-        ? violation(
+      // A program that names no type has none to bind, and a binding
+      // that names none is what the summary should carry. Every other
+      // empty half is an address a client cannot reach.
+      const typeIsAccountedFor =
+        typeName !== "" || expectation.resolver?.typeName === null;
+      return typeIsAccountedFor && fieldName !== ""
+        ? []
+        : violation(
             "everyBoundaryCanPair",
             `${summary.identity.name} binds to graphql-resolver with type ${JSON.stringify(typeName)} and field ${JSON.stringify(fieldName)}, which pairs with nothing`,
-          )
-        : [];
+          );
     }
     return [];
   });
+
+/** Whether a summary says some part of the reading fell short. */
+const saysWhatItCouldNotRead = (summary: BehavioralSummary): boolean =>
+  summary.gaps.some((gap) => gap.type === "unreadOutcome");
+
+/**
+ * Whether this summary is the answer for the field the program states.
+ *
+ * A program that names no type is answered by a binding that names none
+ * either, and only when the summary also says the type went unread. An
+ * empty type with nothing to explain it reads the same as an extraction
+ * that dropped the name on the way.
+ */
+function bindsToTheWantedField(
+  summary: BehavioralSummary,
+  wanted: NonNullable<ShapeExpectation["resolver"]>,
+): boolean {
+  const binding = summary.identity.boundaryBinding;
+  if (binding === null || binding.semantics.name !== "graphql-resolver") {
+    return false;
+  }
+  if (binding.semantics.fieldName !== wanted.fieldName) {
+    return false;
+  }
+  if (wanted.typeName === null) {
+    return binding.semantics.typeName === "" && saysWhatItCouldNotRead(summary);
+  }
+  return binding.semantics.typeName === wanted.typeName;
+}
 
 const aResolverBindsToTheFieldItAnswers: Invariant = (
   summaries,
@@ -172,20 +211,18 @@ const aResolverBindsToTheFieldItAnswers: Invariant = (
     return [];
   }
   const matching = ofKind(summaries, expectation);
-  const named = matching.filter((summary) => {
-    const binding = summary.identity.boundaryBinding;
-    return (
-      binding !== null &&
-      binding.semantics.name === "graphql-resolver" &&
-      binding.semantics.typeName === wanted.typeName &&
-      binding.semantics.fieldName === wanted.fieldName
-    );
-  });
+  const named = matching.filter((summary) =>
+    bindsToTheWantedField(summary, wanted),
+  );
+  const field =
+    wanted.typeName === null
+      ? `${wanted.fieldName}, on a type it does not name,`
+      : `${wanted.typeName}.${wanted.fieldName} and`;
   return named.length > 0
     ? []
     : violation(
         "aResolverBindsToTheFieldItAnswers",
-        `the program answers ${wanted.typeName}.${wanted.fieldName} and nothing binds to that field, so a query for it pairs with nothing (bindings: ${
+        `the program answers ${field} nothing binds to that field the way the program states it, so a query for it pairs with the wrong thing or with nothing (bindings: ${
           matching
             .map((s) => JSON.stringify(s.identity.boundaryBinding?.semantics))
             .join(", ") || "none"

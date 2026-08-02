@@ -37,7 +37,9 @@ export function normalizePath(path: string): string {
  * Compute a stable string key from a boundary binding for grouping.
  * Dispatches on `semantics.name`:
  *   - `rest` → `"METHOD /normalized/path"` (null if method or path empty)
- *   - `graphql-resolver` → `"gql:<TypeName>.<fieldName>"`
+ *   - `graphql-resolver` → `"gql:<TypeName>.<fieldName>"` (null when
+ *     either is empty, which is how a resolver says the source never
+ *     named the field it answers)
  *   - `message-bus` → `"bus:<messageBus> <subject>"` (null if the
  *     subject is empty)
  *   - `function-call` → `"fn:<package>::<exportPath>"` when both
@@ -56,6 +58,9 @@ export function boundaryKey(binding: BoundaryBinding): string | null {
     return `${method} ${path}`;
   }
   if (semantics.name === "graphql-resolver") {
+    if (semantics.typeName === "" || semantics.fieldName === "") {
+      return null;
+    }
     return `gql:${semantics.typeName}.${semantics.fieldName}`;
   }
   if (semantics.name === "message-bus") {
