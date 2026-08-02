@@ -72,38 +72,6 @@ function nodeKey(func: FunctionRoot): string {
 }
 
 // ---------------------------------------------------------------------------
-// Locate a summary's FunctionRoot in the project
-// ---------------------------------------------------------------------------
-
-function locateFunctionBySummary(
-  summary: BehavioralSummary,
-  lookup: ReturnType<typeof createSourceFileLookup>,
-): FunctionRoot | null {
-  const sf = lookup.bySuffix(summary.location.file);
-  if (sf === null) {
-    return null;
-  }
-  let found: FunctionRoot | null = null;
-  sf.forEachDescendant((node, traversal) => {
-    if (found !== null) {
-      traversal.stop();
-      return;
-    }
-    if (
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node)) &&
-      node.getStartLineNumber() === summary.location.range.start &&
-      node.getEndLineNumber() === summary.location.range.end
-    ) {
-      found = node as FunctionRoot;
-    }
-  });
-  return found;
-}
-
-// ---------------------------------------------------------------------------
 // Callee resolution
 // ---------------------------------------------------------------------------
 
@@ -364,10 +332,9 @@ export function expandReachableClosure(
   facts?: ClosureFacts,
   recognizers: ClosureRecognizers = NO_RECOGNIZERS,
 ): BehavioralSummary[] {
-  // One source-file enumeration shared across every seed locate.
-  // Without this, each `locateFunctionBySummary` was re-scanning the
-  // project's full file list — N seeds × M source files of redundant
-  // walk work.
+  // One source-file enumeration and one per-file function index, shared
+  // across every seed locate. Without them each seed re-scanned the
+  // project's file list and re-walked the file it landed in.
   const lookup = createSourceFileLookup(project);
 
   // When the caller hands in shared facts, the closure's entry/calls
@@ -379,7 +346,7 @@ export function expandReachableClosure(
   const scanned = new Set<string>();
 
   for (const seed of seeds) {
-    const func = locateFunctionBySummary(seed, lookup);
+    const func = lookup.functionAt(seed.location);
     if (func !== null) {
       const key = nodeKey(func);
       seedKeys.add(key);

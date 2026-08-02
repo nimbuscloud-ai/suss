@@ -35,6 +35,7 @@ import { Node, type Project } from "ts-morph";
 import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
 
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
+import { endLineOf, startLineOf } from "../lines.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "../conditions.js";
@@ -146,7 +147,7 @@ export function enrichRethrows(
       db.add("throwsDirect", [unitKey, sourceId]);
     }
 
-    const func = locateFunctionForSummary(summary, lookup);
+    const func = lookup.functionAt(summary.location);
     if (func === null) {
       continue;
     }
@@ -251,38 +252,6 @@ function indexSummariesByFunctionLocation(
 }
 
 // ---------------------------------------------------------------------------
-// Locate a summary's FunctionRoot in the project
-// ---------------------------------------------------------------------------
-
-function locateFunctionForSummary(
-  summary: BehavioralSummary,
-  lookup: ReturnType<typeof createSourceFileLookup>,
-): FunctionRoot | null {
-  const sf = lookup.bySuffix(summary.location.file);
-  if (sf === null) {
-    return null;
-  }
-  let found: FunctionRoot | null = null;
-  sf.forEachDescendant((node, traversal) => {
-    if (found !== null) {
-      traversal.stop();
-      return;
-    }
-    if (
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node)) &&
-      node.getStartLineNumber() === summary.location.range.start &&
-      node.getEndLineNumber() === summary.location.range.end
-    ) {
-      found = node as FunctionRoot;
-    }
-  });
-  return found;
-}
-
-// ---------------------------------------------------------------------------
 // Bare-rethrow detection
 // ---------------------------------------------------------------------------
 
@@ -306,10 +275,10 @@ function findBareRethrow(
     if (!Node.isThrowStatement(node)) {
       return;
     }
-    if (node.getStartLineNumber() !== location.start) {
+    if (startLineOf(node) !== location.start) {
       return;
     }
-    if (node.getEndLineNumber() !== location.end) {
+    if (endLineOf(node) !== location.end) {
       return;
     }
     const thrown = node.getExpression();
@@ -412,8 +381,8 @@ function resolveCalleeSummary(
     // The index is keyed by the summary's relative file path; keys in
     // it may or may not match absolute paths. Try both.
     const absPath = sf.getFilePath();
-    const start = func.getStartLineNumber();
-    const end = func.getEndLineNumber();
+    const start = startLineOf(func);
+    const end = endLineOf(func);
     // Summary paths are relative to the project root after CLI processing,
     // or absolute in-process. Match by suffix against either.
     for (const [key, summary] of index.byFunctionLocation) {
