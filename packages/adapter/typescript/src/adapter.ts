@@ -883,9 +883,16 @@ function computeSubUnitBarriers(
   }
 }
 
+/** Which pack claimed a unit, and the file it was reading at the time. */
+interface ClaimedUnit {
+  pack: string;
+  file: string;
+}
+
 function extractFromSourceFile(
   sourceFile: SourceFile,
   frameworks: PatternPack[],
+  claimedUnits: Map<string, ClaimedUnit>,
   options?: ExtractorOptions,
   tallies?: Map<string, PackTally>,
   resolution?: ResolutionStore,
@@ -924,7 +931,12 @@ function extractFromSourceFile(
   // Which pack claimed a key is kept too. A later pack losing a unit to
   // an earlier one is precedence working; a pack losing a unit to
   // itself is two of its own patterns reading the same code.
-  const claimed = new Map<string, string>();
+  //
+  // The map is the run's, not this file's. A barrel re-exporting a
+  // component reaches the same function the file declaring it reaches,
+  // and one function on one boundary is one unit however many modules
+  // name it.
+  const claimed = claimedUnits;
 
   for (const pack of frameworks) {
     // Funnel accounting: this pack was applicable to this file, and
@@ -989,12 +1001,23 @@ function extractFromSourceFile(
       const claimKey = unitDedupKey(unit);
       const claimant = claimed.get(claimKey);
       if (claimant !== undefined) {
-        if (claimant === pack.name && tally !== undefined) {
+        // Two of a pack's own patterns reading the same code is worth
+        // reporting. The same pack reaching one function from two
+        // modules is a barrel and says nothing about the pack, so only
+        // a collision inside one file counts.
+        if (
+          claimant.pack === pack.name &&
+          claimant.file === sourceFile.getFilePath() &&
+          tally !== undefined
+        ) {
           tally.selfCollisions += 1;
         }
         continue;
       }
-      claimed.set(claimKey, pack.name);
+      claimed.set(claimKey, {
+        pack: pack.name,
+        file: sourceFile.getFilePath(),
+      });
       unitsWalkedHere += 1;
       if (tally !== undefined) {
         tally.unitsClaimed += 1;
@@ -1720,6 +1743,7 @@ export function createTypeScriptAdapter(
     async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
       const summaries: BehavioralSummary[] = [];
       const resolution = new ResolutionStore(packWrappers);
+      const claimedUnits = new Map<string, ClaimedUnit>();
 
       for (const fp of filePaths) {
         // Project may have skipped initial loading (lazy
@@ -1738,6 +1762,7 @@ export function createTypeScriptAdapter(
           ...extractFromSourceFile(
             sourceFile,
             config.frameworks,
+            claimedUnits,
             config.extractorOptions,
             undefined,
             resolution,
@@ -1873,6 +1898,7 @@ export function createTypeScriptAdapter(
       // merges them with the kept summaries above.
       const filesToExtractSet =
         partial !== null ? new Set(partial.filesToExtract) : null;
+      const claimedUnits = new Map<string, ClaimedUnit>();
       timer.time("extract per-file", () => {
         for (const sourceFile of sourceFiles) {
           if (
@@ -1889,6 +1915,7 @@ export function createTypeScriptAdapter(
             ...extractFromSourceFile(
               sourceFile,
               applicablePacks,
+              claimedUnits,
               config.extractorOptions,
               tallies,
               resolution,

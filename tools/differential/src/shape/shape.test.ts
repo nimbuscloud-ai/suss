@@ -103,6 +103,11 @@ const SOUND_COMPONENT_ROUTES = new Set([
   "namedBinding",
   "namedAndDefault",
   "aliasedNamed",
+  "defaultDeclaration",
+  "defaultOfName",
+  "throughProperty",
+  "barrel",
+  "twoBarrels",
 ]);
 
 const arbSoundComponentShape: fc.Arbitrary<ComponentShapeSpec> =

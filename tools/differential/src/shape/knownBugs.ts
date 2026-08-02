@@ -25,42 +25,19 @@ export interface ReproducedBug {
 }
 
 /**
- * Wrong behaviour at the render boundary. How a component is written
- * and how its name is bound both resolve now, so the sound tier carries
- * those two dimensions. What is left is the route out of the module.
+ * Wrong behaviour at the render boundary. How a component is written,
+ * how its name is bound, and every way it leaves the module all resolve
+ * now, so the sound tier carries those three dimensions. What is left is
+ * the one route that hands the component to a factory, where the value
+ * arrives inside an object argument and no rule reads it back out.
  */
 export const COMPONENT_BUGS: ReproducedBug[] = [
-  {
-    dimension: "route",
-    value: "defaultOfName",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "`export default Panel`, where Panel is a binding, is not discovered",
-  },
-  {
-    dimension: "route",
-    value: "defaultDeclaration",
-    signature: "invariant:aNamedUnitKeepsItsName",
-    wrong: "a named function exported as the default is reported as `default`",
-  },
-  {
-    dimension: "route",
-    value: "throughProperty",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong: "`export default views.Panel` is not discovered",
-  },
   {
     dimension: "route",
     value: "throughFactoryArg",
     signature: "invariant:everyAnnouncedBoundaryIsSummarized",
     wrong:
       "a component handed to a factory in an object argument is not discovered",
-  },
-  {
-    dimension: "route",
-    value: "barrel",
-    signature: "invariant:noTwoSummariesShareAnIdentity",
-    wrong: "a barrel re-export produces a second summary on the same identity",
   },
 ];
 

@@ -654,3 +654,72 @@ describe("reactFramework — integration", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// A component reached through more than one module
+// ---------------------------------------------------------------------------
+
+async function summariesOf(
+  files: Record<string, string>,
+): Promise<BehavioralSummary[]> {
+  const project = new Project({
+    useInMemoryFileSystem: true,
+    compilerOptions: {
+      strict: true,
+      target: 99,
+      module: 99,
+      moduleResolution: 100,
+      jsx: 4,
+    },
+  });
+  for (const [filePath, contents] of Object.entries(files)) {
+    project.createSourceFile(filePath, contents);
+  }
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: [reactFramework()],
+  });
+  return await adapter.extractAll();
+}
+
+const PANEL_SOURCE = `
+export function Panel() {
+  return <div/>;
+}
+`;
+
+describe("reactFramework, a component a barrel re-exports", () => {
+  it("summarizes it once, where it is written", async () => {
+    const summaries = await summariesOf({
+      "/src/Panel.tsx": PANEL_SOURCE,
+      "/src/index.ts": `export { Panel } from "./Panel.js";\n`,
+    });
+
+    const panels = summaries.filter((s) => s.identity.name === "Panel");
+    expect(panels).toHaveLength(1);
+    expect(panels[0].location.file).toContain("Panel.tsx");
+  });
+
+  it("summarizes it once however many barrels name it", async () => {
+    const summaries = await summariesOf({
+      "/src/Panel.tsx": PANEL_SOURCE,
+      "/src/index.ts": `export { Panel } from "./Panel.js";\n`,
+      "/src/all.ts": `export { Panel } from "./Panel.js";\n`,
+    });
+
+    expect(summaries.filter((s) => s.identity.name === "Panel")).toHaveLength(
+      1,
+    );
+  });
+
+  it("keeps two components that happen to share a name", async () => {
+    const summaries = await summariesOf({
+      "/src/left/Panel.tsx": PANEL_SOURCE,
+      "/src/right/Panel.tsx": PANEL_SOURCE,
+    });
+
+    expect(summaries.filter((s) => s.identity.name === "Panel")).toHaveLength(
+      2,
+    );
+  });
+});
