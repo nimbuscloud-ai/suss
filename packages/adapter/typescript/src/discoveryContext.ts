@@ -40,11 +40,18 @@ export interface TsDiscoveryContext {
   ): Array<{ name: string; func: FunctionRoot; isDefault: boolean }>;
 
   /**
-   * For an export whose declaration is a call to one of `callees`,
-   * read the string a property of the call's config object holds:
+   * For an export the project builds by calling a factory, the string a
+   * property of that call's config object holds:
    * `export const handler = makeWidgetHandler({ subject: "a.b" }, ...)`
-   * with `{ callees: ["makeWidgetHandler"], argIndex: 0, property:
-   * "subject" }` answers `"a.b"`.
+   * with `{ property: "subject" }` answers `"a.b"`.
+   *
+   * Which function was called and which argument carried the config are
+   * questions the caller does not have to answer. Every object argument
+   * is read. Naming the callee or fixing the argument position narrows
+   * that, for a project whose factories would otherwise collide.
+   *
+   * Two arguments holding the property under different values answers
+   * null, since nothing says which one was meant.
    *
    * The config argument is usually an object literal at the call site;
    * a variable or import is followed to the literal it resolves to.
@@ -56,7 +63,7 @@ export interface TsDiscoveryContext {
   exportedCallConfigString(
     sourceFile: SourceFile,
     exportName: string,
-    spec: { callees: string[]; argIndex: number; property: string },
+    spec: { callees?: string[]; argIndex?: number; property: string },
   ): string | null;
 
   /**
@@ -129,7 +136,7 @@ function exportedFunctions(
 function exportedCallConfigString(
   sourceFile: SourceFile,
   exportName: string,
-  spec: { callees: string[]; argIndex: number; property: string },
+  spec: { callees?: string[]; argIndex?: number; property: string },
   resolution?: ResolutionStore,
 ): string | null {
   const declarations = sourceFile.getExportedDeclarations().get(exportName);
@@ -137,6 +144,7 @@ function exportedCallConfigString(
     return null;
   }
 
+  const found = new Set<string>();
   for (const decl of declarations) {
     if (!Node.isVariableDeclaration(decl)) {
       continue;
@@ -145,29 +153,56 @@ function exportedCallConfigString(
     if (init === undefined || !Node.isCallExpression(init)) {
       continue;
     }
-    const callee = init.getExpression();
-    if (
-      !Node.isIdentifier(callee) ||
-      !spec.callees.includes(callee.getText())
-    ) {
+    if (!calleeIsNamed(init.getExpression(), spec.callees)) {
       continue;
     }
-    const arg = init.getArguments()[spec.argIndex];
-    if (arg === undefined) {
-      continue;
+    for (const arg of configArguments(init.getArguments(), spec.argIndex)) {
+      const held = configString(arg, spec.property, resolution);
+      if (held !== null) {
+        found.add(held);
+      }
     }
-    const config = toObjectLiteral(arg, resolution);
-    if (config === null) {
-      continue;
-    }
-    const prop = config.getProperty(spec.property);
-    if (prop === undefined || !Node.isPropertyAssignment(prop)) {
-      continue;
-    }
-    const value = peelExpression(prop.getInitializer());
-    if (value !== undefined && Node.isStringLiteral(value)) {
-      return value.getLiteralValue();
-    }
+  }
+  // Two answers mean the shape does not say which was meant, and the
+  // same reasoning applies as everywhere else something reaches two
+  // candidates: ambiguity is nothing.
+  return found.size === 1 ? ([...found][0] as string) : null;
+}
+
+/** A callee the caller did not constrain matches whatever it is. */
+function calleeIsNamed(callee: Node, names: string[] | undefined): boolean {
+  if (names === undefined || names.length === 0) {
+    return true;
+  }
+  return Node.isIdentifier(callee) && names.includes(callee.getText());
+}
+
+/** The arguments to read a config out of: one position, or all of them. */
+function configArguments(args: Node[], argIndex: number | undefined): Node[] {
+  if (argIndex === undefined) {
+    return args;
+  }
+  const at = args[argIndex];
+  return at === undefined ? [] : [at];
+}
+
+/** The string an argument's object holds under `property`. */
+function configString(
+  arg: Node,
+  property: string,
+  resolution?: ResolutionStore,
+): string | null {
+  const config = toObjectLiteral(arg, resolution);
+  if (config === null) {
+    return null;
+  }
+  const prop = config.getProperty(property);
+  if (prop === undefined || !Node.isPropertyAssignment(prop)) {
+    return null;
+  }
+  const value = peelExpression(prop.getInitializer());
+  if (value !== undefined && Node.isStringLiteral(value)) {
+    return value.getLiteralValue();
   }
   return null;
 }

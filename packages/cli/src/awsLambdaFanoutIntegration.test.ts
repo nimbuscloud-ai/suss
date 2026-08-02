@@ -46,13 +46,7 @@ async function extractCode(): Promise<BehavioralSummary[]> {
         // The fixture service owns this factory, so the pack only reads
         // the subject once the service names it, the way a project does
         // through `-f aws-lambda=config.json`.
-        subjectFactories: [
-          {
-            callees: ["makeWidgetHandler"],
-            argIndex: 0,
-            property: "subject",
-          },
-        ],
+        subjectFactories: [{ property: "subject" }],
       }),
     ],
   });

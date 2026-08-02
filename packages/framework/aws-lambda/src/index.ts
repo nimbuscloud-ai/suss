@@ -40,12 +40,15 @@ export type { SubjectFactory } from "./discovery.js";
 
 export interface AwsLambdaPackOptions {
   /**
-   * Factories this project builds its SQS consumers with, whose config
-   * names the subject the consumer expects. A handler built by one gets
-   * a message-bus binding on that subject instead of the fallback.
-   * AWS declares no such factory, so nothing is assumed by default and
-   * a project that installs this pack never matches a call on a name
-   * some other codebase happened to use.
+   * Where a project's own handler factory states the subject its SQS
+   * consumer expects. A handler built by such a factory gets a
+   * message-bus binding on that subject instead of the fallback.
+   *
+   * The adapter follows the export back to the call that built it, so
+   * an entry says which property carries the subject and nothing else:
+   * `{ "property": "subject" }`. AWS declares no such factory and
+   * nothing here names one, so a service that does not use this shape
+   * is unaffected.
    */
   subjectFactories?: SubjectFactory[];
 }

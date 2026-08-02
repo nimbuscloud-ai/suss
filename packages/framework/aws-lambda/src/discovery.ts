@@ -168,12 +168,20 @@ function accountingUnit(
  * the code adds is which subject this consumer answers to.
  */
 export interface SubjectFactory {
-  /** Factory functions the project builds its consumers with. */
-  callees: string[];
-  /** Argument position carrying the config object. */
-  argIndex: number;
-  /** Property on that object holding the subject. */
+  /** Property on the factory's config object holding the subject. */
   property: string;
+  /**
+   * Factory functions the project builds its consumers with. Naming
+   * them is not required: the adapter reads whatever call built the
+   * export. Name them when two factories in the same service put
+   * different things under the same property.
+   */
+  callees?: string[];
+  /**
+   * Argument position carrying the config object. Every object
+   * argument is read when this is left out.
+   */
+  argIndex?: number;
 }
 
 /**
