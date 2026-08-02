@@ -38,7 +38,7 @@ describe("runtime-config over a template with a Globals section", () => {
 
   it("gives the function's own value where both declare the variable", () => {
     const declared = cloudFormationFileToSummaries(templatePath);
-    const ingest = declared.find((s) => s.identity.name === "IngestFunction");
+    const ingest = summaryNamed(declared, "IngestFunction");
     expect(readEnvVarTargets(ingest).TABLE_NAME).toEqual({
       kind: "ref",
       logicalId: "IngestTable",
@@ -77,6 +77,13 @@ describe("runtime-config over a template with a Globals section", () => {
     expect(retry[0].description).toContain("IngestFunction");
   });
 });
+
+function summaryNamed(
+  summaries: BehavioralSummary[],
+  name: string,
+): BehavioralSummary | undefined {
+  return summaries.find((s) => s.identity.name === name);
+}
 
 function readEnvVarTargets(
   summary: BehavioralSummary | undefined,
