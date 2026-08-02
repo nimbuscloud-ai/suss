@@ -9,25 +9,27 @@
 //   ];
 //   for (const r of routes) app[r.method](r.path, r.handler);
 //
-// Iterable resolution: inline `ArrayLiteralExpression` or a
-// single-hop `const`-bound identifier whose initializer is one.
-// Each element must be an object literal with literal `method` /
-// `path` and a `handler` value resolvable to a function.
+// The iterable and each element's handler are asked of the fact
+// layer, so an array of routes shared between modules reads the same
+// as one written above the loop. Each element must be an object
+// literal with a literal `method` and `path`.
 //
 // Body filter: the loop body must reference the loop variable in
 // at least one CallExpression. Filters out unrelated loops without
 // requiring the body's exact shape.
 
+import { type ForOfStatement, Node, type SourceFile } from "ts-morph";
+
 import {
-  type ArrayLiteralExpression,
-  type ForOfStatement,
-  Node,
-  type ObjectLiteralExpression,
-  type SourceFile,
-} from "ts-morph";
+  arrayLiteralOf,
+  functionValueOf,
+  objectLiteralOf,
+} from "./resolveValue.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
+import type { ObjectLiteralExpression } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
+import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 type LoopMatch = Extract<
@@ -39,6 +41,7 @@ export function discoverRegistrationLoops(
   sourceFile: SourceFile,
   match: LoopMatch,
   kind: string,
+  resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
 
@@ -46,7 +49,7 @@ export function discoverRegistrationLoops(
     if (!Node.isForOfStatement(node)) {
       return;
     }
-    const expanded = tryExpandLoop(node, match, kind);
+    const expanded = tryExpandLoop(node, match, kind, resolution);
     if (expanded !== null) {
       results.push(...expanded);
     }
@@ -59,6 +62,7 @@ function tryExpandLoop(
   loop: ForOfStatement,
   match: LoopMatch,
   kind: string,
+  resolution: ResolutionStore | undefined,
 ): DiscoveredUnit[] | null {
   const loopVar = loopVariableName(loop);
   if (loopVar === null) {
@@ -67,17 +71,18 @@ function tryExpandLoop(
   if (!bodyReferencesLoopVar(loop, loopVar)) {
     return null;
   }
-  const arrayLit = resolveIterableToArrayLiteral(loop);
+  const arrayLit = arrayLiteralOf(loop.getExpression(), resolution);
   if (arrayLit === null) {
     return null;
   }
 
   const out: DiscoveredUnit[] = [];
   for (const element of arrayLit.getElements()) {
-    if (!Node.isObjectLiteralExpression(element)) {
+    const spec = objectLiteralOf(element, resolution);
+    if (spec === null) {
       continue;
     }
-    const route = readRouteSpec(element, match.elementShape);
+    const route = readRouteSpec(spec, match.elementShape, resolution);
     if (route === null) {
       continue;
     }
@@ -128,33 +133,10 @@ function bodyReferencesLoopVar(loop: ForOfStatement, name: string): boolean {
   return referenced;
 }
 
-function resolveIterableToArrayLiteral(
-  loop: ForOfStatement,
-): ArrayLiteralExpression | null {
-  const expr = loop.getExpression();
-  if (Node.isArrayLiteralExpression(expr)) {
-    return expr;
-  }
-  if (Node.isIdentifier(expr)) {
-    const symbol = expr.getSymbol();
-    if (symbol === undefined) {
-      return null;
-    }
-    for (const decl of symbol.getDeclarations()) {
-      if (Node.isVariableDeclaration(decl)) {
-        const init = decl.getInitializer();
-        if (init !== undefined && Node.isArrayLiteralExpression(init)) {
-          return init;
-        }
-      }
-    }
-  }
-  return null;
-}
-
 function readRouteSpec(
   element: ObjectLiteralExpression,
   shape: LoopMatch["elementShape"],
+  resolution: ResolutionStore | undefined,
 ): {
   method: string;
   path: string;
@@ -183,7 +165,8 @@ function readRouteSpec(
     } else if (name === shape.pathKey) {
       path = readStringLiteralValue(init);
     } else if (name === shape.handlerKey) {
-      handler = resolveHandlerExpression(init);
+      const func = functionValueOf(init, resolution);
+      handler = func === null ? null : { func, name: handlerName(init) };
     }
   }
 
@@ -203,32 +186,12 @@ function readStringLiteralValue(node: Node): string | null {
   return null;
 }
 
-function resolveHandlerExpression(
-  node: Node,
-): { func: FunctionRoot; name: string } | null {
-  if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) {
-    return { func: node as FunctionRoot, name: node.getKindName() };
-  }
-  if (Node.isIdentifier(node)) {
-    const name = node.getText();
-    const symbol = node.getSymbol();
-    if (symbol === undefined) {
-      return null;
-    }
-    for (const decl of symbol.getDeclarations()) {
-      if (Node.isFunctionDeclaration(decl)) {
-        return { func: decl, name };
-      }
-      if (Node.isVariableDeclaration(decl)) {
-        const init = decl.getInitializer();
-        if (init === undefined) {
-          continue;
-        }
-        if (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) {
-          return { func: init as FunctionRoot, name };
-        }
-      }
-    }
-  }
-  return null;
+/**
+ * What to call the handler an element holds. A name is the answer where
+ * there is one; a function written out in the array has none, and the
+ * kind is what the unit has carried there since this handler was
+ * written.
+ */
+function handlerName(value: Node): string {
+  return Node.isIdentifier(value) ? value.getText() : value.getKindName();
 }

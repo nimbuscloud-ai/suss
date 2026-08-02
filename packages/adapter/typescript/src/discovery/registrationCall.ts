@@ -1,67 +1,21 @@
-// registrationCall.ts — discover handlers registered via library
-// calls. Covers Express (`app.get("/users", h)`), ts-rest
-// (`s.router(contract, { getUser })`), Fastify, and similar shapes
-// where a runtime API call associates a handler function with a
+// registrationCall.ts (discovery handler) — handlers registered
+// through a library call. Covers Express (`app.get("/users", h)`),
+// ts-rest (`s.router(contract, { getUser })`), Fastify, and similar
+// shapes where a runtime API call associates a handler function with a
 // route or operation.
+//
+// `router.get("/users", listUsers)` is how most Express code is
+// written, and reading the syntax at the argument position sees an
+// identifier and stops. Which function sits there, and which object
+// carries a route's method and path, are both asked of the fact layer.
 
-import {
-  type CallExpression,
-  type MethodDeclaration,
-  Node,
-  type SourceFile,
-} from "ts-morph";
+import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
-import { toFunctionRoot } from "./shared.js";
+import { functionValueOf, objectLiteralOf } from "./resolveValue.js";
 
 import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
-import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
-
-/**
- * The function a registration call was handed, whether it was written
- * out at the call or named there.
- *
- * `router.get("/users", listUsers)` is how most Express code is
- * written, and reading the syntax at the argument position sees an
- * identifier and stops. The fact layer follows the name to the function
- * instead, through a property read, an array element, an alias, an
- * import, and a barrel, without any of those being written down here.
- *
- * A value the rules reach two different functions from answers null,
- * because picking one would report a route's behaviour from a function
- * that may not be the one that runs. So does a handler passed in as a
- * parameter, which cannot be followed at all: what registers the route
- * is handed the function from somewhere this file cannot see.
- */
-function registeredFunction(
-  arg: Node,
-  resolution: ResolutionStore | undefined,
-): FunctionRoot | null {
-  if (Node.isArrowFunction(arg) || Node.isFunctionExpression(arg)) {
-    return arg as FunctionRoot;
-  }
-  if (resolution === undefined || !couldNameAFunction(arg)) {
-    return null;
-  }
-  const resolved = resolution.resolveCallable(arg);
-  return resolved === null ? null : toFunctionRoot(resolved);
-}
-
-/**
- * Whether an argument is shaped like something that could name a
- * function. A route's path argument is a string, and asking the fact
- * layer about it pulls in that file's import closure for an answer that
- * is always null.
- */
-function couldNameAFunction(arg: Node): boolean {
-  return (
-    Node.isIdentifier(arg) ||
-    Node.isPropertyAccessExpression(arg) ||
-    Node.isElementAccessExpression(arg) ||
-    Node.isCallExpression(arg)
-  );
-}
 
 export function discoverRegistrationCalls(
   sourceFile: SourceFile,
@@ -211,7 +165,7 @@ export function discoverRegistrationCalls(
         // Method shorthand: { async getUser() { ... } }
         if (Node.isMethodDeclaration(prop)) {
           results.push({
-            func: prop as MethodDeclaration,
+            func: prop,
             kind,
             name: prop.getName(),
           });
@@ -227,7 +181,7 @@ export function discoverRegistrationCalls(
           continue;
         }
 
-        const held = registeredFunction(propInit, resolution);
+        const held = functionValueOf(propInit, resolution);
         if (held !== null) {
           results.push({ func: held, kind, name: prop.getName() });
         }
@@ -246,7 +200,7 @@ export function discoverRegistrationCalls(
       // function-call binding.
       const lastArg = args[args.length - 1] as Node | undefined;
       const handler =
-        lastArg === undefined ? null : registeredFunction(lastArg, resolution);
+        lastArg === undefined ? null : functionValueOf(lastArg, resolution);
       if (handler !== null) {
         const routeInfo =
           bindingExtraction !== undefined
@@ -327,14 +281,8 @@ function extractRouteInfoFromBinding(
     if (arg === undefined) {
       return null;
     }
-    const routeObject = Node.isObjectLiteralExpression(arg)
-      ? arg
-      : resolution?.resolveObject(arg);
-    if (
-      routeObject === undefined ||
-      routeObject === null ||
-      !Node.isObjectLiteralExpression(routeObject)
-    ) {
+    const routeObject = objectLiteralOf(arg, resolution);
+    if (routeObject === null) {
       return null;
     }
     const method = stringProperty(routeObject, binding.method.property);

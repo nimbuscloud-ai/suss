@@ -965,6 +965,105 @@ function makeResolverMapPattern(
   };
 }
 
+describe("resolverMap discovery, a map assembled across modules", () => {
+  it("reads a resolver map another module exports", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "resolvers.ts",
+      `
+      export const resolvers = {
+        Query: { ping: () => "pong" },
+      };
+    `,
+    );
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      import { resolvers } from "./resolvers.js";
+      new ApolloServer({ typeDefs: "type Query { ping: String }", resolvers });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
+  it("reads a per-type object another module exports", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "query.ts",
+      `export const Query = { ping: () => "pong" };`,
+    );
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      import { Query } from "./query.js";
+      new ApolloServer({ typeDefs: "", resolvers: { Query } });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
+  it("reads a resolver the map names rather than writes out", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "ping.ts",
+      `export function ping() { return "pong"; }`,
+    );
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      import { ping } from "./ping.js";
+      new ApolloServer({ typeDefs: "", resolvers: { Query: { ping } } });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+    expect(units[0]?.func.getText()).toContain("pong");
+  });
+
+  it("reads the schema off a constant another module exports", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "schema.ts",
+      "export const typeDefs = `type Query { ping: String }`;",
+    );
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      import { typeDefs } from "./schema.js";
+      new ApolloServer({ typeDefs, resolvers: { Query: { ping: () => "pong" } } });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0]?.resolverInfo?.schemaSdl).toContain("type Query");
+  });
+});
+
 describe("resolverMap discovery", () => {
   it("finds resolvers via shorthand `new ApolloServer({ resolvers })`", () => {
     const project = createProject();
@@ -979,7 +1078,11 @@ describe("resolverMap discovery", () => {
       new ApolloServer({ typeDefs: "", resolvers });
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     const names = units.map((u) => u.name).sort();
     expect(names).toEqual(["Mutation.signIn", "Query.ping", "Query.users"]);
     for (const u of units) {
@@ -1007,7 +1110,11 @@ describe("resolverMap discovery", () => {
       });
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
   });
 
@@ -1024,7 +1131,11 @@ describe("resolverMap discovery", () => {
       new ApolloServer({ typeDefs: "", resolvers });
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
   });
 
@@ -1046,7 +1157,11 @@ describe("resolverMap discovery", () => {
       });
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     expect(units.map((u) => u.name)).toEqual(["Mutation.signIn"]);
   });
 
@@ -1088,7 +1203,11 @@ describe("resolverMap discovery", () => {
       });
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
   });
 
@@ -1101,7 +1220,11 @@ describe("resolverMap discovery", () => {
       const server = { resolvers };
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     expect(units).toEqual([]);
   });
 
@@ -1115,7 +1238,11 @@ describe("resolverMap discovery", () => {
       new ApolloServer(config);
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     expect(units).toEqual([]);
   });
 
@@ -1128,7 +1255,11 @@ describe("resolverMap discovery", () => {
       new ApolloServer({ typeDefs: "" });
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     expect(units).toEqual([]);
   });
 
@@ -1142,7 +1273,11 @@ describe("resolverMap discovery", () => {
       new ApolloServer({ typeDefs: "", resolvers: dynamicResolvers });
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     expect(units).toEqual([]);
   });
 
@@ -1158,7 +1293,11 @@ describe("resolverMap discovery", () => {
       });
     `,
     );
-    const units = discoverUnits(file, [makeResolverMapPattern()]);
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
     expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
   });
 });

@@ -1,12 +1,13 @@
 import { Project, ScriptTarget, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { ResolutionStore } from "../facts/store.js";
 import { discoverUnits } from "./index.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 
-function makeFile(source: string): SourceFile {
-  const project = new Project({
+function makeProject(): Project {
+  return new Project({
     compilerOptions: {
       target: ScriptTarget.ES2022,
       strict: true,
@@ -14,7 +15,10 @@ function makeFile(source: string): SourceFile {
     },
     useInMemoryFileSystem: true,
   });
-  return project.createSourceFile("user.ts", source);
+}
+
+function makeFile(source: string): SourceFile {
+  return makeProject().createSourceFile("user.ts", source);
 }
 
 const PATTERN: DiscoveryPattern = {
@@ -42,7 +46,7 @@ describe("registrationLoop discovery", () => {
         app[r.method](r.path, r.handler);
       }
     `);
-    const units = discoverUnits(file, [PATTERN]);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
     const routes = units
       .map((u) => u.routeInfo)
       .filter((r): r is { method: string; path: string } => r !== undefined)
@@ -64,7 +68,7 @@ describe("registrationLoop discovery", () => {
         app[r.method](r.path, r.handler);
       }
     `);
-    const units = discoverUnits(file, [PATTERN]);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
     const routes = units
       .map((u) => u.routeInfo)
       .filter((r): r is { method: string; path: string } => r !== undefined)
@@ -83,7 +87,7 @@ describe("registrationLoop discovery", () => {
         unrelated();
       }
     `);
-    const units = discoverUnits(file, [PATTERN]);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
     expect(units).toHaveLength(0);
   });
 
@@ -97,7 +101,7 @@ describe("registrationLoop discovery", () => {
         app[r.method](r.path, r.handler);
       }
     `);
-    const units = discoverUnits(file, [PATTERN]);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
     expect(units).toHaveLength(0);
   });
 
@@ -114,7 +118,7 @@ describe("registrationLoop discovery", () => {
         app[r.method](r.path, r.handler);
       }
     `);
-    const units = discoverUnits(file, [PATTERN]);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
     const routes = units
       .map((u) => u.routeInfo)
       .filter((r): r is { method: string; path: string } => r !== undefined)
@@ -132,8 +136,44 @@ describe("registrationLoop discovery", () => {
         app[r.method](r.path, r.handler);
       }
     `);
-    const units = discoverUnits(file, [PATTERN]);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
     expect(units).toHaveLength(1);
     expect(units[0]?.routeInfo).toEqual({ method: "GET", path: "/inline" });
+  });
+});
+
+describe("registrationLoop discovery, a route table the loop names", () => {
+  it("expands a loop over an array another module exports", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "routes.ts",
+      `
+      export function listOrders() {}
+      export function createOrder() {}
+      export const routes = [
+        { method: "get", path: "/orders", handler: listOrders },
+        { method: "post", path: "/orders", handler: createOrder },
+      ];
+    `,
+    );
+    const file = project.createSourceFile(
+      "user.ts",
+      `
+      import { routes } from "./routes.js";
+      const app: any = {};
+      for (const r of routes) {
+        app[r.method](r.path, r.handler);
+      }
+    `,
+    );
+
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
+    const found = units
+      .map((u) => `${u.routeInfo?.method} ${u.routeInfo?.path} ${u.name}`)
+      .sort();
+    expect(found).toEqual([
+      "GET /orders listOrders",
+      "POST /orders createOrder",
+    ]);
   });
 });
