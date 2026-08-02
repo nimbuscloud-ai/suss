@@ -1,6 +1,7 @@
 import { Project, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { ResolutionStore } from "../facts/store.js";
 import { computePackApplicability } from "./preFilter.js";
 
 import type {
@@ -129,5 +130,42 @@ describe("computePackApplicability — pack-level requiresImport", () => {
     expect(
       result.get(bothFile)?.sort((a, b) => a.name.localeCompare(b.name)),
     ).toEqual([prismaPack, sqsPack]);
+  });
+});
+
+describe("computePackApplicability with the fact layer", () => {
+  function projectOf(files: Record<string, string>): Project {
+    const project = new Project({ useInMemoryFileSystem: true });
+    for (const [path, source] of Object.entries(files)) {
+      project.createSourceFile(path, source);
+    }
+    return project;
+  }
+
+  it("applies a pack to a file that reaches the gate through a barrel", () => {
+    const sqsPack = basePack({
+      name: "sqs",
+      requiresImport: ["@aws-sdk/client-sqs"],
+      invocationRecognizers: [noopInvocation],
+    });
+    const project = projectOf({
+      "/aws/sqs.ts": `export { SendMessageCommand } from "@aws-sdk/client-sqs";`,
+      "/service.ts": `import { SendMessageCommand } from "./aws/sqs";`,
+      "/unrelated.ts": "export const x = 1;",
+    });
+    const files = project.getSourceFiles();
+    const service = project.getSourceFileOrThrow("/service.ts");
+    const unrelated = project.getSourceFileOrThrow("/unrelated.ts");
+
+    const withoutFacts = computePackApplicability(files, [sqsPack]);
+    expect(withoutFacts.get(service)).toBeUndefined();
+
+    const withFacts = computePackApplicability(
+      files,
+      [sqsPack],
+      new ResolutionStore(),
+    );
+    expect(withFacts.get(service)).toEqual([sqsPack]);
+    expect(withFacts.get(unrelated)).toBeUndefined();
   });
 });
