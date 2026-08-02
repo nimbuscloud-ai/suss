@@ -13,6 +13,8 @@ Both paths run unconditionally so a mixed template (inline OpenAPI for some rout
 
 CloudFormation YAML intrinsic shorthand (`!Ref`, `!GetAtt`, plus pass-through tolerance for `!Sub`/`!Join`/`!If`/etc.) is recognized so realistic hand-written templates parse correctly.
 
+A SAM `Globals` section is applied to every resource that inherits from it before any of the walks run, so a template that declares an environment variable, a `CodeUri` or a timeout once for all of its functions reads the same as one that repeats it on each. The resource's own value wins where both declare one, maps merge key by key, and lists hold the section's entries first, which is what [SAM itself does](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-specification-template-anatomy-globals.html). A variable a function takes from the section is marked `globals` in `metadata.runtimeContract.envVarSources`, because a default written once for a whole document is a claim about the document rather than about any one function.
+
 Recognised resource types:
 
 | Resource type | Property read | Path source |

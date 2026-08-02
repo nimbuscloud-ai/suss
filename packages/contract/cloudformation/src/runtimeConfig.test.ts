@@ -14,7 +14,7 @@ function pickRuntimeConfig(
 
 interface RuntimeContractMeta {
   envVars?: string[];
-  envVarSources?: Record<string, "template" | "platform">;
+  envVarSources?: Record<string, "template" | "globals" | "platform">;
 }
 
 function readEnvVars(summary: BehavioralSummary): RuntimeContractMeta {
@@ -43,6 +43,33 @@ describe("buildRuntimeConfigSummaries — Lambda", () => {
     expect(meta.envVars).toContain("STRIPE_KEY");
     expect(meta.envVarSources?.DATABASE_URL).toBe("template");
     expect(meta.envVarSources?.STRIPE_KEY).toBe("template");
+  });
+
+  it("gives a function the section's variables, marked as the section's", () => {
+    const summaries = pickRuntimeConfig(
+      cloudFormationToSummaries({
+        Globals: {
+          Function: {
+            Environment: {
+              Variables: { LOG_LEVEL: "info", TABLE_NAME: { Ref: "Shared" } },
+            },
+          },
+        },
+        Resources: {
+          MyFn: {
+            Type: "AWS::Serverless::Function",
+            Properties: {
+              Environment: { Variables: { TABLE_NAME: { Ref: "Own" } } },
+            },
+          },
+        },
+      }),
+    );
+    const meta = readEnvVars(summaries[0]);
+    expect(meta.envVars).toContain("LOG_LEVEL");
+    expect(meta.envVarSources?.LOG_LEVEL).toBe("globals");
+    // The function declares this one itself, so it answers for it.
+    expect(meta.envVarSources?.TABLE_NAME).toBe("template");
   });
 
   it("appends Lambda's platform-injected vars with source=platform", () => {

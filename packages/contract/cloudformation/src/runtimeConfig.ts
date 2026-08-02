@@ -12,8 +12,10 @@
 // Each summary carries `metadata.runtimeContract.envVars` (the FULL
 // set the process sees, including platform-injected vars) and
 // `metadata.runtimeContract.envVarSources` (provenance per name —
-// "template" vs "platform"). The pairing checker uses the source
-// distinction so platform-injected vars never fire boundaryFieldUnused.
+// "template", "globals" or "platform"). The pairing checker uses the
+// source distinction so platform-injected vars never fire
+// boundaryFieldUnused, and so a name the whole document supplies is
+// judged across the document rather than function by function.
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
@@ -85,6 +87,7 @@ const PLATFORM_INJECTED: Record<
 export function buildRuntimeConfigSummaries(
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
+  inheritedEnvVars: Record<string, string[]> = {},
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
 
@@ -97,7 +100,12 @@ export function buildRuntimeConfigSummaries(
       type === "AWS::Lambda::Function" ||
       type === "AWS::Serverless::Function"
     ) {
-      const summary = buildLambdaSummary(logicalId, resource, sourceFile);
+      const summary = buildLambdaSummary({
+        logicalId,
+        resource,
+        sourceFile,
+        inherited: inheritedEnvVars[logicalId] ?? [],
+      });
       if (summary !== null) {
         summaries.push(summary);
       }
@@ -109,11 +117,14 @@ export function buildRuntimeConfigSummaries(
   return summaries;
 }
 
-function buildLambdaSummary(
-  logicalId: string,
-  resource: CloudFormationResource,
-  sourceFile: string,
-): BehavioralSummary | null {
+function buildLambdaSummary(opts: {
+  logicalId: string;
+  resource: CloudFormationResource;
+  sourceFile: string;
+  /** Variables the SAM Globals section supplies to this function. */
+  inherited: string[];
+}): BehavioralSummary | null {
+  const { logicalId, resource, sourceFile } = opts;
   const props = resource.Properties ?? {};
   const envVariables =
     (props.Environment as { Variables?: Record<string, unknown> } | undefined)
@@ -126,6 +137,7 @@ function buildLambdaSummary(
     sourceFile,
     deploymentTarget: "lambda",
     templateVars,
+    inheritedVars: opts.inherited,
     envVarTargets,
     codeScope,
   });
@@ -177,6 +189,12 @@ function buildSummary(opts: {
   deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment";
   templateVars: string[];
   /**
+   * The subset of `templateVars` a document-level default supplies
+   * rather than the resource itself. Recorded as its own provenance so
+   * the checker asks about it once for the document.
+   */
+  inheritedVars?: string[];
+  /**
    * Resolved CFN-ref targets for env vars. Maps the env var NAME the
    * code reads to the LOGICAL ID of the resource it Refs. Lets the
    * message-bus pairing (and any future cross-resource pairing) collapse
@@ -192,11 +210,12 @@ function buildSummary(opts: {
     instanceName: opts.logicalId,
   };
   const platformVars = PLATFORM_INJECTED[opts.deploymentTarget] ?? [];
+  const inherited = new Set(opts.inheritedVars ?? []);
   const merged = new Set<string>();
-  const sources: Record<string, "template" | "platform"> = {};
+  const sources: Record<string, "template" | "globals" | "platform"> = {};
   for (const v of opts.templateVars) {
     merged.add(v);
-    sources[v] = "template";
+    sources[v] = inherited.has(v) ? "globals" : "template";
   }
   for (const v of platformVars) {
     if (!merged.has(v)) {
