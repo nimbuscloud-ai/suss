@@ -19,8 +19,19 @@
 
 import { Node } from "ts-morph";
 
-import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
-import { RESOLUTION_RULES as SHARED_RULES } from "@suss/resolution";
+import {
+  Database,
+  deriveOnDemand,
+  evaluate,
+  lit,
+  rule,
+  variable as v,
+} from "@suss/datalog";
+import {
+  ANSWER_RELATIONS,
+  RESOLUTION_QUESTIONS,
+  RESOLUTION_RULES as SHARED_RULES,
+} from "@suss/resolution";
 
 import { isFunctionRoot } from "../discovery/shared.js";
 import {
@@ -51,10 +62,28 @@ const JS_RULES = [
 ];
 
 /**
- * What this adapter evaluates: the shared language rules, plus the ones
- * that are about JavaScript in particular.
+ * What this adapter evaluates: the shared language rules, the ones that
+ * are about JavaScript in particular, and the questions a caller asks,
+ * rewritten so a chain is followed only where a question reaches it.
+ *
+ * On a codebase dense enough for these rules to matter the rewrite is
+ * most of the run, so the escape hatch stays: `SUSS_RESOLUTION_ON_DEMAND=0`
+ * runs the same rules unrestricted. Both settings answer every question
+ * the same way, and the difference is how much never gets derived.
  */
-const RESOLUTION_RULES = [...SHARED_RULES, ...JS_RULES];
+const RESOLUTION_RULES =
+  process.env.SUSS_RESOLUTION_ON_DEMAND === "0"
+    ? [...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS]
+    : deriveOnDemand(
+        [...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS],
+        ANSWER_RELATIONS,
+      );
+
+/**
+ * The two ways a caller can ask about a value: what it is, or where the
+ * name came from. Each one is a fact the rules read.
+ */
+type Question = "wanted" | "wantedOrigin";
 
 /**
  * How many module hops a query follows when pulling in facts. Deep
@@ -104,7 +133,7 @@ export class ResolutionStore {
    */
   resolveCallable(value: Node): Node | null {
     const target = factKeyOf(value);
-    return this.resolveByWaves(target, () => this.lookup(target));
+    return this.resolveByWaves(target, "wanted", () => this.lookup(target));
   }
 
   /**
@@ -114,7 +143,9 @@ export class ResolutionStore {
    */
   resolveObject(value: Node): Node | null {
     const target = factKeyOf(value);
-    return this.resolveByWaves(target, () => this.lookupObject(target));
+    return this.resolveByWaves(target, "wanted", () =>
+      this.lookupObject(target),
+    );
   }
 
   /**
@@ -130,7 +161,9 @@ export class ResolutionStore {
    */
   resolveWrittenValue(value: Node): Node | null {
     const target = factKeyOf(value);
-    return this.resolveByWaves(target, () => this.lookupWritten(target));
+    return this.resolveByWaves(target, "wanted", () =>
+      this.lookupWritten(target),
+    );
   }
 
   /**
@@ -161,7 +194,7 @@ export class ResolutionStore {
     }
     const target = factKeyOf(value);
     const found =
-      this.resolveByWaves(target, () =>
+      this.resolveByWaves(target, "wantedOrigin", () =>
         this.lookupImportedNames(target, modules),
       ) ?? [];
     this.importedNames.set(declaration, found);
@@ -199,7 +232,12 @@ export class ResolutionStore {
     return origins.some((pair) => namesAPackage(moduleOf(pair))) ? [] : null;
   }
 
-  private resolveByWaves<T>(value: Node, ask: () => T | null): T | null {
+  private resolveByWaves<T>(
+    value: Node,
+    question: Question,
+    ask: () => T | null,
+  ): T | null {
+    this.wantValue(question, value);
     this.seedValue(value);
 
     // Where the walk has been on this query, which is separate from
@@ -229,6 +267,18 @@ export class ResolutionStore {
       frontier = next;
     }
     return null;
+  }
+
+  /**
+   * Somebody asked about this value, which is what the rules follow
+   * chains for. Separate from `seedValue`, which only speaks for values
+   * that are expressions; a caller can ask about a declaration too, and
+   * the answer is still owed.
+   */
+  private wantValue(question: Question, value: Node): void {
+    if (this.db.add(question, [nodeId(value)])) {
+      this.stale = true;
+    }
   }
 
   /**
@@ -342,11 +392,15 @@ export class ResolutionStore {
     this.stale = false;
     evaluate(this.db, RESOLUTION_RULES);
 
-    this.resolvedBySource = indexBySource(this.db.facts("resolves"));
-    this.comesToBySource = indexBySource(this.db.facts("comesTo"));
-    this.writtenAsBySource = indexBySource(this.db.facts("isWrittenAs"));
-    this.callsIntoBySource = indexPairsBySource(this.db.facts("callsInto"));
-    this.comesFromBySource = indexPairsBySource(this.db.facts("comesFrom"));
+    this.resolvedBySource = indexBySource(this.db.facts("wantedResolves"));
+    this.comesToBySource = indexBySource(this.db.facts("wantedComesTo"));
+    this.writtenAsBySource = indexBySource(this.db.facts("wantedIsWrittenAs"));
+    this.callsIntoBySource = indexPairsBySource(
+      this.db.facts("wantedCallsInto"),
+    );
+    this.comesFromBySource = indexPairsBySource(
+      this.db.facts("wantedComesFrom"),
+    );
   }
 
   /** Emit a file's facts, unless some earlier query already did. */
