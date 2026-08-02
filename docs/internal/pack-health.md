@@ -54,7 +54,7 @@ pack declares a version, which is true or false with no codebase
 involved. The other asks whether a pack discovered the same unit
 twice.
 
-## The two ways a pack can contribute
+## The pack the funnel cannot reach
 
 A pack that finds units of its own is measured against what its gate
 selected. A pack made of recognizers finds nothing by design: it
@@ -63,33 +63,51 @@ count is zero on every healthy run.
 
 That is five packs, not a rare case. Prisma, Drizzle, SQS,
 EventBridge and the Node runtime pack all declare an empty discovery
-list. Exempting them from the funnel would turn a known gap into an
-invisible one: if Prisma's recognizers stopped matching tomorrow, the
-output of a run would be byte-identical.
+list. Leaving them out reads as fine by construction, which turns a
+known gap into an invisible one: if Prisma's recognizers stopped
+matching tomorrow, the output of a run would be byte-identical.
 
-So they get a pair of their own. `PackTally` counts the effects each
+So a pair was built for them. `PackTally` counts the effects each
 pack's recognizers returned, and the unit bodies any pack walked in
-the files that pack's gate selected. The second is the number that
-makes the first mean something: a recognizer only ever runs inside a
-unit some pack discovered, so bodies walked in gated files is what the
-pack had the chance to match against. Bodies to look at and no effects
-from any of them is a recognizer pack that stopped working.
+the files that pack's gate selected, on the reasoning that a
+recognizer only runs inside a unit some pack discovered, so bodies
+walked in gated files is what the pack had the chance to match
+against.
 
-Getting the count required wrapping each recognizer with its owner at
-aggregation. The adapter flattens every pack's recognizers into one
-list and the pack name is gone by the time one fires, so the wrapper
-is the only place that still knows whose it was.
+Measuring it killed it. Over the fixtures the pair was live 29 times
+and fired never, which looked like a quiet check. On a private
+monorepo it fired on nearly every case where it was live. Opening
+those showed the predecessor is not a fact about the pack at all:
+bodies walked in gated files counts what the pack's *companions*
+found.
 
-That covers four of the five. The Node runtime pack is ungated,
-because what it recognizes needs no import: a `process.env` read is
-reachable from any file. Nothing about a run tells us whether that
-project was ever supposed to read the environment, and plenty of
-codebases never do, so bodies walked with no effects from them is not
-evidence of anything. The Node pack therefore stays unmeasured, on the
-same rule that keeps React Router from reporting itself broken on
-every project that does not use it. Measuring it needs a signal that
-the project intended to use the runtime at all, and no such signal
-exists today.
+The clearest case ran the Drizzle pack twice over one service. Paired
+with the pack that discovers that service's handlers, Drizzle returned
+effects and read as healthy. Paired instead with a client pack, it
+read as broken: the client pack found a call site in a file that
+happens to import `drizzle-orm`, Drizzle correctly matched nothing
+inside that particular body, and the check called Drizzle broken for
+it. Whether a pack is working cannot depend on which unrelated pack
+someone passed alongside it.
+
+Broad gates make it worse. The SQS pack gates on `aws-lambda` as well
+as the SDK, to catch the consumer side, so every Lambda handler in a
+service counts as a body it should have matched something in.
+
+There is no cheaper predecessor that fixes this. Whether a recognizer
+should have fired inside a given body is knowable only by something
+that understands the library's API, and that is the recognizer. Any
+proxy at the file level is too loose, because importing a library in a
+file whose walked bodies are unrelated to it is ordinary code.
+
+So the pair is gone and the counts stay. A run reports how many bodies
+a recognizer pack could look inside and how many effects came back,
+which is what makes those five packs legible in the funnel instead of
+three zeros against their name. Nothing judges them. **Five packs are
+not measured by any check here, and Prisma, Drizzle, SQS, EventBridge
+and the Node pack are the five.** The Node pack would be unreachable
+regardless, being ungated: a `process.env` read needs no import, and
+plenty of codebases never do one.
 
 ## What makes zero a signal
 
@@ -139,12 +157,10 @@ one pack per run.
 A private monorepo was measured the same way. Both checks fired there
 at about the same rate, and every case opened was correct.
 
-One pack per run cannot reach the recognizer pair, since a recognizer
-only fires inside a unit another pack discovered. That pair was
-measured separately, by re-running every target where some pack
-produced summaries with that pack and each recognizer pack together:
-125 such pairings over the fixtures, of which the pair was live in 29
-and fired in none.
+Every target where some pack produced summaries was also re-run with
+that pack and each recognizer pack together, 125 such pairings over
+the fixtures and the same sweep over a private monorepo. That is what
+retired the recognizer pair, above.
 
 **Funnel drops.** Every one is React Router producing summaries with
 no transitions: 30 of them on Saleor Storefront, 11 on Twenty's
@@ -230,10 +246,10 @@ arithmetic is worth doing and is not a heuristic.
 
 ## What this does not do
 
-**It leaves the Node runtime pack unmeasured.** Four of the five
-recognizer packs are gated and get a pair. The Node pack is not, for
-the reason above, and it is the one most likely to be in an arbitrary
-run.
+**It leaves five packs unmeasured.** Prisma, Drizzle, SQS,
+EventBridge and the Node runtime pack contribute effects rather than
+summaries, and the section above says why no check here can judge
+them. Their counts are reported and nothing is concluded from them.
 
 **"Reached zero" is much weaker than it sounds.** One count above zero
 anywhere in a pack's run silences that pair for the whole run. Eleven
@@ -249,10 +265,6 @@ threshold that needs no evidence, so it is the one shipped.
 extraction report when it answers from the cache, because no stage
 ran. Health therefore only fires on a cold cache or under
 `--no-cache`, and a passing check on a warm run means nothing at all.
-
-**It counts effects without reading them.** The recognizer pair asks
-whether any effect came back and stops there. A pack emitting one
-effect where it should emit forty looks healthy.
 
 **It does not fail a run.** Every check reports, and the exit code is
 what it was.
