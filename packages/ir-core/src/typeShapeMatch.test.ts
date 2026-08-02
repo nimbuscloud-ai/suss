@@ -126,7 +126,7 @@ describe("bodyShapesMatch — composites and uncertainty", () => {
     ).toBe("unknown");
     expect(
       bodyShapesMatch({ type: "ref", name: "A" }, { type: "ref", name: "A" }),
-    ).toBe("match");
+    ).toBe("unknown");
   });
 });
 

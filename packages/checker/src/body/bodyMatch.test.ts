@@ -237,12 +237,18 @@ describe("bodyShapesMatch — dictionary", () => {
 });
 
 describe("bodyShapesMatch — refs and unknown", () => {
-  it("matches refs with the same name", () => {
-    expect(bodyShapesMatch(ref("User"), ref("User"))).toBe("match");
+  it("returns unknown for refs with the same name", () => {
+    expect(bodyShapesMatch(ref("User"), ref("User"))).toBe("unknown");
   });
 
   it("returns unknown for refs with different names", () => {
     expect(bodyShapesMatch(ref("User"), ref("Admin"))).toBe("unknown");
+  });
+
+  it("does not let a same-named ref inside a record claim agreement", () => {
+    const actual = record({ id: text, user: ref("User") });
+    const declared = record({ id: text, user: ref("User") });
+    expect(bodyShapesMatch(actual, declared)).toBe("unknown");
   });
 
   it("returns unknown when one side is a ref and the other is a primitive", () => {
