@@ -119,6 +119,107 @@ describe("env-var recognizer — happy path", () => {
     expect(reads[0]?.interaction.defaulted).toBe(false);
   });
 
+  it("recognizes a bracket read, which the pack has always documented", () => {
+    const file = makeProject(`
+      const url = process.env["SERVICE_URL"];
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads).toHaveLength(1);
+    expect(reads[0]?.interaction).toMatchObject({
+      name: "SERVICE_URL",
+      defaulted: false,
+    });
+  });
+
+  it("marks a bracket read defaulted when it carries a ?? fallback", () => {
+    const file = makeProject(`
+      const url = process.env["SERVICE_URL"] ?? "http://localhost";
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads[0]?.interaction.defaulted).toBe(true);
+  });
+
+  it("names a bracket read the way it names a dotted one", () => {
+    const file = makeProject(`
+      const url = process.env["SERVICE_URL"];
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads[0]?.callee).toBe("process.env.SERVICE_URL");
+  });
+
+  it("reports nothing for an index it cannot read back as a name", () => {
+    const file = makeProject(`
+      declare const key: string;
+      const value = process.env[key];
+    `);
+    expect(configReadEffectsOf(recognizeAll(file))).toEqual([]);
+  });
+
+  it("reports nothing for an index that names no variable", () => {
+    const file = makeProject(`
+      const value = process.env[""];
+    `);
+    expect(configReadEffectsOf(recognizeAll(file))).toEqual([]);
+  });
+
+  it("recognizes every variable destructured off process.env", () => {
+    const file = makeProject(`
+      const { AWS_REGION, SERVICE_URL: url } = process.env;
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads.map((r) => r.interaction.name).sort()).toEqual([
+      "AWS_REGION",
+      "SERVICE_URL",
+    ]);
+  });
+
+  it("marks a destructured read defaulted when the binding supplies one", () => {
+    const file = makeProject(`
+      const { PORT = "3000", HOST } = process.env;
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    const byName = new Map(reads.map((r) => [r.interaction.name, r]));
+    expect(byName.get("PORT")?.interaction.defaulted).toBe(true);
+    expect(byName.get("HOST")?.interaction.defaulted).toBe(false);
+  });
+
+  it("names no variable for a rest element, which stands for the others", () => {
+    const file = makeProject(`
+      const { PORT, ...rest } = process.env;
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads.map((r) => r.interaction.name)).toEqual(["PORT"]);
+  });
+
+  it("names no variable for a computed binding it cannot read back", () => {
+    const file = makeProject(`
+      declare const key: string;
+      const { [key]: value } = process.env;
+    `);
+    expect(configReadEffectsOf(recognizeAll(file))).toEqual([]);
+  });
+
+  it("names no variable for a binding whose property name is empty", () => {
+    const file = makeProject(`
+      const { "": value } = process.env;
+    `);
+    expect(configReadEffectsOf(recognizeAll(file))).toEqual([]);
+  });
+
+  it("reports nothing when process.env is bound whole rather than destructured", () => {
+    const file = makeProject(`
+      const settings = process.env;
+    `);
+    expect(configReadEffectsOf(recognizeAll(file))).toEqual([]);
+  });
+
+  it("reports a dotted read once, though the walk visits both its nodes", () => {
+    const file = makeProject(`
+      const key = process.env.STRIPE_API_KEY;
+    `);
+    expect(configReadEffectsOf(recognizeAll(file))).toHaveLength(1);
+  });
+
   it("recognizes multiple env reads in one file", () => {
     const file = makeProject(`
       const a = process.env.AWS_REGION;
