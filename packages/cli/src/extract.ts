@@ -404,10 +404,16 @@ export async function extract(
     }
 
     // A run that produced plenty can still have one pack in it that
-    // produced nothing, and that pack is invisible in a total. The
-    // health checks print whenever they fire, whatever the run's own
-    // counts look like, and never change the exit code.
-    process.stderr.write(formatPackHealth(evaluatePackHealth(report)));
+    // produced nothing, and that pack is invisible in a total. What
+    // the person running this can act on prints whenever it fires;
+    // what only a pack's author can fix waits for `--explain`. Neither
+    // changes the exit code.
+    process.stderr.write(
+      formatPackHealth(
+        evaluatePackHealth(report),
+        options.explain === true ? ["run", "pack"] : ["run"],
+      ),
+    );
   }
 
   if (options.failOnEmpty === true && summaries.length === 0) {

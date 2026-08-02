@@ -29,6 +29,17 @@ export interface HealthViolation {
 
 export interface HealthCheck {
   name: string;
+  /**
+   * Who can act on this.
+   *
+   * A `run` check found something about the code in front of it, and
+   * the person who started the run can do something about it: drop a
+   * pack, install a dependency, open an issue with the file that
+   * broke. A `pack` check found something about how a pack was built,
+   * which only whoever ships that pack can fix. Printing the second
+   * kind on every run would teach people to skim past the first.
+   */
+  scope: "run" | "pack";
   violations: HealthViolation[];
 }
 
@@ -147,22 +158,36 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
   return [
     {
       name: "no pack drops everything it was holding",
+      scope: "run",
       violations: funnelDrops(report.packs),
     },
     {
       name: "no pack collides with itself",
+      scope: "run",
       violations: selfCollisions(report.packs),
     },
     {
       name: "every pack declares a version",
+      scope: "pack",
       violations: unversionedPacks(report.packs),
     },
   ];
 }
 
-/** The health checks that fired, as lines for a terminal. */
-export function formatPackHealth(checks: ReadonlyArray<HealthCheck>): string {
-  const fired = checks.filter((check) => check.violations.length > 0);
+/**
+ * The health checks that fired, as lines for a terminal.
+ *
+ * `scopes` is who the caller is printing for. A CLI run prints what
+ * the person who started it can act on; the dogfood run, where a pack
+ * author is reading, asks for both.
+ */
+export function formatPackHealth(
+  checks: ReadonlyArray<HealthCheck>,
+  scopes: ReadonlyArray<HealthCheck["scope"]> = ["run", "pack"],
+): string {
+  const fired = checks.filter(
+    (check) => check.violations.length > 0 && scopes.includes(check.scope),
+  );
   if (fired.length === 0) {
     return "";
   }

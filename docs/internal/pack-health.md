@@ -124,6 +124,16 @@ AWS Lambda pack collides with itself the same way.
 **No declared version.** Eighteen of the nineteen built-in packs
 declare none. Only `@suss/runtime-node` does.
 
+That last one is correct every time it fires, and it would still be
+the check most likely to get the whole report ignored. Someone running
+`suss extract` cannot version a pack we ship, so printing it on every
+run teaches them to skim past the lines above it. Each check therefore
+says who can act on it. A `run` check found something about the code in
+front of it and prints whenever it fires; a `pack` check found
+something about how a pack was built and waits for `--explain`. The
+dogfood run prints both, because there the pack author is the person
+reading.
+
 ## What was measured and dropped
 
 **A declared pattern that never matched.** Discovery and terminal

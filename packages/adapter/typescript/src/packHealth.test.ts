@@ -146,6 +146,24 @@ describe("the funnel-drop check", () => {
   });
 });
 
+describe("who a check is addressed to", () => {
+  it("keeps a codebase finding separate from a pack-build finding", () => {
+    const checks = evaluatePackHealth({
+      filesInProject: 20,
+      filesWalked: 20,
+      packs: [funnel()],
+      summaries: 0,
+      emptyStage: null,
+    });
+    const scopeOf = (name: string) =>
+      checks.find((check) => check.name === name)?.scope;
+
+    expect(scopeOf("no pack drops everything it was holding")).toBe("run");
+    expect(scopeOf("no pack collides with itself")).toBe("run");
+    expect(scopeOf("every pack declares a version")).toBe("pack");
+  });
+});
+
 describe("the remaining checks", () => {
   it("names a pack that declares no version", () => {
     expect(
