@@ -51,6 +51,8 @@ Node identity is the adapter's business. The rules only join on it.
 comesTo(x, z)               following x arrives at the value z
 resolves(x, z)              comesTo narrowed to functions
 isWrittenAs(x, z)           x is written as the expression z
+comesFrom(x, m, n)          following x arrives at m's export n
+callsInto(f, m, n)          calling f ends up calling m's n
 ```
 
 `resolves` is the question most callers ask. `comesTo` is the one
@@ -61,6 +63,20 @@ pass through objects for `routes.list` to reach what `list` holds.
 written as, whatever kind of expression that turns out to be. A GraphQL
 document is neither a function nor an object, so `comesTo` never
 reaches one.
+
+`comesFrom` answers the direction `comesTo` cannot. Every `comesTo`
+chain ends at something written out in the source being read, so a name
+for a library's own function ends nowhere: the library's body is not
+here. `comesFrom` follows the same aliases, imports and barrels and
+answers with the module and the name that module exports.
+
+`callsInto` puts that together with the calls a function makes. A
+project writes its own decorator that calls `Resolver()` and applies
+that one to its classes, and the class is a resolver even though nothing
+about it says `Resolver`. Several answers for one function is the normal
+case rather than an ambiguity, since a wrapper composing two library
+decorators applies both, so a caller asks whether the one it cares about
+is among them.
 
 One relation comes out for the rules' own use rather than for callers:
 
