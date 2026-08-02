@@ -375,3 +375,69 @@ describe("what calling a project wrapper reaches", () => {
     ).toEqual([]);
   });
 });
+
+describe("a name written more than once", () => {
+  it("comes to the value the writes leave it holding", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "first"],
+          ["func", "second"],
+          ["endsHolding", "panel", "second"],
+        ],
+        "panel",
+      ),
+    ).toEqual(["second"]);
+  });
+
+  it("comes to nothing when the adapter cannot say which write reaches", () => {
+    // A write inside a branch, a loop, or a function body: the adapter
+    // emits no `endsHolding`, and two values with no way to tell which
+    // one a read sees is not an answer.
+    expect(
+      resolutionsOf(
+        [
+          ["func", "first"],
+          ["func", "second"],
+        ],
+        "panel",
+      ),
+    ).toEqual([]);
+  });
+
+  it("carries the surviving value through an alias and an import", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "second"],
+          ["endsHolding", "panel", "second"],
+          ["exportsAs", "mod", "Panel", "panel"],
+          ["imports", "here", "mod", "Panel"],
+          ["binds", "alias", "here"],
+        ],
+        "alias",
+      ),
+    ).toEqual(["second"]);
+  });
+
+  it("follows the surviving value through a wrapper call", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "body"],
+          ["func", "wrap"],
+          ["call", "wrapped", "wrapRef"],
+          ["binds", "wrapRef", "wrap"],
+          ["paramOf", "wrap", "0", "p"],
+          ["returnsValue", "wrap", "inner"],
+          ["func", "inner"],
+          ["bodyCalls", "inner", "pRef"],
+          ["binds", "pRef", "p"],
+          ["callArg", "wrapped", "0", "body"],
+          ["endsHolding", "panel", "wrapped"],
+        ],
+        "panel",
+      ),
+    ).toEqual(["body"]);
+  });
+});

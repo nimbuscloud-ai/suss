@@ -34,12 +34,6 @@ export const COMPONENT_BUGS: ReproducedBug[] = [
   },
   {
     dimension: "binding",
-    value: "letReassigned",
-    signature: "equivalence:summaries[0].transitions",
-    wrong: "a reassigned binding is summarized from its first assignment",
-  },
-  {
-    dimension: "binding",
     value: "destructured",
     signature: "invariant:everyAnnouncedBoundaryIsSummarized",
     wrong: "a component bound by destructuring is not discovered",

@@ -21,6 +21,8 @@
 //   holdsProperty(o, n, x)      object o holds x under the name n
 //   readsProperty(x, o, n)      x is the expression o.n
 //   binds(x, y)                 the name x is declared as y
+//   endsHolding(x, y)           the name x is written more than once
+//                               and holds y once the writes have run
 //   paramOf(f, k, p)            p is f's parameter at position k
 //   returnsValue(f, v)          f returns v
 //   bodyCalls(f, c)             f's body calls c
@@ -70,6 +72,17 @@ export const RESOLUTION_RULES = [
     "comesTo",
     [v("x"), v("z")],
     [lit("binds", v("x"), v("y")), lit("comesTo", v("y"), v("z"))],
+  ),
+
+  // A name written more than once holds the value the last write left
+  // there, and `binds` says nothing about it. The adapter works out
+  // which write that is, in its own language's terms, and stays quiet
+  // when control flow decides. A name it stays quiet about comes to no
+  // value, which is the answer.
+  rule(
+    "comesTo",
+    [v("x"), v("z")],
+    [lit("endsHolding", v("x"), v("y")), lit("comesTo", v("y"), v("z"))],
   ),
 
   // An import comes to what the module exports under that name.
@@ -312,6 +325,11 @@ export const RESOLUTION_RULES = [
     "isWrittenAs",
     [v("x"), v("z")],
     [lit("binds", v("x"), v("y")), lit("isWrittenAs", v("y"), v("z"))],
+  ),
+  rule(
+    "isWrittenAs",
+    [v("x"), v("z")],
+    [lit("endsHolding", v("x"), v("y")), lit("isWrittenAs", v("y"), v("z"))],
   ),
   rule(
     "isWrittenAs",

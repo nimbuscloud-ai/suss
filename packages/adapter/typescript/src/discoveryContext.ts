@@ -14,6 +14,7 @@
 import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 
 import { toFunctionRoot } from "./discovery/shared.js";
+import { isWrittenAgain } from "./facts/assignments.js";
 
 import type { FunctionRoot } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
@@ -109,19 +110,7 @@ function exportedFunctions(
       continue;
     }
     for (const decl of declarations) {
-      let fn = resolveDeclarationToFunction(decl);
-      if (fn === null && resolution !== undefined) {
-        // The export is a wrapper call, an alias, or a .bind rather
-        // than a function. The fact layer follows those to the
-        // function they resolve to.
-        const value = Node.isVariableDeclaration(decl)
-          ? (decl.getInitializer() ?? decl)
-          : decl;
-        if (couldResolveToFunction(value)) {
-          const resolved = resolution.resolveCallable(value);
-          fn = resolved === null ? null : toFunctionRoot(resolved);
-        }
-      }
+      const fn = exportedFunction(decl, resolution);
       if (fn === null) {
         continue;
       }
@@ -131,6 +120,52 @@ function exportedFunctions(
     }
   }
   return out;
+}
+
+/**
+ * The function an export is, however it got there.
+ *
+ * A name written once is answered from the syntax at the declaration,
+ * which is what most exports are and costs nothing. A name written
+ * again holds a different value by the time anything imports it, so
+ * the binding goes to the fact layer and the rules say which write
+ * survives. When they cannot say, the export has no function here,
+ * which is the answer rather than the first value.
+ */
+function exportedFunction(
+  decl: Node,
+  resolution?: ResolutionStore,
+): FunctionRoot | null {
+  const writtenAgain = Node.isVariableDeclaration(decl) && isWrittenAgain(decl);
+  if (!writtenAgain) {
+    const declared = resolveDeclarationToFunction(decl);
+    if (declared !== null) {
+      return declared;
+    }
+  }
+  if (resolution === undefined) {
+    return null;
+  }
+
+  // The export is a wrapper call, an alias, or a .bind rather than a
+  // function. The fact layer follows those to the function they
+  // resolve to.
+  const value = valueToAskAbout(decl, writtenAgain);
+  if (value === null) {
+    return null;
+  }
+  const resolved = resolution.resolveCallable(value);
+  return resolved === null ? null : toFunctionRoot(resolved);
+}
+
+function valueToAskAbout(decl: Node, writtenAgain: boolean): Node | null {
+  if (writtenAgain) {
+    return decl;
+  }
+  const value = Node.isVariableDeclaration(decl)
+    ? (decl.getInitializer() ?? decl)
+    : decl;
+  return couldResolveToFunction(value) ? value : null;
 }
 
 function exportedCallConfigString(

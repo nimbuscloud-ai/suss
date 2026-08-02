@@ -129,3 +129,35 @@ describe("exportedCallConfigString", () => {
     );
   });
 });
+
+describe("an export whose binding is written again", () => {
+  it("reports the write that survives rather than the initializer", () => {
+    const file = sourceFile(`
+      function PanelImpl() { return <div />; }
+      let Panel = () => <span />;
+      Panel = PanelImpl;
+      export { Panel };
+    `);
+    const withRules = createTsDiscoveryContext(new ResolutionStore());
+
+    const found = withRules
+      .exportedFunctions(file)
+      .find((entry) => entry.name === "Panel");
+    expect(found?.func.getText()).toContain("<div />");
+  });
+
+  it("reports nothing when a branch decides which write runs", () => {
+    const file = sourceFile(`
+      declare const flag: boolean;
+      function PanelImpl() { return <div />; }
+      let Panel = () => <span />;
+      if (flag) { Panel = PanelImpl; }
+      export { Panel };
+    `);
+    const withRules = createTsDiscoveryContext(new ResolutionStore());
+
+    expect(
+      withRules.exportedFunctions(file).map((entry) => entry.name),
+    ).not.toContain("Panel");
+  });
+});

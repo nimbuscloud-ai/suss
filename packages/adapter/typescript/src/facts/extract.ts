@@ -13,8 +13,10 @@
 import { type Expression, Node, type SourceFile, SyntaxKind } from "ts-morph";
 
 import { isFunctionRoot } from "../discovery/shared.js";
+import { isWrittenAgain, writesToBinding } from "./assignments.js";
 
 import type { Database } from "@suss/datalog";
+import type { VariableDeclaration } from "ts-morph";
 
 /** Arity sugar over `Database.add`, which takes a tuple array. */
 function fact(db: Database, relation: string, ...tuple: string[]): void {
@@ -384,6 +386,40 @@ export function emitValue(
 }
 
 /**
+ * What a declaration's name holds. A name written once holds its
+ * initializer, and `binds` says so. A name written again holds
+ * whatever the last write left there, and saying `binds` about the
+ * initializer would hand every reader the value the name held before
+ * the module finished.
+ *
+ * Which write that is comes from `writesToBinding`, which answers only
+ * where control flow cannot change it. Where it has no answer, nothing
+ * goes down, and a reader asking about the name gets nothing.
+ */
+function emitBindingValues(
+  db: Database,
+  table: NodeTable,
+  declaration: VariableDeclaration,
+): void {
+  const declarationId = nodeId(declaration);
+
+  if (!isWrittenAgain(declaration)) {
+    const initializer = declaration.getInitializer();
+    if (initializer !== undefined) {
+      fact(db, "binds", declarationId, emitValue(db, table, initializer));
+    }
+    return;
+  }
+
+  const { values, inOrder } = writesToBinding(declaration);
+  const last = values[values.length - 1];
+  if (!inOrder || last === undefined) {
+    return;
+  }
+  fact(db, "endsHolding", declarationId, emitValue(db, table, last));
+}
+
+/**
  * binds(reference, declaration) for an identifier or property access.
  * The declaration may be an import specifier (rules follow it through
  * the imports relation), a variable declaration, or a function.
@@ -436,10 +472,7 @@ function emitReferenceFacts(
 
     if (Node.isVariableDeclaration(declaration)) {
       fact(db, "binds", referenceId, declarationId);
-      const initializer = declaration.getInitializer();
-      if (initializer !== undefined) {
-        fact(db, "binds", declarationId, emitValue(db, table, initializer));
-      }
+      emitBindingValues(db, table, declaration);
       continue;
     }
 
@@ -683,10 +716,7 @@ export function extractFileFacts(
         const declarationId = nodeId(declaration);
         table.byId.set(declarationId, declaration);
         fact(db, "exportsAs", filePath, name, declarationId);
-        const initializer = declaration.getInitializer();
-        if (initializer !== undefined) {
-          fact(db, "binds", declarationId, emitValue(db, table, initializer));
-        }
+        emitBindingValues(db, table, declaration);
         continue;
       }
 

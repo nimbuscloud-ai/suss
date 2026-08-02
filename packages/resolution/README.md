@@ -25,6 +25,8 @@ writtenValue(x)             x is an expression written out in source
 holdsProperty(o, n, x)      object o holds x under the name n
 readsProperty(x, o, n)      x is the expression o.n
 binds(x, y)                 the name x is declared as y
+endsHolding(x, y)           the name x is written more than once and
+                            holds y once the writes have run
 paramOf(f, k, p)            p is f's parameter at position k
 returnsValue(f, v)          f returns v
 bodyCalls(f, c)             f's body calls c
@@ -121,8 +123,27 @@ unresolved on purpose.
 **An element of an array.** `all[0]` has no fact for what an array
 holds.
 
-**Reassignment.** A name assigned twice resolves to the first
-assignment rather than to both or to neither.
+**Which write a read sees, once control flow decides it.** A name
+written twice in a module's own statement list is answered: those
+statements run once each, top to bottom, so the last write is what
+anything importing the name gets, and the adapter says so with
+`endsHolding`. A write inside a branch, a loop, or a function body is a
+different claim, and the adapter stays quiet. The name then comes to
+nothing, which is the answer until there are control-flow facts to
+reason over.
+
+Answering it in general is reaching definitions, per use rather than
+per name. That needs facts saying which statement follows which and
+which branch each sits on, and no adapter emits any today.
+
+The adapter picking the write rather than a rule picking it is a cost
+decision. Ordering writes inside the rules means asking which writes
+have no later write, negation says that in one line, and this
+evaluator has to throw its last fixpoint away and start over whenever a
+rule set uses negation. The store evaluates after every wave of facts,
+so one negated rule turned a 66 second run on the Saleor dashboard into
+one that had not finished in ten minutes. Source order is something
+every adapter already knows.
 
 **Ambiguity is the caller's problem.** When the rules reach two
 different functions the store returns nothing, since picking one would
