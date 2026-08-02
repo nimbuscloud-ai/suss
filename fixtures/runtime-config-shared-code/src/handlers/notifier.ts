@@ -2,9 +2,12 @@
 // function; RETRY_LIMIT is declared nowhere, so it stays a finding once
 // the two functions stop sharing each other's reads.
 
+import { logLevel } from "../config/logging.js";
+
 export async function handler(event: { id: string }): Promise<{
   statusCode: number;
 }> {
+  logLevel();
   await publish(
     process.env.NOTIFY_TOPIC_ARN,
     event.id,

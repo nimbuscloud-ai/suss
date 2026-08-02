@@ -242,9 +242,15 @@ A queue / topic is declared in infrastructure but neither produced to nor consum
 
 **Severity:** info • **Emitted by:** `checkRuntimeConfig`
 
-A runtime-config-bound provider summary declares no `codeScope` (or one we couldn't resolve to source files), so the env-var contract can't be paired against any code. Heads-up that verification was skipped, not a defect in the code itself. Common cause: raw CloudFormation that uses S3-built artifacts (no `CodeUri`) without a `Metadata.SussCodeScope` annotation.
+suss could not tell which code a runtime runs, so it paired that runtime's env-var contract against none. Heads-up that verification was skipped, not a defect in the code itself. Two ways to get here.
+
+The provider declares no `codeScope`, or one we couldn't resolve to source files. Common cause: raw CloudFormation that uses S3-built artifacts (no `CodeUri`).
 
 **Fix:** add `Metadata: { SussCodeScope: { CodeUri: "src/handlers/x" } }` to the resource, or wire CodeUri through.
+
+Or several providers declare a directory holding the same source file, and the code in that file names no deployable unit. A service that builds every one of its functions from the service root gives them all the same directory, and nothing then says which function runs a shared helper. Attributing the helper to all of them would report one `process.env` read once per function.
+
+**Fix:** let a pack discover the code under a template entry so it carries a deployable unit, or give each function a `CodeUri` covering only its own sources.
 
 ---
 
