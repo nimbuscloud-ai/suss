@@ -29,6 +29,7 @@ import {
   conditionInfoToRawCondition,
   type FunctionRoot,
 } from "../conditions.js";
+import { startLineOf } from "../lines.js";
 import {
   type DescentBarriers,
   isDescentStop,
@@ -192,7 +193,7 @@ export function extractInvocationEffects(
             async,
             ...(preconditions.length > 0 ? { preconditions } : {}),
           },
-          line: node.getStartLineNumber(),
+          line: startLineOf(node),
           neverTerminal: false,
         });
       }
@@ -662,11 +663,11 @@ function enclosingStatementLine(node: Node): number {
   let current: Node | undefined = node;
   while (current !== undefined) {
     if (Node.isStatement(current)) {
-      return current.getStartLineNumber();
+      return startLineOf(current);
     }
     current = current.getParent();
   }
-  return node.getStartLineNumber();
+  return startLineOf(node);
 }
 
 /**

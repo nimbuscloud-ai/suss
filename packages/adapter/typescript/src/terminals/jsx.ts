@@ -4,6 +4,7 @@
 
 import { Node } from "ts-morph";
 
+import { endLineOf, startLineOf } from "../lines.js";
 import { peelParens } from "../walk/unwrap.js";
 
 import type { RenderNode } from "@suss/behavioral-ir";
@@ -60,8 +61,8 @@ export function tryMatchJsxReturn(
     emitEvent: null,
     renderTree: tree,
     location: {
-      start: node.getStartLineNumber(),
-      end: node.getEndLineNumber(),
+      start: startLineOf(node),
+      end: endLineOf(node),
     },
   };
 

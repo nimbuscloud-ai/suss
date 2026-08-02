@@ -6,6 +6,7 @@
 
 import { Node } from "ts-morph";
 
+import { endLineOf } from "../lines.js";
 import {
   crossesNestedFunctionScope,
   type DescentBarriers,
@@ -170,7 +171,7 @@ export function functionMayFallThrough(func: FunctionRoot): boolean {
 export function makeFallthroughTerminal(func: FunctionRoot): FoundTerminal {
   const body = func.getBody();
   const anchor: Node = body ?? func;
-  const line = anchor.getEndLineNumber();
+  const line = endLineOf(anchor);
   return {
     node: anchor,
     terminal: {

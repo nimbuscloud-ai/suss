@@ -4,6 +4,7 @@
 
 import { type Expression, Node } from "ts-morph";
 
+import { endLineOf, startLineOf } from "../lines.js";
 import {
   type ExtractionContext,
   extractBody,
@@ -50,8 +51,8 @@ export function tryMatchThrowExpression(
     emitEvent: null,
     renderTree: null,
     location: {
-      start: node.getStartLineNumber(),
-      end: node.getEndLineNumber(),
+      start: startLineOf(node),
+      end: endLineOf(node),
     },
   };
 
