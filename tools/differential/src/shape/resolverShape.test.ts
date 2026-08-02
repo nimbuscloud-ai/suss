@@ -45,7 +45,7 @@ const SEED = envInt("SUSS_FUZZ_SEED", 20260801);
 // ---------------------------------------------------------------------------
 
 const arbSoundApolloShape: fc.Arbitrary<ApolloResolverSpec> =
-  arbApolloResolverSpec.filter((spec) => spec.route !== "spreadIntoLiteral");
+  arbApolloResolverSpec;
 
 const arbSoundNestShape: fc.Arbitrary<NestResolverSpec> =
   arbNestResolverSpec.filter(

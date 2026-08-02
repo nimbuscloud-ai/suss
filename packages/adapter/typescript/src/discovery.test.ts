@@ -1244,6 +1244,68 @@ describe("resolverMap discovery, a map assembled across modules", () => {
     expect(units[0]?.func?.getText()).toContain("pong");
   });
 
+  it("reads a type's fields built elsewhere and spread in", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      const QueryFields = { ping: () => "pong" };
+      const resolvers = { Query: { ...QueryFields, version: () => "1" } };
+      new ApolloServer({ typeDefs: "", resolvers });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping", "Query.version"]);
+  });
+
+  it("reads whole types another module exports and spreads into the map", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "query.ts",
+      `export const queryResolvers = { Query: { ping: () => "pong" } };`,
+    );
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      import { queryResolvers } from "./query.js";
+      new ApolloServer({ typeDefs: "", resolvers: { ...queryResolvers } });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
+  it("walks an object that spreads its way back to itself once", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      const fields: any = { ping: () => "pong", ...(fields ?? {}) };
+      new ApolloServer({ typeDefs: "", resolvers: { Query: fields } });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
   it("reads the schema off a constant another module exports", () => {
     const project = createProject();
     project.createSourceFile(

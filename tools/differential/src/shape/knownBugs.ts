@@ -124,20 +124,12 @@ export const HANDLER_BUGS: ReproducedBug[] = [
 export const ANNOUNCEMENT_BUGS: ReproducedBug[] = [];
 
 /**
- * Wrong behaviour where a GraphQL field says which function answers
- * it. Apollo reads the object the constructor is handed, and every
- * route to that object resolves except the one that builds a type's
- * fields elsewhere and spreads them in.
+ * Wrong behaviour where a GraphQL field says which function answers it.
+ * Apollo reads the object the constructor is handed, and every route to
+ * that object now resolves, spreads included, so the sound tier carries
+ * the whole route dimension and nothing is listed here.
  */
-export const APOLLO_RESOLVER_BUGS: ReproducedBug[] = [
-  {
-    dimension: "route",
-    value: "spreadIntoLiteral",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a type's fields built in one object and spread into the resolver map are not discovered, so the field pairs with nothing",
-  },
-];
+export const APOLLO_RESOLVER_BUGS: ReproducedBug[] = [];
 
 /**
  * Wrong behaviour on a decorated resolver class. The arrow property is

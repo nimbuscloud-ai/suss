@@ -13,7 +13,11 @@ import { Node } from "ts-morph";
 import { factKeyOf } from "../facts/extract.js";
 import { toFunctionRoot } from "./shared.js";
 
-import type { ArrayLiteralExpression, ObjectLiteralExpression } from "ts-morph";
+import type {
+  ArrayLiteralExpression,
+  ObjectLiteralElementLike,
+  ObjectLiteralExpression,
+} from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -82,6 +86,42 @@ export function objectLiteralOf(
     (node): node is ObjectLiteralExpression =>
       Node.isObjectLiteralExpression(node),
   );
+}
+
+/**
+ * The properties an object literal holds, with a spread standing for
+ * the properties of whatever it names.
+ *
+ * A spread is a name in property position, so it asks the same question
+ * `objectLiteralOf` answers, and a spread of something the rules do not
+ * reach an object from contributes nothing, the same as a property
+ * whose value nothing resolves. An object that spreads its way back to
+ * itself is walked once.
+ */
+export function propertiesOf(
+  object: ObjectLiteralExpression,
+  resolution: ResolutionStore | undefined,
+): ObjectLiteralElementLike[] {
+  return propertiesReached(object, resolution, new Set());
+}
+
+function propertiesReached(
+  object: ObjectLiteralExpression,
+  resolution: ResolutionStore | undefined,
+  seen: Set<ObjectLiteralExpression>,
+): ObjectLiteralElementLike[] {
+  if (seen.has(object)) {
+    return [];
+  }
+  seen.add(object);
+
+  return object.getProperties().flatMap((property) => {
+    if (!Node.isSpreadAssignment(property)) {
+      return [property];
+    }
+    const spread = objectLiteralOf(property.getExpression(), resolution);
+    return spread === null ? [] : propertiesReached(spread, resolution, seen);
+  });
 }
 
 /** The array literal this value is, whether written out here or named. */
