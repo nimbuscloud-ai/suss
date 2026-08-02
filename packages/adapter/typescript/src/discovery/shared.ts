@@ -231,6 +231,52 @@ export function declarationCarryingTheBody(declaration: Node): Node {
  * written more than once answers with the one declaration that carries
  * the body, so two spellings of one function do not become two units.
  */
+
+/**
+ * Whether a value is shaped like something that could name a function.
+ * Most exports are object literals, string constants, or schemas, and
+ * asking the fact layer about those pulls in their import closure for
+ * an answer that is always null.
+ */
+export function couldResolveToFunction(value: Node): boolean {
+  return (
+    Node.isCallExpression(value) ||
+    Node.isIdentifier(value) ||
+    Node.isPropertyAccessExpression(value) ||
+    Node.isExportSpecifier(value) ||
+    Node.isImportSpecifier(value) ||
+    Node.isImportClause(value) ||
+    Node.isBindingElement(value)
+  );
+}
+
+/**
+ * Whether following this name could still arrive at a function.
+ *
+ * A name the file itself writes as an object literal, a string or a
+ * tagged template holds that, and every rule that could follow the name
+ * ends there. Asking anyway walks the file's import closure for a null.
+ * One hop is enough to tell: what the declaration is written as.
+ */
+export function couldStillNameAFunction(value: Node): boolean {
+  if (!couldResolveToFunction(value)) {
+    return false;
+  }
+  if (!Node.isIdentifier(value)) {
+    return true;
+  }
+  const declaration = value.getSymbol()?.getDeclarations()?.[0];
+  if (declaration === undefined || !Node.isVariableDeclaration(declaration)) {
+    return true;
+  }
+  const written = declaration.getInitializer();
+  return (
+    written === undefined ||
+    isFunctionRoot(written) ||
+    couldResolveToFunction(written)
+  );
+}
+
 export function toFunctionRoot(node: Node): FunctionRoot | null {
   return isFunctionRoot(node)
     ? (declarationCarryingTheBody(node) as FunctionRoot)

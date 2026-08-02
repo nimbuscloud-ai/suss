@@ -13,7 +13,7 @@
 
 import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 
-import { toFunctionRoot } from "./discovery/shared.js";
+import { couldStillNameAFunction, toFunctionRoot } from "./discovery/shared.js";
 import { isWrittenAgain } from "./facts/assignments.js";
 
 import type { FunctionRoot } from "./conditions.js";
@@ -165,7 +165,7 @@ function valueToAskAbout(decl: Node, writtenAgain: boolean): Node | null {
   const value = Node.isVariableDeclaration(decl)
     ? (decl.getInitializer() ?? decl)
     : decl;
-  return couldResolveToFunction(value) ? value : null;
+  return couldStillNameAFunction(value) ? value : null;
 }
 
 function exportedCallConfigString(
@@ -283,24 +283,6 @@ function toObjectLiteral(
     return resolved;
   }
   return null;
-}
-
-/**
- * Whether a value is shaped like something that could name a function.
- * Most exports are object literals, string constants, or schemas, and
- * asking the fact layer about those pulls in their import closure for
- * an answer that is always null.
- */
-function couldResolveToFunction(value: Node): boolean {
-  return (
-    Node.isCallExpression(value) ||
-    Node.isIdentifier(value) ||
-    Node.isPropertyAccessExpression(value) ||
-    Node.isExportSpecifier(value) ||
-    Node.isImportSpecifier(value) ||
-    Node.isImportClause(value) ||
-    Node.isBindingElement(value)
-  );
 }
 
 function resolveDeclarationToFunction(decl: Node): FunctionRoot | null {

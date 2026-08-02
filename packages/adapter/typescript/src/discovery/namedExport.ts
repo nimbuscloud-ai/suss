@@ -5,14 +5,17 @@
 
 import {
   type ArrowFunction,
-  type FunctionDeclaration,
   type FunctionExpression,
   Node,
   type SourceFile,
 } from "ts-morph";
 
 import { isWrittenAgain } from "../facts/assignments.js";
-import { type DiscoveredUnit, toFunctionRoot } from "./shared.js";
+import {
+  couldStillNameAFunction,
+  type DiscoveredUnit,
+  toFunctionRoot,
+} from "./shared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -141,6 +144,7 @@ export function discoverNamedExports(
       const fn = rewritten === null ? null : toFunctionRoot(rewritten);
       if (fn !== null) {
         results.push({ func: fn, kind, name });
+        satisfied.add(name);
       }
       continue;
     }
@@ -276,10 +280,19 @@ function defaultExportUnits(
   return units;
 }
 
+/**
+ * The function a value comes down to, asked only of names that could
+ * still be one. Most default exports are objects, schemas or constants,
+ * and asking about those walks a file's import closure for an answer
+ * that was always going to be null.
+ */
 function resolutionToFunctionRoot(
   resolution: ResolutionStore,
   value: Node,
 ): FunctionRoot | null {
+  if (!couldStillNameAFunction(value)) {
+    return null;
+  }
   const resolved = resolution.resolveCallable(value);
   return resolved === null ? null : toFunctionRoot(resolved);
 }
