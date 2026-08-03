@@ -17,6 +17,7 @@ const funnel = (over: Partial<PackFunnel> = {}): PackFunnel => ({
   effectsRecognized: 0,
   unitsClaimed: 3,
   selfCollisions: 0,
+  failures: [],
   summariesProduced: 3,
   summariesBound: 3,
   providerSummaries: 3,
