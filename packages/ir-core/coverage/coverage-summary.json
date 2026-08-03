@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 197,
-      "covered": 197,
+      "total": 199,
+      "covered": 199,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 200,
-      "covered": 200,
+      "total": 202,
+      "covered": 202,
       "skipped": 0,
       "pct": 100
     },
@@ -19,10 +19,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 194,
-      "covered": 192,
+      "total": 198,
+      "covered": 196,
       "skipped": 0,
-      "pct": 98.96
+      "pct": 98.98
     },
     "branchesTrue": {
       "total": 0,
@@ -33,8 +33,8 @@
   },
   "src/boundaryKey.ts": {
     "lines": {
-      "total": 25,
-      "covered": 25,
+      "total": 27,
+      "covered": 27,
       "skipped": 0,
       "pct": 100
     },
@@ -45,14 +45,14 @@
       "pct": 100
     },
     "statements": {
-      "total": 25,
-      "covered": 25,
+      "total": 27,
+      "covered": 27,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 25,
-      "covered": 25,
+      "total": 29,
+      "covered": 29,
       "skipped": 0,
       "pct": 100
     }

@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 131,
-      "covered": 131,
+      "total": 133,
+      "covered": 133,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 132,
-      "covered": 132,
+      "total": 134,
+      "covered": 134,
       "skipped": 0,
       "pct": 100
     },
@@ -19,10 +19,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 129,
-      "covered": 126,
+      "total": 131,
+      "covered": 128,
       "skipped": 0,
-      "pct": 97.67
+      "pct": 97.7
     },
     "branchesTrue": {
       "total": 0,
@@ -33,8 +33,8 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 129,
-      "covered": 129,
+      "total": 131,
+      "covered": 131,
       "skipped": 0,
       "pct": 100
     },
@@ -45,16 +45,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 129,
-      "covered": 129,
+      "total": 131,
+      "covered": 131,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 127,
-      "covered": 124,
+      "total": 129,
+      "covered": 126,
       "skipped": 0,
-      "pct": 97.63
+      "pct": 97.67
     }
   },
   "src/packHelpers.ts": {
