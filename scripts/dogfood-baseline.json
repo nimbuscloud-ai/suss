@@ -2,10 +2,10 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "exports": 211,
-    "internal": 1051,
-    "consumers": 335,
-    "pairs": 327
+    "exports": 214,
+    "internal": 1056,
+    "consumers": 339,
+    "pairs": 331
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -71,8 +71,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 25,
-      "consumers": 28
+      "internal": 26,
+      "consumers": 30
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -132,7 +132,7 @@
       "name": "@suss/framework-aws-lambda",
       "exports": 4,
       "internal": 13,
-      "consumers": 7
+      "consumers": 9
     },
     "packages/framework/aws-sqs": {
       "name": "@suss/framework-aws-sqs",
@@ -220,8 +220,8 @@
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
-      "exports": 7,
-      "internal": 19,
+      "exports": 10,
+      "internal": 23,
       "consumers": 1
     },
     "packages/resolution": {
