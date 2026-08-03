@@ -1168,6 +1168,15 @@
         "required": ["source", "level"],
         "additionalProperties": false
       },
+      "definitions": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        }
+      },
       "metadata": {
         "type": "object",
         "propertyNames": {
@@ -1372,6 +1381,9 @@
               "type": "string"
             },
             "from": {
+              "type": "string"
+            },
+            "def": {
               "type": "string"
             }
           },

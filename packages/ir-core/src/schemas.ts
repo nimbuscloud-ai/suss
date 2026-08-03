@@ -264,6 +264,17 @@ export type TypeShape =
       type: "ref";
       name: string;
       /**
+       * Where this type is written down, when it is. The key into the
+       * summary's table of definitions.
+       *
+       * A name does not identify a type. Every instantiation of one
+       * generic reports the generic's own name and file, so `Omit<User,
+       * "secret">` and `Omit<Order, "total">` are both `Omit`, and a
+       * table keyed on that hands the second one the first one's
+       * fields. This is built from what the type actually is.
+       */
+      def?: string | undefined;
+      /**
        * The file that declares this type, when the project declares it.
        * Absent for a name the language or a dependency owns, which means
        * the same thing everywhere.
@@ -275,6 +286,20 @@ export type TypeShape =
       from?: string | undefined;
     }
   | { type: "unknown" };
+
+/**
+ * How a table of definitions names the type a ref points at.
+ *
+ * A ref carries the name and the file that declares it, and that pair
+ * already identifies the type, so a table keyed on it needs nothing new
+ * on the ref. A name the language or a dependency owns has no file and
+ * keys on the name alone.
+ */
+export function typeDefinitionKey(ref: {
+  def?: string | undefined;
+}): string | null {
+  return ref.def ?? null;
+}
 
 export const TypeShapeSchema: z.ZodType<TypeShape> = z.lazy(() =>
   z.discriminatedUnion("type", [
@@ -304,7 +329,84 @@ export const TypeShapeSchema: z.ZodType<TypeShape> = z.lazy(() =>
       type: z.literal("ref"),
       name: z.string(),
       from: z.string().optional(),
+      def: z.string().optional(),
     }),
     z.object({ type: z.literal("unknown") }),
   ]),
 );
+
+/**
+ * How deep a shape is walked while definitions are put back.
+ *
+ * The same number the shape walk itself stops at, so a shape read from
+ * a table looks like the one that was never in a table.
+ */
+const MAX_DEFINITION_DEPTH = 6;
+
+/**
+ * A shape with the definitions it names put back into it.
+ *
+ * Comparing two shapes means comparing their structure, and a ref has
+ * none. Rather than teach every comparison to look in a table, the
+ * table goes back into the shape once, and everything downstream reads
+ * what it always read.
+ *
+ * Putting a definition back is a substitution rather than a level of
+ * nesting, so it does not spend depth. Counting it did: a type six
+ * deep came back three deep, and a consumer reading a field past that
+ * point was told the provider did not have it. What stops a type that
+ * names itself is the set of names already being put back on this
+ * path, which is how the shape walk guards its own cycles.
+ */
+export function withDefinitionsInlined(
+  shape: TypeShape,
+  definitions: Record<string, TypeShape> | undefined,
+  depth = 0,
+  inProgress: ReadonlySet<string> = new Set(),
+): TypeShape {
+  if (definitions === undefined || depth >= MAX_DEFINITION_DEPTH) {
+    return shape;
+  }
+  const deeper = (inner: TypeShape): TypeShape =>
+    withDefinitionsInlined(inner, definitions, depth + 1, inProgress);
+
+  if (shape.type === "ref") {
+    const key = typeDefinitionKey(shape);
+    // A ref with no key was never written down, which is what a name
+    // the language owns looks like.
+    if (key === null) {
+      return shape;
+    }
+    const defined = definitions[key];
+    // A ref naming nothing in the table stays a ref, which is what it
+    // means: this is the name, and nobody wrote the type down. A name
+    // already on this path stays a ref too, or a type that names itself
+    // would be put back for ever.
+    if (defined === undefined || inProgress.has(key)) {
+      return shape;
+    }
+    return withDefinitionsInlined(
+      defined,
+      definitions,
+      depth,
+      new Set([...inProgress, key]),
+    );
+  }
+  if (shape.type === "record") {
+    const properties: Record<string, TypeShape> = {};
+    for (const [name, value] of Object.entries(shape.properties)) {
+      properties[name] = deeper(value);
+    }
+    return { ...shape, properties };
+  }
+  if (shape.type === "array") {
+    return { ...shape, items: deeper(shape.items) };
+  }
+  if (shape.type === "dictionary") {
+    return { ...shape, values: deeper(shape.values) };
+  }
+  if (shape.type === "union") {
+    return { ...shape, variants: shape.variants.map(deeper) };
+  }
+  return shape;
+}

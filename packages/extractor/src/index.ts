@@ -257,6 +257,12 @@ export interface RawDeclaredContract {
 export type BodyContent = "absent" | "empty" | "statements" | "elsewhere";
 
 export interface RawCodeStructure {
+  /**
+   * The types this unit's shapes name rather than spell out. Carried
+   * onto the summary as `definitions`, so a reader following a name has
+   * somewhere to look.
+   */
+  definitions?: Record<string, TypeShape> | null;
   identity: {
     name: string;
     kind: CodeUnitKind;
@@ -478,6 +484,9 @@ export function assembleSummary(
     transitions,
     gaps,
     confidence,
+    ...(raw.definitions !== undefined && raw.definitions !== null
+      ? { definitions: raw.definitions }
+      : {}),
     ...(metadata !== null ? { metadata } : {}),
   };
 }

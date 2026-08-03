@@ -59,6 +59,7 @@ Options (extract):
   -o, --output     Write JSON to a file instead of stdout
   --files          Read only these source files
   --gaps           What to do with gaps: strict (default), permissive, silent
+  --types          Spell out the types a summary names, rather than naming them
   --explain        Show where the summaries came from, file by file and pack by
                    pack. Shown automatically when a run finds nothing.
   --fail-on-empty  Exit non-zero when a run finds nothing
@@ -228,7 +229,9 @@ async function runExtract(args: string[]): Promise<number> {
   return process.exitCode === 1 ? 1 : 0;
 }
 
-function runInspect(args: string[]): number {
+function runInspect(argv: string[]): number {
+  const types = argv.includes("--types");
+  const args = argv.filter((a) => a !== "--types");
   if (args[0] === "--diff") {
     const before = args[1];
     const after = args[2];
@@ -249,7 +252,7 @@ function runInspect(args: string[]): number {
       );
       return 1;
     }
-    inspectDir({ dir });
+    inspectDir({ dir, ...(types ? { types } : {}) });
     return 0;
   }
   const file = args[0];
@@ -259,7 +262,7 @@ function runInspect(args: string[]): number {
     );
     return 1;
   }
-  inspect({ file });
+  inspect({ file, ...(types ? { types } : {}) });
   return 0;
 }
 

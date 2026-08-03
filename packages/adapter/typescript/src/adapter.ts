@@ -86,6 +86,7 @@ import {
 import { runAccessRecognizersAtModuleScope } from "./resolve/invocationEffects.js";
 import { expandReachableClosure } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
+import { withDefinitions } from "./shapes/definitions.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 import {
   createTsSubUnitContext,
@@ -524,6 +525,29 @@ export function extractCodeStructure(
   invocationRecognizers: InvocationRecognizer[] = [],
   accessRecognizers: AccessRecognizer[] = [],
   barriers: DescentBarriers = NO_BARRIERS,
+): RawCodeStructure {
+  // One unit, one table. Every shape read while this runs writes the
+  // types it names into it, and the summary carries them.
+  const read = withDefinitions(() =>
+    readCodeStructure(
+      unit,
+      pack,
+      invocationRecognizers,
+      accessRecognizers,
+      barriers,
+    ),
+  );
+  return read.definitions === null
+    ? read.value
+    : { ...read.value, definitions: read.definitions };
+}
+
+function readCodeStructure(
+  unit: DiscoveredUnit,
+  pack: PatternPack,
+  invocationRecognizers: InvocationRecognizer[],
+  accessRecognizers: AccessRecognizer[],
+  barriers: DescentBarriers,
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   if (func === null) {
