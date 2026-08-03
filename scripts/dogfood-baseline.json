@@ -3,9 +3,9 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 211,
-    "internal": 1048,
-    "consumers": 334,
-    "pairs": 326
+    "internal": 1051,
+    "consumers": 335,
+    "pairs": 327
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -23,8 +23,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 26,
-      "internal": 112,
-      "consumers": 41
+      "internal": 115,
+      "consumers": 42
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
