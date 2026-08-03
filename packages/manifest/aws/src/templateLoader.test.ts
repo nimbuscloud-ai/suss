@@ -22,6 +22,44 @@ afterEach(() => {
 });
 
 describe("loadCloudFormationTemplate", () => {
+  it("reads the list forms of the intrinsics without warning", () => {
+    const file = writeTemp(
+      "template.yaml",
+      [
+        "Resources:",
+        "  Fn:",
+        "    Type: AWS::Serverless::Function",
+        "    Properties:",
+        "      Role: !GetAtt [FnRole, Arn]",
+        "      When: !If [IsProd, prod-table, dev-table]",
+        "      Name: !Join ['-', [svc, prod]]",
+        "      Same: !Equals [!Ref Stage, prod]",
+        "      Sub: !Sub ['x-${A}', { A: !Ref Stage }]",
+      ].join("\n"),
+    );
+
+    // Every one of these used to parse correctly and warn while doing
+    // it, once per occurrence, which buried the rest of the output.
+    const warnings: unknown[] = [];
+    const wasEmit = process.emitWarning;
+    process.emitWarning = ((...args: unknown[]) => {
+      warnings.push(args);
+    }) as typeof process.emitWarning;
+    let props: Record<string, unknown>;
+    try {
+      const template = loadCloudFormationTemplate(file);
+      props = template.Resources?.Fn?.Properties as Record<string, unknown>;
+    } finally {
+      process.emitWarning = wasEmit;
+    }
+
+    expect(warnings).toEqual([]);
+    // A list-form GetAtt names the same thing as the dotted form.
+    expect(props.Role).toEqual({ "Fn::GetAtt": ["FnRole", "Arn"] });
+    expect(props.When).toEqual(["IsProd", "prod-table", "dev-table"]);
+    expect(props.Same).toEqual([{ Ref: "Stage" }, "prod"]);
+  });
+
   it("parses YAML templates and resolves intrinsic shorthand tags", () => {
     const file = writeTemp(
       "template.yaml",

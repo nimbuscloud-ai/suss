@@ -581,7 +581,7 @@ describe("extract — errors", () => {
         tsconfig: tsconfigPath,
         frameworks: ["nonexistent-framework"],
       }),
-    ).rejects.toThrow("Unknown framework");
+    ).rejects.toThrow("Unknown pack");
 
     fs.rmSync(tmpDir, { recursive: true });
   });

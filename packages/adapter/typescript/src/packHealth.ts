@@ -33,7 +33,16 @@ export interface HealthViolation {
 }
 
 export interface HealthCheck {
+  /** The property, as something that either holds or does not. */
   name: string;
+  /**
+   * The heading printed when this check finds something.
+   *
+   * The property reads as an assertion, so printing `name` above the
+   * violations of it says "no pack collides with itself" and then lists
+   * a pack colliding with itself.
+   */
+  whenBroken: string;
   /**
    * Who the finding is addressed to.
    *
@@ -195,21 +204,25 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
   return [
     {
       name: "no pack throws while it reads",
+      whenBroken: "a pack threw while it was reading",
       audience: "run",
       violations: threwWhileReading(report.packs),
     },
     {
       name: "no pack drops everything it was holding",
+      whenBroken: "a pack dropped everything it was holding",
       audience: "run",
       violations: funnelDrops(report.packs),
     },
     {
       name: "no pack collides with itself",
+      whenBroken: "a pack collided with itself",
       audience: "run",
       violations: selfCollisions(report.packs),
     },
     {
       name: "every pack declares a version",
+      whenBroken: "a pack declares no version",
       audience: "pack",
       violations: unversionedPacks(report.packs),
     },
@@ -238,7 +251,7 @@ export function formatPackHealth(
 
   const lines = ["", "Pack health:"];
   for (const check of fired) {
-    lines.push(`  ${check.name}`);
+    lines.push(`  ${check.whenBroken}`);
     for (const violation of check.violations) {
       lines.push(`    ${violation.label}: ${violation.detail}`);
     }
