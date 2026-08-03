@@ -2,7 +2,7 @@
 
 import { Node } from "ts-morph";
 
-import type { RawTerminal } from "@suss/extractor";
+import type { RawCondition, RawTerminal } from "@suss/extractor";
 
 export interface FoundTerminal {
   node: Node;
@@ -17,6 +17,16 @@ export interface FoundTerminal {
    * Anything downstream that guessed instead got it wrong.
    */
   source?: Node;
+  /**
+   * A test that also has to hold for this terminal to be the one that
+   * fires, on top of whatever the path to it required.
+   *
+   * One call site answers with more than one status when the status is
+   * written as a choice, and the arms are told apart by nothing else:
+   * they share a node, so the path engine gives them the same
+   * conditions.
+   */
+  whenAlso?: RawCondition;
 }
 
 /**
