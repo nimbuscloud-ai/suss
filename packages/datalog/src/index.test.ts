@@ -27,6 +27,28 @@ describe("Database", () => {
     expect(db.has("r", ["a", 1])).toBe(true);
     expect(db.has("missing", ["a"])).toBe(false);
   });
+
+  it("keeps tuples apart when a value looks like the key encoding", () => {
+    const db = new Database();
+    // Every pair here would collide under a scheme that joins the
+    // columns on some character and trusts values not to contain it.
+    const pairs: [string | number, string][] = [
+      ["a\u0000sb", "c"],
+      ["a", "b\u0000sc"],
+      ["a:b", "c"],
+      ["a", "b:c"],
+      ["3:a:b", "c"],
+      ["ab", "c"],
+      ["a", "bc"],
+      [1, "x"],
+      ["1", "x"],
+    ];
+    for (const pair of pairs) {
+      expect(db.add("r", pair)).toBe(true);
+    }
+
+    expect(db.size("r")).toBe(pairs.length);
+  });
 });
 
 describe("evaluate — positive rules", () => {
