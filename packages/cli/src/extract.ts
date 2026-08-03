@@ -213,19 +213,41 @@ export async function resolveFramework(spec: string): Promise<PatternPack> {
     return instantiatePack(mod.default, options, builtin);
   }
 
-  // A name the record does not carry is taken for a pack published
-  // under the family prefix, so someone can ship one without waiting
-  // for the CLI to list it.
-  const specifier = `@suss/framework-${name}`;
-  let mod: { default: PackFactory };
-  try {
-    mod = (await import(specifier)) as { default: PackFactory };
-  } catch {
-    throw new Error(
-      `Unknown framework: "${name}". Built-in: ${Object.keys(BUILTIN_FRAMEWORKS).join(", ")}`,
-    );
+  // A name the record does not carry is taken for a package to import.
+  // Someone shipping a pack should not have to wait for the CLI to list
+  // it, and a name that already looks like a package is used as written
+  // so a pack outside the family prefix can be named at all.
+  const candidates = looksLikeAPackage(name)
+    ? [name]
+    : [`@suss/framework-${name}`, `@suss/${name}`];
+  for (const specifier of candidates) {
+    const mod = await importPack(specifier);
+    if (mod !== null) {
+      return instantiatePack(mod.default, options, specifier);
+    }
   }
-  return instantiatePack(mod.default, options, specifier);
+
+  throw new Error(
+    [
+      `Unknown pack: "${name}".`,
+      `Tried to import ${candidates.map((c) => `"${c}"`).join(" and ")}.`,
+      `Built in: ${Object.keys(BUILTIN_FRAMEWORKS).join(", ")}`,
+    ].join("\n"),
+  );
+}
+
+/** A scoped name or a path names the package itself, not a short name. */
+const looksLikeAPackage = (name: string): boolean =>
+  name.startsWith("@") || name.includes("/");
+
+async function importPack(
+  specifier: string,
+): Promise<{ default: PackFactory } | null> {
+  try {
+    return (await import(specifier)) as { default: PackFactory };
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

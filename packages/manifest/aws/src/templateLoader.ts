@@ -12,6 +12,8 @@ import path from "node:path";
 
 import YAML from "yaml";
 
+import type { CollectionTag } from "yaml";
+
 export interface CloudFormationResource {
   Type?: string;
   Properties?: Record<string, unknown>;
@@ -39,17 +41,53 @@ export interface CloudFormationTemplate {
 // resource references — anything else collapses to its raw scalar value
 // rather than failing the whole parse.
 
+/**
+ * Every node kind an intrinsic can be written as.
+ *
+ * `!If [cond, a, b]` is a sequence and `!Sub ["x", { A: 1 }]` holds a
+ * map, and a tag registered for scalars only leaves those unresolved.
+ * The value still came through, but the parser warned once per
+ * occurrence, which on a template of any size buried everything else
+ * suss had to say.
+ */
+const everyNodeKind = (
+  tag: string,
+  resolve: (value: unknown) => unknown,
+): CollectionTag[] => {
+  // A collection tag is handed the parsed node rather than a plain
+  // value, so everything is read through `plainly` and each entry only
+  // has to think about JavaScript.
+  const forNode = (value: unknown): unknown => resolve(plainly(value));
+  return [
+    { tag, resolve: forNode },
+    { tag, collection: "seq", resolve: forNode },
+    { tag, collection: "map", resolve: forNode },
+  ] as CollectionTag[];
+};
+
+/** A parsed YAML node as ordinary JavaScript. */
+const plainly = (value: unknown): unknown =>
+  typeof value === "object" &&
+  value !== null &&
+  "toJSON" in value &&
+  typeof (value as { toJSON: unknown }).toJSON === "function"
+    ? (value as { toJSON: () => unknown }).toJSON()
+    : value;
+
+/** `!GetAtt Table.Arn` and `!GetAtt [Table, Arn]` name the same thing. */
+const getAttParts = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map(String);
+  }
+  const text = String(value);
+  return text.includes(".") ? text.split(".") : [text];
+};
+
 export const CLOUDFORMATION_YAML_TAGS = [
-  {
-    tag: "!Ref",
-    resolve: (value: string) => ({ Ref: value }),
-  },
-  {
-    tag: "!GetAtt",
-    resolve: (value: string) => ({
-      "Fn::GetAtt": value.includes(".") ? value.split(".") : [value],
-    }),
-  },
+  ...everyNodeKind("!Ref", (value) => ({ Ref: value })),
+  ...everyNodeKind("!GetAtt", (value) => ({
+    "Fn::GetAtt": getAttParts(value),
+  })),
   ...[
     "!Sub",
     "!Join",
@@ -64,7 +102,7 @@ export const CLOUDFORMATION_YAML_TAGS = [
     "!And",
     "!Or",
     "!Equals",
-  ].map((tag) => ({ tag, resolve: (value: unknown) => value })),
+  ].flatMap((tag) => everyNodeKind(tag, (value) => value)),
 ];
 
 /**

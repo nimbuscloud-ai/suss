@@ -167,7 +167,7 @@ describe("formatPackHealth", () => {
   it("says nothing when the caller asked for an audience that found nothing", () => {
     expect(
       formatPackHealth(
-        [{ name: "x", audience: "run", violations: [] }],
+        [{ whenBroken: "broken", name: "x", audience: "run", violations: [] }],
         ["run"],
       ),
     ).toBe("");

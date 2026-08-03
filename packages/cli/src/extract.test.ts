@@ -35,6 +35,19 @@ describe("resolveFramework", () => {
     await expect(resolveFramework("nuxt")).rejects.toThrow(/nextjs/);
   });
 
+  it("names what it tried to import", async () => {
+    await expect(resolveFramework("nuxt")).rejects.toThrow(
+      /@suss\/framework-nuxt/,
+    );
+  });
+
+  it("takes a scoped name as the package to import", async () => {
+    // The effect packs ship outside the framework- prefix, so a short
+    // name cannot reach them and the full one has to work.
+    const pack = await resolveFramework("@suss/runtime-node");
+    expect(pack.name.length).toBeGreaterThan(0);
+  });
+
   it("hands a pack the config the flag names", async () => {
     const file = writeConfig(
       JSON.stringify({
