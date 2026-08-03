@@ -220,6 +220,40 @@ describe("discoverPackageExports", () => {
     expect(units.every((u) => u.kind === "library")).toBe(true);
   });
 
+  it("reads a package.json again once it changes", async () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/lib",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      { relPath: "src/index.ts", content: "export function foo() {}" },
+      { relPath: "src/schemas.ts", content: "export function bar() {}" },
+    ]);
+    const packageJsonPath = path.join(root, "package.json");
+
+    expect(runDiscovery(packageJsonPath).units.map((u) => u.name)).toEqual([
+      "foo",
+    ]);
+
+    // Nothing clears the cache here. A long-lived process reading a
+    // package.json that has since been rewritten has to see the change.
+    fs.writeFileSync(
+      packageJsonPath,
+      JSON.stringify({
+        name: "@ex/lib",
+        exports: { "./schemas": { types: "./dist/schemas.d.ts" } },
+      }),
+      "utf8",
+    );
+
+    expect(runDiscovery(packageJsonPath).units.map((u) => u.name)).toEqual([
+      "bar",
+    ]);
+  });
+
   it("records packageExportInfo with package + exportPath", async () => {
     root = writeFixturePackage([
       {
