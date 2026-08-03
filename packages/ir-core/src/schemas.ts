@@ -260,7 +260,20 @@ export type TypeShape =
   | { type: "null" }
   | { type: "undefined" }
   | { type: "union"; variants: TypeShape[] }
-  | { type: "ref"; name: string }
+  | {
+      type: "ref";
+      name: string;
+      /**
+       * The file that declares this type, when the project declares it.
+       * Absent for a name the language or a dependency owns, which means
+       * the same thing everywhere.
+       *
+       * A name on its own does not identify a type. Two modules each
+       * declaring a `User` produce the same ref, and a checker comparing
+       * them has nothing to go on. This is what tells them apart.
+       */
+      from?: string | undefined;
+    }
   | { type: "unknown" };
 
 export const TypeShapeSchema: z.ZodType<TypeShape> = z.lazy(() =>
@@ -287,7 +300,11 @@ export const TypeShapeSchema: z.ZodType<TypeShape> = z.lazy(() =>
       type: z.literal("union"),
       variants: z.array(TypeShapeSchema),
     }),
-    z.object({ type: z.literal("ref"), name: z.string() }),
+    z.object({
+      type: z.literal("ref"),
+      name: z.string(),
+      from: z.string().optional(),
+    }),
     z.object({ type: z.literal("unknown") }),
   ]),
 );

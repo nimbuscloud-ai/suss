@@ -459,16 +459,50 @@ function isOutsideProject(file: SourceFile): boolean {
   return outside;
 }
 
+/**
+ * A name for a type we are not expanding, and where that name was
+ * declared.
+ *
+ * Two modules each declaring a `User` used to produce the same ref, so
+ * anything comparing them was comparing spellings. The declaring file
+ * is what tells them apart, and it is left off for a name the language
+ * or a dependency owns, since those do mean the same thing everywhere.
+ */
 function refFromType(type: Type, ctx: ConvertContext): TypeShape {
   const symbol = type.getAliasSymbol() ?? type.getSymbol();
   if (symbol) {
     const name = symbol.getName();
     if (name && name !== "__type" && name !== "__object") {
-      return { type: "ref", name };
+      const declaredIn = declaringFileOf(symbol);
+      return declaredIn === null
+        ? { type: "ref", name }
+        : { type: "ref", name, from: declaredIn };
     }
   }
-  const text = type.getText(ctx.enclosing);
-  return { type: "ref", name: text };
+  // An anonymous type has no declaration to point at, so its text is
+  // the name. That text is read without an enclosing node: what
+  // `getText` prints for a name depends on what is in scope where you
+  // are standing, and the same type reached from two files has to come
+  // out the same. Reading it from nowhere qualifies an imported name
+  // with the absolute path it came from, which is one machine's
+  // answer, so that qualifier comes back off.
+  return { type: "ref", name: withoutImportQualifiers(type.getText()) };
+}
+
+const IMPORT_QUALIFIER = /import\("[^"]*"\)\./g;
+
+const withoutImportQualifiers = (text: string): string =>
+  text.replace(IMPORT_QUALIFIER, "");
+
+/** The project file declaring this symbol, or null when nothing in the project does. */
+function declaringFileOf(symbol: TsSymbol): string | null {
+  for (const declaration of symbol.getDeclarations()) {
+    const file = declaration.getSourceFile();
+    if (!isOutsideProject(file)) {
+      return file.getFilePath();
+    }
+  }
+  return null;
 }
 
 function propertyTypeOf(sym: TsSymbol, enclosing: Node): Type | null {
