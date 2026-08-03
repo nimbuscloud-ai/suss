@@ -12,7 +12,7 @@ Contributors are expected to act professionally and constructively. Behavior tha
 
 ## Reporting
 
-If you experience or witness behavior that violates this code of conduct, please report it by emailing **conduct@nimbuscloud.ai**. Reports will be reviewed and handled confidentially.
+If you experience or witness behavior that violates this code of conduct, please report it by emailing **conduct@nimbusai.dev**. Reports will be reviewed and handled confidentially.
 
 ## Enforcement
 
