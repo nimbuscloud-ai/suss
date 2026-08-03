@@ -9,26 +9,18 @@
 // Unlike the Prisma equivalent, no generate step exists: Drizzle's
 // schema IS TypeScript, so the whole fixture lives in memory.
 
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import drizzleFramework from "@suss/framework-drizzle";
 import expressFramework from "@suss/framework-express";
+import { createTestProject } from "@suss/test-project";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type { Project } from "ts-morph";
 
 function makeProject(): Project {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-    },
-  });
+  const project = createTestProject();
 
   project.createSourceFile(
     "node_modules/drizzle-orm/index.d.ts",

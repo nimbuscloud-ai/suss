@@ -1,9 +1,9 @@
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createDecoratorFixtureProject } from "@suss/test-project";
 
 import { nestjsGraphqlFramework } from "./index.js";
 
@@ -19,18 +19,7 @@ const fixturesDir = path.resolve(
 );
 
 async function runAdapter(): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99, // ESNext
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
-      experimentalDecorators: true,
-      emitDecoratorMetadata: true,
-      skipLibCheck: true,
-    },
-  });
+  const project = createDecoratorFixtureProject(fixturesDir, "*.ts");
   // `@nestjs/graphql` isn't installed in the fixture; create a stub
   // module that exposes the decorator names as identity functions so
   // ts-morph's import resolution succeeds. Discovery only needs the
@@ -48,7 +37,6 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
      export const Context: (...args: unknown[]) => ParameterDecorator;
      export const Info: (...args: unknown[]) => ParameterDecorator;`,
   );
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
 
   const adapter = createTypeScriptAdapter({
     project,

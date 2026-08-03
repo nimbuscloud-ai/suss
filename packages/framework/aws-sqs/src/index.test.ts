@@ -1,13 +1,8 @@
-import {
-  type CallExpression,
-  Node,
-  Project,
-  ScriptTarget,
-  type SourceFile,
-} from "ts-morph";
+import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { isImportedFrom } from "@suss/adapter-typescript";
+import { createTestProject } from "@suss/test-project";
 
 import { sqsFramework } from "./index.js";
 
@@ -24,14 +19,7 @@ const raise = (msg: string): never => {
  * symbols to resolve against. Returns a ready-to-use SourceFile.
  */
 function makeProject(userSource: string): SourceFile {
-  const project = new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      strict: true,
-      moduleResolution: 100, // ts.ModuleResolutionKind.Bundler
-    },
-    useInMemoryFileSystem: true,
-  });
+  const project = createTestProject();
 
   // Minimal fake @aws-sdk/client-sqs surface — enough for the
   // recognizer to walk the import to its source.
@@ -199,14 +187,7 @@ function messageSendEffectsOf(
 
 describe("sqs recognizer, through a project-local barrel", () => {
   it("recognizes a send whose import goes through a re-export barrel", () => {
-    const project = new Project({
-      compilerOptions: {
-        target: ScriptTarget.ES2022,
-        strict: true,
-        moduleResolution: 100,
-      },
-      useInMemoryFileSystem: true,
-    });
+    const project = createTestProject();
     project.createSourceFile(
       "node_modules/@aws-sdk/client-sqs/index.d.ts",
       `

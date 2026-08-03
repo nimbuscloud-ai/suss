@@ -1,5 +1,6 @@
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { shapeFromNodeType } from "./typeShapes.js";
 
@@ -11,14 +12,7 @@ import type { Node } from "ts-morph";
  * about a value of a particular type.
  */
 function lastInitializer(files: Record<string, string>, source: string): Node {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    compilerOptions: {
-      strict: true,
-      noEmit: true,
-      lib: ["lib.es2020.d.ts", "lib.dom.d.ts"],
-    },
-  });
+  const project = createTestProject();
   for (const [name, text] of Object.entries(files)) {
     project.createSourceFile(name, text);
   }

@@ -1,7 +1,9 @@
 // terminals.test.ts — exhaustive tests for findTerminals (Task 2.3)
 
-import { Project, SyntaxKind } from "ts-morph";
+import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { findTerminals } from "./terminals/index.js";
 
@@ -13,7 +15,7 @@ import type { FunctionRoot } from "./conditions.js";
 // ---------------------------------------------------------------------------
 
 function createProject() {
-  return new Project({ useInMemoryFileSystem: true });
+  return createTestProject();
 }
 
 function makeReturnShapePattern(
@@ -2157,7 +2159,7 @@ describe("findTerminals — JSON.stringify body unwrap", () => {
   }
 
   it("unwraps JSON.stringify(x) in the body property to the shape of x", () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const file = project.createSourceFile(
       "test.ts",
       `
@@ -2183,7 +2185,7 @@ describe("findTerminals — JSON.stringify body unwrap", () => {
   });
 
   it("leaves a non-JSON.stringify body property untouched", () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const file = project.createSourceFile(
       "test.ts",
       `

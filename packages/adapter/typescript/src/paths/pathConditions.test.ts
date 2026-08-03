@@ -7,15 +7,17 @@
 // exits) yield the sound per-path lists, and declined shapes degrade
 // to enclosure conditions plus an opaque unmodeled-flow conjunct.
 
-import { Node, Project, SyntaxKind } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { computePathConditions } from "./pathConditions.js";
 
 import type { ConditionInfo, FunctionRoot } from "../conditions.js";
 
 function getFunction(source: string): FunctionRoot {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = createTestProject();
   const file = project.createSourceFile("test.ts", source);
   const fn = file.getFunctions().find((f) => f.isExported());
   if (fn === undefined) {

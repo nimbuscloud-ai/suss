@@ -3,22 +3,15 @@
 // matters: which function does this export resolve to, or which
 // packages does this file reach.
 
-import { type Node, Project, type SourceFile, SyntaxKind } from "ts-morph";
+import { type Node, type Project, type SourceFile, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "./store.js";
 
 function projectOf(files: Record<string, string>): Project {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    // moduleResolution node so a fixture can put a package under
-    // node_modules and have imports of it actually resolve there.
-    compilerOptions: { allowJs: true, moduleResolution: 100 },
-  });
-  // The compiler enumerates the @types root when resolving a package
-  // that ships its declarations separately, and an in-memory directory
-  // only exists once something makes it.
-  project.getFileSystem().mkdirSync("/node_modules/@types");
+  const project = createTestProject();
   for (const [path, contents] of Object.entries(files)) {
     project.createSourceFile(path, contents);
   }

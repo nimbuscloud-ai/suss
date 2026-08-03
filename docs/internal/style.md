@@ -85,6 +85,7 @@ Two packages break this. `@suss/datalog` and `@suss/differential` are named for 
 - Test file naming: `index.test.ts` next to `index.ts`. One test file per source file is typical but not required.
 - Prefer hand-crafted data fixtures over file-based fixtures when the data is small enough to read in one screen — it's easier to understand and update.
 - Tests describe *behavior*, not implementation: `it("wraps null-structured conditions as opaque")` not `it("assembleSummary works")`.
+- A test that parses fixture source takes its ts-morph project from `@suss/test-project`, so every test reads the same language the adapter reads. `createTestProject()` gives what suss configures for a codebase with no tsconfig; `createStrictTestProject()` gives what a codebase whose tsconfig turns strictness on gets, and only a test about nullability needs it. Both hand back a project reused between calls with everything the last caller wrote removed, so hold onto yours only until the next call. A test reading fixture files off disk builds its own project with `testCompilerOptions`.
 
 ## Commits
 

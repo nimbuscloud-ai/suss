@@ -3,15 +3,20 @@ import path from "node:path";
 import { Node, Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { createTestProject, testCompilerOptions } from "@suss/test-project";
+
 import { resolveSubject } from "./subjects.js";
 
 import type { Expression } from "ts-morph";
 
 const FIXTURES_DIR = path.resolve(__dirname, "../../../../fixtures/subjects");
 
+// One project for every fixture in this file. Each fixture has its own
+// path, so nothing here collides.
+const fixtures = new Project({ compilerOptions: testCompilerOptions });
+
 function loadFixture(filename: string) {
-  const project = new Project({ useInMemoryFileSystem: false });
-  return project.addSourceFileAtPath(path.join(FIXTURES_DIR, filename));
+  return fixtures.addSourceFileAtPath(path.join(FIXTURES_DIR, filename));
 }
 
 /**
@@ -192,7 +197,7 @@ describe("resolveSubject — literals", () => {
   it("undefined identifier → { type: literal, value: null }", () => {
     // We need an expression that has `undefined` in it. Use a function whose
     // condition is `x === undefined`. Get the right side.
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_undefined.ts",
       "export function f(x: any) { if (x === undefined) return 1; }",
@@ -209,7 +214,7 @@ describe("resolveSubject — literals", () => {
   });
 
   it("true keyword → { type: literal, value: true }", () => {
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_bool.ts",
       "export function f(x: any) { if (x === true) return 1; }",
@@ -226,7 +231,7 @@ describe("resolveSubject — literals", () => {
   });
 
   it("false keyword → { type: literal, value: false }", () => {
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_false.ts",
       "export function f(x: any) { if (x === false) return 1; }",
@@ -273,7 +278,7 @@ describe("resolveSubject — deep property chain", () => {
 
 describe("resolveSubject — unresolved", () => {
   it("arrow function expression → unresolved", () => {
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_unresolved.ts",
       "export function f() { const fn = () => 1; if (fn()) return 1; }",
@@ -296,7 +301,7 @@ describe("resolveSubject — unresolved", () => {
   });
 
   it("unknown expression kind → unresolved", () => {
-    const project = new Project({ useInMemoryFileSystem: false });
+    const project = createTestProject();
     const tmpFile = project.createSourceFile(
       "__tmp_newexpr2.ts",
       "export function f(x: any) { if (new Error()) return 1; }",
@@ -428,10 +433,7 @@ describe("resolveSubject — intermediate variable assignments", () => {
 
 describe("Promise .then parameter binding", () => {
   function propAccess(source: string, text: string): Expression {
-    const project = new Project({
-      useInMemoryFileSystem: true,
-      compilerOptions: { strict: true, target: 9 /* ES2022 */ },
-    });
+    const project = createTestProject();
     const file = project.createSourceFile("chain.ts", source);
     const found = file
       .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)

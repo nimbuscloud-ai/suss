@@ -57,6 +57,7 @@
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",
+    "@suss/test-project": "*",
     "ts-morph": "*",
     "tsup": "*",
     "typescript": "*",

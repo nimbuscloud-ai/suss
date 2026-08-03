@@ -1,9 +1,9 @@
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { apolloClientPack } from "./index.js";
 
@@ -14,23 +14,8 @@ const fixturesDir = path.resolve(
   "../../../../fixtures/apollo-client",
 );
 
-function makeProject() {
-  return new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-      jsx: 4,
-    },
-  });
-}
-
 async function runAdapter(): Promise<BehavioralSummary[]> {
-  const project = makeProject();
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.tsx"));
+  const project = createFixtureProject(fixturesDir, "*.tsx");
   const adapter = createTypeScriptAdapter({
     project,
     frameworks: [apolloClientPack()],
@@ -44,8 +29,7 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
 // adapter can resolve the cross-module import to its declaration.
 async function runCodegenAdapter(): Promise<BehavioralSummary[]> {
   const codegenDir = path.join(fixturesDir, "codegen");
-  const project = makeProject();
-  project.addSourceFilesAtPaths(path.join(codegenDir, "**/*.ts"));
+  const project = createFixtureProject(codegenDir, "**/*.ts");
   project.addSourceFilesAtPaths(path.join(codegenDir, "**/*.tsx"));
   const adapter = createTypeScriptAdapter({
     project,
@@ -55,17 +39,7 @@ async function runCodegenAdapter(): Promise<BehavioralSummary[]> {
 }
 
 async function runInMemory(source: string): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-    },
-  });
+  const project = createTestProject();
   project.createSourceFile("consumer.ts", source);
   const adapter = createTypeScriptAdapter({
     project,
@@ -463,8 +437,7 @@ describe("apolloClientPack — edge cases", () => {
 // declaration.
 async function runDocumentsAdapter(): Promise<BehavioralSummary[]> {
   const documentsDir = path.join(fixturesDir, "documents");
-  const project = makeProject();
-  project.addSourceFilesAtPaths(path.join(documentsDir, "**/*.ts"));
+  const project = createFixtureProject(documentsDir, "**/*.ts");
   project.addSourceFilesAtPaths(path.join(documentsDir, "**/*.tsx"));
   const adapter = createTypeScriptAdapter({
     project,

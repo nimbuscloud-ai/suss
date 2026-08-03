@@ -1,9 +1,9 @@
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createDecoratorFixtureProject } from "@suss/test-project";
 
 import { nestjsRestFramework } from "./index.js";
 
@@ -16,18 +16,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/nestjs-rest");
 
 async function runAdapter(): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      experimentalDecorators: true,
-      emitDecoratorMetadata: true,
-      skipLibCheck: true,
-    },
-  });
+  const project = createDecoratorFixtureProject(fixturesDir, "*.ts");
   // Stub `@nestjs/common` so ts-morph import resolution succeeds.
   // Discovery only needs the decorator names + import module to
   // match — runtime behaviour is irrelevant to static analysis.
@@ -54,7 +43,6 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
      export class HttpException { constructor(...args: unknown[]); }
      export class BadRequestException extends HttpException {}`,
   );
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
 
   const adapter = createTypeScriptAdapter({
     project,

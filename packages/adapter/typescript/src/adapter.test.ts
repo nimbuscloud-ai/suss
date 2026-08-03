@@ -6,6 +6,7 @@ import { type CallExpression, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { assembleSummary } from "@suss/extractor";
+import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
 import { createTypeScriptAdapter, extractCodeStructure } from "./adapter.js";
 import { readContract } from "./contract.js";
@@ -113,13 +114,7 @@ function fixturesDir() {
 function createFixtureProject(): Project {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99, // ESNext
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
-      skipLibCheck: true,
-    },
+    compilerOptions: { ...testCompilerOptions },
   });
 
   project.addSourceFilesAtPaths(path.join(fixturesDir(), "*.ts"));
@@ -136,7 +131,7 @@ const raise = (msg: string): never => {
 
 describe("extractCodeStructure", () => {
   it("extracts parameters from a destructured ts-rest handler", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       const s = initServer();
@@ -165,7 +160,7 @@ describe("extractCodeStructure", () => {
     // `([state, setState]) => ...` — common in callbacks that destructure
     // tuple returns. Each bound name should surface as its own Input.
     // Omitted-expression holes (`[, b]`) are skipped.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       export const handler = ([state, setState, , rest]: [string, (s: string) => void, number, unknown]) => {
         return state;
@@ -192,7 +187,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("extracts dependency calls from function body", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       declare const db: { findById(id: string): Promise<any> };
@@ -216,7 +211,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("extracts branches with conditions and terminals", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       declare const db: { findById(id: string): Promise<any> };
@@ -272,7 +267,7 @@ describe("extractCodeStructure", () => {
         },
       ],
     };
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       export function getUser(req: any, res: any, next: any) {
         return { status: 200, body: {} };
@@ -290,7 +285,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("extracts non-destructured object parameter", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       const s = initServer();
@@ -310,7 +305,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("handles expression-body arrow with no dependency calls", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       const s = initServer();
@@ -328,7 +323,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("extracts multiple dependency calls including sync", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       declare const db: { findById(id: string): Promise<any> };
@@ -355,7 +350,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("handles handler with no parameters", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       const s = initServer();
@@ -373,7 +368,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("extracts dependency calls nested inside if/try blocks", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       declare const db: { findById(id: string): Promise<any>; log(msg: string): void };
@@ -411,7 +406,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("extracts ternary return branches as separate branches with conditions", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       declare const db: { findById(id: string): Promise<any> };
@@ -449,7 +444,7 @@ describe("extractCodeStructure", () => {
   });
 
   it("extracts destructured dependency call assignedTo as null", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initServer } from "@ts-rest/express";
       declare const db: { find(id: string): Promise<{ name: string; email: string }> };
@@ -478,7 +473,7 @@ describe("extractCodeStructure", () => {
 
 describe("readContract", () => {
   it("reads contract responses from same-file contract definition", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initContract } from "@ts-rest/core";
       import { initServer } from "@ts-rest/express";
@@ -527,7 +522,7 @@ describe("readContract", () => {
   });
 
   it("returns null when handler is not in a router call", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       export async function standalone() {
         return { status: 200, body: {} };
@@ -548,7 +543,7 @@ describe("readContract", () => {
   });
 
   it("returns null when handler name does not match any contract endpoint", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initContract } from "@ts-rest/core";
       import { initServer } from "@ts-rest/express";
@@ -586,7 +581,7 @@ describe("readContract", () => {
   });
 
   it("reads contract for method-shorthand handlers", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initContract } from "@ts-rest/core";
       import { initServer } from "@ts-rest/express";
@@ -625,7 +620,7 @@ describe("readContract", () => {
   });
 
   it("extracts body TypeShape from c.type<T>() declarations", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initContract } from "@ts-rest/core";
       import { initServer } from "@ts-rest/express";
@@ -678,7 +673,7 @@ describe("readContract", () => {
   });
 
   it("omits body when response schema is not a c.type<T>() call", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initContract } from "@ts-rest/core";
       import { initServer } from "@ts-rest/express";
@@ -713,7 +708,7 @@ describe("readContract", () => {
   });
 
   it("returns null boundaryBinding when contract has no method or path", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initContract } from "@ts-rest/core";
       import { initServer } from "@ts-rest/express";
@@ -1047,7 +1042,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
   });
 
   it("produces reverse gap when handler returns undeclared status", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       import { initContract } from "@ts-rest/core";
       import { initServer } from "@ts-rest/express";
@@ -1104,7 +1099,7 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
   });
 
   it("file with no matching handlers produces empty result", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       export function helper(x: number) { return x + 1; }
     `;
@@ -1146,7 +1141,7 @@ describe("createTypeScriptAdapter — cross-pack dedup", () => {
     // a `component`. Before cross-pack dedup this produced two summaries
     // at different `recognition` labels. First pack wins — user controls
     // precedence via the frameworks[] order.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "Button.tsx",
       `
@@ -1186,7 +1181,7 @@ describe("createTypeScriptAdapter — cross-pack dedup", () => {
   });
 
   it("respects framework order — first-listed wins", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "Thing.tsx",
       "export default function Thing() { return <div />; }",
@@ -1224,7 +1219,7 @@ describe("createTypeScriptAdapter — cross-pack dedup", () => {
 
 describe("createTypeScriptAdapter — reachable closure", () => {
   it("discovers internal helpers transitively called from a handler", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1279,7 +1274,7 @@ describe("createTypeScriptAdapter — reachable closure", () => {
     // A service keeps most of its work in functions the closure reaches
     // rather than in the handler itself, so a recognizer that fires only
     // on discovered units misses nearly every call a pack cares about.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1357,7 +1352,7 @@ describe("createTypeScriptAdapter — reachable closure", () => {
   });
 
   it("transitively reaches helpers called by other helpers", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1398,7 +1393,7 @@ describe("createTypeScriptAdapter — reachable closure", () => {
   });
 
   it("stops at declaration-file boundaries (skips external deps)", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "handlers.ts",
       `
@@ -1426,7 +1421,7 @@ describe("createTypeScriptAdapter — reachable closure", () => {
   });
 
   it("opt-out via includeReachable: false yields only pack-discovered units", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       "export function helper(x: string) { return x; }",
@@ -1455,7 +1450,7 @@ describe("createTypeScriptAdapter — reachable closure", () => {
   });
 
   it("deduplicates when the same helper is reached from multiple seeds", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       "export function shared(x: string) { return x.toUpperCase(); }",
@@ -1500,7 +1495,7 @@ describe("createTypeScriptAdapter — boundary effects closure", () => {
     // handler → orchestrate → persist; persist fires the invocation
     // effect (audit.log). The closure derives it back onto the handler
     // as metadata.effectsClosure with transitive: true.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1552,7 +1547,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     // `loadUser`. The rethrow enrichment pass should walk the try
     // block's call sites, find `loadUser` in the summary set, and
     // attribute its two throw terminals to the rethrow.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1617,7 +1612,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     // The rules-based propagation resolves `deepest`'s literal throw
     // message all the way up to `outer` — the shape the one-hop
     // implementation explicitly deferred.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1684,7 +1679,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     // `throw new Error("literal")` is not a rethrow candidate — its
     // message is already captured from the constructor. Enrichment
     // should leave it alone.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1726,7 +1721,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     // could have thrown, so the rethrow's possibleSources should be the
     // union of all their throw terminals. `c` doesn't throw; its absence
     // from the sources is a correctness check on its own.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1784,7 +1779,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     // Two separate try/catches, each wrapping a different callee —
     // each rethrow should pick up only its own try body's throws, not
     // a merged union across the function.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1852,7 +1847,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     // try-catch) isn't the pattern we're enriching. The enrichment
     // walks the *try body's* call sites; without an enclosing try,
     // there's nothing to walk.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
       `
@@ -1937,7 +1932,7 @@ describe("consumer extraction", () => {
   };
 
   it("extracts a consumer summary from a function with fetch()", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -1962,7 +1957,7 @@ describe("consumer extraction", () => {
   });
 
   it("extracts boundary binding from literal URL argument", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -1993,7 +1988,7 @@ describe("consumer extraction", () => {
     // makes them discoverable via the unified pairing dispatcher
     // (#174's interactionsByClass.get("service-call")) once a
     // service-call finding generator lands.
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2030,7 +2025,7 @@ describe("consumer extraction", () => {
   });
 
   it("extracts a template-literal path with substitutions as OpenAPI placeholders", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2051,7 +2046,7 @@ describe("consumer extraction", () => {
   });
 
   it("extracts a template literal with no substitutions as the literal text", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2071,7 +2066,7 @@ describe("consumer extraction", () => {
   });
 
   it("extracts a template-literal path with multiple substitutions", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2091,7 +2086,7 @@ describe("consumer extraction", () => {
   });
 
   it("uses the trailing property name when the substitution is a property access", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2112,7 +2107,7 @@ describe("consumer extraction", () => {
   });
 
   it("falls back to {param} when the substitution is not a simple identifier", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2132,7 +2127,7 @@ describe("consumer extraction", () => {
   });
 
   it("extracts method from options argument", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2154,7 +2149,7 @@ describe("consumer extraction", () => {
   });
 
   it("defaults method to GET when no options argument", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2175,7 +2170,7 @@ describe("consumer extraction", () => {
   });
 
   it("omits path when URL is non-literal", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2199,7 +2194,7 @@ describe("consumer extraction", () => {
   });
 
   it("produces status-code conditions the checker can read", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2305,7 +2300,7 @@ describe("response property semantics", () => {
   };
 
   it("resolves response.ok to a status range comparison", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2354,7 +2349,7 @@ describe("response property semantics", () => {
   });
 
   it("resolves negated !response.ok to negation(status range)", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2393,7 +2388,7 @@ describe("response property semantics", () => {
   });
 
   it("leaves status comparisons unchanged", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2431,7 +2426,7 @@ describe("response property semantics", () => {
   it("does not resolve when pack has no responseSemantics", async () => {
     const { responseSemantics: _, ...packWithoutSemantics } =
       fetchPackWithSemantics;
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2504,7 +2499,7 @@ describe("client-side contract resolution via fromClientMethod", () => {
   };
 
   it("resolves method+path on a client.method() call by walking back to the contract", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2543,7 +2538,7 @@ describe("client-side contract resolution via fromClientMethod", () => {
   });
 
   it("returns no binding when the called method isn't in the contract", async () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
@@ -2623,16 +2618,7 @@ describe("wrapper expansion", () => {
   };
 
   function makeProject(): Project {
-    return new Project({
-      useInMemoryFileSystem: true,
-      compilerOptions: {
-        strict: true,
-        target: 99,
-        module: 99,
-        moduleResolution: 100,
-        skipLibCheck: true,
-      },
-    });
+    return createTestProject();
   }
 
   it("synthesises a caller summary for a single-hop path-passthrough wrapper", async () => {
@@ -2915,16 +2901,7 @@ describe("wrapper expansion", () => {
 
 describe("subUnits plumbing", () => {
   function makeProject() {
-    return new Project({
-      useInMemoryFileSystem: true,
-      compilerOptions: {
-        strict: true,
-        target: 99,
-        module: 99,
-        moduleResolution: 100,
-        skipLibCheck: true,
-      },
-    });
+    return createTestProject();
   }
 
   const testPack: PatternPack = {
@@ -3116,17 +3093,7 @@ describe("inline JSX conditional decomposition", () => {
   };
 
   function makeProject() {
-    return new Project({
-      useInMemoryFileSystem: true,
-      compilerOptions: {
-        strict: true,
-        target: 99,
-        module: 99,
-        moduleResolution: 100,
-        skipLibCheck: true,
-        jsx: 4,
-      },
-    });
+    return createTestProject();
   }
 
   function rootOf(summaries: ReturnType<typeof Array.prototype.at>) {
@@ -3429,7 +3396,7 @@ const expressResPack: PatternPack = {
 
 describe("walker descent", () => {
   it("(a) finds a handler's terminal produced inside a Promise executor", () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       declare function loadUser(id: string): { name: string };
       export function handleUser(req: any, res: any) {
@@ -3469,7 +3436,7 @@ describe("walker descent", () => {
   });
 
   it("(c) descends a class method's nested arrow to find the terminal", () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       declare function loadUser(id: string): Promise<{ name: string }>;
       export class UserController {
@@ -3511,7 +3478,7 @@ describe("walker descent", () => {
   });
 
   it("attributes an effect inside a `.then` callback to the enclosing unit", () => {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       declare const audit: { record(msg: string): void };
       declare function loadUser(id: string): Promise<{ name: string }>;
@@ -3566,7 +3533,7 @@ describe("walker descent", () => {
       },
     };
 
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     const source = `
       declare function defer(cb: () => void): void;
       declare const audit: { record(msg: string): void };
@@ -3654,7 +3621,7 @@ describe("discoverUnits callback with routeInfo + metadata", () => {
   };
 
   async function run(): Promise<BehavioralSummary[]> {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     project.createSourceFile(
       "handler.ts",
       `

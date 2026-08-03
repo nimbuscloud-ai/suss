@@ -4,14 +4,15 @@
 // and the engine composes the rest. A case that stops working is a
 // missing fact rather than a missing rule.
 
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "./store.js";
 
 /** The line the exported handler's body comes down to, or null. */
 function resolvedLine(source: string): number | null {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = createTestProject();
   const file = project.createSourceFile("/mod.ts", source);
   const init = file.getVariableDeclarationOrThrow("handler").getInitializer();
   if (init === undefined) {

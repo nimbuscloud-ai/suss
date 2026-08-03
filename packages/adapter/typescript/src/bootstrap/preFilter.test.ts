@@ -1,5 +1,6 @@
-import { Project, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
 import { computePackApplicability } from "./preFilter.js";
@@ -9,13 +10,17 @@ import type {
   InvocationRecognizer,
   PatternPack,
 } from "@suss/extractor";
+import type { Project, SourceFile } from "ts-morph";
 
 const noopInvocation: InvocationRecognizer = () => null;
 const noopAccess: AccessRecognizer = () => null;
 
-function makeFile(source: string, name = "src.ts"): SourceFile {
-  const project = new Project({ useInMemoryFileSystem: true });
-  return project.createSourceFile(name, source);
+/** Several fixture files in one project, in the order they are written. */
+function makeFiles(files: Record<string, string>): SourceFile[] {
+  const project = createTestProject();
+  return Object.entries(files).map(([name, source]) =>
+    project.createSourceFile(name, source),
+  );
 }
 
 function basePack(overrides: Partial<PatternPack>): PatternPack {
@@ -37,11 +42,10 @@ describe("computePackApplicability — pack-level requiresImport", () => {
       requiresImport: ["@aws-sdk/client-sqs"],
       invocationRecognizers: [noopInvocation],
     });
-    const importsSqs = makeFile(
-      `import { SQSClient } from "@aws-sdk/client-sqs"; export const x = 1;`,
-      "imports-sqs.ts",
-    );
-    const noImports = makeFile("export const y = 2;", "no-imports.ts");
+    const [importsSqs, noImports] = makeFiles({
+      "imports-sqs.ts": `import { SQSClient } from "@aws-sdk/client-sqs"; export const x = 1;`,
+      "no-imports.ts": "export const y = 2;",
+    });
 
     const result = computePackApplicability([importsSqs, noImports], [sqsPack]);
     expect(result.get(importsSqs)).toEqual([sqsPack]);
@@ -54,10 +58,9 @@ describe("computePackApplicability — pack-level requiresImport", () => {
       requiresImport: ["@aws-sdk/client-sqs"],
       invocationRecognizers: [noopInvocation],
     });
-    const importsSubpath = makeFile(
-      `import { SendMessageCommand } from "@aws-sdk/client-sqs/dist/types"; export const z = 1;`,
-      "subpath.ts",
-    );
+    const [importsSubpath] = makeFiles({
+      "subpath.ts": `import { SendMessageCommand } from "@aws-sdk/client-sqs/dist/types"; export const z = 1;`,
+    });
     const result = computePackApplicability([importsSubpath], [sqsPack]);
     expect(result.get(importsSubpath)).toEqual([sqsPack]);
   });
@@ -68,8 +71,10 @@ describe("computePackApplicability — pack-level requiresImport", () => {
       // No requiresImport — the process surface is a Node.js global
       accessRecognizers: [noopAccess],
     });
-    const file1 = makeFile("export const a = 1;", "f1.ts");
-    const file2 = makeFile(`import x from "y"; export const b = 2;`, "f2.ts");
+    const [file1, file2] = makeFiles({
+      "f1.ts": "export const a = 1;",
+      "f2.ts": `import x from "y"; export const b = 2;`,
+    });
 
     const result = computePackApplicability([file1, file2], [nodeRuntimePack]);
     expect(result.get(file1)).toEqual([nodeRuntimePack]);
@@ -82,11 +87,10 @@ describe("computePackApplicability — pack-level requiresImport", () => {
       requiresImport: ["dotenv"],
       accessRecognizers: [noopAccess],
     });
-    const importsDotenv = makeFile(
-      `import dotenv from "dotenv"; export const c = 1;`,
-      "dotenv.ts",
-    );
-    const noImports = makeFile("export const d = 2;", "plain.ts");
+    const [importsDotenv, noImports] = makeFiles({
+      "dotenv.ts": `import dotenv from "dotenv"; export const c = 1;`,
+      "plain.ts": "export const d = 2;",
+    });
 
     const result = computePackApplicability(
       [importsDotenv, noImports],
@@ -107,19 +111,12 @@ describe("computePackApplicability — pack-level requiresImport", () => {
       requiresImport: ["@prisma/client"],
       invocationRecognizers: [noopInvocation],
     });
-    const sqsFile = makeFile(
-      `import { SQSClient } from "@aws-sdk/client-sqs";`,
-      "sqs.ts",
-    );
-    const prismaFile = makeFile(
-      `import { PrismaClient } from "@prisma/client";`,
-      "prisma.ts",
-    );
-    const bothFile = makeFile(
-      `import { SQSClient } from "@aws-sdk/client-sqs";
+    const [sqsFile, prismaFile, bothFile] = makeFiles({
+      "sqs.ts": `import { SQSClient } from "@aws-sdk/client-sqs";`,
+      "prisma.ts": `import { PrismaClient } from "@prisma/client";`,
+      "both.ts": `import { SQSClient } from "@aws-sdk/client-sqs";
        import { PrismaClient } from "@prisma/client";`,
-      "both.ts",
-    );
+    });
 
     const result = computePackApplicability(
       [sqsFile, prismaFile, bothFile],
@@ -135,7 +132,7 @@ describe("computePackApplicability — pack-level requiresImport", () => {
 
 describe("computePackApplicability with the fact layer", () => {
   function projectOf(files: Record<string, string>): Project {
-    const project = new Project({ useInMemoryFileSystem: true });
+    const project = createTestProject();
     for (const [path, source] of Object.entries(files)) {
       project.createSourceFile(path, source);
     }

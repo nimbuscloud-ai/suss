@@ -1,11 +1,7 @@
-import {
-  type CallExpression,
-  Node,
-  Project,
-  ScriptTarget,
-  type SourceFile,
-} from "ts-morph";
+import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
+
+import { createTestProject } from "@suss/test-project";
 
 import { readConfiguredCall } from "./configuredCall.js";
 
@@ -25,14 +21,7 @@ const DISPATCH: ConfiguredCallSpec = {
  * checker can name the receiver's type the way it does on a service.
  */
 function makeProject(userSource: string): SourceFile {
-  const project = new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      strict: true,
-      moduleResolution: 100, // ts.ModuleResolutionKind.Bundler
-    },
-    useInMemoryFileSystem: true,
-  });
+  const project = createTestProject();
 
   project.createSourceFile(
     "node_modules/@acme/async/package.json",

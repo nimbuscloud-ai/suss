@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createFixtureProject } from "@suss/test-project";
 
 import { honoFramework } from "./index.js";
 
@@ -112,12 +113,7 @@ describe("honoFramework \u2014 zod-openapi registration", () => {
 
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
-    const { Project } = await import("ts-morph");
-    const project = new Project({
-      skipAddingFilesFromTsConfig: true,
-      compilerOptions: { strict: true, skipLibCheck: true },
-    });
-    project.addSourceFilesAtPaths(path.join(dir, "*.ts"));
+    const project = createFixtureProject(dir, "*.ts");
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [honoFramework()],

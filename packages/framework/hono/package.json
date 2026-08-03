@@ -50,6 +50,7 @@
   "devDependencies": {
     "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
+    "@suss/test-project": "*",
     "ts-morph": "*",
     "tsup": "*",
     "typescript": "*",

@@ -1,9 +1,9 @@
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { apolloFramework } from "./index.js";
 
@@ -16,17 +16,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/apollo");
 
 async function runAdapter(): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99, // ESNext
-      module: 99, // ESNext
-      moduleResolution: 100, // Bundler
-      skipLibCheck: true,
-    },
-  });
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
+  const project = createFixtureProject(fixturesDir, "*.ts");
 
   const adapter = createTypeScriptAdapter({
     project,
@@ -163,17 +153,7 @@ describe("apolloFramework — integration", () => {
 // ---------------------------------------------------------------------------
 
 async function runInMemory(source: string): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      strict: true,
-      target: 99,
-      module: 99,
-      moduleResolution: 100,
-      skipLibCheck: true,
-    },
-  });
+  const project = createTestProject();
   project.createSourceFile("server.ts", source);
   const adapter = createTypeScriptAdapter({
     project,
@@ -211,17 +191,7 @@ describe("apolloFramework — discovery shapes", () => {
   });
 
   it("excludeTypes skips the listed types", async () => {
-    const project = new Project({
-      useInMemoryFileSystem: true,
-      skipAddingFilesFromTsConfig: true,
-      compilerOptions: {
-        strict: true,
-        target: 99,
-        module: 99,
-        moduleResolution: 100,
-        skipLibCheck: true,
-      },
-    });
+    const project = createTestProject();
     project.createSourceFile(
       "server.ts",
       `
