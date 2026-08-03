@@ -11,7 +11,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 25,
-      "internal": 486,
+      "internal": 488,
       "consumers": 26
     },
     "packages/behavioral-ir": {
@@ -41,7 +41,7 @@
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
       "exports": 2,
-      "internal": 1,
+      "internal": 0,
       "consumers": 8
     },
     "packages/client/axios": {
@@ -203,7 +203,7 @@
     "packages/framework/ts-rest": {
       "name": "@suss/framework-ts-rest",
       "exports": 2,
-      "internal": 1,
+      "internal": 0,
       "consumers": 4
     },
     "packages/intent-ir": {
