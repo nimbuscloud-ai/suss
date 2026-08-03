@@ -1,10 +1,9 @@
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { testCompilerOptions } from "@suss/test-project";
+import { createFixtureProject } from "@suss/test-project";
 
 import { reactRouterFramework } from "./index.js";
 
@@ -20,11 +19,7 @@ const fixturesDir = path.resolve(
 );
 
 async function runAdapter(): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: { ...testCompilerOptions },
-  });
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
+  const project = createFixtureProject(fixturesDir, "*.ts");
 
   const adapter = createTypeScriptAdapter({
     project,

@@ -1,10 +1,9 @@
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { testCompilerOptions } from "@suss/test-project";
+import { createFixtureProject } from "@suss/test-project";
 
 import { awsLambdaFramework, clearTemplateCache } from "./index.js";
 import { HTTP_TERMINALS, NON_HTTP_TERMINALS } from "./terminals.js";
@@ -25,13 +24,9 @@ async function runAdapter(
   },
 ): Promise<BehavioralSummary[]> {
   clearTemplateCache();
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: { ...testCompilerOptions },
-  });
   // The whole src tree: handlers plus the lib/ factory a handler
   // export resolves through.
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "src/**/*.ts"));
+  const project = createFixtureProject(fixturesDir, "src/**/*.ts");
 
   const adapter = createTypeScriptAdapter({
     project,

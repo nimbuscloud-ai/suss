@@ -1,10 +1,9 @@
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { createTestProject, testCompilerOptions } from "@suss/test-project";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { reactFramework } from "./index.js";
 
@@ -21,11 +20,7 @@ const raise = (msg: string): never => {
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/react");
 
 async function runAdapter(): Promise<BehavioralSummary[]> {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: { ...testCompilerOptions },
-  });
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.tsx"));
+  const project = createFixtureProject(fixturesDir, "*.tsx");
 
   const adapter = createTypeScriptAdapter({
     project,

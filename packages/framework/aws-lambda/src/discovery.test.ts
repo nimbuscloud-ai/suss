@@ -2,11 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { testCompilerOptions } from "@suss/test-project";
+import { createFixtureProject } from "@suss/test-project";
 
 import { awsLambdaFramework, clearTemplateCache } from "./index.js";
 import { handlersForFile } from "./templateIndex.js";
@@ -183,11 +182,7 @@ afterAll(() => {
 
 async function run(): Promise<BehavioralSummary[]> {
   clearTemplateCache();
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: { ...testCompilerOptions },
-  });
-  project.addSourceFilesAtPaths(path.join(root, "src/*.ts"));
+  const project = createFixtureProject(root, "src/*.ts");
   const adapter = createTypeScriptAdapter({
     project,
     frameworks: [awsLambdaFramework()],

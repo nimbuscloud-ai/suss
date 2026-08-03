@@ -17,6 +17,8 @@
 // nearly all of it parsing the default libraries, and the suite created
 // one per test.
 
+import path from "node:path";
+
 import {
   ModuleKind,
   ModuleResolutionKind,
@@ -105,4 +107,50 @@ function empty(project: Project): Project {
  */
 function makeTypesRoot(project: Project): void {
   project.getFileSystem().mkdirSync("/node_modules/@types");
+}
+
+/**
+ * A project holding the fixture files a pack's tests read. These come off
+ * the file system rather than memory, so the project is a fresh one: the
+ * reused projects above have no disk behind them.
+ *
+ * Every pack test wants the same three lines, and thirteen of them had
+ * their own copy.
+ */
+export function createFixtureProject(
+  directory: string,
+  ...globs: string[]
+): Project {
+  return fixtureProject({}, directory, globs);
+}
+
+/**
+ * The same, for a pack whose fixtures carry decorators. TypeScript parses
+ * those only with the two decorator options turned on, and the NestJS
+ * packs are the ones that need them.
+ */
+export function createDecoratorFixtureProject(
+  directory: string,
+  ...globs: string[]
+): Project {
+  return fixtureProject(
+    { experimentalDecorators: true, emitDecoratorMetadata: true },
+    directory,
+    globs,
+  );
+}
+
+function fixtureProject(
+  overrides: CompilerOptions,
+  directory: string,
+  globs: string[],
+): Project {
+  const project = new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: { ...testCompilerOptions, ...overrides },
+  });
+  for (const glob of globs) {
+    project.addSourceFilesAtPaths(path.join(directory, glob));
+  }
+  return project;
 }

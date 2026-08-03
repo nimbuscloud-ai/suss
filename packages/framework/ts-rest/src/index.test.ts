@@ -1,10 +1,9 @@
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { testCompilerOptions } from "@suss/test-project";
+import { createFixtureProject } from "@suss/test-project";
 
 import { tsRestFramework } from "./index.js";
 
@@ -20,16 +19,8 @@ const composedFixturesDir = path.resolve(
   "../../../../fixtures/ts-rest-composed",
 );
 
-function makeProject(): Project {
-  return new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: { ...testCompilerOptions },
-  });
-}
-
 async function runAdapter(): Promise<BehavioralSummary[]> {
-  const project = makeProject();
-  project.addSourceFilesAtPaths(path.join(fixturesDir, "*.ts"));
+  const project = createFixtureProject(fixturesDir, "*.ts");
 
   const adapter = createTypeScriptAdapter({
     project,
@@ -40,8 +31,7 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
 }
 
 async function runComposedAdapter(): Promise<BehavioralSummary[]> {
-  const project = makeProject();
-  project.addSourceFilesAtPaths(path.join(composedFixturesDir, "**/*.ts"));
+  const project = createFixtureProject(composedFixturesDir, "**/*.ts");
 
   const adapter = createTypeScriptAdapter({
     project,
