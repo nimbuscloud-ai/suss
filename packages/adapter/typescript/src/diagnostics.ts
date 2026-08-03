@@ -104,6 +104,11 @@ export interface PackFunnel {
   providerSummaries: number;
   /** Provider summaries carrying at least one transition. */
   summariesWithBehavior: number;
+  /**
+   * Where one of this pack's hooks threw. Every count above is a floor
+   * while this is non-empty.
+   */
+  failures: PackFailure[];
 }
 
 export interface ExtractionReport {
@@ -127,6 +132,22 @@ export type EmptyStage =
   | "discovery"
   | "assembly";
 
+/**
+ * A pack's hook throwing on one file.
+ *
+ * The run carries on with the other files, so every count for that pack
+ * afterwards is a floor rather than a total. Somebody reading those
+ * counts has to be told, or a pack that broke reads the same as a pack
+ * that looked and found nothing.
+ */
+export interface PackFailure {
+  /** The hook that threw, named as a pack author would know it. */
+  hook: string;
+  /** The file the pack was reading. */
+  file: string;
+  message: string;
+}
+
 /** Per-pack running counts, filled as the extract proceeds. */
 export interface PackTally {
   candidateFiles: number;
@@ -136,6 +157,7 @@ export interface PackTally {
   unitsClaimed: number;
   selfCollisions: number;
   summariesProduced: number;
+  failures: PackFailure[];
 }
 
 const emptyTally = (): PackTally => ({
@@ -146,7 +168,29 @@ const emptyTally = (): PackTally => ({
   unitsClaimed: 0,
   selfCollisions: 0,
   summariesProduced: 0,
+  failures: [],
 });
+
+/**
+ * Write down that a pack's hook threw, and say it in one sentence a
+ * caller can print. Both callers want the same wording, and a failure
+ * that only reached stderr left the counts looking like an empty pack.
+ */
+export function recordPackFailure(
+  tally: PackTally | undefined,
+  failure: { pack: string; hook: string; file: string; error: unknown },
+): string {
+  const message =
+    failure.error instanceof Error
+      ? failure.error.message
+      : String(failure.error);
+  tally?.failures.push({
+    hook: failure.hook,
+    file: failure.file,
+    message,
+  });
+  return `[suss] pack "${failure.pack}" threw from ${failure.hook} while reading ${failure.file}: ${message}\n`;
+}
 
 export function createPackTallies(
   packs: ReadonlyArray<PatternPack>,
@@ -358,6 +402,7 @@ export function buildExtractionReport(args: {
       unitsClaimed: tally.unitsClaimed,
       selfCollisions: tally.selfCollisions,
       summariesProduced: tally.summariesProduced,
+      failures: tally.failures,
       summariesBound: counted.bound,
       providerSummaries: counted.providers,
       summariesWithBehavior: counted.withBehavior,

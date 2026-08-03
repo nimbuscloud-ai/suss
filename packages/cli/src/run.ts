@@ -62,6 +62,7 @@ Options (extract):
   --explain        Show where the summaries came from, file by file and pack by
                    pack. Shown automatically when a run finds nothing.
   --fail-on-empty  Exit non-zero when a run finds nothing
+  --fail-on-pack-error  Exit non-zero when a pack throws while it reads
 
 Options (check):
   --dir            Folder of summary files, paired up by method and path
@@ -160,6 +161,7 @@ async function runExtract(args: string[]): Promise<number> {
       "no-cache": { type: "boolean" },
       explain: { type: "boolean" },
       "fail-on-empty": { type: "boolean" },
+      "fail-on-pack-error": { type: "boolean" },
     },
     allowPositionals: true,
   });
@@ -221,6 +223,7 @@ async function runExtract(args: string[]): Promise<number> {
     ...(values["no-cache"] === true ? { noCache: true } : {}),
     ...(values.explain === true ? { explain: true } : {}),
     ...(values["fail-on-empty"] === true ? { failOnEmpty: true } : {}),
+    ...(values["fail-on-pack-error"] === true ? { failOnPackError: true } : {}),
   });
   return process.exitCode === 1 ? 1 : 0;
 }

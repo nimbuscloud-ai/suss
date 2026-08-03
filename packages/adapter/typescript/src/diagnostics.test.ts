@@ -119,6 +119,7 @@ function report(
       ...c,
       unitsInGatedFiles: 0,
       effectsRecognized: 0,
+      failures: [],
       unitsClaimed: c.unitsDiscovered,
       selfCollisions: 0,
     });

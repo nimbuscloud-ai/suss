@@ -66,6 +66,7 @@ import {
   createPackTallies,
   type ExtractionReport,
   type PackTally,
+  recordPackFailure,
 } from "./diagnostics.js";
 import { routePathFromFile } from "./discovery/filenameRoute.js";
 import {
@@ -897,6 +898,8 @@ function computeSubUnitBarriers(
   unit: DiscoveredUnit,
   pack: PatternPack,
   ctx: TsSubUnitContext,
+  tally: PackTally | undefined,
+  file: string,
 ): DescentBarriers {
   // A boundary announced without a handler behind it has no body for a
   // sub-unit to sit in.
@@ -920,7 +923,12 @@ function computeSubUnitBarriers(
     return barriers;
   } catch (err) {
     process.stderr.write(
-      `[suss] subUnits hook in pack "${pack.name}" threw during barrier computation: ${err instanceof Error ? err.message : String(err)}\n`,
+      recordPackFailure(tally, {
+        pack: pack.name,
+        hook: "subUnits",
+        file,
+        error: err,
+      }),
     );
     return NO_BARRIERS;
   }
@@ -1033,7 +1041,12 @@ function extractFromSourceFile(
         }
       } catch (err) {
         process.stderr.write(
-          `[suss] discoverUnits callback in pack "${pack.name}" threw: ${err instanceof Error ? err.message : String(err)}\n`,
+          recordPackFailure(tally, {
+            pack: pack.name,
+            hook: "discoverUnits",
+            file: sourceFile.getFilePath(),
+            error: err,
+          }),
         );
       }
     }
@@ -1065,7 +1078,13 @@ function extractFromSourceFile(
       if (tally !== undefined) {
         tally.unitsClaimed += 1;
       }
-      const barriers = computeSubUnitBarriers(unit, pack, subUnitCtx);
+      const barriers = computeSubUnitBarriers(
+        unit,
+        pack,
+        subUnitCtx,
+        tally,
+        sourceFile.getFilePath(),
+      );
       const raw = extractCodeStructure(
         unit,
         pack,

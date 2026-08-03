@@ -24,6 +24,7 @@ function pack(overrides: Partial<PackFunnel> = {}): PackFunnel {
     effectsRecognized: 0,
     unitsClaimed: 2,
     selfCollisions: 0,
+    failures: [],
     summariesProduced: 2,
     summariesBound: 2,
     providerSummaries: 2,

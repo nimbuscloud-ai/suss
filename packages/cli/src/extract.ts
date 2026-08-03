@@ -270,6 +270,13 @@ export interface ExtractOptions {
    * on in CI, where a silent zero looks identical to a passing check.
    */
   failOnEmpty?: boolean;
+  /**
+   * Exit non-zero when a pack threw while it was reading. Off by
+   * default, because one bad file in a large tree should not stop a run
+   * that is otherwise working; on in CI, where a count that quietly
+   * came out short is worse than a failure.
+   */
+  failOnPackError?: boolean;
 }
 
 /**
@@ -413,6 +420,17 @@ export async function extract(
         options.explain === true ? ["run", "pack"] : ["run"],
       ),
     );
+
+    // Pack health always says a pack threw. This is the caller asking
+    // for that to stop the build, which is what CI wants: a count that
+    // quietly came out short is worse than a run that failed.
+    const threw = report.packs.filter((p) => p.failures.length > 0);
+    if (options.failOnPackError === true && threw.length > 0) {
+      process.stderr.write(
+        `Failing because ${listOf(threw.map((p) => p.pack))} threw while reading (--fail-on-pack-error).\n`,
+      );
+      process.exitCode = 1;
+    }
   }
 
   if (options.failOnEmpty === true && summaries.length === 0) {

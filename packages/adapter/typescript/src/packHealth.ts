@@ -20,7 +20,11 @@
 // the pair holding it, which the notes next to `stagesOf` say more
 // about.
 
-import type { ExtractionReport, PackFunnel } from "./diagnostics.js";
+import type {
+  ExtractionReport,
+  PackFailure,
+  PackFunnel,
+} from "./diagnostics.js";
 
 /** One thing that looks wrong, in the same shape the dogfood invariants report. */
 export interface HealthViolation {
@@ -153,11 +157,47 @@ function selfCollisions(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
 }
 
 /**
+ * A pack's hook threw while it was reading.
+ *
+ * The run carries on so one bad file does not cost a whole extract, and
+ * the pack's counts stop being totals the moment that happens. This
+ * says so, because a pack that broke on every file it was handed
+ * reports the same zero as a pack that looked and found nothing.
+ *
+ * This is the one check whose finding is never about the codebase. The
+ * pack is at fault, and the person running it is told anyway, since
+ * their numbers are the ones that came out short.
+ */
+function threwWhileReading(
+  packs: ReadonlyArray<PackFunnel>,
+): HealthViolation[] {
+  return packs
+    .filter((funnel) => funnel.failures.length > 0)
+    .map((funnel) => {
+      const first = funnel.failures[0] as PackFailure;
+      const rest = funnel.failures.length - 1;
+      const alsoIn =
+        rest > 0
+          ? ` and on ${rest} other ${rest === 1 ? "file" : "files"}`
+          : "";
+      return {
+        label: funnel.pack,
+        detail: `threw from ${first.hook} on ${first.file}${alsoIn}, so its counts below are a floor: ${first.message}`,
+      };
+    });
+}
+
+/**
  * Run every health check over one extraction report and return what
  * fired, grouped by which check caught it.
  */
 export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
   return [
+    {
+      name: "no pack throws while it reads",
+      audience: "run",
+      violations: threwWhileReading(report.packs),
+    },
     {
       name: "no pack drops everything it was holding",
       audience: "run",
