@@ -194,6 +194,12 @@ export function checkRuntimeConfig(
  * runtimes declare a directory holding its file. It says what could not
  * be told, and names nothing in the code as at fault.
  */
+/**
+ * Joins a document path to a variable name for a set key. A NUL
+ * cannot appear in either half, so the two can never run together.
+ */
+const DOCUMENT_NAME_SEPARATOR = "\0";
+
 function contestedFindings(
   codeReads: EnvVarRead[],
   contested: ReadonlySet<string>,
@@ -242,7 +248,7 @@ function unusedFindings(scoped: ScopedRuntime[]): Finding[] {
         findings.push(makeUnusedFinding(entry.runtime, entry.binding, name));
         continue;
       }
-      const key = `${document} ${name}`;
+      const key = `${document}${DOCUMENT_NAME_SEPARATOR}${name}`;
       const readHere = readPerDocument.get(document) ?? new Set<string>();
       // A document whose runtimes matched no code at all cannot say
       // that nothing reads the variable, so it says nothing either way.
