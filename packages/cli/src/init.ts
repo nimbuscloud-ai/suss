@@ -26,7 +26,12 @@ export interface PackSuggestion {
   packageName: string;
   /** What in the project pointed at it. */
   because: string;
-  kind: "framework" | "client" | "contract";
+  /**
+   * What this pack contributes. An `effects` pack recognises calls
+   * inside units some other pack discovered, so it produces nothing on
+   * its own and asking for it alone always comes back empty.
+   */
+  kind: "framework" | "client" | "contract" | "effects";
   /** For a contract source, the file to read. */
   file?: string;
 }
@@ -125,25 +130,25 @@ const BY_DEPENDENCY: Array<{
     dependency: "@prisma/client",
     name: "prisma",
     packageName: "@suss/framework-prisma",
-    kind: "framework",
+    kind: "effects",
   },
   {
     dependency: "drizzle-orm",
     name: "drizzle",
     packageName: "@suss/framework-drizzle",
-    kind: "framework",
+    kind: "effects",
   },
   {
     dependency: "@aws-sdk/client-sqs",
     name: "aws-sqs",
     packageName: "@suss/framework-aws-sqs",
-    kind: "framework",
+    kind: "effects",
   },
   {
     dependency: "@aws-sdk/client-eventbridge",
     name: "aws-eventbridge",
     packageName: "@suss/framework-aws-eventbridge",
-    kind: "framework",
+    kind: "effects",
   },
   {
     dependency: "@apollo/client",
@@ -265,8 +270,54 @@ export function inspectProject(root: string): InitReport {
 }
 
 /** Every dependency name in package.json, with which field it came from. */
+/**
+ * Every library this project reaches, and where it was named.
+ *
+ * A service in a monorepo names its own packages and lets those bring in
+ * the SDKs, so its manifest says nothing about the queue it sends to.
+ * Reading only the manifest in front of us meant no pack for that queue,
+ * nobody looking for the sends, and a run that came back clean because
+ * it had not been asked the question.
+ *
+ * So a dependency that resolves to a package inside this repository is
+ * followed into that package's own manifest. A dependency that resolves
+ * outside it is a published library and stops here, because whatever it
+ * depends on is its business rather than this project's.
+ */
 function dependenciesOf(root: string): Array<[string, string]> {
-  const manifest = path.join(root, "package.json");
+  const found: Array<[string, string]> = [];
+  const seen = new Set<string>();
+  const queue: Array<{ dir: string; through: string | null }> = [
+    { dir: root, through: null },
+  ];
+
+  while (queue.length > 0) {
+    const next = queue.shift();
+    if (next === undefined) {
+      continue;
+    }
+    const manifest = path.join(next.dir, "package.json");
+    if (seen.has(manifest)) {
+      continue;
+    }
+    seen.add(manifest);
+
+    for (const [name, field] of declaredIn(manifest)) {
+      found.push([
+        name,
+        next.through === null ? field : `${field} of ${next.through}`,
+      ]);
+      const inside = packageInsideRepository(root, next.dir, name);
+      if (inside !== null) {
+        queue.push({ dir: inside, through: name });
+      }
+    }
+  }
+  return found;
+}
+
+/** The dependency names one manifest declares, with the field naming each. */
+function declaredIn(manifest: string): Array<[string, string]> {
   if (!fs.existsSync(manifest)) {
     return [];
   }
@@ -288,6 +339,40 @@ function dependenciesOf(root: string): Array<[string, string]> {
     }
   }
   return found;
+}
+
+/**
+ * Where a dependency lives when it lives in this repository, or null.
+ *
+ * A workspace is linked into node_modules, so the link's target is the
+ * answer and no workspace globs have to be read. A package resolving
+ * outside the tree we were pointed at is somebody else's.
+ */
+function packageInsideRepository(
+  root: string,
+  from: string,
+  name: string,
+): string | null {
+  const linked = path.join(from, "node_modules", name);
+  const candidates = [linked, path.join(root, "node_modules", name)];
+  for (const candidate of candidates) {
+    let resolved: string;
+    try {
+      resolved = fs.realpathSync(candidate);
+    } catch {
+      continue;
+    }
+    const withinRoot = resolved.startsWith(
+      `${fs.realpathSync(root)}${path.sep}`,
+    );
+    if (
+      withinRoot &&
+      !resolved.includes(`${path.sep}node_modules${path.sep}`)
+    ) {
+      return resolved;
+    }
+  }
+  return null;
 }
 
 function* filesUnder(dir: string, depth = 0): Generator<string> {
@@ -350,6 +435,7 @@ export function formatInitReport(report: InitReport): string {
   const frameworks = suggestions.filter((s) => s.kind === "framework");
   const clients = suggestions.filter((s) => s.kind === "client");
   const contracts = suggestions.filter((s) => s.kind === "contract");
+  const effects = suggestions.filter((s) => s.kind === "effects");
 
   lines.push(
     `${green("✓")} Found ${bold(describeCount(suggestions.length, "thing"))} to read in ${report.root}`,
@@ -357,6 +443,7 @@ export function formatInitReport(report: InitReport): string {
   lines.push("");
   for (const group of [
     { label: "Your code", items: [...frameworks, ...clients] },
+    { label: "What your code reaches", items: effects },
     { label: "Declared contracts", items: contracts },
   ]) {
     if (group.items.length === 0) {
@@ -381,8 +468,30 @@ export function formatInitReport(report: InitReport): string {
   const code = [...frameworks, ...clients];
   if (code.length > 0) {
     // One pass over the project reads every pack, so one command does.
-    const flags = code.map((item) => `-f ${item.name}`).join(" ");
+    // The effects packs ride along: each one recognises calls inside
+    // units the others found, so they add to this command and cannot be
+    // the whole of it.
+    const flags = [...code, ...effects]
+      .map((item) => `-f ${item.name}`)
+      .join(" ");
     lines.push(`   suss extract ${flags} -o summaries/code.json`);
+  } else if (effects.length > 0) {
+    // Asking for these alone gives an empty file and a message about
+    // the code, which reads as though the code were at fault.
+    lines.push(
+      `   ${dim(`suss extract ${effects.map((e) => `-f ${e.name}`).join(" ")} ...`)}`,
+    );
+    lines.push("");
+    lines.push(
+      `   ${yellow("!")} ${listOfNames(effects)} ${effects.length === 1 ? "reads calls" : "read calls"} inside handlers and`,
+    );
+    lines.push(
+      "     components that another pack finds first, so on its own it comes",
+    );
+    lines.push(
+      "     back empty. Add the pack for whatever serves this project, and",
+    );
+    lines.push("     see `suss --help` for the built-in list.");
   }
   for (const item of contracts) {
     lines.push(
@@ -445,4 +554,13 @@ export function formatInitReport(report: InitReport): string {
 
 function describeCount(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** A few pack names, as somebody would say them aloud. */
+function listOfNames(items: ReadonlyArray<PackSuggestion>): string {
+  const names = items.map((item) => cyan(item.name));
+  if (names.length <= 1) {
+    return names[0] ?? "";
+  }
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
