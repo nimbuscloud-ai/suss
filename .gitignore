@@ -23,7 +23,7 @@ scripts/dogfood-report.json
 # External dogfood targets, cloned to the repo root for ad-hoc
 # end-to-end runs. Clone them under this directory so they stay ignored
 # without anyone editing this file to name one.
-/dogfood-targets/
+/dogfood-targets
 
 # Claude Code
 PLAN.md
