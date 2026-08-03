@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-prisma",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Generate suss behavioral summaries from Prisma schema declarations.",
   "keywords": [
@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@mrleebo/prisma-ast": "^0.15.0",
-    "@suss/behavioral-ir": "0.1.0"
+    "@suss/behavioral-ir": "0.1.1"
   },
   "devDependencies": {
     "tsup": "*",
