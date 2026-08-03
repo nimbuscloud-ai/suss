@@ -12,11 +12,11 @@ Contributors are expected to act professionally and constructively. Behavior tha
 
 ## Reporting
 
-If you experience or witness behavior that violates this code of conduct, please report it by emailing **conduct@nimbusai.dev**. Reports will be reviewed and handled confidentially.
+If you experience or witness behavior that violates this code of conduct, please report it by emailing **matt.kindy@nimbusai.dev**. Reports will be reviewed and handled confidentially.
 
 ## Enforcement
 
-Project maintainers are responsible for clarifying and enforcing the standards above, and may take appropriate action — including warnings, removal of contributions, or removal from the project — in response to violations.
+Project maintainers are responsible for clarifying and enforcing the standards above, and may take appropriate action in response to violations, including warnings, removal of contributions, or removal from the project.
 
 ## Attribution
 
