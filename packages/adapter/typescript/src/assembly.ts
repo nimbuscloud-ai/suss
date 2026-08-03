@@ -206,20 +206,49 @@ export function extractRawBranches(
     }
   }
 
-  const rawBranches: RawBranch[] = terminals.flatMap(({ node, terminal }) => {
-    // Dead-code terminals (no entry path reaches them) produce no
-    // branches — a terminal that cannot fire is not behavior.
-    const conditionLists = byTerminal.get(node) ?? [];
-    return conditionLists.map((infos): RawBranch => {
-      const conditions: RawCondition[] = infos.map(conditionInfoToRawCondition);
-      return {
-        conditions,
-        terminal,
-        effects: [] as RawEffect[],
-        location: terminal.location,
-        isDefault: isDefaultConditionList(infos),
-      };
-    });
+  const rawBranches: RawBranch[] = terminals.flatMap(
+    ({ node, terminal, whenAlso }) => {
+      // Dead-code terminals (no entry path reaches them) produce no
+      // branches — a terminal that cannot fire is not behavior.
+      const conditionLists = byTerminal.get(node) ?? [];
+      return conditionLists.map((infos): RawBranch => {
+        // A terminal sharing its node with another one carries the
+        // test that tells them apart. The path to the node cannot
+        // say, because both were reached the same way.
+        const conditions: RawCondition[] = [
+          ...infos.map(conditionInfoToRawCondition),
+          ...(whenAlso === undefined ? [] : [whenAlso]),
+        ];
+        return {
+          conditions,
+          terminal,
+          effects: [] as RawEffect[],
+          location: terminal.location,
+          isDefault: isDefaultConditionList(infos),
+        };
+      });
+    },
+  );
+
+  // Two branches that agree on their conditions, their terminal and
+  // where they sit describe one behaviour, however many ways the walk
+  // arrived at them. A status written as a choice reaches its call
+  // through every path the choice makes, and each path would otherwise
+  // repeat every arm.
+  const seenBranches = new Set<string>();
+  const distinctBranches = rawBranches.filter((branch) => {
+    const key = [
+      branch.terminal.kind,
+      JSON.stringify(branch.terminal.statusCode),
+      branch.location.start,
+      branch.location.end,
+      branch.conditions.map((c) => `${c.polarity}:${c.sourceText}`).join(";"),
+    ].join("\u001f");
+    if (seenBranches.has(key)) {
+      return false;
+    }
+    seenBranches.add(key);
+    return true;
   });
 
   // Attach invocation effects to the default branch. A default branch
@@ -236,10 +265,10 @@ export function extractRawBranches(
   // terminal and shouldn't be double-counted as a side-effect
   // invocation.
   if (invocations.length > 0) {
-    const defaultBranch = rawBranches.find((b) => b.isDefault);
+    const defaultBranch = distinctBranches.find((b) => b.isDefault);
     if (defaultBranch !== undefined) {
       const terminalLines = new Set(
-        rawBranches.map((b) => b.terminal.location.start),
+        distinctBranches.map((b) => b.terminal.location.start),
       );
       // Container-building calls (spread / array-element composition)
       // are never themselves terminals, so they skip the terminal-line
@@ -257,7 +286,7 @@ export function extractRawBranches(
   // interaction (paired against the schema) AND any terminal-
   // shaped invocation, and that's the right behavior.
   if (recognized.length > 0) {
-    const defaultBranch = rawBranches.find((b) => b.isDefault);
+    const defaultBranch = distinctBranches.find((b) => b.isDefault);
     if (defaultBranch !== undefined) {
       const extra: Effect[] = recognized.map((r) => r.effect);
       defaultBranch.extraEffects = [
@@ -267,5 +296,5 @@ export function extractRawBranches(
     }
   }
 
-  return { branches: rawBranches, terminals };
+  return { branches: distinctBranches, terminals };
 }

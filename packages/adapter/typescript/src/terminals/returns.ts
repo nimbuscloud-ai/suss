@@ -13,6 +13,7 @@ import {
 } from "ts-morph";
 
 import { endLineOf, startLineOf } from "../lines.js";
+import { parseConditionExpression } from "../predicates.js";
 import { extractShape } from "../shapes/shapes.js";
 import {
   type ExtractionContext,
@@ -21,6 +22,7 @@ import {
 } from "./extract.js";
 import { resolveHelperReturn } from "./helperResolution.js";
 import { returnPositionOf, unwrapValue } from "./shared.js";
+import { statusChoicesOf } from "./statusBranches.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -276,9 +278,9 @@ export function tryMatchParameterMethodCall(
   func: FunctionRoot,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "parameterMethodCall" }>,
-): FoundTerminal | null {
+): FoundTerminal[] {
   if (!Node.isCallExpression(node)) {
-    return null;
+    return [];
   }
 
   const result = unwrapMethodChain(
@@ -289,7 +291,7 @@ export function tryMatchParameterMethodCall(
   );
 
   if (result === null) {
-    return null;
+    return [];
   }
 
   const { calls } = result;
@@ -321,7 +323,40 @@ export function tryMatchParameterMethodCall(
     },
   };
 
-  return { node, ...(source !== null ? { source } : {}), terminal };
+  const base = { node, ...(source !== null ? { source } : {}) };
+  const argument = statusArgument(calls, pattern.extraction);
+  const choices = argument === null ? null : statusChoicesOf(argument);
+  if (choices === null) {
+    return [{ ...base, terminal }];
+  }
+  return choices.map((choice) => ({
+    ...base,
+    terminal: {
+      ...terminal,
+      statusCode: { type: "literal" as const, value: choice.status },
+    },
+    whenAlso: {
+      sourceText: choice.conditionText,
+      structured: parseConditionExpression(choice.condition),
+      polarity: choice.whenTrue ? ("positive" as const) : ("negative" as const),
+      source: "explicit" as const,
+    },
+  }));
+}
+
+/**
+ * The argument the pack reads the status out of, when it reads one out
+ * of an argument at all. Nothing else knows which argument that is.
+ */
+function statusArgument(
+  calls: CallExpression[],
+  extraction: TerminalPattern["extraction"],
+): Node | null {
+  const from = extraction.statusCode;
+  if (from === undefined || from.from !== "argument") {
+    return null;
+  }
+  return calls[0]?.getArguments()[from.position] ?? null;
 }
 
 /**

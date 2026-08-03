@@ -83,12 +83,25 @@ export function findTerminals(
         }
         continue;
       }
+      if (pattern.match.type === "parameterMethodCall") {
+        // One call can produce several terminals too: a status written
+        // as a choice fires once per arm.
+        const matches = tryMatchParameterMethodCall(
+          node,
+          func,
+          pattern,
+          pattern.match,
+        );
+        if (matches.length > 0) {
+          results.push(...matches);
+          break;
+        }
+        continue;
+      }
       if (pattern.match.type === "returnStatement") {
         found = tryMatchReturnStatement(node, pattern, func, patterns);
       } else if (pattern.match.type === "jsxReturn") {
         found = tryMatchJsxReturn(node, pattern);
-      } else if (pattern.match.type === "parameterMethodCall") {
-        found = tryMatchParameterMethodCall(node, func, pattern, pattern.match);
       } else if (pattern.match.type === "throwExpression") {
         found = tryMatchThrowExpression(node, pattern, pattern.match);
       } else if (pattern.match.type === "functionCall") {
@@ -118,6 +131,19 @@ export function findTerminals(
     if (body !== undefined && !Node.isBlock(body)) {
       for (const pattern of patterns) {
         let found: FoundTerminal | null = null;
+        if (pattern.match.type === "parameterMethodCall") {
+          const matches = tryMatchParameterMethodCall(
+            body,
+            func,
+            pattern,
+            pattern.match,
+          );
+          if (matches.length > 0) {
+            results.push(...matches);
+            break;
+          }
+          continue;
+        }
         if (pattern.match.type === "returnStatement") {
           found = tryMatchReturnStatement(func, pattern, func, patterns);
         } else if (pattern.match.type === "jsxReturn") {
