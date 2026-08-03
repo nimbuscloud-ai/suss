@@ -21,8 +21,14 @@ against every other function's contract.
 A pack that discovers a handler under a template entry knows the unit it will be
 deployed as, and stamps `identity.deployableUnit`. Where the declaring side and
 the code both name a unit, the two units decide, and the directory is not
-consulted. Where either side names none, the directory answers as before, so a
-pack that never stamps the field keeps pairing exactly as it did.
+consulted.
+
+Where either side names none, the directory answers, and only where one
+directory could. A service that builds every one of its functions from the
+service root gives them all the same directory, so a shared helper sits inside
+every unit at once and the directory says nothing about which one runs it.
+`contestedFiles` names those files, and a caller holding that set pairs them
+against nothing and reports what it could not tell.
 
 ## Key files
 
@@ -33,6 +39,9 @@ pack that never stamps the field keeps pairing exactly as it did.
   `@suss/ir-core` owns that comparison, and it stops at a segment boundary,
   so a scope of `src/foo` never reaches `src/foobar`.
 - `unitScope.ts:unitsByFile` reads the units off a summary set and groups them
-  by file, dropping any file whose summaries disagree.
+  by file, keeping every unit a file's summaries name. A module holding two
+  handlers is deployed as both, so its helpers run in each.
+- `unitScope.ts:contestedFiles` gives the files two or more scopes' directories
+  hold, among code that names no unit of its own.
 - `unitScope.ts:sameUnit` compares two units on deployment target and instance
   name.

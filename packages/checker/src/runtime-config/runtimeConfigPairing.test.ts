@@ -235,7 +235,7 @@ describe("checkRuntimeConfig", () => {
     expect(findings).toEqual([]);
   });
 
-  it("multi-attributes a shared util read against every runtime that includes it", () => {
+  it("says which runtime runs a shared util cannot be told, rather than blaming both", () => {
     const runtimeA = makeRuntimeProvider({
       instanceName: "alpha",
       envVars: [],
@@ -252,10 +252,14 @@ describe("checkRuntimeConfig", () => {
       envReads: ["SHARED_VAR"],
     });
     const findings = checkRuntimeConfig([runtimeA, runtimeB, shared]);
-    const unprovided = findings.filter(
-      (f) => f.kind === "boundaryFieldUnknown",
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+      [],
     );
-    expect(unprovided).toHaveLength(2); // one per runtime
+    const unplaced = findings.filter((f) => f.kind === "runtimeScopeUnknown");
+    expect(unplaced).toHaveLength(1);
+    expect(unplaced[0].severity).toBe("info");
+    expect(unplaced[0].description).toContain("src/shared.ts");
+    expect(unplaced[0].description).toContain("2 runtimes");
   });
 
   it("recurses into call-shaped EffectArg for env reads inside nested calls", () => {
@@ -440,9 +444,9 @@ describe("checkRuntimeConfig", () => {
       expect(findings).toEqual([]);
     });
 
-    it("leaves a module its two handlers disagree over on the file path", () => {
-      // Two units in one file, so the module says nothing about where
-      // the helper runs and the directory answers as it always has.
+    it("runs a helper in both units its module is deployed as", () => {
+      // A module holding two handlers is deployed twice, so the helper
+      // beside them runs in each and answers to both contracts.
       const findings = checkRuntimeConfig([
         ...twoRuntimes(),
         makeCodeSummary({
@@ -467,9 +471,7 @@ describe("checkRuntimeConfig", () => {
       expect(unknown).toHaveLength(2);
     });
 
-    it("leaves code that names no unit scoped by its file path", () => {
-      // A pack that never stamps a unit gets the multi-attribution it
-      // has always had: the shared module pairs against both runtimes.
+    it("pairs code no summary places against neither runtime", () => {
       const findings = checkRuntimeConfig([
         ...twoRuntimes(),
         makeCodeSummary({
@@ -478,9 +480,66 @@ describe("checkRuntimeConfig", () => {
           envReads: ["INDEX_TABLE_NAME"],
         }),
       ]);
+      expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+        [],
+      );
+      const unplaced = findings.filter((f) => f.kind === "runtimeScopeUnknown");
+      expect(unplaced).toHaveLength(1);
+      expect(unplaced[0].description).toContain("sharedConfig");
+    });
+
+    it("does not call a variable unread when the code reading it went unplaced", () => {
+      const findings = checkRuntimeConfig([
+        ...twoRuntimes(),
+        makeCodeSummary({
+          name: "sharedConfig",
+          file: "src/lib/config.ts",
+          envReads: ["INDEX_TABLE_NAME", "NOTIFY_TOPIC_ARN"],
+        }),
+      ]);
+      expect(findings.filter((f) => f.kind === "boundaryFieldUnused")).toEqual(
+        [],
+      );
+    });
+
+    it("still reports a handler reading what its own function does not declare", () => {
+      const findings = checkRuntimeConfig([
+        ...twoRuntimes(),
+        makeCodeSummary({
+          name: "indexer",
+          file: "src/handlers/indexer.ts",
+          envReads: ["NOTIFY_TOPIC_ARN"],
+          runsInUnit: "IndexerFunction",
+        }),
+        makeCodeSummary({
+          name: "sharedConfig",
+          file: "src/lib/config.ts",
+          envReads: ["ANYTHING"],
+        }),
+      ]);
       const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
       expect(unknown).toHaveLength(1);
-      expect(unknown[0].description).toContain("NotifierFunction");
+      expect(unknown[0].description).toContain("NOTIFY_TOPIC_ARN");
+      expect(unknown[0].description).toContain("IndexerFunction");
+    });
+
+    it("lets one runtime's directory answer on its own", () => {
+      const findings = checkRuntimeConfig([
+        makeRuntimeProvider({
+          instanceName: "IndexerFunction",
+          envVars: [],
+          codeScope: { kind: "codeUri", path: "" },
+          namesUnit: true,
+        }),
+        makeCodeSummary({
+          name: "sharedConfig",
+          file: "src/lib/config.ts",
+          envReads: ["INDEX_TABLE_NAME"],
+        }),
+      ]);
+      const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
+      expect(unknown).toHaveLength(1);
+      expect(unknown[0].description).toContain("INDEX_TABLE_NAME");
     });
   });
 

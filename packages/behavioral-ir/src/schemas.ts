@@ -124,14 +124,16 @@ export const FindingKindSchema = z.enum([
    */
   "scenarioCoverageGap",
   /**
-   * A runtime-config-bound provider summary declares no
-   * codeScope (or one we couldn't resolve to source files), so
-   * we can't pair its env-var contract against any code.
-   * Emitted by checkRuntimeConfig as info — a heads-up that
-   * verification was skipped, not a defect in the code itself.
-   * Common cause: raw CloudFormation that uses S3-built
-   * artifacts (no `CodeUri`) without a `Metadata.SussCodeScope`
-   * annotation.
+   * suss could not tell which code a runtime runs, so it paired
+   * that runtime's env-var contract against none. Emitted by
+   * checkRuntimeConfig as info — a heads-up that verification was
+   * skipped, not a defect in the code itself. Two ways to get
+   * here. A provider declares no codeScope (or one we couldn't
+   * resolve to source files), commonly raw CloudFormation that
+   * uses S3-built artifacts without a `Metadata.SussCodeScope`
+   * annotation. Or several providers declare a directory holding
+   * the same source file and the code there names no deployable
+   * unit, so nothing distinguishes them.
    */
   "runtimeScopeUnknown",
   /**

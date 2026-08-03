@@ -69,6 +69,19 @@ describe("runtime-config over two Lambdas on one CodeUri", () => {
     expect(retry[0].description).toContain("NotifierFunction");
   });
 
+  it("reports the module neither function can claim once, and blames nothing", async () => {
+    const findings = await runPipeline();
+    const fromShared = findings.filter((f) =>
+      f.consumer.location.file.includes("config/logging"),
+    );
+    expect(fromShared.map((f) => f.kind)).toEqual(["runtimeScopeUnknown"]);
+    expect(fromShared[0].severity).toBe("info");
+    expect(fromShared[0].description).toContain("2 runtimes");
+    expect(findings.filter((f) => f.description.includes("LOG_LEVEL"))).toEqual(
+      [],
+    );
+  });
+
   it("does not call either function's declaration unused", async () => {
     const findings = await runPipeline();
     const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
