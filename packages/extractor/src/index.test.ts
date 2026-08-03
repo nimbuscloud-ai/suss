@@ -1134,6 +1134,19 @@ describe("detectGaps", () => {
     expect(gaps[0]?.description).toContain("3 returns");
   });
 
+  it("carries through what the reader could not make out about the boundary", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      unreadBinding: "The type whose field widget belongs to is not stated",
+    };
+    const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.type).toBe("unreadOutcome");
+    expect(gaps[0]?.description).toContain("widget");
+  });
+
   it("says so when there was no body behind the declaration", () => {
     const raw: RawCodeStructure = {
       ...twoPathRaw,

@@ -56,7 +56,14 @@ export const SIMPLEST_APOLLO_RESOLVER: ApolloResolverSpec = {
 /** What the oracles expect back, whichever way the program was written. */
 export interface RenderedResolverShape {
   files: Record<string, string>;
-  typeName: string;
+  /**
+   * The type whose field the program answers, or null where the program
+   * does not say. A field resolver on a class that names no type is the
+   * one shape with no answer: the class argument is where the type
+   * would have been written. Nothing should bind that field to a type,
+   * because every type is a guess.
+   */
+  typeName: string | null;
   fieldName: string;
   /**
    * The name the source gives the unit, where the source gives it one.
@@ -274,7 +281,7 @@ const nestDecorators: DispatchTable<
     typeName: OWNER_TYPE,
   }),
   // With no type argument the class says nothing about which type it
-  // resolves for, and the operation kind is the answer.
+  // resolves for, and the operation decorator has to answer.
   noTypeArgument: () => ({
     preamble: [GQL_IMPORT],
     applied: "@Resolver()",
@@ -308,12 +315,23 @@ const nestDecorators: DispatchTable<
   }),
 };
 
-/** The type a field's binding names, given what the class announced. */
-function resolvedTypeName(spec: NestResolverSpec, declared: string): string {
+/**
+ * The type a field's binding names, given what the class announced, or
+ * null where the program names none.
+ *
+ * `@Query` and `@Mutation` put their field on the root type of the same
+ * name, so those two say it themselves. `@ResolveField` reads the type
+ * off the class decorator's argument, so a class without one leaves the
+ * program silent on which type the field belongs to.
+ */
+function resolvedTypeName(
+  spec: NestResolverSpec,
+  declared: string,
+): string | null {
   if (declared !== "") {
     return declared;
   }
-  return spec.operation === "ResolveField" ? OWNER_TYPE : spec.operation;
+  return spec.operation === "ResolveField" ? null : spec.operation;
 }
 
 function nestMethodLines(spec: NestResolverSpec): string[] {

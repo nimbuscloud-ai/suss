@@ -234,11 +234,10 @@ export type DiscoveryMatch =
        * The adapter populates `DiscoveredUnit.resolverInfo` so the
        * produced binding carries `graphql-resolver(typeName, fieldName)`.
        * `typeName` resolves from the class decorator's first argument
-       * (`@Resolver(() => User)` → `"User"`); when the class decorator
-       * has no argument it defaults to the operation kind (`"Query"`,
-       * `"Mutation"`, `"Subscription"`). `fieldName` reads the method
-       * decorator's `{ name }` option override when present, otherwise
-       * the method name.
+       * (`@Resolver(() => User)` → `"User"`), and from
+       * `methodDecoratorTypeMap` when the class decorator has no
+       * argument. `fieldName` reads the method decorator's `{ name }`
+       * option override when present, otherwise the method name.
        */
       type: "decoratedMethod";
       /**
@@ -259,6 +258,18 @@ export type DiscoveryMatch =
        */
       classDecorators: string[];
       methodDecorators: string[];
+      /**
+       * Method decorator name → the type its field hangs off when the
+       * class decorator names none. NestJS puts `@Query` on the root
+       * `Query` type and `@Mutation` on `Mutation` whatever the class
+       * says, so those two answer for themselves.
+       *
+       * A decorator the map leaves out has no answer of its own, and a
+       * class that names no type leaves the field's owner unread. The
+       * binding then names no type and pairs with nothing, rather than
+       * claiming a field the schema does not have.
+       */
+      methodDecoratorTypeMap: Record<string, string>;
     }
   | {
       /**

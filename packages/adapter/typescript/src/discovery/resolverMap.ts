@@ -5,7 +5,9 @@
 //
 // The map, the per-type object, the function under a field and the
 // schema are each asked of the fact layer, so a resolver map assembled
-// across modules reads the same as one written at the construction.
+// across modules reads the same as one written at the construction. A
+// spread in either object is the same question again, asked of the name
+// being spread.
 
 import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 
@@ -14,6 +16,7 @@ import {
   couldNameAValue,
   functionValueOf,
   objectLiteralOf,
+  propertiesOf,
   propertyValueOf,
 } from "./resolveValue.js";
 
@@ -73,7 +76,7 @@ export function discoverResolverMaps(
     const schemaSdl = extractTypeDefsSdl(config, resolution);
 
     // Walk type → field → function.
-    for (const typeProp of resolversObj.getProperties()) {
+    for (const typeProp of propertiesOf(resolversObj, resolution)) {
       const typeName = resolverPropertyName(typeProp);
       if (typeName === null || excludeTypes.has(typeName)) {
         continue;
@@ -82,7 +85,7 @@ export function discoverResolverMaps(
       if (typeObj === null) {
         continue;
       }
-      for (const fieldProp of typeObj.getProperties()) {
+      for (const fieldProp of propertiesOf(typeObj, resolution)) {
         const fieldName = resolverPropertyName(fieldProp);
         if (fieldName === null) {
           continue;

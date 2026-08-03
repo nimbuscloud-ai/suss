@@ -45,17 +45,10 @@ const SEED = envInt("SUSS_FUZZ_SEED", 20260801);
 // ---------------------------------------------------------------------------
 
 const arbSoundApolloShape: fc.Arbitrary<ApolloResolverSpec> =
-  arbApolloResolverSpec.filter((spec) => spec.route !== "spreadIntoLiteral");
+  arbApolloResolverSpec;
 
 const arbSoundNestShape: fc.Arbitrary<NestResolverSpec> =
-  arbNestResolverSpec.filter(
-    (spec) =>
-      spec.method !== "arrowProperty" &&
-      !(
-        spec.announcement === "noTypeArgument" &&
-        spec.operation === "ResolveField"
-      ),
-  );
+  arbNestResolverSpec.filter((spec) => spec.method !== "arrowProperty");
 
 describe("shape fuzzer, sound tier (apollo)", () => {
   it(

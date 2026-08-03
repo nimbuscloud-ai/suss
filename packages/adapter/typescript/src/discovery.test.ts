@@ -1244,6 +1244,68 @@ describe("resolverMap discovery, a map assembled across modules", () => {
     expect(units[0]?.func?.getText()).toContain("pong");
   });
 
+  it("reads a type's fields built elsewhere and spread in", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      const QueryFields = { ping: () => "pong" };
+      const resolvers = { Query: { ...QueryFields, version: () => "1" } };
+      new ApolloServer({ typeDefs: "", resolvers });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping", "Query.version"]);
+  });
+
+  it("reads whole types another module exports and spreads into the map", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "query.ts",
+      `export const queryResolvers = { Query: { ping: () => "pong" } };`,
+    );
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      import { queryResolvers } from "./query.js";
+      new ApolloServer({ typeDefs: "", resolvers: { ...queryResolvers } });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
+  it("walks an object that spreads its way back to itself once", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      const fields: any = { ping: () => "pong", ...(fields ?? {}) };
+      new ApolloServer({ typeDefs: "", resolvers: { Query: fields } });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.name)).toEqual(["Query.ping"]);
+  });
+
   it("reads the schema off a constant another module exports", () => {
     const project = createProject();
     project.createSourceFile(
@@ -2139,6 +2201,11 @@ function makeDecoratedMethodPattern(
       importModule: "@nestjs/graphql",
       classDecorators: ["Resolver"],
       methodDecorators: ["Query", "Mutation", "ResolveField", "Subscription"],
+      methodDecoratorTypeMap: {
+        Query: "Query",
+        Mutation: "Mutation",
+        Subscription: "Subscription",
+      },
       ...overrides,
     },
   };
@@ -2360,7 +2427,7 @@ describe("decoratedMethod discovery", () => {
     expect(units).toHaveLength(0);
   });
 
-  it("falls back to the operation kind for typeName when @Resolver() is bare", () => {
+  it("reads typeName off the operation decorator when @Resolver() is bare", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "stub.ts",
@@ -2400,6 +2467,44 @@ describe("decoratedMethod discovery", () => {
     expect(units[0].resolverInfo).toEqual({
       typeName: "Pet",
       fieldName: "all",
+    });
+  });
+
+  it("names no type for a field resolver on a class that names none", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { ResolveField, Resolver } from "@nestjs/graphql";
+      @Resolver()
+      class Bare {
+        @ResolveField(() => String)
+        label() { return "widget"; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units[0].resolverInfo).toEqual({ typeName: "", fieldName: "label" });
+  });
+
+  it("keeps the class's type for a field resolver that has one", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { ResolveField, Resolver } from "@nestjs/graphql";
+      @Resolver(() => Widget)
+      class WidgetResolver {
+        @ResolveField(() => String)
+        label() { return "widget"; }
+      }
+      declare class Widget { id: string; }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units[0].resolverInfo).toEqual({
+      typeName: "Widget",
+      fieldName: "label",
     });
   });
 

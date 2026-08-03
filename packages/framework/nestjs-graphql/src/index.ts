@@ -10,10 +10,19 @@
 // nothing here. Decorator-driven discovery covers it.
 //
 // Resolver typeName comes from the class decorator's first argument
-// (`@Resolver(() => User)` → "User"). Class decorators with no
-// argument fall back to the operation kind ("Query" / "Mutation" /
-// "Subscription") so top-level operation classes still produce
-// well-formed `graphql-resolver` bindings.
+// (`@Resolver(() => User)` → "User"). A class decorator with no
+// argument leaves the operation decorator to answer: `@Query` puts its
+// field on the root `Query` type and `@Mutation` on `Mutation`, so a
+// top-level operation class still produces a well-formed
+// `graphql-resolver` binding.
+//
+// `@ResolveField` is the one that cannot answer for itself. The type it
+// resolves a field on is what the class decorator's argument would have
+// named, so on a class that names none there is nothing left to read it
+// from. The binding then names no type, the summary carries a gap
+// saying so, and nothing pairs with it. NestJS rejects that class at
+// startup; suss reports what it could not read rather than picking a
+// root operation type and claiming a field the schema does not have.
 //
 // Field name reads the method-decorator's `name` option override
 // (`@Query(() => User, { name: "lookupUser" })`) when present;
@@ -78,6 +87,14 @@ export function nestjsGraphqlFramework(
             "ResolveField",
             "Subscription",
           ],
+          // The three NestJS routes to a root operation type, each
+          // named after the type it puts its field on. `ResolveField`
+          // is deliberately absent: it needs the class to name a type.
+          methodDecoratorTypeMap: {
+            Query: "Query",
+            Mutation: "Mutation",
+            Subscription: "Subscription",
+          },
         },
         requiresImport: ["@nestjs/graphql"],
       },

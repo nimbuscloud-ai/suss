@@ -62,6 +62,19 @@ describe("boundaryKey", () => {
     ).toBe("gql:Query.user");
   });
 
+  it("has no key for a resolver whose type the source never named", () => {
+    expect(
+      boundaryKey(
+        graphqlResolverBinding({
+          transport: "http",
+          recognition: "nestjs-graphql",
+          typeName: "",
+          fieldName: "user",
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it("has no key for a boundary shape it does not know", () => {
     // A runtime-config or storage binding names a boundary with no
     // counterpart to pair against, so it stays out of the buckets.

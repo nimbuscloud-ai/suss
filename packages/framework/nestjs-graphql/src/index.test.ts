@@ -81,6 +81,20 @@ describe("nestjsGraphqlFramework — pack shape", () => {
     }
   });
 
+  it("names a type for every operation decorator that puts one on a root type", () => {
+    const match = nestjsGraphqlFramework().discovery[0].match;
+    if (match.type === "decoratedMethod") {
+      expect(match.methodDecoratorTypeMap).toEqual({
+        Query: "Query",
+        Mutation: "Mutation",
+        Subscription: "Subscription",
+      });
+      // A field resolver takes its type from the class decorator's
+      // argument, so it has no answer of its own to give.
+      expect(match.methodDecoratorTypeMap.ResolveField).toBeUndefined();
+    }
+  });
+
   it("adds the wrapper decorators a project names", () => {
     const match = nestjsGraphqlFramework({
       classDecorators: ["InternalResolver"],
@@ -105,6 +119,7 @@ describe("nestjsGraphqlFramework — integration", () => {
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual([
       "HealthResolver.ping",
+      "UntypedFieldResolver.homeWorkspace",
       "UserResolver.createUser",
       "UserResolver.findUser",
       "UserResolver.userUpdated",
@@ -145,7 +160,7 @@ describe("nestjsGraphqlFramework — integration", () => {
     });
   });
 
-  it("falls back to the operation kind as typeName when @Resolver() has no argument", () => {
+  it("takes the typeName off @Query when @Resolver() has no argument", () => {
     const ping = summaries.find(
       (s) => s.identity.name === "HealthResolver.ping",
     );
@@ -159,6 +174,22 @@ describe("nestjsGraphqlFramework — integration", () => {
     });
   });
 
+  it("names no type for a field resolver on a class that names none", () => {
+    const untyped = summaries.find(
+      (s) => s.identity.name === "UntypedFieldResolver.homeWorkspace",
+    );
+    if (!untyped) {
+      throw new Error("homeWorkspace missing");
+    }
+    expect(untyped.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "graphql-resolver",
+      typeName: "",
+      fieldName: "homeWorkspace",
+    });
+    const gap = untyped.gaps.find((g) => g.type === "unreadOutcome");
+    expect(gap?.description).toContain("homeWorkspace");
+  });
+
   it("classifies @Subscription as a Subscription-typed resolver", () => {
     const sub = summaries.find(
       (s) => s.identity.name === "UserResolver.userUpdated",
@@ -166,10 +197,9 @@ describe("nestjsGraphqlFramework — integration", () => {
     if (!sub) {
       throw new Error("subscription missing");
     }
-    // @Resolver(() => User) on the class wins over the method-kind
-    // default — the subscription is "on User" semantically. The
-    // operation-kind fallback only kicks in for the no-argument
-    // @Resolver() case.
+    // @Resolver(() => User) on the class wins over the decorator's own
+    // type name, so the subscription reads as "on User". The
+    // decorator answers only for a class that names nothing.
     expect(sub.identity.boundaryBinding?.semantics).toMatchObject({
       name: "graphql-resolver",
       typeName: "User",

@@ -9,11 +9,11 @@
 //   - Schema-first shapes where resolvers are attached via
 //     `addResolversToSchema` or `makeExecutableSchema` — separate
 //     discovery pattern, tracked with the stub-appsync work.
-//   - `mergeResolvers` / `import resolvers from "./queries"` spread
-//     forms that compose resolvers across modules. v0 stops at the
-//     object literal the constructor sees; multi-module composition
-//     is a follow-up that needs cross-module tracking (same story as
-//     the axios-wrapper expansion in the adapter).
+//   - `mergeResolvers(...)` and anything else that composes the map by
+//     calling a function. A map assembled by naming and spreading
+//     objects reads, whichever module each part was written in, because
+//     the adapter follows the names; a map some function returns has no
+//     written form to follow.
 //   - Subscription resolver shape: `Subscription.fieldName` can be
 //     either a function or `{ subscribe, resolve }`. v0 discovers only
 //     the function form; the `{ subscribe }` shape is opt-out via

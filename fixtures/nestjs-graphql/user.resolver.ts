@@ -68,11 +68,23 @@ export class UserResolver {
 }
 
 // Top-level operation class — no `@Resolver(() => Type)` argument.
-// The class typeName falls back to the operation kind.
+// `@Query` puts its field on the root Query type whatever the class
+// says, so the binding is well formed without one.
 @Resolver()
 export class HealthResolver {
   @Query(() => Boolean)
   ping() {
     return true;
+  }
+}
+
+// A field resolver with no class type argument, which is the shape
+// NestJS rejects at startup. The type this field hangs off is what the
+// class argument would have named, so nothing here says it.
+@Resolver()
+export class UntypedFieldResolver {
+  @ResolveField(() => Workspace)
+  async homeWorkspace(@Parent() user: User) {
+    return workspaceService.forUser(user.id);
   }
 }
