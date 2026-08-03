@@ -33,12 +33,20 @@ export function bodyShapesMatch(
     return "unknown";
   }
 
-  // A ref carries a name and no structure, so two refs sharing a name
-  // could still describe different types: two repositories each
-  // declaring a `User` is the case cross-repository checking exists to
-  // catch. Nothing here can decide it, and answering "match" would hide
-  // the drift, so it stays undecided until a ref carries provenance and
-  // a content hash.
+  // A ref carries a name and no structure. Two refs naming the same
+  // declaration are the same type, and that is the one case this can
+  // decide. Two `User`s from different files are the drift
+  // cross-repository checking exists to catch, and a ref with no file
+  // behind it is a name the language or a dependency owns, which says
+  // nothing about whether two of them agree. Both stay undecided,
+  // because answering "match" would hide a difference.
+  if (actual.type === "ref" && declared.type === "ref") {
+    const sameDeclaration =
+      actual.from !== undefined &&
+      actual.from === declared.from &&
+      actual.name === declared.name;
+    return sameDeclaration ? "match" : "unknown";
+  }
   if (actual.type === "ref" || declared.type === "ref") {
     return "unknown";
   }

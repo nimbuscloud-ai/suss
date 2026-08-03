@@ -1370,6 +1370,9 @@
             },
             "name": {
               "type": "string"
+            },
+            "from": {
+              "type": "string"
             }
           },
           "required": ["type", "name"],
