@@ -92,14 +92,13 @@ export const rule = (
 // Tuple store
 // ---------------------------------------------------------------------------
 
-// Tuple values can contain anything a caller interns, so the joined
-// key uses a control character. Written as an escape so this file
-// stays text to git rather than turning into a binary blob.
-const SEP = "\u0000";
+// A tuple value can be any string a caller interns, so no separator
+// character is safe to join on. Each atom carries its own length
+// instead, which no value can forge.
+const atomKey = (a: Atom): string =>
+  typeof a === "number" ? `n${a}:` : `s${a.length}:${a}`;
 
-const atomKey = (a: Atom): string => `${typeof a === "number" ? "n" : "s"}${a}`;
-
-const keyOf = (tuple: Tuple): string => tuple.map(atomKey).join(SEP);
+const keyOf = (tuple: Tuple): string => tuple.map(atomKey).join("");
 
 interface Relation {
   keys: Set<string>;

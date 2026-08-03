@@ -195,10 +195,11 @@ export function checkRuntimeConfig(
  * be told, and names nothing in the code as at fault.
  */
 /**
- * Joins a document path to a variable name for a set key. A NUL
- * cannot appear in either half, so the two can never run together.
+ * Joins a document path to a variable name for a set key. The ASCII
+ * unit separator cannot appear in either half, so the two can never
+ * run together.
  */
-const DOCUMENT_NAME_SEPARATOR = "\0";
+const DOCUMENT_NAME_SEPARATOR = "\u001f";
 
 function contestedFindings(
   codeReads: EnvVarRead[],

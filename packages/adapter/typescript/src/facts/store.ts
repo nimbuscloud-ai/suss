@@ -116,10 +116,10 @@ const MAX_MODULE_HOPS = 6;
 
 /**
  * Joins the two trailing columns of a three-column relation into one
- * index key. A NUL cannot appear in a module specifier or an
- * identifier, so the halves come back apart intact.
+ * index key. The ASCII unit separator cannot appear in a module
+ * specifier or an identifier, so the halves come back apart intact.
  */
-const PAIR_SEPARATOR = "\0";
+const PAIR_SEPARATOR = "\u001f";
 
 export class ResolutionStore {
   private readonly db = new Database();
