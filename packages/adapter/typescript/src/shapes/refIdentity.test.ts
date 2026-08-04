@@ -12,7 +12,7 @@ import { createTestProject } from "@suss/test-project";
 
 import { shapeFromNodeType } from "./typeShapes.js";
 
-import type { TypeShape } from "@suss/ir-core/schemas";
+import type { TypeShape } from "@suss/behavioral-ir";
 import type { Node, Project } from "ts-morph";
 
 /** The initializer of `const <name> = ...`, as the walk would reach it. */

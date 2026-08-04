@@ -12,7 +12,7 @@ import {
   dispatchByType,
   safeParseSummaries,
 } from "@suss/behavioral-ir";
-import { pairSummaries } from "@suss/checker";
+import { pairSummaries, summaryWithDefinitionsInlined } from "@suss/checker";
 
 import type {
   BehavioralSummary,
@@ -42,6 +42,22 @@ import type {
 // Body shape rendering
 // ---------------------------------------------------------------------------
 
+/** Summaries with their named types spelled out, when the reader asked. */
+function spelledOutIfAsked(
+  summaries: BehavioralSummary[],
+  types: boolean | undefined,
+): BehavioralSummary[] {
+  return types === true
+    ? summaries.map(summaryWithDefinitionsInlined)
+    : summaries;
+}
+
+/** A path as somebody would say it: the last two parts, no more. */
+function shortPath(file: string): string {
+  const parts = file.split("/").filter((p) => p.length > 0);
+  return parts.slice(-2).join("/");
+}
+
 const SHAPE_FORMATTERS: DispatchTable<TypeShape, string> = {
   record: (s) => {
     const keys = Object.keys(s.properties);
@@ -54,7 +70,11 @@ const SHAPE_FORMATTERS: DispatchTable<TypeShape, string> = {
     return `{ ${keys.slice(0, 4).join(", ")}, ... }`;
   },
   literal: (s) => JSON.stringify(s.value),
-  ref: (s) => s.name,
+  // A name, and where the type is written. A reader who wants the
+  // fields asks for them; printing every field of every named type is
+  // how one summary came to be a megabyte.
+  ref: (s) =>
+    s.from === undefined ? s.name : `${s.name} (${shortPath(s.from)})`,
   array: (s) => `[${formatBodyShape(s.items)}]`,
   dictionary: (s) => `{ [key]: ${formatBodyShape(s.values)} }`,
   union: (s) => s.variants.map(formatBodyShape).join(" | "),
@@ -997,10 +1017,20 @@ function formatEffectDeps(deps: string[] | null | undefined): string {
 
 export interface InspectOptions {
   file: string;
+  /**
+   * Spell out the types a summary names rather than naming them.
+   *
+   * Naming is the default because a boundary answering with a `User`
+   * is what a reader wants to see, and printing every field of every
+   * named type is how one summary came to be a megabyte. Somebody
+   * chasing a particular shape asks for it.
+   */
+  types?: boolean;
 }
 
 export interface DirOptions {
   dir: string;
+  types?: boolean;
 }
 
 export interface DiffOptions {
@@ -1048,7 +1078,10 @@ export function inspect(options: InspectOptions): void {
   }
 
   const content = fs.readFileSync(filePath, "utf-8");
-  const summaries = parseSummaryFile(filePath, content);
+  const summaries = spelledOutIfAsked(
+    parseSummaryFile(filePath, content),
+    options.types,
+  );
   const ctx = buildRenderCtx(summaries);
 
   // Group by file; within each file, order by line number. File insertion
@@ -1384,7 +1417,10 @@ function parseSummaryFile(
 }
 
 export function inspectDir(options: DirOptions): void {
-  const summaries = readSummariesFromDir(options.dir);
+  const summaries = spelledOutIfAsked(
+    readSummariesFromDir(options.dir),
+    options.types,
+  );
   const result = pairSummaries(summaries);
 
   // Paired boundaries

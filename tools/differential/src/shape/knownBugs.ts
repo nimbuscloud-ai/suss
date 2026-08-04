@@ -103,17 +103,14 @@ export const REACH_BUGS: ReproducedBug[] = [
   },
 ];
 
-/** Wrong behaviour at an HTTP registration call. */
-export const HANDLER_BUGS: ReproducedBug[] = [
-  ...REACH_BUGS,
-  {
-    dimension: "result",
-    value: "wideNamedType",
-    signature: "invariant:noRunawaySummary",
-    wrong:
-      "a wide type the project declares is walked across its whole breadth",
-  },
-];
+/**
+ * Wrong behaviour at an HTTP registration call.
+ *
+ * A wide type the project declares used to be walked across its whole
+ * breadth at every mention. It is now written down once and named
+ * everywhere else, so the sound tier carries the result dimension.
+ */
+export const HANDLER_BUGS: ReproducedBug[] = [...REACH_BUGS];
 
 /**
  * Every way a class can announce a controller now resolves, so the

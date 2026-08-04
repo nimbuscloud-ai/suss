@@ -292,7 +292,7 @@ describe("shape fuzzer, reach paths still in the tree", () => {
 
 describe("shape fuzzer, a response typed by a library type", () => {
   it(
-    "a wide type is walked across its whole breadth, into a summary nobody can read",
+    "writes a wide type down once rather than at every mention",
     { timeout: 120_000 },
     async () => {
       const result = await runShapeDifferential(
@@ -311,8 +311,8 @@ describe("shape fuzzer, a response typed by a library type", () => {
       );
       expect(
         result.findings.map(findingSignature),
-        `the type walk may now bound its breadth. If it does, drop this and let the sound tier carry the dimension.\n${formatShapeFailure(result)}`,
-      ).toContain("invariant:noRunawaySummary");
+        formatShapeFailure(result),
+      ).not.toContain("invariant:noRunawaySummary");
     },
   );
 });

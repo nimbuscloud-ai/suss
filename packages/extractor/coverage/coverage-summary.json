@@ -19,10 +19,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 131,
-      "covered": 128,
+      "total": 135,
+      "covered": 130,
       "skipped": 0,
-      "pct": 97.7
+      "pct": 96.29
     },
     "branchesTrue": {
       "total": 0,
@@ -51,10 +51,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 129,
-      "covered": 126,
+      "total": 133,
+      "covered": 128,
       "skipped": 0,
-      "pct": 97.67
+      "pct": 96.24
     }
   },
   "src/packHelpers.ts": {

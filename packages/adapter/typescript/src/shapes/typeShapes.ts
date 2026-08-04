@@ -22,6 +22,10 @@
 // location (generic type params depend on use-site context) without forcing
 // callers to plumb Types through themselves.
 
+import { createHash } from "node:crypto";
+
+import { definitionsInProgress } from "./definitions.js";
+
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { Node, SourceFile, Symbol as TsSymbol, Type } from "ts-morph";
 
@@ -232,7 +236,7 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   }
 
   if (type.isObject() || type.isClassOrInterface()) {
-    return objectToShape(type, ctx);
+    return namedOnce(type, ctx) ?? objectToShape(type, ctx);
   }
 
   // Enum types — each member is a string or number literal. Collect members
@@ -468,6 +472,71 @@ function isOutsideProject(file: SourceFile): boolean {
  * is what tells them apart, and it is left off for a name the language
  * or a dependency owns, since those do mean the same thing everywhere.
  */
+/**
+ * A named type written down once, and named here.
+ *
+ * A reader following the name finds it in the summary's table, and a
+ * type mentioned twenty times costs one expansion rather than twenty.
+ * Answers null when nothing is collecting definitions, or when the type
+ * has no name to file it under, and the caller expands as before.
+ */
+function namedOnce(type: Type, ctx: ConvertContext): TypeShape | null {
+  const table = definitionsInProgress();
+  if (table === null) {
+    return null;
+  }
+  const named = refFromType(type, ctx);
+  if (named.type !== "ref") {
+    return null;
+  }
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  const name = symbol?.getName();
+  if (name === undefined || name === "__type" || name === "__object") {
+    return null;
+  }
+
+  const key = definitionKeyFor(type, named.name);
+  const filed: TypeShape = { ...named, def: key };
+  if (!table.has(key)) {
+    // Reserved before expanding, so a type that refers to itself meets
+    // its own key and stops rather than going round again.
+    table.reserve(key);
+    // Expanded as though nothing had been read yet. A definition read
+    // at depth five and reused everywhere would make the summary
+    // depend on which mention the walk reached first, which is a thing
+    // suss is supposed to be free of.
+    const expanded = objectToShape(type, {
+      enclosing: ctx.enclosing,
+      depth: 0,
+      seen: new Set(),
+    });
+    if (expanded === null) {
+      return null;
+    }
+    table.define(key, expanded);
+  }
+  return filed;
+}
+
+/**
+ * What a type is, as a key.
+ *
+ * The name alone is not it. Every instantiation of one generic reports
+ * the generic's own name, so `Omit<User, "secret">` and `Omit<Order,
+ * "total">` are both `Omit`. The printed type says which is which, and
+ * it is read from nowhere so two files spell the same type the same
+ * way. The name stays on the front so a person reading the table can
+ * still tell what they are looking at.
+ */
+function definitionKeyFor(type: Type, name: string): string {
+  const written = withoutImportQualifiers(type.getText());
+  return `${name}@${shortHash(written)}`;
+}
+
+function shortHash(text: string): string {
+  return createHash("sha1").update(text).digest("hex").slice(0, 12);
+}
+
 function refFromType(type: Type, ctx: ConvertContext): TypeShape {
   const symbol = type.getAliasSymbol() ?? type.getSymbol();
   if (symbol) {

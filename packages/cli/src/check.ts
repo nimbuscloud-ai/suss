@@ -12,6 +12,7 @@ import {
   checkAll,
   checkPair,
   countsForThreshold,
+  summaryWithDefinitionsInlined,
 } from "@suss/checker";
 import {
   applyIntentSuppressions,
@@ -401,7 +402,10 @@ function readSummaries(file: string): BehavioralSummary[] {
       `suss could not read ${resolved} as summaries. It should be the output of \`suss extract\` or \`suss contract\`. What did not fit:\n${formatParseIssues(result.error.issues)}`,
     );
   }
-  return result.data;
+  // Spelled out on the way in, so everything downstream reads
+  // structure. A summary writes a named type once and refers to it
+  // after that, and a comparison of two names is not a comparison.
+  return result.data.map(summaryWithDefinitionsInlined);
 }
 
 function formatParseIssues(

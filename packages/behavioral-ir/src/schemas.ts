@@ -802,6 +802,12 @@ export const BehavioralSummarySchema = z.object({
   transitions: z.array(TransitionSchema),
   gaps: z.array(GapSchema),
   confidence: ConfidenceInfoSchema,
+  /**
+   * The types this summary refers to but does not spell out, each
+   * written once and keyed the way `typeDefinitionKey` builds a key out
+   * of a ref.
+   */
+  definitions: z.record(z.string(), TypeShapeSchema).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 

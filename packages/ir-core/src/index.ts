@@ -35,6 +35,8 @@ export {
   SourceLocationSchema,
   StorageRelationalSemanticsSchema,
   TypeShapeSchema,
+  typeDefinitionKey,
+  withDefinitionsInlined,
 } from "./schemas.js";
 
 // ---------------------------------------------------------------------------

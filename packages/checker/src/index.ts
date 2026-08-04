@@ -98,6 +98,10 @@ export {
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
 export { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
+
+import { summaryWithDefinitionsInlined } from "./spelledOut.js";
+
+export { summaryWithDefinitionsInlined } from "./spelledOut.js";
 export { checkRelationalStorage } from "./storage/relationalPairing.js";
 export { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 export {
@@ -110,7 +114,25 @@ export {
   validateRule,
 } from "./suppressions.js";
 
+/**
+ * Compare one boundary's two sides.
+ *
+ * Each side is read with the types it names put back into its shapes
+ * first. A summary writes a named type once and refers to it after
+ * that, and a comparison of two refs can only say "same name", so the
+ * table goes back in and every check below reads structure the way it
+ * always did.
+ */
 export function checkPair(
+  provider: BehavioralSummary,
+  consumer: BehavioralSummary,
+): Finding[] {
+  const spelledOut = summaryWithDefinitionsInlined(provider);
+  const consuming = summaryWithDefinitionsInlined(consumer);
+  return checkSpelledOutPair(spelledOut, consuming);
+}
+
+function checkSpelledOutPair(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
 ): Finding[] {
