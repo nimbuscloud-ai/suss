@@ -526,6 +526,7 @@ export function extractCodeStructure(
   invocationRecognizers: InvocationRecognizer[] = [],
   accessRecognizers: AccessRecognizer[] = [],
   barriers: DescentBarriers = NO_BARRIERS,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): RawCodeStructure {
   // One unit, one table. Every shape read while this runs writes the
   // types it names into it, and the summary carries them.
@@ -536,6 +537,7 @@ export function extractCodeStructure(
       invocationRecognizers,
       accessRecognizers,
       barriers,
+      resolveWrittenValue,
     ),
   );
   return read.definitions === null
@@ -549,6 +551,7 @@ function readCodeStructure(
   invocationRecognizers: InvocationRecognizer[],
   accessRecognizers: AccessRecognizer[],
   barriers: DescentBarriers,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   if (func === null) {
@@ -567,6 +570,7 @@ function readCodeStructure(
     invocationRecognizers,
     accessRecognizers,
     barriers,
+    resolveWrittenValue,
   );
   let branches = extracted.branches;
   const unmatchedReturns = countUnmatchedReturns(
@@ -1116,6 +1120,9 @@ function extractFromSourceFile(
         allInvocationRecognizers,
         allAccessRecognizers,
         barriers,
+        resolution === undefined
+          ? undefined
+          : (value) => resolution.resolveWrittenValue(value),
       );
 
       // Which deployable unit runs this code is independent of the

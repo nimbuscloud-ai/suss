@@ -155,11 +155,17 @@ export function extractRawBranches(
   invocationRecognizers: InvocationRecognizer[] = [],
   accessRecognizers: AccessRecognizer[] = [],
   barriers: DescentBarriers = NO_BARRIERS,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): RawBranchResult {
   const terminals = findTerminals(func, terminalPatterns, barriers);
   const invocations = extractInvocationEffects(func, barriers);
   const recognized = [
-    ...runInvocationRecognizers(func, invocationRecognizers, barriers),
+    ...runInvocationRecognizers(
+      func,
+      invocationRecognizers,
+      barriers,
+      resolveWrittenValue,
+    ),
     ...runAccessRecognizers(func, accessRecognizers, barriers),
   ];
 

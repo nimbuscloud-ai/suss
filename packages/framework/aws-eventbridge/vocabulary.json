@@ -1,5 +1,8 @@
 {
   "putEvents": "AWS SDK v3: EventBridgeClient operation name",
   "send": "AWS SDK v3: the client method a command is dispatched through",
-  "eventbridge": "AWS transport name, Amazon EventBridge"
+  "eventbridge": "AWS transport name, Amazon EventBridge",
+  "Entries": "AWS SDK v3: PutEventsCommandInput property holding the event entries",
+  "EventBusName": "AWS SDK v3: PutEventsRequestEntry property naming the target bus",
+  "DetailType": "AWS SDK v3: PutEventsRequestEntry property naming the event's detail-type"
 }

@@ -1,7 +1,7 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { isImportedFrom } from "@suss/adapter-typescript";
+import { isImportedFrom, ResolutionStore } from "@suss/adapter-typescript";
 import { boundaryKey } from "@suss/ir-core";
 import { createTestProject } from "@suss/test-project";
 
@@ -79,6 +79,7 @@ function recognizeAll(
     return raise("expected pack to declare invocationRecognizers");
   }
   const effects: Effect[] = [];
+  const store = new ResolutionStore([]);
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) {
       return;
@@ -88,6 +89,7 @@ function recognizeAll(
       sourceFile,
       extractArgs: (): EffectArg[] => extractArgsForTest(node),
       isImportedFrom,
+      resolveWrittenValue: (value: Node) => store.resolveWrittenValue(value),
     };
     for (const recognizer of recognizers) {
       const emitted = recognizer(node, ctx);
@@ -417,6 +419,32 @@ describe("eventbridge recognizer — skip cases", () => {
       true,
       false,
     ]);
+  });
+
+  it("names a detail type held in a const one import away", () => {
+    const file = makeProject(`
+      import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
+      import { ORDER_PLACED } from "./events";
+      const client = new EventBridgeClient({});
+      export async function publish(id: string) {
+        await client.send(new PutEventsCommand({
+          Entries: [{
+            EventBusName: process.env.BUS_NAME,
+            DetailType: ORDER_PLACED,
+            Detail: JSON.stringify({ id }),
+          }],
+        }));
+      }
+    `);
+    file
+      .getProject()
+      .createSourceFile(
+        "events.ts",
+        `export const ORDER_PLACED = "OrderPlaced";`,
+      );
+
+    const sends = messageSendEffectsOf(recognizeAll(file));
+    expect(sends.map(channelOf)).toEqual(["BUS_NAME#OrderPlaced"]);
   });
 
   it("ignores PutEventsCommand from the wrong module", () => {

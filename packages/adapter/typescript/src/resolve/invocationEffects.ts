@@ -118,6 +118,20 @@ export interface TsInvocationRecognizerContext {
    * aliased symbol still sits in the package that declared it.
    */
   isImportedFrom(identifier: Node, expectedModule: string): boolean;
+  /**
+   * The expression `value` is written as, followed through const
+   * bindings, imports, and re-export barrels. A recognizer asks this
+   * before claiming the source does not name something:
+   *
+   *   const url = "https://sqs/.../orders";
+   *   client.send(new SendMessageCommand({ QueueUrl: url }));
+   *
+   * Resolving `url` answers the string literal, and the recognizer's
+   * own pattern match runs on that. Null when the value has no written
+   * form (a parameter, a call result), which is when null on the
+   * binding is the truthful answer.
+   */
+  resolveWrittenValue(value: Node): Node | null;
 }
 
 export function isImportedFrom(
@@ -313,6 +327,7 @@ export function runInvocationRecognizers(
   func: FunctionRoot,
   recognizers: InvocationRecognizer[],
   barriers: DescentBarriers = NO_BARRIERS,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): RecognizedEffectLocation[] {
   if (recognizers.length === 0) {
     return [];
@@ -333,6 +348,9 @@ export function runInvocationRecognizers(
       sourceFile,
       extractArgs: () => extractArgs(node),
       isImportedFrom,
+      // A context built without a store answers null, and the
+      // recognizer's own pattern match runs on the raw node.
+      resolveWrittenValue: resolveWrittenValue ?? (() => null),
     };
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {
