@@ -503,13 +503,12 @@ function insertIntoTree(
     return insertIntoTree(branch, conditions, i, leaf);
   }
   if (node.kind === "leaf") {
-    // The leaf is the unconditional outcome; the conditioned arrival
-    // is the specific case. Branch, keeping the leaf as the else side.
+    // Branch; the leaf keeps whichever side the arrival does not take.
     const branch: TreeNode = {
       kind: "branch",
       predicate: pred,
-      thenBranch: { kind: "empty" },
-      elseBranch: node,
+      thenBranch: positive ? { kind: "empty" } : node,
+      elseBranch: positive ? node : { kind: "empty" },
     };
     return insertIntoTree(branch, conditions, i, leaf);
   }
