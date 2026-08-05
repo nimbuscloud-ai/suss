@@ -34,7 +34,7 @@
 // the comparison is skipped — absence of the finding doesn't imply
 // agreement.
 
-import { summaryRef } from "@suss/behavioral-ir";
+import { readMessageBusMetadata, summaryRef } from "@suss/behavioral-ir";
 
 import {
   buildInteractionIndex,
@@ -285,9 +285,7 @@ function channelOf(s: BehavioralSummary): string | null {
  * drains, or null when the consumer's channel already names the queue.
  */
 function consumedQueueOf(s: BehavioralSummary): string | null {
-  const meta = s.metadata as { messageBus?: { queue?: unknown } } | undefined;
-  const queue = meta?.messageBus?.queue;
-  return typeof queue === "string" ? queue : null;
+  return readMessageBusMetadata(s)?.queue ?? null;
 }
 
 /**
@@ -418,18 +416,7 @@ function splitBusChannel(
 function readPatternResolution(
   summary: BehavioralSummary,
 ): "exact" | "schedule" | "unresolvable" | null {
-  const meta = summary.metadata as
-    | { messageBus?: { patternResolution?: unknown } }
-    | undefined;
-  const resolution = meta?.messageBus?.patternResolution;
-  if (
-    resolution === "exact" ||
-    resolution === "schedule" ||
-    resolution === "unresolvable"
-  ) {
-    return resolution;
-  }
-  return null;
+  return readMessageBusMetadata(summary)?.patternResolution ?? null;
 }
 
 /** The runtime whose environment this producer's code is deployed with. */
@@ -549,27 +536,12 @@ function makeUnusedQueueFinding(
  */
 function makeUnresolvableRuleFinding(consumer: BehavioralSummary): Finding {
   const binding = consumer.identity.boundaryBinding as BoundaryBinding;
-  const meta = consumer.metadata as
-    | {
-        messageBus?: {
-          rule?: unknown;
-          eventBus?: unknown;
-          unresolvableReason?: unknown;
-        };
-      }
-    | undefined;
-  const rule =
-    typeof meta?.messageBus?.rule === "string"
-      ? meta.messageBus.rule
-      : consumer.identity.name;
-  const eventBus =
-    typeof meta?.messageBus?.eventBus === "string"
-      ? meta.messageBus.eventBus
-      : "default";
+  const meta = readMessageBusMetadata(consumer);
+  const rule = meta?.rule ?? consumer.identity.name;
+  const eventBus = meta?.eventBus ?? "default";
   const reason =
-    typeof meta?.messageBus?.unresolvableReason === "string"
-      ? meta.messageBus.unresolvableReason
-      : "the EventPattern couldn't be reduced to exact detail-types";
+    meta?.unresolvableReason ??
+    "the EventPattern couldn't be reduced to exact detail-types";
   return {
     kind: "unsupportedSemantics",
     boundary: binding,
