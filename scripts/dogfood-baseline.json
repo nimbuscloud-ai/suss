@@ -3,7 +3,7 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 219,
-    "internal": 1092,
+    "internal": 1099,
     "consumers": 341,
     "pairs": 333
   },
@@ -113,7 +113,7 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 8,
-      "internal": 5,
+      "internal": 12,
       "consumers": 0
     },
     "packages/framework/apollo": {
