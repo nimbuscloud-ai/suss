@@ -440,10 +440,18 @@ Each step lands separately with the tree green:
    before and after, findings that appeared or disappeared, and the
    extraction-time cost of resolution threading.
 
+## Decided
+
+- The wildcard token is `"*"` (Matt, 2026-08-05). Not `ANY`, which is
+  one vendor's spelling of the same claim; the CloudFormation reader
+  maps `ANY` to `"*"`.
+- Empty strings never signal a state. This was the proposal's thesis
+  and is now a standing rule: a field that means something when blank
+  gets a spelling the type system carries.
+
 ## Open questions
 
-1. The wildcard token: `"*"` or API Gateway's own `ANY`? And does
-   wildcard pairing land with this pass or after it?
+1. Does wildcard pairing land with this pass or after it?
 2. Unused-queue findings when unnamed sends share the bus technology:
    annotate with the count (recommended) or suppress. Suppression lets
    one dynamic send silence every unused-queue warning in the project.
