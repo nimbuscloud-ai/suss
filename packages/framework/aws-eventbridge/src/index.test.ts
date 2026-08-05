@@ -2,6 +2,7 @@ import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { isImportedFrom } from "@suss/adapter-typescript";
+import { boundaryKey } from "@suss/ir-core";
 import { createTestProject } from "@suss/test-project";
 
 import { eventBridgeFramework } from "./index.js";
@@ -271,6 +272,7 @@ describe("eventbridge recognizer — happy path", () => {
         }));
       }
     `);
+    // Both puts are recorded. Only the one the code named can pair.
     const sends = messageSendEffectsOf(recognizeAll(file));
     expect(sends.map(channelOf).sort()).toEqual([
       "ORDER_EVENT_BUS_NAME#OrderPlaced",
@@ -329,6 +331,7 @@ describe("eventbridge recognizer — happy path", () => {
         }));
       }
     `);
+    // Both puts are recorded. Only the one the code named can pair.
     const sends = messageSendEffectsOf(recognizeAll(file));
     expect(sends).toHaveLength(1);
     expect(channelOf(sends[0] ?? raise("no send"))).toBe(
@@ -338,7 +341,7 @@ describe("eventbridge recognizer — happy path", () => {
 });
 
 describe("eventbridge recognizer — skip cases", () => {
-  it("skips an entry whose DetailType isn't a string literal", () => {
+  it("records an entry whose detail type is worked out at runtime", () => {
     const file = makeProject(`
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
       const client = new EventBridgeClient({});
@@ -353,11 +356,14 @@ describe("eventbridge recognizer — skip cases", () => {
         }));
       }
     `);
-    // Channel identity can't form without a literal DetailType → skipped.
-    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
+    // The put happened. What it cannot say is which detail type, so
+    // that half is empty and the boundary pairs with nothing.
+    const [effect] = messageSendEffectsOf(recognizeAll(file));
+    const binding = effect?.binding ?? raise("no binding");
+    expect(boundaryKey(binding)).toBeNull();
   });
 
-  it("skips an entry whose EventBusName is a dynamic (non-env, non-literal) value", () => {
+  it("records an entry whose bus is worked out at runtime", () => {
     const file = makeProject(`
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
       const client = new EventBridgeClient({});
@@ -372,10 +378,12 @@ describe("eventbridge recognizer — skip cases", () => {
         }));
       }
     `);
-    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
+    const [effect] = messageSendEffectsOf(recognizeAll(file));
+    const binding = effect?.binding ?? raise("no binding");
+    expect(boundaryKey(binding)).toBeNull();
   });
 
-  it("keeps resolvable entries and drops unresolvable ones in the same call", () => {
+  it("records both entries when one of them names less than the other", () => {
     const file = makeProject(`
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
       const client = new EventBridgeClient({});
@@ -397,8 +405,16 @@ describe("eventbridge recognizer — skip cases", () => {
         }));
       }
     `);
+    // Both puts are recorded. Only the one the code named can pair.
     const sends = messageSendEffectsOf(recognizeAll(file));
-    expect(sends.map(channelOf)).toEqual(["ORDER_EVENT_BUS_NAME#OrderPlaced"]);
+    expect(sends.map(channelOf)).toEqual([
+      "ORDER_EVENT_BUS_NAME#OrderPlaced",
+      "",
+    ]);
+    expect(sends.map((send) => boundaryKey(send.binding) !== null)).toEqual([
+      true,
+      false,
+    ]);
   });
 
   it("ignores PutEventsCommand from the wrong module", () => {

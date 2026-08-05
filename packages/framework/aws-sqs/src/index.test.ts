@@ -2,6 +2,7 @@ import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { isImportedFrom } from "@suss/adapter-typescript";
+import { boundaryKey } from "@suss/ir-core";
 import { createTestProject } from "@suss/test-project";
 
 import { sqsFramework } from "./index.js";
@@ -324,6 +325,42 @@ describe("sqs recognizer — happy path", () => {
   });
 });
 
+describe("a send whose queue the code does not name", () => {
+  it("is still a send", () => {
+    // The queue arrives as a parameter, which is what a wrapper around
+    // the SDK looks like. Dropping the whole effect made a service that
+    // sends to a queue read as a service that sends nothing.
+    const file = makeProject(`
+      import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+      const client = new SQSClient();
+      export async function publish(queue: string, body: string) {
+        await client.send(new SendMessageCommand({
+          QueueUrl: queue,
+          MessageBody: body,
+        }));
+      }
+    `);
+
+    expect(messageSendEffectsOf(recognizeAll(file))).toHaveLength(1);
+  });
+
+  it("names no queue, so it pairs with nothing", () => {
+    const file = makeProject(`
+      import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+      const client = new SQSClient();
+      export async function publish(queue: string) {
+        await client.send(new SendMessageCommand({ QueueUrl: queue }));
+      }
+    `);
+
+    const [effect] = messageSendEffectsOf(recognizeAll(file));
+    const binding = effect?.binding ?? raise("no binding");
+    const semantics = binding.semantics;
+    expect(semantics.name === "message-bus" && semantics.channel).toBe("");
+    expect(boundaryKey(binding)).toBeNull();
+  });
+});
+
 describe("sqs recognizer — rejection cases", () => {
   it("ignores .send() with a non-SQS command class", () => {
     const file = makeProject(`
@@ -384,7 +421,7 @@ describe("sqs recognizer — rejection cases", () => {
     expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
   });
 
-  it("returns null when QueueUrl uses an unrecognized shape", () => {
+  it("records a send whose queue comes back from a call", () => {
     const file = makeProject(`
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
@@ -396,8 +433,15 @@ describe("sqs recognizer — rejection cases", () => {
         }));
       }
     `);
-    // Call doesn't pair without channel identity → recognizer skips it.
-    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
+
+    // The queue cannot be read, so nothing is claimed about which one it
+    // is, and the boundary pairs with nothing. The send still happened.
+    const [effect] = messageSendEffectsOf(recognizeAll(file));
+    const binding = effect?.binding ?? raise("no binding");
+    expect(
+      binding.semantics.name === "message-bus" && binding.semantics.channel,
+    ).toBe("");
+    expect(boundaryKey(binding)).toBeNull();
   });
 
   it("returns null when SendMessageCommand input isn't an object literal", () => {

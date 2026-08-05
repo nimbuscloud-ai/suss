@@ -3,9 +3,9 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 219,
-    "internal": 1100,
-    "consumers": 341,
-    "pairs": 333
+    "internal": 1112,
+    "consumers": 346,
+    "pairs": 338
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -125,8 +125,8 @@
     "packages/framework/aws-eventbridge": {
       "name": "@suss/framework-aws-eventbridge",
       "exports": 2,
-      "internal": 4,
-      "consumers": 3
+      "internal": 10,
+      "consumers": 6
     },
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
@@ -137,8 +137,8 @@
     "packages/framework/aws-sqs": {
       "name": "@suss/framework-aws-sqs",
       "exports": 2,
-      "internal": 6,
-      "consumers": 4
+      "internal": 12,
+      "consumers": 6
     },
     "packages/framework/drizzle": {
       "name": "@suss/framework-drizzle",

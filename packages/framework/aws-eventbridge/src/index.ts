@@ -219,15 +219,17 @@ function buildEntryEffect(entry: EffectArg, callee: string): Effect | null {
   }
   const fields = (entry as { fields: Record<string, EffectArg> }).fields;
 
+  // A put whose bus or detail type is named at runtime used to be
+  // dropped whole, so the event went unrecorded rather than being
+  // recorded without a name. An empty half is how the rest of suss says
+  // the code did not name one, and it pairs with nothing.
   const bus = readBusToken(fields.EventBusName);
-  if (bus === null) {
-    return null;
-  }
   const detailType = readLiteralString(fields.DetailType);
-  if (detailType === null) {
-    return null;
-  }
-  const channel = `${bus}#${detailType}`;
+  // Either half missing means the code did not name this boundary, and
+  // a put named by half of one would pair across buses. The put still
+  // happened, so it is recorded with nothing claimed about where it went.
+  const channel =
+    bus === null || detailType === null ? "" : `${bus}#${detailType}`;
 
   // Body extraction mirrors the SQS pack: prefer the inner object when
   // Detail is `JSON.stringify({...})` (the dominant pattern) so the body
