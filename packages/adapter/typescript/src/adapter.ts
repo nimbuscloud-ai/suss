@@ -1690,6 +1690,26 @@ function buildCallerSummary(
 // Public adapter API
 // ---------------------------------------------------------------------------
 
+/**
+ * A run's summaries, named.
+ *
+ * Where the project sits is worked out from the summaries themselves
+ * rather than from the files a run happened to load, because a run
+ * served from the cache loaded none and still has to answer with the
+ * same names.
+ */
+function named(
+  summaries: BehavioralSummary[],
+  workspace: string | undefined,
+): BehavioralSummary[] {
+  const projectRoot = commonDirectoryOf(summaries.map((s) => s.location.file));
+  nameSummaries(summaries, {
+    workspace: workspace ?? workspaceNameFor(projectRoot),
+    projectRoot,
+  });
+  return summaries;
+}
+
 export interface TypeScriptAdapterConfig {
   tsConfigFilePath?: string;
   /**
@@ -1941,7 +1961,11 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return lookup.summaries;
+        // Named here too. A cached run answers with the same summaries
+        // a fresh one would, and a name that only survives the first
+        // run is worse than none: every second run would hand back a
+        // call graph with nothing in it.
+        return named(lookup.summaries, config.workspace);
       }
 
       // A miss runs the lazy bootstrap so the rest of the pipeline has
