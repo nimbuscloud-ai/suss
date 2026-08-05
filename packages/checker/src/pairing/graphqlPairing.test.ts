@@ -432,7 +432,7 @@ describe("checkAll — graphql pairing integration", () => {
     const result = checkAll([petResolver, op]);
     expect(result.unmatched.providers).toEqual([]);
     expect(result.unmatched.consumers).toEqual([]);
-    expect(result.unmatched.noBinding).toEqual([]);
+    expect(result.unmatched.unpairable).toEqual([]);
   });
 
   it("includes graphqlFieldNotImplemented findings in the top-level findings list", () => {

@@ -8,6 +8,7 @@
 // Anyone needing zod-level composition can import the schema module
 // directly via the package's internal path; that surface is not stable.
 
+import { normalizeLegacySummary } from "./legacy.js";
 import {
   BehavioralSummaryArraySchema,
   BehavioralSummarySchema,
@@ -50,6 +51,8 @@ export {
   runtimeConfigBinding,
   storageRelationalBinding,
 } from "@suss/ir-core";
+
+export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
 
 export type {
   BoundaryBinding,
@@ -159,16 +162,17 @@ export const BOUNDARY_ROLE: Record<CodeUnitKind, BoundaryRole> = {
 /**
  * Validate and return a single summary, throwing on failure. Use this at
  * boundaries where invalid data should halt processing (CLI loading from
- * disk).
+ * disk). Version-1 artifacts are normalized first, so summaries written
+ * by 0.3.x keep parsing.
  */
 export function parseSummary(input: unknown): BehavioralSummary {
-  return BehavioralSummarySchema.parse(input);
+  return BehavioralSummarySchema.parse(normalizeLegacySummary(input));
 }
 
 export function safeParseSummary(
   input: unknown,
 ): z.ZodSafeParseResult<BehavioralSummary> {
-  return BehavioralSummarySchema.safeParse(input);
+  return BehavioralSummarySchema.safeParse(normalizeLegacySummary(input));
 }
 
 /**
@@ -177,13 +181,17 @@ export function safeParseSummary(
  * for non-throwing behavior.
  */
 export function parseSummaries(input: unknown): BehavioralSummary[] {
-  return BehavioralSummaryArraySchema.parse(input);
+  return BehavioralSummaryArraySchema.parse(normalizeLegacyArray(input));
 }
 
 export function safeParseSummaries(
   input: unknown,
 ): z.ZodSafeParseResult<BehavioralSummary[]> {
-  return BehavioralSummaryArraySchema.safeParse(input);
+  return BehavioralSummaryArraySchema.safeParse(normalizeLegacyArray(input));
+}
+
+function normalizeLegacyArray(input: unknown): unknown {
+  return Array.isArray(input) ? input.map(normalizeLegacySummary) : input;
 }
 
 // ---------------------------------------------------------------------------

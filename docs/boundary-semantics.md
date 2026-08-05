@@ -109,22 +109,34 @@ interface BoundaryBinding {
 
 ```ts
 type Semantics =
-  | { name: "rest"; method: string; path: string; declaredResponses?: number[] }
+  | { name: "rest"; method: string | null; path: string | null; declaredResponses?: number[] }
   | { name: "function-call"; module?: string; exportName?: string; package?: string; exportPath?: string[] }
-  | { name: "graphql-resolver"; typeName: string; fieldName: string }
+  | { name: "graphql-resolver"; typeName: string | null; fieldName: string }
   | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
   | { name: "runtime-config"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment"; instanceName: string }
   | { name: "storage-relational"; storageSystem: "postgres" | "mysql" | "sqlite"; scope: string; table: string }
-  | { name: "message-bus"; messageBus: "sqs" | "bullmq" | "kafka" | "nats"; channel: string };
+  | { name: "message-bus"; messageBus: "sqs" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null };
 ```
+
+An identity field is null when the source does not name it. A queue
+URL held in a variable is the common case:
+
+```json
+{ "name": "message-bus", "messageBus": "sqs", "channel": null }
+```
+
+The send is recorded. It pairs with nothing. The empty string is
+invalid in these fields, and the builders throw on it. REST's method
+also admits `"*"`: the handler answers every method.
 
 ### Semantics in use today
 
 **`rest`** is the dispatch-dominant case, pairing, provider coverage,
 consumer satisfaction, body compatibility, and semantic bridging all read
-`semantics.name === "rest"` and narrow to `method` + `path`. `method === ""`
-or `path === ""` signals "extracted but unresolved"; `boundaryKey` returns
-`null` for these, keeping them out of automatic pairing.
+`semantics.name === "rest"` and narrow to `method` + `path`. A null
+method or path means the source never named one; `boundaryKey` returns
+`null` for these, keeping them out of automatic pairing. A `"*"` method
+buckets by path and pairs with whichever method each consumer names.
 
 **`function-call`** handles in-process units (React components, bare function
 exports, Storybook contract components) that don't participate in REST pairing.
@@ -161,10 +173,14 @@ via Prisma, Drizzle, TypeORM, or raw DDL. Columns are fields on the table's
 contract; field-level access checks compare what code reads/writes against
 `metadata.storageContract.columns`. Pairing key: `(storageSystem, scope, table)`.
 
-**`message-bus`** covers SQS, BullMQ, Kafka, and NATS. Producer-side
-`interaction(class: "message-send")` effects pair against it; consumer-side
-handlers gain the same shape via the deployment-manifest contract source (CFN
-event-source mappings and similar). Pairing key: `(messageBus, channel)`.
+**`message-bus`** covers SQS, EventBridge, BullMQ, Kafka, and NATS.
+Producer-side `interaction(class: "message-send")` effects pair against it;
+consumer-side handlers gain the same shape via the deployment-manifest
+contract source (CFN event-source mappings and similar). Pairing key:
+`(messageBus, channel)`. A send whose queue the code names at runtime
+carries a null channel. A receive effect always does: the event-source
+mapping states which queue the handler drains, and the checker joins
+the two by code scope.
 
 ### Pack helpers
 
@@ -172,44 +188,51 @@ event-source mappings and similar). Pairing key: `(messageBus, channel)`.
 the three-layer shape:
 
 ```ts
-restBinding({ transport, method, path, recognition, declaredResponses? })
+restBinding({ transport, method /* string | null */, path /* string | null */, recognition, declaredResponses? })
 functionCallBinding({ transport, recognition, module?, exportName?, package?, exportPath? })
 packageExportBinding({ recognition, packageName, exportPath, transport? })
-graphqlResolverBinding({ transport, recognition, typeName, fieldName })
+graphqlResolverBinding({ transport, recognition, typeName /* string | null */, fieldName })
 graphqlOperationBinding({ transport, recognition, operationType, operationName? })
 runtimeConfigBinding({ recognition, deploymentTarget, instanceName })
 storageRelationalBinding({ recognition, storageSystem, scope, table })
-messageBusBinding({ recognition, messageBus, channel })
+messageBusBinding({ recognition, messageBus, channel /* string | null */ })
 ```
+
+The builders throw on an empty string in an identity field. Write null
+when the source does not name it.
 
 `packageExportBinding` is a thin wrapper over `functionCallBinding` that
 makes call sites declarative, it defaults `transport` to `"in-process"`.
 
 ## Dispatching on semantics
 
-The checker's dispatch today is per-semantics but ad-hoc rather than
-registry-backed:
+Each protocol is one module under `@suss/ir-core`'s `semantics/`
+directory: its schema and its `BoundaryBehavior` travel together, and
+the registry composes the modules into the `Semantics` union and the
+runtime lookup. A behavior answers three questions:
 
-- `pairing.boundaryKey(binding)`: returns `"METHOD /path"` for `rest`,
-  `"gql:Type.field"` for `graphql-resolver`, `"fn:<package>::<exportPath>"`
-  for package-export `function-call`, `null` for everything else.
-- `graphqlPairing.pairGraphqlOperations`: separate pass that pairs
-  `graphql-operation` consumers against `graphql-resolver` providers by
-  walking the selection set.
-- `contract/graphqlContractAgreement.ts`: compares `metadata.graphql.declaredContract`
-  across providers at the same resolver boundary.
-- Per-domain checker modules (`message-bus/`, `runtime-config/`, `storage/`)
-  handle their semantics directly without going through `boundaryKey`, they
-  filter by `semantics.name` and apply the appropriate pairing logic.
-- `cli/inspect.ts` rendering, reads `semantics.name === "rest"` and renders
-  `METHOD path`; other semantics fall back to the function name or recognition
-  string.
+- `identityKey`: the name a reader sees and a suppression targets
+  (`"GET /users/{id}"`, `"* /api/users"`, `"bus:sqs order.placed"`), or
+  null when the source never stated one.
+- `pairingKey`: the bucket pairing groups by. It carries what both
+  sides always know. REST buckets carry the path alone, so
+  `GET /users` and `* /users` both bucket as `rest /users`.
+- `sidesAgree`: settles what the bucket dropped. `GET` agrees with
+  `GET` and with `"*"`. `default#order.placed` agrees with
+  `order.placed` and disagrees with `staging#order.placed`.
 
-A `BoundarySemantics<S>` registry, one per semantics, with `pairingKey`,
-`extractDiscriminator`, and `extractPayload` as interface methods, would
-consolidate the inline narrows each check function currently does. That
-abstraction has been deferred: multiple variants have shipped but the registry
-hasn't been extracted yet. It's a refactor, not a design question.
+`boundaryKey`, `pairingKey`, and `semanticsAgree` in
+`packages/ir-core/src/boundaryKey.ts` are thin lookups over the
+registry. Adding a protocol adds one module and one line in each
+registry list. A compile-time check fails when the two lists differ.
+The definitions ship with ir-core, not with packs: a published summary
+has to mean the same thing to a reader who never installed the pack
+that wrote it.
+
+Passes that pair through their own machinery still do:
+`pairGraphqlOperations` walks selection sets, and the per-domain checker
+modules (`message-bus/`, `runtime-config/`, `storage/`) filter by
+`semantics.name`; their variants' `identityKey` answers null.
 
 ### Metadata namespaced by semantics
 
@@ -296,7 +319,8 @@ Shipped:
 4. Checker modules for HTTP/REST, GraphQL (contract agreement and operation
    pairing), message-bus, storage, runtime-config, and Storybook stories.
 5. `boundaryKey` dispatches on `semantics.name`; summaries without a
-   matchable key go to `unmatched.noBinding` rather than being fabricated
+   matchable key go to `unmatched.unpairable`, each entry saying why,
+   rather than being fabricated
    into REST pairs.
 
 Deferred:

@@ -356,7 +356,7 @@ describe("a send whose queue the code does not name", () => {
     const [effect] = messageSendEffectsOf(recognizeAll(file));
     const binding = effect?.binding ?? raise("no binding");
     const semantics = binding.semantics;
-    expect(semantics.name === "message-bus" && semantics.channel).toBe("");
+    expect(semantics.name === "message-bus" && semantics.channel).toBeNull();
     expect(boundaryKey(binding)).toBeNull();
   });
 });
@@ -440,7 +440,7 @@ describe("sqs recognizer — rejection cases", () => {
     const binding = effect?.binding ?? raise("no binding");
     expect(
       binding.semantics.name === "message-bus" && binding.semantics.channel,
-    ).toBe("");
+    ).toBeNull();
     expect(boundaryKey(binding)).toBeNull();
   });
 
@@ -485,7 +485,7 @@ describe("sqs message-receive recognizer", () => {
       messageBus: "sqs",
       // Channel intentionally empty: pairing layer fills from CFN
       // consumer summary's binding via codeScope.
-      channel: "",
+      channel: null,
     });
   });
 

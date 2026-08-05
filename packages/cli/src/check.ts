@@ -179,9 +179,11 @@ export function checkDir(
 
   const collisions = findBoundaryCollisions(allSummaries, sourceFile);
 
+  const runtimeNamedCrossings = countRuntimeNamedCrossings(allSummaries);
   const rendered = options.json
-    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched, collisions }, null, 2)}\n`
+    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched, runtimeNamedCrossings, collisions }, null, 2)}\n`
     : renderDirHuman(result, confidence) +
+      renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderCollisions(collisions) +
       renderIntentSection(intent);
 
@@ -549,10 +551,48 @@ function formatRoute(boundary: Finding["boundary"]): string {
     return "";
   }
   const { method, path } = boundary.semantics;
-  if (method === "" && path === "") {
+  if (method === null && path === null) {
     return "";
   }
-  return ` ${method} ${path}`.trimEnd();
+  return ` ${method ?? ""} ${path ?? ""}`.trimEnd();
+}
+
+/**
+ * How many message sends cross a boundary the code names at runtime.
+ * These are recorded and can never be checked, and the count keeps
+ * them from reading as coverage. Counted per distinct send site so a
+ * wrapper's summary and the summaries derived from it never report
+ * one send twice.
+ */
+function countRuntimeNamedCrossings(
+  summaries: ReadonlyArray<BehavioralSummary>,
+): number {
+  const sites = new Set<string>();
+  for (const summary of summaries) {
+    for (const transition of summary.transitions) {
+      for (const effect of transition.effects) {
+        if (
+          effect.type !== "interaction" ||
+          effect.interaction.class !== "message-send" ||
+          effect.binding.semantics.name !== "message-bus" ||
+          effect.binding.semantics.channel !== null
+        ) {
+          continue;
+        }
+        sites.add(
+          `${summary.location.file}:${summary.location.range.start}:${effect.callee ?? ""}`,
+        );
+      }
+    }
+  }
+  return sites.size;
+}
+
+function renderRuntimeNamedCrossings(count: number): string {
+  if (count === 0) {
+    return "";
+  }
+  return `\n${count} send${count === 1 ? "" : "s"} name${count === 1 ? "s" : ""} ${count === 1 ? "its" : "their"} queue or bus at runtime. Each is recorded; none can be checked from source.\n`;
 }
 
 function renderDirHuman(
@@ -560,7 +600,9 @@ function renderDirHuman(
   confidence: ConfidenceLookup,
 ): string {
   const lines: string[] = [];
-  const { providers, consumers, noBinding } = result.unmatched;
+  const { providers, consumers, unpairable } = result.unmatched;
+  const noBoundary = unpairable.filter((u) => u.reason === "noBoundary");
+  const unnamed = unpairable.filter((u) => u.reason === "unnamedBoundary");
 
   // Lead with how much was actually compared. "No findings" on its own
   // reads as a pass, and a run where nothing paired has checked nothing
@@ -610,13 +652,34 @@ function renderDirHuman(
     }
   }
 
+  // A boundary whose name the source never stated is worth a line per
+  // unit: something crossed it, and a reader deciding what to trust
+  // needs to know it went unchecked.
+  if (unnamed.length > 0) {
+    lines.push("");
+    lines.push(
+      `${unnamed.length} boundar${unnamed.length === 1 ? "y is" : "ies are"} named at runtime, so nothing can be checked against ${unnamed.length === 1 ? "it" : "them"}:`,
+    );
+    for (const u of unnamed) {
+      lines.push(`  ${u.name}`);
+    }
+  }
+
+  const unknownKinds = unpairable.filter((u) => u.reason === "unknownKind");
+  if (unknownKinds.length > 0) {
+    lines.push("");
+    lines.push(
+      `${unknownKinds.length} summar${unknownKinds.length === 1 ? "y carries" : "ies carry"} a kind this version does not know, likely written by a newer suss.`,
+    );
+  }
+
   // Internal helpers reached through the closure pass land here by the
   // dozen. Listing each one buries whatever else is on screen, and a
   // function with no boundary is the normal case rather than a problem.
-  if (noBinding.length > 0) {
+  if (noBoundary.length > 0) {
     lines.push("");
     lines.push(
-      `${noBinding.length} other summar${noBinding.length === 1 ? "y is" : "ies are"} internal code with no boundary, so nothing pairs with ${noBinding.length === 1 ? "it" : "them"}.`,
+      `${noBoundary.length} other summar${noBoundary.length === 1 ? "y is" : "ies are"} internal code with no boundary, so nothing pairs with ${noBoundary.length === 1 ? "it" : "them"}.`,
     );
   }
 

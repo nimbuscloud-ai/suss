@@ -327,9 +327,9 @@ function buildRestApiConfig(
       continue;
     }
     const props = resource.Properties ?? {};
-    const method = String(props.HttpMethod ?? "").toUpperCase();
-    if (method === "" || method === "ANY") {
-      // ANY would explode into 7 verbs; v0 skips it rather than guess.
+    // ANY is API Gateway's spelling of the method wildcard.
+    const method = wildcardOrMethod(String(props.HttpMethod ?? ""));
+    if (method === null) {
       continue;
     }
 
@@ -830,9 +830,9 @@ function readSamApiEvents(
       if (restApiRef === null && apiId !== "RestApi" && !resources[apiId]) {
         continue;
       }
-      const method = String(props.Method ?? "").toUpperCase();
+      const method = wildcardOrMethod(String(props.Method ?? ""));
       const path = String(props.Path ?? "");
-      if (method === "" || method === "ANY" || path === "") {
+      if (method === null || path === "") {
         continue;
       }
       const implementingHandler = readHandlerPointer(fnId, resource);
@@ -895,9 +895,9 @@ function readSamHttpApiEvents(
       if (apiRef === null && apiId !== "HttpApi" && !resources[apiId]) {
         continue;
       }
-      const method = String(props.Method ?? "").toUpperCase();
+      const method = wildcardOrMethod(String(props.Method ?? ""));
       const pathProp = String(props.Path ?? "");
-      if (method === "" || method === "ANY" || pathProp === "") {
+      if (method === null || pathProp === "") {
         continue;
       }
       const implementingHandler = readHandlerPointer(fnId, resource);
@@ -1000,6 +1000,19 @@ function readCors(
     cors.maxAge = obj.MaxAge;
   }
   return cors;
+}
+
+/**
+ * A template's HTTP method as a binding method: `ANY` is API
+ * Gateway's spelling of the method wildcard, and a blank method is a
+ * malformed template with nothing to bind.
+ */
+function wildcardOrMethod(raw: string): string | null {
+  const method = raw.toUpperCase();
+  if (method === "") {
+    return null;
+  }
+  return method === "ANY" ? "*" : method;
 }
 
 function readStringArray(value: unknown): string[] | null {

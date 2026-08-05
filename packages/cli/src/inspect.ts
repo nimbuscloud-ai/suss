@@ -915,8 +915,8 @@ function summaryHeaderName(
     binding !== null && binding.semantics.name === "message-bus"
       ? binding.semantics
       : null;
-  if (rest !== null && (rest.method !== "" || rest.path !== "")) {
-    return `${rest.method} ${rest.path}`.trim();
+  if (rest !== null && (rest.method !== null || rest.path !== null)) {
+    return `${rest.method ?? ""} ${rest.path ?? ""}`.trim();
   }
   if (
     fn !== null &&
@@ -933,7 +933,7 @@ function summaryHeaderName(
   // should too: its name says which deployable unit receives, and its
   // channel says what. A queue declared by a template is named after
   // its own channel, where showing both would stutter.
-  if (bus !== null && bus.channel !== "") {
+  if (bus !== null && bus.channel !== null) {
     const channel = `${bus.messageBus} ${bus.channel}`;
     if (summary.identity.name === bus.channel) {
       return channel;
@@ -1229,8 +1229,10 @@ function summaryKey(s: BehavioralSummary): string {
   const binding = s.identity.boundaryBinding;
   if (binding !== null && binding.semantics.name === "rest") {
     const { method, path } = binding.semantics;
-    if (method !== "" || path !== "") {
-      return `${s.kind}:${method || "*"} ${path || "*"}`;
+    // "?" stands in for an unnamed half. "*" is the method wildcard,
+    // a value of its own, and renders as itself.
+    if (method !== null || path !== null) {
+      return `${s.kind}:${method ?? "?"} ${path ?? "?"}`;
     }
   }
   return `${s.kind}::${s.identity.name}`;
@@ -1239,18 +1241,18 @@ function summaryKey(s: BehavioralSummary): string {
 /**
  * Human-readable `METHOD path` for a REST-shaped binding, or null
  * when the summary has no placeable REST routing (function-call
- * semantics, or REST with empty method/path from a partial
- * extraction).
+ * semantics, or REST whose method and path a partial extraction never
+ * named).
  */
 function restKey(s: BehavioralSummary): string | null {
   const sem = s.identity.boundaryBinding?.semantics;
   if (sem?.name !== "rest") {
     return null;
   }
-  if (sem.method === "" && sem.path === "") {
+  if (sem.method === null && sem.path === null) {
     return null;
   }
-  return `${sem.method} ${sem.path}`;
+  return `${sem.method ?? ""} ${sem.path ?? ""}`.trim();
 }
 
 function renderTransitionShort(t: Transition): string {
@@ -1466,8 +1468,9 @@ export function inspectDir(options: DirOptions): void {
   }
 
   // Unmatched
-  const { providers, consumers, noBinding } = result.unmatched;
-  const unmatchedCount = providers.length + consumers.length + noBinding.length;
+  const { providers, consumers, unpairable } = result.unmatched;
+  const unmatchedCount =
+    providers.length + consumers.length + unpairable.length;
 
   if (unmatchedCount > 0) {
     if (pairsByKey.size > 0) {
@@ -1482,12 +1485,24 @@ export function inspectDir(options: DirOptions): void {
       const key = restKey(c) ?? "no path";
       process.stdout.write(`  ${c.identity.name} (${key}) has no provider\n`);
     }
-    if (noBinding.length > 0) {
+    // A boundary named at runtime is worth its own line: something
+    // crosses it, and the reader should know it went unchecked.
+    for (const u of unpairable) {
+      if (u.reason === "unnamedBoundary") {
+        process.stdout.write(
+          `  ${u.summary.identity.name} crosses a boundary named at runtime\n`,
+        );
+      }
+    }
+    const internalCount = unpairable.filter(
+      (u) => u.reason !== "unnamedBoundary",
+    ).length;
+    if (internalCount > 0) {
       // Internal helpers arrive here by the dozen from the closure pass.
       // Naming each one buries the boundaries above it, and a function
       // with no boundary is the normal case, not a problem to report.
       process.stdout.write(
-        `  ${noBinding.length} internal function${noBinding.length === 1 ? "" : "s"} with no boundary\n`,
+        `  ${internalCount} internal function${internalCount === 1 ? "" : "s"} with no boundary\n`,
       );
     }
   }

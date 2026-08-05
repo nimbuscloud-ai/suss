@@ -318,8 +318,8 @@ function extractEndpointContract(
     method !== undefined || path !== undefined
       ? restBinding({
           transport: "http",
-          method: method ?? "",
-          path: path ?? "",
+          method: method ?? null,
+          path: path ?? null,
           recognition: framework,
         })
       : null;

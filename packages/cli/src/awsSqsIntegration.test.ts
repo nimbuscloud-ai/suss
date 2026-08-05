@@ -62,14 +62,19 @@ describe("aws-sqs integration", () => {
   it("emits one message-send interaction per producer Lambda", async () => {
     const codeSummaries = await extractCode();
     const sends = collectSendEffects(codeSummaries);
-    // Two producer Lambdas: OrderProducer (sends to OrdersQueue) and
-    // OrphanProducer (sends to OrphanQueue).
-    expect(sends).toHaveLength(2);
+    // Three producer Lambdas: OrderProducer (env var), OrphanProducer
+    // (env var), AuditProducer (a const in another file, named through
+    // resolution).
+    expect(sends).toHaveLength(3);
     const channels = sends
       .map((e) => readChannel(e))
       .filter((c): c is string => c !== null)
       .sort();
-    expect(channels).toEqual(["ORDERS_QUEUE_URL", "ORPHAN_QUEUE_URL"]);
+    expect(channels).toEqual([
+      "ORDERS_QUEUE_URL",
+      "ORPHAN_QUEUE_URL",
+      "https://sqs.us-east-1.amazonaws.com/123456789012/AuditQueue",
+    ]);
   });
 
   it("CFN walker emits queue providers for each AWS::SQS::Queue", () => {

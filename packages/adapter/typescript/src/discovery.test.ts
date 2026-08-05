@@ -2482,7 +2482,10 @@ describe("decoratedMethod discovery", () => {
     `,
     );
     const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
-    expect(units[0].resolverInfo).toEqual({ typeName: "", fieldName: "label" });
+    expect(units[0].resolverInfo).toEqual({
+      typeName: null,
+      fieldName: "label",
+    });
   });
 
   it("keeps the class's type for a field resolver that has one", () => {

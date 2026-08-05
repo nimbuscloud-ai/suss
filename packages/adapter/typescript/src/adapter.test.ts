@@ -2188,9 +2188,9 @@ describe("consumer extraction", () => {
     });
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
-    // Non-literal URL: method extracted, path left empty (signals
+    // Non-literal URL: method extracted, path null (signals
     // "unresolved" to the wrapper-expansion post-pass).
-    expect(restPathOf(summaries[0])).toBe("");
+    expect(restPathOf(summaries[0])).toBeNull();
   });
 
   it("produces status-code conditions the checker can read", async () => {
@@ -2568,11 +2568,11 @@ describe("client-side contract resolution via fromClientMethod", () => {
     const summaries = await adapter.extractAll();
     const consumer = summaries.find((s) => s.identity.name === "ping");
     // Discovery still finds the function; the binding falls back to a
-    // rest-shaped entry with empty method/path because fromClientMethod
-    // can't resolve the method+path from the contract.
+    // rest-shaped entry naming no method or path because
+    // fromClientMethod can't resolve them from the contract.
     expect(consumer?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "", path: "" },
+      semantics: { name: "rest", method: null, path: null },
       recognition: "ts-rest",
     });
   });
@@ -2656,9 +2656,9 @@ describe("wrapper expansion", () => {
     // (synthesised with the literal/template-literal path from the call site).
     const wrapper = summaries.find((s) => s.identity.name === "getJson");
     expect(wrapper).toBeDefined();
-    // Wrapper: method extracted, path empty (unresolved — path is a
+    // Wrapper: method extracted, path null (unresolved: the path is a
     // parameter, not a literal).
-    expect(restPathOf(wrapper)).toBe("");
+    expect(restPathOf(wrapper)).toBeNull();
 
     const caller = summaries.find((s) => s.identity.name === "getPet");
     expect(caller).toBeDefined();

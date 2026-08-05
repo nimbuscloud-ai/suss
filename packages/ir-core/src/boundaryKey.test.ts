@@ -5,7 +5,9 @@ import {
   functionCallBinding,
   graphqlResolverBinding,
   messageBusBinding,
+  methodsAgree,
   normalizePath,
+  pairingKey,
   restBinding,
 } from "./index.js";
 
@@ -36,17 +38,75 @@ describe("boundaryKey", () => {
     ).toBe("GET /users/{id}");
   });
 
-  it("returns null for a REST binding with empty method or path", () => {
+  it("returns null for a REST binding whose method or path the source never named", () => {
     expect(
       boundaryKey(
         restBinding({
           transport: "http",
-          method: "",
-          path: "",
+          method: null,
+          path: null,
           recognition: "x",
         }),
       ),
     ).toBeNull();
+  });
+
+  it("refuses an empty string where a name or null belongs", () => {
+    expect(() =>
+      restBinding({
+        transport: "http",
+        method: "",
+        path: "/x",
+        recognition: "x",
+      }),
+    ).toThrow(/empty string/);
+
+    expect(() =>
+      graphqlResolverBinding({
+        transport: "http",
+        recognition: "x",
+        typeName: "",
+        fieldName: "user",
+      }),
+    ).toThrow(/empty string/);
+
+    expect(() =>
+      messageBusBinding({ recognition: "x", messageBus: "sqs", channel: "" }),
+    ).toThrow(/empty string/);
+  });
+
+  it("keys a wildcard route as written, and buckets REST routes by path", () => {
+    const wildcard = restBinding({
+      transport: "http",
+      method: "*",
+      path: "/api/users",
+      recognition: "x",
+    });
+    const named = restBinding({
+      transport: "http",
+      method: "get",
+      path: "/api/users",
+      recognition: "x",
+    });
+    expect(boundaryKey(wildcard)).toBe("* /api/users");
+    expect(pairingKey(wildcard)).toBe("rest /api/users");
+    expect(pairingKey(named)).toBe("rest /api/users");
+
+    const unnamed = messageBusBinding({
+      recognition: "x",
+      messageBus: "sqs",
+      channel: null,
+    });
+    expect(pairingKey(unnamed)).toBeNull();
+  });
+
+  it("agrees methods the way buses agree: equal, or a wildcard on either side", () => {
+    expect(methodsAgree("GET", "GET")).toBe(true);
+    expect(methodsAgree("GET", "POST")).toBe(false);
+    expect(methodsAgree("*", "PROPFIND")).toBe(true);
+    expect(methodsAgree("GET", "*")).toBe(true);
+    expect(methodsAgree(null, "GET")).toBe(false);
+    expect(methodsAgree("*", null)).toBe(false);
   });
 
   it("keys a graphql-resolver binding", () => {
@@ -68,7 +128,7 @@ describe("boundaryKey", () => {
         graphqlResolverBinding({
           transport: "http",
           recognition: "nestjs-graphql",
-          typeName: "",
+          typeName: null,
           fieldName: "user",
         }),
       ),

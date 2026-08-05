@@ -16,7 +16,7 @@ const fixturesDir = path.resolve(__dirname, "../../../../fixtures/appsync");
 
 function restSemanticsOf(
   summary: BehavioralSummary,
-): { typeName: string; fieldName: string } | null {
+): { typeName: string | null; fieldName: string } | null {
   const sem = summary.identity.boundaryBinding?.semantics;
   return sem?.name === "graphql-resolver"
     ? { typeName: sem.typeName, fieldName: sem.fieldName }

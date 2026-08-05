@@ -293,7 +293,16 @@ const pairing = pairSummaries(allSummaries);
 console.log(`  pairs:               ${pairing.pairs.length}`);
 console.log(`  unmatched providers: ${pairing.unmatched.providers.length}`);
 console.log(`  unmatched consumers: ${pairing.unmatched.consumers.length}`);
-console.log(`  noBinding:           ${pairing.unmatched.noBinding.length}`);
+const unpairableByReason = new Map();
+for (const entry of pairing.unmatched.unpairable) {
+  unpairableByReason.set(
+    entry.reason,
+    (unpairableByReason.get(entry.reason) ?? 0) + 1,
+  );
+}
+for (const [reason, count] of unpairableByReason) {
+  console.log(`  unpairable (${reason}): ${count}`);
+}
 
 // Group paired edges by provider package for a readable top-level map.
 const edgesByProvider = new Map();
@@ -329,7 +338,7 @@ report.pairing = {
   pairs: pairing.pairs.length,
   unmatchedProviders: pairing.unmatched.providers.length,
   unmatchedConsumers: pairing.unmatched.consumers.length,
-  noBinding: pairing.unmatched.noBinding.length,
+  unpairable: Object.fromEntries(unpairableByReason),
   edgesByProvider: Object.fromEntries(ranked),
 };
 

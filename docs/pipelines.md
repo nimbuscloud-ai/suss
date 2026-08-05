@@ -200,8 +200,8 @@ Each step is small, pure over `RawCodeStructure`, and independently testable, wh
 
 Before `suss check --dir` runs `checkPair`, it has to decide which summaries face each other across a boundary. `pairSummaries` does that in three passes:
 
-1. Classify each summary by its role via `BOUNDARY_ROLE[summary.kind]`: provider (handler, loader, action, middleware, resolver, worker, component, hook) or consumer (client, consumer). Summaries with an unrecognized kind land in `unmatched.noBinding` rather than crashing, the runtime guard deferred until the zod IR migration makes it unreachable.
-2. Derive a boundary key for each summary via `boundaryKey(binding)`. Today that's `"<METHOD> <normalizedPath>"` with path normalization that treats `:id` and `{id}` equivalently and lowercases static segments. Summaries without a path go into `unmatched.noBinding`.
+1. Classify each summary by its role via `BOUNDARY_ROLE[summary.kind]`: provider (handler, loader, action, middleware, resolver, worker, component, hook) or consumer (client, consumer). Summaries with an unrecognized kind land in `unmatched.unpairable` with reason `unknownKind` rather than crashing, the runtime guard deferred until the zod IR migration makes it unreachable.
+2. Derive a boundary key for each summary via `boundaryKey(binding)`. Today that's `"<METHOD> <normalizedPath>"` with path normalization that treats `:id` and `{id}` equivalently and lowercases static segments. Summaries without a path land in `unmatched.unpairable` with reason `unnamedBoundary`.
 3. Group by (key × role). Every key that has at least one provider AND one consumer yields pairs (`N × M` cross-product within the group). Keys with only one side populate `unmatched.providers` or `unmatched.consumers`.
 
 The result is `{ pairs, unmatched }`. `checkPair` runs on each pair; the unmatched lists surface in the CLI output so you can see what didn't line up.

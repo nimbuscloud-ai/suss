@@ -81,6 +81,7 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
     sourceFile: SourceFile;
     extractArgs: () => EffectArg[];
     isImportedFrom: (identifier: Node, expectedModule: string) => boolean;
+    resolveWrittenValue?: (value: Node) => Node | null;
   };
 
   // Shape gate: callee must be PropertyAccess `<receiver>.send`.
@@ -148,10 +149,14 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   // A send whose queue is named by a variable, a parameter, or a
   // config lookup used to be dropped whole, so a service that sends to
   // a queue it names at runtime read as a service that sends nothing.
-  // The send happened either way. An empty channel is how the rest of
-  // suss says the code did not name one, and a boundary with an empty
-  // half pairs with nothing rather than pairing wrongly.
-  const channel = readQueueUrlChannel(input) ?? "";
+  // The send happened either way. A null channel says the code did not
+  // name one, and it pairs with nothing rather than pairing wrongly.
+  // A host older than the resolution-threaded context answers null,
+  // and the pattern match runs on the raw node, as it always did.
+  const channel = readQueueUrlChannel(
+    input,
+    recognizerCtx.resolveWrittenValue ?? (() => null),
+  );
 
   // Body extraction: prefer the inner object when MessageBody is
   // `JSON.stringify({...})` (the dominant pattern). Both producer
@@ -202,21 +207,26 @@ function rootIdentifier(node: Node): Node | null {
 
 /**
  * Read the QueueUrl property of the SendMessageCommand input object
- * and return the channel identifier as a string. v0 supports two
- * shapes:
- *   - `QueueUrl: process.env.ORDERS_QUEUE_URL` → "ORDERS_QUEUE_URL"
- *   - `QueueUrl: "https://sqs..."` → the literal URL
+ * and return the channel identifier as a string. Two shapes name a
+ * channel:
+ *   - `QueueUrl: process.env.ORDERS_QUEUE_URL` answers "ORDERS_QUEUE_URL"
+ *   - `QueueUrl: "https://sqs..."` answers the literal URL
  *
- * The env-var case is the dominant pattern in real codebases (URL
- * isn't known at code-write time). The literal case is for tests
- * and local dev — included so the recognizer doesn't silently drop
- * those calls.
+ * Anything else is asked of the resolution store first. A const
+ * holding a literal, here or in another file, resolves to the literal
+ * and names the channel:
  *
- * Returns null when the QueueUrl shape isn't recognised — the call
- * is still a Send, but we can't pair it without channel identity, so
- * the recognizer skips it. (Future: emit a gap-shaped effect.)
+ *   const url = "https://sqs/.../orders";
+ *   new SendMessageCommand({ QueueUrl: url })   // the literal URL
+ *
+ * Null means the chain leaves what the code states (a parameter, a
+ * config lookup, a call result). The send is still recorded; the
+ * channel is null on its binding.
  */
-function readQueueUrlChannel(input: Node): string | null {
+function readQueueUrlChannel(
+  input: Node,
+  resolveWrittenValue: (value: Node) => Node | null,
+): string | null {
   if (!N.isObjectLiteralExpression(input)) {
     return null;
   }
@@ -231,21 +241,30 @@ function readQueueUrlChannel(input: Node): string | null {
     if (initializer === undefined) {
       return null;
     }
-    // process.env.X
-    if (N.isPropertyAccessExpression(initializer)) {
-      const text = initializer.getText();
-      const match = text.match(/^process\.env\.(\w+)$/);
-      if (match !== null) {
-        return match[1];
-      }
-      return null;
+    const named = channelNamedBy(initializer);
+    if (named !== null) {
+      return named;
     }
-    // "literal-url"
-    if (N.isStringLiteral(initializer)) {
-      return initializer.getLiteralValue();
-    }
-    return null;
+    const resolved = resolveWrittenValue(initializer);
+    return resolved === null ? null : channelNamedBy(resolved);
   }
+  return null;
+}
+
+/** The channel a single expression names, with no resolution. */
+function channelNamedBy(expr: Node): string | null {
+  // process.env.X
+  if (N.isPropertyAccessExpression(expr)) {
+    const text = expr.getText();
+    const match = text.match(/^process\.env\.(\w+)$/);
+    return match === null ? null : (match[1] ?? null);
+  }
+
+  // "literal-url"
+  if (N.isStringLiteral(expr)) {
+    return expr.getLiteralValue();
+  }
+
   return null;
 }
 
@@ -391,13 +410,13 @@ function messageReceiveRecognizer(
   return [
     {
       type: "interaction",
-      // Channel intentionally empty: the SQS consumer binding lives on
-      // the CFN event-source mapping summary; the pairing pass joins
-      // by codeScope rather than by channel name from this side.
+      // Channel intentionally null: the queue a handler drains is
+      // stated by the CFN event-source mapping, so this side does not
+      // name it and the pairing pass joins by codeScope instead.
       binding: messageBusBinding({
         recognition: "@suss/framework-aws-sqs",
         messageBus: "sqs",
-        channel: "",
+        channel: null,
       }),
       callee: callNode.getExpression().getText(),
       interaction: {

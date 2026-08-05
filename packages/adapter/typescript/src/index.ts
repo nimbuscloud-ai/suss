@@ -14,6 +14,10 @@ export { readConfiguredCall } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery/index.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
+// The store behind the recognizer context's `resolveWrittenValue`.
+// Exported so a pack's test harness can hand recognizers the same
+// resolution the adapter threads through at extraction time.
+export { ResolutionStore } from "./facts/store.js";
 export { evaluatePackHealth, formatPackHealth } from "./packHealth.js";
 export { parseConditionExpression } from "./predicates.js";
 export { isImportedFrom } from "./resolve/invocationEffects.js";

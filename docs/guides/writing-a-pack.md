@@ -256,6 +256,19 @@ export const schedulingRecognizer: InvocationRecognizer = (call, _ctx) => {
 
 The recognizer returns `null` for any call that isn't a scheduling primitive. The adapter dispatches every CallExpression to every recognizer; a recognizer's only job is "is this my call? If yes, emit; if no, return null."
 
+One rule sits on top of that: a recognizer that matched records the crossing. When the code does not name an identity field, write null:
+
+```typescript
+// QueueUrl came from a variable. The send still happened.
+messageBusBinding({
+  recognition: "@suss/framework-aws-sqs",
+  messageBus: "sqs",
+  channel: null,
+});
+```
+
+Returning `null` from the recognizer means only "not my call". A field the pack could not read is not that; record the crossing and leave the field null. The builders throw on an empty string. Three packs each broke this rule a different way, and every one made a crossing disappear from the summaries.
+
 ### Access recognizer
 
 `processSurfaceRecognizer` fires on `PropertyAccessExpression` and `ElementAccessExpression` nodes. It recognizes `process.argv`, `process.cwd`, `process.platform`, `process.argv[N]`, etc., but skips `process.env.X`, which the sibling `envVarRecognizer` in the same pack owns. The two recognizers partition the `process.*` space without duplication:

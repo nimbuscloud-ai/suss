@@ -38,7 +38,7 @@ async function runAdapter(
 
 function restBindingOf(
   summary: BehavioralSummary,
-): { method: string; path: string } | null {
+): { method: string | null; path: string | null } | null {
   const binding = summary.identity.boundaryBinding;
   if (binding === null || binding.semantics.name !== "rest") {
     return null;

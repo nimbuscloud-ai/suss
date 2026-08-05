@@ -67,10 +67,9 @@
 // `detail-type`), so producers pair with consumers via shared channel.
 //
 // An entry whose EventBusName or DetailType can't be reduced to the
-// scheme above (dynamic bus builder, non-literal DetailType) is skipped
-// rather than paired on a guessed channel — matching the SQS
-// recognizer's "skip on unresolvable channel identity" behaviour. The
-// entry is still a PutEvents call; it just can't participate in pairing.
+// scheme above (dynamic bus builder, non-literal DetailType) is asked
+// of the resolution store first. What still cannot be named is
+// recorded with a null channel and pairs with nothing.
 
 import {
   type CallExpression,
@@ -113,7 +112,11 @@ function eventBridgeRecognizer(call: unknown, ctx: unknown): Effect[] | null {
     sourceFile: SourceFile;
     extractArgs: () => EffectArg[];
     isImportedFrom: (identifier: Node, expectedModule: string) => boolean;
+    resolveWrittenValue?: (value: Node) => Node | null;
   };
+  // A host older than the resolution-threaded context answers null,
+  // and the pattern match runs on the raw shapes, as it always did.
+  const resolveValue = recognizerCtx.resolveWrittenValue ?? (() => null);
 
   // Shape gate: callee must be PropertyAccess `<receiver>.send`.
   const calleeExpr = callNode.getExpression();
@@ -172,14 +175,105 @@ function eventBridgeRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   }
 
   const callee = callNode.getExpression().getText();
+  const astEntries = readAstEntries(firstArg);
   const effects: Effect[] = [];
-  for (const entry of entries) {
-    const effect = buildEntryEffect(entry, callee);
+  for (const [index, entry] of entries.entries()) {
+    const effect = buildEntryEffect(
+      entry,
+      callee,
+      astEntries?.[index],
+      resolveValue,
+    );
     if (effect !== null) {
       effects.push(effect);
     }
   }
   return effects.length > 0 ? effects : null;
+}
+
+/**
+ * The entry object literals as AST nodes, index-aligned with the
+ * EffectArg entries. The AST is where an identity held in a const can
+ * be resolved; the EffectArg tree only says "identifier". Null when
+ * the Entries array is not written literally at the call.
+ */
+function readAstEntries(command: Node): Node[] | null {
+  if (!N.isNewExpression(command)) {
+    return null;
+  }
+  const input = command.getArguments()[0];
+  if (input === undefined || !N.isObjectLiteralExpression(input)) {
+    return null;
+  }
+  for (const prop of input.getProperties()) {
+    if (!N.isPropertyAssignment(prop) || prop.getName() !== "Entries") {
+      continue;
+    }
+    const init = prop.getInitializer();
+    if (init === undefined || !N.isArrayLiteralExpression(init)) {
+      return null;
+    }
+    return init.getElements();
+  }
+  return null;
+}
+
+/** The initializer of `name` on an entry object literal, when written there. */
+function astField(entry: Node | undefined, name: string): Node | null {
+  if (entry === undefined || !N.isObjectLiteralExpression(entry)) {
+    return null;
+  }
+  for (const prop of entry.getProperties()) {
+    if (N.isPropertyAssignment(prop) && prop.getName() === name) {
+      return prop.getInitializer() ?? null;
+    }
+  }
+  return null;
+}
+
+/**
+ * The bus token a single expression names, with no resolution: a
+ * non-empty string literal, or the env-var name in `process.env.X`.
+ */
+function busTokenOf(expr: Node): string | null {
+  if (N.isStringLiteral(expr)) {
+    const value = expr.getLiteralValue();
+    return value === "" ? null : value;
+  }
+  const match = expr.getText().match(/^process\.env\.(\w+)$/);
+  return match === null ? null : (match[1] ?? null);
+}
+
+/** The detail type a single expression names: a non-empty string literal. */
+function detailTypeOf(expr: Node): string | null {
+  if (!N.isStringLiteral(expr)) {
+    return null;
+  }
+  const value = expr.getLiteralValue();
+  return value === "" ? null : value;
+}
+
+/**
+ * Read one identity half from the entry's AST, resolving a value the
+ * call does not write literally. `const bus = "orders";` one import
+ * away names the bus the same as writing it in the entry.
+ */
+function resolvedHalf(
+  entry: Node | undefined,
+  name: string,
+  readToken: (expr: Node) => string | null,
+  resolve: (value: Node) => Node | null,
+): string | null {
+  const expr = astField(entry, name);
+  if (expr === null) {
+    return null;
+  }
+  const direct = readToken(expr);
+  if (direct !== null) {
+    return direct;
+  }
+  const resolved = resolve(expr);
+  return resolved === null ? null : readToken(resolved);
 }
 
 /**
@@ -209,11 +303,16 @@ function readEntries(callArgs: EffectArg[]): EffectArg[] | null {
 
 /**
  * Build one message-send effect from a single PutEvents entry. Returns
- * null when the entry's (bus, detailType) channel identity can't be
- * resolved from literals — the entry is skipped rather than paired on a
- * guessed channel.
+ * null only when the entry isn't an object literal at all; an entry
+ * whose bus or detail type the code names at runtime is still a send,
+ * recorded with a null channel.
  */
-function buildEntryEffect(entry: EffectArg, callee: string): Effect | null {
+function buildEntryEffect(
+  entry: EffectArg,
+  callee: string,
+  astEntry: Node | undefined,
+  resolve: (value: Node) => Node | null,
+): Effect | null {
   if (!isEffectArgOfKind(entry, "object")) {
     return null;
   }
@@ -221,15 +320,23 @@ function buildEntryEffect(entry: EffectArg, callee: string): Effect | null {
 
   // A put whose bus or detail type is named at runtime used to be
   // dropped whole, so the event went unrecorded rather than being
-  // recorded without a name. An empty half is how the rest of suss says
-  // the code did not name one, and it pairs with nothing.
-  const bus = readBusToken(fields.EventBusName);
-  const detailType = readLiteralString(fields.DetailType);
+  // recorded without a name. A null channel says the code did not name
+  // one, and it pairs with nothing. The AST is asked first, with
+  // resolution, so a const-held name still names; the EffectArg
+  // readers answer when the entry is not written literally.
+  const bus =
+    fields.EventBusName === undefined
+      ? readBusToken(undefined)
+      : (resolvedHalf(astEntry, "EventBusName", busTokenOf, resolve) ??
+        readBusToken(fields.EventBusName));
+  const detailType =
+    resolvedHalf(astEntry, "DetailType", detailTypeOf, resolve) ??
+    readLiteralString(fields.DetailType);
   // Either half missing means the code did not name this boundary, and
   // a put named by half of one would pair across buses. The put still
   // happened, so it is recorded with nothing claimed about where it went.
   const channel =
-    bus === null || detailType === null ? "" : `${bus}#${detailType}`;
+    bus === null || detailType === null ? null : `${bus}#${detailType}`;
 
   // Body extraction mirrors the SQS pack: prefer the inner object when
   // Detail is `JSON.stringify({...})` (the dominant pattern) so the body
@@ -271,7 +378,10 @@ function readBusToken(arg: EffectArg | undefined): string | null {
     return "default";
   }
   if (isEffectArgOfKind(arg, "string")) {
-    return (arg as { value: string }).value;
+    // An empty literal names nothing, same as a value decided at
+    // runtime.
+    const value = (arg as { value: string }).value;
+    return value === "" ? null : value;
   }
   if (isEffectArgOfKind(arg, "identifier")) {
     const name = (arg as { name: string }).name;
@@ -287,7 +397,10 @@ function readBusToken(arg: EffectArg | undefined): string | null {
  */
 function readLiteralString(arg: EffectArg | undefined): string | null {
   if (isEffectArgOfKind(arg, "string")) {
-    return (arg as { value: string }).value;
+    // An empty literal names nothing, same as a value decided at
+    // runtime.
+    const value = (arg as { value: string }).value;
+    return value === "" ? null : value;
   }
   return null;
 }

@@ -18,7 +18,7 @@
 
 import { z } from "zod";
 
-import { normalizePath } from "./boundaryKey.js";
+import { normalizePath } from "./semantics/rest.js";
 
 // ---------------------------------------------------------------------------
 // Rule schema
