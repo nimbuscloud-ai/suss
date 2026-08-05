@@ -100,6 +100,11 @@ describe("honoFramework — extraction", () => {
     expect(statuses(boundary("POST", "/users"))).toEqual([201, 400]);
   });
 
+  it("does not read a status off a class the map never names", () => {
+    const retries = boundary("POST", "/users/:id/retries");
+    expect(statuses(retries)).not.toContain(503);
+  });
+
   it("reads the status off HTTPException's first argument", () => {
     const del = boundary("DELETE", "/users/:id");
     expect(statuses(del)).toContain(404);

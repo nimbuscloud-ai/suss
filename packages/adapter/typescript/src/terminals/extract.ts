@@ -184,10 +184,18 @@ function extractStatusCodeFromRule(
   }
 
   if (sc.from === "constructor") {
-    // A constructor whose first argument is a status literal states it
-    // more precisely than the name map's per-class default:
-    // `new HTTPException(404)` is a 404, whatever the map says about
-    // the class.
+    // The map says which classes carry a status; an unmatched class
+    // answers null, whatever its arguments hold.
+    if (ctx.exceptionType === undefined) {
+      return null;
+    }
+    const mapped = matchConstructorCode(ctx.exceptionType, sc.codes);
+    if (mapped === null) {
+      return null;
+    }
+
+    // A status literal in first position beats the class default:
+    // `new HTTPException(404)` is a 404.
     const first = ctx.throwCallArgs?.[0];
     if (first !== undefined && Node.isNumericLiteral(first)) {
       const value = first.getLiteralValue();
@@ -195,15 +203,7 @@ function extractStatusCodeFromRule(
         return { type: "literal", value };
       }
     }
-
-    // Look up the thrown expression's constructor name in the pack-supplied
-    // mapping. Match against the full text (e.g. "HttpError.NotFound"), falling
-    // back to the last dot-segment so "NotFound" alone also resolves. Without
-    // a match we return null rather than guessing.
-    if (ctx.exceptionType === undefined) {
-      return null;
-    }
-    return matchConstructorCode(ctx.exceptionType, sc.codes);
+    return mapped;
   }
 
   if (sc.from === "argumentConstructor") {

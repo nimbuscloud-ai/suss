@@ -46,6 +46,22 @@ app.delete("/users/:id", async (c) => {
   return c.json({ deleted: user.id });
 });
 
+app.post("/users/:id/retries", async (c) => {
+  const user = await findUser(c.req.param("id"));
+  if (!user) {
+    // The first argument is a count; the class carries no status.
+    throw new RetryBudgetExceeded(503, "no attempts left");
+  }
+  return c.json({ retried: user.id });
+});
+
+class RetryBudgetExceeded extends Error {
+  constructor(attemptsUsed: number, message: string) {
+    super(message);
+    void attemptsUsed;
+  }
+}
+
 declare function findUser(
   id: string,
 ): Promise<{ id: string; name: string; deletedAt: string | null } | null>;
