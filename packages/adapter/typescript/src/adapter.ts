@@ -92,6 +92,7 @@ import {
   createTsSubUnitContext,
   type TsSubUnitContext,
 } from "./subUnitContext.js";
+import { nameSummaries, workspaceNameFor } from "./summaryIdentity.js";
 import { createTimer, type TimingReport } from "./timing.js";
 import { adapterCodeStamp, computeAdapterPacksDigest } from "./version.js";
 import { type DescentBarriers, NO_BARRIERS } from "./walk/descent.js";
@@ -1691,6 +1692,16 @@ function buildCallerSummary(
 
 export interface TypeScriptAdapterConfig {
   tsConfigFilePath?: string;
+  /**
+   * What the project being read calls itself, so a summary can carry a
+   * name nothing else in a run shares.
+   *
+   * Two services in one repository both hold `src/handlers.ts`, and a
+   * summary named after the file and the export is the same on both
+   * sides until something says which project it came from. Worked out
+   * from the project's own package.json when nobody says.
+   */
+  workspace?: string;
   project?: Project;
   frameworks: PatternPack[];
   extractorOptions?: ExtractorOptions;
@@ -2103,6 +2114,17 @@ export function createTypeScriptAdapter(
           }),
         );
       }
+
+      // Named last, so a call can be pointed at whatever the run
+      // produced, including the units the reachable pass added.
+      nameSummaries(enriched, {
+        workspace:
+          config.workspace ??
+          workspaceNameFor(
+            commonDirectoryOf(sourceFiles.map((f) => f.getFilePath())),
+          ),
+        projectRoot: commonDirectoryOf(sourceFiles.map((f) => f.getFilePath())),
+      });
 
       return enriched;
     },

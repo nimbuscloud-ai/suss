@@ -231,6 +231,33 @@ export function extractInvocationEffects(
       return;
     }
 
+    // Case 4: a call whose result is given a name, `const a = foo()`.
+    // The commonest call there is, and the one this walker used to miss,
+    // so a handler that fetched something and then answered looked as
+    // though it had called nothing. What a summary said about the code
+    // and what the code did came apart there.
+    if (Node.isVariableDeclaration(node)) {
+      const initializer = node.getInitializer();
+      if (initializer !== undefined) {
+        const { call, async } = unwrapCall(initializer);
+        if (call !== null) {
+          const preconditions = collectPreconditions(node, func);
+          results.push({
+            effect: {
+              type: "invocation",
+              callee: call.getExpression().getText(),
+              args: extractArgs(call),
+              async,
+              ...(preconditions.length > 0 ? { preconditions } : {}),
+            },
+            line: enclosingStatementLine(node),
+            neverTerminal: true,
+          });
+        }
+      }
+      return;
+    }
+
     // Case 3: direct call element in an array literal or property
     // assignment value — `[foo(), bar()]`, `{ key: foo() }`. These
     // also fire when the container evaluates. Skip arguments to

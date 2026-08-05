@@ -302,6 +302,15 @@ export const BoundaryAspectSchema = z.enum([
 ]);
 
 export const CodeUnitIdentitySchema = z.object({
+  /**
+   * What to call this summary when something else refers to it.
+   *
+   * A name is not enough: one repository had 408 summaries sharing a
+   * name with another, so anything matching on names was guessing.
+   * This is the workspace, the file, and the export path, which is
+   * unique across everything one run can see.
+   */
+  id: z.string().optional(),
   name: z.string(),
   exportPath: z.array(z.string()).nullable(),
   boundaryBinding: BoundaryBindingSchema.nullable(),
@@ -611,6 +620,17 @@ export const EffectSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("invocation"),
     callee: z.string(),
+    /**
+     * The summary this call reaches, by its id, when exactly one
+     * summary in the run answers to the name.
+     *
+     * `callee` is the text somebody wrote, and a repository can hold
+     * many functions called `processRecord`. Following a call meant
+     * matching that text and hoping, which is why a call graph built
+     * from these came out mostly empty. Absent when nothing matched,
+     * or when more than one did: a guess is worse than a gap.
+     */
+    summary: z.string().optional(),
     args: z.array(z.unknown()),
     async: z.boolean(),
     /**

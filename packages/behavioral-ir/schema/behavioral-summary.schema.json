@@ -53,6 +53,9 @@
                 "type": "null"
               }
             ]
+          },
+          "workspace": {
+            "type": "string"
           }
         },
         "required": ["file", "range", "exportName"],
@@ -61,6 +64,9 @@
       "identity": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -601,6 +607,9 @@
                         "const": "invocation"
                       },
                       "callee": {
+                        "type": "string"
+                      },
+                      "summary": {
                         "type": "string"
                       },
                       "args": {

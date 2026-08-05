@@ -63,6 +63,15 @@ export const SourceLocationSchema = z.object({
   file: z.string(),
   range: z.object({ start: z.number(), end: z.number() }),
   exportName: z.string().nullable(),
+  /**
+   * What the extract was pointed at, as that project calls itself.
+   *
+   * A path is relative to wherever the extract ran, so two services in
+   * one repository both say `src/handlers.ts` and merging their
+   * summaries puts them on top of each other. This is what tells them
+   * apart, and what a reader groups by.
+   */
+  workspace: z.string().optional(),
 });
 
 // ---------------------------------------------------------------------------
