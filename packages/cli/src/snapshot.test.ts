@@ -1401,3 +1401,53 @@ describe("inspect variant rendering", () => {
     expect(output).toMatchSnapshot();
   });
 });
+
+describe("inspect transition trees", () => {
+  it("keeps a conditioned transition that follows an unconditional one", () => {
+    const summary: BehavioralSummary = {
+      kind: "resolver",
+      location: {
+        file: "src/resolvers/widget.ts",
+        range: { start: 1, end: 20 },
+        exportName: "widget",
+      },
+      identity: { name: "widget", exportPath: null, boundaryBinding: null },
+      inputs: [],
+      transitions: [
+        {
+          id: "widget:return:1",
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [],
+          location: { start: 2, end: 3 },
+          isDefault: true,
+        },
+        {
+          id: "widget:throw:1",
+          conditions: [
+            {
+              type: "opaque",
+              sourceText: "resolver errored",
+              reason: "complexExpression",
+            },
+          ],
+          output: {
+            type: "throw",
+            exceptionType: "GraphQLError",
+            message: "resolver errored",
+          },
+          effects: [],
+          location: { start: 4, end: 5 },
+          isDefault: false,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "derived", level: "high" },
+    };
+    const filePath = writeTempJson([summary]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toContain("GraphQLError");
+    expect(output).toContain("resolver errored");
+  });
+});
