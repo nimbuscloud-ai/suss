@@ -3,28 +3,28 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 228,
-    "internal": 1118,
-    "consumers": 348,
-    "pairs": 340
+    "internal": 1125,
+    "consumers": 358,
+    "pairs": 350
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
-      "internal": 510,
+      "internal": 511,
       "consumers": 27
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
       "exports": 21,
-      "internal": 8,
+      "internal": 11,
       "consumers": 3
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 27,
-      "internal": 118,
-      "consumers": 44
+      "internal": 116,
+      "consumers": 47
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -36,7 +36,7 @@
       "name": "@suss/cli",
       "exports": 10,
       "internal": 152,
-      "consumers": 121
+      "consumers": 122
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -71,8 +71,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 27,
-      "consumers": 30
+      "internal": 32,
+      "consumers": 36
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
