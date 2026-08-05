@@ -239,15 +239,15 @@ and each gets its own disposition:
 
 - **A wildcard.** The Next.js pages-api handler and API Gateway's
   `ANY` method answer every method. The method field gets a wildcard
-  spelling, `"*"`, that is neither a name nor null. In this pass
-  `boundaryKey` treats `"*"` as it treats null, so pairing behavior
-  does not change; teaching pairing that a wildcard matches every
-  method is future work, and the CloudFormation reader, which skips
-  `ANY` routes entirely today, can stop skipping them once the
-  spelling exists. Without this, throwing builders would crash
-  extraction on any pages-api project, and the mechanical rewrite to
-  null would make inspect say "named at runtime" about a handler
-  whose method is not named by anyone.
+  spelling, `"*"`, that is neither a name nor null, and pairing learns
+  it in this pass: at indexing time a `"*"` provider is entered under
+  each concrete HTTP method, a closed set, so every existing key
+  string stays as it is and no consumer-side code changes. The
+  CloudFormation reader, which skips `ANY` routes entirely today,
+  stops skipping them. Without the spelling, throwing builders would
+  crash extraction on any pages-api project, and the mechanical
+  rewrite to null would make inspect say "named at runtime" about a
+  handler whose method is not named by anyone.
 - **Identity stated elsewhere.** A receive effect's channel is null
   because the queue a handler drains is deployment wiring; the
   checker's join by code scope is the pairing rule, and null is the
@@ -395,9 +395,6 @@ Committed coverage baselines regenerate in the same change.
   the command is built out of the recognizer's reach leaves the send
   class itself unknown, not only the channel. That is an unnamed
   effect rather than an unnamed boundary and needs its own design.
-- **Wildcard pairing.** `"*"` preserves today's behavior, in which a
-  method-wildcard route pairs with nothing. Matching it against every
-  consumer method is its own change with its own blast radius.
 - **No confidence machinery.** Null is not low confidence. It is a
   claim, made at whatever confidence the summary already carries, that
   this source does not state the name.
@@ -423,8 +420,9 @@ Each step lands separately with the tree green:
    decorated-method discovery, wrapper expansion and contract reader,
    the Next.js wildcard, the CloudFormation reader's `ANY` routes, and
    the checker, where PR #115's guard comes out.
-5. cli and checker surfaces: the `unmatched.unnamed` bucket, the
-   unused-queue description, the send-only crossing counter with
+5. cli and checker surfaces: the `unmatched.unnamed` bucket, wildcard
+   pairing (a `"*"` provider indexed under each concrete method), the
+   unused-queue annotation, the send-only crossing counter with
    wrapper dedup, null-safe rendering in inspect, check, and
    corroborate, and the service-call effect's copied method field.
 6. Resolution threading into the recognizer context, gated on
@@ -445,22 +443,24 @@ Each step lands separately with the tree green:
 - The wildcard token is `"*"` (Matt, 2026-08-05). Not `ANY`, which is
   one vendor's spelling of the same claim; the CloudFormation reader
   maps `ANY` to `"*"`.
+- Wildcard pairing lands with this pass (Matt, 2026-08-05). A `"*"`
+  provider pairs with consumers of every method, indexed as described
+  above.
+- Unused-queue findings annotate rather than suppress (Matt,
+  2026-08-05): the description carries the count of unnamed sends in
+  scope, and the finding keeps firing.
 - Empty strings never signal a state. This was the proposal's thesis
   and is now a standing rule: a field that means something when blank
   gets a spelling the type system carries.
 
 ## Open questions
 
-1. Does wildcard pairing land with this pass or after it?
-2. Unused-queue findings when unnamed sends share the bus technology:
-   annotate with the count (recommended) or suppress. Suppression lets
-   one dynamic send silence every unused-queue warning in the project.
-3. `pairSummaries` is exported, so splitting the unmatched bucket is a
+1. `pairSummaries` is exported, so splitting the unmatched bucket is a
    public API change either way it is shaped. New array, or a label on
    the existing one?
-4. When symbolic references land and the per-unit finding returns,
+2. When symbolic references land and the per-unit finding returns,
    does it get a new kind or widen `unsupportedSemantics`? The
    existing EventPattern usage already strains that name, so the
    answer may be a rename rather than a sibling.
-5. Does resolution threading ship default-on once profiled, or behind
+3. Does resolution threading ship default-on once profiled, or behind
    a flag until the numbers hold across more than one corpus?
