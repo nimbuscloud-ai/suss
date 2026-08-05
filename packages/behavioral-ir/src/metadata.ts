@@ -7,9 +7,9 @@
 // the same shapes, and a renamed key made findings evaporate with no
 // error anywhere.
 //
-// Reads validate. An entry that does not parse answers undefined, the
-// same answer as an absent entry, so artifacts written before a
-// namespace changed keep reading instead of crashing.
+// Reads validate field by field. A field that does not parse is
+// dropped and its siblings keep reading, so an artifact written
+// before a namespace changed keeps answering what it still can.
 
 import { z } from "zod";
 
@@ -61,14 +61,33 @@ export function withMessageBusMetadata(
   };
 }
 
-/** The summary's message-bus namespace, or undefined when absent or unreadable. */
+/**
+ * The namespace's fields that parse, field by field, or undefined
+ * when the entry is absent or not an object. Per-field validation
+ * matches the hand-written typeof checks this module replaced: one
+ * bad field never takes its siblings down with it.
+ */
+function readNamespace<Shape extends z.ZodRawShape>(
+  schema: z.ZodObject<Shape>,
+  raw: unknown,
+): z.infer<z.ZodObject<Shape>> | undefined {
+  if (typeof raw !== "object" || raw === null) {
+    return undefined;
+  }
+  const entries = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(schema.shape)) {
+    const parsed = (field as z.ZodTypeAny).safeParse(entries[key]);
+    if (parsed.success && parsed.data !== undefined) {
+      out[key] = parsed.data;
+    }
+  }
+  return out as z.infer<z.ZodObject<Shape>>;
+}
+
+/** The summary's message-bus namespace, or undefined when absent or not an object. */
 export function readMessageBusMetadata(
   summary: BehavioralSummary,
 ): MessageBusMetadata | undefined {
-  const raw = summary.metadata?.messageBus;
-  if (raw === undefined) {
-    return undefined;
-  }
-  const parsed = MessageBusMetadataSchema.safeParse(raw);
-  return parsed.success ? parsed.data : undefined;
+  return readNamespace(MessageBusMetadataSchema, summary.metadata?.messageBus);
 }

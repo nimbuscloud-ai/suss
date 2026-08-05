@@ -43,13 +43,21 @@ describe("the messageBus metadata namespace", () => {
     });
   });
 
-  it("answers undefined for an absent or unreadable entry", () => {
+  it("answers undefined when the namespace is absent or not an object", () => {
     expect(readMessageBusMetadata(summaryWith(undefined))).toBeUndefined();
     expect(
-      readMessageBusMetadata(
-        summaryWith({ messageBus: { patternResolution: 42 } }),
-      ),
+      readMessageBusMetadata(summaryWith({ messageBus: 42 })),
     ).toBeUndefined();
+  });
+
+  it("drops a field that does not parse and keeps its siblings", () => {
+    const read = readMessageBusMetadata(
+      summaryWith({
+        messageBus: { queue: "OrdersQueue", patternResolution: "unresolved" },
+      }),
+    );
+    expect(read?.queue).toBe("OrdersQueue");
+    expect(read?.patternResolution).toBeUndefined();
   });
 
   it("refuses a value the schema does not name at write time", () => {

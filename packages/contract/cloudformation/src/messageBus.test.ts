@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { readMessageBusMetadata } from "@suss/behavioral-ir";
+
 import { cloudFormationToSummaries } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -334,8 +336,7 @@ function eventBridgeConsumers(
 }
 
 function resolutionOf(summary: BehavioralSummary): string | undefined {
-  return (summary.metadata as { messageBus?: { patternResolution?: string } })
-    ?.messageBus?.patternResolution;
+  return readMessageBusMetadata(summary)?.patternResolution;
 }
 
 describe("buildMessageBusSummaries — EventBridge", () => {
@@ -483,11 +484,7 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     expect(resolutionOf(consumer)).toBe("unresolvable");
     // No provider is emitted for an unresolvable pattern.
     expect(eventBridgeProviders(out)).toEqual([]);
-    const reason = (
-      consumer.metadata as {
-        messageBus?: { unresolvableReason?: string };
-      }
-    )?.messageBus?.unresolvableReason;
+    const reason = readMessageBusMetadata(consumer)?.unresolvableReason;
     expect(reason).toContain("detail-type");
   });
 

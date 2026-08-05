@@ -24,6 +24,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { readMessageBusMetadata } from "@suss/behavioral-ir";
 import { checkAll } from "@suss/checker";
 import { cloudFormationFileToSummaries } from "@suss/contract-cloudformation";
 import { eventBridgeFramework } from "@suss/framework-aws-eventbridge";
@@ -97,14 +98,7 @@ describe("aws-eventbridge integration", () => {
     );
     const byResolution = (status: string): string[] =>
       consumers
-        .filter(
-          (c) =>
-            (
-              c.metadata as {
-                messageBus?: { patternResolution?: string };
-              }
-            )?.messageBus?.patternResolution === status,
-        )
+        .filter((c) => readMessageBusMetadata(c)?.patternResolution === status)
         .map((c) => c.identity.name)
         .sort();
     expect(byResolution("exact")).toEqual([
