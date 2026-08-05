@@ -1,8 +1,9 @@
 # Proposal: the boundary the code does not name
 
-Status: draft, seeking alignment. Nothing below is implemented except
-where a step says otherwise. The false finding in the first section
-reproduces against the checker on main today.
+Status: draft, seeking alignment. Revised after three reviews (design,
+alignment with the boundary model, and a correctness review of the
+interim fix). Step 1 of the work list has landed as PR #115; nothing
+else is implemented.
 
 ## The same mistake, three ways in one week
 
@@ -23,9 +24,9 @@ it was gotten wrong three different ways:
    sends while many of its files construct send commands. EventBridge
    did the same for a put whose bus or detail type is named at runtime
    (both #113).
-3. **Misreading the spelling.** The message-bus checker reads the
-   empty channel #113 introduced as a channel named `""`. Every send
-   recorded without a queue now produces this, verified today:
+3. **Misreading the spelling.** The message-bus checker read the empty
+   channel #113 introduced as a channel named `""`. Every send
+   recorded without a queue produced this until PR #115:
 
    > Producer.handler sends to sqs channel "" but nothing in the
    > analysed scope declares this channel, and no handler answers it.
@@ -46,33 +47,56 @@ evidence available that the convention is not carrying its weight.
 
 Writers of the empty-string spelling:
 
-- `packages/adapter/typescript/src/adapter.ts:687,1667`, a route still
-  inside wrapper expansion and a route whose handler its caller
-  supplies
+- `packages/adapter/typescript/src/adapter.ts:687,1667`, a binding
+  whose method or path the pack could not read, and the synthesized
+  side of wrapper expansion
 - `packages/adapter/typescript/src/contract.ts:321`
+- `packages/adapter/typescript/src/discovery/decoratedMethod.ts:30`,
+  the type a decorator never named (#94; the earlier draft pointed at
+  the nestjs-graphql pack, which holds no writer)
 - `packages/framework/aws-sqs/src/index.ts:154,400`, the send and
   receive recognizers
 - `packages/framework/aws-eventbridge/src/index.ts:231`
-- `packages/framework/nestjs-graphql`, the type a decorator never
-  named (#94)
+- `packages/framework/nextjs/src/index.ts:105`, a pages-api handler
+  that answers every method
 
 Readers that each re-state "empty means unnamed" by hand:
 
 - `packages/ir-core/src/boundaryKey.ts:53,61,82`
+- `packages/adapter/typescript/src/adapter.ts:842,1148,1286,1429`
 - `packages/cli/src/inspect.ts:918,936,1232,1250`
 - `packages/cli/src/check.ts:552`
 - `packages/cli/src/corroborateCommand.ts:58`
-- `packages/checker/src/message-bus/messageBusPairing.ts`: nowhere,
-  which is failure 3 above
+- `tools/differential/src/shape/invariants.ts:141`
+- `packages/checker/src/message-bus/messageBusPairing.ts`: nowhere
+  until PR #115, which is failure 3 above
 
-And the schema already spells the same state two other ways.
+The review of this inventory found something worse than a missing
+guard: the empty string does not mean one thing. Today it carries four
+meanings, and only the first is "named at runtime":
+
+1. **The code assigns the name at runtime.** The SQS send whose
+   `QueueUrl` is a variable.
+2. **The unit answers every value.** The Next.js pages-api handler
+   writes an empty method because one export serves all seven, with a
+   comment saying so, and `corroborateCommand.ts:57` reads it back the
+   same way. A wildcard is a claim about breadth, and calling it
+   unnamed is false.
+3. **The identity is stated elsewhere.** The SQS receive recognizer
+   always writes an empty channel because the queue a handler drains
+   is stated by the event-source mapping in the template; the checker
+   joins the two by code scope, never by channel.
+4. **The pack matched and could not read.** `adapter.ts:687` fills
+   `""` when the route extraction answers null, which the taxonomy
+   below calls not-understood rather than unnamed.
+
+And the schema already spells "no name" two more ways.
 `graphql-operation.operationName` is an optional field left unset for
-an anonymous operation. `DeployableUnit.instanceName` is
+an unnamed operation. `DeployableUnit.instanceName` is
 `z.string().min(1)` with a comment that argues against the empty
 string directly: "An empty name would agree with every other empty
 name, so a unit that names nothing has to leave the field off
-instead." One state, three spellings, and the newest spelling's
-comment is a case against the oldest.
+instead." The newest spelling's comment is a case against the oldest.
 
 ## What the model needs
 
@@ -80,18 +104,22 @@ Three states, of which today's model expresses two and overloads one:
 
 - a boundary the source names, which pairs
 - a boundary the source crosses but does not name, which is recorded
-  and counted and never pairs
-- no boundary
+  and counted and never pairs in the checker
+- no boundary at all
 
 The middle state is currently "empty string, plus a convention that
 every reader must re-implement". It should be something the type
-system enforces on writers and hands to readers.
+system enforces on writers and hands to readers. And the migration has
+to route the four current meanings to the right places: meaning 1
+becomes null, meaning 2 becomes a wildcard spelling that is not null,
+meaning 3 becomes null with its join rule documented, and meaning 4
+becomes null plus the gap that already exists for it.
 
 On whether we need a name at all: pairing does, existence does not. A
 name is what pairing is, so an unnamed boundary can never pair, and
 that is not a defect to engineer around. What must never follow from a
 missing name is the crossing going unrecorded. Identity and existence
-separate cleanly once the middle state is expressible.
+separate once the middle state is expressible.
 
 ## The design: null, and empty becomes invalid
 
@@ -102,48 +130,92 @@ the empty string stops validating:
 export const MessageBusSemanticsSchema = z.object({
   name: z.literal("message-bus"),
   messageBus: z.enum(["sqs", "eventbridge", "bullmq", "kafka", "nats"]),
-  /** null when the code assigns the channel at runtime. */
+  /** null when this source does not name the channel. */
   channel: z.string().min(1).nullable(),
 });
 ```
 
 The binding builders take `string | null` and throw on `""`, so misuse
-fails at extraction time rather than at read time. `boundaryKey`
-returns null when any identity field is null, which is the behavior it
-has today with the spelling made explicit.
-
-In the serialized summary the claim is written down rather than
-inferred from an empty field:
+fails at extraction time. `boundaryKey` returns null when any identity
+field is null, which is the behavior it has today with the spelling
+made explicit. In the serialized summary the claim is written down
+rather than inferred from an empty field:
 
 ```json
 "semantics": { "name": "message-bus", "messageBus": "sqs", "channel": null }
 ```
 
-The effect on the code that had the bugs is deletion. The SQS
-recognizer's send path today:
+### Null is claimed after resolution, not instead of it
 
-```ts
-const channel = readQueueUrlChannel(input) ?? "";
-```
+The first draft defined null as "the name is assigned at runtime, and
+no static reader can do better". The alignment review showed both
+halves overclaim. `readQueueUrlChannel` resolves exactly two shapes, a
+string literal and `process.env.X`; it does not follow an identifier
+to a const initialized from a literal one line above the call. A
+static reader can do better, and the project already has it:
+`ResolutionStore.resolveWrittenValue` answers "what is this expression
+written as" across files, and the GraphQL document discovery already
+uses it for the structurally identical question of a document held in
+a named constant.
 
-becomes:
+So the definition is: **null means that after resolution, the chain
+leaves what this source states.** The mechanics:
 
-```ts
-const channel = readQueueUrlChannel(input);
-```
+- The recognizer context gains the resolution store, the way it
+  already carries `isImportedFrom`. The store is threaded through
+  discovery today and never reaches recognizers; that is plumbing, not
+  new machinery.
+- The per-pack mini-resolvers (`readQueueUrlChannel`, `readBusToken`)
+  shrink to a final pattern match on the resolved expression. The seam
+  where three packs made three different wrong choices (invent, drop,
+  coerce) stops existing, because the store's answer flows into the
+  binding unchanged.
+- A pack records the most-grounded symbolic form it can reach: a
+  resolved name first; failing that, a symbolic token some grounding
+  pass can bind later (an env-var name is such a token today, grounded
+  at check time against `envVarTargets`); null only when no symbolic
+  form exists. Without this rule, every reference today's grounding
+  does not cover (a config key, a parameter) would be demoted into a
+  state defined as permanently unpairable, while `process.env.X`
+  pairs. The difference between those references is which grounding
+  machinery exists, not what kind of thing they are.
+- Cost is measured before the threading lands as default behavior.
+  The store widens toward imports when an answer is missing, and a
+  null answer is what pays for the widening; queue identities on the
+  repos this proposal cares about will often answer null. The work
+  list gates the change on `--datalog-profile` numbers over a corpus.
 
-`readQueueUrlChannel` already answers `string | null`. The seam where
-three packs made three different wrong choices (invent, drop, coerce)
-stops existing, because the helper's answer flows into the binding
-unchanged. A pack author cannot reintroduce the bug without writing
-`?? ""` on purpose, and the schema would reject the result.
+The symbolic-token state deserves its own representation eventually:
+the channel string carrying either a queue name or an env token is the
+same one-field-two-meanings shape this proposal exists to kill, and
+the checker's fallback ("trust direct name match") compares tokens
+against logical ids as if they shared a namespace. That typing belongs
+to the message-bus identity proposal, which restructures channel
+identity into facets anyway; that document does not yet treat env-var
+channels or the chain-collapse at all, so this proposal nominates it
+as the owner and leaves the convention in place until then. The
+long-range direction is externalized references whose bindings arrive
+from contract readers, from a hand-supplied scenario file, or from a
+pack that reads a live system, with provenance on each binding; a
+reference the checker cannot ground then reports "pairs if env
+ORDERS_QUEUE_URL is bound", which tells a reader which question to
+ask.
 
-On the reading side the checker gets the same correction from the
-types. `effectiveChannel` in the message-bus checker starts returning
+This sequencing also reconciles an encoding conflict the review found:
+`effect-grammar.md` requires an unresolved target to be recorded as
+`unresolved` with a reason, and its migration note makes message
+channels into grammar targets. Null on today's binding fields is the
+degenerate spelling of that same state; when channels become targets,
+these nulls lift into the grammar's encoding, reasons and all. The two
+documents now cite each other so neither drifts.
+
+### What falls out on the reading side
+
+`effectiveChannel` in the message-bus checker starts returning
 `string | null` because the semantics field does, and its existing
-`ch === null` branch covers the case. Failure 3 disappears without a
-new guard, which is the point: the convention becomes something the
-compiler carries to every consumer, present and future.
+null branch covers the case; PR #115's guard is then deleted rather
+than maintained. The compiler carries the convention to every
+consumer, present and future.
 
 Alternatives considered:
 
@@ -153,37 +225,79 @@ Alternatives considered:
 - **Absence (optional field).** In the artifact, an absent field is
   indistinguishable from an older writer that never knew the field
   existed. Null is the claim stated by a writer who looked.
-- **A per-field union with a reason**, like the schedule effect's
-  `callbackRef: { type: "opaque", reason }`. The reason texture
-  already lives on the interaction effect (callee text, args) and in
-  the summary's gaps; wrapping every identity read in a union is
-  machinery ahead of need.
+- **A per-field union with a reason.** This is effect-grammar's
+  encoding, and it wins eventually, per the sequencing above. Landing
+  it on every identity field now would wrap every consumer in a union
+  ahead of the grammar migration that motivates it.
 - **A binding-level `identified: boolean`.** Loses which facet is
   unknown. EventBridge shows facets go missing independently.
 
+## What null does not mean
+
+Three of the empty string's four meanings are not "named at runtime",
+and each gets its own disposition:
+
+- **A wildcard.** The Next.js pages-api handler and API Gateway's
+  `ANY` method answer every method. The method field gets a wildcard
+  spelling, `"*"`, that is neither a name nor null. In this pass
+  `boundaryKey` treats `"*"` as it treats null, so pairing behavior
+  does not change; teaching pairing that a wildcard matches every
+  method is future work, and the CloudFormation reader, which skips
+  `ANY` routes entirely today, can stop skipping them once the
+  spelling exists. Without this, throwing builders would crash
+  extraction on any pages-api project, and the mechanical rewrite to
+  null would make inspect say "named at runtime" about a handler
+  whose method is not named by anyone.
+- **Identity stated elsewhere.** A receive effect's channel is null
+  because the queue a handler drains is deployment wiring; the
+  checker's join by code scope is the pairing rule, and null is the
+  field being truthful that this source does not state it. These
+  effects are excluded from the named-at-runtime count below; a
+  summary line that swept them in would report one unnamed crossing
+  per SQS handler in every project.
+- **Matched but unreadable.** When a pack matches a call and cannot
+  read the identity expression at all, the summary carries null and
+  the `unreadBinding` gap the adapter already emits. A reader tells
+  the two apart by the gap: null with the gap is not-understood, null
+  without it is a source that does not state the name. The fuzzer's
+  quarry stays what it was: crossings that produce neither.
+
+The EventBridge recognizer needs one alignment with this: an empty
+string literal in `DetailType` currently survives into the channel as
+an empty subject with a named bus. An empty literal names nothing, so
+it takes the same null treatment as a missing half.
+
 ## What a reader sees
 
-- **inspect** renders the state in words instead of hiding the row:
-  `sqs (named at runtime)` where a channel would appear. "Named at
-  runtime" is the vocabulary #113 established; it is used everywhere
-  rather than a synonym per surface.
+- **inspect** renders the state in words on the send side:
+  `sqs (named at runtime)` where a channel would appear. Receive rows
+  are unchanged; their identity was never rendered from the channel.
+  "Named at runtime" is #113's vocabulary, used on every surface. The
+  word "anonymous" is avoided: in this tree it already means a source
+  construct without a name, like an unnamed GraphQL operation, which
+  is a different thing.
 - **check** prints one line when the count is nonzero: `4 crossings
-  name their boundary at runtime`. Anonymous crossings never enter a
+  name their boundary at runtime`. The counter walks message-send
+  effects, not summaries, because effect-level crossings never enter
+  summary pairing; and it skips the crossings a wrapper's own summary
+  shares with the summaries derived from it, which would otherwise be
+  counted once unnamed and once named. Unnamed crossings never enter a
   pairable-boundary denominator, so a pack learning to record them
   never reads as coverage lost.
-- **findings**: an anonymous producer yields one info finding per unit
-  and bus technology, in the mold of the existing
-  EventPattern-unresolvable info finding (surfaced rather than
-  dropped): "OrderService.handler sends to an sqs queue the code names
-  at runtime. The send is recorded; its delivery cannot be checked
-  from source." It is never an orphan warning, because "nothing
-  declares this channel" is not something we know.
+- **No per-unit finding in this pass.** The first draft proposed an
+  info finding per unit and bus technology. Review showed it would
+  duplicate the aggregate line while being suppressible only by a
+  broad kind rule, since a suppression cannot name a null-key
+  boundary. The finding earns its place when symbolic references
+  land and it can say "pairs if env ORDERS_QUEUE_URL is bound", which
+  is actionable; until then the aggregate line and inspect carry the
+  state.
 - **unused-queue findings** stay, and stop overclaiming: when N sends
   in scope name their queue at runtime, the description says so, since
   any of them could target the queue.
 - **pairing** splits the bucket: `unmatched.noBinding` today mixes
   units that have no boundary with units whose boundary has no name.
-  An `unmatched.anonymous` bucket separates them, so a reader asking
+  An `unmatched.unnamed` bucket separates them, so a reader asking
   "what could not be checked, and why" gets two answers instead of
   one.
 
@@ -192,18 +306,26 @@ Alternatives considered:
 Nullable now, each because a source exists that can match the crossing
 and not the name:
 
-- `message-bus.channel` (SQS and EventBridge recognizers, #113)
-- `rest.method`, `rest.path` (wrapper expansion, caller-supplied
-  handlers, #86)
-- `graphql-resolver.typeName` (undeclared resolver type, #94)
+- `message-bus.channel` (SQS and EventBridge recognizers, #113; the
+  receive recognizer's identity-elsewhere case rides the same type)
+- `rest.method`, `rest.path` (unreadable bindings, caller-supplied
+  handlers, #86), with `"*"` as the wildcard spelling for method
+- `graphql-resolver.typeName` (undeclared resolver type, #94, written
+  by the adapter's decorated-method discovery)
 
 Unchanged, because no source today can fail to name them:
 `graphql-resolver.fieldName`, `storage-relational.table` and `scope`,
 `runtime-config.instanceName`. The rule going forward: a field becomes
 nullable when a pack turns up that can recognize the crossing without
-the name, not before. `graphql-operation.operationName` stays optional;
-it has produced no wrong output, and migrating its spelling is a
-serialization change with no payoff today.
+the name, not before. `graphql-operation.operationName` stays
+optional; it has produced no wrong output, and migrating its spelling
+is a serialization change with no payoff today.
+
+Null also flows into two places the inventory review found beyond the
+binding itself: the adapter copies `semantics.method` into a
+service-call effect's `interaction.method`, and `corroborateCommand`
+and one inspect path render method and path bare, which would print
+the word "null". Both are in the work list.
 
 ## Partial identity
 
@@ -211,87 +333,126 @@ An EventBridge entry can name its detail type while the bus is decided
 at runtime. #113 collapses either missing half to a fully unnamed
 channel, because a put keyed by half an identity pairs across buses.
 This pass keeps that rule and the one-string channel. The message-bus
-identity proposal restructures the channel into its facets (queue
-identity; bus and detail type); when it lands, each facet takes the
-null treatment independently and the collapse rule dissolves into it.
+identity proposal restructures the channel into its facets; when it
+lands, each facet takes the null treatment independently and the
+collapse rule dissolves into it.
 
-## Named-at-runtime is not the same as not-understood
+## The property that catches the whole class
 
-A null identity field is a claim made by a pack that matched the call
-and read the site: the name is assigned at runtime, and no static
-reader can do better. A pattern the pack does not understand produces
-nothing at all. Everything present in a summary is deliberate;
-absence is the gap. So the reader-facing question "could suss not name
-this, or did it not understand it" is answered by construction, and
-the second class stays what the fuzzer hunts.
+The metamorphic property: generate the same program twice, once with
+the identity named by a literal and once with the name routed through
+a binding the fact layer cannot ground, a value from a fetched config
+or a parameter no call site in scope supplies. Hold two things: the
+summaries agree once identity fields are erased, and the erased fields
+are null rather than the crossing being gone.
 
-The property that patrols the border, and would have caught every
-instance above regardless of the model: for each shape family that
-names an identity (queue producer, EventBridge entry, REST route,
-resolver type), generate the same program with the name routed through
-a binding the recognizer cannot read, a variable assigned from config.
-Hold two things: the summaries equal the literal-named summaries once
-identity fields are erased, and the erased fields are null rather than
-the crossing being gone. This slots into the equivalence oracle, which
-already compares the same behavior written the plainest way; the
-transform is the same behavior, named less. The invariant that treats
-a keyless boundary as a defect refines to: a boundary that names every
-identity field must key, and an anonymous boundary must never pair.
+The routing matters. The first draft said "a variable assigned from
+config", and fact-resolution.md's acceptance criteria require exactly
+that shape to resolve to a name; the two documents would have asserted
+opposite outcomes on one input. The transform has to use a binding
+that stays ungroundable after resolution, or the property starts
+failing the moment resolution improves, which is the wrong direction
+for a guard.
+
+The cost, from reading the harness rather than assuming it: the
+shape families today are consumer-side (REST handler, component,
+announce, env, resolver, queue consumer, package export), so queue
+producer and EventBridge entry families are new construction, not a
+transform on existing ones. Identity-erased comparison needs
+per-family ignore paths in `summarySetDifferences` plus an invariant
+that the crossing survived, and `everyBoundaryCanPair` carries an
+exemption only for resolver typeName today. The harness also
+deliberately declines these comparisons in two places, returning a
+null baseline with a comment calling the unnamed variant a different
+program; this proposal reverses that stance, on the position that the
+same send named less is the same behavior, and says so here rather
+than leaving the reversal implicit in a diff.
 
 ## Compatibility
 
-Published 0.3.x summaries carry `""` in these fields (every SQS
-receive effect does). `parseSummary` normalizes `""` to null on the
-three affected variants at read time and keeps doing so; the cost is a
-comparison. Writers never emit `""` again. Committed coverage
-baselines regenerate in the same change.
+Two read paths exist, and the first draft covered only one:
+
+- **Parsed reads.** All entry points into `BehavioralSummarySchema`
+  (`parseSummary` and the safe variants; both CLI read paths use
+  `safeParseSummaries`) normalize `""` to null on the affected
+  variants before validation, and the schema itself rejects `""`. The
+  first draft said the schema both normalizes and rejects, which one
+  schema cannot do; normalization lives in the entry points, rejection
+  in the schema, and builders throw at the source. Published 0.3.x
+  summaries keep parsing indefinitely; the cost is a comparison.
+- **The extraction cache.** `readManifest` does `JSON.parse` with no
+  validation and a warm hit returns summaries verbatim, which is the
+  path the 0.3.1 bug came from. A 0.3.x cache directory would feed
+  `""`-spelled summaries into code that only handles null. The cache's
+  `SCHEMA_VERSION` is part of the entry key; bumping it makes old
+  entries unreachable, one line.
+
+Committed coverage baselines regenerate in the same change.
 
 ## What this does not do
 
 - **An operation we cannot classify.** `client.send(command)` where
   the command is built out of the recognizer's reach leaves the send
-  class itself unknown, not only the channel. That is an anonymous
-  effect, not an anonymous boundary, and it needs its own design.
+  class itself unknown, not only the channel. That is an unnamed
+  effect rather than an unnamed boundary and needs its own design.
+- **Wildcard pairing.** `"*"` preserves today's behavior, in which a
+  method-wildcard route pairs with nothing. Matching it against every
+  consumer method is its own change with its own blast radius.
 - **No confidence machinery.** Null is not low confidence. It is a
-  high-confidence claim that the source assigns the name at runtime.
+  claim, made at whatever confidence the summary already carries, that
+  this source does not state the name.
 - **Intent matching.** An intent saying "sends to some queue" being
-  satisfied by an anonymous send is the vague-spec direction, separate
-  work.
+  satisfied by an unnamed send is the vague-spec direction, separate
+  work. The middle state is what makes that direction expressible at
+  all, which is an argument for the model rather than part of this
+  pass.
 
 ## The work, in order
 
 Each step lands separately with the tree green:
 
-1. Stop the false orphan under the current spelling: the message-bus
-   checker treats an empty producer channel as unnamed. One guard and
-   a regression test, deleted again by step 3. This enforces behavior
-   #113 already decided, so it ships ahead of alignment on the rest.
-2. ir-core: nullable identity fields, builders take `string | null`
-   and throw on `""`, `boundaryKey` reads null, schema rejects `""`.
-3. The writers follow the types: aws-sqs, aws-eventbridge,
-   nestjs-graphql, wrapper expansion, the contract reader. The
-   `?? ""` sites disappear.
-4. checker and cli: the `unmatched.anonymous` bucket, the info
-   finding, the unused-queue description, inspect and check rendering,
-   corroborate's method guard.
-5. behavioral-ir: parse-time normalization of `""`.
-6. Fuzzer: the named-less transform and the refined invariant.
-7. Pack-authoring docs, one paragraph: a recognizer that matches
-   records the crossing; an identity field the code does not name is
-   null; returning null means only "not my call".
-8. Measure on the dogfood repos and state the numbers: sends recorded
-   before and after, findings that appeared or disappeared.
+1. Landed: PR #115. The message-bus checker treats an empty producer
+   channel as unnamed and skips resolution for it. Deleted by step 4.
+2. ir-core: nullable identity fields, the `"*"` wildcard spelling for
+   method, builders that take `string | null` and throw on `""`,
+   `boundaryKey` reading null.
+3. behavioral-ir and the adapter: entry-point normalization of `""`,
+   the cache `SCHEMA_VERSION` bump.
+4. The writers and readers follow the types: aws-sqs, aws-eventbridge
+   (including the empty-literal halves), the adapter's
+   decorated-method discovery, wrapper expansion and contract reader,
+   the Next.js wildcard, the CloudFormation reader's `ANY` routes, and
+   the checker, where PR #115's guard comes out.
+5. cli and checker surfaces: the `unmatched.unnamed` bucket, the
+   unused-queue description, the send-only crossing counter with
+   wrapper dedup, null-safe rendering in inspect, check, and
+   corroborate, and the service-call effect's copied method field.
+6. Resolution threading into the recognizer context, gated on
+   `--datalog-profile` numbers over a corpus, since identity queries
+   that answer null pay the store's widening cost.
+7. Fuzzer: the producer-side shape families, the named-less transform,
+   and the invariant exemptions per family.
+8. Docs: the pack-authoring rule in one paragraph (a recognizer that
+   matches records the crossing; an identity field the source does not
+   state is null, after asking the store; returning null means only
+   "not my call"), and the effect-grammar cross-citation.
+9. Measure on the dogfood repos and state the numbers: sends recorded
+   before and after, findings that appeared or disappeared, and the
+   extraction-time cost of resolution threading.
 
 ## Open questions
 
-1. The anonymous-producer info finding: a new kind, or widen
-   `unsupportedSemantics`? And does the EventPattern-unresolvable
-   finding fold into it later? Leaning new kind; "unsupported" is
-   wrong for a semantics we support whose identity is unknowable.
-2. Unused-queue findings when anonymous sends share the bus
-   technology: annotate with the count (recommended) or suppress.
-   Suppression lets one dynamic send silence every unused-queue
-   warning in the project.
+1. The wildcard token: `"*"` or API Gateway's own `ANY`? And does
+   wildcard pairing land with this pass or after it?
+2. Unused-queue findings when unnamed sends share the bus technology:
+   annotate with the count (recommended) or suppress. Suppression lets
+   one dynamic send silence every unused-queue warning in the project.
 3. `pairSummaries` is exported, so splitting the unmatched bucket is a
    public API change either way it is shaped. New array, or a label on
    the existing one?
+4. When symbolic references land and the per-unit finding returns,
+   does it get a new kind or widen `unsupportedSemantics`? The
+   existing EventPattern usage already strains that name, so the
+   answer may be a rename rather than a sibling.
+5. Does resolution threading ship default-on once profiled, or behind
+   a flag until the numbers hold across more than one corpus?

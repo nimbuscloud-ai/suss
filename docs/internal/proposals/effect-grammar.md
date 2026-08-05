@@ -64,7 +64,10 @@ Read it as a sentence: this code **verb**s a **family** resource named
 - **target** — the specific thing touched: a table name, a host, a
   queue, an env-var name, `stdout`, a file path. When the analyzer
   cannot work the target out, it records `unresolved` with a reason.
-  It never silently drops the effect.
+  It never silently drops the effect. The unnamed-boundaries proposal
+  spells this same state as null on today's binding identity fields;
+  when pairing keys become targets, those nulls lift into `unresolved`
+  with a reason, so the two documents state one rule.
 - **payload** — the shape of the data crossing, in TypeShape (the same
   shape language bodies and intent declarations already use), when
   extractable.
