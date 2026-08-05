@@ -291,15 +291,25 @@ it takes the same null treatment as a missing half.
   boundary. The finding earns its place when symbolic references
   land and it can say "pairs if env ORDERS_QUEUE_URL is bound", which
   is actionable; until then the aggregate line and inspect carry the
-  state.
+  state. Its eventual shape follows what other analysis tools
+  converged on. They keep three things separate: a stable name a user
+  can silence (ESLint rule names, staticcheck's prefixed codes), the
+  severity, and whether the tool found a violation or is reporting
+  that it could not decide. SARIF, the report format most analyzers
+  emit, gives that last state its own value: a result whose kind is
+  "open" means the rule ran and lacked the information to conclude,
+  distinct from "fail". And clang attaches a note that says what
+  would settle the diagnostic. So the new kind reports as info, maps
+  to "open" rather than "fail" if suss ever emits SARIF, and its
+  description names the missing binding the way a clang note does.
 - **unused-queue findings** stay, and stop overclaiming: when N sends
   in scope name their queue at runtime, the description says so, since
   any of them could target the queue.
-- **pairing** splits the bucket: `unmatched.noBinding` today mixes
-  units that have no boundary with units whose boundary has no name.
-  An `unmatched.unnamed` bucket separates them, so a reader asking
-  "what could not be checked, and why" gets two answers instead of
-  one.
+- **pairing** keeps one unmatched list, and each entry says why it
+  went unmatched: the unit has no boundary, or its boundary has no
+  name. Surfaces render the two segments separately, so a reader
+  asking "what could not be checked, and why" gets two answers, and
+  existing consumers of the list keep one list to walk.
 
 ## Which fields change
 
@@ -420,14 +430,17 @@ Each step lands separately with the tree green:
    decorated-method discovery, wrapper expansion and contract reader,
    the Next.js wildcard, the CloudFormation reader's `ANY` routes, and
    the checker, where PR #115's guard comes out.
-5. cli and checker surfaces: the `unmatched.unnamed` bucket, wildcard
-   pairing (a `"*"` provider indexed under each concrete method), the
-   unused-queue annotation, the send-only crossing counter with
-   wrapper dedup, null-safe rendering in inspect, check, and
-   corroborate, and the service-call effect's copied method field.
-6. Resolution threading into the recognizer context, gated on
-   `--datalog-profile` numbers over a corpus, since identity queries
-   that answer null pay the store's widening cost.
+5. cli and checker surfaces: the unmatched-reason property and its
+   segmented rendering, wildcard pairing (a `"*"` provider indexed
+   under each concrete method), the unused-queue annotation, the
+   send-only crossing counter with wrapper dedup, null-safe rendering
+   in inspect, check, and corroborate, and the service-call effect's
+   copied method field.
+6. Resolution threading into the recognizer context, on for everyone.
+   `--datalog-profile` numbers over a corpus are part of the merge
+   check, since identity queries that answer null pay the store's
+   widening cost; a shortfall is fixed in the store rather than put
+   behind a setting.
 7. Fuzzer: the producer-side shape families, the named-less transform,
    and the invariant exemptions per family.
 8. Docs: the pack-authoring rule in one paragraph (a recognizer that
@@ -452,15 +465,19 @@ Each step lands separately with the tree green:
 - Empty strings never signal a state. This was the proposal's thesis
   and is now a standing rule: a field that means something when blank
   gets a spelling the type system carries.
+- The unmatched list stays one list; each entry carries why it went
+  unmatched, and surfaces render the segments separately (Matt,
+  2026-08-05).
+- The ungrounded-boundary warning is a new kind, not a widening of
+  `unsupportedSemantics` (Matt, 2026-08-05). It lands with symbolic
+  references, shaped per the prior-art note above; the EventPattern
+  case folds into it then, with a deprecation window since suppression
+  rules validate against kind names.
+- Resolution threading ships on for everyone (Matt, 2026-08-05).
+  Speed is measured before merge and a shortfall is fixed in the
+  store, never put behind a setting.
 
 ## Open questions
 
-1. `pairSummaries` is exported, so splitting the unmatched bucket is a
-   public API change either way it is shaped. New array, or a label on
-   the existing one?
-2. When symbolic references land and the per-unit finding returns,
-   does it get a new kind or widen `unsupportedSemantics`? The
-   existing EventPattern usage already strains that name, so the
-   answer may be a rename rather than a sibling.
-3. Does resolution threading ship default-on once profiled, or behind
-   a flag until the numbers hold across more than one corpus?
+1. The new warning kind's name, chosen when it lands with symbolic
+   references.
