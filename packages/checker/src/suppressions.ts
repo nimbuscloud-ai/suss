@@ -54,6 +54,23 @@ function ruleSideMatches(
   return true;
 }
 
+/**
+ * Dedupe keeps one representative and lists the other contributing
+ * providers in `sources`; a rule naming any contributor matches.
+ */
+function providerSideMatches(
+  side: SuppressionRule["provider"],
+  finding: Finding,
+): boolean {
+  if (ruleSideMatches(side, finding.provider)) {
+    return true;
+  }
+  if (side?.summary === undefined || side.transitionId !== undefined) {
+    return false;
+  }
+  return finding.sources?.includes(side.summary) ?? false;
+}
+
 function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
   if (
     rule.boundary !== undefined &&
@@ -63,7 +80,7 @@ function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
   }
   return (
     ruleSideMatches(rule.consumer, finding.consumer) &&
-    ruleSideMatches(rule.provider, finding.provider)
+    providerSideMatches(rule.provider, finding)
   );
 }
 

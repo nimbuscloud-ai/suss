@@ -2,7 +2,8 @@
 // previous one's summaries whole or extracts from scratch.
 //
 //   key = (schema version, adapter version, adapter code hash, pack
-//          versions, tsconfig path, tsconfig stamp, sorted
+//          versions, extraction config stamp, tsconfig path,
+//          tsconfig stamp, sorted
 //          [(file path, mtime, size)] for the include set)
 //
 // On a warm run with nothing changed, checking the key costs one

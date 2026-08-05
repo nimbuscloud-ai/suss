@@ -503,7 +503,14 @@ function insertIntoTree(
     return insertIntoTree(branch, conditions, i, leaf);
   }
   if (node.kind === "leaf") {
-    return node;
+    // Branch; the leaf keeps whichever side the arrival does not take.
+    const branch: TreeNode = {
+      kind: "branch",
+      predicate: pred,
+      thenBranch: positive ? { kind: "empty" } : node,
+      elseBranch: positive ? node : { kind: "empty" },
+    };
+    return insertIntoTree(branch, conditions, i, leaf);
   }
   if (!predicateEqual(node.predicate, pred)) {
     // Predicate shape mismatch at this depth. The transitions don't line up
@@ -1485,12 +1492,12 @@ export function inspectDir(options: DirOptions): void {
       const key = restKey(c) ?? "no path";
       process.stdout.write(`  ${c.identity.name} (${key}) has no provider\n`);
     }
-    // A boundary named at runtime is worth its own line: something
+    // A boundary with no name is worth its own line: something
     // crosses it, and the reader should know it went unchecked.
     for (const u of unpairable) {
       if (u.reason === "unnamedBoundary") {
         process.stdout.write(
-          `  ${u.summary.identity.name} crosses a boundary named at runtime\n`,
+          `  ${u.summary.identity.name} crosses a boundary with no name to pair on\n`,
         );
       }
     }

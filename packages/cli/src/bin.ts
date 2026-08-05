@@ -5,8 +5,13 @@ import { runCli } from "./run.js";
 
 runCli(process.argv.slice(2)).then(
   (code) => process.exit(code),
-  (err: Error) => {
-    process.stderr.write(`Error: ${err.message}\n`);
+  (err: unknown) => {
+    // The stack says where; its first line already reads "Error: ...".
+    const detail =
+      err instanceof Error
+        ? (err.stack ?? `Error: ${err.message}`)
+        : `Error: ${String(err)}`;
+    process.stderr.write(`${detail}\n`);
     process.exit(1);
   },
 );

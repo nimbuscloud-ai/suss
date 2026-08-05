@@ -69,6 +69,7 @@ function producerSummary(opts: {
   /** Null models a send whose queue the code names at runtime. */
   channel: string | null;
   bodyFields?: string[] | null;
+  messageBus?: "sqs" | "eventbridge";
 }): BehavioralSummary {
   const body =
     opts.bodyFields === null
@@ -90,7 +91,7 @@ function producerSummary(opts: {
       transport: "sqs",
       semantics: {
         name: "message-bus",
-        messageBus: "sqs",
+        messageBus: opts.messageBus ?? "sqs",
         channel: opts.channel,
       },
       recognition: "@suss/framework-aws-sqs",
@@ -907,6 +908,21 @@ describe("sends whose queue the code names at runtime", () => {
   // This held before the fix as well (an empty subject matched no named
   // one). It pins that the fix stays narrow: an unnamed send must not
   // widen into a producer for every declared queue.
+  it("counts unnamed sends into the unused caveat only on the queue's own technology", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "EventPublisher",
+        filePath: "src/events/index.ts",
+        channel: null,
+        messageBus: "eventbridge",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const unused = findings.find((f) => f.kind === "messageBusUnused");
+    expect(unused?.description).not.toContain("name the queue at runtime");
+  });
+
   it("does not count a send with no channel as producing to a declared queue", () => {
     const summaries = [
       queueProvider("OrdersQueue"),

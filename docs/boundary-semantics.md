@@ -232,7 +232,9 @@ that wrote it.
 Passes that pair through their own machinery still do:
 `pairGraphqlOperations` walks selection sets, and the per-domain checker
 modules (`message-bus/`, `runtime-config/`, `storage/`) filter by
-`semantics.name`; their variants' `identityKey` answers null.
+`semantics.name`. The `runtime-config` and `storage-relational`
+variants' `identityKey` answers null; `message-bus` keys and pairs
+through the generic pass as well.
 
 ### Metadata namespaced by semantics
 

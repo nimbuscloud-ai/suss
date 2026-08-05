@@ -12,6 +12,7 @@
 //   the other two, because the program still runs and the summary that
 //   survives is well-formed.
 
+import { checkAll } from "@suss/checker";
 import { apolloFramework } from "@suss/framework-apollo";
 import {
   awsLambdaFramework,
@@ -650,6 +651,19 @@ export async function runQueueShapeDifferential(
     detail: `${violation.invariant}: ${violation.detail}`,
   }));
 
+  // A consumer-side program alone gives the checker nothing to accuse:
+  // handlers bound to subjects are not orphans, and nothing here is
+  // an unused queue.
+  findings.push(
+    ...checkerFindings(summaries, {
+      none: [
+        "messageBusProducerOrphan",
+        "messageBusConsumerOrphan",
+        "messageBusUnused",
+      ],
+    }),
+  );
+
   // A consumer built by no factory names no subject, so it is a
   // different program rather than another spelling of this one.
   const baseline =
@@ -749,6 +763,18 @@ export async function runProducerShapeDifferential(
     }
   }
 
+  // The checker's own verdicts, judged. A send the code does not name
+  // must never read as an orphan; a named send to a queue nothing
+  // declares must read as exactly one.
+  findings.push(
+    ...checkerFindings(
+      summaries,
+      rendered.expectedChannel === null
+        ? { none: ["messageBusProducerOrphan"] }
+        : { exactly: [{ kind: "messageBusProducerOrphan", count: 1 }] },
+    ),
+  );
+
   // The same send, named less: against the plainest spelling, with the
   // channel put aside, the send should look identical.
   const baselineRendered = renderProducerShape(SIMPLEST_PRODUCER_SHAPE);
@@ -782,6 +808,51 @@ export async function runProducerShapeDifferential(
     harnessFailures: [],
     requestsRun: 0,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The checker stage: findings judged against what the program means
+// ---------------------------------------------------------------------------
+
+/** What the checker may and must say about one generated scenario. */
+export interface FindingExpectation {
+  /** Kinds that must not appear. */
+  none?: string[];
+  /** Kinds that must appear exactly this often. */
+  exactly?: Array<{ kind: string; count: number }>;
+}
+
+/**
+ * Run the checker over a scenario's summaries and judge the findings.
+ * The extraction oracles cannot see a checker bug: a summary set can
+ * be right and the findings about it wrong, which is how a recorded
+ * send with no channel came back as an orphan to a queue named "".
+ */
+export function checkerFindings(
+  summaries: BehavioralSummary[],
+  expectation: FindingExpectation,
+): ShapeFinding[] {
+  const findings = checkAll(summaries).findings;
+  const out: ShapeFinding[] = [];
+  for (const kind of expectation.none ?? []) {
+    const hits = findings.filter((f) => f.kind === kind);
+    if (hits.length > 0) {
+      out.push({
+        oracle: "invariant",
+        detail: `checker: ${kind} must not fire for this scenario and fired ${hits.length} time${hits.length === 1 ? "" : "s"}: ${hits[0]?.description ?? ""}`,
+      });
+    }
+  }
+  for (const expected of expectation.exactly ?? []) {
+    const hits = findings.filter((f) => f.kind === expected.kind);
+    if (hits.length !== expected.count) {
+      out.push({
+        oracle: "invariant",
+        detail: `checker: ${expected.kind} must fire ${expected.count} time${expected.count === 1 ? "" : "s"} for this scenario and fired ${hits.length}`,
+      });
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

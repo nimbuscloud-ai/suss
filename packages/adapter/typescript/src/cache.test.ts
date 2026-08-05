@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { testCompilerOptions } from "@suss/test-project";
 
+import { extractionConfigStamp } from "./adapter.js";
 import { createCacheLayer, MAX_ENTRIES } from "./cache.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -367,5 +368,24 @@ describe("createCacheLayer", () => {
       expect(result.kind).toBe("miss");
       expect(result.diagnostic.missReason).toBe("key-changed");
     });
+  });
+});
+
+describe("extractionConfigStamp", () => {
+  it("separates runs that differ only in extraction config", () => {
+    const on = extractionConfigStamp({});
+    const off = extractionConfigStamp({ includeReachable: false });
+    expect(on).not.toBe(off);
+
+    const strict = extractionConfigStamp({
+      extractorOptions: { gapHandling: "strict" },
+    });
+    expect(strict).not.toBe(on);
+  });
+
+  it("is stable for the default config", () => {
+    expect(extractionConfigStamp({})).toBe(
+      extractionConfigStamp({ includeReachable: true }),
+    );
   });
 });

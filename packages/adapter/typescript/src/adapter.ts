@@ -1815,6 +1815,21 @@ let saidWhyNoCache = false;
  * and an edit to the adapter leaves the previous run's answers in
  * place. A slower run is the better trade against a wrong one.
  */
+/**
+ * Config that changes what an extraction produces belongs in the cache
+ * key. Two runs differing only in `includeReachable` used to share an
+ * entry, and whichever ran first answered for both.
+ */
+export function extractionConfigStamp(config: {
+  includeReachable?: boolean;
+  extractorOptions?: { gapHandling?: string };
+}): string {
+  return [
+    `includeReachable=${config.includeReachable !== false}`,
+    `gapHandling=${config.extractorOptions?.gapHandling ?? "default"}`,
+  ].join(",");
+}
+
 function declineWhenRunFromSource(cacheDir: string | null): string | null {
   if (cacheDir === null || adapterCodeStamp().kind === "bundle") {
     return cacheDir;
@@ -1877,13 +1892,13 @@ export function createTypeScriptAdapter(
             : null)),
   );
   const cache: CacheLayer = createCacheLayer(cacheDir);
-  const adapterPacksDigest = computeAdapterPacksDigest(
+  const adapterPacksDigest = `${computeAdapterPacksDigest(
     config.frameworks.map((p) =>
       p.version !== undefined
         ? { name: p.name, version: p.version }
         : { name: p.name },
     ),
-  );
+  )}|${extractionConfigStamp(config)}`;
 
   const packWrappers = config.frameworks.flatMap(
     (pack) => pack.transparentWrappers ?? [],

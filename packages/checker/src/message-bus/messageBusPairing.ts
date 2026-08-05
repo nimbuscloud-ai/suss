@@ -219,15 +219,22 @@ export function checkMessageBus(
     findings.push(makeOrphanConsumerFinding(c, semantics));
   }
 
-  // Queue declared but no producer AND no consumer → unused. When
-  // sends in scope name their queue at runtime, the finding says so
-  // rather than claiming nothing produces to it; any of them could
-  // reach this queue.
-  const unnamedSendCount = producers.filter(
-    (p) =>
-      p.effect.binding.semantics.name === "message-bus" &&
-      p.effect.binding.semantics.channel === null,
-  ).length;
+  // Queue declared but no producer AND no consumer → unused. Unnamed
+  // sends on the queue's own technology could reach it, so the finding
+  // carries their count; other technologies cannot.
+  const unnamedSendsByBus = new Map<string, number>();
+  for (const p of producers) {
+    const sendSemantics = p.effect.binding.semantics;
+    if (
+      sendSemantics.name === "message-bus" &&
+      sendSemantics.channel === null
+    ) {
+      unnamedSendsByBus.set(
+        sendSemantics.messageBus,
+        (unnamedSendsByBus.get(sendSemantics.messageBus) ?? 0) + 1,
+      );
+    }
+  }
   for (const p of queueProviders) {
     const semantics = p.identity.boundaryBinding?.semantics;
     if (semantics?.name !== "message-bus" || semantics.channel === null) {
@@ -239,7 +246,13 @@ export function checkMessageBus(
     ) {
       continue;
     }
-    findings.push(makeUnusedQueueFinding(p, semantics, unnamedSendCount));
+    findings.push(
+      makeUnusedQueueFinding(
+        p,
+        semantics,
+        unnamedSendsByBus.get(semantics.messageBus) ?? 0,
+      ),
+    );
   }
 
   // Body-shape pairing: for each channel that has both producer

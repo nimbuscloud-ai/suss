@@ -654,11 +654,13 @@ function renderDirHuman(
 
   // A boundary whose name the source never stated is worth a line per
   // unit: something crossed it, and a reader deciding what to trust
-  // needs to know it went unchecked.
+  // needs to know it went unchecked. "No name to pair on" covers both
+  // a value assigned at runtime and a binding whose identity fields a
+  // pack never fills.
   if (unnamed.length > 0) {
     lines.push("");
     lines.push(
-      `${unnamed.length} boundar${unnamed.length === 1 ? "y is" : "ies are"} named at runtime, so nothing can be checked against ${unnamed.length === 1 ? "it" : "them"}:`,
+      `${unnamed.length} boundar${unnamed.length === 1 ? "y has" : "ies have"} no name to pair on, so nothing can be checked against ${unnamed.length === 1 ? "it" : "them"}:`,
     );
     for (const u of unnamed) {
       lines.push(`  ${u.name}`);

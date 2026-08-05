@@ -81,7 +81,7 @@ Location is file + line range. Identity is symbolic: *what* is this code unit, r
 
 **`deployableUnit` names the thing that runs this code**, when the pack knows it: the Lambda's logical id from a SAM template, the container or deployment name elsewhere. It answers a question a boundary cannot. Several Lambdas can subscribe to one subject with a handler each, and the subject alone does not say which handler runs where, so every handler looks like it might answer every subscription.
 
-Nothing in the checker reads the field yet. It names the function a piece of code runs as, which is what lets a check ask whether the code of a wired-up function handles what the template routes to it. `runtime-config` boundaries already carry the same pair in their semantics, since it is what keys that boundary, and both come from one value.
+The checker joins on it: message-bus pairing scopes producers to the runtime they deploy with, and runtime-config pairing keys on it. It names the function a piece of code runs as, which is what lets a check ask whether the code of a wired-up function handles what the template routes to it. `runtime-config` boundaries already carry the same pair in their semantics, since it is what keys that boundary, and both come from one value.
 
 Optional rather than nullable: a React component or a library export is never deployed on its own, so there is nothing for it to say.
 
@@ -89,17 +89,26 @@ Optional rather than nullable: a React component or a library export is never de
 
 ```typescript
 interface BoundaryBinding {
-  protocol: string;            // "http" today; will split when we add a second protocol
-  method?: string;             // "GET", "POST", etc. for HTTP
-  path?: string;               // "/users/:id" for HTTP
-  framework: string;           // "ts-rest", "express", "react-router", "fetch", "axios"
-  declaredResponses?: number[];
+  transport: string;      // the wire: "http", "sqs", "in-process", "os"
+  semantics: Semantics;   // the pairing rule, a discriminated union on `name`
+  recognition: string;    // which pack matched, or "reachable"
 }
+
+// One variant per protocol; each lives in its own module under
+// packages/ir-core/src/semantics with its keying and agreement rules.
+type Semantics =
+  | { name: "rest"; method: string | null; path: string | null; declaredResponses?: number[] }
+  | { name: "graphql-resolver"; typeName: string | null; fieldName: string }
+  | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
+  | { name: "function-call"; module?: string; exportName?: string; package?: string; exportPath?: string[] }
+  | { name: "runtime-config"; deploymentTarget: string; instanceName: string }
+  | { name: "storage-relational"; storageSystem: string; scope: string; table: string }
+  | { name: "message-bus"; messageBus: string; channel: string | null };
 ```
 
 Where a code unit connects to the outside world. A REST endpoint is the same boundary whether it's served at `/api/v1/users` or `/api/v2/members`, the *identity* of the boundary is separate from the address. For v0, we use the address as the identity; adding stable boundary IDs is a future concern.
 
-**This shape is HTTP-biased today.** `protocol` is doing the work of both *transport* (wire protocol) and *semantics* (what the participants think they're doing); `framework` is doing the work of recognition (the specific library). `method` / `path` are REST-specific and would be empty for any non-REST boundary even if it's HTTP-transported. When a second boundary semantics lands (GraphQL is the planned forcing function), these fields split into `transport` + `semantics` (a discriminated union) + `recognition`. See [`boundary-semantics.md`](boundary-semantics.md) for the target shape. Until then, the checker, the pairing logic, and the pack interfaces all assume REST semantics.
+An identity field is null when the source does not name it; the empty string is invalid there, and REST's method also admits `"*"`, the wildcard for a handler that answers every method. [`boundary-semantics.md`](boundary-semantics.md) covers each variant's pairing rule and the builder helpers packs use.
 
 ## `Transition`
 
@@ -458,7 +467,7 @@ The adapter-to-extractor interface. Defined in `@suss/extractor`, not `@suss/beh
 ```typescript
 interface RawCodeStructure {
   identity: { name; kind; file; range; exportName; exportPath }
-  boundaryBinding: { protocol; method; path; framework } | null;
+  boundaryBinding: BoundaryBinding | null;
   parameters: RawParameter[];
   branches: RawBranch[];
   dependencyCalls: RawDependencyCall[];
