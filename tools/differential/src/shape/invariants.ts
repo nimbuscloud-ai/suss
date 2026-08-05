@@ -149,7 +149,7 @@ const everyBoundaryCanPair: Invariant = (summaries, expectation) =>
     }
     if (binding.semantics.name === "rest") {
       const { method, path } = binding.semantics;
-      return method === "" || path === ""
+      return method === null || path === null
         ? violation(
             "everyBoundaryCanPair",
             `${summary.identity.name} binds to rest with method ${JSON.stringify(method)} and path ${JSON.stringify(path)}, which pairs with nothing`,
@@ -162,7 +162,7 @@ const everyBoundaryCanPair: Invariant = (summaries, expectation) =>
       // that names none is what the summary should carry. Every other
       // empty half is an address a client cannot reach.
       const typeIsAccountedFor =
-        typeName !== "" || expectation.resolver?.typeName === null;
+        typeName !== null || expectation.resolver?.typeName === null;
       return typeIsAccountedFor && fieldName !== ""
         ? []
         : violation(
@@ -197,7 +197,9 @@ function bindsToTheWantedField(
     return false;
   }
   if (wanted.typeName === null) {
-    return binding.semantics.typeName === "" && saysWhatItCouldNotRead(summary);
+    return (
+      binding.semantics.typeName === null && saysWhatItCouldNotRead(summary)
+    );
   }
   return binding.semantics.typeName === wanted.typeName;
 }

@@ -148,10 +148,9 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   // A send whose queue is named by a variable, a parameter, or a
   // config lookup used to be dropped whole, so a service that sends to
   // a queue it names at runtime read as a service that sends nothing.
-  // The send happened either way. An empty channel is how the rest of
-  // suss says the code did not name one, and a boundary with an empty
-  // half pairs with nothing rather than pairing wrongly.
-  const channel = readQueueUrlChannel(input) ?? "";
+  // The send happened either way. A null channel says the code did not
+  // name one, and it pairs with nothing rather than pairing wrongly.
+  const channel = readQueueUrlChannel(input);
 
   // Body extraction: prefer the inner object when MessageBody is
   // `JSON.stringify({...})` (the dominant pattern). Both producer
@@ -391,13 +390,13 @@ function messageReceiveRecognizer(
   return [
     {
       type: "interaction",
-      // Channel intentionally empty: the SQS consumer binding lives on
-      // the CFN event-source mapping summary; the pairing pass joins
-      // by codeScope rather than by channel name from this side.
+      // Channel intentionally null: the queue a handler drains is
+      // stated by the CFN event-source mapping, so this side does not
+      // name it and the pairing pass joins by codeScope instead.
       binding: messageBusBinding({
         recognition: "@suss/framework-aws-sqs",
         messageBus: "sqs",
-        channel: "",
+        channel: null,
       }),
       callee: callNode.getExpression().getText(),
       interaction: {

@@ -210,7 +210,7 @@ export function checkMessageBus(
   // be in a different repo we don't analyse).
   for (const c of consumers) {
     const semantics = c.identity.boundaryBinding?.semantics;
-    if (semantics?.name !== "message-bus") {
+    if (semantics?.name !== "message-bus" || semantics.channel === null) {
       continue;
     }
     if (hasPair(producerChannels, semantics.channel)) {
@@ -219,10 +219,18 @@ export function checkMessageBus(
     findings.push(makeOrphanConsumerFinding(c, semantics));
   }
 
-  // Queue declared but no producer AND no consumer → unused.
+  // Queue declared but no producer AND no consumer → unused. When
+  // sends in scope name their queue at runtime, the finding says so
+  // rather than claiming nothing produces to it; any of them could
+  // reach this queue.
+  const unnamedSendCount = producers.filter(
+    (p) =>
+      p.effect.binding.semantics.name === "message-bus" &&
+      p.effect.binding.semantics.channel === null,
+  ).length;
   for (const p of queueProviders) {
     const semantics = p.identity.boundaryBinding?.semantics;
-    if (semantics?.name !== "message-bus") {
+    if (semantics?.name !== "message-bus" || semantics.channel === null) {
       continue;
     }
     if (
@@ -231,7 +239,7 @@ export function checkMessageBus(
     ) {
       continue;
     }
-    findings.push(makeUnusedQueueFinding(p, semantics));
+    findings.push(makeUnusedQueueFinding(p, semantics, unnamedSendCount));
   }
 
   // Body-shape pairing: for each channel that has both producer
@@ -287,10 +295,10 @@ function effectiveChannel(p: ProducerRecord): string | null {
     return null;
   }
 
-  // An empty channel is a send whose queue the code names at runtime.
+  // A null channel is a send whose queue the code names at runtime.
   // The send is recorded, and there is no name to pair on or to call
   // an orphan.
-  return sem.channel === "" ? null : sem.channel;
+  return sem.channel;
 }
 
 /**
@@ -331,9 +339,9 @@ function resolveProducerChannels(
     }
 
     // A send with no channel has nothing to resolve. Skipping it here
-    // also keeps a resolved channel from ever outranking the no-name
-    // guard in effectiveChannel, whatever a template happens to hold.
-    if (semantics.channel === "") {
+    // also keeps a resolved channel from ever outranking the null
+    // channel in effectiveChannel, whatever a template happens to hold.
+    if (semantics.channel === null) {
       continue;
     }
 
@@ -341,7 +349,10 @@ function resolveProducerChannels(
     // it on `${bus}#${detailType}`, where only the bus segment is env-
     // derived — split it off, resolve the bus, recompose with the
     // detail-type intact.
-    const { busToken, detailSuffix } = splitBusChannel(semantics);
+    const { busToken, detailSuffix } = splitBusChannel(
+      semantics.messageBus,
+      semantics.channel,
+    );
     const runtime = runtimeRunning(runtimeProviders, producer.summary, byFile);
     if (runtime === null) {
       continue;
@@ -365,20 +376,23 @@ function resolveProducerChannels(
  * env-var chain-collapse, so it's split out and the detail-type is
  * recomposed after resolution.
  */
-function splitBusChannel(semantics: MessageBusSemantics): {
+function splitBusChannel(
+  messageBus: MessageBusSemantics["messageBus"],
+  channel: string,
+): {
   busToken: string;
   detailSuffix: string | null;
 } {
-  if (semantics.messageBus === "eventbridge") {
-    const hash = semantics.channel.indexOf("#");
+  if (messageBus === "eventbridge") {
+    const hash = channel.indexOf("#");
     if (hash !== -1) {
       return {
-        busToken: semantics.channel.slice(0, hash),
-        detailSuffix: semantics.channel.slice(hash + 1),
+        busToken: channel.slice(0, hash),
+        detailSuffix: channel.slice(hash + 1),
       };
     }
   }
-  return { busToken: semantics.channel, detailSuffix: null };
+  return { busToken: channel, detailSuffix: null };
 }
 
 /**
@@ -492,14 +506,22 @@ function makeOrphanConsumerFinding(
 function makeUnusedQueueFinding(
   provider: BehavioralSummary,
   semantics: MessageBusSemantics,
+  unnamedSendCount: number,
 ): Finding {
   const binding = provider.identity.boundaryBinding as BoundaryBinding;
+  // A send whose queue the code names at runtime could reach this
+  // queue, so the finding says what is known instead of claiming
+  // nothing produces to it.
+  const caveat =
+    unnamedSendCount === 0
+      ? ""
+      : ` ${unnamedSendCount} send${unnamedSendCount === 1 ? "" : "s"} in scope name${unnamedSendCount === 1 ? "s" : ""} the queue at runtime and could target it.`;
   return {
     kind: "messageBusUnused",
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${semantics.messageBus} channel "${semantics.channel}" is declared in infrastructure but neither produced to nor consumed from. Likely orphan resource left over from a removed feature.`,
+    description: `${semantics.messageBus} channel "${semantics.channel}" is declared in infrastructure but has no identified producer or consumer. Likely orphan resource left over from a removed feature.${caveat}`,
     severity: "warning",
   };
 }
@@ -597,6 +619,10 @@ function checkBodyShapes(opts: {
       continue;
     }
     const channel = semantics.channel;
+    if (channel === null) {
+      continue;
+    }
+
     const codeScope = readCodeScope(cfnConsumer);
     if (codeScope === null) {
       continue;

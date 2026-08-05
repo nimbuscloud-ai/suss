@@ -23,6 +23,13 @@ A summary file is a JSON array of `BehavioralSummary` objects:
 
 Each element describes one code unit, a handler, client call site, loader, action, component, etc.
 
+Every summary carries `schemaVersion`. A summary without one is
+version 1, written by 0.3.x. The parsers in `@suss/behavioral-ir` read
+every version ever published, so an artifact never needs rewriting.
+Version 2 is current. It spells an unnamed identity field null,
+rejects the empty string there, and adds `"*"` as the REST method
+wildcard.
+
 ## Core concept: transitions
 
 A **transition** is a single execution path through the code unit. Every transition has:
@@ -102,6 +109,17 @@ A boundary binding connects a code unit to an API endpoint. It has three layers,
 ```
 
 Two summaries with matching `semantics` (pairing is semantics-specific, REST pairs by `(method, normalizedPath)`; `function-call` pairs by `package::exportPath`) describe opposite sides of the same boundary, a provider and a consumer. This is how cross-boundary checking works: pair summaries by boundary, then compare transitions.
+
+An identity field is null when the source does not name it. A send
+whose queue URL lives in a variable still appears:
+
+```json
+{ "name": "message-bus", "messageBus": "sqs", "channel": null }
+```
+
+It pairs with nothing. A REST `method` of `"*"` says the handler
+answers every method, and it pairs with whichever method each consumer
+names.
 
 `recognition: "reachable"` identifies library summaries produced by transitive closure, internal functions called from a pack-recognised entry point but not themselves matched by any pack. They have no pairing identity yet, so they're not cross-checked, but their transitions and effects are fully extracted.
 

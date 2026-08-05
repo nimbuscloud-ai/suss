@@ -1,5 +1,5 @@
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
-import { boundaryKey, channelsPair } from "@suss/ir-core";
+import { boundaryKey, pairingKey, semanticsAgree } from "@suss/ir-core";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -19,24 +19,40 @@ export interface SummaryPair {
   key: string;
 }
 
+/** Why a summary took no part in pairing. */
+export type UnpairableReason = "noBoundary" | "unnamedBoundary" | "unknownKind";
+
+export interface UnpairableSummary {
+  summary: BehavioralSummary;
+  reason: UnpairableReason;
+}
+
 export interface PairingResult {
   pairs: SummaryPair[];
   unmatched: {
     providers: BehavioralSummary[];
     consumers: BehavioralSummary[];
-    noBinding: BehavioralSummary[];
+    /**
+     * Summaries that took no part in pairing, each carrying why:
+     * `noBoundary` is internal code with nothing to pair on,
+     * `unnamedBoundary` is a boundary whose name the source never
+     * stated, and `unknownKind` is a summary read from disk with a
+     * kind this build does not know. One list, so a caller walks it
+     * once; the reason is what a reader groups by.
+     */
+    unpairable: UnpairableSummary[];
   };
 }
 
 /**
- * Whether two summaries that share a key really name the same
+ * Whether two summaries that share a bucket really name the same
  * boundary.
  *
- * A key is usually the whole answer, but a message-bus key carries
- * only the subject so that `default#order.placed` and `order.placed`
- * land in one bucket. The bus is compared here instead, where a side
- * that names its bus can still pair with a side that cannot know one,
- * and two named buses have to agree.
+ * A bucket key carries what both sides always know, and what one side
+ * may know more precisely is settled by the semantics variant's own
+ * agreement rule: buses have to agree on a message-bus bucket,
+ * methods on a REST bucket (which is how a `"*"` route meets
+ * consumers that each name one method).
  */
 function bindingsPair(
   provider: BehavioralSummary,
@@ -44,39 +60,63 @@ function bindingsPair(
 ): boolean {
   const providerSemantics = provider.identity.boundaryBinding?.semantics;
   const consumerSemantics = consumer.identity.boundaryBinding?.semantics;
-  if (
-    providerSemantics?.name === "message-bus" &&
-    consumerSemantics?.name === "message-bus"
-  ) {
-    return channelsPair(providerSemantics.channel, consumerSemantics.channel);
+  if (providerSemantics === undefined || consumerSemantics === undefined) {
+    // Unreachable from a bucket: a summary with no binding never got
+    // a key. Kept permissive so a direct caller sees old behavior.
+    return true;
   }
-  return true;
+
+  return semanticsAgree(providerSemantics, consumerSemantics);
 }
 
 /**
- * Given a flat list of summaries, match providers to consumers by
- * `(method, normalizedPath)`.
+ * The key a pair reports. The bucket key drops what the sides compare
+ * in-bucket, so the pair names the consumer's concrete identity (a
+ * consumer of a `"*"` route shows the method it actually uses),
+ * falling back to the provider's, then to the bucket.
+ */
+function pairKeyFor(
+  provider: BehavioralSummary,
+  consumer: BehavioralSummary,
+  bucketKey: string,
+): string {
+  const consumerBinding = consumer.identity.boundaryBinding;
+  const providerBinding = provider.identity.boundaryBinding;
+  const consumerKey =
+    consumerBinding === null ? null : boundaryKey(consumerBinding);
+  if (consumerKey !== null) {
+    return consumerKey;
+  }
+
+  const providerKey =
+    providerBinding === null ? null : boundaryKey(providerBinding);
+  return providerKey ?? bucketKey;
+}
+
+/**
+ * Given a flat list of summaries, match providers to consumers.
  *
- * Each provider is paired with every matching consumer (N×M within a group).
- * Summaries without a boundary path end up in `unmatched.noBinding`.
- * Summaries with a path but no counterpart end up in the appropriate
- * `unmatched` bucket.
+ * Summaries bucket on `pairingKey` and settle the rest with
+ * `bindingsPair`; each provider pairs with every agreeing consumer in
+ * its bucket (N×M within a group). Summaries that cannot take part
+ * land in `unmatched.unpairable` with the reason; sides with a key but
+ * no agreeing counterpart land in the matching `unmatched` list.
  */
 export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
   const providersByKey = new Map<string, BehavioralSummary[]>();
   const consumersByKey = new Map<string, BehavioralSummary[]>();
-  const noBinding: BehavioralSummary[] = [];
+  const unpairable: UnpairableSummary[] = [];
 
   for (const summary of summaries) {
     const binding = summary.identity.boundaryBinding;
     if (binding === null) {
-      noBinding.push(summary);
+      unpairable.push({ summary, reason: "noBoundary" });
       continue;
     }
 
-    const key = boundaryKey(binding);
+    const key = pairingKey(binding);
     if (key === null) {
-      noBinding.push(summary);
+      unpairable.push({ summary, reason: "unnamedBoundary" });
       continue;
     }
 
@@ -86,7 +126,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
     // place it on either side of a pairing.
     const role = BOUNDARY_ROLE[summary.kind];
     if (role === undefined) {
-      noBinding.push(summary);
+      unpairable.push({ summary, reason: "unknownKind" });
       continue;
     }
     const bucket = role === "provider" ? providersByKey : consumersByKey;
@@ -100,8 +140,9 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
 
   const pairs: SummaryPair[] = [];
   // Tracked per summary rather than per key, because a key bucket can
-  // now hold a summary that pairs with nothing in it: two message-bus
-  // sides share a subject but name different buses.
+  // hold a summary that pairs with nothing in it: two message-bus
+  // sides share a subject but name different buses, or two REST sides
+  // share a path but name different methods.
   const matchedProviders = new Set<BehavioralSummary>();
   const matchedConsumers = new Set<BehavioralSummary>();
 
@@ -116,7 +157,11 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
         if (!bindingsPair(provider, consumer)) {
           continue;
         }
-        pairs.push({ provider, consumer, key });
+        pairs.push({
+          provider,
+          consumer,
+          key: pairKeyFor(provider, consumer, key),
+        });
         matchedProviders.add(provider);
         matchedConsumers.add(consumer);
       }
@@ -146,7 +191,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
     unmatched: {
       providers: unmatchedProviders,
       consumers: unmatchedConsumers,
-      noBinding,
+      unpairable,
     },
   };
 }

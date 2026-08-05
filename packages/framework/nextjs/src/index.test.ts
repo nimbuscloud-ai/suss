@@ -63,7 +63,7 @@ describe("nextjsFramework — extraction", () => {
 
   it("reads one handler per method a route file exports", () => {
     expect(summaries.map(routeOf).sort()).toEqual([
-      " /api/legacy",
+      "* /api/legacy",
       "DELETE /api/orders/{id}",
       "GET /api/orders",
       "GET /api/orders/{id}",
@@ -105,7 +105,7 @@ describe("nextjsFramework — extraction", () => {
 
   it("reads a pages handler through the response it was handed", () => {
     const legacy = summaries.find(
-      (s) => routeOf(s) === " /api/legacy",
+      (s) => routeOf(s) === "* /api/legacy",
     ) as BehavioralSummary;
     // The path is right and the statuses are right. There is no
     // method, because one export answers all of them, so this route

@@ -167,7 +167,9 @@ function messageSendEffectsOf(
   );
 }
 
-function channelOf(effect: Extract<Effect, { type: "interaction" }>): string {
+function channelOf(
+  effect: Extract<Effect, { type: "interaction" }>,
+): string | null {
   const sem = effect.binding.semantics;
   return sem.name === "message-bus" ? sem.channel : raise("not message-bus");
 }
@@ -409,7 +411,7 @@ describe("eventbridge recognizer — skip cases", () => {
     const sends = messageSendEffectsOf(recognizeAll(file));
     expect(sends.map(channelOf)).toEqual([
       "ORDER_EVENT_BUS_NAME#OrderPlaced",
-      "",
+      null,
     ]);
     expect(sends.map((send) => boundaryKey(send.binding) !== null)).toEqual([
       true,

@@ -20,7 +20,7 @@ import type {
   BoundaryBinding,
   Finding,
 } from "@suss/behavioral-ir";
-import type { SummaryPair } from "./pairing/pairing.js";
+import type { SummaryPair, UnpairableReason } from "./pairing/pairing.js";
 
 /**
  * Human-readable pairing key for unmatched-summary reporting. Mirrors
@@ -95,6 +95,8 @@ export {
   type PairingResult,
   pairSummaries,
   type SummaryPair,
+  type UnpairableReason,
+  type UnpairableSummary,
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
 export { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
@@ -152,7 +154,14 @@ export interface CheckAllResult {
   unmatched: {
     providers: Array<{ name: string; key: string | null }>;
     consumers: Array<{ name: string; key: string | null }>;
-    noBinding: string[];
+    /**
+     * Summaries that took no part in pairing, each saying why: internal
+     * code with no boundary, a boundary whose name the source never
+     * stated, or a kind this build does not know. Renderers group by
+     * the reason, so a reader tells "nothing to check" from "something
+     * to check, no name to check it by".
+     */
+    unpairable: Array<{ name: string; reason: UnpairableReason }>;
   };
 }
 
@@ -217,7 +226,9 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const unmatched = {
     providers: restUnmatched.providers.filter(stillUnmatched),
     consumers: restUnmatched.consumers.filter(stillUnmatched),
-    noBinding: restUnmatched.noBinding.filter((s) => !graphqlMatched.has(s)),
+    unpairable: restUnmatched.unpairable.filter(
+      (u) => !graphqlMatched.has(u.summary),
+    ),
   };
 
   // Layer 2: cross-source contract agreement. Runs independently of
@@ -287,7 +298,10 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
             ? describeBinding(s.identity.boundaryBinding)
             : null,
       })),
-      noBinding: unmatched.noBinding.map((s) => s.identity.name),
+      unpairable: unmatched.unpairable.map((u) => ({
+        name: u.summary.identity.name,
+        reason: u.reason,
+      })),
     },
   };
 }

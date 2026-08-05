@@ -66,7 +66,8 @@ function consumerSummary(opts: {
 function producerSummary(opts: {
   name: string;
   filePath: string;
-  channel: string;
+  /** Null models a send whose queue the code names at runtime. */
+  channel: string | null;
   bodyFields?: string[] | null;
 }): BehavioralSummary {
   const body =
@@ -130,7 +131,9 @@ function consumerCodeSummary(opts: {
       semantics: {
         name: "message-bus",
         messageBus: "sqs",
-        channel: "",
+        // The queue a handler drains is stated by the event-source
+        // mapping, so the receive effect does not name it.
+        channel: null,
       },
       recognition: "@suss/framework-aws-sqs",
     },
@@ -882,7 +885,7 @@ describe("subject-channelled consumers", () => {
 });
 
 describe("sends whose queue the code names at runtime", () => {
-  // The recognizer records such a send with an empty channel. There is
+  // The recognizer records such a send with a null channel. There is
   // no name to pair on, so the checker must neither call the send an
   // orphan nor let it stand in for a producer on some named channel.
 
@@ -892,7 +895,7 @@ describe("sends whose queue the code names at runtime", () => {
       producerSummary({
         name: "OrderPublisher",
         filePath: "src/api/index.ts",
-        channel: "",
+        channel: null,
       }),
     ];
     const findings = checkMessageBus(summaries);
@@ -910,7 +913,7 @@ describe("sends whose queue the code names at runtime", () => {
       producerSummary({
         name: "OrderPublisher",
         filePath: "src/api/index.ts",
-        channel: "",
+        channel: null,
       }),
     ];
     const findings = checkMessageBus(summaries);
@@ -1008,7 +1011,7 @@ describe("checkAll, message-bus pairing integration", () => {
 
     expect(result.unmatched.providers).toEqual([]);
     expect(result.unmatched.consumers).toEqual([]);
-    expect(result.unmatched.noBinding).toEqual([]);
+    expect(result.unmatched.unpairable).toEqual([]);
     expect(result.findings.map((f) => f.kind)).toContain(
       "messageBusConsumerOrphan",
     );

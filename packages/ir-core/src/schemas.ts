@@ -13,6 +13,21 @@
 
 import { z } from "zod";
 
+import { SemanticsSchema } from "./semantics/registry.js";
+
+// The `@suss/ir-core/schemas` subpath is a public surface. The
+// protocol schemas moved into one module per protocol under
+// `semantics/`; these re-exports keep the subpath's contract.
+export { DeployableUnitSchema } from "./deployableUnit.js";
+export { FunctionCallSemanticsSchema } from "./semantics/functionCall.js";
+export { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js";
+export { GraphqlResolverSemanticsSchema } from "./semantics/graphqlResolver.js";
+export { MessageBusSemanticsSchema } from "./semantics/messageBus.js";
+export { SemanticsSchema } from "./semantics/registry.js";
+export { RestSemanticsSchema } from "./semantics/rest.js";
+export { RuntimeConfigSemanticsSchema } from "./semantics/runtimeConfig.js";
+export { StorageRelationalSemanticsSchema } from "./semantics/storageRelational.js";
+
 // ---------------------------------------------------------------------------
 // Confidence — how a claim was produced and how much to trust it.
 // ---------------------------------------------------------------------------
@@ -75,163 +90,10 @@ export const SourceLocationSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Boundary semantics — the discriminated union that gives a boundary
-// its pairing rule. New transports/semantics are added as variants.
-// ---------------------------------------------------------------------------
-
-export const RestSemanticsSchema = z.object({
-  name: z.literal("rest"),
-  /** Uppercase HTTP method ("GET", "POST", …). */
-  method: z.string(),
-  /** Normalized route path ("/users/{id}"). */
-  path: z.string(),
-  /**
-   * Status codes the producing source explicitly declared (OpenAPI
-   * responses, CFN MethodResponses, ts-rest router statuses). Kept here
-   * so the pairing layer can still see them without unwrapping metadata.
-   * Empty / absent for inferred sources.
-   */
-  declaredResponses: z.array(z.number()).optional(),
-});
-
-export const FunctionCallSemanticsSchema = z.object({
-  name: z.literal("function-call"),
-  /**
-   * Optional module identifier for cross-unit references
-   * (e.g. `"./components/Button"` for a React component, or the TS
-   * module path for a bare function export). Packs that don't do
-   * cross-module pairing can leave it unset.
-   */
-  module: z.string().optional(),
-  /** Named export within the module, when applicable. */
-  exportName: z.string().optional(),
-  /**
-   * Package name (as written in `package.json`) when this identity
-   * refers to a public package export — e.g. `"@suss/behavioral-ir"`.
-   * Set alongside `exportPath` by packs that resolve a package's
-   * public surface (the `packageExports` discovery variant). Distinct
-   * from `module`, which is a repo-relative module path for
-   * intra-repo pairing.
-   */
-  package: z.string().optional(),
-  /**
-   * Path to the exported binding within the package, starting with
-   * the sub-path key when one is used. Examples:
-   *   `["parseSummary"]`              — root export
-   *   `["schemas", "BoundaryBindingSchema"]` — sub-path `./schemas`
-   *
-   * The first segment is the sub-path without the leading `./`
-   * (`"."` → omitted). The last segment is the exported name.
-   */
-  exportPath: z.array(z.string()).optional(),
-});
-
-/**
- * Provider-side GraphQL resolver. One resolver binds one
- * (typeName, fieldName) pair. Pairing key: `${typeName}.${fieldName}`.
- */
-export const GraphqlResolverSemanticsSchema = z.object({
-  name: z.literal("graphql-resolver"),
-  /** GraphQL type the resolver attaches to: "Query", "Mutation", "Subscription", or an object-type name. */
-  typeName: z.string(),
-  /** Field name on that type. */
-  fieldName: z.string(),
-});
-
-/**
- * Consumer-side GraphQL operation — a document sent from client to
- * server. Binds by operation name + type.
- */
-export const GraphqlOperationSemanticsSchema = z.object({
-  name: z.literal("graphql-operation"),
-  /** Optional operation name — anonymous queries / mutations leave this unset. */
-  operationName: z.string().optional(),
-  operationType: z.enum(["query", "mutation", "subscription"]),
-});
-
-/**
- * One thing that gets deployed and runs on its own: a Lambda
- * function, an ECS task's container, a plain container, a k8s
- * deployment.
- *
- * `instanceName` is the stable identifier the deployment medium uses:
- * the CFN logical resource id for Lambda and ECS, the deployment name
- * for k8s, the container name for a plain container.
- */
-export const DeployableUnitSchema = z.object({
-  deploymentTarget: z.enum([
-    "lambda",
-    "ecs-task",
-    "container",
-    "k8s-deployment",
-  ]),
-  // An empty name would agree with every other empty name, so a unit
-  // that names nothing has to leave the field off instead.
-  instanceName: z.string().min(1),
-});
-
-/**
- * Provider-side runtime configuration channel: env vars and their
- * declared values on a deployable unit. The channel is the boundary;
- * env var names are FIELDS on its contract. Pairing key:
- * `(deploymentTarget, instanceName)`, which is exactly a deployable
- * unit, so the two fields come from `DeployableUnitSchema` rather
- * than being spelled a second time.
- */
-export const RuntimeConfigSemanticsSchema = DeployableUnitSchema.extend({
-  name: z.literal("runtime-config"),
-});
-
-/**
- * Provider-side relational storage table. Columns are FIELDS on the
- * table's contract. Pairing key: `(storageSystem, scope, table)`.
- */
-export const StorageRelationalSemanticsSchema = z.object({
-  name: z.literal("storage-relational"),
-  storageSystem: z.enum(["postgres", "mysql", "sqlite"]),
-  /**
-   * ORM / driver scope. Defaults to `"default"` for single-database
-   * setups; monorepos with multiple schemas use distinct values.
-   */
-  scope: z.string(),
-  /** Table / model name as declared in the schema. */
-  table: z.string(),
-});
-
-/**
- * Provider-side message-bus boundary — SQS / EventBridge / BullMQ /
- * Kafka / NATS. Producer `interaction(class: "message-send")` effects
- * pair against these via `(messageBus, channel)`.
- *
- * The `channel` string is per-bus. SQS keys it on the single queue
- * identity (CFN logical id / env-var name). EventBridge carries a
- * two-part identity — the event bus AND the DetailType a rule matches —
- * encoded as `"<bus>#<detailType>"`, because one bus multiplexes many
- * event types and a rule subscribes to a subset. See
- * `@suss/framework-aws-eventbridge` for the producer-side scheme and
- * `@suss/contract-cloudformation`'s messageBus reader for the
- * consumer/provider-side scheme.
- */
-export const MessageBusSemanticsSchema = z.object({
-  name: z.literal("message-bus"),
-  messageBus: z.enum(["sqs", "eventbridge", "bullmq", "kafka", "nats"]),
-  /** Stable channel identifier — CFN logical id, queue/topic name, subject pattern, `bus#detailType`. */
-  channel: z.string(),
-});
-
-export const SemanticsSchema = z.discriminatedUnion("name", [
-  RestSemanticsSchema,
-  FunctionCallSemanticsSchema,
-  GraphqlResolverSemanticsSchema,
-  GraphqlOperationSemanticsSchema,
-  RuntimeConfigSemanticsSchema,
-  StorageRelationalSemanticsSchema,
-  MessageBusSemanticsSchema,
-]);
-
-// ---------------------------------------------------------------------------
 // Boundary binding — three-layer model: transport (the wire), semantics
-// (the pairing rule), recognition (how the unit was found).
+// (the pairing rule), recognition (how the unit was found). The
+// semantics union and each protocol's schema live under `semantics/`,
+// one module per protocol.
 // ---------------------------------------------------------------------------
 
 export const BoundaryBindingSchema = z.object({

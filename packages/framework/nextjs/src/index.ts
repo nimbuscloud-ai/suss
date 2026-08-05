@@ -99,10 +99,10 @@ export function nextjsFramework(): PatternPack {
           exportNames: ["default"],
         },
         bindingExtraction: {
-          // One export answers every method, so the pack states none
-          // rather than picking one and being wrong six times out of
-          // seven.
-          method: { type: "literal", value: "" },
+          // One export answers every method, which is what the method
+          // wildcard says. Pairing matches it with whichever method a
+          // consumer names.
+          method: { type: "literal", value: "*" },
           path: PAGES_ROUTES,
         },
       },

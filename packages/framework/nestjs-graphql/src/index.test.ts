@@ -171,7 +171,7 @@ describe("nestjsGraphqlFramework — integration", () => {
     }
     expect(untyped.identity.boundaryBinding?.semantics).toMatchObject({
       name: "graphql-resolver",
-      typeName: "",
+      typeName: null,
       fieldName: "homeWorkspace",
     });
     const gap = untyped.gaps.find((g) => g.type === "unreadOutcome");

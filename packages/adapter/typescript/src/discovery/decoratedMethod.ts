@@ -19,15 +19,15 @@ import type { DiscoveredUnit } from "./shared.js";
  * Without one, the answer is the pack's own: a decorator that puts its
  * field on a root operation type is in the pack's map, and one that
  * needs the class to name a type is not. The second kind, on a class
- * that names none, has nowhere left to read the type from, and the
- * empty string carries that through to a binding nothing pairs with.
+ * that names none, has nowhere left to read the type from, and null
+ * carries that through to a binding nothing pairs with.
  */
 function resolverTypeName(args: {
   classTypeName: string | null;
   decoratorName: string;
   typeMap: Record<string, string>;
-}): string {
-  return args.classTypeName ?? args.typeMap[args.decoratorName] ?? "";
+}): string | null {
+  return args.classTypeName ?? args.typeMap[args.decoratorName] ?? null;
 }
 
 /**

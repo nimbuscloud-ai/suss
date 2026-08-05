@@ -7,6 +7,9 @@
   "items": {
     "type": "object",
     "properties": {
+      "schemaVersion": {
+        "type": "number"
+      },
       "kind": {
         "type": "string",
         "enum": [
@@ -101,10 +104,26 @@
                             "const": "rest"
                           },
                           "method": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "path": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "declaredResponses": {
                             "type": "array",
@@ -150,7 +169,15 @@
                             "const": "graphql-resolver"
                           },
                           "typeName": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "fieldName": {
                             "type": "string"
@@ -244,7 +271,15 @@
                             ]
                           },
                           "channel": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": ["name", "messageBus", "channel"],
@@ -682,10 +717,26 @@
                                     "const": "rest"
                                   },
                                   "method": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "path": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "declaredResponses": {
                                     "type": "array",
@@ -731,7 +782,15 @@
                                     "const": "graphql-resolver"
                                   },
                                   "typeName": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "fieldName": {
                                     "type": "string"
@@ -834,7 +893,15 @@
                                     ]
                                   },
                                   "channel": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": ["name", "messageBus", "channel"],

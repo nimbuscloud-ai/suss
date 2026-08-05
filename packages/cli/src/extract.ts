@@ -13,6 +13,7 @@ import {
   findNearestTsconfig,
   formatPackHealth,
 } from "@suss/adapter-typescript";
+import { SUMMARY_SCHEMA_VERSION } from "@suss/behavioral-ir";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 
 import { writeJson } from "./jsonStream.js";
@@ -390,9 +391,12 @@ export async function extract(
 
   // Make file paths relative to the project root so summaries are portable.
   // Absolute paths leak filesystem structure and break on other machines.
+  // Stamp the format version at the same time: an artifact that says
+  // which format it speaks is one a future reader never has to guess at.
   const projectRoot = source.root;
   for (const summary of summaries) {
     summary.location.file = path.relative(projectRoot, summary.location.file);
+    summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
   }
 
   // Output

@@ -69,7 +69,8 @@ export interface DiscoveredUnit {
    * fields without needing a separate schema provenance.
    */
   resolverInfo?: {
-    typeName: string;
+    /** Null when the source never names the type the resolver attaches to. */
+    typeName: string | null;
     fieldName: string;
     schemaSdl?: string;
   };

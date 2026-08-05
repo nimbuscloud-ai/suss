@@ -17,7 +17,7 @@ function statusFromOutput(output: Output): number | null {
 
 function restOf(
   summary: BehavioralSummary,
-): { method: string; path: string } | null {
+): { method: string | null; path: string | null } | null {
   const s = summary.identity.boundaryBinding?.semantics;
   return s?.name === "rest" ? { method: s.method, path: s.path } : null;
 }
@@ -416,7 +416,7 @@ describe("SAM Events block expansion", () => {
     expect(codes).toContain(504);
   });
 
-  it("Events with Method=ANY are skipped (would explode into 7 verbs)", () => {
+  it("Events with Method=ANY bind the method wildcard", () => {
     const summaries = cloudFormationToSummaries({
       Resources: {
         Api: { Type: "AWS::ApiGateway::RestApi" },
@@ -437,13 +437,15 @@ describe("SAM Events block expansion", () => {
         },
       },
     });
-    // Runtime-config summaries from the Function resource are
-    // expected; the assertion is specifically that no REST endpoint
-    // summaries got synthesized for the ANY method.
+    // ANY is API Gateway's spelling of the method wildcard, so the
+    // route binds "*" and pairing matches it with whichever method a
+    // consumer names.
     const restSummaries = summaries.filter(
       (s) => s.identity.boundaryBinding?.semantics.name === "rest",
     );
-    expect(restSummaries).toHaveLength(0);
+    expect(restSummaries).toHaveLength(1);
+    const semantics = restSummaries[0]?.identity.boundaryBinding?.semantics;
+    expect(semantics?.name === "rest" && semantics.method).toBe("*");
   });
 });
 

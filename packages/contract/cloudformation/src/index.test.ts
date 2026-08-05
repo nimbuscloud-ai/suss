@@ -274,7 +274,7 @@ describe("cloudFormationToSummaries — AWS::ApiGateway::Method", () => {
     expect(codes).toEqual([201, 422]);
   });
 
-  it("skips methods with HttpMethod=ANY (would explode into 7 verbs)", () => {
+  it("binds HttpMethod=ANY as the method wildcard", () => {
     const summaries = cloudFormationToSummaries({
       Resources: {
         R: {
@@ -287,7 +287,9 @@ describe("cloudFormationToSummaries — AWS::ApiGateway::Method", () => {
         },
       },
     });
-    expect(summaries).toEqual([]);
+    expect(summaries).toHaveLength(1);
+    const semantics = summaries[0]?.identity.boundaryBinding?.semantics;
+    expect(semantics?.name === "rest" && semantics.method).toBe("*");
   });
 
   it("falls back to '/' when ResourceId can't be resolved", () => {

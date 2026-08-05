@@ -69,6 +69,7 @@ describe("aws-lambda fan-out on one subject", () => {
       return (
         semantics?.name === "message-bus" &&
         semantics.messageBus === "sqs" &&
+        semantics.channel !== null &&
         semantics.channel.endsWith("order.placed")
       );
     });

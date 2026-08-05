@@ -680,12 +680,12 @@ function extractConsumerBinding(
 
   // Consumer bindings without both method and path can't be placed as
   // REST. Return a rest-shaped partial so downstream code can still
-  // see what was extracted — `path` staying empty is the signal
+  // see what was extracted — a null `path` is the signal
   // wrapper-expansion uses to detect forwarding wrappers.
   return restBinding({
     transport: pack.protocol,
-    method: method ?? "",
-    path: path ?? "",
+    method: method ?? null,
+    path: path ?? null,
     recognition: pack.name,
   });
 }
@@ -840,7 +840,7 @@ function resolveContractField(
     return undefined;
   }
   const value = field === "method" ? semantics.method : semantics.path;
-  return value === "" ? undefined : value;
+  return value ?? undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -1145,7 +1145,7 @@ function extractFromSourceFile(
         // so beats picking a type, because a picked one is a root field
         // no schema has and a query for it would pair against a
         // function that answers something else.
-        if (unit.resolverInfo.typeName === "") {
+        if (unit.resolverInfo.typeName === null) {
           raw.unreadBinding = `The type whose field ${unit.resolverInfo.fieldName} belongs to is not stated where this resolver is written, so the binding names no type and nothing pairs with it`;
         }
         // When the pack captured typeDefs alongside the resolver
@@ -1161,17 +1161,21 @@ function extractFromSourceFile(
         // surfaces the disagreement.
         if (unit.resolverInfo.schemaSdl !== undefined) {
           raw.graphqlSchemaSdl = unit.resolverInfo.schemaSdl;
-          const contract = deriveGraphqlContract(
-            unit.resolverInfo.schemaSdl,
-            unit.resolverInfo.typeName,
-            unit.resolverInfo.fieldName,
-            pack.name,
-          );
-          if (contract !== null) {
-            raw.graphqlDeclaredContract = contract as unknown as Record<
-              string,
-              unknown
-            >;
+          // A resolver with no stated type has no schema entry to
+          // look up, so there is no contract to derive for it.
+          if (unit.resolverInfo.typeName !== null) {
+            const contract = deriveGraphqlContract(
+              unit.resolverInfo.schemaSdl,
+              unit.resolverInfo.typeName,
+              unit.resolverInfo.fieldName,
+              pack.name,
+            );
+            if (contract !== null) {
+              raw.graphqlDeclaredContract = contract as unknown as Record<
+                string,
+                unknown
+              >;
+            }
           }
         }
       } else if (unit.routeInfo !== undefined) {
@@ -1269,7 +1273,13 @@ function extractFromSourceFile(
           // axios / apollo calls become discoverable through the
           // unified shape without rewriting clientCall discovery
           // itself.
-          if (binding.semantics.name === "rest") {
+          // A call whose method the wrapper never named would carry a
+          // service-call effect that says nothing; the binding on the
+          // summary already records the crossing.
+          if (
+            binding.semantics.name === "rest" &&
+            binding.semantics.method !== null
+          ) {
             const defaultBranch = raw.branches.find((b) => b.isDefault);
             if (defaultBranch !== undefined) {
               const calleeText = unit.callSite.callExpression
@@ -1420,14 +1430,14 @@ function expandWrapperCallers(
       continue;
     }
     const binding = s.identity.boundaryBinding;
-    // Wrappers are rest-shaped clients whose path came back empty
-    // (method extracted, path unresolved — the `path` param is a
-    // function parameter, not a literal). Everything else skips.
+    // Wrappers are rest-shaped clients with a method and no path
+    // (the `path` param is a function parameter, not a literal).
+    // Everything else skips.
     if (
       binding === null ||
       binding.semantics.name !== "rest" ||
-      binding.semantics.method === "" ||
-      binding.semantics.path !== ""
+      binding.semantics.method === null ||
+      binding.semantics.path !== null
     ) {
       continue;
     }
@@ -1664,7 +1674,7 @@ function buildCallerSummary(
   const raw = extractCodeStructure(unit, syntheticPack);
   raw.boundaryBinding = restBinding({
     transport: wrapperBinding?.transport ?? "http",
-    method: wrapperRest?.method ?? "",
+    method: wrapperRest?.method ?? null,
     path,
     recognition: wrapperBinding?.recognition ?? "unknown",
   });

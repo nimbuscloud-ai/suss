@@ -209,9 +209,9 @@ function readEntries(callArgs: EffectArg[]): EffectArg[] | null {
 
 /**
  * Build one message-send effect from a single PutEvents entry. Returns
- * null when the entry's (bus, detailType) channel identity can't be
- * resolved from literals — the entry is skipped rather than paired on a
- * guessed channel.
+ * null only when the entry isn't an object literal at all; an entry
+ * whose bus or detail type the code names at runtime is still a send,
+ * recorded with a null channel.
  */
 function buildEntryEffect(entry: EffectArg, callee: string): Effect | null {
   if (!isEffectArgOfKind(entry, "object")) {
@@ -221,15 +221,15 @@ function buildEntryEffect(entry: EffectArg, callee: string): Effect | null {
 
   // A put whose bus or detail type is named at runtime used to be
   // dropped whole, so the event went unrecorded rather than being
-  // recorded without a name. An empty half is how the rest of suss says
-  // the code did not name one, and it pairs with nothing.
+  // recorded without a name. A null channel says the code did not name
+  // one, and it pairs with nothing.
   const bus = readBusToken(fields.EventBusName);
   const detailType = readLiteralString(fields.DetailType);
   // Either half missing means the code did not name this boundary, and
   // a put named by half of one would pair across buses. The put still
   // happened, so it is recorded with nothing claimed about where it went.
   const channel =
-    bus === null || detailType === null ? "" : `${bus}#${detailType}`;
+    bus === null || detailType === null ? null : `${bus}#${detailType}`;
 
   // Body extraction mirrors the SQS pack: prefer the inner object when
   // Detail is `JSON.stringify({...})` (the dominant pattern) so the body
@@ -271,7 +271,10 @@ function readBusToken(arg: EffectArg | undefined): string | null {
     return "default";
   }
   if (isEffectArgOfKind(arg, "string")) {
-    return (arg as { value: string }).value;
+    // An empty literal names nothing, same as a value decided at
+    // runtime.
+    const value = (arg as { value: string }).value;
+    return value === "" ? null : value;
   }
   if (isEffectArgOfKind(arg, "identifier")) {
     const name = (arg as { name: string }).name;
@@ -287,7 +290,10 @@ function readBusToken(arg: EffectArg | undefined): string | null {
  */
 function readLiteralString(arg: EffectArg | undefined): string | null {
   if (isEffectArgOfKind(arg, "string")) {
-    return (arg as { value: string }).value;
+    // An empty literal names nothing, same as a value decided at
+    // runtime.
+    const value = (arg as { value: string }).value;
+    return value === "" ? null : value;
   }
   return null;
 }

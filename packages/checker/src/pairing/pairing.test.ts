@@ -74,11 +74,11 @@ describe("boundaryKey", () => {
     expect(boundaryKey(binding)).toBe("GET /users/{id}");
   });
 
-  it("returns null when path is empty (unresolved wrapper)", () => {
+  it("returns null when the source never named a path (unresolved wrapper)", () => {
     const binding: BoundaryBinding = restBinding({
       transport: "http",
       method: "GET",
-      path: "",
+      path: null,
       recognition: "fetch",
     });
     expect(boundaryKey(binding)).toBeNull();
@@ -119,7 +119,7 @@ describe("boundaryKey", () => {
 
 function providerWithPath(
   name: string,
-  method: string,
+  method: string | null,
   path: string,
 ): BehavioralSummary {
   const base = provider(name, [
@@ -313,7 +313,9 @@ describe("pairSummaries over a message bus", () => {
 
     const result = pairSummaries([handler]);
 
-    expect(result.unmatched.noBinding).toEqual([handler]);
+    expect(result.unmatched.unpairable).toEqual([
+      { summary: handler, reason: "unnamedBoundary" },
+    ]);
   });
 });
 
@@ -330,7 +332,7 @@ describe("pairSummaries", () => {
     expect(result.pairs[0].key).toBe("GET /users/{id}");
     expect(result.unmatched.providers).toHaveLength(0);
     expect(result.unmatched.consumers).toHaveLength(0);
-    expect(result.unmatched.noBinding).toHaveLength(0);
+    expect(result.unmatched.unpairable).toHaveLength(0);
   });
 
   it("pairs across param syntax styles (:id vs {id})", () => {
@@ -369,7 +371,7 @@ describe("pairSummaries", () => {
     expect(result.pairs).toHaveLength(0);
   });
 
-  it("puts summaries with no binding in noBinding", () => {
+  it("marks a summary with no binding unpairable for that reason", () => {
     const noBinding: BehavioralSummary = {
       kind: "handler",
       location: { file: "x.ts", range: { start: 1, end: 10 }, exportName: "x" },
@@ -382,10 +384,12 @@ describe("pairSummaries", () => {
 
     const result = pairSummaries([noBinding]);
     expect(result.pairs).toHaveLength(0);
-    expect(result.unmatched.noBinding).toHaveLength(1);
+    expect(result.unmatched.unpairable).toEqual([
+      { summary: noBinding, reason: "noBoundary" },
+    ]);
   });
 
-  it("puts summaries with no path in noBinding", () => {
+  it("marks a function-call summary with no pairable identity unpairable", () => {
     const noPath: BehavioralSummary = {
       kind: "handler",
       location: { file: "x.ts", range: { start: 1, end: 10 }, exportName: "x" },
@@ -404,7 +408,9 @@ describe("pairSummaries", () => {
     };
 
     const result = pairSummaries([noPath]);
-    expect(result.unmatched.noBinding).toHaveLength(1);
+    expect(result.unmatched.unpairable).toEqual([
+      { summary: noPath, reason: "unnamedBoundary" },
+    ]);
   });
 
   it("correctly separates unmatched providers and consumers", () => {
@@ -432,6 +438,42 @@ describe("pairSummaries", () => {
     expect(result.unmatched.consumers[0].identity.name).toBe("OrgPage");
   });
 
+  it("pairs a wildcard route with every method consumers actually use", () => {
+    const p = providerWithPath("pagesApi", "*", "/api/users");
+    const c1 = consumerWithPath("UserPage", "GET", "/api/users");
+    const c2 = consumerWithPath("UserSync", "PROPFIND", "/api/users");
+
+    const result = pairSummaries([p, c1, c2]);
+    expect(result.pairs).toHaveLength(2);
+    // The pair reports the consumer's concrete method, so a reader
+    // sees what is actually called rather than the wildcard.
+    expect(result.pairs.map((pair) => pair.key).sort()).toEqual([
+      "GET /api/users",
+      "PROPFIND /api/users",
+    ]);
+    expect(result.unmatched.providers).toHaveLength(0);
+  });
+
+  it("does not pair a wildcard route across paths", () => {
+    const p = providerWithPath("pagesApi", "*", "/api/users");
+    const c = consumerWithPath("OrgPage", "GET", "/api/orgs");
+
+    const result = pairSummaries([p, c]);
+    expect(result.pairs).toHaveLength(0);
+    expect(result.unmatched.providers).toEqual([p]);
+  });
+
+  it("keeps a route whose method the source never named out of pairing", () => {
+    const p = providerWithPath("unreadRoute", null, "/api/users");
+    const c = consumerWithPath("UserPage", "GET", "/api/users");
+
+    const result = pairSummaries([p, c]);
+    expect(result.pairs).toHaveLength(0);
+    expect(result.unmatched.unpairable).toEqual([
+      { summary: p, reason: "unnamedBoundary" },
+    ]);
+  });
+
   it("case-insensitive path matching", () => {
     const p = providerWithPath("getUser", "GET", "/Users/:id");
     const c = consumerWithPath("UserPage", "GET", "/users/:id");
@@ -450,17 +492,19 @@ describe("pairSummaries", () => {
     const result = pairSummaries([workerProvider, c]);
     expect(result.pairs).toHaveLength(1);
     expect(result.pairs[0].provider.kind).toBe("worker");
-    expect(result.unmatched.noBinding).toHaveLength(0);
+    expect(result.unmatched.unpairable).toHaveLength(0);
   });
 
-  it("places summaries with an unrecognized kind into noBinding", () => {
+  it("marks a summary with an unrecognized kind unpairable", () => {
     const malformed = {
       ...providerWithPath("mystery", "GET", "/x"),
       kind: "made-up" as BehavioralSummary["kind"],
     };
 
     const result = pairSummaries([malformed]);
-    expect(result.unmatched.noBinding).toHaveLength(1);
+    expect(result.unmatched.unpairable).toEqual([
+      { summary: malformed, reason: "unknownKind" },
+    ]);
     expect(result.pairs).toHaveLength(0);
   });
 });

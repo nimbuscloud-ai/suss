@@ -815,6 +815,13 @@ export const GapSchema = z.object({
 });
 
 export const BehavioralSummarySchema = z.object({
+  /**
+   * The summary format version the writer spoke. Absent means 1, the
+   * 0.3.x format, which the parse entry points normalize before
+   * validation. `SUMMARY_SCHEMA_VERSION` is the version this build
+   * writes.
+   */
+  schemaVersion: z.number().optional(),
   kind: CodeUnitKindSchema,
   location: SourceLocationSchema,
   identity: CodeUnitIdentitySchema,

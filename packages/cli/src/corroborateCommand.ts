@@ -52,12 +52,14 @@ export interface CorroborateResult {
 function summaryLabel(summary: BehavioralSummary): string {
   const binding = summary.identity.boundaryBinding;
   if (binding !== null && binding.semantics.name === "rest") {
-    // A handler answering every method carries no method, and the
-    // label should not start with the gap where one would go.
-    const method = binding.semantics.method;
-    return method === ""
-      ? binding.semantics.path
-      : `${method} ${binding.semantics.path}`;
+    // A wildcard route answers every method, and an unnamed one names
+    // none; neither label should start with the gap where a method
+    // would go.
+    const { method, path } = binding.semantics;
+    if (path === null) {
+      return summary.identity.name;
+    }
+    return method === null || method === "*" ? path : `${method} ${path}`;
   }
   return summary.identity.name;
 }
