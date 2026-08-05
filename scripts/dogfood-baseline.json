@@ -2,8 +2,8 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "exports": 228,
-    "internal": 1125,
+    "exports": 230,
+    "internal": 1123,
     "consumers": 358,
     "pairs": 350
   },
@@ -16,8 +16,8 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 21,
-      "internal": 11,
+      "exports": 23,
+      "internal": 9,
       "consumers": 3
     },
     "packages/checker": {
