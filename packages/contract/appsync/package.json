@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-appsync",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "description": "Generate suss behavioral summaries from AWS AppSync in CloudFormation (AWS::AppSync::*) and SAM (AWS::Serverless::GraphQLApi) templates, including external .graphql schema files (GraphQL schema-first).",
   "keywords": [
@@ -46,8 +46,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.3.1",
-    "@suss/contract-graphql": "0.3.1",
+    "@suss/behavioral-ir": "0.3.2",
+    "@suss/contract-graphql": "0.3.2",
     "graphql": "^16.8.0",
     "yaml": "^2.4.0"
   },
