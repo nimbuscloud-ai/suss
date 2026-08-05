@@ -1,10 +1,12 @@
 # Proposal: the boundary the code does not name
 
-Status: decided and mostly implemented. Step 1 landed as PR #115.
-Steps 2 through 5, the wildcard, and the schema versioning landed as
-PR #117. Resolution threading (step 6) and the fuzzer property (step
-7) remain. Revised twice: after three reviews, and after
-implementation changed two mechanisms, noted inline below.
+Status: decided and implemented. Step 1 landed as PR #115. The rest
+is on PR #117: the schema and behavior modules, the wildcard, the
+versioning, resolution threading (benchmarked against main, every
+difference inside the run spread), and the producer shape family that
+holds the send-survives-its-naming property. Revised twice: after
+three reviews, and after implementation changed two mechanisms, noted
+inline below.
 
 ## The same mistake, three ways in one week
 
