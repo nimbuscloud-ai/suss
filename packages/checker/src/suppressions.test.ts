@@ -324,3 +324,33 @@ describe("countsForThreshold", () => {
     ).toBe(true);
   });
 });
+
+describe("rules against deduped sources", () => {
+  it("suppresses via a provider listed in sources, not only the representative", () => {
+    const collapsed = finding({
+      sources: [
+        "src/handlers/pet.ts::getPet",
+        "template.yml::cfn::GetPetIntegration",
+      ],
+    });
+    const byContributor = rule({
+      provider: { summary: "template.yml::cfn::GetPetIntegration" },
+    });
+    const [out] = applySuppressions([collapsed], [byContributor]);
+    expect(out.suppressed).toBeDefined();
+  });
+
+  it("does not match sources when the rule also names a transition", () => {
+    const collapsed = finding({
+      sources: ["template.yml::cfn::GetPetIntegration"],
+    });
+    const withTransition = rule({
+      provider: {
+        summary: "template.yml::cfn::GetPetIntegration",
+        transitionId: "t-200",
+      },
+    });
+    const [out] = applySuppressions([collapsed], [withTransition]);
+    expect(out.suppressed).toBeUndefined();
+  });
+});

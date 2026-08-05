@@ -54,6 +54,26 @@ function ruleSideMatches(
   return true;
 }
 
+/**
+ * Dedupe collapses identical findings from overlapping providers into
+ * one representative and lists every contributor in `sources`. A rule
+ * naming any contributor suppresses the collapsed finding; matching
+ * only the representative would leave a rule written against a listed
+ * source silently ineffective.
+ */
+function providerSideMatches(
+  side: SuppressionRule["provider"],
+  finding: Finding,
+): boolean {
+  if (ruleSideMatches(side, finding.provider)) {
+    return true;
+  }
+  if (side?.summary === undefined || side.transitionId !== undefined) {
+    return false;
+  }
+  return finding.sources?.includes(side.summary) ?? false;
+}
+
 function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
   if (
     rule.boundary !== undefined &&
@@ -63,7 +83,7 @@ function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
   }
   return (
     ruleSideMatches(rule.consumer, finding.consumer) &&
-    ruleSideMatches(rule.provider, finding.provider)
+    providerSideMatches(rule.provider, finding)
   );
 }
 
