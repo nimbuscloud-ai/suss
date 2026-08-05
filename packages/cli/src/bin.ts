@@ -5,8 +5,12 @@ import { runCli } from "./run.js";
 
 runCli(process.argv.slice(2)).then(
   (code) => process.exit(code),
-  (err: Error) => {
-    process.stderr.write(`Error: ${err.message}\n`);
+  (err: unknown) => {
+    // The stack carries the message and says where. Printing only the
+    // message made a crash undiagnosable from the outside.
+    const detail =
+      err instanceof Error ? (err.stack ?? err.message) : String(err);
+    process.stderr.write(`Error: ${detail}\n`);
     process.exit(1);
   },
 );
