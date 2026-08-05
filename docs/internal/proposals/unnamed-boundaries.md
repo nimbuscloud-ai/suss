@@ -281,15 +281,17 @@ it takes the same null treatment as a missing half.
 
 ## What a reader sees
 
-- **inspect** renders the state in words on the send side:
-  `sqs (named at runtime)` where a channel would appear. Receive rows
-  are unchanged; their identity was never rendered from the channel.
-  "Named at runtime" is #113's vocabulary, used on every surface. The
-  word "anonymous" is avoided: in this tree it already means a source
-  construct without a name, like an unnamed GraphQL operation, which
-  is a different thing.
-- **check** prints one line when the count is nonzero: `4 crossings
-  name their boundary at runtime`. The counter walks message-send
+- **inspect** shows a send through its invocation record (the callee
+  and arguments), which is unchanged. The unmatched list names each
+  unit whose boundary has no name to pair on. A typed channel line on
+  the send itself is not rendered today; if one lands later it belongs
+  with the symbolic-reference work, where there is a question to show.
+  The word "anonymous" is avoided: in this tree it already means a
+  source construct without a name, like an unnamed GraphQL operation,
+  which is a different thing.
+- **check** prints one line when the count is nonzero: `4 sends name
+  their queue or bus at runtime. Each is recorded; none can be checked
+  from source.` The counter walks message-send
   effects, not summaries, because effect-level crossings never enter
   summary pairing; and it skips the crossings a wrapper's own summary
   shares with the summaries derived from it, which would otherwise be
@@ -449,11 +451,12 @@ Each step lands separately with the tree green:
    the Next.js wildcard, the CloudFormation reader's `ANY` routes, and
    the checker, where PR #115's guard comes out.
 5. cli and checker surfaces: the unmatched-reason property and its
-   segmented rendering, wildcard pairing (a `"*"` provider indexed
-   under each concrete method), the unused-queue annotation, the
-   send-only crossing counter with wrapper dedup, null-safe rendering
-   in inspect, check, and corroborate, and the service-call effect's
-   copied method field.
+   segmented rendering, wildcard pairing (REST buckets carry the path
+   and `methodsAgree` settles the method in-bucket, per the Decided
+   section), the unused-queue annotation, the send-only crossing
+   counter with wrapper dedup, null-safe rendering in inspect, check,
+   and corroborate, and the service-call effect's copied method
+   field.
 6. Resolution threading into the recognizer context, on for everyone.
    `--datalog-profile` numbers over a corpus are part of the merge
    check, since identity queries that answer null pay the store's
