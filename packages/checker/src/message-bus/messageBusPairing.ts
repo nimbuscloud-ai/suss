@@ -283,7 +283,14 @@ function effectiveChannel(p: ProducerRecord): string | null {
     return p.resolvedChannel;
   }
   const sem = p.effect.binding.semantics;
-  return sem.name === "message-bus" ? sem.channel : null;
+  if (sem.name !== "message-bus") {
+    return null;
+  }
+
+  // An empty channel is a send whose queue the code names at runtime.
+  // The send is recorded, and there is no name to pair on or to call
+  // an orphan.
+  return sem.channel === "" ? null : sem.channel;
 }
 
 /**

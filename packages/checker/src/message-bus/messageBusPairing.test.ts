@@ -881,6 +881,46 @@ describe("subject-channelled consumers", () => {
   });
 });
 
+describe("sends whose queue the code names at runtime", () => {
+  // The recognizer records such a send with an empty channel. There is
+  // no name to pair on, so the checker must neither call the send an
+  // orphan nor let it stand in for a producer on some named channel.
+
+  it("does not orphan a send with no channel", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter((f) => f.kind === "messageBusProducerOrphan"),
+    ).toHaveLength(0);
+  });
+
+  it("does not count a send with no channel as producing to a declared queue", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderPublisher",
+        filePath: "src/api/index.ts",
+        channel: "",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter(
+        (f) =>
+          f.kind === "messageBusUnused" &&
+          f.description.includes("OrdersQueue"),
+      ),
+    ).toHaveLength(1);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Integration with checkAll
 // ---------------------------------------------------------------------------
