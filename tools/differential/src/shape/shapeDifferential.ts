@@ -17,6 +17,7 @@ import {
   awsLambdaFramework,
   clearTemplateCache,
 } from "@suss/framework-aws-lambda";
+import { sqsFramework } from "@suss/framework-aws-sqs";
 import { expressFramework } from "@suss/framework-express";
 import { nestjsGraphqlFramework } from "@suss/framework-nestjs-graphql";
 import { nodeRuntimePack } from "@suss/runtime-node";
@@ -49,6 +50,12 @@ import {
   renderPackageShape,
   writePackageShape,
 } from "./packageShape.js";
+import {
+  PRODUCER_HANDLER_PACK,
+  type ProducerShapeSpec,
+  renderProducerShape,
+  SIMPLEST_PRODUCER_SHAPE,
+} from "./producerShape.js";
 import {
   type QueueShapeSpec,
   type RenderedQueueShape,
@@ -95,7 +102,8 @@ export interface ShapeResult {
     | ApolloResolverSpec
     | NestResolverSpec
     | QueueShapeSpec
-    | PackageShapeSpec;
+    | PackageShapeSpec
+    | ProducerShapeSpec;
   /** The dimension values this shape was drawn at, for the failure line. */
   label: string;
   files: Record<string, string>;
@@ -667,6 +675,106 @@ export async function runQueueShapeDifferential(
   return {
     spec,
     label: `${spec.build} / ${spec.config}`,
+    files: rendered.files,
+    baselineFiles: baselineRendered.files,
+    summaries,
+    findings,
+    harnessFailures: [],
+    requestsRun: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Queue producers, where the send has to survive however its queue is
+// named
+// ---------------------------------------------------------------------------
+
+interface SendRecord {
+  interactionClass: string;
+  channel: string | null;
+  bodyFields: string[];
+}
+
+/** Every message-send effect in the set, reduced to what the property compares. */
+function messageSends(summaries: BehavioralSummary[]): SendRecord[] {
+  const sends: SendRecord[] = [];
+  for (const summary of summaries) {
+    for (const transition of summary.transitions) {
+      for (const effect of transition.effects) {
+        if (
+          effect.type !== "interaction" ||
+          effect.interaction.class !== "message-send"
+        ) {
+          continue;
+        }
+        const semantics = effect.binding.semantics;
+        const body = effect.interaction.body as
+          | { kind?: string; fields?: Record<string, unknown> }
+          | undefined;
+        sends.push({
+          interactionClass: effect.interaction.class,
+          channel: semantics.name === "message-bus" ? semantics.channel : null,
+          bodyFields: Object.keys(body?.fields ?? {}).sort(),
+        });
+      }
+    }
+  }
+  return sends;
+}
+
+export async function runProducerShapeDifferential(
+  spec: ProducerShapeSpec,
+): Promise<ShapeResult> {
+  const rendered = renderProducerShape(spec);
+  const producerPacks = [sqsFramework(), PRODUCER_HANDLER_PACK];
+  const summaries = await extractAllSummaries({
+    files: rendered.files,
+    pack: producerPacks,
+  });
+  const findings: ShapeFinding[] = [];
+
+  const sends = messageSends(summaries);
+  if (sends.length !== 1) {
+    findings.push({
+      oracle: "invariant",
+      detail: `theSendSurvivesItsNaming: the program sends once and extraction recorded ${sends.length} sends`,
+    });
+  } else {
+    const send = sends[0] as SendRecord;
+    if (send.channel !== rendered.expectedChannel) {
+      findings.push({
+        oracle: "invariant",
+        detail: `theNamingReachesTheChannel: this naming should carry ${JSON.stringify(rendered.expectedChannel)} and the summary carries ${JSON.stringify(send.channel)}`,
+      });
+    }
+  }
+
+  // The same send, named less: against the plainest spelling, with the
+  // channel put aside, the send should look identical.
+  const baselineRendered = renderProducerShape(SIMPLEST_PRODUCER_SHAPE);
+  if (spec.naming !== SIMPLEST_PRODUCER_SHAPE.naming) {
+    const baselineSummaries = await extractAllSummaries({
+      files: baselineRendered.files,
+      pack: producerPacks,
+    });
+    const erase = (send: SendRecord): string =>
+      JSON.stringify({
+        interactionClass: send.interactionClass,
+        bodyFields: send.bodyFields,
+      });
+    const left = messageSends(baselineSummaries).map(erase).sort();
+    const right = sends.map(erase).sort();
+    if (JSON.stringify(left) !== JSON.stringify(right)) {
+      findings.push({
+        oracle: "equivalence",
+        detail: `with the channel put aside, the plainest spelling sends ${left.join(", ")} and this spelling sends ${right.join(", ")}`,
+      });
+    }
+  }
+
+  return {
+    spec,
+    label: spec.naming,
     files: rendered.files,
     baselineFiles: baselineRendered.files,
     summaries,
