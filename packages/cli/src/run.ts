@@ -58,7 +58,8 @@ Options (extract):
                    messages through. Each pack documents its own options.
   -o, --output     Write JSON to a file instead of stdout
   --files          Read only these source files
-  --gaps           What to do with gaps: strict (default), permissive, silent
+  --gaps           What to do with gaps: permissive (default) and strict
+                   record them in the summary, silent drops them
   --types          Spell out the types a summary names, rather than naming them
   --explain        Show where the summaries came from, file by file and pack by
                    pack. Shown automatically when a run finds nothing.

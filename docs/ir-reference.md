@@ -338,7 +338,7 @@ type Input =
 
 How inputs reach a code unit. Most of these are for React/Vue components; HTTP handlers typically only have `parameter` inputs. The `role` field on parameters carries framework-specific meaning (`"request"`, `"response"`, `"pathParams"`, `"requestBody"`, etc.), it's what `InputMappingPattern` in the framework pack sets.
 
-**`hookReturn`, `contextValue`, `closure`** are for components and hooks. A hook call like `const [user, setUser] = useUser()` produces a `hookReturn` input with `destructuredFields: ["user", "setUser"]`. The full React component support isn't implemented yet, Phase 2 will start building toward it.
+**`hookReturn`, `contextValue`, `closure`** are for components and hooks. A hook call like `const [user, setUser] = useUser()` produces a `hookReturn` input with `destructuredFields: ["user", "setUser"]`. The React pack discovers components, hooks, and event handlers and fills these in; see the `component` and `hook` entries under `CodeUnitKind`.
 
 ## `Gap`
 

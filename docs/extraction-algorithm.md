@@ -1,6 +1,6 @@
 # Extraction Algorithm
 
-How the TypeScript adapter turns a function AST into a `RawCodeStructure`. This is the central piece of Phase 2, everything downstream assumes this pipeline produces correct output.
+How the TypeScript adapter turns a function AST into a `RawCodeStructure`. Everything downstream assumes this pipeline produces correct output.
 
 ## Overview
 

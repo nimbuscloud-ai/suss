@@ -123,7 +123,7 @@ Each check is pure over `(provider, consumer)`, emits `Finding[]`, and knows not
   <text class="label" x="220" y="352" text-anchor="middle">Findings</text>
 </svg>
 
-Pairing is HTTP-shaped today. See [`boundary-semantics.md`](boundary-semantics.md) for the planned refactor when a second boundary semantics lands.
+Pairing dispatches through the semantics registry, so every shipped variant pairs the same way: the binding's semantics names its own key and agreement rules. See [`boundary-semantics.md`](boundary-semantics.md).
 
 ## `suss contract --from openapi`
 
@@ -206,4 +206,4 @@ Before `suss check --dir` runs `checkPair`, it has to decide which summaries fac
 
 The result is `{ pairs, unmatched }`. `checkPair` runs on each pair; the unmatched lists surface in the CLI output so you can see what didn't line up.
 
-This logic is REST-shaped: both the key function and the role classification assume HTTP. When a second boundary semantics lands, pairing dispatches on the binding's semantics variant (GraphQL pairs by operation name, Kafka by topic, Lambda by function name). See [`boundary-semantics.md`](boundary-semantics.md).
+The key function and the agreement check both come from the binding's semantics variant, imported from `@suss/ir-core`: REST buckets by path and settles the method inside the bucket, GraphQL pairs by operation type + field, message-bus by the channel's subject. A summary whose semantics declares no key lands in the unpaired list with a reason instead of being forced through a REST-shaped key. See [`boundary-semantics.md`](boundary-semantics.md).

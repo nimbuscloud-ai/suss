@@ -4,6 +4,18 @@ suss finds the bugs that compile cleanly, type-check, and pass their tests, and 
 
 suss reads what each function does on every path it can follow, then compares those readings wherever two units of code meet: a caller against a handler, a query against a schema. Where they disagree, you get a finding. It runs on your source as it stands, without instrumentation or authored specs.
 
+This is what a finding looks like, from the [runnable example](examples/petstore-axios-openapi/) in this repo:
+
+```
+[ERROR] unhandledProviderCase
+  Provider produces status 400 but no consumer branch handles it
+  provider: openapi:petstore-openapi.json::findPetsByStatus
+  consumer: src/petstore-client.ts::listPets (src/petstore-client.ts:48)
+  boundary: openapi (http) GET /pet/findByStatus
+```
+
+The spec declares a 400 this client never branches on. Both sides type-check today, and the first bad request at runtime lands in code with no plan for it.
+
 ## Getting started
 
 `suss init` reads your project, works out which packs it needs, and

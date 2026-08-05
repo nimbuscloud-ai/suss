@@ -5,6 +5,13 @@ explicitly: what bytes travel (transport), what the participants think they're
 doing (semantics), and how a particular library expresses that in source code
 (recognition).
 
+Seven semantics variants ship today: `rest`, `function-call`,
+`graphql-resolver`, `graphql-operation`, `runtime-config`,
+`storage-relational`, and `message-bus`, each as its own module under
+`packages/ir-core/src/semantics/`. If you came to ask whether a protocol
+already works, [What's shipped vs what's deferred](#whats-shipped-vs-whats-deferred)
+is the answer; the rest of the page explains the model those variants share.
+
 ## The three layers
 
 A "boundary" in suss is conceptually three things, which the IR
@@ -325,15 +332,17 @@ Shipped:
    rather than being fabricated
    into REST pairs.
 
+Shipped since the list above was first written: the dispatch registry.
+Each variant declares its behavior (`identityKey`, `pairingKey`,
+`sidesAgree`) in its own module under `packages/ir-core/src/semantics/`,
+and `registry.ts` composes them with a compile-time completeness check.
+
 Deferred:
 
-1. A `BoundarySemantics<S>` dispatch registry. The inline narrows in each
-   check function are adequate, but extracting a shared interface is overdue
-   given the number of shipped variants.
-2. `lambda-invoke` and `kafka-message` semantics variants.
-3. Composable binding identities and transformation descriptors for multi-hop
+1. `lambda-invoke` and `kafka-message` semantics variants.
+2. Composable binding identities and transformation descriptors for multi-hop
    infra chains, described in the section above.
-4. Operation-level consumer-side GraphQL pairing beyond root-field selection
+3. Operation-level consumer-side GraphQL pairing beyond root-field selection
    (nested type checking via the SDL is wired; full variable-type comparison
    against resolver arguments is not).
 

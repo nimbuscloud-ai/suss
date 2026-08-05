@@ -80,11 +80,12 @@ suss extract [-p TSCONFIG | --dir DIR] -f FRAMEWORK [-f FRAMEWORK ...]
 | `--dir PATH` | no | Read this directory directly, for a project with no tsconfig. |
 | `-o`, `--output PATH` | no | Write JSON to file. Default: stdout. Parent dirs created automatically. |
 | `--files F1 F2 ...` | no | Scope extraction to specific files. Default: every file in the tsconfig. Paths are resolved relative to cwd. |
-| `--gaps MODE` | no | `strict` (default), record gaps where conditions can't be decomposed. `permissive`, record gaps silently. `silent`, skip gap detection entirely. |
+| `--gaps MODE` | no | `permissive` (default) records gaps in the summary where conditions can't be decomposed. `strict` behaves the same today. `silent` skips gap detection entirely. |
 | `--explain` | no | Print the extraction funnel, file by file and pack by pack, so you can see where summaries came from. A run that produced nothing prints it either way. |
 | `--timing` | no | Print the per-phase wall-clock breakdown to stderr. |
 | `--no-cache` | no | Skip the on-disk extraction cache for this run. Normal runs benefit from it; reach for this when debugging cache invalidation. |
 | `--fail-on-empty` | no | Exit non-zero when the run produces no summaries. Worth turning on in CI, where a silent zero looks the same as a passing check. |
+| `--fail-on-pack-error` | no | Exit non-zero when a pack throws while it reads. By default the run reports the throw and continues with the other packs. |
 
 ### Built-in packs
 
@@ -344,6 +345,7 @@ suss inspect --diff BEFORE.json AFTER.json
 |---|---|
 | `--dir PATH` | Render every summary in a directory, grouped by boundary with pair-discovery annotations. |
 | `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions. |
+| `--types` | Spell out the named types a summary references instead of printing their names. |
 
 No JSON output mode, `inspect` is always human-formatted. For
 programmatic consumption, read the summary files directly (they

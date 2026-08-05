@@ -50,7 +50,7 @@ Frameworks with new transport classes introduce new protocol strings. Plausible 
 
 Rule of thumb: if your pack's pairing shape and payload semantics match an existing protocol's, reuse the string. If they don't, pick a new string that reads as "transport class," not as "framework name." React isn't a protocol (it has no wire format); `"in-process"` names what the boundary *is*.
 
-The `BoundarySemantics` refactor ([`boundary-semantics.md`](../boundary-semantics.md)) splits transport from semantics as separate fields on `BoundaryBinding`. Current pack declarations remain valid as that work expands; the new shape is additive.
+`BoundaryBinding` has transport and semantics as separate fields; [`boundary-semantics.md`](../boundary-semantics.md) explains the split. Pack declarations written before the split remain valid, because the shape was added without changing existing fields.
 
 ## `DiscoveryMatch` variants
 
