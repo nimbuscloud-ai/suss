@@ -1,9 +1,9 @@
-SUSS := node ../../packages/cli/dist/index.js
+SUSS := node ../../packages/cli/dist/bin.js
 OUT  := out
 
-.PHONY: all extract stub check inspect-consumer inspect-provider clean
+.PHONY: all extract contract check inspect-consumer inspect-provider clean
 
-all: extract stub check
+all: extract contract check
 
 # Build the CLI from this monorepo before anything else if dist is missing.
 $(OUT):
@@ -13,9 +13,9 @@ $(OUT):
 extract: $(OUT)
 	$(SUSS) extract -p tsconfig.json -f axios -o $(OUT)/consumer.json
 
-# Stub the OpenAPI spec into a provider summary file.
-stub: $(OUT)
-	$(SUSS) stub --from openapi petstore-openapi.json -o $(OUT)/provider.json
+# Derive the provider summary from the OpenAPI spec.
+contract: $(OUT)
+	$(SUSS) contract --from openapi petstore-openapi.json -o $(OUT)/provider.json
 
 # Cross-boundary check both files together.
 check: $(OUT)/consumer.json $(OUT)/provider.json
