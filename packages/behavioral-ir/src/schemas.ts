@@ -828,6 +828,16 @@ export const BehavioralSummarySchema = z.object({
    * of a ref.
    */
   definitions: z.record(z.string(), TypeShapeSchema).optional(),
+  /**
+   * What this unit reads out of what it was given, once each.
+   *
+   * A reader asking "what does this handler use" had to walk the
+   * derivation nodes inside every condition and value to find out. The
+   * summary says it.
+   */
+  inputReads: z
+    .array(z.object({ input: z.string(), path: z.array(z.string()) }))
+    .optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 

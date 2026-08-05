@@ -2,6 +2,8 @@
 
 import { createHash } from "node:crypto";
 
+import { inputReadsOf } from "./inputReads.js";
+
 import type {
   BehavioralSummary,
   BoundaryBinding,
@@ -191,6 +193,14 @@ export interface RawBranch {
    * The extractor copies this through to Transition.expectedInput.
    */
   expectedInput?: TypeShape | null;
+}
+
+/** The values an outcome names, so a read through one is not missed. */
+function valuesOfOutput(output: Transition["output"]): ValueRef[] {
+  if (output.type === "response" && output.statusCode !== null) {
+    return [output.statusCode];
+  }
+  return [];
 }
 
 export interface RawDependencyCall {
@@ -465,6 +475,11 @@ export function assembleSummary(
   const inputs: Input[] = raw.parameters.map(paramToInput);
 
   const metadata = buildMetadata(raw);
+  const reads = inputReadsOf({
+    conditions: transitions.map((t) => t.conditions),
+    values: transitions.flatMap((t) => valuesOfOutput(t.output)),
+  });
+
   return {
     kind: raw.identity.kind,
     location: {
@@ -484,6 +499,7 @@ export function assembleSummary(
     transitions,
     gaps,
     confidence,
+    ...(reads.length > 0 ? { inputReads: reads } : {}),
     ...(raw.definitions !== undefined && raw.definitions !== null
       ? { definitions: raw.definitions }
       : {}),

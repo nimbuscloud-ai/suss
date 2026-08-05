@@ -1186,6 +1186,25 @@
           "$ref": "#/$defs/__schema0"
         }
       },
+      "inputReads": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "string"
+            },
+            "path": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["input", "path"],
+          "additionalProperties": false
+        }
+      },
       "metadata": {
         "type": "object",
         "propertyNames": {
