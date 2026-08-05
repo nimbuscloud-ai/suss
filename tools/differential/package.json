@@ -29,6 +29,7 @@
   "dependencies": {
     "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
+    "@suss/checker": "*",
     "@suss/extractor": "*",
     "@suss/framework-apollo": "*",
     "@suss/framework-aws-lambda": "*",
