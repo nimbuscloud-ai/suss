@@ -24,7 +24,7 @@
 // share the channel identity so the pairing dispatcher joins producers
 // to consumers.
 
-import { messageBusBinding } from "@suss/behavioral-ir";
+import { messageBusBinding, withMessageBusMetadata } from "@suss/behavioral-ir";
 import { codeScopePath } from "@suss/ir-core";
 import { refTarget } from "@suss/manifest-aws";
 
@@ -188,14 +188,12 @@ function buildQueueProviderSummary(
     transitions: [],
     gaps: [],
     confidence: { source: "declared", level: "high" },
-    metadata: {
-      messageBus: {
-        fifoQueue,
-        ...(typeof resource.Properties?.QueueName === "string"
-          ? { physicalName: resource.Properties.QueueName }
-          : {}),
-      },
-    },
+    metadata: withMessageBusMetadata(undefined, {
+      fifoQueue,
+      ...(typeof resource.Properties?.QueueName === "string"
+        ? { physicalName: resource.Properties.QueueName }
+        : {}),
+    }),
   };
 }
 
@@ -250,9 +248,9 @@ function buildLambdaConsumerSummary(
     transitions: [],
     gaps: [],
     confidence: { source: "declared", level: "high" },
-    metadata: {
-      codeScope,
-      messageBus: {
+    metadata: withMessageBusMetadata(
+      { codeScope },
+      {
         eventName: opts.eventName,
         ...(opts.routed !== null
           ? {
@@ -262,7 +260,7 @@ function buildLambdaConsumerSummary(
             }
           : {}),
       },
-    },
+    ),
   };
 }
 
@@ -623,13 +621,11 @@ function buildRuleProviderSummary(opts: {
     transitions: [],
     gaps: [],
     confidence: { source: "declared", level: "high" },
-    metadata: {
-      messageBus: {
-        eventBus: opts.eventBus,
-        detailType: opts.detailType,
-        rule: opts.ruleLabel,
-      },
-    },
+    metadata: withMessageBusMetadata(undefined, {
+      eventBus: opts.eventBus,
+      detailType: opts.detailType,
+      rule: opts.ruleLabel,
+    }),
   };
 }
 
@@ -669,9 +665,9 @@ function buildEventBridgeConsumerSummary(
     transitions: [],
     gaps: [],
     confidence: { source: "declared", level: "high" },
-    metadata: {
-      codeScope,
-      messageBus: {
+    metadata: withMessageBusMetadata(
+      { codeScope },
+      {
         rule: opts.ruleLabel,
         eventBus: opts.eventBus,
         patternResolution: opts.patternResolution,
@@ -682,7 +678,7 @@ function buildEventBridgeConsumerSummary(
           ? { unresolvableReason: opts.unresolvableReason }
           : {}),
       },
-    },
+    ),
   };
 }
 

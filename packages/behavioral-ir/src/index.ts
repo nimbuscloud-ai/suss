@@ -53,6 +53,12 @@ export {
 } from "@suss/ir-core";
 
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
+export {
+  type MessageBusMetadata,
+  MessageBusMetadataSchema,
+  readMessageBusMetadata,
+  withMessageBusMetadata,
+} from "./metadata.js";
 
 export type {
   BoundaryBinding,
