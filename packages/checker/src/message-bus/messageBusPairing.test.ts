@@ -901,6 +901,9 @@ describe("sends whose queue the code names at runtime", () => {
     ).toHaveLength(0);
   });
 
+  // This held before the fix as well (an empty subject matched no named
+  // one). It pins that the fix stays narrow: an unnamed send must not
+  // widen into a producer for every declared queue.
   it("does not count a send with no channel as producing to a declared queue", () => {
     const summaries = [
       queueProvider("OrdersQueue"),

@@ -329,6 +329,14 @@ function resolveProducerChannels(
     if (semantics.name !== "message-bus") {
       continue;
     }
+
+    // A send with no channel has nothing to resolve. Skipping it here
+    // also keeps a resolved channel from ever outranking the no-name
+    // guard in effectiveChannel, whatever a template happens to hold.
+    if (semantics.channel === "") {
+      continue;
+    }
+
     // SQS keys the whole channel on the env-var name. EventBridge keys
     // it on `${bus}#${detailType}`, where only the bus segment is env-
     // derived — split it off, resolve the bus, recompose with the
