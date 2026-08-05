@@ -104,7 +104,6 @@ type Semantics =
   | { name: "runtime-config"; deploymentTarget: string; instanceName: string }
   | { name: "storage-relational"; storageSystem: string; scope: string; table: string }
   | { name: "message-bus"; messageBus: string; channel: string | null };
-}
 ```
 
 Where a code unit connects to the outside world. A REST endpoint is the same boundary whether it's served at `/api/v1/users` or `/api/v2/members`, the *identity* of the boundary is separate from the address. For v0, we use the address as the identity; adding stable boundary IDs is a future concern.

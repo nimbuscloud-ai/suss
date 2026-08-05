@@ -55,11 +55,8 @@ function ruleSideMatches(
 }
 
 /**
- * Dedupe collapses identical findings from overlapping providers into
- * one representative and lists every contributor in `sources`. A rule
- * naming any contributor suppresses the collapsed finding; matching
- * only the representative would leave a rule written against a listed
- * source silently ineffective.
+ * Dedupe keeps one representative and lists the other contributing
+ * providers in `sources`; a rule naming any contributor matches.
  */
 function providerSideMatches(
   side: SuppressionRule["provider"],

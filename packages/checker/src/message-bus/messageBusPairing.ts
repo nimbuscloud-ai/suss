@@ -219,11 +219,9 @@ export function checkMessageBus(
     findings.push(makeOrphanConsumerFinding(c, semantics));
   }
 
-  // Queue declared but no producer AND no consumer → unused. When
-  // sends on the same bus technology name their queue at runtime, the
-  // finding says so rather than claiming nothing produces to it; any
-  // of them could reach this queue. A send on another technology
-  // could not, so it does not count.
+  // Queue declared but no producer AND no consumer → unused. Unnamed
+  // sends on the queue's own technology could reach it, so the finding
+  // carries their count; other technologies cannot.
   const unnamedSendsByBus = new Map<string, number>();
   for (const p of producers) {
     const sendSemantics = p.effect.binding.semantics;
