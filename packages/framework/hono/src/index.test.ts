@@ -100,6 +100,11 @@ describe("honoFramework — extraction", () => {
     expect(statuses(boundary("POST", "/users"))).toEqual([201, 400]);
   });
 
+  it("reads the status off HTTPException's first argument", () => {
+    const del = boundary("DELETE", "/users/:id");
+    expect(statuses(del)).toContain(404);
+  });
+
   it("gives a redirect Hono's default status", () => {
     expect(statuses(boundary("GET", "/legacy/:id"))).toEqual([302]);
   });

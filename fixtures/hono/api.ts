@@ -5,6 +5,7 @@
 // response with an explicit status, and a redirect taking its default.
 
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 
 const app = new Hono();
 
@@ -34,6 +35,15 @@ app.post("/users", async (c) => {
 
 app.get("/legacy/:id", (c) => {
   return c.redirect(`/users/${c.req.param("id")}`);
+});
+
+app.delete("/users/:id", async (c) => {
+  const user = await findUser(c.req.param("id"));
+  if (!user) {
+    // The status rides the constructor's first argument.
+    throw new HTTPException(404, { message: "no such user" });
+  }
+  return c.json({ deleted: user.id });
 });
 
 declare function findUser(
