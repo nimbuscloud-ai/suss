@@ -5,6 +5,7 @@
 declare module "aws-lambda" {
   export interface ALBResult {
     statusCode: number;
+    isBase64Encoded: boolean;
     body?: string;
   }
 

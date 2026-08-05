@@ -6,8 +6,9 @@ import { listOrders } from "../handlers/listOrders";
 type Handler = (req: Request, res: Response) => void;
 
 // The wildcard route hands every /api/orders/* request here as one
-// req.params[0] capture. Map it to a concrete handler by shape: no
-// remaining segment means the collection, one segment means an item.
+// req.params[0] capture. An empty remainder means the collection;
+// anything else is read as an item id, multi-segment remainders
+// included, so /api/orders/123/extra looks up the id "123/extra".
 const handlersBySubPath: Record<"collection" | "item", Handler> = {
   collection: listOrders,
   item: getOrder,

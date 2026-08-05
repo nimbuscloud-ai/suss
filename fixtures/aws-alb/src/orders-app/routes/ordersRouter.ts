@@ -1,7 +1,7 @@
 import { Router } from "express";
 
-// Room for routes that skip the dispatch map entirely, such as a
-// liveness probe scoped to the orders app.
+// Routes here skip the dispatch map entirely. The ALB health check
+// hits /_health through the mount, as /api/orders/_health.
 export const ordersRouter = Router();
 
 ordersRouter.get("/_health", (_req, res) => {

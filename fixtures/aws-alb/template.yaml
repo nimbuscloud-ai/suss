@@ -1,16 +1,20 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: |
   Fixture for ALB request-flow resolution: one client request, one ALB,
-  two listener rules, and two different target kinds behind them.
-    1. /api/orders/* forwards to OrdersTargetGroup, an IP target group in
-       front of OrdersService (ECS Fargate), whose container runs the
-       orders-app Express app from src/orders-app.
-    2. /api/health forwards to HealthTargetGroup, a Lambda target group
-       in front of HealthFunction, the handler in src/health.
+  four listener rules, and two different target kinds behind them.
+    1. /api/orders/* and /api/orders/_health forward to
+       OrdersTargetGroup, an IP target group in front of OrdersService
+       (ECS Fargate), whose container runs the orders-app Express app
+       from src/orders-app.
+    2. /api/health and /api/health/* forward to HealthTargetGroup, a
+       Lambda target group in front of HealthFunction, the handler in
+       src/health.
   Both paths exist so one future reachability rule can be checked against
   both target kinds at once: resolve a listener rule to a target group to
   whatever backs it, whether that's a container behind an ECS service or
-  a Lambda function, and land on a handler either way.
+  a Lambda function, and land on a handler either way. Each side has one
+  exact and one wildcard pattern, so pattern shape cannot stand in for
+  target kind.
 
 Resources:
   ShopAlb:
@@ -38,6 +42,23 @@ Resources:
             StatusCode: "404"
             ContentType: text/plain
             MessageBody: not found
+
+  # The ALB health check hits this exact path, and the rule also
+  # gives the ECS side an exact-match pattern, so pattern shape alone
+  # cannot predict the target kind.
+  OrdersHealthRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ShopHttpsListener
+      Priority: 9
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /api/orders/_health
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref OrdersTargetGroup
 
   # Path 1: ECS. Matches /api/orders/* and forwards to the IP target
   # group in front of the orders-app container.
@@ -71,6 +92,23 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref HealthTargetGroup
 
+  # The Lambda side's wildcard pattern, for the same reason the ECS
+  # side has an exact one: each pattern shape forwards to both target
+  # kinds.
+  HealthPrefixRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ShopHttpsListener
+      Priority: 21
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /api/health/*
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref HealthTargetGroup
+
   OrdersTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -78,7 +116,7 @@ Resources:
       Port: 3000
       Protocol: HTTP
       VpcId: vpc-0123456789abcdef0
-      HealthCheckPath: /api/orders
+      HealthCheckPath: /api/orders/_health
 
   OrdersCluster:
     Type: AWS::ECS::Cluster
@@ -136,24 +174,27 @@ Resources:
       SussCodeScope: src/health
     Properties:
       Handler: index.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
+      Role: arn:aws:iam::123456789012:role/health-lambda-role
       Code:
         S3Bucket: shop-lambda-artifacts
         S3Key: health.zip
 
+  # Registering the Lambda target fails unless the invoke permission
+  # already exists, so the target group depends on it. The permission
+  # names no SourceArn: naming the target group there would close a
+  # dependency cycle.
   HealthTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: HealthFunctionInvokePermission
     Properties:
       TargetType: lambda
       Targets:
         - Id: !GetAtt HealthFunction.Arn
 
-  # A Lambda target group can only invoke the function once the ALB
-  # service principal is granted permission.
   HealthFunctionInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref HealthFunction
       Action: lambda:InvokeFunction
       Principal: elasticloadbalancing.amazonaws.com
-      SourceArn: !Ref HealthTargetGroup

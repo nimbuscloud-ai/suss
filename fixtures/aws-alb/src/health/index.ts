@@ -5,6 +5,7 @@ import type { ALBHandler, ALBResult } from "aws-lambda";
 export const handler: ALBHandler = async () => {
   return {
     statusCode: 200,
+    isBase64Encoded: false,
     body: JSON.stringify({ ok: true }),
   } as ALBResult;
 };
