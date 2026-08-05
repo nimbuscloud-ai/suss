@@ -1,9 +1,10 @@
 # Proposal: the boundary the code does not name
 
-Status: draft, seeking alignment. Revised after three reviews (design,
-alignment with the boundary model, and a correctness review of the
-interim fix). Step 1 of the work list has landed as PR #115; nothing
-else is implemented.
+Status: decided and mostly implemented. Step 1 landed as PR #115.
+Steps 2 through 5, the wildcard, and the schema versioning landed as
+PR #117. Resolution threading (step 6) and the fuzzer property (step
+7) remain. Revised twice: after three reviews, and after
+implementation changed two mechanisms, noted inline below.
 
 ## The same mistake, three ways in one week
 
@@ -201,6 +202,15 @@ reference the checker cannot ground then reports "pairs if env
 ORDERS_QUEUE_URL is bound", which tells a reader which question to
 ask.
 
+One structural outcome landed with the implementation, at Matt's
+prompting. Each protocol is one module in ir-core: its schema and its
+behavior (identity key, pairing bucket, agreement rule) travel
+together, composed by a registry with a compile-time completeness
+check. Nothing outside a protocol's module decides how its boundaries
+key or agree. The modules stay in ir-core rather than in packs: a
+published summary has to mean the same thing to a reader who never
+installed the pack that wrote it.
+
 This sequencing also reconciles an encoding conflict the review found:
 `effect-grammar.md` requires an unresolved target to be recorded as
 `unresolved` with a reason, and its migration note makes message
@@ -239,15 +249,15 @@ and each gets its own disposition:
 
 - **A wildcard.** The Next.js pages-api handler and API Gateway's
   `ANY` method answer every method. The method field gets a wildcard
-  spelling, `"*"`, that is neither a name nor null, and pairing learns
-  it in this pass: at indexing time a `"*"` provider is entered under
-  each concrete HTTP method, a closed set, so every existing key
-  string stays as it is and no consumer-side code changes. The
-  CloudFormation reader, which skips `ANY` routes entirely today,
-  stops skipping them. Without the spelling, throwing builders would
-  crash extraction on any pages-api project, and the mechanical
-  rewrite to null would make inspect say "named at runtime" about a
-  handler whose method is not named by anyone.
+  spelling, `"*"`, that is neither a name nor null. Pairing buckets
+  REST routes by path and lets `methodsAgree` settle the method
+  in-bucket, so a wildcard meets whichever method each consumer
+  writes, with no method vocabulary listed anywhere. The
+  CloudFormation reader binds `ANY` as `"*"` instead of skipping it.
+  Without the spelling, throwing builders would crash extraction on
+  any pages-api project. The mechanical rewrite to null would be
+  worse: inspect would say "named at runtime" about a handler whose
+  method nobody names at runtime.
 - **Identity stated elsewhere.** A receive effect's channel is null
   because the queue a handler drains is deployment wiring; the
   checker's join by code scope is the pairing rule, and null is the
@@ -380,6 +390,12 @@ than leaving the reversal implicit in a diff.
 
 ## Compatibility
 
+Summaries now carry `schemaVersion` (2). An artifact without one is
+version 1, and the parsers normalize it before validation, so 0.3.x
+output keeps reading with no rewrite. The published JSON schema
+regenerates on build and is committed, which is the file's version
+history.
+
 Two read paths exist, and the first draft covered only one:
 
 - **Parsed reads.** All entry points into `BehavioralSummarySchema`
@@ -456,9 +472,12 @@ Each step lands separately with the tree green:
 - The wildcard token is `"*"` (Matt, 2026-08-05). Not `ANY`, which is
   one vendor's spelling of the same claim; the CloudFormation reader
   maps `ANY` to `"*"`.
-- Wildcard pairing lands with this pass (Matt, 2026-08-05). A `"*"`
-  provider pairs with consumers of every method, indexed as described
-  above.
+- Wildcard pairing lands with this pass (Matt, 2026-08-05). The
+  mechanism changed during implementation, at Matt's prompting: no
+  per-method indexing and no method list anywhere. REST buckets carry
+  the path alone, and a `methodsAgree` rule settles the method
+  in-bucket, the way buses already agree. `GET` agrees with `"*"`;
+  `PROPFIND` does too.
 - Unused-queue findings annotate rather than suppress (Matt,
   2026-08-05): the description carries the count of unnamed sends in
   scope, and the finding keeps firing.
@@ -481,3 +500,8 @@ Each step lands separately with the tree green:
 
 1. The new warning kind's name, chosen when it lands with symbolic
    references.
+2. Whether `rest` is the right variant name at all, or `http` route
+   semantics more generally (Matt, 2026-08-05). An ALB listener rule
+   and a webhook route are HTTP routing with no REST framing. Renaming
+   a variant is a serialization change; `schemaVersion` now exists to
+   carry one. Longer term, alongside the flow-resolution north star.
