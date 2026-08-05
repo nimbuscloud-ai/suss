@@ -319,7 +319,8 @@ Shipped:
 4. Checker modules for HTTP/REST, GraphQL (contract agreement and operation
    pairing), message-bus, storage, runtime-config, and Storybook stories.
 5. `boundaryKey` dispatches on `semantics.name`; summaries without a
-   matchable key go to `unmatched.noBinding` rather than being fabricated
+   matchable key go to `unmatched.unpairable`, each entry saying why,
+   rather than being fabricated
    into REST pairs.
 
 Deferred:

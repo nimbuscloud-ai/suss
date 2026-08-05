@@ -66,8 +66,8 @@ function missingProviders(packages) {
  *
  * The transitive closure is the one exception. A helper the closure
  * reaches sits inside a package rather than on its edge, so it has no
- * export path, cannot pair, and `pairSummaries` reports it under
- * `noBinding`. Every other summary came from a pack that matched a
+ * export path, cannot pair, and `pairSummaries` reports it as
+ * unpairable. Every other summary came from a pack that matched a
  * boundary, and a boundary with no name on it is a pairing key that
  * stopped being built.
  */
