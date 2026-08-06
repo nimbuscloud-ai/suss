@@ -226,6 +226,34 @@ describe("buildMessageBusSummaries", () => {
     });
   });
 
+  it("does not resolve a malformed SQS ARN with an empty account segment", () => {
+    // A dropped account segment must not fall through to the bare
+    // queue name: that name can coincidentally collide with an
+    // unrelated logical id elsewhere in the template.
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrders: {
+                Type: "SQS",
+                Properties: {
+                  Queue: "arn:aws:sqs:us-east-1::external-orders-queue",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "arn:aws:sqs:us-east-1::external-orders-queue",
+    });
+  });
+
   it("ignores non-SQS event sources", () => {
     const out = cloudFormationToSummaries({
       Resources: {
@@ -1182,6 +1210,32 @@ describe("buildMessageBusSummaries — SNS", () => {
     });
     expect(consumer.metadata?.messageBus).toMatchObject({
       patternResolution: "exact",
+    });
+  });
+
+  it("does not resolve a malformed SNS ARN with an empty region segment", () => {
+    // A dropped region segment must not fall through to the bare
+    // topic name: that name can coincidentally collide with an
+    // unrelated logical id elsewhere in the template.
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrderEvents: {
+                Type: "SNS",
+                Properties: { Topic: "arn:aws:sns::123456789012:order-events" },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = snsConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "arn:aws:sns::123456789012:order-events",
     });
   });
 

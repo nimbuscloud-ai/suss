@@ -1088,10 +1088,13 @@ function readRuleTargets(
  * the referenced resource's CFN logical id. `service` is the ARN
  * segment a plain string is matched against (`"sqs"`, `"sns"`, `"s3"`),
  * so a queue ARN, a topic ARN, and a bucket ARN each resolve through
- * the same shape. The region and account segments are matched loosely
- * (zero or more characters) rather than required, because an S3 ARN
- * carries neither (`arn:aws:s3:::bucket-name`) while an SQS or SNS ARN
- * always does; the same pattern reads both.
+ * the same shape. The region and account segments are required to be
+ * non-empty for every service except `"s3"`, whose ARNs carry neither
+ * (`arn:aws:s3:::bucket-name`). Loosening that requirement for every
+ * service would let a malformed SQS or SNS ARN with an empty segment
+ * (a queue's region dropped, say) fall through to a bare name that can
+ * coincidentally collide with an unrelated logical id, instead of
+ * failing to match and falling through unresolved.
  *
  * Returns null when the reference is dynamic (a parameter, an import,
  * or an Fn::Join naming nothing this template declares); those need
@@ -1108,8 +1111,9 @@ function resolveResourceChannel(
     // Plain string: either the ARN of an external resource (we can't
     // resolve that to a logical id without the deployed stack) or, in
     // tests, a logical id passed directly.
+    const segment = service === "s3" ? "[^:]*" : "[^:]+";
     const arnMatch = value.match(
-      new RegExp(`:${service}:[^:]*:[^:]*:([^/]+)$`),
+      new RegExp(`:${service}:${segment}:${segment}:([^/]+)$`),
     );
     if (arnMatch !== null) {
       return arnMatch[1];
