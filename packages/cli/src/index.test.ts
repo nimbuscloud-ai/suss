@@ -323,6 +323,49 @@ describe("extract, --gaps modes", () => {
     expect(process.exitCode).toBe(previous);
     process.exitCode = previous;
   }, 90_000);
+
+  it("still fails a strict run that answered from a warm cache", async () => {
+    // A fresh tsconfig, so this test owns its own cache directory and
+    // the second call's hit can't be a leftover from an earlier test.
+    const warmTsconfig = createTempTsConfig(fixtureDir);
+    const previous = process.exitCode;
+    const stderrChunks: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      stderrChunks.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+
+    let first: BehavioralSummary[];
+    let second: BehavioralSummary[];
+    try {
+      first = await extract({
+        tsconfig: warmTsconfig,
+        frameworks: ["ts-rest"],
+        gaps: "strict",
+        timing: true,
+      });
+      process.exitCode = previous;
+      stderrChunks.length = 0;
+
+      second = await extract({
+        tsconfig: warmTsconfig,
+        frameworks: ["ts-rest"],
+        gaps: "strict",
+        timing: true,
+      });
+    } finally {
+      process.stderr.write = origWrite;
+    }
+
+    // The cache key folds gapHandling in, so two strict runs against
+    // the same tsconfig share an entry: the second call answers from
+    // the manifest the first one wrote, gaps and all, and still fails.
+    expect(stderrChunks.join("")).toContain("cache: hit");
+    expect(second.map(normalize)).toEqual(first.map(normalize));
+    expect(process.exitCode).toBe(1);
+    process.exitCode = previous;
+  }, 90_000);
 });
 
 // ---------------------------------------------------------------------------

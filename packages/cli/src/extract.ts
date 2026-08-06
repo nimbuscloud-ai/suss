@@ -482,9 +482,16 @@ export async function extract(
       process.stderr.write(
         `Failing because ${gapped.length} gap${gapped.length === 1 ? "" : "s"} ${gapped.length === 1 ? "was" : "were"} recorded (--gaps strict).\n`,
       );
-      for (const { summary, gap } of gapped.slice(0, 5)) {
+      const shown = gapped.slice(0, 5);
+      for (const { summary, gap } of shown) {
         process.stderr.write(
           `  ${summary.location.file}:${summary.location.range.start} ${summary.identity.name}: ${gap.description}\n`,
+        );
+      }
+      const remaining = gapped.length - shown.length;
+      if (remaining > 0) {
+        process.stderr.write(
+          `  and ${remaining} more gap${remaining === 1 ? "" : "s"} not shown.\n`,
         );
       }
       process.exitCode = 1;

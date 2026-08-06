@@ -1,16 +1,16 @@
 {
   "total": {
     "lines": {
-      "total": 1958,
-      "covered": 1776,
+      "total": 1962,
+      "covered": 1779,
       "skipped": 0,
-      "pct": 90.7
+      "pct": 90.67
     },
     "statements": {
-      "total": 2007,
-      "covered": 1818,
+      "total": 2011,
+      "covered": 1821,
       "skipped": 0,
-      "pct": 90.58
+      "pct": 90.55
     },
     "functions": {
       "total": 357,
@@ -19,10 +19,10 @@
       "pct": 89.63
     },
     "branches": {
-      "total": 1328,
-      "covered": 1044,
+      "total": 1332,
+      "covered": 1045,
       "skipped": 0,
-      "pct": 78.61
+      "pct": 78.45
     },
     "branchesTrue": {
       "total": 0,
@@ -137,10 +137,10 @@
   },
   "src/extract.ts": {
     "lines": {
-      "total": 180,
-      "covered": 173,
+      "total": 184,
+      "covered": 176,
       "skipped": 0,
-      "pct": 96.11
+      "pct": 95.65
     },
     "functions": {
       "total": 43,
@@ -149,16 +149,16 @@
       "pct": 97.67
     },
     "statements": {
-      "total": 188,
-      "covered": 181,
+      "total": 192,
+      "covered": 184,
       "skipped": 0,
-      "pct": 96.27
+      "pct": 95.83
     },
     "branches": {
-      "total": 128,
-      "covered": 108,
+      "total": 132,
+      "covered": 109,
       "skipped": 0,
-      "pct": 84.37
+      "pct": 82.57
     }
   },
   "src/index.ts": {
