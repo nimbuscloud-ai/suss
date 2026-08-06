@@ -505,6 +505,7 @@ function announcedBoundaryStructure(unit: DiscoveredUnit): RawCodeStructure {
   return {
     identity: {
       name: unit.name,
+      ...(unit.nameKind !== undefined ? { nameKind: unit.nameKind } : {}),
       kind: unit.kind as CodeUnitKind,
       file: at.getSourceFile().getFilePath(),
       range: { start: at.getStartLineNumber(), end: at.getEndLineNumber() },
@@ -629,6 +630,7 @@ function readCodeStructure(
   return {
     identity: {
       name,
+      ...(unit.nameKind !== undefined ? { nameKind: unit.nameKind } : {}),
       kind: kind as CodeUnitKind,
       // The range below is the function's own, so the path has to be
       // too. Discovery can walk a barrel and land on a declaration

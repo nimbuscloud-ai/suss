@@ -86,6 +86,23 @@ describe("expressFramework — integration", () => {
     });
     const sem = webhook?.identity.boundaryBinding?.semantics;
     expect(sem?.name === "rest" ? sem.method : null).toBe("*");
+    expect(webhook?.identity.nameKind).toBe("label");
+  });
+
+  it("never links a Promise.all call to the .all route handler", () => {
+    const webhook = summaries.find((s) => {
+      const sem = s.identity.boundaryBinding?.semantics;
+      return sem?.name === "rest" && sem.path === "/webhooks/:source";
+    });
+    const invocations = (webhook?.transitions ?? [])
+      .flatMap((t) => t.effects)
+      .filter((e) => e.type === "invocation" && e.callee === "Promise.all");
+    expect(invocations.length).toBeGreaterThan(0);
+    for (const effect of invocations) {
+      expect(effect.type === "invocation" ? effect.summary : null).toBe(
+        undefined,
+      );
+    }
   });
 
   it("maps positional params (req, res, next) to framework roles", () => {

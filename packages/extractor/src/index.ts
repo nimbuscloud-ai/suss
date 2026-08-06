@@ -275,6 +275,8 @@ export interface RawCodeStructure {
   definitions?: Record<string, TypeShape> | null;
   identity: {
     name: string;
+    /** See the IR's CodeUnitIdentity: "label" names coined for the reader. */
+    nameKind?: "binding" | "label";
     kind: CodeUnitKind;
     file: string;
     range: { start: number; end: number };
@@ -489,6 +491,9 @@ export function assembleSummary(
     },
     identity: {
       name: raw.identity.name,
+      ...(raw.identity.nameKind !== undefined
+        ? { nameKind: raw.identity.nameKind }
+        : {}),
       exportPath: raw.identity.exportPath,
       boundaryBinding: raw.boundaryBinding ?? null,
       ...(raw.deployableUnit !== undefined

@@ -49,8 +49,11 @@ router.get("/moved", (req, res) => {
 });
 
 // ALL /webhooks/:source — .all registers every method; the summary
-// records "*" so any client method pairs with it.
-router.all("/webhooks/:source", (req, res) => {
+// records "*" so any client method pairs with it. The Promise.all
+// call exercises the name collision: the handler's unit name is "*",
+// not "all", so call linking must not point this call at the route.
+router.all("/webhooks/:source", async (req, res) => {
+  await Promise.all([]);
   res.status(202).json({ accepted: true });
 });
 

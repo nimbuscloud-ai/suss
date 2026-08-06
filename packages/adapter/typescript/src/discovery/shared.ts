@@ -37,6 +37,12 @@ export interface DiscoveredUnit {
   announcedAt?: Node;
   kind: string;
   name: string;
+  /**
+   * "label" when the name was coined for the reader rather than
+   * naming a binding other code can call, the way a registration
+   * verb names its handler. Absent means the name is a binding.
+   */
+  nameKind?: "binding" | "label";
   callSite?: ClientCallSite;
   /** The discovery pattern that produced this unit. Set by discoverUnits. */
   pattern?: DiscoveryPattern;

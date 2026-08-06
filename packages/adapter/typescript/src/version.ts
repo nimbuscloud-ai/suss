@@ -31,7 +31,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const ADAPTER_VERSION = "0.2.0";
+export const ADAPTER_VERSION = "0.2.1";
 
 /** Packages whose behaviour shapes extraction output. */
 const ANALYSIS_PACKAGES = ["@suss/extractor", "@suss/resolution"];

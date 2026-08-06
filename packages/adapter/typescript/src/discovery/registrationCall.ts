@@ -215,7 +215,9 @@ export function discoverRegistrationCalls(
         results.push({
           func: handler,
           kind,
+          // The verb names the unit for the reader; nothing calls it.
           name: methodName,
+          nameKind: "label",
           ...(routeInfo !== null ? { routeInfo } : {}),
         });
         return;
@@ -237,6 +239,7 @@ export function discoverRegistrationCalls(
           announcedAt: node,
           kind,
           name: methodName,
+          nameKind: "label",
           routeInfo,
         });
       }

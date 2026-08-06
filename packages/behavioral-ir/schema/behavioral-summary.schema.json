@@ -73,6 +73,10 @@
           "name": {
             "type": "string"
           },
+          "nameKind": {
+            "type": "string",
+            "enum": ["binding", "label"]
+          },
           "exportPath": {
             "anyOf": [
               {
