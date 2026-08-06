@@ -2,6 +2,8 @@
 
 import { createHash } from "node:crypto";
 
+import { withGraphqlMetadata } from "@suss/behavioral-ir";
+
 import { inputReadsOf } from "./inputReads.js";
 
 import type {
@@ -12,6 +14,8 @@ import type {
   DeployableUnit,
   Effect,
   Gap,
+  GraphqlDeclaredContract,
+  GraphqlMetadata,
   Input,
   Output,
   Predicate,
@@ -350,9 +354,8 @@ export interface RawCodeStructure {
    */
   graphqlSchemaSdl?: string;
   /**
-   * Declared contract derived from the SDL field for this resolver:
-   * `{ returnType, args, provenance, framework }`. Surfaced as
-   * `summary.metadata.graphql.declaredContract` so
+   * Declared contract derived from the SDL field for this resolver.
+   * Surfaced as `summary.metadata.graphql.declaredContract` so
    * `checkGraphqlContractAgreement` can pair it against other
    * sources declaring a contract for the same boundary.
    *
@@ -361,7 +364,7 @@ export interface RawCodeStructure {
    * Today: the TS adapter does this for Apollo-style resolverMap
    * discovery. NestJS GraphQL (decorator-based) is a follow-up.
    */
-  graphqlDeclaredContract?: Record<string, unknown>;
+  graphqlDeclaredContract?: GraphqlDeclaredContract;
   /**
    * Set on a consumer-side GraphQL summary whose document reference was
    * recognized (an imported `TypedDocumentNode` from graphql-codegen,
@@ -521,14 +524,14 @@ export function assembleSummary(
  * gets its own metadata key space so they can evolve independently.
  */
 function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
-  const metadata: Record<string, unknown> = {};
+  let metadata: Record<string, unknown> = {};
   const http = buildHttpMetadata(raw);
   if (http !== null) {
     metadata.http = http;
   }
-  const graphql = buildGraphqlMetadata(raw);
+  const graphql = buildGraphqlMetadataValue(raw);
   if (graphql !== null) {
-    metadata.graphql = graphql;
+    metadata = withGraphqlMetadata(metadata, graphql);
   }
   return Object.keys(metadata).length > 0 ? metadata : null;
 }
@@ -549,10 +552,10 @@ function buildHttpMetadata(
   return Object.keys(http).length > 0 ? http : null;
 }
 
-function buildGraphqlMetadata(
+function buildGraphqlMetadataValue(
   raw: RawCodeStructure,
-): Record<string, unknown> | null {
-  const graphql: Record<string, unknown> = {};
+): GraphqlMetadata | null {
+  const graphql: GraphqlMetadata = {};
   if (raw.graphqlDocument !== undefined) {
     graphql.document = raw.graphqlDocument;
   }

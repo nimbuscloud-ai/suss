@@ -27,7 +27,7 @@ import {
   type TypeNode,
 } from "graphql";
 
-import { summaryRef } from "@suss/behavioral-ir";
+import { readGraphqlMetadata, summaryRef } from "@suss/behavioral-ir";
 
 import type {
   BehavioralSummary,
@@ -232,12 +232,7 @@ function operationDocFor(summary: BehavioralSummary): OperationDoc | null {
 }
 
 function readOperationDocument(summary: BehavioralSummary): string | null {
-  const graphqlMeta = summary.metadata?.graphql;
-  if (typeof graphqlMeta !== "object" || graphqlMeta === null) {
-    return null;
-  }
-  const document = (graphqlMeta as { document?: unknown }).document;
-  return typeof document === "string" ? document : null;
+  return readGraphqlMetadata(summary)?.document ?? null;
 }
 
 function parseOperationDoc(
@@ -343,12 +338,7 @@ function resolverSchema(
 }
 
 function readSchemaSdl(summary: BehavioralSummary): string | null {
-  const meta = summary.metadata?.graphql;
-  if (typeof meta !== "object" || meta === null) {
-    return null;
-  }
-  const sdl = (meta as { schemaSdl?: unknown }).schemaSdl;
-  return typeof sdl === "string" ? sdl : null;
+  return readGraphqlMetadata(summary)?.schemaSdl ?? null;
 }
 
 function buildSchemaIndex(sdl: string): SchemaIndex | null {

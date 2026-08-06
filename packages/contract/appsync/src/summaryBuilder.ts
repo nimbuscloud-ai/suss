@@ -10,7 +10,10 @@
 // surfacing them beats silently dropping. Lambda data-source attribution
 // rides on each summary so it can later correlate to handler code.
 
-import { graphqlResolverBinding } from "@suss/behavioral-ir";
+import {
+  graphqlResolverBinding,
+  withGraphqlMetadata,
+} from "@suss/behavioral-ir";
 
 import { schemaKey } from "./schema.js";
 import { resolvedSdl } from "./schemaSource.js";
@@ -128,17 +131,30 @@ function buildOne(
     transitions: buildTransitions(ownerKey, resolver, field),
     gaps: [],
     confidence: { source: "derived", level: "high" },
-    metadata: {
-      appsync: buildAppsyncMetadata(resolver, api, resolved, field, indexes),
-      // Surface the resolved SDL so the checker can resolve nested
-      // selections against this resolver's return type. Repeated across
-      // every resolver from the same API by design — each summary
-      // travels independently; keeping the SDL on-hand is simpler than
-      // cross-summary schema lookup, and the checker caches parses
-      // per-SDL.
-      ...(schemaSdl !== null ? { graphql: { schemaSdl } } : {}),
-    },
+    metadata: buildMetadata(resolver, api, resolved, field, indexes, schemaSdl),
   };
+}
+
+function buildMetadata(
+  resolver: AppSyncResolver,
+  api: AppSyncApi | null,
+  resolved: ResolvedSchema | null,
+  field: FieldInfo | null,
+  indexes: Indexes,
+  schemaSdl: string | null,
+): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {
+    appsync: buildAppsyncMetadata(resolver, api, resolved, field, indexes),
+  };
+  // Surface the resolved SDL so the checker can resolve nested
+  // selections against this resolver's return type. Repeated across
+  // every resolver from the same API by design — each summary travels
+  // independently; keeping the SDL on-hand is simpler than
+  // cross-summary schema lookup, and the checker caches parses per-SDL.
+  if (schemaSdl === null) {
+    return metadata;
+  }
+  return withGraphqlMetadata(metadata, { schemaSdl });
 }
 
 function buildAppsyncMetadata(

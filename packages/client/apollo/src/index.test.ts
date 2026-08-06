@@ -3,6 +3,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { readGraphqlMetadata } from "@suss/behavioral-ir";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { apolloClientPack } from "./index.js";
@@ -337,17 +338,12 @@ describe("apolloClientPack — codegen client-preset", () => {
     const adopt = summaries.find(
       (s) => s.identity.name === "useAdoptPet.AdoptPet",
     );
-    const graphqlMeta = adopt?.metadata?.graphql as
-      | { unresolvedDocument?: { reference: string; reason: string } }
-      | undefined;
+    const graphqlMeta = adopt && readGraphqlMetadata(adopt);
     expect(graphqlMeta?.unresolvedDocument?.reference).toBe("AdoptPetDocument");
     expect(graphqlMeta?.unresolvedDocument?.reason).toContain("type arguments");
     // No document body carried through — the checker's pairing layer
     // reads that field and degrades rather than parsing an empty doc.
-    expect(
-      (adopt?.metadata?.graphql as { document?: unknown } | undefined)
-        ?.document,
-    ).toBeUndefined();
+    expect(graphqlMeta?.document).toBeUndefined();
   });
 });
 
@@ -375,11 +371,7 @@ describe("apolloClientPack — edge cases", () => {
       }
     `);
     expect(summaries).toHaveLength(1);
-    const gap = (
-      summaries[0].metadata?.graphql as
-        | { unresolvedDocument?: { reference: string } }
-        | undefined
-    )?.unresolvedDocument;
+    const gap = readGraphqlMetadata(summaries[0])?.unresolvedDocument;
     expect(gap?.reference).toBe("doc");
   });
 
@@ -503,11 +495,7 @@ describe("apolloClientPack (documents in named constants)", () => {
       s.identity.name.startsWith("useChosen."),
     );
     expect(chosen).toHaveLength(1);
-    const gap = (
-      chosen[0].metadata?.graphql as
-        | { unresolvedDocument?: { reference: string } }
-        | undefined
-    )?.unresolvedDocument;
+    const gap = readGraphqlMetadata(chosen[0])?.unresolvedDocument;
     expect(gap?.reference).toBe("CHOSEN_DOCUMENT");
   });
 
@@ -515,8 +503,7 @@ describe("apolloClientPack (documents in named constants)", () => {
     const gaps = summaries.filter(
       (s) =>
         !s.identity.name.startsWith("useChosen.") &&
-        (s.metadata?.graphql as { unresolvedDocument?: unknown } | undefined)
-          ?.unresolvedDocument !== undefined,
+        readGraphqlMetadata(s)?.unresolvedDocument !== undefined,
     );
     expect(gaps).toEqual([]);
   });

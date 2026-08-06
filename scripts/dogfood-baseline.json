@@ -2,10 +2,10 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "exports": 232,
-    "internal": 1120,
-    "consumers": 367,
-    "pairs": 359
+    "exports": 234,
+    "internal": 1116,
+    "consumers": 380,
+    "pairs": 372
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -16,15 +16,15 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 25,
+      "exports": 27,
       "internal": 9,
       "consumers": 3
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 27,
-      "internal": 113,
-      "consumers": 50
+      "internal": 110,
+      "consumers": 53
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -42,7 +42,7 @@
       "name": "@suss/client-apollo",
       "exports": 2,
       "internal": 0,
-      "consumers": 8
+      "consumers": 12
     },
     "packages/client/axios": {
       "name": "@suss/client-axios",
@@ -60,7 +60,7 @@
       "name": "@suss/contract-appsync",
       "exports": 2,
       "internal": 46,
-      "consumers": 2
+      "consumers": 3
     },
     "packages/contract/aws-apigateway": {
       "name": "@suss/contract-aws-apigateway",
@@ -78,7 +78,7 @@
       "name": "@suss/contract-graphql",
       "exports": 6,
       "internal": 25,
-      "consumers": 2
+      "consumers": 6
     },
     "packages/contract/intent": {
       "name": "@suss/contract-intent",
@@ -113,8 +113,8 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 8,
-      "internal": 12,
-      "consumers": 0
+      "internal": 11,
+      "consumers": 1
     },
     "packages/framework/apollo": {
       "name": "@suss/framework-apollo",
