@@ -50,7 +50,7 @@ export function readDeclaredContract(
     return null;
   }
   return {
-    framework: raw.framework,
+    ...(raw.framework !== undefined ? { framework: raw.framework } : {}),
     provenance: raw.provenance,
     responses: raw.responses.map((r) => ({
       statusCode: r.statusCode,

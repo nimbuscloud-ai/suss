@@ -324,7 +324,7 @@ export type HttpContractProvenance = z.infer<
  */
 const HttpDeclaredContractSchema = z.object({
   /** Framework / source tag the producing pack records. */
-  framework: z.string(),
+  framework: z.string().optional(),
   responses: z.array(
     z.object({
       statusCode: z.number(),

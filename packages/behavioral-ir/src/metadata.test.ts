@@ -267,6 +267,21 @@ describe("the http metadata namespace", () => {
     expect(read?.declaredContract?.provenance).toBe("independent");
   });
 
+  it("still answers responses when a writer omits framework", () => {
+    // A writer that leaves framework unset shouldn't lose the whole
+    // contract to the field-level drop; framework is informational,
+    // not required to trust the responses it names.
+    const read = readHttpMetadata(
+      summaryWith({
+        http: {
+          declaredContract: { responses: [{ statusCode: 200 }] },
+        },
+      }),
+    );
+    expect(read?.declaredContract?.responses).toEqual([{ statusCode: 200 }]);
+    expect(read?.declaredContract?.framework).toBeUndefined();
+  });
+
   it("answers undefined when the namespace is absent or not an object", () => {
     expect(readHttpMetadata(summaryWith(undefined))).toBeUndefined();
     expect(readHttpMetadata(summaryWith({ http: 42 }))).toBeUndefined();
