@@ -595,6 +595,94 @@ describe("eventbridge pairing", () => {
   });
 });
 
+function snsConsumer(opts: {
+  name: string;
+  channel: string;
+  patternResolution: "exact" | "unresolvable";
+  subscription?: string;
+  unresolvableReason?: string;
+}): BehavioralSummary {
+  return {
+    kind: "consumer",
+    location: {
+      file: "template.yaml",
+      range: { start: 0, end: 0 },
+      exportName: null,
+    },
+    identity: {
+      name: opts.name,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "sns",
+        semantics: {
+          name: "message-bus",
+          messageBus: "sns",
+          channel: opts.channel,
+        },
+        recognition: "cloudformation",
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      messageBus: {
+        patternResolution: opts.patternResolution,
+        ...(opts.subscription !== undefined
+          ? { subscription: opts.subscription }
+          : {}),
+        ...(opts.unresolvableReason !== undefined
+          ? { unresolvableReason: opts.unresolvableReason }
+          : {}),
+      },
+    },
+  };
+}
+
+describe("sns pairing", () => {
+  it("flags a consumer orphan for a topic no producer sends to", () => {
+    const summaries = [
+      snsConsumer({
+        name: "OrderProcessor.ToOrderProcessor",
+        channel: "OrderEvents",
+        patternResolution: "exact",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const orphan = findings.find((f) => f.kind === "messageBusConsumerOrphan");
+    expect(orphan).toBeDefined();
+    if (orphan?.boundary.semantics.name === "message-bus") {
+      expect(orphan.boundary.semantics.channel).toBe("OrderEvents");
+    }
+  });
+
+  it("surfaces a FilterPolicy subscription as unsupportedSemantics naming the subscription, not an EventBridge rule", () => {
+    const summaries = [
+      snsConsumer({
+        name: "OrderProcessor.ToOrderProcessor",
+        channel: "OrderEvents",
+        patternResolution: "unresolvable",
+        subscription: "ToOrderProcessor",
+        unresolvableReason: "subscription declares a FilterPolicy",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const unresolvable = findings.find(
+      (f) => f.kind === "unsupportedSemantics",
+    );
+    expect(unresolvable).toBeDefined();
+    expect(unresolvable?.severity).toBe("info");
+    expect(unresolvable?.description).toContain("SNS subscription");
+    expect(unresolvable?.description).toContain("ToOrderProcessor");
+    expect(unresolvable?.description).not.toContain("EventBridge rule");
+    // Not double-reported as a consumer orphan.
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
+    ).toEqual([]);
+  });
+});
+
 /**
  * A code unit the aws-lambda pack bound to the subject its handler
  * factory names: a handler-kind summary carrying a message-bus binding
