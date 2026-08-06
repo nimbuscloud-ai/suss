@@ -5,6 +5,7 @@ import path from "node:path";
 import { type CallExpression, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { readHttpMetadata } from "@suss/behavioral-ir";
 import { assembleSummary } from "@suss/extractor";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
@@ -867,8 +868,10 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 
     // The metadata should include the declaredContract under the HTTP namespace
     expect(getUser?.metadata).toBeDefined();
-    const http = getUser?.metadata?.http as Record<string, unknown> | undefined;
-    expect(http?.declaredContract).toBeDefined();
+    if (getUser === undefined) {
+      return;
+    }
+    expect(readHttpMetadata(getUser)?.declaredContract).toBeDefined();
   });
 
   it("getUser handler has high confidence when all conditions are structured", async () => {

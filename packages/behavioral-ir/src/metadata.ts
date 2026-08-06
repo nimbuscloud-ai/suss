@@ -15,7 +15,7 @@ import { z } from "zod";
 
 import { TypeShapeSchema } from "@suss/ir-core";
 
-import type { BehavioralSummary } from "./index.js";
+import type { BehavioralSummary, Transition } from "./index.js";
 
 /**
  * What the message-bus contract reader records beside a summary's
@@ -296,4 +296,134 @@ export function readGraphqlMetadata(
   summary: BehavioralSummary,
 ): GraphqlMetadata | undefined {
   return readNamespace(GraphqlMetadataSchema, summary.metadata?.graphql);
+}
+
+const HttpContractProvenanceSchema = z.enum(["derived", "independent"]);
+
+/**
+ * "derived": the contract comes from the same source that drives this
+ * summary's `transitions[]`. An OpenAPI stub's contract and its
+ * transitions both come from the same operation's `responses` block,
+ * so comparing them against each other is tautological.
+ * "independent": a separate statement, such as CFN `MethodResponses`
+ * against an integration-derived transition, or a ts-rest router
+ * declaration against its handler implementation. Worth comparing.
+ *
+ * Defaults to "independent" when a writer doesn't say; surfacing a
+ * spurious-but-investigable finding beats missing one that mattered.
+ */
+export type HttpContractProvenance = z.infer<
+  typeof HttpContractProvenanceSchema
+>;
+
+/**
+ * A declared response contract for one HTTP boundary: the status codes
+ * a source promises and, where the source states it, each one's body
+ * shape. Two sources naming the same boundary each carry one of these,
+ * and the checker compares them.
+ */
+const HttpDeclaredContractSchema = z.object({
+  /** Framework / source tag the producing pack records. */
+  framework: z.string(),
+  responses: z.array(
+    z.object({
+      statusCode: z.number(),
+      /** Response body shape, when the source declares one. */
+      body: TypeShapeSchema.nullish(),
+    }),
+  ),
+  provenance: HttpContractProvenanceSchema.default("independent"),
+});
+
+export type HttpDeclaredContract = z.infer<typeof HttpDeclaredContractSchema>;
+
+/**
+ * Pointer from a declared route to the code that implements it, a SAM
+ * Lambda proxy integration's `Handler`, say. Generic "where is the
+ * code" identity, not any one manifest's semantics, so a checker can
+ * later correlate the declared route with the extracted handler summary
+ * that carries the same REST binding. Purely additive.
+ */
+const HttpHandlerPointerSchema = z.object({
+  /** Raw handler reference, e.g. "src/handlers/confirmToken.handler". */
+  handler: z.string(),
+  /** Module-path portion (before the final dot). */
+  modulePath: z.string(),
+  /** Exported symbol the handler names. */
+  exportName: z.string(),
+  /** Base directory the module path resolves against (SAM CodeUri). */
+  codeUri: z.string().optional(),
+  /** Logical id of the function resource that declared the handler. */
+  functionLogicalId: z.string().optional(),
+});
+
+/**
+ * What an HTTP contract reader records beside a summary's binding: the
+ * declared response contract, the accessors a consumer's response
+ * wrapper uses to reach the body and the status code, a pointer to the
+ * code that implements a declared route, and the status-code range a
+ * range response ("2XX", "4XX", and so on) covers.
+ *
+ * Every field but `statusRange` lives on a summary's own metadata.
+ * `statusRange` lives on the transition it describes instead. A range
+ * belongs to one response, not to the boundary as a whole, and the IR's
+ * `statusCode` field only holds a literal value or none.
+ */
+export const HttpMetadataSchema = z.object({
+  /**
+   * The contract this summary's own transitions should be checked
+   * against, or, for a summary a contract reader produces with no
+   * handler body behind it, the contract itself.
+   * `checkContractConsistency` and `checkContractAgreement` pair it
+   * against another source describing the same boundary.
+   */
+  declaredContract: HttpDeclaredContractSchema.optional(),
+  /**
+   * Names of pack-declared response properties whose semantics is
+   * `body`: `["data"]` for axios, `["body","json","text"]` for fetch.
+   * Lets the checker unwrap a consumer's expected shape without knowing
+   * each pack. Falls back to `["body"]` when absent.
+   */
+  bodyAccessors: z.array(z.string()).optional(),
+  /**
+   * Names of pack-declared response properties whose semantics is
+   * `statusCode`: fetch and axios both use `status`. Falls back to
+   * `["status", "statusCode"]` when absent.
+   */
+  statusAccessors: z.array(z.string()).optional(),
+  /** Code that implements this declared route, when the manifest names it. */
+  implementingHandler: HttpHandlerPointerSchema.optional(),
+  /** The range spec ("2XX", "5xx", and so on) this transition's response covers. */
+  statusRange: z
+    .object({ min: z.number(), max: z.number(), spec: z.string() })
+    .optional(),
+});
+
+export type HttpMetadata = z.infer<typeof HttpMetadataSchema>;
+
+/**
+ * A metadata bag with the http namespace set. Writes are strict: a
+ * field the schema does not name throws here, next to its cause. Reads
+ * stay lenient so older artifacts keep reading.
+ */
+export function withHttpMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: HttpMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    http: HttpMetadataSchema.strict().parse(value),
+  };
+}
+
+/**
+ * The http namespace on a summary or one of its transitions, or
+ * undefined when absent or not an object. Most fields live on a
+ * summary; `statusRange` lives on the transition it describes. Both
+ * carry a `metadata` bag of the same shape, so one reader covers both.
+ */
+export function readHttpMetadata(
+  carrier: BehavioralSummary | Transition,
+): HttpMetadata | undefined {
+  return readNamespace(HttpMetadataSchema, carrier.metadata?.http);
 }

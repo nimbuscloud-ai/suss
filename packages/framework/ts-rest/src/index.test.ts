@@ -3,6 +3,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { readHttpMetadata } from "@suss/behavioral-ir";
 import { createFixtureProject } from "@suss/test-project";
 
 import { tsRestFramework } from "./index.js";
@@ -173,10 +174,10 @@ describe("tsRestFramework — integration", () => {
   it("attaches the declaredContract to summary metadata under metadata.http", async () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
-    const http = getUser?.metadata?.http as Record<string, unknown> | undefined;
-    const contract = http?.declaredContract as
-      | { responses: Array<{ statusCode: number }> }
-      | undefined;
+    if (getUser === undefined) {
+      return;
+    }
+    const contract = readHttpMetadata(getUser)?.declaredContract;
     expect(contract).toBeDefined();
     const declaredStatuses = contract?.responses
       .map((r) => r.statusCode)

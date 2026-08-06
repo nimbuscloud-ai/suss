@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 
-import { withGraphqlMetadata } from "@suss/behavioral-ir";
+import { withGraphqlMetadata, withHttpMetadata } from "@suss/behavioral-ir";
 
 import { inputReadsOf } from "./inputReads.js";
 
@@ -16,6 +16,7 @@ import type {
   Gap,
   GraphqlDeclaredContract,
   GraphqlMetadata,
+  HttpMetadata,
   Input,
   Output,
   Predicate,
@@ -525,9 +526,9 @@ export function assembleSummary(
  */
 function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
   let metadata: Record<string, unknown> = {};
-  const http = buildHttpMetadata(raw);
+  const http = buildHttpMetadataValue(raw);
   if (http !== null) {
-    metadata.http = http;
+    metadata = withHttpMetadata(metadata, http);
   }
   const graphql = buildGraphqlMetadataValue(raw);
   if (graphql !== null) {
@@ -536,12 +537,20 @@ function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
   return Object.keys(metadata).length > 0 ? metadata : null;
 }
 
-function buildHttpMetadata(
-  raw: RawCodeStructure,
-): Record<string, unknown> | null {
-  const http: Record<string, unknown> = {};
+function buildHttpMetadataValue(raw: RawCodeStructure): HttpMetadata | null {
+  const http: HttpMetadata = {};
   if (raw.declaredContract !== null) {
-    http.declaredContract = raw.declaredContract;
+    // The raw contract's own `provenance` is optional (packs that don't
+    // derive it from the same source as `transitions[]` may leave it
+    // unset); the schema default only applies inside `withHttpMetadata`'s
+    // parse, so it's spelled out here too to keep this object's static
+    // type aligned with what the parse will actually produce. `params`
+    // isn't part of the http namespace: no pack populates it today.
+    http.declaredContract = {
+      framework: raw.declaredContract.framework,
+      responses: raw.declaredContract.responses,
+      provenance: raw.declaredContract.provenance ?? "independent",
+    };
   }
   if (raw.bodyAccessors !== undefined && raw.bodyAccessors.length > 0) {
     http.bodyAccessors = raw.bodyAccessors;

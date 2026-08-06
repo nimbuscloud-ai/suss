@@ -6,6 +6,8 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { readHttpMetadata } from "@suss/behavioral-ir";
+
 import { extract } from "./extract.js";
 import { inspect } from "./inspect.js";
 
@@ -193,8 +195,7 @@ describe("extract — ts-rest", () => {
     ]);
 
     // Declared contract preserved in metadata (under the HTTP namespace)
-    const http = getUser.metadata?.http as Record<string, unknown> | undefined;
-    expect(http?.declaredContract).toMatchObject({
+    expect(readHttpMetadata(getUser)?.declaredContract).toMatchObject({
       framework: "ts-rest",
       responses: expect.arrayContaining([
         expect.objectContaining({ statusCode: 200 }),

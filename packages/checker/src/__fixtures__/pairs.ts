@@ -1,4 +1,8 @@
-import { functionCallBinding } from "@suss/behavioral-ir";
+import {
+  functionCallBinding,
+  readHttpMetadata,
+  withHttpMetadata,
+} from "@suss/behavioral-ir";
 
 import type {
   BehavioralSummary,
@@ -106,23 +110,17 @@ export function withContract(
   declaredStatuses: number[],
   gaps: Gap[] = [],
 ): BehavioralSummary {
-  const existingHttp =
-    summary.metadata?.http && typeof summary.metadata.http === "object"
-      ? (summary.metadata.http as Record<string, unknown>)
-      : {};
   return {
     ...summary,
     gaps,
-    metadata: {
-      ...(summary.metadata ?? {}),
-      http: {
-        ...existingHttp,
-        declaredContract: {
-          framework: "ts-rest",
-          responses: declaredStatuses.map((statusCode) => ({ statusCode })),
-        },
+    metadata: withHttpMetadata(summary.metadata, {
+      ...readHttpMetadata(summary),
+      declaredContract: {
+        framework: "ts-rest",
+        provenance: "independent",
+        responses: declaredStatuses.map((statusCode) => ({ statusCode })),
       },
-    },
+    }),
   };
 }
 
@@ -131,23 +129,17 @@ export function withContractBodies(
   responses: Array<{ statusCode: number; body: TypeShape | null }>,
   gaps: Gap[] = [],
 ): BehavioralSummary {
-  const existingHttp =
-    summary.metadata?.http && typeof summary.metadata.http === "object"
-      ? (summary.metadata.http as Record<string, unknown>)
-      : {};
   return {
     ...summary,
     gaps,
-    metadata: {
-      ...(summary.metadata ?? {}),
-      http: {
-        ...existingHttp,
-        declaredContract: {
-          framework: "ts-rest",
-          responses,
-        },
+    metadata: withHttpMetadata(summary.metadata, {
+      ...readHttpMetadata(summary),
+      declaredContract: {
+        framework: "ts-rest",
+        provenance: "independent",
+        responses,
       },
-    },
+    }),
   };
 }
 
