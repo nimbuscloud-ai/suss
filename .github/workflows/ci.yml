@@ -88,6 +88,14 @@ jobs:
       - name: Pack vocabulary
         run: npm run check:vocabulary
 
+      # A generic file branching on a protocol name is how one route
+      # got spelled two ways and a message-bus suppression rule
+      # silently stopped matching. Protocol behavior comes from the
+      # semantics registry; the pre-existing sites carry counts that
+      # only go down.
+      - name: Protocol dispatch
+        run: npm run check:dispatch
+
       # The fixed-seed fuzz run: a few thousand generated programs
       # through the pipeline itself, in about twenty seconds. A shape
       # that works today and stops working fails the build the day it
