@@ -419,6 +419,33 @@ describe("extract — express", () => {
     expect(codes).toContainEqual({ type: "literal", value: 302 });
     expect(codes).toContainEqual({ type: "literal", value: 301 });
   });
+
+  it("renders no follow marker for a Promise.all call beside the .all route", () => {
+    // The .all handler is label-named "all"; a follow marker would
+    // claim Promise.all reaches it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-all-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(file, JSON.stringify(summaries));
+
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      inspect({ file });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const output = chunks.join("");
+    expect(output).toContain("Promise.all");
+    expect(output).not.toMatch(/Promise\.all[^\n]*→/);
+    expect(output).not.toContain("handlers.all");
+
+    fs.rmSync(dir, { recursive: true });
+  });
 });
 
 // ---------------------------------------------------------------------------
