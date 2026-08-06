@@ -23,5 +23,11 @@ export type GraphqlOperationSemantics = z.infer<
 export const graphqlOperationSemantics = defineBoundarySemantics({
   name: "graphql-operation",
   schema: GraphqlOperationSemanticsSchema,
-  behavior: { identityKey: () => null },
+  behavior: {
+    identityKey: () => null,
+    /** "query GetUser"; the contract checker pairs it, not the key. */
+    displayLabel(semantics) {
+      return `${semantics.operationType} ${semantics.operationName ?? "<anonymous>"}`;
+    },
+  },
 });

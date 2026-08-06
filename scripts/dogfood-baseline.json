@@ -2,10 +2,10 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "exports": 234,
-    "internal": 1123,
-    "consumers": 384,
-    "pairs": 376
+    "exports": 237,
+    "internal": 1117,
+    "consumers": 373,
+    "pairs": 365
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -16,7 +16,7 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 27,
+      "exports": 28,
       "internal": 9,
       "consumers": 3
     },
@@ -24,7 +24,7 @@
       "name": "@suss/checker",
       "exports": 27,
       "internal": 112,
-      "consumers": 53
+      "consumers": 51
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -35,14 +35,14 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 152,
-      "consumers": 124
+      "internal": 149,
+      "consumers": 129
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
       "exports": 2,
       "internal": 0,
-      "consumers": 12
+      "consumers": 8
     },
     "packages/client/axios": {
       "name": "@suss/client-axios",
@@ -60,7 +60,7 @@
       "name": "@suss/contract-appsync",
       "exports": 2,
       "internal": 46,
-      "consumers": 3
+      "consumers": 2
     },
     "packages/contract/aws-apigateway": {
       "name": "@suss/contract-aws-apigateway",
@@ -71,14 +71,14 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 37,
-      "consumers": 44
+      "internal": 32,
+      "consumers": 40
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
       "exports": 6,
       "internal": 25,
-      "consumers": 6
+      "consumers": 2
     },
     "packages/contract/intent": {
       "name": "@suss/contract-intent",
@@ -113,8 +113,8 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 8,
-      "internal": 11,
-      "consumers": 1
+      "internal": 12,
+      "consumers": 0
     },
     "packages/framework/apollo": {
       "name": "@suss/framework-apollo",
@@ -214,8 +214,8 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 29,
-      "internal": 7,
+      "exports": 31,
+      "internal": 8,
       "consumers": 0
     },
     "packages/manifest/aws": {

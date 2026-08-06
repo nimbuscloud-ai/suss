@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   boundaryKey,
+  boundaryLabel,
+  displayLabel,
   functionCallBinding,
   graphqlResolverBinding,
   messageBusBinding,
@@ -275,5 +277,68 @@ describe("boundaryKey", () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("displayLabel", () => {
+  it("shows the identity key when the protocol declares no label", () => {
+    expect(
+      displayLabel(
+        restBinding({
+          transport: "http",
+          recognition: "express",
+          method: "get",
+          path: "/Users/:id",
+        }),
+      ),
+    ).toBe("GET /users/{id}");
+  });
+
+  it("keeps a readable half when REST names only one", () => {
+    expect(
+      displayLabel(
+        restBinding({
+          transport: "http",
+          recognition: "express",
+          method: null,
+          path: "/users",
+        }),
+      ),
+    ).toBe("ANY /users");
+  });
+
+  it("shows the whole message-bus channel, bus included", () => {
+    expect(
+      displayLabel(
+        messageBusBinding({
+          recognition: "cloudformation",
+          messageBus: "eventbridge",
+          channel: "default#order.placed",
+        }),
+      ),
+    ).toBe("bus:eventbridge default#order.placed");
+  });
+
+  it("says a null channel is named at runtime", () => {
+    expect(
+      displayLabel(
+        messageBusBinding({
+          recognition: "runtime-node",
+          messageBus: "sqs",
+          channel: null,
+        }),
+      ),
+    ).toBe("bus:sqs (channel named at runtime)");
+  });
+
+  it("falls back to the variant and recognizer when nothing is named", () => {
+    const binding = restBinding({
+      transport: "http",
+      recognition: "express",
+      method: null,
+      path: null,
+    });
+    expect(boundaryLabel(binding)).toBeNull();
+    expect(displayLabel(binding)).toBe("rest:express");
   });
 });

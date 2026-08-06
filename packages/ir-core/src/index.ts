@@ -100,7 +100,15 @@ export type { StorageRelationalSemantics } from "./semantics/storageRelational.j
 // needs and must agree on. They live here so neither the behavioural
 // checker nor the intent checker owns them (and so the two can't drift).
 
-export { boundaryKey, pairingKey, semanticsAgree } from "./boundaryKey.js";
+// normalizeRuleBoundary lives in boundaryKey.ts too, but ships through
+// the suppressions surface below, beside the matcher that uses it.
+export {
+  boundaryKey,
+  boundaryLabel,
+  displayLabel,
+  pairingKey,
+  semanticsAgree,
+} from "./boundaryKey.js";
 export {
   busesAgree,
   channelsPair,

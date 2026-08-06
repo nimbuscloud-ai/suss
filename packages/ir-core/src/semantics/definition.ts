@@ -67,6 +67,30 @@ export interface BoundaryBehavior<S extends { name: string }> {
    * not penalized for the bus a counterpart does know.
    */
   sidesAgree?(a: S, b: S): boolean;
+
+  /**
+   * The line a reader sees for this boundary in unmatched lists and
+   * inspect headers. Defaults to `identityKey`. Define it when the
+   * reader wants more than the key holds, the way a message-bus
+   * channel shows its bus and queue while the key carries the
+   * subject alone.
+   */
+  displayLabel?(semantics: S): string | null;
+
+  /**
+   * How a hand-written suppression boundary becomes comparable to
+   * `identityKey`'s output. `claims` says whether a string is this
+   * protocol's to normalize; the first protocol that claims a string
+   * normalizes it, and an unclaimed string compares byte for byte.
+   * REST claims "METHOD /path" and forgives the spellings authors
+   * write (":id" for "{id}", a lowercased method). A protocol whose
+   * keys are exact, like message-bus, declares nothing and stays
+   * verbatim.
+   */
+  ruleBoundary?: {
+    claims(raw: string): boolean;
+    normalize(raw: string): string;
+  };
 }
 
 /**

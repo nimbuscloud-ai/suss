@@ -64,6 +64,15 @@ export function behaviorOf(semantics: Semantics): BoundaryBehavior<Semantics> {
   return definition.behavior as BoundaryBehavior<Semantics>;
 }
 
+/**
+ * Every protocol's behavior, for lookups that start from a string
+ * rather than a semantics value, the way a suppression rule's
+ * boundary arrives. Same cast seam as `behaviorOf`.
+ */
+export function allBehaviors(): ReadonlyArray<BoundaryBehavior<Semantics>> {
+  return DEFINITIONS.map((d) => d.behavior as BoundaryBehavior<Semantics>);
+}
+
 // Compile-time completeness: every union member has a definition and
 // every definition is in the union. A protocol module added to one
 // list and not the other fails here.
