@@ -2,22 +2,22 @@
   "totals": {
     "packages": 38,
     "packagesWithExports": 37,
-    "exports": 241,
-    "internal": 1122,
-    "consumers": 416,
-    "pairs": 408
+    "exports": 242,
+    "internal": 1123,
+    "consumers": 417,
+    "pairs": 409
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
-      "internal": 513,
-      "consumers": 28
+      "internal": 512,
+      "consumers": 29
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 32,
-      "internal": 9,
+      "exports": 33,
+      "internal": 10,
       "consumers": 3
     },
     "packages/checker": {
@@ -35,7 +35,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 148,
+      "internal": 149,
       "consumers": 131
     },
     "packages/client/apollo": {
