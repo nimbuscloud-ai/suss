@@ -14,7 +14,7 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 **suss reads a deployment split across nested stacks.** A handler declared in a child template is found and named by the stack path that reaches it, a Lambda referenced through `Fn::GetAtt` resolves, and config reads are picked up in every spelling, including reads that happen when a module loads.
 
-**A summary lists what a unit reads out of what it was given.** Parameters, destructured fields, and hook returns show up as the unit's declared inputs, so a reader can see what a handler depends on without opening it.
+**A summary lists what a unit reads out of what it was given.** Each input (a parameter, a destructured field, a hook return) now also records the property paths the unit reads from it, so a reader can see that a handler uses `body.status` without opening the code.
 
 ## If you contribute to suss
 

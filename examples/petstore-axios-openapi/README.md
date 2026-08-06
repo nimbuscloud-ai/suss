@@ -14,9 +14,9 @@ make all
 
 `make all` runs three steps in order:
 
-1. `make extract` — `suss extract -p tsconfig.json -f axios -o out/consumer.json`
-2. `make contract` — `suss contract --from openapi petstore-openapi.json -o out/provider.json`
-3. `make check`   — `suss check --dir out/` (intentionally exits non-zero when there are error-severity findings, so CI pipelines fail on regressions)
+1. `make extract` runs `suss extract -p tsconfig.json -f axios -o out/consumer.json`
+2. `make contract` runs `suss contract --from openapi petstore-openapi.json -o out/provider.json`
+3. `make check` runs `suss check --dir out/` (intentionally exits non-zero when there are error-severity findings, so CI pipelines fail on regressions)
 
 Or inspect each side as a human-readable rendering:
 
@@ -43,9 +43,9 @@ These are real bugs in the consumer. Petstore declares 200, 400, and 404 for `GE
 
 Note that `listPets` doesn't directly call axios — it calls `getJson()` from `api-client.ts`, which forwards `path` to `axios.get`. `suss` walks references to wrapper functions and synthesises a per-caller summary so the call site is still pairable.
 
-### Warnings — the same seven gaps, reported from the contract's side
+### Warnings: the same seven gaps, from the contract's side
 
-Each unhandled status above is also reported as a `consumerContractViolation` at warning severity ("Contract declares response 400 but consumer does not handle it"). The error comes from pairing the two summaries; the warning comes from checking the consumer against the declared OpenAPI contract directly. Same seven gaps, two vantage points, so fixing a consumer branch clears both at once.
+Each unhandled status above is also reported as a `consumerContractViolation` at warning severity ("Contract declares response 400 but consumer does not handle it"). The error comes from pairing the two summaries; the warning comes from checking the consumer against the declared OpenAPI contract directly. Adding the missing consumer branch clears the error and its warning together.
 
 ### Info — consumer reads a field the provider declares optional
 

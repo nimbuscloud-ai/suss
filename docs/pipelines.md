@@ -206,4 +206,4 @@ Before `suss check --dir` runs `checkPair`, it has to decide which summaries fac
 
 The result is `{ pairs, unmatched }`. `checkPair` runs on each pair; the unmatched lists surface in the CLI output so you can see what didn't line up.
 
-The key function and the agreement check both come from the binding's semantics variant, imported from `@suss/ir-core`: REST buckets by path and settles the method inside the bucket, GraphQL pairs by operation type + field, message-bus by the channel's subject. A summary whose semantics declares no key lands in the unpaired list with a reason instead of being forced through a REST-shaped key. See [`boundary-semantics.md`](boundary-semantics.md).
+The key function and the agreement check both come from the binding's semantics variant, imported from `@suss/ir-core`: REST buckets by path and settles the method inside the bucket, GraphQL pairs by the parent type name + field, message-bus by the channel's subject. A summary whose semantics declares no key lands in the unpaired list with a reason instead of being forced through a REST-shaped key. See [`boundary-semantics.md`](boundary-semantics.md).

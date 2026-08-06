@@ -259,7 +259,7 @@ Static analysis of production codebases is always imperfect. suss handles this e
 The IR types are mostly protocol-agnostic, every `Output` is a typed shape, every `Predicate` operates on `ValueRef`s. Seven semantics variants ship, each as its own module under `packages/ir-core/src/semantics/` composed by a registry:
 
 - **`rest`**: `(method, normalizedPath)` as the identity, `"*"` as the method wildcard; two sides pair when their paths bucket together and their methods agree. Metadata namespaced under `metadata.http.*`.
-- **`graphql-resolver`**: operation type + field as the identity, with contract derivation from inline SDL. Metadata under `metadata.graphql.*`. **`graphql-operation`** describes the client side; the contract checker pairs it rather than the key engine.
+- **`graphql-resolver`**: the parent type name + field as the identity (`Query.user`, but also `User.posts`), with contract derivation from inline SDL. Metadata under `metadata.graphql.*`. **`graphql-operation`** describes the client side; the contract checker pairs it rather than the key engine.
 - **`message-bus`**: the key is built from the channel's subject, so a template that writes `default#order.placed` and a handler that writes `order.placed` land in one bucket, and the buses have to agree inside it.
 - **`function-call`**: keyed by package + export path when both are known.
 - **`runtime-config`** and **`storage-relational`**: no identity key; their checkers pair by deployable unit and by relation.
