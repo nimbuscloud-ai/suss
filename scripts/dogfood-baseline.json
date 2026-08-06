@@ -3,9 +3,9 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 241,
-    "internal": 1116,
-    "consumers": 409,
-    "pairs": 401
+    "internal": 1122,
+    "consumers": 416,
+    "pairs": 408
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -71,8 +71,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 37,
-      "consumers": 45
+      "internal": 43,
+      "consumers": 52
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",

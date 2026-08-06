@@ -226,6 +226,59 @@ describe("buildMessageBusSummaries", () => {
     });
   });
 
+  it("does not resolve a malformed SQS ARN with an empty account segment", () => {
+    // A dropped account segment must not fall through to the bare
+    // queue name: that name can coincidentally collide with an
+    // unrelated logical id elsewhere in the template.
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrders: {
+                Type: "SQS",
+                Properties: {
+                  Queue: "arn:aws:sqs:us-east-1::external-orders-queue",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "arn:aws:sqs:us-east-1::external-orders-queue",
+    });
+  });
+
+  it("does not resolve an ARN naming a different service", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrders: {
+                Type: "SQS",
+                Properties: {
+                  Queue: "arn:aws:sns:us-east-1:123456789012:not-a-queue",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "arn:aws:sns:us-east-1:123456789012:not-a-queue",
+    });
+  });
+
   it("ignores non-SQS event sources", () => {
     const out = cloudFormationToSummaries({
       Resources: {
@@ -1185,6 +1238,32 @@ describe("buildMessageBusSummaries — SNS", () => {
     });
   });
 
+  it("does not resolve a malformed SNS ARN with an empty region segment", () => {
+    // A dropped region segment must not fall through to the bare
+    // topic name: that name can coincidentally collide with an
+    // unrelated logical id elsewhere in the template.
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrderEvents: {
+                Type: "SNS",
+                Properties: { Topic: "arn:aws:sns::123456789012:order-events" },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = snsConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "arn:aws:sns::123456789012:order-events",
+    });
+  });
+
   it("marks a Protocol lambda subscription with a FilterPolicy as unresolvable, naming the policy", () => {
     const out = cloudFormationToSummaries({
       Resources: {
@@ -1357,6 +1436,640 @@ describe("buildMessageBusSummaries — SNS", () => {
       expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
         channel: "OrdersQueue",
       });
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S3
+// ---------------------------------------------------------------------------
+
+function isS3(summary: BehavioralSummary): boolean {
+  const sem = summary.identity.boundaryBinding?.semantics;
+  return sem?.name === "message-bus" && sem.messageBus === "s3";
+}
+
+function s3Providers(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  return pickProviders(summaries).filter(isS3);
+}
+
+function s3Consumers(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  return pickConsumers(summaries).filter(isS3);
+}
+
+const imageProcessor = {
+  Type: "AWS::Serverless::Function",
+  Properties: { CodeUri: "src/image-processor/" },
+};
+
+describe("buildMessageBusSummaries: S3", () => {
+  it("does not emit a provider for a bucket with no NotificationConfiguration", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Assets: { Type: "AWS::S3::Bucket", Properties: {} },
+      },
+    });
+    expect(s3Providers(out)).toEqual([]);
+  });
+
+  it("emits one provider summary per AWS::S3::Bucket with a notification", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: {
+          Type: "AWS::S3::Bucket",
+          Properties: {
+            NotificationConfiguration: {
+              LambdaConfigurations: [
+                {
+                  Event: "s3:ObjectCreated:*",
+                  Function: { "Fn::GetAtt": ["ImageProcessor", "Arn"] },
+                },
+              ],
+            },
+          },
+        },
+        ImageProcessor: imageProcessor,
+      },
+    });
+    const providers = s3Providers(out);
+    expect(providers).toHaveLength(1);
+    expect(providers[0]?.identity.name).toBe("Uploads");
+  });
+
+  it("emits a provider for a bucket whose only notification is a TopicConfiguration", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: {
+          Type: "AWS::S3::Bucket",
+          Properties: {
+            NotificationConfiguration: {
+              TopicConfigurations: [
+                { Event: "s3:ObjectCreated:*", Topic: { Ref: "UploadEvents" } },
+              ],
+            },
+          },
+        },
+        UploadEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+      },
+    });
+    const providers = s3Providers(out);
+    expect(providers).toHaveLength(1);
+    expect(providers[0]?.identity.name).toBe("Uploads");
+  });
+
+  it("emits a provider for a bucket whose only notification target never resolves", () => {
+    // Gating counts the raw notification entry, not whether its target
+    // resolves: the bucket really does declare the wiring, even when
+    // the Function it names is missing from this template.
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: {
+          Type: "AWS::S3::Bucket",
+          Properties: {
+            NotificationConfiguration: {
+              LambdaConfigurations: [
+                {
+                  Event: "s3:ObjectCreated:*",
+                  Function: { "Fn::GetAtt": ["Ghost", "Arn"] },
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+    const providers = s3Providers(out);
+    expect(providers).toHaveLength(1);
+    expect(providers[0]?.identity.name).toBe("Uploads");
+    expect(s3Consumers(out)).toEqual([]);
+  });
+
+  it("captures BucketName in metadata", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: {
+          Type: "AWS::S3::Bucket",
+          Properties: {
+            BucketName: "my-uploads",
+            NotificationConfiguration: {
+              LambdaConfigurations: [
+                {
+                  Event: "s3:ObjectCreated:*",
+                  Function: { "Fn::GetAtt": ["ImageProcessor", "Arn"] },
+                },
+              ],
+            },
+          },
+        },
+        ImageProcessor: imageProcessor,
+      },
+    });
+    const provider = s3Providers(out)[0] ?? raise("no provider");
+    expect(provider.metadata?.messageBus).toMatchObject({
+      physicalName: "my-uploads",
+    });
+  });
+
+  it("emits a consumer for a LambdaConfiguration, channelled on the bucket", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: {
+          Type: "AWS::S3::Bucket",
+          Properties: {
+            NotificationConfiguration: {
+              LambdaConfigurations: [
+                {
+                  Event: "s3:ObjectCreated:*",
+                  Function: { "Fn::GetAtt": ["ImageProcessor", "Arn"] },
+                },
+              ],
+            },
+          },
+        },
+        ImageProcessor: imageProcessor,
+      },
+    });
+    const consumers = s3Consumers(out);
+    expect(consumers).toHaveLength(1);
+    const consumer = consumers[0] ?? raise("no consumer");
+    expect(consumer.identity.name).toBe(
+      "ImageProcessor.Uploads.LambdaConfiguration0",
+    );
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "message-bus",
+      messageBus: "s3",
+      channel: "Uploads",
+    });
+    expect(consumer.identity.deployableUnit).toEqual({
+      deploymentTarget: "lambda",
+      instanceName: "ImageProcessor",
+    });
+    expect(consumer.metadata?.codeScope).toEqual({
+      kind: "codeUri",
+      path: "src/image-processor",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      notification: "Uploads.LambdaConfiguration0",
+      events: ["s3:ObjectCreated:*"],
+      patternResolution: "exact",
+    });
+  });
+
+  it("subscribes the function for a SAM Events Type: S3 entry", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: { Type: "AWS::S3::Bucket", Properties: {} },
+        ImageProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/image-processor/",
+            Events: {
+              FromUploads: {
+                Type: "S3",
+                Properties: {
+                  Bucket: { Ref: "Uploads" },
+                  Events: "s3:ObjectCreated:*",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumers = s3Consumers(out);
+    expect(consumers).toHaveLength(1);
+    const consumer = consumers[0] ?? raise("no consumer");
+    expect(consumer.identity.name).toBe("ImageProcessor.FromUploads");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "Uploads",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      notification: "FromUploads",
+      events: ["s3:ObjectCreated:*"],
+      patternResolution: "exact",
+    });
+    // The bucket resource itself declares no NotificationConfiguration
+    // of its own (SAM injects one at transform time), but it still
+    // gets a provider: the Bucket resource is right here in the
+    // template, and without one every SAM-wired bucket would report a
+    // producer orphan the day an S3 producer pack ships.
+    const providers = s3Providers(out);
+    expect(providers).toHaveLength(1);
+    expect(providers[0]?.identity.name).toBe("Uploads");
+  });
+
+  it("does not emit a provider for a SAM Type: S3 event whose Bucket isn't declared in this template", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        ImageProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/image-processor/",
+            Events: {
+              FromUploads: {
+                Type: "S3",
+                Properties: {
+                  Bucket: { Ref: "ExternalUploads" },
+                  Events: "s3:ObjectCreated:*",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(s3Providers(out)).toEqual([]);
+    expect(s3Consumers(out)).toHaveLength(1);
+  });
+
+  it("resolves a plain S3 ARN string to the bucket's logical id segment", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        ImageProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/image-processor/",
+            Events: {
+              FromUploads: {
+                Type: "S3",
+                Properties: {
+                  Bucket: "arn:aws:s3:::external-uploads-bucket",
+                  Events: "s3:ObjectCreated:*",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = s3Consumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "external-uploads-bucket",
+    });
+  });
+
+  it("strips an object key from an S3 ARN, keeping the bucket as the channel", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        ImageProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/image-processor/",
+            Events: {
+              FromUploads: {
+                Type: "S3",
+                Properties: {
+                  Bucket:
+                    "arn:aws:s3:::external-uploads-bucket/incoming/photo.jpg",
+                  Events: "s3:ObjectCreated:*",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = s3Consumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "external-uploads-bucket",
+    });
+  });
+
+  it("does not resolve an S3 ARN carrying a region segment", () => {
+    // An S3 ARN never carries a region; one that does is malformed and
+    // must not fall through to a bare bucket name.
+    const out = cloudFormationToSummaries({
+      Resources: {
+        ImageProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/image-processor/",
+            Events: {
+              FromUploads: {
+                Type: "S3",
+                Properties: {
+                  Bucket: "arn:aws:s3:us-east-1::external-uploads-bucket",
+                  Events: "s3:ObjectCreated:*",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = s3Consumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "arn:aws:s3:us-east-1::external-uploads-bucket",
+    });
+  });
+
+  it("marks a LambdaConfiguration with a Filter as unresolvable, naming the filter", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: {
+          Type: "AWS::S3::Bucket",
+          Properties: {
+            NotificationConfiguration: {
+              LambdaConfigurations: [
+                {
+                  Event: "s3:ObjectCreated:*",
+                  Function: { "Fn::GetAtt": ["ImageProcessor", "Arn"] },
+                  Filter: {
+                    S3Key: { Rules: [{ Name: "prefix", Value: "uploads/" }] },
+                  },
+                },
+              ],
+            },
+          },
+        },
+        ImageProcessor: imageProcessor,
+      },
+    });
+    const consumer = s3Consumers(out)[0] ?? raise("no consumer");
+    expect(readMessageBusMetadata(consumer)?.patternResolution).toBe(
+      "unresolvable",
+    );
+    expect(readMessageBusMetadata(consumer)?.unresolvableReason).toContain(
+      "Filter",
+    );
+  });
+
+  it("skips a LambdaConfiguration whose Function names a resource missing from the template", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: {
+          Type: "AWS::S3::Bucket",
+          Properties: {
+            NotificationConfiguration: {
+              LambdaConfigurations: [
+                {
+                  Event: "s3:ObjectCreated:*",
+                  Function: { "Fn::GetAtt": ["Ghost", "Arn"] },
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+    expect(s3Consumers(out)).toEqual([]);
+  });
+
+  it("skips a LambdaConfiguration whose Function can't be resolved", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: {
+          Type: "AWS::S3::Bucket",
+          Properties: {
+            NotificationConfiguration: {
+              LambdaConfigurations: [
+                { Event: "s3:ObjectCreated:*", Function: null },
+              ],
+            },
+          },
+        },
+      },
+    });
+    expect(s3Consumers(out)).toEqual([]);
+  });
+
+  it("skips malformed entries in LambdaConfigurations, QueueConfigurations, and TopicConfigurations", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: {
+          Type: "AWS::S3::Bucket",
+          Properties: {
+            NotificationConfiguration: {
+              LambdaConfigurations: [null],
+              QueueConfigurations: [null],
+              TopicConfigurations: [null],
+            },
+          },
+        },
+      },
+    });
+    expect(s3Providers(out)).toEqual([]);
+    expect(s3Consumers(out)).toEqual([]);
+  });
+
+  it("carries an array Events value on a SAM Type: S3 entry as a list", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Uploads: { Type: "AWS::S3::Bucket", Properties: {} },
+        ImageProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/image-processor/",
+            Events: {
+              FromUploads: {
+                Type: "S3",
+                Properties: {
+                  Bucket: { Ref: "Uploads" },
+                  Events: ["s3:ObjectCreated:Put", "s3:ObjectRemoved:*"],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = s3Consumers(out)[0] ?? raise("no consumer");
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      events: ["s3:ObjectCreated:Put", "s3:ObjectRemoved:*"],
+    });
+  });
+
+  describe("QueueConfiguration bridges into the queue's own consumer", () => {
+    function s3FedQueueTemplate(configProps: Record<string, unknown>) {
+      return {
+        Resources: {
+          Uploads: {
+            Type: "AWS::S3::Bucket",
+            Properties: {
+              NotificationConfiguration: {
+                QueueConfigurations: [
+                  {
+                    Event: "s3:ObjectCreated:*",
+                    Queue: { "Fn::GetAtt": ["UploadsQueue", "Arn"] },
+                    ...configProps,
+                  },
+                ],
+              },
+            },
+          },
+          UploadsQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+          ImageProcessor: {
+            Type: "AWS::Serverless::Function",
+            Properties: {
+              CodeUri: "src/image-processor/",
+              Events: {
+                FromUploadsQueue: {
+                  Type: "SQS",
+                  Properties: {
+                    Queue: { "Fn::GetAtt": ["UploadsQueue", "Arn"] },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+    }
+
+    it("does not emit its own consumer for a QueueConfiguration", () => {
+      const out = cloudFormationToSummaries(s3FedQueueTemplate({}));
+      expect(s3Consumers(out)).toEqual([]);
+    });
+
+    it("routes the queue's Lambda consumer onto the bucket's channel", () => {
+      const out = cloudFormationToSummaries(s3FedQueueTemplate({}));
+      const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        name: "message-bus",
+        messageBus: "sqs",
+        channel: "Uploads",
+      });
+      expect(consumer.metadata?.messageBus).toMatchObject({
+        queue: "UploadsQueue",
+      });
+    });
+
+    it("keeps the queue's own channel when the QueueConfiguration declares a Filter", () => {
+      const out = cloudFormationToSummaries(
+        s3FedQueueTemplate({
+          Filter: { S3Key: { Rules: [{ Name: "prefix", Value: "uploads/" }] } },
+        }),
+      );
+      const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        channel: "UploadsQueue",
+      });
+    });
+
+    it("keeps the queue's own channel when the QueueConfiguration's Queue can't be resolved to a declared SQS queue", () => {
+      const out = cloudFormationToSummaries(
+        s3FedQueueTemplate({ Queue: { Ref: "Ghost" } }),
+      );
+      const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        channel: "UploadsQueue",
+      });
+    });
+
+    it("keeps the queue's own channel when a bucket QueueConfiguration and a rule both route into it", () => {
+      const template = s3FedQueueTemplate({});
+      const out = cloudFormationToSummaries({
+        Resources: {
+          ...template.Resources,
+          UploadsRule: {
+            Type: "AWS::Events::Rule",
+            Properties: {
+              EventPattern: { "detail-type": ["upload.finished"] },
+              Targets: [
+                {
+                  Id: "uploads",
+                  Arn: { "Fn::GetAtt": ["UploadsQueue", "Arn"] },
+                },
+              ],
+            },
+          },
+        },
+      });
+      const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        channel: "UploadsQueue",
+      });
+    });
+
+    it("keeps the queue's own channel when a rule, an SNS subscription, and a bucket all route into it", () => {
+      const template = s3FedQueueTemplate({});
+      const out = cloudFormationToSummaries({
+        Resources: {
+          ...template.Resources,
+          UploadsRule: {
+            Type: "AWS::Events::Rule",
+            Properties: {
+              EventPattern: { "detail-type": ["upload.finished"] },
+              Targets: [
+                {
+                  Id: "uploads",
+                  Arn: { "Fn::GetAtt": ["UploadsQueue", "Arn"] },
+                },
+              ],
+            },
+          },
+          UploadEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+          ToUploadsQueue: {
+            Type: "AWS::SNS::Subscription",
+            Properties: {
+              TopicArn: { Ref: "UploadEvents" },
+              Protocol: "sqs",
+              Endpoint: { "Fn::GetAtt": ["UploadsQueue", "Arn"] },
+            },
+          },
+        },
+      });
+      const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        channel: "UploadsQueue",
+      });
+    });
+  });
+
+  describe("TopicConfiguration records a bucket-channelled bridge consumer", () => {
+    it("names the targeted topic in metadata, since a topic isn't a deployableUnit", () => {
+      const out = cloudFormationToSummaries({
+        Resources: {
+          Uploads: {
+            Type: "AWS::S3::Bucket",
+            Properties: {
+              NotificationConfiguration: {
+                TopicConfigurations: [
+                  {
+                    Event: "s3:ObjectCreated:*",
+                    Topic: { Ref: "UploadEvents" },
+                  },
+                ],
+              },
+            },
+          },
+          UploadEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        },
+      });
+      const consumers = s3Consumers(out);
+      expect(consumers).toHaveLength(1);
+      const consumer = consumers[0] ?? raise("no consumer");
+      expect(consumer.identity.name).toBe("Uploads.TopicConfiguration0");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        name: "message-bus",
+        messageBus: "s3",
+        channel: "Uploads",
+      });
+      expect(consumer.identity.deployableUnit).toBeUndefined();
+      expect(consumer.metadata?.messageBus).toMatchObject({
+        notification: "Uploads.TopicConfiguration0",
+        topic: "UploadEvents",
+        events: ["s3:ObjectCreated:*"],
+        patternResolution: "exact",
+      });
+    });
+
+    it("skips a TopicConfiguration whose Topic names a resource missing from the template", () => {
+      const out = cloudFormationToSummaries({
+        Resources: {
+          Uploads: {
+            Type: "AWS::S3::Bucket",
+            Properties: {
+              NotificationConfiguration: {
+                TopicConfigurations: [
+                  { Event: "s3:ObjectCreated:*", Topic: { Ref: "Ghost" } },
+                ],
+              },
+            },
+          },
+        },
+      });
+      expect(s3Consumers(out)).toEqual([]);
     });
   });
 });

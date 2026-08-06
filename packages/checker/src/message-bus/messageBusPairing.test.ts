@@ -683,6 +683,111 @@ describe("sns pairing", () => {
   });
 });
 
+function s3Consumer(opts: {
+  name: string;
+  channel: string;
+  patternResolution: "exact" | "unresolvable";
+  notification?: string;
+  unresolvableReason?: string;
+}): BehavioralSummary {
+  return {
+    kind: "consumer",
+    location: {
+      file: "template.yaml",
+      range: { start: 0, end: 0 },
+      exportName: null,
+    },
+    identity: {
+      name: opts.name,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "s3",
+        semantics: {
+          name: "message-bus",
+          messageBus: "s3",
+          channel: opts.channel,
+        },
+        recognition: "cloudformation",
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      messageBus: {
+        patternResolution: opts.patternResolution,
+        ...(opts.notification !== undefined
+          ? { notification: opts.notification }
+          : {}),
+        ...(opts.unresolvableReason !== undefined
+          ? { unresolvableReason: opts.unresolvableReason }
+          : {}),
+      },
+    },
+  };
+}
+
+describe("s3 pairing", () => {
+  it("flags a consumer orphan for a bucket no producer sends to", () => {
+    const summaries = [
+      s3Consumer({
+        name: "ImageProcessor.Uploads.LambdaConfiguration0",
+        channel: "Uploads",
+        patternResolution: "exact",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const orphan = findings.find((f) => f.kind === "messageBusConsumerOrphan");
+    expect(orphan).toBeDefined();
+    if (orphan?.boundary.semantics.name === "message-bus") {
+      expect(orphan.boundary.semantics.channel).toBe("Uploads");
+    }
+  });
+
+  it("surfaces a Filter notification as unsupportedSemantics naming the notification, not an EventBridge rule", () => {
+    const summaries = [
+      s3Consumer({
+        name: "ImageProcessor.Uploads.LambdaConfiguration0",
+        channel: "Uploads",
+        patternResolution: "unresolvable",
+        notification: "Uploads.LambdaConfiguration0",
+        unresolvableReason: "notification declares a Filter",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const unresolvable = findings.find(
+      (f) => f.kind === "unsupportedSemantics",
+    );
+    expect(unresolvable).toBeDefined();
+    expect(unresolvable?.severity).toBe("info");
+    expect(unresolvable?.description).toContain("S3 notification");
+    expect(unresolvable?.description).toContain("Uploads.LambdaConfiguration0");
+    expect(unresolvable?.description).not.toContain("EventBridge rule");
+    // Not double-reported as a consumer orphan.
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
+    ).toEqual([]);
+  });
+
+  it("falls back to a default reason when an unresolvable S3 consumer names none of its own", () => {
+    const summaries = [
+      s3Consumer({
+        name: "ImageProcessor.Uploads.LambdaConfiguration0",
+        channel: "Uploads",
+        patternResolution: "unresolvable",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const unresolvable = findings.find(
+      (f) => f.kind === "unsupportedSemantics",
+    );
+    expect(unresolvable?.description).toContain(
+      "the Filter couldn't be reduced to the whole bucket",
+    );
+  });
+});
+
 /**
  * A code unit the aws-lambda pack bound to the subject its handler
  * factory names: a handler-kind summary carrying a message-bus binding

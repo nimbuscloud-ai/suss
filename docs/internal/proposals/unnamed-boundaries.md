@@ -132,7 +132,7 @@ the empty string stops validating:
 ```ts
 export const MessageBusSemanticsSchema = z.object({
   name: z.literal("message-bus"),
-  messageBus: z.enum(["sqs", "sns", "eventbridge", "bullmq", "kafka", "nats"]),
+  messageBus: z.enum(["sqs", "sns", "s3", "eventbridge", "bullmq", "kafka", "nats"]),
   /** null when this source does not name the channel. */
   channel: z.string().min(1).nullable(),
 });

@@ -20,8 +20,9 @@ import type { BehavioralSummary, Transition } from "./index.js";
 /**
  * What the message-bus contract reader records beside a summary's
  * binding: the queue a consumer drains, the rule or subscription and
- * bus a subscription came from, and how far a rule's EventPattern or a
- * subscription's FilterPolicy reduced.
+ * bus a subscription came from, how far a rule's EventPattern, an SNS
+ * FilterPolicy, or an S3 notification Filter reduced, and which S3
+ * events and target an S3 bucket notification names.
  */
 export const MessageBusMetadataSchema = z.object({
   /** CFN logical id of the queue a subject-channelled consumer drains. */
@@ -36,9 +37,15 @@ export const MessageBusMetadataSchema = z.object({
   rule: z.string().optional(),
   /** Label of the SNS subscription a consumer summary came from: the standalone AWS::SNS::Subscription's logical id, a synthesized label for an inline entry, or the SAM event name. */
   subscription: z.string().optional(),
+  /** Label of the S3 bucket notification a consumer summary came from: a synthesized index into LambdaConfigurations/QueueConfigurations/TopicConfigurations, or the SAM event name. */
+  notification: z.string().optional(),
+  /** S3 event types a bucket notification matches, e.g. ["s3:ObjectCreated:*"]. A LambdaConfiguration/QueueConfiguration/TopicConfiguration's Event names one; SAM's Events on a Type: S3 event source can name several. */
+  events: z.array(z.string()).optional(),
+  /** CFN logical id of the SNS topic an S3 TopicConfiguration notifies, recorded on its own bucket-channelled consumer since an SNS topic isn't a deployableUnit. */
+  topic: z.string().optional(),
   /** SAM event name the subscription was declared under. */
   eventName: z.string().optional(),
-  /** How far an EventPattern (or an SNS FilterPolicy) reduced; see the CFN reader. */
+  /** How far an EventPattern, an SNS FilterPolicy, or an S3 notification Filter reduced; see the CFN reader. */
   patternResolution: z.enum(["exact", "schedule", "unresolvable"]).optional(),
   /** Present when unresolvable: what stopped the reduction. */
   unresolvableReason: z.string().optional(),
@@ -46,7 +53,7 @@ export const MessageBusMetadataSchema = z.object({
   fifoQueue: z.boolean().optional(),
   /** Whether a declared SNS topic is FIFO. */
   fifoTopic: z.boolean().optional(),
-  /** Physical QueueName or TopicName when the template sets one. */
+  /** Physical QueueName, TopicName, or BucketName when the template sets one. */
   physicalName: z.string().optional(),
 });
 

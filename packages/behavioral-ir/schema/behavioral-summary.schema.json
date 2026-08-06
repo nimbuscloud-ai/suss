@@ -269,6 +269,7 @@
                             "enum": [
                               "sqs",
                               "sns",
+                              "s3",
                               "eventbridge",
                               "bullmq",
                               "kafka",
@@ -892,6 +893,7 @@
                                     "enum": [
                                       "sqs",
                                       "sns",
+                                      "s3",
                                       "eventbridge",
                                       "bullmq",
                                       "kafka",

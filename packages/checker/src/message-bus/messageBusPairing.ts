@@ -13,10 +13,10 @@
 //   messageBusProducerOrphan       warning  code sends to channel X but no provider declares X
 //   messageBusConsumerOrphan       warning  consumer Lambda exists for channel X but no producer sends to X
 //   messageBusUnused               warning  channel X declared but no producer or consumer
-//   unsupportedSemantics           info     an EventBridge rule's EventPattern, or an SNS
-//                                           subscription's FilterPolicy, couldn't be reduced to
-//                                           an exact match; the target Lambda is surfaced as
-//                                           unpaired-unresolvable
+//   unsupportedSemantics           info     an EventBridge rule's EventPattern, an SNS
+//                                           subscription's FilterPolicy, or an S3 notification's
+//                                           Filter couldn't be reduced to an exact match; the
+//                                           target Lambda is surfaced as unpaired-unresolvable
 //   boundaryFieldUnknown (aspect: receive)
 //                                  warning  consumer destructures field X from JSON.parse(record.body)
 //                                           but no producer to this channel sends X
@@ -548,20 +548,23 @@ function makeUnresolvableRuleFinding(consumer: BehavioralSummary): Finding {
   };
 }
 
-/** The reason shown when a consumer is unresolvable but names no reason of its own — should not happen in practice, since every producer of this state also sets `unresolvableReason`. */
+/** The reason shown when a consumer is unresolvable but names no reason of its own. Should not happen in practice, since every producer of this state also sets `unresolvableReason`. */
 function defaultUnresolvableReason(
   messageBus: MessageBusSemantics["messageBus"],
 ): string {
   if (messageBus === "sns") {
     return "the FilterPolicy couldn't be reduced to the whole topic";
   }
+  if (messageBus === "s3") {
+    return "the Filter couldn't be reduced to the whole bucket";
+  }
   return "the EventPattern couldn't be reduced to exact detail-types";
 }
 
 /**
  * The unresolvable finding's description, in the wording that matches
- * where the consumer came from: an EventBridge rule's EventPattern, or
- * an SNS subscription's FilterPolicy.
+ * where the consumer came from: an EventBridge rule's EventPattern, an
+ * SNS subscription's FilterPolicy, or an S3 notification's Filter.
  */
 function unresolvableDescription(
   consumer: BehavioralSummary,
@@ -573,9 +576,13 @@ function unresolvableDescription(
     const subscription = meta?.subscription ?? consumer.identity.name;
     return `SNS subscription "${subscription}" on topic "${semantics.channel}" routes to ${consumer.identity.name}, but ${reason}. It's surfaced as unpaired-unresolvable rather than dropped.`;
   }
+  if (semantics.messageBus === "s3") {
+    const notification = meta?.notification ?? consumer.identity.name;
+    return `S3 notification "${notification}" on bucket "${semantics.channel}" routes to ${consumer.identity.name}, but ${reason}. It's surfaced as unpaired-unresolvable rather than dropped.`;
+  }
   const rule = meta?.rule ?? consumer.identity.name;
   const eventBus = meta?.eventBus ?? "default";
-  return `EventBridge rule "${rule}" on bus "${eventBus}" routes to ${consumer.identity.name}, but ${reason}. v0 pairs producers to rules on exact detail-type match, so this rule can't be paired — it's surfaced as unpaired-unresolvable rather than dropped. Pattern subsumption (prefix / content-based filtering) is out of scope for now.`;
+  return `EventBridge rule "${rule}" on bus "${eventBus}" routes to ${consumer.identity.name}, but ${reason}. v0 pairs producers to rules on exact detail-type match, so this rule can't be paired, and it's surfaced as unpaired-unresolvable rather than dropped. Pattern subsumption (prefix / content-based filtering) is out of scope for now.`;
 }
 
 function makeSide(
