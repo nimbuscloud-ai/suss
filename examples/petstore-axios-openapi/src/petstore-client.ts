@@ -1,5 +1,5 @@
 // Petstore consumer code. Each function exercises a different real-world
-// pattern that the axios pack + wrapper expansion + OpenAPI stub need to
+// pattern that the axios pack + wrapper expansion + OpenAPI contract reader need to
 // handle correctly.
 
 import axios from "axios";

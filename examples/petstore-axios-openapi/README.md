@@ -1,6 +1,6 @@
 # Example: axios consumer ↔ Petstore OpenAPI
 
-A complete, runnable end-to-end example. A small TypeScript axios client calls a handful of Petstore endpoints; the Petstore API is described as an OpenAPI 3.0 spec. `suss` extracts the consumer's behavioral summary, generates a stub provider summary from the OpenAPI document, and reports cross-boundary findings.
+A complete, runnable end-to-end example. A small TypeScript axios client calls a handful of Petstore endpoints; the Petstore API is described as an OpenAPI 3.0 spec. `suss` extracts the consumer's behavioral summary, derives a provider summary from the OpenAPI document, and reports cross-boundary findings.
 
 The consumer is deliberately written to exercise every shape that came up in real-world testing — `axios.create()` instances, destructured responses, template-literal paths, `try`/`catch` with `err.response.status`, a thin path-passthrough wrapper, and reads of fields the spec declares optional.
 
@@ -14,9 +14,9 @@ make all
 
 `make all` runs three steps in order:
 
-1. `make extract` — `suss extract -p tsconfig.json -f axios -o out/consumer.json`
-2. `make stub`    — `suss stub --from openapi petstore-openapi.json -o out/provider.json`
-3. `make check`   — `suss check --dir out/` (intentionally exits non-zero when there are error-severity findings, so CI pipelines fail on regressions)
+1. `make extract` runs `suss extract -p tsconfig.json -f axios -o out/consumer.json`
+2. `make contract` runs `suss contract --from openapi petstore-openapi.json -o out/provider.json`
+3. `make check` runs `suss check --dir out/` (intentionally exits non-zero when there are error-severity findings, so CI pipelines fail on regressions)
 
 Or inspect each side as a human-readable rendering:
 
@@ -27,7 +27,7 @@ make inspect-provider
 
 ## What you should see
 
-The `check` step produces 11 findings: 7 errors and 4 info. Below is what each one means and which line of the consumer caused it.
+The `check` step produces 18 findings: 7 errors, 7 warnings, and 4 info. Below is what each one means and which line of the consumer caused it.
 
 ### Errors — provider produces a status the consumer doesn't handle
 
@@ -37,11 +37,15 @@ These are real bugs in the consumer. Petstore declares 200, 400, and 404 for `GE
 |----------|----------|---------------|-----|
 | `getPetById` (line 23)  | `GET /pet/{petId}`        | 400 | branches on `status === 404` only |
 | `safeGetPet` (line 33)  | `GET /pet/{petId}`        | 400 | catches 404 only via `err.response?.status` |
-| `describePet` (line 55) | `GET /pet/{petId}`        | 400 + 404 | no status handling at all — assumes 200 |
-| `listPets` (line 48)    | `GET /pet/findByStatus`   | 400 | wrapper-callsite (via `getJson`) — no status handling |
-| `describePetViaWrapper` (line 65) | `GET /pet/{petId}` | 400 + 404 | wrapper-callsite — no status handling |
+| `describePet` (line 66) | `GET /pet/{petId}`        | 400 + 404 | no status handling at all, assumes 200 |
+| `listPets` (line 48)    | `GET /pet/findByStatus`   | 400 | wrapper-callsite (via `getJson`), no status handling |
+| `describePetViaWrapper` (line 58) | `GET /pet/{petId}` | 400 + 404 | wrapper-callsite, no status handling |
 
 Note that `listPets` doesn't directly call axios — it calls `getJson()` from `api-client.ts`, which forwards `path` to `axios.get`. `suss` walks references to wrapper functions and synthesises a per-caller summary so the call site is still pairable.
+
+### Warnings: the same seven gaps, from the contract's side
+
+Each unhandled status above is also reported as a `consumerContractViolation` at warning severity ("Contract declares response 400 but consumer does not handle it"). The error comes from pairing the two summaries; the warning comes from checking the consumer against the declared OpenAPI contract directly. Adding the missing consumer branch clears the error and its warning together.
 
 ### Info — consumer reads a field the provider declares optional
 

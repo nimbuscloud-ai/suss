@@ -62,9 +62,15 @@ Every boundary carries three contracts, the declared contract (a specification),
 
 ## What's checked today
 
-The checker compares status-code coverage in both directions, detects when a consumer collapses provider sub-cases that share a status code, compares the body fields a consumer reads against what the provider produces (and against the declared contract), and traces subjects through intermediate variables so a condition on `const data = result.body` still resolves back to the response. It also bridges semantic conditions: when a provider puts `status: "deleted"` in a 200 body on the `user.deletedAt` branch and the consumer never tests `body.status`, the sub-case flows through undistinguished and the checker reports it. That last comparison is where suss catches the motivating example, a 200 that changed meaning, end to end.
+The checker compares:
 
-The depth of comparison has grown in stages, and some layers remain in progress, local-function inlining, complement reasoning on negated conditions, additional body accessors beyond `.body` and `.json()`.
+- **Status-code coverage in both directions.** A status the provider produces with no consumer branch, or a consumer branch for a status the provider never produces.
+- **Collapsed sub-cases.** A consumer that treats two provider outcomes sharing a status code as one.
+- **Body fields.** What the consumer reads against what the provider produces, and against the declared contract.
+- **Subjects through intermediate variables.** A condition on `const data = result.body` still resolves back to the response.
+- **Semantic conditions.** When a provider puts `status: "deleted"` in a 200 body on the `user.deletedAt` branch and the consumer never tests `body.status`, the sub-case flows through undistinguished and the checker reports it. This comparison is where suss catches the motivating example, a 200 that changed meaning, end to end.
+
+Some layers remain in progress: local-function inlining, complement reasoning on negated conditions, and body accessors beyond `.body` and `.json()`.
 
 ## How the IR supports comparison
 
@@ -103,7 +109,11 @@ Findings are JSON-serializable. The CLI exits non-zero when any `error`-severity
 
 **Cross-source contract agreement.** When multiple providers describe the same boundary (an OpenAPI contract + a CloudFormation contract for the same endpoint, say), they each carry their own declared contract. `checkContractAgreement` (invoked automatically by `checkAll`) compares those contracts to each other and emits `contractDisagreement` findings when they don't match, "sources disagree on whether status 500 exists at `GET /pet/:id`," for example. This runs at the contract level only (`{statusCode, body}` tuples), independent of transitions, so 3+ sources produce one finding per non-unanimous status rather than an N-way pairwise explosion. Layer 1 (`checkContractConsistency`) still answers the orthogonal "is each provider consistent with its own contract?" question; Layer 2 adds cross-source agreement on top of that without replacing it. The `declaredContract.provenance` field ("derived" vs "independent") tells Layer 1 whether a provider's transitions and contract share a source, OpenAPI contracts are "derived" (self-comparison skipped); CFN contracts and extracted handlers with authored contracts are "independent."
 
-**Confidence is informational, not prescriptive.** Each summary carries `ConfidenceInfo` (high / medium / low, plus source) reflecting how well the extractor decomposed the source, how many opaque predicates it fell back to, whether wrapper-expansion inferred the summary indirectly, etc. The checker does **not** downgrade severities based on it; the `lowConfidence` finding kind is the per-finding mechanism for "I couldn't decide." Summary-level confidence is a different axis (analysis quality on one side) and conflating it with finding certainty would hide both. The human `suss check` output appends `(confidence: medium|low)` after a provider or consumer side whose confidence is below `high`, so reviewers can weigh findings themselves; downstream tools (dashboards, docs generators) can read `summary.confidence` from the JSON output and apply their own policy if they want one.
+**Confidence is informational, not prescriptive.** Each summary includes `ConfidenceInfo` (high / medium / low, plus source) reflecting how well the extractor decomposed the source: how many opaque predicates it fell back to, whether wrapper-expansion inferred the summary indirectly.
+
+The checker does **not** downgrade severities based on it. Summary confidence measures analysis quality on one side; finding certainty is a different question, with its own mechanism (the `lowConfidence` finding kind). Folding one into the other would hide both.
+
+Reviewers still see it: the human `suss check` output appends `(confidence: medium|low)` after a side whose confidence is below `high`. Downstream tools can read `summary.confidence` from the JSON output and apply their own policy.
 
 ## Scope
 

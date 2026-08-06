@@ -6,7 +6,7 @@ Related: [`cross-boundary-checking.md`](cross-boundary-checking.md) (the checker
 
 ## Three kinds of truth
 
-A distinction that shapes everything downstream: artifacts about code have different *epistemic characters*, different kinds of truth.
+A distinction that shapes everything downstream: artifacts about code have different *epistemic characters*, meaning each kind of artifact can only answer a certain sort of question about the code. The table grounds the term.
 
 | Character | Answers | Examples | Completeness |
 |---|---|---|---|

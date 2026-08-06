@@ -256,16 +256,15 @@ Static analysis of production codebases is always imperfect. suss handles this e
 
 ## Boundary semantics today
 
-The IR types are mostly protocol-agnostic, every `Output` is a typed shape, every `Predicate` operates on `ValueRef`s. The cross-boundary plumbing has two semantics shipped:
+The IR types are mostly protocol-agnostic, every `Output` is a typed shape, every `Predicate` operates on `ValueRef`s. Seven semantics variants ship, each as its own module under `packages/ir-core/src/semantics/` composed by a registry:
 
-- **HTTP**, `(method, normalizedPath)` as the pairing key, status codes as the outcome discriminator, response bodies as the payload. Metadata namespaced under `metadata.http.*`.
-- **GraphQL**: operation type + field as the identity, contract derivation from inline SDL, contract-agreement checker. Metadata namespaced under `metadata.graphql.*`.
+- **`rest`**: `(method, normalizedPath)` as the identity, `"*"` as the method wildcard; two sides pair when their paths bucket together and their methods agree. Metadata namespaced under `metadata.http.*`.
+- **`graphql-resolver`**: the parent type name + field as the identity (`Query.user`, but also `User.posts`), with contract derivation from inline SDL. Metadata under `metadata.graphql.*`. **`graphql-operation`** describes the client side; the contract checker pairs it rather than the key engine.
+- **`message-bus`**: the key is built from the channel's subject, so a template that writes `default#order.placed` and a handler that writes `order.placed` land in one bucket, and the buses have to agree inside it.
+- **`function-call`**: keyed by package + export path when both are known.
+- **`runtime-config`** and **`storage-relational`**: no identity key; their checkers pair by deployable unit and by relation.
 
-Other parts of the pipeline (automatic boundary pairing, the inspect output) are still HTTP-only and need extending as new semantics land.
-
-The forward direction is `boundary-semantics.md`: a `BoundarySemantics` interface that splits transport, semantics, and recognition into separate fields on `BoundaryBinding`. The GraphQL work is the second concrete case the abstraction was waiting for; before that, designing it would have put the seams in the wrong places.
-
-Other boundary types are still ahead. Message buses with event-name pairing are the most concrete next case; each new semantics adds a `BoundarySemantics` variant rather than stretching an existing one.
+Each variant declares its identity key, its pairing key, and how two sides agree; the pairing engine in `@suss/checker` dispatches through the registry rather than assuming any one protocol. A new boundary type adds a variant instead of stretching an existing one. [`boundary-semantics.md`](boundary-semantics.md) covers the shape of a variant and what adding one involves.
 
 ## What's deliberately not here
 
