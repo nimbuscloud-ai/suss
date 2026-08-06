@@ -61,6 +61,12 @@ describe("summaryRef", () => {
     summary.identity.name = "listUsers";
     expect(summaryRef(summary)).toBe("src/test.ts::listUsers");
   });
+
+  it("ignores identity.id, so a rule written against file and name keeps matching", () => {
+    const summary = makeSummary([]);
+    summary.identity.id = "some-workspace::src/test.ts::test";
+    expect(summaryRef(summary)).toBe("src/test.ts::test");
+  });
 });
 
 describe("diffSummaries", () => {

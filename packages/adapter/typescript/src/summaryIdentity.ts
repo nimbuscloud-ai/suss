@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { summaryIdFromParts } from "@suss/behavioral-ir";
 import { boundaryKey } from "@suss/ir-core";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -128,14 +129,12 @@ function idFor(
   file: string,
   summary: BehavioralSummary,
 ): string {
-  const reached =
-    summary.identity.exportPath !== null &&
-    summary.identity.exportPath.length > 0
-      ? summary.identity.exportPath.join(".")
-      : summary.identity.name;
-  return workspace === null
-    ? `${file}::${reached}`
-    : `${workspace}::${file}::${reached}`;
+  return summaryIdFromParts({
+    workspace: workspace ?? undefined,
+    file,
+    name: summary.identity.name,
+    exportPath: summary.identity.exportPath,
+  });
 }
 
 /**

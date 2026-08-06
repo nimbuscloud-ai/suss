@@ -352,6 +352,15 @@ interface RenderCtx {
    */
   fileByName: Map<string, string>;
   /**
+   * Every loaded summary that carries an `identity.id`, keyed by that
+   * id. An invocation effect whose `summary` field names one of these
+   * ids resolves through this map instead of by matching `callee`
+   * text against `fileByName`, since that field is an actual call fact
+   * the extractor already worked out, not a name a reader hopes is
+   * unique.
+   */
+  summaryById: Map<string, { name: string; file: string }>;
+  /**
    * For each parent summary (keyed by `identity.name`), the sub-units
    * that were spawned by a specific callee in the parent's body,
    * ordered by the source index the pack recorded. Example: for a
@@ -634,7 +643,16 @@ function renderEffect(effect: Effect, ctx: PerSummaryRenderCtx): string | null {
     if (spawned !== null) {
       return `+ ${spawned} →`;
     }
-    const target = resolveFollowTarget(callee, ctx);
+    // Trust the id the extractor already resolved this call to over a
+    // name guess: `effect.summary` names one specific summary, where
+    // `callee` text can coincide with any number of them across a run.
+    // Falls back to the name match only when no id was recorded, which
+    // covers both an artifact predating that resolution and a call the
+    // extractor itself couldn't pin down.
+    const target =
+      effect.summary !== undefined
+        ? resolveFollowTargetById(effect.summary, callee, ctx)
+        : resolveFollowTargetByName(callee, ctx);
     if (target !== null) {
       return `+ ${target} →`;
     }
@@ -678,25 +696,56 @@ function consumeSpawnedSubUnit(
 }
 
 /**
- * If the callee resolves to a known summary, return the display text
- * for a follow reference: the bare name for same-file targets, or
- * `<relative/path/without-ext>.<name>` for cross-file ones so the
- * reader knows which file-group to scroll to. Resolution matches the
- * full callee text first, then the last dotted segment so
- * `utils.formatError` still resolves against a `formatError` summary.
- * Returns null when the callee isn't summarized anywhere.
+ * Resolve a follow reference from the id the extractor already
+ * recorded for this call. Absent from `summaryById`, the target
+ * wasn't part of this load (a filtered-out kind, a summary from a
+ * different run); returns null rather than falling back to a name
+ * guess, since a wrong id would defeat the reason to have one. Same
+ * display shape as the name-based resolver below: bare for a
+ * same-file target, `<relative/path/without-ext>.<name>` across files.
  */
-function resolveFollowTarget(
+function resolveFollowTargetById(
+  id: string,
+  callee: string,
+  ctx: PerSummaryRenderCtx,
+): string | null {
+  const target = ctx.base.summaryById.get(id);
+  if (target === undefined) {
+    return null;
+  }
+  if (target.file === ctx.parentFile) {
+    return callee;
+  }
+  const stripped = target.file.replace(/\.[^./]+$/, "");
+  return `${stripped}.${target.name}`;
+}
+
+/**
+ * Fallback for an effect the extractor recorded no id for, whether
+ * because the artifact predates that resolution or the call itself
+ * couldn't be pinned to one summary. If the callee resolves to a
+ * known summary, return the display text for a follow reference: the
+ * bare name for same-file targets, or `<relative/path/without-ext>.<name>`
+ * for cross-file ones so the reader knows which file-group to scroll
+ * to. Resolution matches the full callee text first, then the last
+ * dotted segment so `utils.formatError` still resolves against a
+ * `formatError` summary. Returns null when the callee isn't
+ * summarized anywhere. Matches by name alone, across every summary
+ * loaded, so it can point at the wrong one when a name recurs; kept
+ * only for artifacts an id can't be read from.
+ */
+function resolveFollowTargetByName(
   callee: string,
   ctx: PerSummaryRenderCtx,
 ): string | null {
   const byName = ctx.base.fileByName;
-  // Prefer a full-callee match (`"Form.onSubmit"` → `Form.onSubmit`) so
-  // sub-unit names with dots stay intact. Fall back to the last dotted
-  // segment, and when that's what matched, render the resolved name
-  // rather than the original callee text — otherwise a cross-file
-  // `utils.formatPayload` resolves against a `formatPayload` summary
-  // and renders nonsense like `src/helpers.utils.formatPayload`.
+  // Prefer a full-callee match (`"Form.onSubmit"` resolves as
+  // `Form.onSubmit`) so sub-unit names with dots stay intact. Fall
+  // back to the last dotted segment, and when that's what matched,
+  // render the resolved name rather than the original callee text,
+  // since otherwise a cross-file `utils.formatPayload` resolves
+  // against a `formatPayload` summary and renders nonsense like
+  // `src/helpers.utils.formatPayload`.
   let resolved: string | null = null;
   if (byName.has(callee)) {
     resolved = callee;
@@ -1183,6 +1232,20 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     }
   }
 
+  // Precise counterpart to fileByName: keyed by `identity.id` rather
+  // than a name, so a call the extractor already resolved follows the
+  // summary it actually reaches rather than whichever same-named one
+  // happened to load first.
+  const summaryById = new Map<string, { name: string; file: string }>();
+  for (const s of summaries) {
+    if (s.identity.id !== undefined) {
+      summaryById.set(s.identity.id, {
+        name: s.identity.name,
+        file: s.location.file,
+      });
+    }
+  }
+
   // Identity names that appear on more than one summary — those need
   // file-path qualification in the header so `Index` at _app._index.tsx
   // vs `Index` at _app.tsx don't render indistinguishably.
@@ -1244,7 +1307,7 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     spawnerIndex.set(parent, ordered);
   }
 
-  return { fileByName, spawnerIndex, ambiguousNames };
+  return { fileByName, summaryById, spawnerIndex, ambiguousNames };
 }
 
 // ---------------------------------------------------------------------------

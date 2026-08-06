@@ -100,3 +100,67 @@ describe("reading version-1 artifacts", () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe("backfilling identity.id", () => {
+  it("stamps a v1 summary's id from its file and name", () => {
+    const parsed = parseSummary(v1Summary({}));
+    expect(parsed.identity.id).toBe("src/producer.ts::Producer.handler");
+  });
+
+  it("folds in the workspace and export path when the summary carries them", () => {
+    const parsed = parseSummary(
+      v1Summary({
+        location: {
+          file: "src/producer.ts",
+          range: { start: 0, end: 0 },
+          exportName: "handler",
+          workspace: "svc-a",
+        },
+        identity: {
+          name: "Producer.handler",
+          exportPath: ["Producer", "handler"],
+          boundaryBinding: null,
+        },
+      }),
+    );
+    expect(parsed.identity.id).toBe("svc-a::src/producer.ts::Producer.handler");
+  });
+
+  it("leaves an id its producer already stamped untouched", () => {
+    const parsed = parseSummary(
+      v1Summary({
+        identity: {
+          name: "Producer.handler",
+          exportPath: null,
+          boundaryBinding: null,
+          id: "already-stamped",
+        },
+      }),
+    );
+    expect(parsed.identity.id).toBe("already-stamped");
+  });
+
+  it("does not backfill a current-version summary a producer left without one", () => {
+    // A schemaVersion-2 artifact has spoken the current format in
+    // full; a missing id there is the producer's own gap, not
+    // something the version-1 read path should paper over.
+    const parsed = parseSummary(v1Summary({ schemaVersion: 2 }));
+    expect(parsed.identity.id).toBeUndefined();
+  });
+
+  it("leaves a summary with no file to build an id from unstamped, and validation rejects the shape on its own terms", () => {
+    const result = safeParseSummary(
+      v1Summary({
+        location: { range: { start: 0, end: 0 }, exportName: "handler" },
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it("leaves a summary with no name to build an id from unstamped, and validation rejects the shape on its own terms", () => {
+    const result = safeParseSummary(
+      v1Summary({ identity: { exportPath: null, boundaryBinding: null } }),
+    );
+    expect(result.success).toBe(false);
+  });
+});
