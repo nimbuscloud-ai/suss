@@ -267,6 +267,65 @@ describe("extract — ts-rest", () => {
 });
 
 // ---------------------------------------------------------------------------
+// extract, --gaps modes
+// ---------------------------------------------------------------------------
+
+describe("extract, --gaps modes", () => {
+  const fixtureDir = path.join(FIXTURES_ROOT, "ts-rest");
+  const tsconfigPath = createTempTsConfig(fixtureDir);
+
+  it("permissive records the getUser gap and leaves the run passing", async () => {
+    const previous = process.exitCode;
+    const summaries = await extract({
+      tsconfig: tsconfigPath,
+      frameworks: ["ts-rest"],
+      gaps: "permissive",
+    });
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.gaps.length).toBeGreaterThan(0);
+    expect(process.exitCode).toBe(previous);
+    process.exitCode = previous;
+  }, 90_000);
+
+  it("strict records the same gaps as permissive, then fails the run", async () => {
+    const previous = process.exitCode;
+
+    const permissive = await extract({
+      tsconfig: tsconfigPath,
+      frameworks: ["ts-rest"],
+      gaps: "permissive",
+    });
+    process.exitCode = previous;
+
+    const strict = await extract({
+      tsconfig: tsconfigPath,
+      frameworks: ["ts-rest"],
+      gaps: "strict",
+    });
+
+    // Extraction is identical between the two modes; strict only adds an
+    // exit-code decision on top of what permissive already wrote.
+    expect(strict.map(normalize)).toEqual(permissive.map(normalize));
+    expect(process.exitCode).toBe(1);
+    process.exitCode = previous;
+  }, 90_000);
+
+  it("silent records no gaps and leaves the run passing", async () => {
+    const previous = process.exitCode;
+    const summaries = await extract({
+      tsconfig: tsconfigPath,
+      frameworks: ["ts-rest"],
+      gaps: "silent",
+    });
+    for (const s of summaries) {
+      expect(s.gaps).toEqual([]);
+    }
+    expect(process.exitCode).toBe(previous);
+    process.exitCode = previous;
+  }, 90_000);
+});
+
+// ---------------------------------------------------------------------------
 // extract — express fixtures
 // ---------------------------------------------------------------------------
 

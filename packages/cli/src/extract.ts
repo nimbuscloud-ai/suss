@@ -267,6 +267,14 @@ export interface ExtractOptions {
   frameworks: string[];
   files?: string[];
   output?: string;
+  /**
+   * What to do with gaps. `permissive` (default) and `strict` record the
+   * same gaps in the summary; extraction itself does not differ. `strict`
+   * also fails the run (sets a non-zero exit code) when any summary came
+   * out carrying a gap, which is what CI wants: a gap nobody looked at is
+   * worse than a run that stopped to say so. `silent` skips gap detection
+   * entirely, recording none.
+   */
   gaps?: "strict" | "permissive" | "silent";
   /** Print the per-phase wall-clock breakdown to stderr. */
   timing?: boolean;
@@ -464,6 +472,23 @@ export async function extract(
       "Failing because the extract produced no summaries (--fail-on-empty).\n",
     );
     process.exitCode = 1;
+  }
+
+  if (options.gaps === "strict") {
+    const gapped = summaries.flatMap((summary) =>
+      summary.gaps.map((gap) => ({ summary, gap })),
+    );
+    if (gapped.length > 0) {
+      process.stderr.write(
+        `Failing because ${gapped.length} gap${gapped.length === 1 ? "" : "s"} ${gapped.length === 1 ? "was" : "were"} recorded (--gaps strict).\n`,
+      );
+      for (const { summary, gap } of gapped.slice(0, 5)) {
+        process.stderr.write(
+          `  ${summary.location.file}:${summary.location.range.start} ${summary.identity.name}: ${gap.description}\n`,
+        );
+      }
+      process.exitCode = 1;
+    }
   }
 
   return summaries;
