@@ -13,9 +13,10 @@
 //   messageBusProducerOrphan       warning  code sends to channel X but no provider declares X
 //   messageBusConsumerOrphan       warning  consumer Lambda exists for channel X but no producer sends to X
 //   messageBusUnused               warning  channel X declared but no producer or consumer
-//   unsupportedSemantics           info     an EventBridge rule's EventPattern couldn't be reduced
-//                                           to exact detail-types (content filter / no detail-type);
-//                                           the target Lambda is surfaced as unpaired-unresolvable
+//   unsupportedSemantics           info     an EventBridge rule's EventPattern, or an SNS
+//                                           subscription's FilterPolicy, couldn't be reduced to
+//                                           an exact match; the target Lambda is surfaced as
+//                                           unpaired-unresolvable
 //   boundaryFieldUnknown (aspect: receive)
 //                                  warning  consumer destructures field X from JSON.parse(record.body)
 //                                           but no producer to this channel sends X
@@ -524,29 +525,57 @@ function makeUnusedQueueFinding(
 }
 
 /**
- * An EventBridge rule whose EventPattern couldn't be reduced to exact
- * detail-types (no detail-type field, content filters, etc.). v0 pairs
- * on exact detail-type match only, so this rule's target can't be
- * matched to producers. Surfaced as info rather than dropped — the
- * target might well be wired correctly; suss just can't verify the
- * pattern subsumption.
+ * An EventBridge rule whose EventPattern, or an SNS subscription whose
+ * FilterPolicy, couldn't be reduced to an exact match (no detail-type
+ * field, content filters, a FilterPolicy at all, etc.). v0 pairs on an
+ * exact match only, so this consumer can't be matched to producers.
+ * Surfaced as info rather than dropped — the wiring might well be
+ * correct; suss just can't verify the pattern/filter subsumption.
  */
 function makeUnresolvableRuleFinding(consumer: BehavioralSummary): Finding {
   const binding = consumer.identity.boundaryBinding as BoundaryBinding;
+  const semantics = binding.semantics as MessageBusSemantics;
   const meta = readMessageBusMetadata(consumer);
-  const rule = meta?.rule ?? consumer.identity.name;
-  const eventBus = meta?.eventBus ?? "default";
   const reason =
-    meta?.unresolvableReason ??
-    "the EventPattern couldn't be reduced to exact detail-types";
+    meta?.unresolvableReason ?? defaultUnresolvableReason(semantics.messageBus);
   return {
     kind: "unsupportedSemantics",
     boundary: binding,
     provider: makeSide(consumer),
     consumer: makeSide(consumer),
-    description: `EventBridge rule "${rule}" on bus "${eventBus}" routes to ${consumer.identity.name}, but ${reason}. v0 pairs producers to rules on exact detail-type match, so this rule can't be paired — it's surfaced as unpaired-unresolvable rather than dropped. Pattern subsumption (prefix / content-based filtering) is out of scope for now.`,
+    description: unresolvableDescription(consumer, semantics, meta, reason),
     severity: "info",
   };
+}
+
+/** The reason shown when a consumer is unresolvable but names no reason of its own — should not happen in practice, since every producer of this state also sets `unresolvableReason`. */
+function defaultUnresolvableReason(
+  messageBus: MessageBusSemantics["messageBus"],
+): string {
+  if (messageBus === "sns") {
+    return "the FilterPolicy couldn't be reduced to the whole topic";
+  }
+  return "the EventPattern couldn't be reduced to exact detail-types";
+}
+
+/**
+ * The unresolvable finding's description, in the wording that matches
+ * where the consumer came from: an EventBridge rule's EventPattern, or
+ * an SNS subscription's FilterPolicy.
+ */
+function unresolvableDescription(
+  consumer: BehavioralSummary,
+  semantics: MessageBusSemantics,
+  meta: ReturnType<typeof readMessageBusMetadata>,
+  reason: string,
+): string {
+  if (semantics.messageBus === "sns") {
+    const subscription = meta?.subscription ?? consumer.identity.name;
+    return `SNS subscription "${subscription}" on topic "${semantics.channel}" routes to ${consumer.identity.name}, but ${reason}. It's surfaced as unpaired-unresolvable rather than dropped.`;
+  }
+  const rule = meta?.rule ?? consumer.identity.name;
+  const eventBus = meta?.eventBus ?? "default";
+  return `EventBridge rule "${rule}" on bus "${eventBus}" routes to ${consumer.identity.name}, but ${reason}. v0 pairs producers to rules on exact detail-type match, so this rule can't be paired — it's surfaced as unpaired-unresolvable rather than dropped. Pattern subsumption (prefix / content-based filtering) is out of scope for now.`;
 }
 
 function makeSide(

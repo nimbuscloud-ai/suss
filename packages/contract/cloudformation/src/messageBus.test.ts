@@ -1028,3 +1028,286 @@ describe("buildMessageBusSummaries: subject channels", () => {
     expect(consumer.metadata?.messageBus).not.toHaveProperty("subject");
   });
 });
+
+// ---------------------------------------------------------------------------
+// SNS
+// ---------------------------------------------------------------------------
+
+function isSns(summary: BehavioralSummary): boolean {
+  const sem = summary.identity.boundaryBinding?.semantics;
+  return sem?.name === "message-bus" && sem.messageBus === "sns";
+}
+
+function snsProviders(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  return pickProviders(summaries).filter(isSns);
+}
+
+function snsConsumers(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  return pickConsumers(summaries).filter(isSns);
+}
+
+const orderProcessor = {
+  Type: "AWS::Serverless::Function",
+  Properties: { CodeUri: "src/order-processor/" },
+};
+
+describe("buildMessageBusSummaries — SNS", () => {
+  it("emits one provider summary per AWS::SNS::Topic", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        Alerts: { Type: "AWS::SNS::Topic", Properties: {} },
+      },
+    });
+    const providers = snsProviders(out);
+    expect(providers).toHaveLength(2);
+    expect(providers.map((p) => p.identity.name).sort()).toEqual([
+      "Alerts",
+      "OrderEvents",
+    ]);
+  });
+
+  it("captures FifoTopic + TopicName in metadata", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: {
+          Type: "AWS::SNS::Topic",
+          Properties: { FifoTopic: true, TopicName: "order-events.fifo" },
+        },
+      },
+    });
+    const provider = snsProviders(out)[0] ?? raise("no provider");
+    expect(provider.metadata?.messageBus).toMatchObject({
+      fifoTopic: true,
+      physicalName: "order-events.fifo",
+    });
+  });
+
+  it("emits a consumer for a standalone Protocol lambda Subscription, channelled on the topic", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        OrderProcessor: orderProcessor,
+        ToOrderProcessor: {
+          Type: "AWS::SNS::Subscription",
+          Properties: {
+            TopicArn: { Ref: "OrderEvents" },
+            Protocol: "lambda",
+            Endpoint: { "Fn::GetAtt": ["OrderProcessor", "Arn"] },
+          },
+        },
+      },
+    });
+    const consumers = snsConsumers(out);
+    expect(consumers).toHaveLength(1);
+    const consumer = consumers[0] ?? raise("no consumer");
+    expect(consumer.identity.name).toBe("OrderProcessor.ToOrderProcessor");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "message-bus",
+      messageBus: "sns",
+      channel: "OrderEvents",
+    });
+    expect(consumer.identity.deployableUnit).toEqual({
+      deploymentTarget: "lambda",
+      instanceName: "OrderProcessor",
+    });
+    expect(consumer.metadata?.codeScope).toEqual({
+      kind: "codeUri",
+      path: "src/order-processor",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      subscription: "ToOrderProcessor",
+      patternResolution: "exact",
+    });
+  });
+
+  it("emits an equivalent consumer for an inline Protocol lambda Subscription on the topic", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: {
+          Type: "AWS::SNS::Topic",
+          Properties: {
+            Subscription: [
+              {
+                Protocol: "lambda",
+                Endpoint: { "Fn::GetAtt": ["OrderProcessor", "Arn"] },
+              },
+            ],
+          },
+        },
+        OrderProcessor: orderProcessor,
+      },
+    });
+    const consumers = snsConsumers(out);
+    expect(consumers).toHaveLength(1);
+    const consumer = consumers[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "message-bus",
+      messageBus: "sns",
+      channel: "OrderEvents",
+    });
+    expect(consumer.identity.deployableUnit).toEqual({
+      deploymentTarget: "lambda",
+      instanceName: "OrderProcessor",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      patternResolution: "exact",
+    });
+  });
+
+  it("subscribes the function for a SAM Events Type: SNS entry", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrderEvents: {
+                Type: "SNS",
+                Properties: { Topic: { Ref: "OrderEvents" } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumers = snsConsumers(out);
+    expect(consumers).toHaveLength(1);
+    const consumer = consumers[0] ?? raise("no consumer");
+    expect(consumer.identity.name).toBe("OrderProcessor.FromOrderEvents");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrderEvents",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      patternResolution: "exact",
+    });
+  });
+
+  it("marks a Protocol lambda subscription with a FilterPolicy as unresolvable, naming the policy", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        OrderProcessor: orderProcessor,
+        ToOrderProcessor: {
+          Type: "AWS::SNS::Subscription",
+          Properties: {
+            TopicArn: { Ref: "OrderEvents" },
+            Protocol: "lambda",
+            Endpoint: { "Fn::GetAtt": ["OrderProcessor", "Arn"] },
+            FilterPolicy: { eventType: ["order.placed"] },
+          },
+        },
+      },
+    });
+    const consumer = snsConsumers(out)[0] ?? raise("no consumer");
+    expect(readMessageBusMetadata(consumer)?.patternResolution).toBe(
+      "unresolvable",
+    );
+    expect(readMessageBusMetadata(consumer)?.unresolvableReason).toContain(
+      "FilterPolicy",
+    );
+  });
+
+  it("skips a subscription protocol that isn't lambda or sqs", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        ToOncall: {
+          Type: "AWS::SNS::Subscription",
+          Properties: {
+            TopicArn: { Ref: "OrderEvents" },
+            Protocol: "email",
+            Endpoint: "oncall@example.com",
+          },
+        },
+      },
+    });
+    expect(pickConsumers(out)).toEqual([]);
+  });
+
+  describe("Protocol sqs bridges into the queue's own consumer", () => {
+    function snsFedQueueTemplate(subscriptionProps: Record<string, unknown>) {
+      return {
+        Resources: {
+          OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+          OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+          OrderProcessor: {
+            Type: "AWS::Serverless::Function",
+            Properties: {
+              CodeUri: "src/order-processor/",
+              Events: {
+                FromOrders: {
+                  Type: "SQS",
+                  Properties: {
+                    Queue: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
+                  },
+                },
+              },
+            },
+          },
+          ToOrdersQueue: {
+            Type: "AWS::SNS::Subscription",
+            Properties: {
+              TopicArn: { Ref: "OrderEvents" },
+              Protocol: "sqs",
+              Endpoint: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
+              ...subscriptionProps,
+            },
+          },
+        },
+      };
+    }
+
+    it("does not emit its own consumer for a Protocol sqs subscription", () => {
+      const out = cloudFormationToSummaries(snsFedQueueTemplate({}));
+      expect(snsConsumers(out)).toEqual([]);
+    });
+
+    it("routes the queue's Lambda consumer onto the topic's channel", () => {
+      const out = cloudFormationToSummaries(snsFedQueueTemplate({}));
+      const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        name: "message-bus",
+        messageBus: "sqs",
+        channel: "OrderEvents",
+      });
+      expect(consumer.metadata?.messageBus).toMatchObject({
+        queue: "OrdersQueue",
+      });
+    });
+
+    it("keeps the queue's own channel when the subscription declares a FilterPolicy", () => {
+      const out = cloudFormationToSummaries(
+        snsFedQueueTemplate({ FilterPolicy: { eventType: ["order.placed"] } }),
+      );
+      const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        channel: "OrdersQueue",
+      });
+    });
+
+    it("keeps the queue's own channel when two subscriptions feed different topics into it", () => {
+      const template = snsFedQueueTemplate({});
+      const out = cloudFormationToSummaries({
+        Resources: {
+          ...template.Resources,
+          OtherEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+          AlsoToOrdersQueue: {
+            Type: "AWS::SNS::Subscription",
+            Properties: {
+              TopicArn: { Ref: "OtherEvents" },
+              Protocol: "sqs",
+              Endpoint: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
+            },
+          },
+        },
+      });
+      const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        channel: "OrdersQueue",
+      });
+    });
+  });
+});

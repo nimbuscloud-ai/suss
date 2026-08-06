@@ -122,7 +122,7 @@ type Semantics =
   | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
   | { name: "runtime-config"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment"; instanceName: string }
   | { name: "storage-relational"; storageSystem: "postgres" | "mysql" | "sqlite"; scope: string; table: string }
-  | { name: "message-bus"; messageBus: "sqs" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null };
+  | { name: "message-bus"; messageBus: "sqs" | "sns" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null };
 ```
 
 An identity field is null when the source does not name it. A queue
@@ -180,7 +180,7 @@ via Prisma, Drizzle, TypeORM, or raw DDL. Columns are fields on the table's
 contract; field-level access checks compare what code reads/writes against
 `metadata.storageContract.columns`. Pairing key: `(storageSystem, scope, table)`.
 
-**`message-bus`** covers SQS, EventBridge, BullMQ, Kafka, and NATS.
+**`message-bus`** covers SQS, SNS, EventBridge, BullMQ, Kafka, and NATS.
 Producer-side `interaction(class: "message-send")` effects pair against it;
 consumer-side handlers gain the same shape via the deployment-manifest
 contract source (CFN event-source mappings and similar). Pairing key:

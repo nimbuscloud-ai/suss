@@ -23,6 +23,8 @@
   "jwt": "API Gateway: authorization type, JWT, lower cased",
   "SQS": "SAM: event source type on a Serverless::Function",
   "sqs": "AWS transport name, Amazon SQS",
+  "SNS": "SAM: event source type on a Serverless::Function",
+  "sns": "AWS transport name, Amazon SNS",
   "EventSourceMapping": "CloudFormation: AWS::Lambda::EventSourceMapping resource",
   "EventBridgeRule": "SAM: event source type on a Serverless::Function",
   "eventbridge": "AWS transport name, Amazon EventBridge",

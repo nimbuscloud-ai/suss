@@ -1,22 +1,35 @@
 // messageBus.ts — emit message-bus provider + consumer summaries for
-// two AWS bus families:
+// three AWS bus families:
 //
 //   SQS         — provider per AWS::SQS::Queue, consumer per Lambda
 //                 wired via SAM Events:{Type: SQS} or an
 //                 AWS::Lambda::EventSourceMapping. Channel = queue CFN
-//                 logical id, except when an EventBridge rule routes
-//                 exactly one subject into the queue. In that case the
-//                 consumer's channel is that subject on the routing
-//                 bus, `${bus}#${detailType}`, so the EventBridge
-//                 producer that emits the subject pairs with the
-//                 Lambda that ends up handling it. Pairs against
-//                 @suss/framework-aws-sqs producer effects too.
+//                 logical id, except when an EventBridge rule or an
+//                 SNS subscription routes exactly one subject into the
+//                 queue. In that case the consumer's channel is that
+//                 subject — the routing bus's `${bus}#${detailType}`,
+//                 or the topic's own channel — so the upstream
+//                 producer pairs with the Lambda that ends up handling
+//                 it. Pairs against @suss/framework-aws-sqs producer
+//                 effects too.
 //
 //   EventBridge — provider + consumer per (bus, detailType) a rule
 //                 routes, plus schedule / unresolvable-pattern
 //                 accounting. Channel = `${bus}#${detailType}`. Pairs
 //                 against @suss/framework-aws-eventbridge producer
 //                 effects. See buildEventBridgeSummaries for the scheme.
+//
+//   SNS         — provider per AWS::SNS::Topic, channel = topic CFN
+//                 logical id. A Subscription (standalone
+//                 AWS::SNS::Subscription, or inline on the topic's own
+//                 Subscription list) with Protocol "lambda" gets a
+//                 consumer summary on that channel; Protocol "sqs"
+//                 feeds the queue-routing scheme above instead of its
+//                 own consumer; other protocols (email, https, ...)
+//                 don't reach analysable code and are skipped. A SAM
+//                 Events:{Type: SNS} entry is the same subscription
+//                 shape, declared on the Lambda side. See
+//                 buildTopicProviderSummary / buildSnsLambdaConsumerSummary.
 //
 // Provider summaries (kind: library) describe "this channel exists;
 // messages cross it" — producers pair against them. Consumer summaries
@@ -71,7 +84,8 @@ export function buildMessageBusSummaries(
   sourceFile: string,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
-  const queueSubjects = buildQueueSubjectMap(resources);
+  const snsSubscriptions = collectSnsSubscriptions(resources);
+  const queueSubjects = buildQueueSubjectMap(resources, snsSubscriptions);
 
   // 1. Provider summaries: one per AWS::SQS::Queue.
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -82,8 +96,11 @@ export function buildMessageBusSummaries(
   }
 
   // 2. Consumer summaries: walk Lambdas (AWS::Serverless::Function or
-  //    AWS::Lambda::Function with EventSourceMapping) and detect SQS
-  //    event sources.
+  //    AWS::Lambda::Function with EventSourceMapping) and detect SQS and
+  //    SNS event sources. Both are declared the same way — a SAM Events
+  //    entry naming the resource the Lambda subscribes to — so they
+  //    share this walk; only the target-property name and the summary
+  //    builder differ.
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::Serverless::Function") {
       continue;
@@ -92,32 +109,49 @@ export function buildMessageBusSummaries(
     if (events === null || typeof events !== "object") {
       continue;
     }
-    for (const [eventName, eventDef] of Object.entries(
+    for (const [eventName, eventDefRaw] of Object.entries(
       events as Record<string, unknown>,
     )) {
-      if (
-        eventDef === null ||
-        typeof eventDef !== "object" ||
-        (eventDef as { Type?: string }).Type !== "SQS"
-      ) {
+      if (eventDefRaw === null || typeof eventDefRaw !== "object") {
         continue;
       }
-      const queueRef = (eventDef as { Properties?: { Queue?: unknown } })
-        .Properties?.Queue;
-      const channel = resolveQueueChannel(queueRef);
-      if (channel === null) {
+      const eventDef = eventDefRaw as {
+        Type?: string;
+        Properties?: Record<string, unknown>;
+      };
+      if (eventDef.Type === "SQS") {
+        const channel = resolveQueueChannel(eventDef.Properties?.Queue);
+        if (channel === null) {
+          continue;
+        }
+        summaries.push(
+          buildLambdaConsumerSummary({
+            lambdaId: logicalId,
+            lambdaResource: resource,
+            eventName,
+            channel,
+            routed: singleRoutedSubjectOf(queueSubjects, channel),
+            sourceFile,
+          }),
+        );
         continue;
       }
-      summaries.push(
-        buildLambdaConsumerSummary({
-          lambdaId: logicalId,
-          lambdaResource: resource,
-          eventName,
-          channel,
-          routed: singleRoutedSubjectOf(queueSubjects, channel),
-          sourceFile,
-        }),
-      );
+      if (eventDef.Type === "SNS") {
+        const topicId = resolveTopicChannel(eventDef.Properties?.Topic);
+        if (topicId === null) {
+          continue;
+        }
+        summaries.push(
+          buildSnsLambdaConsumerSummary({
+            lambdaId: logicalId,
+            lambdaResource: resource,
+            label: eventName,
+            topicId,
+            filterPolicy: eventDef.Properties?.FilterPolicy,
+            sourceFile,
+          }),
+        );
+      }
     }
   }
 
@@ -159,6 +193,48 @@ export function buildMessageBusSummaries(
   //    | Schedule}.
   summaries.push(...buildEventBridgeSummaries(resources, sourceFile));
 
+  // 5. SNS: one provider per AWS::SNS::Topic, plus a consumer per
+  //    Protocol "lambda" subscription (standalone or inline). A
+  //    Protocol "sqs" subscription isn't a code consumer of its own —
+  //    it already fed queueSubjects above, the same way a queue-
+  //    targeting EventBridge rule does, so the queue's own Lambda
+  //    consumer(s) pick up the topic's channel there. Any other
+  //    protocol (email, https, sms, application, firehose) doesn't
+  //    reach analysable code and is skipped.
+  for (const [logicalId, resource] of Object.entries(resources)) {
+    if (resource.Type !== "AWS::SNS::Topic") {
+      continue;
+    }
+    summaries.push(buildTopicProviderSummary(logicalId, resource, sourceFile));
+  }
+  for (const sub of snsSubscriptions) {
+    if (sub.protocol !== "lambda") {
+      continue;
+    }
+    const lambdaId = refTarget(sub.endpoint);
+    if (lambdaId === null) {
+      continue;
+    }
+    const lambdaResource = resources[lambdaId];
+    if (
+      lambdaResource === undefined ||
+      (lambdaResource.Type !== "AWS::Serverless::Function" &&
+        lambdaResource.Type !== "AWS::Lambda::Function")
+    ) {
+      continue;
+    }
+    summaries.push(
+      buildSnsLambdaConsumerSummary({
+        lambdaId,
+        lambdaResource,
+        label: sub.label,
+        topicId: sub.topicId,
+        filterPolicy: sub.filterPolicy,
+        sourceFile,
+      }),
+    );
+  }
+
   return summaries;
 }
 
@@ -197,6 +273,56 @@ function buildQueueProviderSummary(
   };
 }
 
+/** One AWS::SNS::Topic provider summary, mirroring buildQueueProviderSummary. */
+function buildTopicProviderSummary(
+  logicalId: string,
+  resource: CloudFormationResource,
+  sourceFile: string,
+): BehavioralSummary {
+  const fifoTopic = resource.Properties?.FifoTopic === true;
+  return {
+    kind: "library",
+    location: {
+      file: sourceFile,
+      range: { start: 1, end: 1 },
+      exportName: null,
+    },
+    identity: {
+      name: logicalId,
+      exportPath: null,
+      boundaryBinding: messageBusBinding({
+        recognition: "cloudformation",
+        messageBus: "sns",
+        channel: logicalId,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: withMessageBusMetadata(undefined, {
+      fifoTopic,
+      ...(typeof resource.Properties?.TopicName === "string"
+        ? { physicalName: resource.Properties.TopicName }
+        : {}),
+    }),
+  };
+}
+
+/**
+ * A consumer's codeScope, mirroring the runtime-config summary's shape
+ * so a downstream pairing pass can scope code reads to it. Shared by
+ * every message-bus consumer builder (SQS, EventBridge, SNS).
+ */
+function resolveCodeScope(
+  lambdaResource: CloudFormationResource,
+): { kind: "codeUri"; path: string } | { kind: "unknown" } {
+  const codeUri = lambdaResource.Properties?.CodeUri;
+  return typeof codeUri === "string"
+    ? { kind: "codeUri", path: codeScopePath(codeUri) }
+    : { kind: "unknown" };
+}
+
 interface LambdaConsumerOpts {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
@@ -215,13 +341,7 @@ interface LambdaConsumerOpts {
 function buildLambdaConsumerSummary(
   opts: LambdaConsumerOpts,
 ): BehavioralSummary {
-  // Mirror the codeScope shape runtime-config emits so a downstream
-  // pairing pass can scope code reads to this consumer's source files.
-  const codeUri = opts.lambdaResource.Properties?.CodeUri;
-  const codeScope =
-    typeof codeUri === "string"
-      ? { kind: "codeUri", path: codeScopePath(codeUri) }
-      : { kind: "unknown" };
+  const codeScope = resolveCodeScope(opts.lambdaResource);
   return {
     kind: "consumer",
     location: {
@@ -255,8 +375,12 @@ function buildLambdaConsumerSummary(
         ...(opts.routed !== null
           ? {
               queue: opts.channel,
-              subject: opts.routed.detailType,
-              eventBus: opts.routed.eventBus,
+              ...(opts.routed.detailType !== undefined
+                ? { subject: opts.routed.detailType }
+                : {}),
+              ...(opts.routed.eventBus !== undefined
+                ? { eventBus: opts.routed.eventBus }
+                : {}),
             }
           : {}),
       },
@@ -264,25 +388,46 @@ function buildLambdaConsumerSummary(
   };
 }
 
-/** One (bus, detailType) an EventBridge rule routes into a queue. */
+/**
+ * One upstream subject that overrides a queue's own logical-id channel
+ * on its Lambda consumer(s): either the (bus, detailType) an
+ * EventBridge rule routes into the queue, or the channel of an SNS
+ * topic a Protocol "sqs" subscription feeds it from. `eventBus` /
+ * `detailType` are set only for the EventBridge case — an SNS topic's
+ * channel already names the topic directly, nothing to decompose.
+ */
 interface RoutedSubject {
-  /** `${eventBus}#${detailType}`, the EventBridge channel scheme. */
+  /** `${eventBus}#${detailType}` for a rule, or the topic's own channel for an SNS subscription. */
   channel: string;
-  eventBus: string;
-  detailType: string;
+  eventBus?: string;
+  detailType?: string;
 }
 
 /**
- * Map each SQS queue's CFN logical id to the set of EventBridge
- * channels rules route into it, keyed by channel so the same (bus,
- * detail-type) routed by two rules counts once. Only rules whose
- * EventPattern reduces to exact detail-types contribute; scheduled
- * rules carry no message subject and are skipped. Only a target's own
- * `Arn` counts, so a target's DeadLetterConfig queue (which receives
- * failed deliveries, not the routed subject) is left alone.
+ * Map each SQS queue's CFN logical id to the set of upstream channels
+ * routed into it, keyed by channel so the same subject routed twice
+ * counts once. Two origins contribute:
+ *
+ *   - An EventBridge rule targeting the queue, whose EventPattern
+ *     reduces to exact detail-types. Scheduled rules carry no message
+ *     subject and are skipped. Only a target's own `Arn` counts, so a
+ *     target's DeadLetterConfig queue (which receives failed
+ *     deliveries, not the routed subject) is left alone.
+ *
+ *   - An SNS subscription (standalone or inline) with Protocol "sqs"
+ *     and no FilterPolicy, whose Endpoint resolves to the queue. A
+ *     FilterPolicy narrows which messages the queue actually sees, and
+ *     v0 doesn't reduce it, so a filtered subscription doesn't
+ *     contribute here — mirroring how a rule whose EventPattern
+ *     doesn't reduce to exact detail-types is left out too.
+ *
+ * Either origin can make a queue's Lambda consumer(s) take the
+ * upstream channel instead of the queue's own logical id; see
+ * `singleRoutedSubjectOf`.
  */
 function buildQueueSubjectMap(
   resources: Record<string, CloudFormationResource>,
+  snsSubscriptions: SnsSubscription[],
 ): Map<string, Map<string, RoutedSubject>> {
   const map = new Map<string, Map<string, RoutedSubject>>();
   for (const [, resource] of Object.entries(resources)) {
@@ -321,13 +466,28 @@ function buildQueueSubjectMap(
       map.set(queueId, routed);
     }
   }
+
+  for (const sub of snsSubscriptions) {
+    if (sub.protocol !== "sqs" || sub.filterPolicy !== undefined) {
+      continue;
+    }
+    const queueId = resolveQueueChannel(sub.endpoint);
+    if (queueId === null || resources[queueId]?.Type !== "AWS::SQS::Queue") {
+      continue;
+    }
+    const routed = map.get(queueId) ?? new Map<string, RoutedSubject>();
+    routed.set(sub.topicId, { channel: sub.topicId });
+    map.set(queueId, routed);
+  }
+
   return map;
 }
 
 /**
- * The one channel routed into the queue, or null when rules route
- * several (or none). Only a single-channel queue can lend its consumer
- * an unambiguous subject identity.
+ * The one channel routed into the queue, or null when several sources
+ * (rules and/or SNS subscriptions) route into it, or none do. Only a
+ * single-channel queue can lend its consumer an unambiguous subject
+ * identity.
  */
 function singleRoutedSubjectOf(
   queueSubjects: Map<string, Map<string, RoutedSubject>>,
@@ -632,11 +792,7 @@ function buildRuleProviderSummary(opts: {
 function buildEventBridgeConsumerSummary(
   opts: EventBridgeConsumerOpts,
 ): BehavioralSummary {
-  const codeUri = opts.lambdaResource.Properties?.CodeUri;
-  const codeScope =
-    typeof codeUri === "string"
-      ? { kind: "codeUri", path: codeScopePath(codeUri) }
-      : { kind: "unknown" };
+  const codeScope = resolveCodeScope(opts.lambdaResource);
   const nameSuffix =
     opts.detailType !== undefined
       ? `#${opts.detailType}`
@@ -794,26 +950,218 @@ function readRuleTargets(
 }
 
 /**
- * Resolve a Queue reference (`!Ref X`, `!GetAtt X.Arn`, plain string
- * ARN) to the queue's CFN logical resource id.
+ * Resolve a reference (`!Ref X`, `!GetAtt X.Arn`, plain string ARN) to
+ * the referenced resource's CFN logical id. `service` is the ARN
+ * segment a plain string is matched against (`"sqs"`, `"sns"`), so a
+ * queue ARN and a topic ARN each resolve through the same shape.
  *
  * Returns null when the reference is dynamic (a parameter / import /
  * fn::join with no obvious target) — those need cross-stack resolution
  * that's out of scope for v0.
  */
-function resolveQueueChannel(value: unknown): string | null {
+function resolveResourceChannel(
+  value: unknown,
+  service: string,
+): string | null {
   if (value === null || value === undefined) {
     return null;
   }
   if (typeof value === "string") {
-    // Plain string: either the ARN of an external queue (we can't
+    // Plain string: either the ARN of an external resource (we can't
     // resolve that to a logical id without the deployed stack) or, in
     // tests, a logical id passed directly.
-    const arnMatch = value.match(/:sqs:[^:]+:[^:]+:([^/]+)$/);
+    const arnMatch = value.match(
+      new RegExp(`:${service}:[^:]+:[^:]+:([^/]+)$`),
+    );
     if (arnMatch !== null) {
       return arnMatch[1];
     }
     return value;
   }
   return refTarget(value);
+}
+
+/**
+ * Resolve a Queue reference (`!Ref X`, `!GetAtt X.Arn`, plain string
+ * ARN) to the queue's CFN logical resource id.
+ */
+function resolveQueueChannel(value: unknown): string | null {
+  return resolveResourceChannel(value, "sqs");
+}
+
+/**
+ * Resolve a Topic reference (`!Ref X`, `!GetAtt X.Arn`, plain string
+ * ARN) to the topic's CFN logical resource id.
+ */
+function resolveTopicChannel(value: unknown): string | null {
+  return resolveResourceChannel(value, "sns");
+}
+
+// ---------------------------------------------------------------------------
+// SNS
+// ---------------------------------------------------------------------------
+
+/** One AWS::SNS::Subscription, standalone or inline on its topic. */
+interface SnsSubscription {
+  /** CFN logical id of the topic this subscription is declared on — also the channel a Protocol "lambda" consumer binds to. */
+  topicId: string;
+  /**
+   * Distinguishes this subscription from others reaching the same
+   * Lambda or queue: the standalone resource's own logical id, or a
+   * synthesized label for an inline entry (which has none).
+   */
+  label: string;
+  protocol: string;
+  endpoint: unknown;
+  /** The subscription's FilterPolicy, verbatim, or undefined when it declares none. */
+  filterPolicy: unknown;
+}
+
+/**
+ * Every AWS::SNS::Subscription the template declares: standalone
+ * resources (TopicArn names the topic) and entries inline on a Topic's
+ * own `Subscription` list (the owning Topic is implicit). Both shapes
+ * carry the same {Protocol, Endpoint, FilterPolicy}; only where the
+ * topic reference and the label come from differs.
+ */
+function collectSnsSubscriptions(
+  resources: Record<string, CloudFormationResource>,
+): SnsSubscription[] {
+  const out: SnsSubscription[] = [];
+
+  for (const [subId, resource] of Object.entries(resources)) {
+    if (resource.Type !== "AWS::SNS::Subscription") {
+      continue;
+    }
+    const protocol = resource.Properties?.Protocol;
+    if (typeof protocol !== "string") {
+      continue;
+    }
+    const topicId = resolveTopicChannel(resource.Properties?.TopicArn);
+    if (topicId === null) {
+      continue;
+    }
+    out.push({
+      topicId,
+      label: subId,
+      protocol,
+      endpoint: resource.Properties?.Endpoint,
+      filterPolicy: resource.Properties?.FilterPolicy,
+    });
+  }
+
+  for (const [topicId, resource] of Object.entries(resources)) {
+    if (resource.Type !== "AWS::SNS::Topic") {
+      continue;
+    }
+    const inline = resource.Properties?.Subscription;
+    if (!Array.isArray(inline)) {
+      continue;
+    }
+    for (const [index, entry] of inline.entries()) {
+      if (entry === null || typeof entry !== "object") {
+        continue;
+      }
+      const protocol = (entry as { Protocol?: unknown }).Protocol;
+      if (typeof protocol !== "string") {
+        continue;
+      }
+      out.push({
+        topicId,
+        label: `${topicId}.Subscription${index}`,
+        protocol,
+        endpoint: (entry as { Endpoint?: unknown }).Endpoint,
+        filterPolicy: (entry as { FilterPolicy?: unknown }).FilterPolicy,
+      });
+    }
+  }
+
+  return out;
+}
+
+interface SnsLambdaConsumerOpts {
+  lambdaId: string;
+  lambdaResource: CloudFormationResource;
+  /** Distinguishes this subscription among others reaching the Lambda: a Subscription's logical id / synthesized label, or the SAM event name. */
+  label: string;
+  /** CFN logical id of the topic — also the consumer's channel. */
+  topicId: string;
+  filterPolicy: unknown;
+  sourceFile: string;
+}
+
+/**
+ * One Protocol "lambda" SNS subscription's consumer summary, whether
+ * declared as a standalone/inline Subscription or a SAM
+ * Events:{Type: SNS} entry. Mirrors buildLambdaConsumerSummary /
+ * buildEventBridgeConsumerSummary's shape: shared codeScope
+ * resolution, `${lambdaId}.${label}` identity naming (there's no
+ * per-message subject to key on the way EventBridge's detailType does
+ * — a subscription with no FilterPolicy receives the whole topic — so
+ * the label plays the differentiating role eventName plays for SQS).
+ */
+function buildSnsLambdaConsumerSummary(
+  opts: SnsLambdaConsumerOpts,
+): BehavioralSummary {
+  const codeScope = resolveCodeScope(opts.lambdaResource);
+  const resolution = reduceFilterPolicy(opts.filterPolicy);
+  return {
+    kind: "consumer",
+    location: {
+      file: opts.sourceFile,
+      range: { start: 1, end: 1 },
+      exportName: null,
+    },
+    identity: {
+      name: `${opts.lambdaId}.${opts.label}`,
+      exportPath: null,
+      boundaryBinding: messageBusBinding({
+        recognition: "cloudformation",
+        messageBus: "sns",
+        channel: opts.topicId,
+      }),
+      deployableUnit: {
+        deploymentTarget: "lambda",
+        instanceName: opts.lambdaId,
+      },
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: withMessageBusMetadata(
+      { codeScope },
+      {
+        subscription: opts.label,
+        patternResolution: resolution.kind,
+        ...(resolution.kind === "unresolvable"
+          ? { unresolvableReason: resolution.reason }
+          : {}),
+      },
+    ),
+  };
+}
+
+type FilterPolicyResolution =
+  | { kind: "exact" }
+  | { kind: "unresolvable"; reason: string };
+
+/**
+ * FilterPolicy reduction (v0): absent means the subscription receives
+ * every message the topic carries, the same shape as a rule with a
+ * single exact detail-type. Present means v0 can't tell which messages
+ * get through, so it's unresolvable — surfaced by the checker, never
+ * silently dropped, mirroring how an EventPattern content filter is
+ * unresolvable. Reducing a FilterPolicy to the subset of messages it
+ * actually admits is out of v0 scope.
+ */
+function reduceFilterPolicy(filterPolicy: unknown): FilterPolicyResolution {
+  if (filterPolicy === undefined) {
+    return { kind: "exact" };
+  }
+  return {
+    kind: "unresolvable",
+    reason:
+      "subscription declares a FilterPolicy; v0 pairs on the whole topic only, filter-policy reduction is out of scope",
+  };
 }

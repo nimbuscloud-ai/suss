@@ -19,9 +19,9 @@ import type { BehavioralSummary } from "./index.js";
 
 /**
  * What the message-bus contract reader records beside a summary's
- * binding: the queue a consumer drains, the rule and bus an
- * EventBridge subscription came from, and how far the rule's pattern
- * reduced.
+ * binding: the queue a consumer drains, the rule or subscription and
+ * bus a subscription came from, and how far a rule's EventPattern or a
+ * subscription's FilterPolicy reduced.
  */
 export const MessageBusMetadataSchema = z.object({
   /** CFN logical id of the queue a subject-channelled consumer drains. */
@@ -34,15 +34,19 @@ export const MessageBusMetadataSchema = z.object({
   detailType: z.string().optional(),
   /** Label of the rule a consumer summary came from. */
   rule: z.string().optional(),
+  /** Label of the SNS subscription a consumer summary came from: the standalone AWS::SNS::Subscription's logical id, a synthesized label for an inline entry, or the SAM event name. */
+  subscription: z.string().optional(),
   /** SAM event name the subscription was declared under. */
   eventName: z.string().optional(),
-  /** How far an EventPattern reduced; see the CFN reader. */
+  /** How far an EventPattern (or an SNS FilterPolicy) reduced; see the CFN reader. */
   patternResolution: z.enum(["exact", "schedule", "unresolvable"]).optional(),
   /** Present when unresolvable: what stopped the reduction. */
   unresolvableReason: z.string().optional(),
   /** Whether a declared queue is FIFO. */
   fifoQueue: z.boolean().optional(),
-  /** Physical QueueName when the template sets one. */
+  /** Whether a declared SNS topic is FIFO. */
+  fifoTopic: z.boolean().optional(),
+  /** Physical QueueName or TopicName when the template sets one. */
   physicalName: z.string().optional(),
 });
 
