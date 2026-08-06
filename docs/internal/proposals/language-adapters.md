@@ -174,9 +174,15 @@ statically means modeling that macro expansion by hand, and the
 TypeScript adapter treats its nearest analogue (registration
 loops) as a scoped-down edge case, where for Ruby it would be the
 primary boundary source. The Ruby baseline exists to price exactly
-this, and no Ruby commitment lands before it does. The platform
-repo carries the Ruby corpus and gets the same read-only
-characterization when reachable.
+this, and no Ruby commitment lands before it does. The target
+profile is Rails including its GraphQL side: graphql-ruby declares
+types and fields through a class-based DSL (field and argument
+calls with literal names and types), which is statically readable
+the way decorator routes are, and the graphql semantics variants
+already in the registry mean a Ruby resolver pairs against a
+TypeScript client with no new checker work. The Ruby corpus is the
+platform repo; it gets the same read-only characterization when
+reachable.
 
 **Verification, restated so this document stands alone.** The
 roadmap's answer carries over unchanged and is the answer here
