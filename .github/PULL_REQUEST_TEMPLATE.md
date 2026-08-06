@@ -1,25 +1,43 @@
-## What this changes
+<!--
+Title: the squash commit takes it. Conventional prefix, imperative,
+the symptom or the change in plain words. No taglines.
+-->
 
-<!-- One or two sentences. Explain the why, not just the what. -->
+## Summary
 
-## Type of change
+<!-- One or two sentences: what changed and why. -->
 
-<!-- Check one. -->
+## What changed
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor (no behavior change)
-- [ ] Docs / chore
-- [ ] Breaking change
+<!-- The concrete changes as a short list, grouped by area when it
+spans several. -->
 
-## Checklist
+## Risk and what to check
 
-- [ ] `npm run lint` passes
-- [ ] `npm run typecheck` passes
-- [ ] `npm test` passes
-- [ ] New behavior is covered by tests
-- [ ] Public API or CLI changes are reflected in the relevant `README.md` / `docs/`
-- [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
+**Overall risk: 🟢 Safe** (legend: 🔴 Critical, 🟡 Caution, 🟢 Safe)
+
+<!--
+The overall level is the highest item below. Tag each item so a
+reviewer sees where to look:
+  🔴 Critical: can break production or cause data, money, or security
+     harm if wrong (a migration, auth, a shared contract or generated
+     schema, a deploy-ordering hazard).
+  🟡 Caution: a behavior change or a shared surface, but bounded.
+  🟢 Safe: isolated, small blast radius.
+Add a line when the change adds a feature flag, a schema change, or
+new infrastructure, since a reviewer cannot always see that in the
+diff. When everything is isolated, "Overall risk: 🟢 Safe (isolated)"
+is enough.
+-->
+
+## Context the code does not show
+
+<!-- The why behind the approach, constraints, non-obvious decisions,
+a sentence or two each. Omit when the diff speaks for itself. -->
+
+## Test plan
+
+<!-- How you verified it. -->
 
 ## Related issues
 
