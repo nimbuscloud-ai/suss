@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
+
 import { cloudFormationToSummaries } from "./index.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  RuntimeContractMetadata,
+} from "@suss/behavioral-ir";
 
 function pickRuntimeConfig(
   summaries: BehavioralSummary[],
@@ -12,13 +17,8 @@ function pickRuntimeConfig(
   );
 }
 
-interface RuntimeContractMeta {
-  envVars?: string[];
-  envVarSources?: Record<string, "template" | "globals" | "platform">;
-}
-
-function readEnvVars(summary: BehavioralSummary): RuntimeContractMeta {
-  return (summary.metadata?.runtimeContract ?? {}) as RuntimeContractMeta;
+function readEnvVars(summary: BehavioralSummary): RuntimeContractMetadata {
+  return readRuntimeContractMetadata(summary) ?? {};
 }
 
 describe("buildRuntimeConfigSummaries — Lambda", () => {

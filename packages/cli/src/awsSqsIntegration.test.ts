@@ -27,6 +27,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
 import { checkAll } from "@suss/checker";
 import { cloudFormationFileToSummaries } from "@suss/contract-cloudformation";
 import { sqsFramework } from "@suss/framework-aws-sqs";
@@ -36,6 +37,10 @@ import type { PatternPack } from "@suss/extractor";
 
 const repoRoot = path.resolve(__dirname, "../../..");
 const fixtureRoot = path.join(repoRoot, "fixtures/aws-sqs");
+
+const raise = (msg: string): never => {
+  throw new Error(msg);
+};
 
 const lambdaHandlerPack: PatternPack = {
   name: "lambda-handler",
@@ -106,16 +111,13 @@ describe("aws-sqs integration", () => {
 
   it("CFN walker captures envVarTargets on producer Lambdas (chain-collapse data)", () => {
     const stubSummaries = readStub();
-    const orderProducer = stubSummaries.find(
-      (s) =>
-        s.identity.boundaryBinding?.semantics.name === "runtime-config" &&
-        s.identity.name === "OrderProducer",
-    );
-    const targets = (
-      orderProducer?.metadata as
-        | { runtimeContract?: { envVarTargets?: Record<string, unknown> } }
-        | undefined
-    )?.runtimeContract?.envVarTargets;
+    const orderProducer =
+      stubSummaries.find(
+        (s) =>
+          s.identity.boundaryBinding?.semantics.name === "runtime-config" &&
+          s.identity.name === "OrderProducer",
+      ) ?? raise("no runtime");
+    const targets = readRuntimeContractMetadata(orderProducer)?.envVarTargets;
     expect(targets).toMatchObject({
       ORDERS_QUEUE_URL: { kind: "ref", logicalId: "OrdersQueue" },
     });

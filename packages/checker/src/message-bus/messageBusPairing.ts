@@ -34,7 +34,11 @@
 // the comparison is skipped — absence of the finding doesn't imply
 // agreement.
 
-import { readMessageBusMetadata, summaryRef } from "@suss/behavioral-ir";
+import {
+  readMessageBusMetadata,
+  readRuntimeContractMetadata,
+  summaryRef,
+} from "@suss/behavioral-ir";
 
 import {
   buildInteractionIndex,
@@ -451,14 +455,7 @@ function runtimeRunning(
 function readEnvVarTargets(
   runtime: BehavioralSummary,
 ): Record<string, { kind: "ref"; logicalId: string }> {
-  const meta = runtime.metadata as
-    | {
-        runtimeContract?: {
-          envVarTargets?: Record<string, { kind: "ref"; logicalId: string }>;
-        };
-      }
-    | undefined;
-  return meta?.runtimeContract?.envVarTargets ?? {};
+  return readRuntimeContractMetadata(runtime)?.envVarTargets ?? {};
 }
 
 // ---------------------------------------------------------------------------
