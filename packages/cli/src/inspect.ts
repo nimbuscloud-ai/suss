@@ -1151,6 +1151,12 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
   // qualified in the effect render.
   const fileByName = new Map<string, string>();
   for (const s of summaries) {
+    // A label names the unit for the reader; nothing calls it, so a
+    // callee matching one is a coincidence and gets no follow marker.
+    if (s.identity.nameKind === "label") {
+      continue;
+    }
+
     // First write wins on collisions — ambiguous names are already
     // qualified at the header level via `ambiguousNames`, so the
     // `fileByName` lookup on a colliding bare name only needs to

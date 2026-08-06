@@ -215,7 +215,9 @@ export function discoverRegistrationCalls(
         results.push({
           func: handler,
           kind,
+          // The verb names the unit for the reader; nothing calls it.
           name: methodName,
+          nameKind: "label",
           ...(routeInfo !== null ? { routeInfo } : {}),
         });
         return;
@@ -237,6 +239,7 @@ export function discoverRegistrationCalls(
           announcedAt: node,
           kind,
           name: methodName,
+          nameKind: "label",
           routeInfo,
         });
       }
@@ -324,7 +327,7 @@ function extractRouteInfoFromBinding(
 
   let method: string;
   if (binding.method.position === "methodName") {
-    method = methodName.toUpperCase();
+    method = binding.method.nameMap?.[methodName] ?? methodName.toUpperCase();
   } else {
     const args = call.getArguments();
     const arg = args[binding.method.position] as Node | undefined;

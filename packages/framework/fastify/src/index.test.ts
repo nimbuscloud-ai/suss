@@ -56,6 +56,7 @@ describe("fastifyFramework — pack shape", () => {
         ".patch",
         ".head",
         ".options",
+        ".all",
       ]);
     }
   });

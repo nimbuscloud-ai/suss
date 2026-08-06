@@ -164,6 +164,13 @@ function nameWhatEachCallReaches(summaries: BehavioralSummary[]): void {
   };
 
   for (const summary of summaries) {
+    // A label names the unit for the reader; nothing in the code can
+    // call it, so a callee segment matching one is a coincidence
+    // (Promise.all against a route registered with .all).
+    if (summary.identity.nameKind === "label") {
+      continue;
+    }
+
     remember(byName, summary.identity.name, summary);
     remember(
       byFileAndName,

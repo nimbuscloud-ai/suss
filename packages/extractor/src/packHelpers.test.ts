@@ -20,7 +20,11 @@ describe("httpRouteDiscovery", () => {
         registrationChain: [".get", ".post"],
       },
       bindingExtraction: {
-        method: { type: "fromRegistration", position: "methodName" },
+        method: {
+          type: "fromRegistration",
+          position: "methodName",
+          nameMap: { all: "*" },
+        },
         path: { type: "fromRegistration", position: 0 },
       },
       requiresImport: ["express"],

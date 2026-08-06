@@ -312,6 +312,15 @@ export const CodeUnitIdentitySchema = z.object({
    */
   id: z.string().optional(),
   name: z.string(),
+  /**
+   * How the name came to be. "binding" means other code can call the
+   * unit by this name; "label" means discovery coined it for the
+   * reader, the way a route handler is named after its registration
+   * verb. A label never stands in for a callable binding. Absent in
+   * artifacts written before the field existed, which all named
+   * bindings.
+   */
+  nameKind: z.enum(["binding", "label"]).optional(),
   exportPath: z.array(z.string()).nullable(),
   boundaryBinding: BoundaryBindingSchema.nullable(),
   /** The thing that gets deployed and runs this unit, when known. */

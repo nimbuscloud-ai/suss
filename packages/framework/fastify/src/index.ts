@@ -24,6 +24,7 @@ export function fastifyFramework(): PatternPack {
         ".patch",
         ".head",
         ".options",
+        ".all",
       ],
     }),
 
