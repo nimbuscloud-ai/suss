@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { readHttpMetadata } from "@suss/behavioral-ir";
+
 import { openApiFileToSummaries, openApiToSummaries } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -383,12 +385,7 @@ describe("openApiToSummaries — basic mapping", () => {
       expect(t.isDefault).toBe(false);
     }
 
-    const ranges = transitions.map((t) => {
-      const http = t.metadata?.http as Record<string, unknown> | undefined;
-      return http?.statusRange as
-        | { min: number; max: number; spec: string }
-        | undefined;
-    });
+    const ranges = transitions.map((t) => readHttpMetadata(t)?.statusRange);
     expect(ranges).toEqual([
       { min: 200, max: 299, spec: "2XX" },
       { min: 400, max: 499, spec: "4XX" },
@@ -408,8 +405,11 @@ describe("openApiToSummaries — basic mapping", () => {
       },
     };
     const t = openApiToSummaries(spec)[0].transitions[0];
-    const http = t.metadata?.http as Record<string, unknown> | undefined;
-    expect(http?.statusRange).toEqual({ min: 500, max: 599, spec: "5xx" });
+    expect(readHttpMetadata(t)?.statusRange).toEqual({
+      min: 500,
+      max: 599,
+      spec: "5xx",
+    });
   });
 
   it("walks every HTTP method on a path item", () => {

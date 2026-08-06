@@ -1,17 +1,14 @@
 import { describe, expect, it } from "vitest";
 
+import { readHttpMetadata } from "@suss/behavioral-ir";
+
 import { cloudFormationToSummaries } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { CloudFormationTemplate } from "@suss/manifest-aws";
 
-function implementingHandlerOf(
-  summary: BehavioralSummary,
-): Record<string, unknown> | undefined {
-  const http = summary.metadata?.http as
-    | { implementingHandler?: Record<string, unknown> }
-    | undefined;
-  return http?.implementingHandler;
+function implementingHandlerOf(summary: BehavioralSummary) {
+  return readHttpMetadata(summary)?.implementingHandler;
 }
 
 describe("cloudFormationToSummaries — SAM handler pointer", () => {

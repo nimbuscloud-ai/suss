@@ -13,6 +13,7 @@ import {
   diffSummaries,
   dispatchByType,
   displayLabel,
+  readHttpMetadata,
   safeParseSummaries,
 } from "@suss/behavioral-ir";
 import { pairSummaries, summaryWithDefinitionsInlined } from "@suss/checker";
@@ -851,15 +852,12 @@ function renderSummary(
   const bodyLines: string[] = [];
 
   // Contract line
-  const http = summary.metadata?.http as Record<string, unknown> | undefined;
-  const contract = http?.declaredContract as
-    | { responses: Array<{ statusCode: number }> }
-    | undefined;
+  const contract = readHttpMetadata(summary)?.declaredContract;
   let declaredStatuses: Set<number> | null = null;
-  if (contract?.responses) {
+  if (contract !== undefined) {
     const statuses = contract.responses
-      .map((r: { statusCode: number }) => r.statusCode)
-      .sort((a: number, b: number) => a - b);
+      .map((r) => r.statusCode)
+      .sort((a, b) => a - b);
     declaredStatuses = new Set(statuses);
     bodyLines.push(`  Contract: ${statuses.join(", ")}`);
   }

@@ -55,11 +55,13 @@ describe("statusAccessorsFor", () => {
     expect([...result].sort()).toEqual(["status", "statusCode"]);
   });
 
-  it("filters out non-string values defensively", () => {
+  it("falls back to the historical names when an entry doesn't parse", () => {
+    // The namespace reader validates statusAccessors as a whole array;
+    // one bad entry drops the whole field rather than filtering it.
     const result = statusAccessorsFor(
       summary({ statusAccessors: ["status", 42, null, "code"] }),
     );
-    expect([...result].sort()).toEqual(["code", "status"]);
+    expect([...result].sort()).toEqual(["status", "statusCode"]);
   });
 });
 
@@ -89,7 +91,9 @@ describe("readDeclaredContract", () => {
   it("returns null when responses is not an array", () => {
     expect(
       readDeclaredContract(
-        summary({ declaredContract: { responses: "nope" } }),
+        summary({
+          declaredContract: { framework: "test", responses: "nope" },
+        }),
       ),
     ).toBeNull();
   });
@@ -98,10 +102,10 @@ describe("readDeclaredContract", () => {
     const contract = readDeclaredContract(
       summary({
         declaredContract: {
+          framework: "test",
           responses: [
             { statusCode: 200, body: { type: "record", properties: {} } },
             { statusCode: 404, body: null },
-            { statusCode: "bogus" },
           ],
         },
       }),
@@ -110,5 +114,20 @@ describe("readDeclaredContract", () => {
       { statusCode: 200, body: { type: "record", properties: {} } },
       { statusCode: 404, body: null },
     ]);
+  });
+
+  it("drops the whole contract when one response entry doesn't parse", () => {
+    // The namespace reader validates `responses` as a whole array; one
+    // bad entry (here a non-numeric statusCode) drops the whole
+    // declaredContract field rather than filtering the bad entry out.
+    const contract = readDeclaredContract(
+      summary({
+        declaredContract: {
+          framework: "test",
+          responses: [{ statusCode: 200 }, { statusCode: "bogus" }],
+        },
+      }),
+    );
+    expect(contract).toBeNull();
   });
 });

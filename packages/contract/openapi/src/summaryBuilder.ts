@@ -1,12 +1,13 @@
 // summary-builder.ts — Build BehavioralSummary objects from OpenAPI operations.
 
-import { restBinding } from "@suss/behavioral-ir";
+import { restBinding, withHttpMetadata } from "@suss/behavioral-ir";
 
 import { newContext, schemaToShape } from "./schemaToShape.js";
 import { isHttpMethod } from "./spec.js";
 
 import type {
   BehavioralSummary,
+  HttpDeclaredContract,
   Input,
   Transition,
   TypeShape,
@@ -97,34 +98,32 @@ function buildSummary(
     transitions,
     gaps: [],
     confidence: { source: "derived", level: "high" },
-    metadata: {
-      openapi: {
-        operationId: op.operationId ?? null,
-        summary: op.summary ?? null,
-        tags: op.tags ?? [],
+    metadata: withHttpMetadata(
+      {
+        openapi: {
+          operationId: op.operationId ?? null,
+          summary: op.summary ?? null,
+          tags: op.tags ?? [],
+        },
       },
-      http: {
+      {
         // Declared contract from the same operation that drove
-        // `transitions[]` above. Provenance is "derived" —
-        // self-consistency is tautological by construction, so the
-        // cross-boundary checker's per-summary contract check skips
-        // these. Other sources describing the same boundary (a CFN
-        // stub, a handler implementation) can still be compared
-        // against this contract via checkContractAgreement.
+        // `transitions[]` above. Provenance is "derived": self-
+        // consistency is tautological by construction, so the cross-
+        // boundary checker's per-summary contract check skips these.
+        // Other sources describing the same boundary (a CFN stub, a
+        // handler implementation) can still be compared against this
+        // contract via checkContractAgreement.
         declaredContract: buildDeclaredContract(op, ctx),
       },
-    },
+    ),
   };
 }
 
 function buildDeclaredContract(
   op: OpenApiOperation,
   ctx: ReturnType<typeof newContext>,
-): {
-  framework: string;
-  provenance: "derived";
-  responses: Array<{ statusCode: number; body: TypeShape | null }>;
-} {
+): HttpDeclaredContract & { provenance: "derived" } {
   const responses: Array<{ statusCode: number; body: TypeShape | null }> = [];
   for (const [code, response] of Object.entries(op.responses ?? {})) {
     if (response === undefined || code === "default") {
@@ -281,11 +280,9 @@ function buildTransitions(
       effects: [],
       location: { start: 0, end: 0 },
       isDefault: false,
-      metadata: {
-        http: {
-          statusRange: { min: parsed.min, max: parsed.max, spec: code },
-        },
-      },
+      metadata: withHttpMetadata(undefined, {
+        statusRange: { min: parsed.min, max: parsed.max, spec: code },
+      }),
     });
   }
 

@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   readGraphqlMetadata,
+  readHttpMetadata,
   readMessageBusMetadata,
   readRuntimeContractMetadata,
   withGraphqlMetadata,
+  withHttpMetadata,
   withMessageBusMetadata,
   withRuntimeContractMetadata,
 } from "./index.js";
 
-import type { BehavioralSummary } from "./index.js";
+import type { BehavioralSummary, Transition } from "./index.js";
 
 function summaryWith(
   metadata: Record<string, unknown> | undefined,
@@ -30,6 +32,20 @@ function summaryWith(
     transitions: [],
     gaps: [],
     confidence: { source: "declared", level: "high" },
+    ...(metadata !== undefined ? { metadata } : {}),
+  };
+}
+
+function transitionWith(
+  metadata: Record<string, unknown> | undefined,
+): Transition {
+  return {
+    id: "t-2xx",
+    conditions: [],
+    output: { type: "response", statusCode: null, body: null, headers: {} },
+    effects: [],
+    location: { start: 0, end: 0 },
+    isDefault: false,
     ...(metadata !== undefined ? { metadata } : {}),
   };
 }
@@ -195,6 +211,101 @@ describe("the graphql metadata namespace", () => {
         // @ts-expect-error a renamed field fails to compile; the parse
         // catches a caller that casts around the type.
         fieldname: "user",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("the http metadata namespace", () => {
+  it("round-trips what a writer sets on a summary", () => {
+    const metadata = withHttpMetadata(
+      { codeScope: { kind: "codeUri", path: "src/handlers/" } },
+      {
+        declaredContract: {
+          framework: "openapi",
+          provenance: "derived",
+          responses: [{ statusCode: 200 }, { statusCode: 404 }],
+        },
+        bodyAccessors: ["data"],
+      },
+    );
+    const read = readHttpMetadata(summaryWith(metadata));
+    expect(read?.declaredContract?.responses).toEqual([
+      { statusCode: 200 },
+      { statusCode: 404 },
+    ]);
+    expect(read?.bodyAccessors).toEqual(["data"]);
+    // Neighboring namespaces survive the merge.
+    expect(metadata.codeScope).toEqual({
+      kind: "codeUri",
+      path: "src/handlers/",
+    });
+  });
+
+  it("round-trips what a writer sets on a transition, not just a summary", () => {
+    // statusRange describes one response, so a range-coded OpenAPI
+    // operation writes it on the transition itself rather than the
+    // summary. The same reader answers both carriers.
+    const metadata = withHttpMetadata(undefined, {
+      statusRange: { min: 200, max: 299, spec: "2XX" },
+    });
+    const read = readHttpMetadata(transitionWith(metadata));
+    expect(read?.statusRange).toEqual({ min: 200, max: 299, spec: "2XX" });
+  });
+
+  it("defaults declaredContract.provenance to independent when a writer omits it", () => {
+    const read = readHttpMetadata(
+      summaryWith({
+        http: {
+          declaredContract: {
+            framework: "apigateway",
+            responses: [{ statusCode: 200 }],
+          },
+        },
+      }),
+    );
+    expect(read?.declaredContract?.provenance).toBe("independent");
+  });
+
+  it("still answers responses when a writer omits framework", () => {
+    // A writer that leaves framework unset shouldn't lose the whole
+    // contract to the field-level drop; framework is informational,
+    // not required to trust the responses it names.
+    const read = readHttpMetadata(
+      summaryWith({
+        http: {
+          declaredContract: { responses: [{ statusCode: 200 }] },
+        },
+      }),
+    );
+    expect(read?.declaredContract?.responses).toEqual([{ statusCode: 200 }]);
+    expect(read?.declaredContract?.framework).toBeUndefined();
+  });
+
+  it("answers undefined when the namespace is absent or not an object", () => {
+    expect(readHttpMetadata(summaryWith(undefined))).toBeUndefined();
+    expect(readHttpMetadata(summaryWith({ http: 42 }))).toBeUndefined();
+  });
+
+  it("drops a field that does not parse and keeps its siblings", () => {
+    const read = readHttpMetadata(
+      summaryWith({
+        http: {
+          bodyAccessors: ["data"],
+          declaredContract: { framework: "cfn", responses: "not-an-array" },
+        },
+      }),
+    );
+    expect(read?.bodyAccessors).toEqual(["data"]);
+    expect(read?.declaredContract).toBeUndefined();
+  });
+
+  it("refuses a value the schema does not name at write time", () => {
+    expect(() =>
+      withHttpMetadata(undefined, {
+        // @ts-expect-error a renamed field fails to compile; the parse
+        // catches a caller that casts around the type.
+        declaredResponses: [{ statusCode: 200 }],
       }),
     ).toThrow();
   });

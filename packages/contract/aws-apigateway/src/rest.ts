@@ -5,7 +5,7 @@
 // owns the AWS API Gateway v1 (REST) resource semantics: which platform
 // transitions appear given which configuration knobs.
 
-import { restBinding } from "@suss/behavioral-ir";
+import { restBinding, withHttpMetadata } from "@suss/behavioral-ir";
 
 import {
   buildCorsPreflightSummary,
@@ -137,16 +137,19 @@ function buildEndpointSummary(
     transitions,
     gaps: [],
     confidence: { source: "derived", level: "high" },
-    metadata: {
-      apiId: api.id,
-      integrationType: endpoint.integration.type,
-      http: {
+    metadata: withHttpMetadata(
+      {
+        apiId: api.id,
+        integrationType: endpoint.integration.type,
+      },
+      {
         // The integration's declared status codes (from MethodResponses
-        // in the CFN template) are the declared contract here. Platform-
-        // injected transitions (authorizer 401/403, throttle 429, etc.)
-        // come from SEPARATE config fields and so are independent from
-        // this contract — contract-consistency comparison is meaningful
-        // and will surface template-internal inconsistencies.
+        // in the CFN template) are the declared contract here.
+        // Platform-injected transitions (authorizer 401/403, throttle
+        // 429, etc.) come from SEPARATE config fields and so are
+        // independent from this contract: contract-consistency
+        // comparison is meaningful and will surface template-internal
+        // inconsistencies.
         declaredContract: {
           framework: FRAMEWORK,
           provenance: "independent",
@@ -162,7 +165,7 @@ function buildEndpointSummary(
           ? { implementingHandler: endpoint.implementingHandler }
           : {}),
       },
-    },
+    ),
   };
 }
 
