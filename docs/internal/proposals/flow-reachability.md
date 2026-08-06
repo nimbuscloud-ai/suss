@@ -14,77 +14,103 @@ exactly that absence and is written to fail the day this ships.
 ## The shape of the answer
 
 A flow is a chain of hops, each hop a fact somebody emitted, and
-reachability is one rule walking them. Nothing about ALB, ECS, or
-Lambda appears in the rule. That is the requirement the fixture
-encodes: each pattern shape forwards to both target kinds, so a
-resolver keyed on anything but the declared wiring picks the wrong
-backend for two of its four rules.
+reachability is a walk over them. Nothing about ALB, ECS, or Lambda
+appears in the walk. That is the requirement the fixture encodes:
+each pattern shape forwards to both target kinds, so a resolver
+keyed on anything but the declared wiring picks the wrong backend
+for two of its four rules.
 
-The datalog engine already runs every fixpoint analysis in the tree,
-and the walkers-and-rules and manifests-as-facts proposals already
-committed us to "readers emit facts, rules derive answers." This
-proposal is those two commitments meeting the north-star question.
+The work splits into two layers, and saying so plainly is the first
+design decision. The datalog engine holds tuples of strings and
+numbers and joins them by equality; it has no function-valued terms
+and no aggregation, so a fact cannot carry a matcher and a rule
+cannot pick a minimum. Matching and priority selection therefore
+happen in TypeScript before evaluation, the same division
+`singleRoutedSubjectOf` already uses to settle which subject feeds a
+queue: TypeScript decides the contested hops, the engine walks the
+settled ones. The recursive part stays a rule because that is what
+the engine is for; the protocol-specific part stays in dispatched
+TypeScript because that is what the registry pattern is for.
 
 ## The facts
 
-Three kinds, all emitted by things that already exist:
+**Routing edges** come from the manifest reader. Each says one
+resource forwards traffic to another, with the match that gates it
+recorded as data (pattern strings, condition fields, priority), not
+as behavior:
 
-**Routing edges** come from the manifest reader. Each edge says one
-resource forwards traffic to another, with the match that gates it:
+    routesTo(router, target, matchId)   a listener rule: its
+                                        conditions and priority live
+                                        on the match record
+    answers(router, matchId, response)  a non-forward action: the
+                                        fixture's fixed-response 404
+                                        default, so an unmatched
+                                        path lands somewhere stated
+    fronts(target, resource)            what backs a target group
 
-    routesTo(listener, targetGroup, match)   an ALB listener rule:
-                                             host, path pattern,
-                                             priority
-    fronts(targetGroup, unit)                what backs the group: the
-                                             ECS service's container,
-                                             or the Lambda function
+`fronts` terminates on a resource, not necessarily a deployable
+unit. The walk decides unit-ness by whether a code scope fact exists
+for the resource, which keeps the vocabulary open to the hop shapes
+the fixture does not have: a CloudFront behavior fronting an ALB is
+`fronts(distribution, alb)` and the walk keeps going; an API
+Gateway method that already resolved its integration one-hop skips
+edge vocabulary entirely and contributes a serving claim directly,
+which the aws-apigateway reader in fact already computes. Before
+slice 1 locks the names, the vocabulary gets checked against those
+two shapes on paper, since the edge kinds are the contract the
+Terraform reader inherits per manifests-as-facts.
 
-The ECS chain (rule to group to service to task definition to
-container code scope) and the Lambda chain (rule to group to
-function code scope) both flatten into the same two edge kinds. The
-CFN reader resolves the intermediate hops the way it already
-resolves queue and topic refs; the reachability rule never learns
-they existed.
+An ALB rule's conditions are typed fields (path-pattern,
+host-header, method, headers, query, source ip), ANDed across
+fields, ORed within one. The match record carries all of them; v0
+matching implements path-pattern and host-header and records the
+rest as unevaluated, surfaced in the rendering rather than silently
+treated as admitting.
 
-**Serving claims** come from summaries suss already extracts. A rest
-provider summary with its code scope inside a unit's scope claims
-`serves(unit, method, path)`. The Express mount prefix and the
-wildcard route are already in the summary after #140; the mount gap
-(a route declared on a sub-app reported without its prefix) is a
-named limitation in the hono pack today and becomes a visible hole
-in flows, which is the right pressure.
+**Serving claims** come from summaries suss already extracts: a rest
+provider whose code scope sits inside a unit claims
+`serves(unit, method, path)`.
+
+This is where the fixture exposes a prerequisite. An Express route
+declared on a mounted router extracts today without its mount
+prefix: the fixture's own `/_health` route summarizes as `/_health`,
+not `/api/orders/_health`, so the exact-match hop the fixture staged
+(`OrdersHealthRule`) cannot resolve until mount-prefix composition
+lands. The hono pack documents the same gap for `app.route`. Closing
+it is slice 2 and blocks the walk; pretending flows work while
+serving claims carry wrong paths would produce confident wrong
+answers, the one failure mode this tool must never have.
 
 **Calling claims** are the client side: a consumer summary claims
 `calls(unit, method, url)`.
 
-## The rule
+## The walk
 
-One recursive rule composes edges from an entry point to a serving
-claim, threading the request's method and path through each hop's
-match:
+For a queried method and URL, a TypeScript pass dispatches each
+edge's match record to its owner's matcher (the ALB glob language
+and the Express path language disagree in corners, so each protocol
+matches its own), selects the winning edge per router by its
+declared ordering (lowest priority first for ALB), and asserts
+ground `admits(edge)` facts. The recursive rule then walks only
+settled edges:
 
-    reaches(entry, unit) when routesTo/fronts edges connect them
-                         and every match on the way admits the path
+    reaches(entry, resource) when an admitted edge chain connects
+                             them, ending at a resource with a code
+                             scope or at an answers() action
 
-Per-hop match semantics stay with the hop's emitter, the same
-inversion the semantics registry uses. An ALB path pattern (`*` and
-`?` globs, first match by priority) and an Express pattern
-(`:params`, mount prefixes) are different languages; each fact
-carries its own matcher, exposed to the rule as a predicate, so the
-rule composes matchers without knowing either language. This is the
-boundary-semantics move applied to routing: the protocol owns its
-matching, the generic layer owns the walk.
-
-Priority is data on the edge. First-match-wins is a property of the
-listener, so the rule prefers the lowest priority edge whose match
-admits the path, which is a plain aggregation the engine already
-supports.
+No negation, no aggregation, no matcher calls inside the engine, so
+the rule stays inside what the engine's resume machinery supports
+today; walkers-and-rules records what negation costs and this
+design does not spend it.
 
 ## What a user sees
 
-The demo is the fixture's question answered at the terminal:
+The demo is the fixture's question answered at the terminal, as an
+inspect view rather than a fifth CLI surface. The README commits to
+four surfaces over one artifact set, and a flow is a reading of
+facts plus summaries, which is inspect's job:
 
-    suss flow GET https://shop.example.com/api/orders/123
+    suss inspect --flow "GET https://shop.example.com/api/orders/123"
 
     client src/client/fetchOrder.ts
       -> ShopHttpsListener rule OrdersListenerRule  /api/orders/*
@@ -92,69 +118,60 @@ The demo is the fixture's question answered at the terminal:
       -> app.all /api/orders/* -> getOrder  (src/orders-app/...)
 
 Every hop names its evidence. A hop nothing declared shows as a
-symbolic ref with what is known (`-> ? (target group names its
-service at runtime)`), following the unnamed-boundaries rule that
-absence is a recorded state, never a guess. The same walk with no
-URL argument lists every entry point and where each lands, which is
-the beginning of the intent-facing story: a PRD names a URL, and the
-checker can now say which code answers it.
+symbolic ref with what is known, following the unnamed-boundaries
+rule that absence is a recorded state. A path no rule admits lands
+on the listener's `answers()` action and renders that. If flows
+outgrow inspect, promoting the view to its own verb is a deliberate
+README change, not a side effect here.
 
 ## Slices
 
-1. **Edges from the CFN reader.** ALB listeners, rules, target
-   groups, ECS service and task definition flattening, Lambda
-   targets. Tests against the fixture; the pinned absence test flips
-   to assert the paths. No rule work yet; the facts are inspectable
-   on their own.
-2. **The rule and the walk.** `reaches` over the edges plus serving
-   claims derived from existing summaries, with the per-hop matcher
-   seam. The fixture's four rules exercise both target kinds and
-   both pattern shapes through the one rule.
-3. **The surface.** `suss flow`, rendering the chain with evidence
-   and symbolic refs. Inspect's boundary view links into it rather
-   than growing its own walker.
-4. **The second manifest language.** Terraform emits the same edges
-   per manifests-as-facts: HCL read from the repo, refs recorded
-   symbolically, plan JSON as an optional binding provider. Nothing
-   in slices 1 to 3 may depend on CFN spellings; the edge vocabulary
-   is the contract.
+1. **Edges from the CFN reader.** Listeners, rules with full
+   condition records, default actions, target groups, the ECS
+   flattening (service to task definition to container code scope,
+   a multi-hop join the reader settles, not the walk), Lambda
+   targets. Tests against the fixture; the pinned absence test
+   flips. The vocabulary review against the API Gateway and
+   CloudFront shapes happens here, before the names harden.
+2. **Mount-prefix composition.** Express `app.use(prefix, router)`
+   and hono `app.route` compose the prefix into the summarized
+   path. Independently valuable (route summaries stop
+   under-describing paths) and a prerequisite for serving claims
+   the walk can trust.
+3. **The match pass and the rule.** The TypeScript admits pass with
+   per-protocol matchers behind a dispatch table, then `reaches`
+   over settled edges plus serving claims. The fixture's four rules
+   exercise both target kinds and both pattern shapes.
+4. **The surface.** `suss inspect --flow`, rendering the chain with
+   evidence, symbolic refs, and unevaluated condition fields shown
+   as such.
+5. **The second manifest language.** Terraform emits the same edges
+   per manifests-as-facts. Nothing in slices 1 to 4 may depend on
+   CFN spellings.
 
-## A decision to make alongside: DynamoDB (#143)
+## Out of this proposal
 
-The table resource needs a boundary identity before flows can end at
-storage. Two options:
-
-- **A storage variant of its own** (`storage-document` beside
-  `storage-relational`): the schema matches the data model instead
-  of stretching relational vocabulary, one more module in the
-  registry, pairing by table identity the way relational pairs
-  today. Streams stay message-bus: a stream-fed
-  consumer arrives through the event source mapping the reader
-  already understands, channelled on the table.
-- **Widen storage-relational** into one storage variant with a
-  system discriminator: fewer modules, but the schema starts
-  carrying fields half its members cannot have, which is the shape
-  the typed-claims work spent this week removing.
-
-Recommendation: the variant of its own. The registry exists so
-variants are cheap, and the fixture for it is the degree of coverage
-the CFN bar needs before the Python corpus becomes a meaningful
-test.
+DynamoDB (#143) came along for the ride in an earlier draft and
+does not fit in a paragraph. The registry makes a new variant's
+schema cheap, but storage pairs through a dedicated checker pass,
+so a `storage-document` variant is priced by that pass, not by the
+module; and stream consumers arriving as message-bus while writes
+are storage effects leaves the two halves of one boundary with no
+join. That deserves its own design pass, and #143 tracks it.
 
 ## Risks
 
 - **Fact vocabulary lock-in.** The edge kinds are the contract the
-  Terraform reader inherits, so slice 1's review should treat
-  `routesTo`/`fronts` naming and match-payload shape as the decision
-  that lasts, not the CFN parsing.
-- **Matcher seams becoming matchers.** The temptation in slice 2 is
-  one shared pattern language. ALB and Express globbing disagree in
-  the corners (ALB `*` crosses `/`, Express `*` semantics changed
-  across majors), so the seam stays per-hop; a shared language would
+  Terraform reader inherits, so slice 1's review treats naming and
+  match-record shape as the decision that lasts, with the API
+  Gateway and CloudFront shapes as the test cases.
+- **The admits pass growing a shared pattern language.** ALB and
+  Express globbing disagree in the corners (ALB `*` crosses `/`,
+  Express semantics changed across majors), so matchers stay
+  per-protocol behind the dispatch table; a shared language would
   be quietly wrong in exactly the way this tool exists to catch.
-- **Scope creep toward middleware semantics.** The dispatch
-  middleware in the fixture resolves by reading the sub-path in
-  code. Slice 2 ends at the wildcard route's handler; saying which
-  branch of the dispatch map answers is condition-level work the
-  summaries already carry, and the flow renders it as the handler's
-  own transitions rather than pretending the router goes deeper.
+- **Scope creep toward middleware semantics.** The fixture's
+  dispatch middleware resolves by reading the sub-path in code. The
+  walk ends at the wildcard route's handler, and the flow renders
+  the handler's own transitions rather than pretending the router
+  goes deeper.
