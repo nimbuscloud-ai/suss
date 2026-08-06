@@ -19,10 +19,12 @@ import { discoverResolverMaps } from "./resolverMap.js";
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
+import type { MountPrefixIndex } from "./registrationCall.js";
 
 export { clearPackageExportsCache } from "./packageExports.js";
 export { toFunctionRoot, unitDedupKey } from "./shared.js";
 
+export type { MountPrefixIndex } from "./registrationCall.js";
 export type { ClientCallSite, DiscoveredUnit } from "./shared.js";
 
 import { unitDedupKey } from "./shared.js";
@@ -33,6 +35,7 @@ function runPattern(
   sourceFile: SourceFile,
   pattern: DiscoveryPattern,
   resolution?: ResolutionStore,
+  mountPrefixes?: MountPrefixIndex,
 ): DiscoveredUnit[] {
   if (pattern.match.type === "namedExport") {
     return discoverNamedExports(
@@ -49,6 +52,7 @@ function runPattern(
       pattern.kind,
       pattern.bindingExtraction,
       resolution,
+      mountPrefixes,
     );
   }
   if (pattern.match.type === "registrationTemplate") {
@@ -135,11 +139,12 @@ export function discoverUnits(
   sourceFile: SourceFile,
   patterns: DiscoveryPattern[],
   resolution?: ResolutionStore,
+  mountPrefixes?: MountPrefixIndex,
 ): DiscoveredUnit[] {
   const allResults: DiscoveredUnit[] = [];
 
   for (const pattern of patterns) {
-    const found = runPattern(sourceFile, pattern, resolution);
+    const found = runPattern(sourceFile, pattern, resolution, mountPrefixes);
     for (const unit of found) {
       unit.pattern = pattern;
     }

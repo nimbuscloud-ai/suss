@@ -6,6 +6,7 @@
   "send": "express: response method sending a body",
   "sendStatus": "express: response method sending a bare status",
   "redirect": "express: response method sending a redirect",
+  "use": "express: router method mounting a sub-router under a prefix",
   "request": "suss: input role",
   "next": "suss: input role"
 }

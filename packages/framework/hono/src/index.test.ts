@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { createFixtureProject } from "@suss/test-project";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { honoFramework } from "./index.js";
 
@@ -163,5 +163,75 @@ describe("honoFramework \u2014 zod-openapi registration", () => {
       )
       .sort();
     expect(statuses).toEqual([200, 409]);
+  });
+});
+
+describe("honoFramework, app.route mount prefix", () => {
+  it("composes a sub-app's mount prefix into its routes, across a file boundary", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/ordersApp.ts",
+      `
+        import { Hono } from "hono";
+        export const ordersApp = new Hono();
+        ordersApp.get("/_health", (c) => c.json({ ok: true }));
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        import { ordersApp } from "./ordersApp";
+        const app = new Hono();
+        app.route("/api/orders", ordersApp);
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoFramework()],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const paths = summaries
+      .map((s) => s.identity.boundaryBinding?.semantics)
+      .filter(
+        (sem): sem is Extract<typeof sem, { name: "rest" }> =>
+          sem?.name === "rest",
+      )
+      .map((sem) => sem.path);
+    expect(paths).toEqual(["/api/orders/_health"]);
+  });
+
+  it("leaves the path alone when the mount can't be resolved", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        declare function pickSubApp(): unknown;
+        const app = new Hono();
+        const ordersApp = new Hono();
+        ordersApp.get("/_health", (c) => c.json({ ok: true }));
+        app.route("/api/orders", pickSubApp());
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoFramework()],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const paths = summaries
+      .map((s) => s.identity.boundaryBinding?.semantics)
+      .filter(
+        (sem): sem is Extract<typeof sem, { name: "rest" }> =>
+          sem?.name === "rest",
+      )
+      .map((sem) => sem.path);
+    expect(paths).toEqual(["/_health"]);
   });
 });

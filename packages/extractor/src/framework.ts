@@ -474,6 +474,32 @@ export interface DiscoveryPattern {
   match: DiscoveryMatch;
   bindingExtraction?: BindingExtraction;
   /**
+   * How the routable this pattern discovers (Express's `Router()`,
+   * Hono's `new Hono()`, and similar) can itself be mounted onto
+   * another one under a path prefix, as in Express's
+   * `app.use(prefix, router)` or Hono's `app.route(prefix, sub)`.
+   * Only meaningful when `match.type` is `"registrationCall"`, since
+   * mount discovery reuses that match's `importModule` and
+   * `importName` to work out which variables in a file are the
+   * routable a mount call names as its subject.
+   *
+   * When set, the adapter composes the mount's prefix into the path
+   * of every route discovered on the mounted value, whether it is
+   * declared in the mounting file or, following the mounted value
+   * through an import, in whichever file declares it. A mount whose
+   * prefix isn't a string literal, or whose target the resolution
+   * store can't follow to a concrete value, contributes nothing:
+   * routes under it keep the path they were written with.
+   */
+  mount?: {
+    /** Method name that registers a sub-router at a prefix, e.g. "use" or "route". */
+    method: string;
+    /** Argument position of the prefix string. */
+    prefixPosition: number;
+    /** Argument position of the mounted router/sub-app value. */
+    targetPosition: number;
+  };
+  /**
    * Files whose import declarations include any of these module
    * specifiers (or sub-paths of them) get this pattern's discovery
    * dispatch. Empty array = no gate (pattern is dispatched against

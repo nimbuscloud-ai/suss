@@ -74,6 +74,10 @@ import {
   discoverUnits,
   unitDedupKey,
 } from "./discovery/index.js";
+import {
+  buildMountPrefixIndex,
+  type MountPrefixIndex,
+} from "./discovery/mountPrefix.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { ResolutionStore } from "./facts/store.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
@@ -978,6 +982,7 @@ function extractFromSourceFile(
   options?: ExtractorOptions,
   tallies?: Map<string, PackTally>,
   resolution?: ResolutionStore,
+  mountPrefixes?: MountPrefixIndex,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   // Aggregate recognizers from EVERY pack — a Prisma recognizer fires
@@ -1033,7 +1038,12 @@ function extractFromSourceFile(
       gatedIn.push(tally);
     }
 
-    const units = discoverUnits(sourceFile, pack.discovery, resolution);
+    const units = discoverUnits(
+      sourceFile,
+      pack.discovery,
+      resolution,
+      mountPrefixes,
+    );
 
     // Pack-supplied discovery callback (sibling of subUnits at the
     // discovery layer). Packs whose conventions don't fit a
@@ -2040,6 +2050,15 @@ export function createTypeScriptAdapter(
         computePackApplicability(sourceFiles, config.frameworks, resolution),
       );
 
+      // A route declared on a mounted router (Express `app.use`, Hono
+      // `app.route`) has to compose the mount's prefix into its path
+      // before the per-file walk below builds its boundary binding, so
+      // this runs first, over the same gated file set `preFilter` already
+      // settled.
+      const mountPrefixes = timer.time("mountPrefix", () =>
+        buildMountPrefixIndex(packsByFile, resolution),
+      );
+
       const claimedUnits = new Map<string, ClaimedUnit>();
       timer.time("extract per-file", () => {
         for (const sourceFile of sourceFiles) {
@@ -2055,6 +2074,7 @@ export function createTypeScriptAdapter(
               config.extractorOptions,
               tallies,
               resolution,
+              mountPrefixes,
             ),
           );
         }
