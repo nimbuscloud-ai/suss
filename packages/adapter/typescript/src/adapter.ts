@@ -773,6 +773,45 @@ function extractBindingMethod(
   return undefined;
 }
 
+// Matches a URL scheme through the "//" that opens an authority section
+// ("https://", "custom-scheme://", and so on).
+const URL_SCHEME = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//;
+
+// Same, but also consumes the host, so replacing a match with "" leaves
+// the path's own leading "/" in place: the same shape `new URL(...).pathname`
+// returns.
+const URL_ORIGIN = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\/[^/]*/;
+
+function stripQueryAndFragment(text: string): string {
+  const idx = text.search(/[?#]/);
+  return idx === -1 ? text : text.slice(0, idx);
+}
+
+function stripOriginIfAbsolute(text: string): string {
+  if (!URL_SCHEME.test(text)) {
+    return text;
+  }
+  return text.replace(URL_ORIGIN, "");
+}
+
+/**
+ * A URL literal argument, narrowed to the path a server route would
+ * name. A client calling an absolute URL, like
+ * `fetch("https://api.example.com/orders/1")`, has to land on the same
+ * boundary path as one calling `fetch("/orders/1")` for the two to
+ * pair, so the origin and any query string or fragment drop.
+ */
+function pathFromLiteralUrl(text: string): string {
+  try {
+    return new URL(text).pathname;
+  } catch {
+    // `new URL` rejects some strings that still open with a scheme (a
+    // bare "https://" with nothing after it, say). Strip the origin by
+    // hand rather than let the scheme flow into the path.
+    return stripQueryAndFragment(stripOriginIfAbsolute(text)) || "/";
+  }
+}
+
 function extractBindingPath(
   binding: BindingExtraction,
   callSite: NonNullable<DiscoveredUnit["callSite"]>,
@@ -789,21 +828,26 @@ function extractBindingPath(
       return undefined;
     }
     if (Node.isStringLiteral(arg)) {
-      return arg.getLiteralValue();
+      return pathFromLiteralUrl(arg.getLiteralValue());
     }
     if (Node.isNoSubstitutionTemplateLiteral(arg)) {
-      return arg.getLiteralValue();
+      return pathFromLiteralUrl(arg.getLiteralValue());
     }
     if (Node.isTemplateExpression(arg)) {
-      // `/pet/${id}/comments/${commentId}` →
+      // `/pet/${id}/comments/${commentId}` becomes
       // `/pet/{id}/comments/{commentId}`. Each substitution becomes an
       // OpenAPI-style placeholder; the checker's path normalizer treats
       // `{id}` and `:id` as equivalent so this pairs with both Express
-      // and ts-rest-style provider paths too.
-      let path = arg.getHead().getLiteralText();
+      // and ts-rest-style provider paths too. A scheme-prefixed head
+      // loses its origin the same way a plain literal does, so
+      // `` `https://api.example.com/orders/${id}` `` pairs on
+      // `/orders/{id}` instead of never pairing at all.
+      let path = stripQueryAndFragment(
+        stripOriginIfAbsolute(arg.getHead().getLiteralText()),
+      );
       for (const span of arg.getTemplateSpans()) {
         path += `{${placeholderName(span.getExpression())}}`;
-        path += span.getLiteral().getLiteralText();
+        path += stripQueryAndFragment(span.getLiteral().getLiteralText());
       }
       return path;
     }

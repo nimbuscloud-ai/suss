@@ -1,7 +1,9 @@
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { createTestProject } from "@suss/test-project";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { webFetchPack } from "./index.js";
 
@@ -96,5 +98,27 @@ describe("webFetchPack — integration", () => {
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
     expect(summaries[0].transitions.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("webFetchPack — fixtures", () => {
+  it("summarizes the ALB fixture's client on the order path, not the absolute URL it calls", async () => {
+    // fetchOrder.ts calls `fetch("https://shop.example.com/api/orders/123")`.
+    // Only a summary keyed on /api/orders/123 can ever pair with the ECS
+    // service that answers it, since the provider side never names the
+    // scheme or host.
+    const fixturesDir = path.resolve(__dirname, "../../../../fixtures/aws-alb");
+    const project = createFixtureProject(fixturesDir, "src/client/*.ts");
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webFetchPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const fetchOrder = summaries.find((s) => s.identity.name === "fetchOrder");
+    expect(fetchOrder?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/api/orders/123" },
+      recognition: "fetch",
+    });
   });
 });

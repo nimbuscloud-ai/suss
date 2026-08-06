@@ -2088,6 +2088,68 @@ describe("consumer extraction", () => {
     expect(restPathOf(summaries[0])).toBe("/pet/{petId}/comments/{commentId}");
   });
 
+  it("narrows an absolute URL with a query string to its pathname", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getOrder(id: string) {
+        const res = await fetch("https://shop.example.com/api/orders/123?verbose=true");
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    // The scheme, host, and query string all drop: what's left is the
+    // path a server route can actually pair with.
+    expect(restPathOf(summaries[0])).toBe("/api/orders/123");
+  });
+
+  it("strips the query string from a relative literal", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function search(term: string) {
+        const res = await fetch("/search?q=widgets&limit=10");
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/search");
+  });
+
+  it("narrows an absolute template-literal URL with a parameter to its pathname", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getOrder(id: string) {
+        const res = await fetch(\`https://shop.example.com/api/orders/\${id}\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/api/orders/{id}");
+  });
+
   it("uses the trailing property name when the substitution is a property access", async () => {
     const project = createTestProject();
     project.createSourceFile(
