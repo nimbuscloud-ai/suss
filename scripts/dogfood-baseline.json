@@ -3,9 +3,9 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 234,
-    "internal": 1116,
-    "consumers": 380,
-    "pairs": 372
+    "internal": 1123,
+    "consumers": 384,
+    "pairs": 376
   },
   "packages": {
     "packages/adapter/typescript": {
@@ -23,7 +23,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 27,
-      "internal": 110,
+      "internal": 112,
       "consumers": 53
     },
     "packages/checker-intent": {
@@ -71,8 +71,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 32,
-      "consumers": 40
+      "internal": 37,
+      "consumers": 44
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
