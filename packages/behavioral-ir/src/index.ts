@@ -79,6 +79,7 @@ export {
   withMessageBusMetadata,
   withRuntimeContractMetadata,
 } from "./metadata.js";
+export { type SummaryIdParts, summaryIdFromParts } from "./summaryId.js";
 
 export type {
   BoundaryBinding,
@@ -149,6 +150,13 @@ export type Finding = z.infer<typeof FindingSchema>;
  * it. Both sides therefore have to agree on the separator and on which
  * two fields go into it, which is why one function owns the format
  * rather than each caller writing the template literal out.
+ *
+ * Deliberately file-and-name, not `identity.id`: a rule someone has
+ * already written against this format has to keep matching, and an id
+ * folds in the workspace, which changes the string for most projects
+ * the moment a rule's author didn't ask for that. Code that wants to
+ * follow a link precisely rather than print one has `identity.id` and
+ * `effect.summary` to read directly.
  */
 export function summaryRef(summary: BehavioralSummary): string {
   return `${summary.location.file}::${summary.identity.name}`;

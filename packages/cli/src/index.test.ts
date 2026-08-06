@@ -710,6 +710,88 @@ describe("inspect", () => {
       "File not found",
     );
   });
+
+  // A component's click handler calling its own "onChange" prop and an
+  // unrelated Form's "onChange" handler both spell the same name.
+  // Inspect used to resolve every call that way, so whichever summary
+  // loaded first for a name won, regardless of which one a call
+  // actually reached.
+  it("without an id, links a call by name across the whole set, which can name the wrong summary", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byname-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify([
+        // Form's onChange loads first, so a name-only match claims
+        // "onChange" for Form.tsx before Counter's own same-file
+        // handler is ever seen.
+        onChangeHandlerSummary("src/Form.tsx"),
+        onChangeHandlerSummary("src/Counter.tsx"),
+        counterSummary({}),
+      ]),
+    );
+
+    const output = captureInspect(() => inspect({ file }));
+    expect(output).toContain("+ src/Form.onChange →");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("with an id, follows the call to the summary it actually reaches, not a name match", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byid-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify([
+        onChangeHandlerSummary("src/Form.tsx", "form::onChange"),
+        onChangeHandlerSummary("src/Counter.tsx", "counter::onChange"),
+        counterSummary({ effectSummary: "counter::onChange" }),
+      ]),
+    );
+
+    const output = captureInspect(() => inspect({ file }));
+    // The id says this call reaches Counter's own onChange, in the
+    // same file, so the arrow is bare rather than pointing at Form.
+    expect(output).toContain("+ onChange →");
+    expect(output).not.toContain("Form.onChange");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("with an id, path-qualifies a call the id resolves to a different file", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byid-cross-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify([
+        onChangeHandlerSummary("src/Form.tsx", "form::onChange"),
+        counterSummary({ effectSummary: "form::onChange" }),
+      ]),
+    );
+
+    const output = captureInspect(() => inspect({ file }));
+    expect(output).toContain("+ src/Form.onChange →");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("with an id the loaded set doesn't answer to, shows the call bare rather than guessing", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byid-miss-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify([
+        onChangeHandlerSummary("src/Form.tsx"),
+        counterSummary({ effectSummary: "counter::onChange" }),
+      ]),
+    );
+
+    const output = captureInspect(() => inspect({ file }));
+    expect(output).toContain("+ onChange\n");
+    expect(output).not.toContain("+ onChange →");
+
+    fs.rmSync(dir, { recursive: true });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -910,6 +992,69 @@ function busSummary(name: string, channel: string): unknown {
     },
     inputs: [],
     transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+/** A minimal named handler summary, optionally carrying an id. */
+function onChangeHandlerSummary(file: string, id?: string): unknown {
+  return {
+    kind: "handler",
+    location: { file, range: { start: 1, end: 2 }, exportName: "onChange" },
+    identity: {
+      name: "onChange",
+      exportPath: ["onChange"],
+      boundaryBinding: null,
+      ...(id !== undefined ? { id } : {}),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+/**
+ * A `Counter` component whose click handler calls a callee named
+ * "onChange", the way a prop call reads once destructured. Pass
+ * `effectSummary` to simulate what the extractor stamps once it has
+ * resolved that call to a specific summary's id.
+ */
+function counterSummary(opts: { effectSummary?: string }): unknown {
+  return {
+    kind: "component",
+    location: {
+      file: "src/Counter.tsx",
+      range: { start: 10, end: 20 },
+      exportName: "Counter",
+    },
+    identity: {
+      name: "Counter",
+      exportPath: ["Counter"],
+      boundaryBinding: null,
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "t1",
+        conditions: [],
+        output: { type: "void" },
+        effects: [
+          {
+            type: "invocation",
+            callee: "onChange",
+            args: [],
+            async: false,
+            ...(opts.effectSummary !== undefined
+              ? { summary: opts.effectSummary }
+              : {}),
+          },
+        ],
+        location: { start: 10, end: 20 },
+        isDefault: true,
+      },
+    ],
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
   };
