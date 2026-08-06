@@ -1086,15 +1086,9 @@ function readRuleTargets(
 /**
  * Resolve a reference (`!Ref X`, `!GetAtt X.Arn`, plain string ARN) to
  * the referenced resource's CFN logical id. `service` is the ARN
- * segment a plain string is matched against (`"sqs"`, `"sns"`, `"s3"`),
+ * segment a plain string is checked against (`"sqs"`, `"sns"`, `"s3"`),
  * so a queue ARN, a topic ARN, and a bucket ARN each resolve through
- * the same shape. The region and account segments are required to be
- * non-empty for every service except `"s3"`, whose ARNs carry neither
- * (`arn:aws:s3:::bucket-name`). Loosening that requirement for every
- * service would let a malformed SQS or SNS ARN with an empty segment
- * (a queue's region dropped, say) fall through to a bare name that can
- * coincidentally collide with an unrelated logical id, instead of
- * failing to match and falling through unresolved.
+ * the same shape.
  *
  * Returns null when the reference is dynamic (a parameter, an import,
  * or an Fn::Join naming nothing this template declares); those need
@@ -1111,16 +1105,49 @@ function resolveResourceChannel(
     // Plain string: either the ARN of an external resource (we can't
     // resolve that to a logical id without the deployed stack) or, in
     // tests, a logical id passed directly.
-    const segment = service === "s3" ? "[^:]*" : "[^:]+";
-    const arnMatch = value.match(
-      new RegExp(`:${service}:${segment}:${segment}:([^/]+)$`),
-    );
-    if (arnMatch !== null) {
-      return arnMatch[1];
-    }
-    return value;
+    const resource = resolveArnResource(value, service);
+    return resource ?? value;
   }
   return refTarget(value);
+}
+
+/**
+ * Parse an ARN structurally rather than matching it against a pattern,
+ * and validate its shape against `service`. `arn:partition:service:
+ * region:account-id:resource` splits on `:`; `resource` is rejoined
+ * from whatever follows the account segment, since some ARN shapes
+ * (an SNS subscription, say) append a further `:`-separated id.
+ *
+ * `"s3"` requires region and account BOTH empty
+ * (`arn:aws:s3:::bucket-name` carries neither) and a non-empty
+ * resource; an object ARN appends `/key` after the bucket name, which
+ * is stripped since the bucket alone is the channel. Every other
+ * service requires region, account, and resource all non-empty. A
+ * value that doesn't validate returns null, so a malformed ARN (a
+ * dropped region or account) falls through unresolved rather than
+ * resolving to a bare name that can coincidentally collide with an
+ * unrelated logical id.
+ */
+function resolveArnResource(value: string, service: string): string | null {
+  const parts = value.split(":");
+  if (parts[0] !== "arn" || parts[2] !== service) {
+    return null;
+  }
+  const region = parts[3];
+  const account = parts[4];
+  const resource = parts.slice(5).join(":");
+  if (service === "s3") {
+    if (region !== "" || account !== "" || resource === "") {
+      return null;
+    }
+    const slash = resource.indexOf("/");
+    const bucket = slash === -1 ? resource : resource.slice(0, slash);
+    return bucket === "" ? null : bucket;
+  }
+  if (!region || !account || resource === "") {
+    return null;
+  }
+  return resource;
 }
 
 /**

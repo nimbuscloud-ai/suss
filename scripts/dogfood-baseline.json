@@ -3,7 +3,7 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 239,
-    "internal": 1125,
+    "internal": 1126,
     "consumers": 397,
     "pairs": 389
   },
@@ -71,7 +71,7 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 42,
+      "internal": 43,
       "consumers": 51
     },
     "packages/contract/graphql": {

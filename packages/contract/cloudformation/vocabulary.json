@@ -27,6 +27,7 @@
   "sns": "AWS transport name, Amazon SNS",
   "S3": "SAM: event source type on a Serverless::Function",
   "s3": "AWS transport name, Amazon S3",
+  "arn": "AWS: the first segment of every ARN",
   "EventSourceMapping": "CloudFormation: AWS::Lambda::EventSourceMapping resource",
   "EventBridgeRule": "SAM: event source type on a Serverless::Function",
   "eventbridge": "AWS transport name, Amazon EventBridge",

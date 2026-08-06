@@ -254,6 +254,31 @@ describe("buildMessageBusSummaries", () => {
     });
   });
 
+  it("does not resolve an ARN naming a different service", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrders: {
+                Type: "SQS",
+                Properties: {
+                  Queue: "arn:aws:sns:us-east-1:123456789012:not-a-queue",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "arn:aws:sns:us-east-1:123456789012:not-a-queue",
+    });
+  });
+
   it("ignores non-SQS event sources", () => {
     const out = cloudFormationToSummaries({
       Resources: {
@@ -1680,6 +1705,61 @@ describe("buildMessageBusSummaries: S3", () => {
     const consumer = s3Consumers(out)[0] ?? raise("no consumer");
     expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
       channel: "external-uploads-bucket",
+    });
+  });
+
+  it("strips an object key from an S3 ARN, keeping the bucket as the channel", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        ImageProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/image-processor/",
+            Events: {
+              FromUploads: {
+                Type: "S3",
+                Properties: {
+                  Bucket:
+                    "arn:aws:s3:::external-uploads-bucket/incoming/photo.jpg",
+                  Events: "s3:ObjectCreated:*",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = s3Consumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "external-uploads-bucket",
+    });
+  });
+
+  it("does not resolve an S3 ARN carrying a region segment", () => {
+    // An S3 ARN never carries a region; one that does is malformed and
+    // must not fall through to a bare bucket name.
+    const out = cloudFormationToSummaries({
+      Resources: {
+        ImageProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/image-processor/",
+            Events: {
+              FromUploads: {
+                Type: "S3",
+                Properties: {
+                  Bucket: "arn:aws:s3:us-east-1::external-uploads-bucket",
+                  Events: "s3:ObjectCreated:*",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = s3Consumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "arn:aws:s3:us-east-1::external-uploads-bucket",
     });
   });
 
