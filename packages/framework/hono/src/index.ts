@@ -48,12 +48,28 @@ export function honoFramework(): PatternPack {
       ...httpRouteDiscovery({
         importModule: "hono",
         importNames: ["Hono", "OpenAPIHono"],
-        methods: [".get", ".post", ".put", ".delete", ".patch", ".options"],
+        methods: [
+          ".get",
+          ".post",
+          ".put",
+          ".delete",
+          ".patch",
+          ".options",
+          ".all",
+        ],
       }),
       ...httpRouteDiscovery({
         importModule: "@hono/zod-openapi",
         importNames: ["OpenAPIHono"],
-        methods: [".get", ".post", ".put", ".delete", ".patch", ".options"],
+        methods: [
+          ".get",
+          ".post",
+          ".put",
+          ".delete",
+          ".patch",
+          ".options",
+          ".all",
+        ],
       }),
       {
         // app.openapi(route, handler), where the route is a

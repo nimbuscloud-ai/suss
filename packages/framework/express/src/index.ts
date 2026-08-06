@@ -16,7 +16,7 @@ export function expressFramework(): PatternPack {
     discovery: httpRouteDiscovery({
       importModule: "express",
       importNames: ["Router", "express"],
-      methods: [".get", ".post", ".put", ".delete", ".patch"],
+      methods: [".get", ".post", ".put", ".delete", ".patch", ".all"],
     }),
 
     terminals: [

@@ -48,4 +48,10 @@ router.get("/moved", (req, res) => {
   res.redirect(301, "/new-location");
 });
 
+// ALL /webhooks/:source — .all registers every method; the summary
+// records "*" so any client method pairs with it.
+router.all("/webhooks/:source", (req, res) => {
+  res.status(202).json({ accepted: true });
+});
+
 export default router;

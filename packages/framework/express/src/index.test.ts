@@ -53,15 +53,13 @@ describe("expressFramework — integration", () => {
   }, 90_000);
 
   it("discovers every router.<method> handler in the fixture", () => {
-    // Three handlers — all registered via router.get(...) so identity.name
-    // comes from the registration method verb. The pack's
+    // Each handler is found through its registration call. The pack's
     // `bindingExtraction` lifts the method (registration verb) and path
     // (arg 0 literal) off the registration call, so each handler gets a
     // REST boundary binding rather than the function-call fallback.
-    expect(summaries).toHaveLength(3);
+    expect(summaries).toHaveLength(4);
     for (const s of summaries) {
       expect(s.kind).toBe("handler");
-      expect(s.identity.name).toBe("get");
       expect(s.identity.boundaryBinding?.transport).toBe("http");
       expect(s.identity.boundaryBinding?.recognition).toBe("express");
       expect(s.identity.boundaryBinding?.semantics.name).toBe("rest");
@@ -73,7 +71,21 @@ describe("expressFramework — integration", () => {
       })
       .filter((p): p is string => p !== null)
       .sort();
-    expect(paths).toEqual(["/moved", "/old-profile", "/users/:id"]);
+    expect(paths).toEqual([
+      "/moved",
+      "/old-profile",
+      "/users/:id",
+      "/webhooks/:source",
+    ]);
+  });
+
+  it('records router.all as the "*" method', () => {
+    const webhook = summaries.find((s) => {
+      const sem = s.identity.boundaryBinding?.semantics;
+      return sem?.name === "rest" && sem.path === "/webhooks/:source";
+    });
+    const sem = webhook?.identity.boundaryBinding?.semantics;
+    expect(sem?.name === "rest" ? sem.method : null).toBe("*");
   });
 
   it("maps positional params (req, res, next) to framework roles", () => {
@@ -126,8 +138,10 @@ describe("expressFramework — integration", () => {
   it("redirect(url) → 1-arg form falls back to default 302", () => {
     // The 1-arg redirect can't extract status from args (minArgs: 2 guard),
     // so it falls back to the pack's defaultStatusCode: 302.
+    // Three single-transition handlers: the two redirects and the
+    // webhook catch-all.
     const singleTxn = summaries.filter((s) => s.transitions.length === 1);
-    expect(singleTxn).toHaveLength(2);
+    expect(singleTxn).toHaveLength(3);
 
     const oneArg = singleTxn.find((s) => {
       const out = s.transitions[0].output;

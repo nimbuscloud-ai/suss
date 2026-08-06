@@ -281,11 +281,10 @@ describe("extract — express", () => {
     });
   }, 90_000);
 
-  it("extracts exactly three handlers (all registered via router.get)", () => {
-    expect(summaries).toHaveLength(3);
+  it("extracts every handler the fixture registers", () => {
+    expect(summaries).toHaveLength(4);
     for (const s of summaries) {
       expect(s.kind).toBe("handler");
-      expect(s.identity.name).toBe("get");
       expect(s.identity.boundaryBinding?.transport).toBe("http");
       expect(s.identity.boundaryBinding?.recognition).toBe("express");
       expect(s.identity.boundaryBinding?.semantics.name).toBe("rest");
@@ -298,7 +297,12 @@ describe("extract — express", () => {
       })
       .filter((p): p is string => p !== null)
       .sort();
-    expect(paths).toEqual(["/moved", "/old-profile", "/users/:id"]);
+    expect(paths).toEqual([
+      "/moved",
+      "/old-profile",
+      "/users/:id",
+      "/webhooks/:source",
+    ]);
   });
 
   it("main /users/:id handler has full expected shape (4 transitions, positional inputs)", () => {
@@ -403,8 +407,9 @@ describe("extract — express", () => {
   });
 
   it("redirect handlers: 1-arg form → default 302, 2-arg form → 301", () => {
+    // The webhook catch-all is the third single-transition handler.
     const singleTxn = summaries.filter((s) => s.transitions.length === 1);
-    expect(singleTxn).toHaveLength(2);
+    expect(singleTxn).toHaveLength(3);
 
     const codes = singleTxn.map((s) =>
       s.transitions[0].output.type === "response"

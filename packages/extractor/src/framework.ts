@@ -392,7 +392,17 @@ export type DiscoveryMatch =
 
 export type BindingExtraction = {
   method:
-    | { type: "fromRegistration"; position: "methodName" | number }
+    | {
+        type: "fromRegistration";
+        position: "methodName" | number;
+        /**
+         * Registration names whose recorded method is not their own
+         * uppercase, the way `.all` registers every method and
+         * records `"*"`. A name not in the map records as its
+         * uppercase.
+         */
+        nameMap?: Record<string, string>;
+      }
     | { type: "fromExportName" }
     | { type: "fromContract" }
     | { type: "fromClientMethod" }

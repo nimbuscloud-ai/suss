@@ -324,7 +324,7 @@ function extractRouteInfoFromBinding(
 
   let method: string;
   if (binding.method.position === "methodName") {
-    method = methodName.toUpperCase();
+    method = binding.method.nameMap?.[methodName] ?? methodName.toUpperCase();
   } else {
     const args = call.getArguments();
     const arg = args[binding.method.position] as Node | undefined;

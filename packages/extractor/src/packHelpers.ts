@@ -47,7 +47,13 @@ export function httpRouteDiscovery(opts: {
       registrationChain: [...opts.methods],
     },
     bindingExtraction: {
-      method: { type: "fromRegistration", position: "methodName" },
+      // `.all` registers every method, so it records the "*" the
+      // pairing engine treats as agreeing with any named method.
+      method: {
+        type: "fromRegistration",
+        position: "methodName",
+        nameMap: { all: "*" },
+      },
       path: { type: "fromRegistration", position: 0 },
     },
     requiresImport: [opts.importModule],
