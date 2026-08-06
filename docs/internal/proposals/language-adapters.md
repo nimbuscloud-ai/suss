@@ -37,9 +37,10 @@ The decisive detail: the route primitives reach application code as
 imports of a known module, directly or through the one wrapper
 package. Recognizing them needs a name classified as
 import-of-module-X plus a pack-configured wrapper module name,
-which is the same mechanism the TypeScript packs use
-(`importModule`) and the same config shape the axios factories
-option ships. It does not need site-packages resolution, stubs, or
+which is the same mechanism the TypeScript packs use: the
+decorated-route patterns already tolerate a list of importModule
+values for a decorator re-exported through a wrapper, and the axios
+factories option shows the config shape for naming one. It does not need site-packages resolution, stubs, or
 a type checker. The roadmap's resolver, a lexical binder that
 answers parameter, local, import, or can't-tell, covers the
 measured need.
@@ -124,7 +125,10 @@ statically means modeling that macro expansion by hand, and the
 TypeScript adapter treats its nearest analogue (registration
 loops) as a scoped-down edge case, where for Ruby it would be the
 primary boundary source. The Ruby baseline exists to price exactly
-this, and no Ruby commitment lands before it does. The platform
+this, and no Ruby commitment lands before it does. A small invented
+fixture demonstrating the wrapper-framework shape, sourced from
+nothing, anchors the Python slices the way the ALB fixture anchors
+flow-reachability, and lands with slice 2. The platform
 repo carries the Ruby corpus and gets the same read-only
 characterization when reachable.
 
