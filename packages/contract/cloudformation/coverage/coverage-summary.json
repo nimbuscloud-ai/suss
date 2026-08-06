@@ -2,15 +2,15 @@
   "total": {
     "lines": {
       "total": 676,
-      "covered": 605,
+      "covered": 607,
       "skipped": 0,
-      "pct": 89.49
+      "pct": 89.79
     },
     "statements": {
       "total": 678,
-      "covered": 607,
+      "covered": 609,
       "skipped": 0,
-      "pct": 89.52
+      "pct": 89.82
     },
     "functions": {
       "total": 62,
@@ -20,9 +20,9 @@
     },
     "branches": {
       "total": 580,
-      "covered": 479,
+      "covered": 481,
       "skipped": 0,
-      "pct": 82.58
+      "pct": 82.93
     },
     "branchesTrue": {
       "total": 0,
@@ -60,9 +60,9 @@
   "src/messageBus.ts": {
     "lines": {
       "total": 245,
-      "covered": 226,
+      "covered": 228,
       "skipped": 0,
-      "pct": 92.24
+      "pct": 93.06
     },
     "functions": {
       "total": 21,
@@ -72,15 +72,15 @@
     },
     "statements": {
       "total": 245,
-      "covered": 226,
+      "covered": 228,
       "skipped": 0,
-      "pct": 92.24
+      "pct": 93.06
     },
     "branches": {
       "total": 191,
-      "covered": 170,
+      "covered": 172,
       "skipped": 0,
-      "pct": 89
+      "pct": 90.05
     }
   },
   "src/runtimeConfig.ts": {

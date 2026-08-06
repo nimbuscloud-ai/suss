@@ -1227,6 +1227,41 @@ describe("buildMessageBusSummaries — SNS", () => {
     expect(pickConsumers(out)).toEqual([]);
   });
 
+  it("skips a Protocol lambda subscription whose Endpoint can't be resolved", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        OrderProcessor: orderProcessor,
+        ToOrderProcessor: {
+          Type: "AWS::SNS::Subscription",
+          Properties: {
+            TopicArn: { Ref: "OrderEvents" },
+            Protocol: "lambda",
+            Endpoint: null,
+          },
+        },
+      },
+    });
+    expect(snsConsumers(out)).toEqual([]);
+  });
+
+  it("skips a Protocol lambda subscription whose Endpoint names a resource missing from the template", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        ToGhost: {
+          Type: "AWS::SNS::Subscription",
+          Properties: {
+            TopicArn: { Ref: "OrderEvents" },
+            Protocol: "lambda",
+            Endpoint: { "Fn::GetAtt": ["Ghost", "Arn"] },
+          },
+        },
+      },
+    });
+    expect(snsConsumers(out)).toEqual([]);
+  });
+
   describe("Protocol sqs bridges into the queue's own consumer", () => {
     function snsFedQueueTemplate(subscriptionProps: Record<string, unknown>) {
       return {
@@ -1302,6 +1337,20 @@ describe("buildMessageBusSummaries — SNS", () => {
               Endpoint: { "Fn::GetAtt": ["OrdersQueue", "Arn"] },
             },
           },
+        },
+      });
+      const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+      expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+        channel: "OrdersQueue",
+      });
+    });
+
+    it("keeps the queue's own channel when a rule and a subscription both route into it", () => {
+      const template = snsFedQueueTemplate({});
+      const out = cloudFormationToSummaries({
+        Resources: {
+          ...template.Resources,
+          OrdersRule: singleSubjectRule(["order.placed"]),
         },
       });
       const consumer = pickConsumers(out)[0] ?? raise("no consumer");

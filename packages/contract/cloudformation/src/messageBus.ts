@@ -1020,9 +1020,14 @@ interface SnsSubscription {
 /**
  * Every AWS::SNS::Subscription the template declares: standalone
  * resources (TopicArn names the topic) and entries inline on a Topic's
- * own `Subscription` list (the owning Topic is implicit). Both shapes
- * carry the same {Protocol, Endpoint, FilterPolicy}; only where the
- * topic reference and the label come from differs.
+ * own `Subscription` list (the owning Topic is implicit). The two
+ * shapes are not the same. CFN's inline `Subscription` property type
+ * carries only {Protocol, Endpoint}. FilterPolicy, and the rest of a
+ * subscription's attributes, exist only on the standalone
+ * AWS::SNS::Subscription resource. An inline entry's `filterPolicy` is
+ * always undefined here, so it always resolves to "exact". Future
+ * FilterPolicy-reduction work only has actual policies to reduce on
+ * the standalone side.
  */
 function collectSnsSubscriptions(
   resources: Record<string, CloudFormationResource>,
@@ -1071,7 +1076,9 @@ function collectSnsSubscriptions(
         label: `${topicId}.Subscription${index}`,
         protocol,
         endpoint: (entry as { Endpoint?: unknown }).Endpoint,
-        filterPolicy: (entry as { FilterPolicy?: unknown }).FilterPolicy,
+        // CFN's inline Subscription property type has no FilterPolicy
+        // field at all; only the standalone resource does.
+        filterPolicy: undefined,
       });
     }
   }
