@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { readMessageBusMetadata, withMessageBusMetadata } from "./index.js";
+import {
+  readMessageBusMetadata,
+  readRuntimeContractMetadata,
+  withMessageBusMetadata,
+  withRuntimeContractMetadata,
+} from "./index.js";
 
 import type { BehavioralSummary } from "./index.js";
 
@@ -66,6 +71,71 @@ describe("the messageBus metadata namespace", () => {
         // @ts-expect-error a renamed field fails to compile; the parse
         // catches a caller that casts around the type.
         queueLogicalId: "OrdersQueue",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("the runtimeContract metadata namespace", () => {
+  it("round-trips what a writer sets", () => {
+    const metadata = withRuntimeContractMetadata(
+      { codeScope: { kind: "codeUri", path: "src/consumer/" } },
+      {
+        envVars: ["ORDERS_QUEUE_URL"],
+        envVarSources: { ORDERS_QUEUE_URL: "template" },
+      },
+    );
+    const read = readRuntimeContractMetadata(summaryWith(metadata));
+    expect(read?.envVars).toEqual(["ORDERS_QUEUE_URL"]);
+    expect(read?.envVarSources).toEqual({ ORDERS_QUEUE_URL: "template" });
+    // Neighboring namespaces survive the merge.
+    expect(metadata.codeScope).toEqual({
+      kind: "codeUri",
+      path: "src/consumer/",
+    });
+  });
+
+  it("answers undefined when the namespace is absent or not an object", () => {
+    expect(readRuntimeContractMetadata(summaryWith(undefined))).toBeUndefined();
+    expect(
+      readRuntimeContractMetadata(summaryWith({ runtimeContract: 42 })),
+    ).toBeUndefined();
+  });
+
+  it("drops a field that does not parse and keeps its siblings", () => {
+    const read = readRuntimeContractMetadata(
+      summaryWith({
+        runtimeContract: {
+          envVars: ["ORDERS_QUEUE_URL"],
+          envVarTargets: {
+            ORDERS_QUEUE_URL: { kind: "getAtt", logicalId: "OrdersQueue" },
+          },
+        },
+      }),
+    );
+    expect(read?.envVars).toEqual(["ORDERS_QUEUE_URL"]);
+    expect(read?.envVarTargets).toBeUndefined();
+  });
+
+  it("drops envVarSources when a value falls outside the enum, and envVars survives", () => {
+    const read = readRuntimeContractMetadata(
+      summaryWith({
+        runtimeContract: {
+          envVars: ["ORDERS_QUEUE_URL"],
+          envVarSources: { ORDERS_QUEUE_URL: "carrier-pigeon" },
+        },
+      }),
+    );
+    expect(read?.envVars).toEqual(["ORDERS_QUEUE_URL"]);
+    expect(read?.envVarSources).toBeUndefined();
+  });
+
+  it("refuses a value the schema does not name at write time", () => {
+    expect(() =>
+      withRuntimeContractMetadata(undefined, {
+        // @ts-expect-error a renamed field fails to compile; the parse
+        // catches a caller that casts around the type.
+        envVariables: ["ORDERS_QUEUE_URL"],
       }),
     ).toThrow();
   });

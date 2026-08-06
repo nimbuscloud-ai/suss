@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { readMessageBusMetadata } from "@suss/behavioral-ir";
+import {
+  readMessageBusMetadata,
+  readRuntimeContractMetadata,
+} from "@suss/behavioral-ir";
 
 import { cloudFormationToSummaries } from "./index.js";
 
@@ -274,17 +277,13 @@ describe("buildMessageBusSummaries", () => {
         },
       },
     });
-    const runtime = out.find(
-      (s) =>
-        s.identity.boundaryBinding?.semantics.name === "runtime-config" &&
-        s.identity.name === "OrderProducer",
-    );
-    expect(runtime).toBeDefined();
-    const targets = (
-      runtime?.metadata as
-        | { runtimeContract?: { envVarTargets?: Record<string, unknown> } }
-        | undefined
-    )?.runtimeContract?.envVarTargets;
+    const runtime =
+      out.find(
+        (s) =>
+          s.identity.boundaryBinding?.semantics.name === "runtime-config" &&
+          s.identity.name === "OrderProducer",
+      ) ?? raise("no runtime");
+    const targets = readRuntimeContractMetadata(runtime)?.envVarTargets;
     expect(targets).toMatchObject({
       ORDERS_QUEUE_URL: { kind: "ref", logicalId: "OrdersQueue" },
       ORDERS_ARN: { kind: "ref", logicalId: "OrdersQueue" },

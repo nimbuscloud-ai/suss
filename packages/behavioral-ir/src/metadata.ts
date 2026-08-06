@@ -91,3 +91,76 @@ export function readMessageBusMetadata(
 ): MessageBusMetadata | undefined {
   return readNamespace(MessageBusMetadataSchema, summary.metadata?.messageBus);
 }
+
+const EnvVarSourceSchema = z.enum(["template", "globals", "platform"]);
+
+/**
+ * Where a variable in a runtime's environment comes from: the
+ * resource's own Environment block, a SAM Globals section the whole
+ * document shares, or the platform the runtime runs on.
+ */
+export type EnvVarSource = z.infer<typeof EnvVarSourceSchema>;
+
+/**
+ * What the runtime-config contract reader records beside a summary's
+ * binding: every environment variable the deployed process sees, where
+ * each one came from, and which CFN resource an env var's value
+ * resolves to when the template wires it to one.
+ */
+export const RuntimeContractMetadataSchema = z.object({
+  /** Every env var the process sees, including ones the platform injects. */
+  envVars: z.array(z.string()).optional(),
+  /**
+   * Per-var provenance: the resource's own Environment block
+   * ("template"), a SAM Globals section every function in the document
+   * inherits ("globals"), or the platform the runtime runs on
+   * ("platform"). The pairing checker uses this so a platform-injected
+   * var never fires an unused warning, and so a document-level default
+   * is judged once for the document rather than function by function.
+   * When this map is absent, every var is treated as declared by the
+   * resource.
+   */
+  envVarSources: z.record(z.string(), EnvVarSourceSchema).optional(),
+  /**
+   * The CFN logical id an env var's value resolves to, when the
+   * template sets it with a Ref or GetAtt. Bridges an env-var-named
+   * channel (what code reads) to the resource-named channel (what a
+   * provider summary declares), so cross-resource pairing can chain
+   * through it.
+   */
+  envVarTargets: z
+    .record(
+      z.string(),
+      z.object({ kind: z.literal("ref"), logicalId: z.string() }),
+    )
+    .optional(),
+});
+
+export type RuntimeContractMetadata = z.infer<
+  typeof RuntimeContractMetadataSchema
+>;
+
+/**
+ * A metadata bag with the runtime-contract namespace set. Writes are
+ * strict: a field the schema does not name throws here, next to its
+ * cause. Reads stay lenient so older artifacts keep reading.
+ */
+export function withRuntimeContractMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: RuntimeContractMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    runtimeContract: RuntimeContractMetadataSchema.strict().parse(value),
+  };
+}
+
+/** The summary's runtime-contract namespace, or undefined when absent or not an object. */
+export function readRuntimeContractMetadata(
+  summary: BehavioralSummary,
+): RuntimeContractMetadata | undefined {
+  return readNamespace(
+    RuntimeContractMetadataSchema,
+    summary.metadata?.runtimeContract,
+  );
+}

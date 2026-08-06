@@ -29,6 +29,8 @@
 // `provided` set the pairing checks against here is the FULL set the
 // process actually receives, not just the template-declared subset.
 
+import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
+
 import { makeSide } from "../coverage/responseMatch.js";
 import { contestedFiles, runsIn, unitsByFile } from "../scope/unitScope.js";
 
@@ -36,6 +38,7 @@ import type {
   BehavioralSummary,
   BoundaryBinding,
   Effect,
+  EnvVarSource,
   Finding,
   RuntimeConfigSemantics,
 } from "@suss/behavioral-ir";
@@ -44,25 +47,6 @@ import type {
   InteractionRecord,
 } from "../interactions/dispatcher.js";
 import type { UnitScope, UnitsByFile } from "../scope/unitScope.js";
-
-/**
- * Where a variable in the runtime's environment comes from: the
- * resource itself, a default the document applies to every runtime of
- * its kind, or the platform the runtime runs on.
- */
-type EnvVarSource = "template" | "globals" | "platform";
-
-interface RuntimeContractMetadata {
-  envVars?: string[];
-  /**
-   * Per-var provenance, written by the stub layer. The pairing logic
-   * uses it so platform-injected vars never fire envVarUnused
-   * warnings, and so a document-level default is judged once for the
-   * document. Template-only treatment is the right default when this
-   * map is absent (all vars treated as declared by the resource).
-   */
-  envVarSources?: Record<string, EnvVarSource>;
-}
 
 interface ScopedRuntime {
   runtime: BehavioralSummary;
@@ -297,19 +281,13 @@ function readCodeScope(summary: BehavioralSummary): CodeScopeMetadata {
 }
 
 function readProvidedEnvVars(summary: BehavioralSummary): string[] {
-  const contract = summary.metadata?.runtimeContract as
-    | RuntimeContractMetadata
-    | undefined;
-  return contract?.envVars ?? [];
+  return readRuntimeContractMetadata(summary)?.envVars ?? [];
 }
 
 function readEnvVarSources(
   summary: BehavioralSummary,
 ): Record<string, EnvVarSource> {
-  const contract = summary.metadata?.runtimeContract as
-    | RuntimeContractMetadata
-    | undefined;
-  return contract?.envVarSources ?? {};
+  return readRuntimeContractMetadata(summary)?.envVarSources ?? {};
 }
 
 /**

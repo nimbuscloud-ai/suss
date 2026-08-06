@@ -54,10 +54,15 @@ export {
 
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
 export {
+  type EnvVarSource,
   type MessageBusMetadata,
   MessageBusMetadataSchema,
+  type RuntimeContractMetadata,
+  RuntimeContractMetadataSchema,
   readMessageBusMetadata,
+  readRuntimeContractMetadata,
   withMessageBusMetadata,
+  withRuntimeContractMetadata,
 } from "./metadata.js";
 
 export type {

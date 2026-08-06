@@ -6,6 +6,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
+
 import { cloudFormationFileToSummaries } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -76,7 +78,7 @@ describe("a template split across nested stacks", () => {
     const byInstance = new Map(
       runtimeConfigOf(summariesFromFixture()).map((s) => [
         s.identity.deployableUnit?.instanceName,
-        (s.metadata?.runtimeContract as { envVars: string[] }).envVars,
+        readRuntimeContractMetadata(s)?.envVars,
       ]),
     );
 

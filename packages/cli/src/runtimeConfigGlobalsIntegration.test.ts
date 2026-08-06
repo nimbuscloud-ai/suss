@@ -8,6 +8,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
 import { checkAll } from "@suss/checker";
 import { cloudFormationFileToSummaries } from "@suss/contract-cloudformation";
 import {
@@ -87,11 +88,11 @@ function summaryNamed(
 
 function readEnvVarTargets(
   summary: BehavioralSummary | undefined,
-): Record<string, { kind: string; logicalId: string }> {
-  const contract = summary?.metadata?.runtimeContract as
-    | { envVarTargets?: Record<string, { kind: string; logicalId: string }> }
-    | undefined;
-  return contract?.envVarTargets ?? {};
+): Record<string, { kind: "ref"; logicalId: string }> {
+  if (summary === undefined) {
+    return {};
+  }
+  return readRuntimeContractMetadata(summary)?.envVarTargets ?? {};
 }
 
 async function runPipeline(): Promise<Finding[]> {

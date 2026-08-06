@@ -17,7 +17,10 @@
 // boundaryFieldUnused, and so a name the whole document supplies is
 // judged across the document rather than function by function.
 
-import { runtimeConfigBinding } from "@suss/behavioral-ir";
+import {
+  runtimeConfigBinding,
+  withRuntimeContractMetadata,
+} from "@suss/behavioral-ir";
 import { codeScopePath } from "@suss/ir-core";
 import { refTarget } from "@suss/manifest-aws";
 
@@ -252,8 +255,9 @@ function buildSummary(opts: {
     transitions: [],
     gaps: [],
     confidence: { source: "declared", level: "high" },
-    metadata: {
-      runtimeContract: {
+    metadata: withRuntimeContractMetadata(
+      { codeScope: opts.codeScope },
+      {
         envVars: [...merged].sort(),
         envVarSources: sources,
         ...(opts.envVarTargets !== undefined &&
@@ -261,8 +265,7 @@ function buildSummary(opts: {
           ? { envVarTargets: opts.envVarTargets }
           : {}),
       },
-      codeScope: opts.codeScope,
-    },
+    ),
   };
 }
 
