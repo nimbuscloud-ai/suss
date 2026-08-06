@@ -283,8 +283,9 @@ describe("assembleSummary — optional metadata plumbing", () => {
         responses: [{ statusCode: 200 }, { statusCode: 404 }],
       },
       graphqlDeclaredContract: {
-        returnType: "User",
-        provenance: "sdl",
+        returnType: { type: "ref", name: "User" },
+        args: [],
+        provenance: "derived",
       },
       graphqlUnresolvedDocument: {
         reference: "SomeDocument",
@@ -295,7 +296,10 @@ describe("assembleSummary — optional metadata plumbing", () => {
     const summary = assembleSummary(raw);
 
     expect(summary.metadata?.graphql).toMatchObject({
-      declaredContract: { returnType: "User", provenance: "sdl" },
+      declaredContract: {
+        returnType: { type: "ref", name: "User" },
+        provenance: "derived",
+      },
       unresolvedDocument: { reference: "SomeDocument" },
     });
     expect(summary.transitions[0].output).toMatchObject({

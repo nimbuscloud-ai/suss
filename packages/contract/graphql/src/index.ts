@@ -23,7 +23,10 @@ import {
   parse,
 } from "graphql";
 
-import { graphqlResolverBinding } from "@suss/behavioral-ir";
+import {
+  graphqlResolverBinding,
+  withGraphqlMetadata,
+} from "@suss/behavioral-ir";
 
 import { typeNodeToShape } from "./typeShape.js";
 
@@ -205,18 +208,16 @@ function buildResolverSummary(
     transitions: buildTransitions(ownerKey, field),
     gaps: [],
     confidence: { source: "derived", level: "high" },
-    metadata: {
-      graphql: {
-        rootType,
-        fieldName,
-        // Declared contract — checker pairs against any other source
-        // declaring a contract for the same gql:Type.field key.
-        // Provenance is "derived" because both this metadata and the
-        // summary's transitions come from the same SDL field
-        // declaration; self-comparison would be tautological.
-        declaredContract: buildDeclaredContract(field, recognition),
-      },
-    },
+    // Declared contract — checker pairs against any other source
+    // declaring a contract for the same gql:Type.field key. Provenance
+    // is "derived" because both this metadata and the summary's
+    // transitions come from the same SDL field declaration;
+    // self-comparison would be tautological.
+    metadata: withGraphqlMetadata(undefined, {
+      rootType,
+      fieldName,
+      declaredContract: buildDeclaredContract(field, recognition),
+    }),
   };
 }
 

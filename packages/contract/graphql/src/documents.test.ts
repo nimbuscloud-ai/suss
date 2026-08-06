@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { parse } from "graphql";
 import { describe, expect, it } from "vitest";
 
+import { readGraphqlMetadata } from "@suss/behavioral-ir";
+
 import {
   graphqlDocumentsPathToSummaries,
   graphqlDocumentsToSummaries,
@@ -29,11 +31,17 @@ function byName(
 }
 
 function documentOf(summary: BehavioralSummary | undefined): string {
-  const meta = summary?.metadata?.graphql as { document?: string } | undefined;
-  if (typeof meta?.document !== "string") {
+  const document = summary && readGraphqlMetadata(summary)?.document;
+  if (typeof document !== "string") {
     throw new Error("summary has no metadata.graphql.document");
   }
-  return meta.document;
+  return document;
+}
+
+function unresolvedFragmentsOf(
+  summary: BehavioralSummary | undefined,
+): string[] {
+  return (summary && readGraphqlMetadata(summary)?.unresolvedFragments) ?? [];
 }
 
 describe("graphqlDocumentsToSummaries", () => {
@@ -105,9 +113,8 @@ describe("graphqlDocumentsToSummaries", () => {
         text: "query Ping { ping }",
       },
     ]);
-    const meta = summaries[0]?.metadata?.graphql as { document: string };
-    expect(meta.document).toContain("query Ping");
-    expect(meta.document).toContain("ping");
+    expect(documentOf(summaries[0])).toContain("query Ping");
+    expect(documentOf(summaries[0])).toContain("ping");
   });
 
   it("inlines fragment spreads defined in another document", () => {
@@ -123,10 +130,9 @@ describe("graphqlDocumentsToSummaries", () => {
     ]);
     // The fragment-only document produces no summary of its own.
     expect(summaries).toHaveLength(1);
-    const meta = summaries[0]?.metadata?.graphql as { document: string };
-    expect(meta.document).toContain("id");
-    expect(meta.document).toContain("email");
-    expect(meta.document).not.toContain("...UserFields");
+    expect(documentOf(summaries[0])).toContain("id");
+    expect(documentOf(summaries[0])).toContain("email");
+    expect(documentOf(summaries[0])).not.toContain("...UserFields");
     expect(summaries[0]?.gaps).toEqual([]);
 
     const success = summaries[0]?.transitions.find((t) => t.isDefault);
@@ -161,8 +167,7 @@ describe("graphqlDocumentsToSummaries", () => {
         `,
       },
     ]);
-    const meta = summaries[0]?.metadata?.graphql as { document: string };
-    expect(meta.document).toContain("email");
+    expect(documentOf(summaries[0])).toContain("email");
     expect(summaries[0]?.gaps).toEqual([]);
   });
 
@@ -177,10 +182,7 @@ describe("graphqlDocumentsToSummaries", () => {
     expect(summaries[0]?.gaps).toHaveLength(1);
     expect(summaries[0]?.gaps[0]?.type).toBe("unreadOutcome");
     expect(summaries[0]?.gaps[0]?.description).toContain("Elsewhere");
-    const meta = summaries[0]?.metadata?.graphql as {
-      unresolvedFragments: string[];
-    };
-    expect(meta.unresolvedFragments).toEqual(["Elsewhere"]);
+    expect(unresolvedFragmentsOf(summaries[0])).toEqual(["Elsewhere"]);
   });
 
   it("keeps an unresolvable spread in the document so it still parses", () => {
@@ -225,8 +227,7 @@ describe("graphqlDocumentsToSummaries", () => {
       },
     ]);
     expect(summaries).toHaveLength(1);
-    const meta = summaries[0]?.metadata?.graphql as { document: string };
-    expect(meta.document).toContain("email");
+    expect(documentOf(summaries[0])).toContain("email");
   });
 
   it("merges overlapping selections instead of overwriting them", () => {
@@ -343,8 +344,7 @@ describe("graphqlDocumentsToSummaries", () => {
         },
       },
     });
-    const meta = summaries[0]?.metadata?.graphql as { document: string };
-    expect(meta.document).toContain("... on Product");
+    expect(documentOf(summaries[0])).toContain("... on Product");
   });
 
   it("skips a document that does not parse and keeps the rest", () => {
@@ -374,10 +374,9 @@ describe("graphqlDocumentsPathToSummaries", () => {
     const productList = summaries.find(
       (s) => s.identity.name === "ProductList",
     );
-    const meta = productList?.metadata?.graphql as { document: string };
     // ProductListItem spreads PriceRange; both live in a separate
     // fragment-only file and both end up inlined.
-    expect(meta.document).toContain("amount");
+    expect(documentOf(productList)).toContain("amount");
     expect(productList?.gaps).toEqual([]);
 
     const checkoutFind = summaries.find(

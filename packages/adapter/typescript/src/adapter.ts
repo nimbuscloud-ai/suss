@@ -1180,10 +1180,7 @@ function extractFromSourceFile(
               pack.name,
             );
             if (contract !== null) {
-              raw.graphqlDeclaredContract = contract as unknown as Record<
-                string,
-                unknown
-              >;
+              raw.graphqlDeclaredContract = contract;
             }
           }
         }

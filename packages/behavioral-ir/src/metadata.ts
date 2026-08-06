@@ -13,6 +13,8 @@
 
 import { z } from "zod";
 
+import { TypeShapeSchema } from "@suss/ir-core";
+
 import type { BehavioralSummary } from "./index.js";
 
 /**
@@ -163,4 +165,131 @@ export function readRuntimeContractMetadata(
     RuntimeContractMetadataSchema,
     summary.metadata?.runtimeContract,
   );
+}
+
+const GraphqlContractProvenanceSchema = z.enum(["derived", "independent"]);
+
+/**
+ * "derived": the contract and this summary's transitions come from the
+ * same source (an SDL field driving both), so comparing them against
+ * each other would be tautological. "independent": a separate
+ * statement — a server-side framework's own type declarations against
+ * an SDL, say — worth comparing.
+ */
+export type GraphqlContractProvenance = z.infer<
+  typeof GraphqlContractProvenanceSchema
+>;
+
+/**
+ * A resolver field's declared shape, as one source states it: a return
+ * type, its arguments, and the error types it may throw. Two sources
+ * naming the same `Type.field` boundary each carry one of these, and
+ * the checker compares them.
+ */
+const GraphqlDeclaredContractSchema = z.object({
+  /** Declared return shape for this resolver field. */
+  returnType: TypeShapeSchema,
+  /**
+   * Declared arguments. Order matters when contract sources disagree —
+   * argument order is part of the resolver's identity in some
+   * frameworks (NestJS positional decorators) even though GraphQL
+   * itself names args.
+   */
+  args: z.array(
+    z.object({
+      name: z.string(),
+      type: TypeShapeSchema,
+      required: z.boolean(),
+    }),
+  ),
+  /**
+   * Error variants the resolver may throw. Most contracts don't
+   * enumerate these; absent means the source doesn't say, not "no
+   * errors."
+   */
+  errorTypes: z.array(z.string()).optional(),
+  /**
+   * Defaults to "independent" when a source doesn't say — investigating
+   * a spurious agreement finding beats silently dropping a real one.
+   */
+  provenance: GraphqlContractProvenanceSchema.default("independent"),
+  /** Framework / source tag the producing pack records. */
+  framework: z.string().optional(),
+});
+
+export type GraphqlDeclaredContract = z.infer<
+  typeof GraphqlDeclaredContractSchema
+>;
+
+/**
+ * What a GraphQL contract reader records beside a summary's binding:
+ * which root field a resolver or operation names, the contract another
+ * source can compare against, the operation document a consumer sent
+ * (or the schema SDL behind a resolver), and how much of it the reader
+ * could resolve.
+ */
+export const GraphqlMetadataSchema = z.object({
+  /** Root type a resolver's field hangs off. */
+  rootType: z.enum(["Query", "Mutation", "Subscription"]).optional(),
+  /** Field name on the root type. */
+  fieldName: z.string().optional(),
+  /**
+   * Declared contract for this resolver field, derived from an SDL or a
+   * framework's own type declarations. `checkGraphqlContractAgreement`
+   * pairs it against any other source declaring a contract for the
+   * same boundary.
+   */
+  declaredContract: GraphqlDeclaredContractSchema.optional(),
+  /**
+   * Schema SDL behind a resolver, when the reader has it on hand
+   * (AppSync's resolved schema, an Apollo code-first server's static
+   * `typeDefs`). Lets the checker's pairing pass walk a consumer
+   * operation's nested selections against the resolver's return type.
+   */
+  schemaSdl: z.string().optional(),
+  /**
+   * Raw operation document text a consumer sent — a `.graphql` file's
+   * contents, or the inner text of a `gql`-tagged template. Absent
+   * when the document body wasn't statically readable.
+   */
+  document: z.string().optional(),
+  /**
+   * Fragment spreads a document reader could not resolve against its
+   * read set — their selections are absent from `document`, kept as
+   * an unexpanded spread so the document still parses.
+   */
+  unresolvedFragments: z.array(z.string()).optional(),
+  /**
+   * Set when a consumer's document reference was recognized (an
+   * imported `TypedDocumentNode`, say) but its body couldn't be read
+   * statically. The boundary is still recorded; this says what
+   * defeated resolution rather than dropping it silently.
+   */
+  unresolvedDocument: z
+    .object({ reference: z.string(), reason: z.string() })
+    .optional(),
+});
+
+export type GraphqlMetadata = z.infer<typeof GraphqlMetadataSchema>;
+
+/**
+ * A metadata bag with the graphql namespace set. Writes are strict: a
+ * field the schema does not name throws here, next to its cause. Reads
+ * stay lenient so older artifacts keep reading.
+ */
+export function withGraphqlMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: GraphqlMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    graphql: GraphqlMetadataSchema.strict().parse(value),
+  };
+}
+
+/** The summary's graphql namespace, or undefined when absent or not an object. */
+export function readGraphqlMetadata(
+  summary: BehavioralSummary,
+): GraphqlMetadata | undefined {
+  return readNamespace(GraphqlMetadataSchema, summary.metadata?.graphql);
 }

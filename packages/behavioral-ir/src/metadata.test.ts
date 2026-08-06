@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  readGraphqlMetadata,
   readMessageBusMetadata,
   readRuntimeContractMetadata,
+  withGraphqlMetadata,
   withMessageBusMetadata,
   withRuntimeContractMetadata,
 } from "./index.js";
@@ -136,6 +138,63 @@ describe("the runtimeContract metadata namespace", () => {
         // @ts-expect-error a renamed field fails to compile; the parse
         // catches a caller that casts around the type.
         envVariables: ["ORDERS_QUEUE_URL"],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("the graphql metadata namespace", () => {
+  it("round-trips what a writer sets", () => {
+    const metadata = withGraphqlMetadata(
+      { codeScope: { kind: "codeUri", path: "src/resolvers/" } },
+      {
+        rootType: "Query",
+        fieldName: "user",
+        document: "query GetUser { user { id } }",
+      },
+    );
+    const read = readGraphqlMetadata(summaryWith(metadata));
+    expect(read?.rootType).toBe("Query");
+    expect(read?.fieldName).toBe("user");
+    expect(read?.document).toBe("query GetUser { user { id } }");
+    // Neighboring namespaces survive the merge.
+    expect(metadata.codeScope).toEqual({
+      kind: "codeUri",
+      path: "src/resolvers/",
+    });
+  });
+
+  it("answers undefined when the namespace is absent or not an object", () => {
+    expect(readGraphqlMetadata(summaryWith(undefined))).toBeUndefined();
+    expect(readGraphqlMetadata(summaryWith({ graphql: 42 }))).toBeUndefined();
+  });
+
+  it("drops a field that does not parse and keeps its siblings", () => {
+    const read = readGraphqlMetadata(
+      summaryWith({
+        graphql: {
+          document: "query GetUser { user { id } }",
+          rootType: "Query",
+          declaredContract: {
+            // Missing `returnType` — the whole nested field fails to
+            // parse and drops, while `document` and `rootType` survive.
+            args: [],
+            provenance: "derived",
+          },
+        },
+      }),
+    );
+    expect(read?.document).toBe("query GetUser { user { id } }");
+    expect(read?.rootType).toBe("Query");
+    expect(read?.declaredContract).toBeUndefined();
+  });
+
+  it("refuses a value the schema does not name at write time", () => {
+    expect(() =>
+      withGraphqlMetadata(undefined, {
+        // @ts-expect-error a renamed field fails to compile; the parse
+        // catches a caller that casts around the type.
+        fieldname: "user",
       }),
     ).toThrow();
   });

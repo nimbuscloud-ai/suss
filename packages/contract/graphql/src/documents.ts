@@ -32,7 +32,10 @@ import {
   type SelectionSetNode,
 } from "graphql";
 
-import { graphqlOperationBinding } from "@suss/behavioral-ir";
+import {
+  graphqlOperationBinding,
+  withGraphqlMetadata,
+} from "@suss/behavioral-ir";
 
 import { typeNodeToShape } from "./typeShape.js";
 
@@ -313,14 +316,12 @@ function buildOperationSummary(
     transitions: buildTransitions(name, responseShape),
     gaps: unexpandedSpreadGaps(unexpanded, fragments),
     confidence: { source: "declared", level: "high" },
-    metadata: {
-      graphql: {
-        document: documentText,
-        ...(unexpanded.missing.size > 0
-          ? { unresolvedFragments: [...unexpanded.missing].sort() }
-          : {}),
-      },
-    },
+    metadata: withGraphqlMetadata(undefined, {
+      document: documentText,
+      ...(unexpanded.missing.size > 0
+        ? { unresolvedFragments: [...unexpanded.missing].sort() }
+        : {}),
+    }),
   };
 }
 

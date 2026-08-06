@@ -55,12 +55,18 @@ export {
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
 export {
   type EnvVarSource,
+  type GraphqlContractProvenance,
+  type GraphqlDeclaredContract,
+  type GraphqlMetadata,
+  GraphqlMetadataSchema,
   type MessageBusMetadata,
   MessageBusMetadataSchema,
   type RuntimeContractMetadata,
   RuntimeContractMetadataSchema,
+  readGraphqlMetadata,
   readMessageBusMetadata,
   readRuntimeContractMetadata,
+  withGraphqlMetadata,
   withMessageBusMetadata,
   withRuntimeContractMetadata,
 } from "./metadata.js";

@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1583,
-      "covered": 1423,
+      "total": 1551,
+      "covered": 1393,
       "skipped": 0,
-      "pct": 89.89
+      "pct": 89.81
     },
     "statements": {
-      "total": 1606,
-      "covered": 1446,
+      "total": 1574,
+      "covered": 1416,
       "skipped": 0,
-      "pct": 90.03
+      "pct": 89.96
     },
     "functions": {
-      "total": 272,
-      "covered": 244,
+      "total": 270,
+      "covered": 243,
       "skipped": 0,
-      "pct": 89.7
+      "pct": 90
     },
     "branches": {
-      "total": 1085,
-      "covered": 876,
+      "total": 1045,
+      "covered": 846,
       "skipped": 0,
-      "pct": 80.73
+      "pct": 80.95
     },
     "branchesTrue": {
       "total": 0,
@@ -371,28 +371,28 @@
   },
   "src/contract/graphqlContract.ts": {
     "lines": {
-      "total": 25,
-      "covered": 23,
+      "total": 1,
+      "covered": 1,
       "skipped": 0,
-      "pct": 92
+      "pct": 100
     },
     "functions": {
-      "total": 3,
-      "covered": 2,
+      "total": 1,
+      "covered": 1,
       "skipped": 0,
-      "pct": 66.66
+      "pct": 100
     },
     "statements": {
-      "total": 25,
-      "covered": 23,
+      "total": 1,
+      "covered": 1,
       "skipped": 0,
-      "pct": 92
+      "pct": 100
     },
     "branches": {
-      "total": 34,
-      "covered": 26,
+      "total": 2,
+      "covered": 2,
       "skipped": 0,
-      "pct": 76.47
+      "pct": 100
     }
   },
   "src/contract/graphqlContractAgreement.ts": {
@@ -553,10 +553,10 @@
   },
   "src/pairing/graphqlPairing.ts": {
     "lines": {
-      "total": 139,
-      "covered": 130,
+      "total": 131,
+      "covered": 122,
       "skipped": 0,
-      "pct": 93.52
+      "pct": 93.12
     },
     "functions": {
       "total": 21,
@@ -565,16 +565,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 139,
-      "covered": 130,
+      "total": 131,
+      "covered": 122,
       "skipped": 0,
-      "pct": 93.52
+      "pct": 93.12
     },
     "branches": {
-      "total": 84,
-      "covered": 69,
+      "total": 76,
+      "covered": 63,
       "skipped": 0,
-      "pct": 82.14
+      "pct": 82.89
     }
   },
   "src/pairing/pairing.ts": {

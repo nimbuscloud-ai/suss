@@ -27,19 +27,7 @@ import {
   type TypeNode,
 } from "graphql";
 
-import type { TypeShape } from "@suss/behavioral-ir";
-
-export interface GraphqlContractData {
-  returnType: TypeShape;
-  args: Array<{ name: string; type: TypeShape; required: boolean }>;
-  /** Always "derived" for adapter-emitted contracts — the SDL field
-   *  declaration is what drives both the contract and the resolver's
-   *  declared identity, so self-comparison would be tautological. */
-  provenance: "derived";
-  /** Tag the producing pack so cross-source agreement findings can
-   *  point at where the contract came from. */
-  framework: string;
-}
+import type { GraphqlDeclaredContract, TypeShape } from "@suss/behavioral-ir";
 
 // SDL parsing is hot when many resolvers share the same SDL (a typical
 // Apollo Server config). Cache the parsed document by SDL text.
@@ -60,12 +48,17 @@ function parseSchema(sdl: string): DocumentNode | null {
   }
 }
 
+/**
+ * Always "derived" for adapter-emitted contracts — the SDL field
+ * declaration is what drives both the contract and the resolver's
+ * declared identity, so self-comparison would be tautological.
+ */
 export function deriveGraphqlContract(
   sdl: string,
   typeName: string,
   fieldName: string,
   framework: string,
-): GraphqlContractData | null {
+): (GraphqlDeclaredContract & { provenance: "derived" }) | null {
   const doc = parseSchema(sdl);
   if (doc === null) {
     return null;
