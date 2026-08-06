@@ -1,5 +1,5 @@
-// messageBus.ts: a message bus (SQS, SNS, EventBridge, BullMQ, Kafka,
-// NATS) as a boundary.
+// messageBus.ts: a message bus (SQS, SNS, S3, EventBridge, BullMQ,
+// Kafka, NATS) as a boundary.
 //
 // Producers send to a channel, consumers receive from it. The channel
 // string is per-bus: SQS keys it on the single queue identity (CFN
@@ -16,7 +16,15 @@ import { defineBoundarySemantics } from "./definition.js";
 
 export const MessageBusSemanticsSchema = z.object({
   name: z.literal("message-bus"),
-  messageBus: z.enum(["sqs", "sns", "eventbridge", "bullmq", "kafka", "nats"]),
+  messageBus: z.enum([
+    "sqs",
+    "sns",
+    "s3",
+    "eventbridge",
+    "bullmq",
+    "kafka",
+    "nats",
+  ]),
   /**
    * Stable channel identifier — CFN logical id, queue/topic name,
    * subject pattern, `bus#detailType`. Null when this source does not

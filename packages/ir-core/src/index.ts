@@ -302,7 +302,14 @@ export function storageRelationalBinding(opts: {
  */
 export function messageBusBinding(opts: {
   recognition: string;
-  messageBus: "sqs" | "sns" | "eventbridge" | "bullmq" | "kafka" | "nats";
+  messageBus:
+    | "sqs"
+    | "sns"
+    | "s3"
+    | "eventbridge"
+    | "bullmq"
+    | "kafka"
+    | "nats";
   /** Null when this source does not name the channel. */
   channel: string | null;
 }): BoundaryBinding {
