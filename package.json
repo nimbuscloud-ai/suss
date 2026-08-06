@@ -67,7 +67,8 @@
     "check:style": "node scripts/checkStyle.mjs",
     "check:fuzz": "npm run -w @suss/differential check:fuzz",
     "fuzz:long": "npm run -w @suss/differential fuzz:long",
-    "check:vocabulary": "node scripts/checkPackVocabulary.mjs"
+    "check:vocabulary": "node scripts/checkPackVocabulary.mjs",
+    "check:dispatch": "node scripts/checkProtocolDispatch.mjs"
   },
   "lint-staged": {
     "*": [
