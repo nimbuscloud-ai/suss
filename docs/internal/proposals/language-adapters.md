@@ -6,11 +6,10 @@ then Ruby. The design foundation already exists:
 [`roadmap-second-language.md`](../roadmap-second-language.md) pinned
 the constraint, the four-piece adapter recipe, the modest name
 resolver, and the verification story before any of this was
-scheduled. This proposal does not replace it. It grounds that
-design in a measured corpus, prices the pieces the roadmap left
-open, records an engine evaluation that ended by confirming the
-roadmap's choice, and adds the commitments the review process
-demanded.
+scheduled. That document was a pre-measurement bet. This proposal
+grounds it in a measured corpus, keeps what the measurement
+confirmed, corrects it in two places named below, and adds the
+commitments the review process demanded.
 
 ## What the measurement added
 
@@ -41,9 +40,56 @@ which is the same mechanism the TypeScript packs use: the
 decorated-route patterns already tolerate a list of importModule
 values for a decorator re-exported through a wrapper, and the axios
 factories option shows the config shape for naming one. It does not need site-packages resolution, stubs, or
-a type checker. The roadmap's resolver, a lexical binder that
-answers parameter, local, import, or can't-tell, covers the
-measured need.
+a type checker.
+
+Two corrections to the roadmap follow from this. Its resolver is
+scoped to single-file classification, and that is too narrow:
+cross-file value tracing is where the payoff lives, so v0 includes
+repo-scoped module resolution (an import maps to the repo file it
+names, deterministically, abstaining on ambiguity) emitted as
+facts. And its ban on native binaries is superseded: Rust behind
+TypeScript is allowed by the standing constraint, unused so far, so
+WASM stays the shipped default and native bindings are permitted if
+performance measurement justifies them.
+
+Dependencies stay boundaries by default: suss recognizes an
+installed package by name and does not read its insides. Opt-in
+dependency analysis is a coherent later feature, name a package and
+suss adds its installed source as one more analysis root and
+extracts summaries for it, which bootstraps the package-exports
+story without waiting for library authors. It is scoped out of v0
+and needs no engine beyond a locate step.
+
+## Decisions
+
+**Parser: tree-sitter, WASM, swappable.** The lowering into
+StructuredStatement and facts is the seam; the parser sits behind
+it. tree-sitter wins on the grammar ecosystem Ruby will use anyway,
+on mature WASM bindings with no build pipeline of ours, and on its
+query language fitting packs-as-data. Its Python grammar can lag
+new syntax, so the fuzzer and corpus runs report the parse-failure
+rate, and the named fallback is a WASM build of ruff's parser
+(published on crates.io, higher fidelity, syntax-only, a swap
+behind the seam rather than a redesign). RustPython's parser is the
+third option on file.
+
+**Resolution: our stack.** The lexical binder, the repo-scoped
+module resolver, and the existing facts and rules. No third-party
+analysis engine.
+
+**Types: annotations are read in v0; inference is not built.**
+This is contract reading, not type checking. FastAPI's declared
+contract IS its annotations (parameters and response_model), so the
+pack cannot work without reading them; Pydantic models are
+annotated field blocks read the same way; flask-restx declares
+shapes through explicit model calls. All of it is syntax we already
+parse. What stays out is inference: propagating unannotated values,
+resolving types across modules, stubs. The re-entry condition is
+measured, not open-ended: after the path-engine slice, if the
+opacity rate is high in code that carries annotations, stub-based
+enrichment goes in the slot the roadmap reserved. In the corpora we
+target, annotation coverage is thin, so inference buys the least
+exactly where we point the tool.
 
 ## The engine evaluation, recorded
 
@@ -193,8 +239,7 @@ that language has by definition.
   corpus runs produce the numbers, and native bindings remain the
   escape hatch behind the same parse seam if measurement objects,
   weighed against the native-binary rule.
-- **Two proposals, one design.** This document and the roadmap now
-  describe one plan at two altitudes; the roadmap stays the
-  constitution, this stays the grounded execution plan, and any
-  future divergence between them is a bug in whichever changed
-  second.
+- **Two documents, one plan.** The roadmap is amended by this
+  proposal where the two disagree (resolver scope, the native
+  binary rule); a note in the roadmap points here so the stale
+  parts cannot be cited as settled.
