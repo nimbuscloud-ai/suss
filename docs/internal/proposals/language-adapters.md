@@ -103,7 +103,10 @@ second language actually unlocks in a polyglot repo, and the
 measured corpus contains exactly that shape. It becomes a named
 acceptance test: the corpus's frontend client summaries pair
 against the Python routes with existence findings, before any
-Python transition work.
+Python transition work. A small invented fixture demonstrating the
+wrapper-framework shape, sourced from nothing, anchors the Python
+slices the way the ALB fixture anchors flow-reachability, and lands
+with slice 2.
 
 **Invariants for the deferred pack vocabulary.** The match shapes
 stay per-language and the shared core still gets extracted after
@@ -125,10 +128,7 @@ statically means modeling that macro expansion by hand, and the
 TypeScript adapter treats its nearest analogue (registration
 loops) as a scoped-down edge case, where for Ruby it would be the
 primary boundary source. The Ruby baseline exists to price exactly
-this, and no Ruby commitment lands before it does. A small invented
-fixture demonstrating the wrapper-framework shape, sourced from
-nothing, anchors the Python slices the way the ALB fixture anchors
-flow-reachability, and lands with slice 2. The platform
+this, and no Ruby commitment lands before it does. The platform
 repo carries the Ruby corpus and gets the same read-only
 characterization when reachable.
 
