@@ -2150,6 +2150,151 @@ describe("consumer extraction", () => {
     expect(restPathOf(summaries[0])).toBe("/api/orders/{id}");
   });
 
+  it("answers a null path, and survives, when an absolute URL names no path at all", async () => {
+    // myapp://host is a valid absolute URL whose pathname is "". An
+    // empty string is invalid everywhere in the IR, so this has to
+    // come out as a null path rather than crash the whole extraction
+    // run by handing restBinding an empty one.
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function openApp() {
+        const res = await fetch("myapp://host");
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(summaries).toHaveLength(1);
+    expect(restPathOf(summaries[0])).toBeNull();
+  });
+
+  it("keeps '/' as the path for a bare absolute URL with a real host", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function ping() {
+        const res = await fetch("https://host");
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/");
+  });
+
+  it("keeps '/' as the path for a bare absolute URL with a query string", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function ping() {
+        const res = await fetch("https://host?q=1");
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/");
+  });
+
+  it("treats a protocol-relative literal as absolute", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getOrder() {
+        const res = await fetch("//api.example.com/orders/123");
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/orders/123");
+  });
+
+  it("drops the host placeholder when a template literal's substitution is the host itself", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getX(host: string) {
+        const res = await fetch(\`https://\${host}/api/x\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/api/x");
+  });
+
+  it("drops the host remainder when a template literal's substitution sits in the middle of the host", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function getX(env: string) {
+        const res = await fetch(\`https://\${env}.example.com/api/x\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/api/x");
+  });
+
+  it("stops composing a template literal's path at a query string, dropping the substitution after it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function search(fmt: string) {
+        const res = await fetch(\`/report?format=\${fmt}\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/report");
+  });
+
   it("uses the trailing property name when the substitution is a property access", async () => {
     const project = createTestProject();
     project.createSourceFile(
