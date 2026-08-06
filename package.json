@@ -38,6 +38,7 @@
   "packageManager": "npm@10.9.2",
   "scripts": {
     "build": "turbo build",
+    "pretest": "node scripts/assertOwnWorkspace.mjs",
     "test": "turbo test --concurrency=3",
     "test:coverage": "turbo test:coverage --concurrency=3",
     "lint": "turbo lint",

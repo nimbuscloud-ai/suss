@@ -6,9 +6,16 @@ labels: bug
 assignees: ""
 ---
 
+<!--
+Title the issue with the symptom in plain words: what a reader or a
+run sees go wrong, not the internal mechanism. "A hand-typed
+suppression rule for a message-bus boundary never matches" reads in
+a list; "fix normalizeRuleBoundary" does not.
+-->
+
 ## What happened
 
-<!-- A clear, concise description of the bug. -->
+<!-- A concise description of the bug. -->
 
 ## What you expected
 
