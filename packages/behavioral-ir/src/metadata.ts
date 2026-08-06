@@ -22,7 +22,7 @@ import type { BehavioralSummary, Transition } from "./index.js";
  * binding: the queue a consumer drains, the rule or subscription and
  * bus a subscription came from, how far a rule's EventPattern, an SNS
  * FilterPolicy, or an S3 notification Filter reduced, and which S3
- * event and target an S3 bucket notification names.
+ * events and target an S3 bucket notification names.
  */
 export const MessageBusMetadataSchema = z.object({
   /** CFN logical id of the queue a subject-channelled consumer drains. */
@@ -39,8 +39,8 @@ export const MessageBusMetadataSchema = z.object({
   subscription: z.string().optional(),
   /** Label of the S3 bucket notification a consumer summary came from: a synthesized index into LambdaConfigurations/QueueConfigurations/TopicConfigurations, or the SAM event name. */
   notification: z.string().optional(),
-  /** S3 event type a bucket notification matches, e.g. "s3:ObjectCreated:*". */
-  event: z.string().optional(),
+  /** S3 event types a bucket notification matches, e.g. ["s3:ObjectCreated:*"]. A LambdaConfiguration/QueueConfiguration/TopicConfiguration's Event names one; SAM's Events on a Type: S3 event source can name several. */
+  events: z.array(z.string()).optional(),
   /** CFN logical id of the SNS topic an S3 TopicConfiguration notifies, recorded on its own bucket-channelled consumer since an SNS topic isn't a deployableUnit. */
   topic: z.string().optional(),
   /** SAM event name the subscription was declared under. */

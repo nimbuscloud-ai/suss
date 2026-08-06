@@ -16,6 +16,7 @@ import type {
   CorroborationSchema,
   SourceLocationSchema,
 } from "./schemas.js";
+import type { MessageBusTechnology } from "./semantics/messageBus.js";
 
 export {
   BoundaryBindingSchema,
@@ -62,7 +63,10 @@ export type { TypeShape } from "./schemas.js";
 export type { FunctionCallSemantics } from "./semantics/functionCall.js";
 export type { GraphqlOperationSemantics } from "./semantics/graphqlOperation.js";
 export type { GraphqlResolverSemantics } from "./semantics/graphqlResolver.js";
-export type { MessageBusSemantics } from "./semantics/messageBus.js";
+export type {
+  MessageBusSemantics,
+  MessageBusTechnology,
+} from "./semantics/messageBus.js";
 export type { Semantics } from "./semantics/registry.js";
 export type { RestSemantics } from "./semantics/rest.js";
 export type { RuntimeConfigSemantics } from "./semantics/runtimeConfig.js";
@@ -302,14 +306,7 @@ export function storageRelationalBinding(opts: {
  */
 export function messageBusBinding(opts: {
   recognition: string;
-  messageBus:
-    | "sqs"
-    | "sns"
-    | "s3"
-    | "eventbridge"
-    | "bullmq"
-    | "kafka"
-    | "nats";
+  messageBus: MessageBusTechnology;
   /** Null when this source does not name the channel. */
   channel: string | null;
 }): BoundaryBinding {

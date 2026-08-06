@@ -1,20 +1,20 @@
 {
   "total": {
     "lines": {
-      "total": 763,
-      "covered": 692,
+      "total": 766,
+      "covered": 695,
       "skipped": 0,
-      "pct": 90.69
+      "pct": 90.73
     },
     "statements": {
-      "total": 765,
-      "covered": 694,
+      "total": 768,
+      "covered": 697,
       "skipped": 0,
-      "pct": 90.71
+      "pct": 90.75
     },
     "functions": {
-      "total": 73,
-      "covered": 73,
+      "total": 74,
+      "covered": 74,
       "skipped": 0,
       "pct": 100
     },
@@ -59,22 +59,22 @@
   },
   "src/messageBus.ts": {
     "lines": {
-      "total": 332,
-      "covered": 313,
+      "total": 335,
+      "covered": 316,
       "skipped": 0,
-      "pct": 94.27
+      "pct": 94.32
     },
     "functions": {
-      "total": 32,
-      "covered": 32,
+      "total": 33,
+      "covered": 33,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 332,
-      "covered": 313,
+      "total": 335,
+      "covered": 316,
       "skipped": 0,
-      "pct": 94.27
+      "pct": 94.32
     },
     "branches": {
       "total": 259,

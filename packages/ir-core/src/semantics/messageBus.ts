@@ -36,6 +36,12 @@ export const MessageBusSemanticsSchema = z.object({
 
 export type MessageBusSemantics = z.infer<typeof MessageBusSemanticsSchema>;
 
+/**
+ * The bus technologies the schema names, derived from the enum so a
+ * value added there cannot drift from a hand-written copy elsewhere.
+ */
+export type MessageBusTechnology = MessageBusSemantics["messageBus"];
+
 export const messageBusSemantics = defineBoundarySemantics({
   name: "message-bus",
   schema: MessageBusSemanticsSchema,

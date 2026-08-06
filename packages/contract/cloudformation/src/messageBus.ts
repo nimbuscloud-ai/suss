@@ -33,10 +33,14 @@
 //                 buildTopicProviderSummary / buildSnsLambdaConsumerSummary.
 //
 //   S3          : provider per AWS::S3::Bucket that declares a
-//                 NotificationConfiguration, channel = bucket CFN
-//                 logical id. Each LambdaConfiguration (standalone
-//                 only; S3 notifications are always inline on the
-//                 bucket) gets a consumer summary on that channel,
+//                 NotificationConfiguration, or that a SAM Type: S3
+//                 event names (SAM injects the notification at
+//                 transform time, so a bucket declared in this
+//                 template that no notification names here still gets
+//                 one). Channel = bucket CFN logical id. Each
+//                 LambdaConfiguration (standalone only; S3
+//                 notifications are always inline on the bucket) gets
+//                 a consumer summary on that channel,
 //                 same shape as SAM Events:{Type: S3} on the Lambda
 //                 side. A QueueConfiguration feeds the queue-routing
 //                 scheme above, the same way an SNS Protocol "sqs"
@@ -109,6 +113,13 @@ export function buildMessageBusSummaries(
     snsSubscriptions,
     s3Notifications.queue,
   );
+  // Buckets a SAM Type: S3 event names, collected as the Lambda-side
+  // loop (step 2) walks them, so section 6 can grant them a provider
+  // too: SAM injects the NotificationConfiguration onto the bucket at
+  // transform time, so the template does declare the wiring even
+  // though it reads on the Lambda side rather than the bucket's own
+  // Properties.
+  const samS3Buckets = new Set<string>();
 
   // 1. Provider summaries: one per AWS::SQS::Queue.
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -181,6 +192,7 @@ export function buildMessageBusSummaries(
         if (bucketId === null) {
           continue;
         }
+        samS3Buckets.add(bucketId);
         summaries.push(
           buildS3LambdaConsumerSummary({
             lambdaId: logicalId,
@@ -277,23 +289,27 @@ export function buildMessageBusSummaries(
   }
 
   // 6. S3: one provider per AWS::S3::Bucket that names at least one
-  //    notification (a bucket with no NotificationConfiguration isn't
-  //    a message bus). A LambdaConfiguration gets a consumer summary
-  //    on the bucket's channel; a QueueConfiguration already fed
-  //    queueSubjects above, the same way a Protocol "sqs" SNS
-  //    subscription does; a TopicConfiguration gets its own
-  //    bucket-channelled consumer, naming the topic it targets, since
-  //    nothing lets it override the topic's own Lambda subscribers'
-  //    channel the way the queue bridge can.
+  //    notification, or is the target of a SAM Type: S3 event (a
+  //    bucket with neither isn't a message bus). A LambdaConfiguration
+  //    gets a consumer summary on the bucket's channel; a
+  //    QueueConfiguration already fed queueSubjects above, the same
+  //    way a Protocol "sqs" SNS subscription does; a TopicConfiguration
+  //    gets its own bucket-channelled consumer, naming the topic it
+  //    targets, since nothing lets it override the topic's own Lambda
+  //    subscribers' channel the way the queue bridge can.
   const notifiedBuckets = new Set([
     ...s3Notifications.lambda.map((n) => n.bucketId),
     ...s3Notifications.queue.map((n) => n.bucketId),
     ...s3Notifications.topic.map((n) => n.bucketId),
+    ...[...samS3Buckets].filter(
+      (bucketId) => resources[bucketId]?.Type === "AWS::S3::Bucket",
+    ),
   ]);
   for (const bucketId of notifiedBuckets) {
-    // notifiedBuckets is built from bucket ids collectS3Notifications
-    // already found an AWS::S3::Bucket resource under, so the lookup
-    // always resolves.
+    // Every id in notifiedBuckets was either found under an
+    // AWS::S3::Bucket resource by collectS3Notifications, or passed
+    // the AWS::S3::Bucket type filter above, so the lookup always
+    // resolves.
     summaries.push(
       buildBucketProviderSummary(bucketId, resources[bucketId], sourceFile),
     );
@@ -1072,11 +1088,10 @@ function readRuleTargets(
  * the referenced resource's CFN logical id. `service` is the ARN
  * segment a plain string is matched against (`"sqs"`, `"sns"`, `"s3"`),
  * so a queue ARN, a topic ARN, and a bucket ARN each resolve through
- * the same shape. An S3 ARN carries no region or account segment
- * (`arn:aws:s3:::bucket-name`), so the two-segment pattern below
- * doesn't match one; a hardcoded bucket ARN falls through to the plain
- * logical-id return path unresolved, the same tolerance an
- * unrecognized queue or topic ARN already gets.
+ * the same shape. The region and account segments are matched loosely
+ * (zero or more characters) rather than required, because an S3 ARN
+ * carries neither (`arn:aws:s3:::bucket-name`) while an SQS or SNS ARN
+ * always does; the same pattern reads both.
  *
  * Returns null when the reference is dynamic (a parameter, an import,
  * or an Fn::Join naming nothing this template declares); those need
@@ -1094,7 +1109,7 @@ function resolveResourceChannel(
     // resolve that to a logical id without the deployed stack) or, in
     // tests, a logical id passed directly.
     const arnMatch = value.match(
-      new RegExp(`:${service}:[^:]+:[^:]+:([^/]+)$`),
+      new RegExp(`:${service}:[^:]*:[^:]*:([^/]+)$`),
     );
     if (arnMatch !== null) {
       return arnMatch[1];
@@ -1478,7 +1493,7 @@ function buildS3LambdaConsumerSummary(
 ): BehavioralSummary {
   const codeScope = resolveCodeScope(opts.lambdaResource);
   const resolution = reduceS3Filter(opts.filter);
-  const event = eventLabel(opts.event);
+  const events = eventList(opts.event);
   return {
     kind: "consumer",
     location: {
@@ -1507,7 +1522,7 @@ function buildS3LambdaConsumerSummary(
       { codeScope },
       {
         notification: opts.label,
-        ...(event !== undefined ? { event } : {}),
+        ...(events !== undefined ? { events } : {}),
         patternResolution: resolution.kind,
         ...(resolution.kind === "unresolvable"
           ? { unresolvableReason: resolution.reason }
@@ -1539,7 +1554,7 @@ function buildS3TopicBridgeConsumerSummary(
     return null;
   }
   const resolution = reduceS3Filter(notification.filter);
-  const event = eventLabel(notification.event);
+  const events = eventList(notification.event);
   return {
     kind: "consumer",
     location: {
@@ -1563,7 +1578,7 @@ function buildS3TopicBridgeConsumerSummary(
     metadata: withMessageBusMetadata(undefined, {
       notification: notification.label,
       topic: topicId,
-      ...(event !== undefined ? { event } : {}),
+      ...(events !== undefined ? { events } : {}),
       patternResolution: resolution.kind,
       ...(resolution.kind === "unresolvable"
         ? { unresolvableReason: resolution.reason }
@@ -1593,22 +1608,22 @@ function reduceS3Filter(filter: unknown): FilterPolicyResolution {
 }
 
 /**
- * Normalize a CFN S3 Event value to a display string. A
+ * Normalize a CFN S3 Event value to a list of event types. A
  * LambdaConfiguration / QueueConfiguration / TopicConfiguration's
- * `Event` is always a single string; SAM's `Events` on a Type: S3
- * event source accepts a string or a list of strings, joined here so
- * either shape ends up in one field.
+ * `Event` is always a single string, wrapped here in a one-element
+ * list; SAM's `Events` on a Type: S3 event source accepts a string or
+ * a list of strings, so either shape ends up in one field.
  */
-function eventLabel(value: unknown): string | undefined {
+function eventList(value: unknown): string[] | undefined {
   if (typeof value === "string") {
-    return value;
+    return [value];
   }
   if (
     Array.isArray(value) &&
     value.length > 0 &&
     value.every((entry) => typeof entry === "string")
   ) {
-    return value.join(",");
+    return value;
   }
   return undefined;
 }
