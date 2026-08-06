@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |
+  Fixture for ALB request-flow resolution: one client request, one ALB,
+  four listener rules, and two different target kinds behind them.
+    1. /api/orders/* and /api/orders/_health forward to
+       OrdersTargetGroup, an IP target group in front of OrdersService
+       (ECS Fargate), whose container runs the orders-app Express app
+       from src/orders-app.
+    2. /api/health and /api/health/* forward to HealthTargetGroup, a
+       Lambda target group in front of HealthFunction, the handler in
+       src/health.
+  Both paths exist so one future reachability rule can be checked against
+  both target kinds at once: resolve a listener rule to a target group to
+  whatever backs it, whether that's a container behind an ECS service or
+  a Lambda function, and land on a handler either way. Each side has one
+  exact and one wildcard pattern, so pattern shape cannot stand in for
+  target kind.
+
+Resources:
+  ShopAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Scheme: internet-facing
+      Subnets:
+        - subnet-0a1b2c3d4e5f60789
+        - subnet-0f9e8d7c6b5a43210
+      SecurityGroups:
+        - sg-0123456789abcdef0
+
+  ShopHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ShopAlb
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:123456789012:certificate/shop-example-com
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "404"
+            ContentType: text/plain
+            MessageBody: not found
+
+  # The ALB health check hits this exact path, and the rule also
+  # gives the ECS side an exact-match pattern, so pattern shape alone
+  # cannot predict the target kind.
+  OrdersHealthRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ShopHttpsListener
+      Priority: 9
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /api/orders/_health
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref OrdersTargetGroup
+
+  # Path 1: ECS. Matches /api/orders/* and forwards to the IP target
+  # group in front of the orders-app container.
+  OrdersListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ShopHttpsListener
+      Priority: 10
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /api/orders/*
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref OrdersTargetGroup
+
+  # Path 2: Lambda. Matches /api/health and forwards to the Lambda
+  # target group in front of HealthFunction.
+  HealthListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ShopHttpsListener
+      Priority: 20
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /api/health
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref HealthTargetGroup
+
+  # The Lambda side's wildcard pattern, for the same reason the ECS
+  # side has an exact one: each pattern shape forwards to both target
+  # kinds.
+  HealthPrefixRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ShopHttpsListener
+      Priority: 21
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /api/health/*
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref HealthTargetGroup
+
+  OrdersTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: ip
+      Port: 3000
+      Protocol: HTTP
+      VpcId: vpc-0123456789abcdef0
+      HealthCheckPath: /api/orders/_health
+
+  OrdersCluster:
+    Type: AWS::ECS::Cluster
+
+  # Raw (non-SAM) task definition, so the code scope is told via
+  # Metadata.SussCodeScope rather than a SAM CodeUri.
+  OrdersTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Metadata:
+      SussCodeScope: src/orders-app
+    Properties:
+      Family: orders-app
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: "256"
+      Memory: "512"
+      ExecutionRoleArn: arn:aws:iam::123456789012:role/ecsTaskExecutionRole
+      ContainerDefinitions:
+        - Name: orders-app
+          Image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/orders-app:latest
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+
+  # The service registers the running container against
+  # OrdersTargetGroup, which is the hop the listener rule forwards to.
+  OrdersService:
+    Type: AWS::ECS::Service
+    DependsOn: OrdersListenerRule
+    Properties:
+      Cluster: !Ref OrdersCluster
+      TaskDefinition: !Ref OrdersTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - subnet-0a1b2c3d4e5f60789
+            - subnet-0f9e8d7c6b5a43210
+          SecurityGroups:
+            - sg-0123456789abcdef0
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: orders-app
+          ContainerPort: 3000
+          TargetGroupArn: !Ref OrdersTargetGroup
+
+  # Raw (non-SAM) function, so the code scope is told via
+  # Metadata.SussCodeScope, with Handler relative to that scope, the
+  # same way CodeUri + Handler works on a SAM function.
+  HealthFunction:
+    Type: AWS::Lambda::Function
+    Metadata:
+      SussCodeScope: src/health
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs24.x
+      Role: arn:aws:iam::123456789012:role/health-lambda-role
+      Code:
+        S3Bucket: shop-lambda-artifacts
+        S3Key: health.zip
+
+  # Registering the Lambda target fails unless the invoke permission
+  # already exists, so the target group depends on it. The permission
+  # names no SourceArn: naming the target group there would close a
+  # dependency cycle.
+  HealthTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: HealthFunctionInvokePermission
+    Properties:
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt HealthFunction.Arn
+
+  HealthFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref HealthFunction
+      Action: lambda:InvokeFunction
+      Principal: elasticloadbalancing.amazonaws.com
