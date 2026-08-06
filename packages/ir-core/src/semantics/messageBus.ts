@@ -66,5 +66,16 @@ export const messageBusSemantics = defineBoundarySemantics({
       }
       return channelsPair(a.channel, b.channel);
     },
+    /**
+     * The whole channel, bus included, unlike the identity key, which
+     * carries the subject alone: someone reading a list of unmatched
+     * channels wants to see which bus each one named.
+     */
+    displayLabel(semantics) {
+      if (semantics.channel === null) {
+        return `bus:${semantics.messageBus} (channel named at runtime)`;
+      }
+      return `bus:${semantics.messageBus} ${semantics.channel}`;
+    },
   },
 });

@@ -40,8 +40,11 @@ import type { z } from "zod";
 // binding constructors so existing `@suss/behavioral-ir` consumers reach
 // them unchanged; behaviour-specific types are derived from schemas.ts below.
 export {
+  boundaryKey,
+  boundaryLabel,
   type DispatchTable,
   dispatchByType,
+  displayLabel,
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,

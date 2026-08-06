@@ -7,9 +7,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  boundaryKey,
+  boundaryLabel,
   type DispatchTable,
   diffSummaries,
   dispatchByType,
+  displayLabel,
   safeParseSummaries,
 } from "@suss/behavioral-ir";
 import { pairSummaries, summaryWithDefinitionsInlined } from "@suss/checker";
@@ -923,7 +926,9 @@ function summaryHeaderName(
       ? binding.semantics
       : null;
   if (rest !== null && (rest.method !== null || rest.path !== null)) {
-    return `${rest.method ?? ""} ${rest.path ?? ""}`.trim();
+    // The protocol's own label, so the header and the boundary key
+    // agree on the spelling (":id" renders as "{id}" everywhere).
+    return displayLabel(binding as NonNullable<typeof binding>);
   }
   if (
     fn !== null &&
@@ -946,6 +951,16 @@ function summaryHeaderName(
       return channel;
     }
     return `${bareName(summary, ctx, layout)} → ${channel}`;
+  }
+
+  // Any other protocol that can label itself gets its label shown,
+  // instead of falling through to a bare unit name because nobody
+  // wrote it a branch here.
+  if (binding !== null) {
+    const label = boundaryLabel(binding);
+    if (label !== null) {
+      return label;
+    }
   }
 
   return bareName(summary, ctx, layout);
@@ -1240,32 +1255,31 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
 
 function summaryKey(s: BehavioralSummary): string {
   const binding = s.identity.boundaryBinding;
-  if (binding !== null && binding.semantics.name === "rest") {
-    const { method, path } = binding.semantics;
-    // "?" stands in for an unnamed half. "*" is the method wildcard,
-    // a value of its own, and renders as itself.
-    if (method !== null || path !== null) {
-      return `${s.kind}:${method ?? "?"} ${path ?? "?"}`;
+  if (binding !== null) {
+    // The boundary's own key, whatever the protocol, so a diff pairs
+    // the before and after of a route spelled ":id" and "{id}".
+    const key = boundaryKey(binding);
+    if (key !== null) {
+      return `${s.kind}:${key}`;
+    }
+    const label = boundaryLabel(binding);
+    if (label !== null) {
+      return `${s.kind}:${label}`;
     }
   }
   return `${s.kind}::${s.identity.name}`;
 }
 
 /**
- * Human-readable `METHOD path` for a REST-shaped binding, or null
- * when the summary has no placeable REST routing (function-call
- * semantics, or REST whose method and path a partial extraction never
- * named).
+ * The boundary's own label for the diff's unpaired lists, or null
+ * when the summary has no binding or the binding names nothing.
  */
-function restKey(s: BehavioralSummary): string | null {
-  const sem = s.identity.boundaryBinding?.semantics;
-  if (sem?.name !== "rest") {
+function bindingLabel(s: BehavioralSummary): string | null {
+  const binding = s.identity.boundaryBinding;
+  if (binding === null) {
     return null;
   }
-  if (sem.method === null && sem.path === null) {
-    return null;
-  }
-  return `${sem.method ?? ""} ${sem.path ?? ""}`.trim();
+  return boundaryLabel(binding);
 }
 
 function renderTransitionShort(t: Transition): string {
@@ -1491,11 +1505,11 @@ export function inspectDir(options: DirOptions): void {
     }
     process.stdout.write("Not paired:\n");
     for (const p of providers) {
-      const key = restKey(p) ?? "no path";
+      const key = bindingLabel(p) ?? "no boundary";
       process.stdout.write(`  ${p.identity.name} (${key}) has no client\n`);
     }
     for (const c of consumers) {
-      const key = restKey(c) ?? "no path";
+      const key = bindingLabel(c) ?? "no boundary";
       process.stdout.write(`  ${c.identity.name} (${key}) has no provider\n`);
     }
     // A boundary with no name is worth its own line: something

@@ -1,3 +1,5 @@
+import { displayLabel } from "@suss/ir-core";
+
 import { checkBodyCompatibility } from "./body/bodyCompatibility.js";
 import { checkConsumerContract } from "./consumer/consumerContract.js";
 import { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
@@ -23,32 +25,11 @@ import type {
 import type { SummaryPair, UnpairableReason } from "./pairing/pairing.js";
 
 /**
- * Human-readable pairing key for unmatched-summary reporting. Mirrors
- * `boundaryKey` but falls back to the semantics name when the binding
- * isn't REST-shaped (so a function-call client unable to pair still
- * shows something meaningful in the CLI's unmatched list).
+ * Human-readable key for unmatched-summary reporting. Each protocol
+ * declares its own label; nothing here knows any of them.
  */
 function describeBinding(binding: BoundaryBinding): string {
-  const sem = binding.semantics;
-  if (sem.name === "rest") {
-    const method = sem.method || "ANY";
-    const path = sem.path || "?";
-    return `${method.toUpperCase()} ${path}`;
-  }
-  if (sem.name === "graphql-resolver") {
-    return `${sem.typeName}.${sem.fieldName}`;
-  }
-  if (sem.name === "graphql-operation") {
-    const label = sem.operationName ?? "<anonymous>";
-    return `${sem.operationType} ${label}`;
-  }
-  if (sem.name === "message-bus") {
-    // The whole channel, bus included, unlike the pairing key, which
-    // carries the subject alone. Someone reading a list of channels
-    // that found no counterpart wants to see which bus each one named.
-    return `bus:${sem.messageBus} ${sem.channel}`;
-  }
-  return `${sem.name}:${binding.recognition}`;
+  return displayLabel(binding);
 }
 
 /**

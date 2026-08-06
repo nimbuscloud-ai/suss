@@ -671,7 +671,7 @@ describe("inspect", () => {
       }
 
       const output = chunks.join("");
-      expect(output).toContain("GET /users/:id");
+      expect(output).toContain("GET /users/{id}");
       expect(output).toContain("-> 200");
       expect(output).toContain("Contract:");
       expect(output).toMatch(/\d+ summar(y|ies)\./);

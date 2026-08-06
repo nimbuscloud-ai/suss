@@ -18,7 +18,7 @@
 
 import { z } from "zod";
 
-import { normalizePath } from "./semantics/rest.js";
+import { normalizeRuleBoundary } from "./boundaryKey.js";
 
 // ---------------------------------------------------------------------------
 // Rule schema
@@ -152,24 +152,7 @@ export function validateRule(rule: SuppressionRule): string | null {
 // Matching helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Normalize a rule's boundary string to match `boundaryKey`'s output
- * format. Authors may write "GET /pet/:id" or "GET /pet/{id}"; we
- * accept either. Method is uppercased; the path goes through
- * `normalizePath` (colon-to-brace, trailing-slash stripping, lowercase
- * static segments). Non-REST keys ("fn:...", "gql:...") don't have the
- * METHOD-space-path shape and are compared verbatim by callers.
- */
-export function normalizeRuleBoundary(raw: string): string {
-  const trimmed = raw.trim();
-  const spaceIdx = trimmed.indexOf(" ");
-  if (spaceIdx < 0) {
-    return trimmed; // no METHOD/path split — compare verbatim
-  }
-  const method = trimmed.slice(0, spaceIdx).toUpperCase();
-  const path = trimmed.slice(spaceIdx + 1);
-  return `${method} ${normalizePath(path)}`;
-}
+export { normalizeRuleBoundary } from "./boundaryKey.js";
 
 /**
  * Does a rule's `boundary` discriminator match a finding's boundary

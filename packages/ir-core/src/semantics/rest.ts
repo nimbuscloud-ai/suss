@@ -98,5 +98,32 @@ export const restSemantics = defineBoundarySemantics({
     sidesAgree(a, b) {
       return methodsAgree(a.method, b.method);
     },
+    /**
+     * What the identity key says, with one unnamed half still
+     * readable: ANY where no method was stated, ? where no path was.
+     * Null when neither half was stated; there is nothing to show.
+     */
+    displayLabel(semantics) {
+      if (semantics.method === null && semantics.path === null) {
+        return null;
+      }
+      const method =
+        semantics.method === null ? "ANY" : semantics.method.toUpperCase();
+      const path =
+        semantics.path === null ? "?" : normalizePath(semantics.path);
+      return `${method} ${path}`;
+    },
+    ruleBoundary: {
+      // "METHOD /path": one leading token, then an absolute path.
+      claims(raw) {
+        return /^\S+ +\//.test(raw.trim());
+      },
+      normalize(raw) {
+        const trimmed = raw.trim();
+        const spaceIdx = trimmed.indexOf(" ");
+        const method = trimmed.slice(0, spaceIdx).toUpperCase();
+        return `${method} ${normalizePath(trimmed.slice(spaceIdx + 1).trim())}`;
+      },
+    },
   },
 });

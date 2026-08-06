@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`inspect --diff output snapshots > shows added transition 1`] = `
-"handler:GET /users/:id
+"handler:GET /users/{id}
   express handler
   1 change
     + 403 { error }  when  db.findById().restricted
@@ -10,7 +10,7 @@ exports[`inspect --diff output snapshots > shows added transition 1`] = `
 `;
 
 exports[`inspect --diff output snapshots > shows changed transition 1`] = `
-"handler:GET /users/:id
+"handler:GET /users/{id}
   express handler
   1 change
     ~ 200 { id, name, email }  (default)
@@ -20,10 +20,10 @@ exports[`inspect --diff output snapshots > shows changed transition 1`] = `
 `;
 
 exports[`inspect --diff output snapshots > shows new and removed summaries 1`] = `
-"+ client:GET /users/:id
+"+ client:GET /users/{id}
   new client with 2 transitions
 
-- handler:GET /users/:id
+- handler:GET /users/{id}
   removed handler (had 3 transitions)
 
 "
@@ -35,7 +35,7 @@ exports[`inspect --diff output snapshots > shows no changes for identical files 
 `;
 
 exports[`inspect --diff output snapshots > shows removed transition 1`] = `
-"handler:GET /users/:id
+"handler:GET /users/{id}
   express handler
   1 change
     - 200 { id, name, email }  (default)
@@ -56,7 +56,7 @@ exports[`inspect --dir output snapshots > shows paired boundaries with transitio
 
 exports[`inspect --dir output snapshots > shows unmatched summaries 1`] = `
 "Not paired:
-  getUser (GET /users/:id) has no client
+  getUser (GET /users/{id}) has no client
 
 1 summary from 1 file.
 "
@@ -116,7 +116,7 @@ app/routes/_app.admin.tsx
 
 exports[`inspect output snapshots > renders a client summary 1`] = `
 "src/pages/user.ts
-└─ GET /users/:id  (fetch client | line 5)
+└─ GET /users/{id}  (fetch client | line 5)
        if  !fetch().ok
          -> throw Error
        else
@@ -128,7 +128,7 @@ exports[`inspect output snapshots > renders a client summary 1`] = `
 
 exports[`inspect output snapshots > renders a handler with contract and body shapes 1`] = `
 "src/handlers/users.ts
-└─ GET /users/:id  (express handler | line 10)
+└─ GET /users/{id}  (express handler | line 10)
      Contract: 200, 400, 404, 500
        if  !req.params.id
          -> 400 { error }
@@ -172,7 +172,7 @@ src/app.ts
 
 exports[`inspect output snapshots > renders multiple summaries 1`] = `
 "src/handlers/users.ts
-└─ GET /users/:id  (express handler | line 10)
+└─ GET /users/{id}  (express handler | line 10)
      Contract: 200, 400, 404, 500
        if  !req.params.id
          -> 400 { error }
@@ -182,7 +182,7 @@ exports[`inspect output snapshots > renders multiple summaries 1`] = `
          -> 200 { id, name, email }
 
 src/pages/user.ts
-└─ GET /users/:id  (fetch client | line 5)
+└─ GET /users/{id}  (fetch client | line 5)
        if  !fetch().ok
          -> throw Error
        else
@@ -194,7 +194,7 @@ src/pages/user.ts
 
 exports[`inspect output snapshots > renders the effects closure as a Reaches block 1`] = `
 "src/handlers/users.ts
-└─ GET /users/:id  (express handler | line 10)
+└─ GET /users/{id}  (express handler | line 10)
        if  !req.params.id
          -> 400 { error }
        elif  db.findById() == null
@@ -247,27 +247,27 @@ exports[`inspect output snapshots > replaces useEffect effect with a reference t
 
 exports[`inspect variant rendering > renders every Output variant 1`] = `
 "src/handlers/users.ts
-├─ GET /users/:id  (express handler | line 10)
+├─ GET /users/{id}  (express handler | line 10)
 │    Contract: 200, 400, 404, 500
 │      -> throw ValidationError
 │
-├─ GET /users/:id  (express handler | line 10)
+├─ GET /users/{id}  (express handler | line 10)
 │    Contract: 200, 400, 404, 500
 │      -> render <ErrorPage />
 │
-├─ GET /users/:id  (express handler | line 10)
+├─ GET /users/{id}  (express handler | line 10)
 │    Contract: 200, 400, 404, 500
 │      -> return string
 │
-├─ GET /users/:id  (express handler | line 10)
+├─ GET /users/{id}  (express handler | line 10)
 │    Contract: 200, 400, 404, 500
 │      -> delegate -> next
 │
-├─ GET /users/:id  (express handler | line 10)
+├─ GET /users/{id}  (express handler | line 10)
 │    Contract: 200, 400, 404, 500
 │      -> emit "user.created"
 │
-└─ GET /users/:id  (express handler | line 10)
+└─ GET /users/{id}  (express handler | line 10)
      Contract: 200, 400, 404, 500
        -> void
 
@@ -277,7 +277,7 @@ exports[`inspect variant rendering > renders every Output variant 1`] = `
 
 exports[`inspect variant rendering > renders every Predicate variant 1`] = `
 "src/handlers/users.ts
-└─ GET /users/:id  (express handler | line 10)
+└─ GET /users/{id}  (express handler | line 10)
      Contract: 200, 400, 404, 500
        if  1 !== 2
          if  req.query.id
@@ -296,7 +296,7 @@ exports[`inspect variant rendering > renders every Predicate variant 1`] = `
 
 exports[`inspect variant rendering > renders every ValueRef and Derivation variant 1`] = `
 "src/handlers/users.ts
-└─ GET /users/:id  (express handler | line 10)
+└─ GET /users/{id}  (express handler | line 10)
      Contract: 200, 400, 404, 500
        if  db().result === 1
          if  arr[0] === "x"
@@ -310,7 +310,7 @@ exports[`inspect variant rendering > renders every ValueRef and Derivation varia
 
 exports[`inspect variant rendering > renders every primitive TypeShape variant in body shapes 1`] = `
 "src/handlers/users.ts
-└─ GET /users/:id  (express handler | line 10)
+└─ GET /users/{id}  (express handler | line 10)
      Contract: 200, 400, 404, 500
        -> 200 { text, int, num, bool, n }
 
@@ -320,7 +320,7 @@ exports[`inspect variant rendering > renders every primitive TypeShape variant i
 
 exports[`inspect variant rendering > renders union, array, dictionary, ref, literal, undefined, unknown TypeShapes 1`] = `
 "src/handlers/users.ts
-└─ GET /users/:id  (express handler | line 10)
+└─ GET /users/{id}  (express handler | line 10)
      Contract: 200, 400, 404, 500
        -> 200 { tags, byKey, shape, literal, ... }
 
@@ -330,7 +330,7 @@ exports[`inspect variant rendering > renders union, array, dictionary, ref, lite
 
 exports[`inspect variant rendering > simplifies double negations and !truthinessCheck via the negation handler 1`] = `
 "src/handlers/users.ts
-└─ GET /users/:id  (express handler | line 10)
+└─ GET /users/{id}  (express handler | line 10)
      Contract: 200, 400, 404, 500
        if  x
          if  y
