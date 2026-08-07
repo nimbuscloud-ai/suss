@@ -22,7 +22,7 @@ tree-sitter provides syntax only. It has no symbol tables, types, or bindings. P
 
 ### 2. Path engine: abstract it once
 
-The condition engine's idea (enumerate entry-to-terminal paths over *structured* statements, one transition per path, opacify loops, degrade honestly on unmodeled shapes) is not a TypeScript idea. Python's statement forms map directly:
+The condition engine's idea (enumerate entry-to-terminal paths over *structured* statements, one transition per path, opacify loops, degrade to declared opacity on unmodeled shapes) is not a TypeScript idea. Python's statement forms map directly:
 
 | TypeScript | Python | Engine treatment |
 |---|---|---|
@@ -36,17 +36,17 @@ The move: extract the enumeration core in `paths/pathConditions.ts` against a sm
 
 ### 3. Name resolution: build the modest version, on purpose
 
-This is what ts-morph's type checker gives TypeScript for free, and the piece people reach for heavy tooling to replace. The constitution shrinks it: extraction needs to classify a name as parameter, local, import, or can't-tell. Because can't-tell is a legal, honest answer (`unresolved` becomes an opaque condition), the resolver only has to avoid being wrong; it never has to be complete. That is a lexical scope binder (module, class, and function scopes, assignments, imports), buildable in TS over the tree-sitter tree in bounded effort. Python's scoping rules are small; `global` and `nonlocal` are edge cases to model, not blockers.
+This is what ts-morph's type checker gives TypeScript for free, and the piece people reach for heavy tooling to replace. The constitution shrinks it: extraction needs to classify a name as parameter, local, import, or can't-tell. Because can't-tell is a legal, declared answer (`unresolved` becomes an opaque condition), the resolver only has to avoid being wrong; it never has to be complete. That is a lexical scope binder (module, class, and function scopes, assignments, imports), buildable in TS over the tree-sitter tree in bounded effort. Python's scoping rules are small; `global` and `nonlocal` are edge cases to model, not blockers.
 
 Types are not required for correctness anywhere in the IR; `shape` fields degrade to opaque or unknown. If a design partner needs Python shapes, stub-based enrichment (typeshed) is an additive later layer, the same slot the TS type checker occupies (piece 4 of the TS adapter, explicitly the language-specific step).
 
 ### 4. Adjudication: the fuzzer decides "good enough"
 
-The differential fuzzer is how we know the resolver and path lowering meet the bar without trusting anyone's judgment. Same protocol as [`differential-fuzzing.md`](differential-fuzzing.md): generate programs in the target language from a small DSL, extract through the real pipeline, execute, compare. A fabricated condition from bad name resolution is a `falseClaim`, which fails the build. Honest abstention shows up as a measurable unknown rate, never as a failure. The gap corpus and promote-on-fix lifecycle carry over unchanged.
+The differential fuzzer is how we know the resolver and path lowering meet the bar without trusting anyone's judgment. Same protocol as [`differential-fuzzing.md`](differential-fuzzing.md): generate programs in the target language from a small DSL, extract through the full pipeline, execute, compare. A fabricated condition from bad name resolution is a `falseClaim`, which fails the build. Abstention shows up as a measurable unknown rate, never as a failure. The gap corpus and promote-on-fix lifecycle carry over unchanged.
 
 ## What about stack graphs and SCIP?
 
-Stack graphs (GitHub's declarative name-resolution engine) and SCIP indexes solve name resolution generally: cross-repository, dependency-spanning, navigation-grade. Both are rejected as foundations for the same three reasons. They carry native Rust cores, against the no-native-binaries rule. They bring their own rule-authoring languages and index formats, each a new maintenance surface. And they solve a bigger problem than we have; we need honest-or-opaque binding, and paying for navigation-grade precision buys nothing above it.
+Stack graphs (GitHub's declarative name-resolution engine) and SCIP indexes solve name resolution generally: cross-repository, dependency-spanning, navigation-grade. Both are rejected as foundations for the same three reasons. They carry native Rust cores, against the no-native-binaries rule. They bring their own rule-authoring languages and index formats, each a new maintenance surface. And they solve a bigger problem than we have; we need resolved-or-opaque binding, and paying for navigation-grade precision buys nothing above it.
 
 They stay available as accelerators behind the seam. Subject resolution is one function with a narrow contract (name in, one of parameter / local / import / unresolved out), so an index-backed implementation can replace the hand-written one per language without anything above noticing. Revisit when hand-writing scope resolvers is the demonstrated repeated cost across two or more languages, not before.
 
@@ -63,7 +63,7 @@ Two places execute code, and only there:
 2. Extract the `StructuredStatement` interface from the TS path engine; verify zero behavior change under the existing fuzzer.
 3. Build the tree-sitter frontend: unit discovery, lowering, and the lexical resolver, driven by ported adapter fixtures.
 4. Write the first pack for the new language (the Flask or FastAPI analog of Express). Packs stay declarative data, so this is recognition only.
-5. Stand up the fuzzer target for the new language; the sound tier must run clean before anything ships.
+5. Stand up the fuzzer target for the new language; the sound tier must run with zero findings before anything ships.
 6. Emit facts. Rules and checking light up with no new work; this step existing at all is what the facts layer bought.
 
 ## Amended

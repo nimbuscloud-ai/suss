@@ -260,7 +260,7 @@ function makeWriteOnlyFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${tableLabel(semantics)} declares column "${column}" and code writes it, but no code in the project reads it. Likely useless data — the application stores values nothing downstream consumes.`,
+    description: `${tableLabel(semantics)} declares column "${column}" and code writes it, but no code in the project reads it. Likely useless data. The application stores values nothing downstream consumes.`,
     severity: "warning",
   };
 }

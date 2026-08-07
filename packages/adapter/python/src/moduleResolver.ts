@@ -28,7 +28,7 @@ export type ModuleResolution =
       status: "unresolved";
       /**
        * "external": no configured root names it, the way a third-party
-       * package or a genuinely missing module reads from here.
+       * package or a missing module reads from here.
        * "ambiguous": more than one configured root names it, and
        * guessing which one runs at import time is exactly the kind of
        * wrong answer this resolver exists to avoid.

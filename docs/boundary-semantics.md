@@ -296,7 +296,7 @@ need to be true:
    side of one hop against the upstream side of the next.
 3. **Transformations between hops have no IR representation.** Path rewrites,
    header additions, and body shape changes between a unit's input binding and
-   its output binding are the genuinely missing IR primitive. A proxy that
+   its output binding are the missing IR primitive. A proxy that
    strips a path prefix before forwarding changes the binding identity across
    the hop, there's currently no way to declare that mapping.
 

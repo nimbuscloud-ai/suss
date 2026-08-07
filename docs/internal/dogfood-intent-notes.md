@@ -16,12 +16,12 @@ bounded defect) or `needs-design` (the shape isn't settled).
 
 ## What shipped
 
-- `intent/*.intent.yaml` — boundary intents for `@suss/checker` and
+- `intent/*.intent.yaml`: boundary intents for `@suss/checker` and
   `@suss/checker-intent` (checkAll, checkPair, dedupeFindings,
   checkIntentAgreement, applyIntentSuppressions), plus one internal
   helper (describeBinding) that exercises the unkeyable case.
-- `intent/self.sussignore.yml` — marks the accepted keying gap.
-- `scripts/checkSelf.mjs` — extraction driver + CLI check.
+- `intent/self.sussignore.yml`: marks the accepted keying gap.
+- `scripts/checkSelf.mjs`: extraction driver + CLI check.
 - `check:self` npm script (root → turbo → `@suss/cli`), a non-gating
   turbo task (`cache: false`, `dependsOn: ["build"]`).
 
@@ -37,19 +37,19 @@ with `--fail-on none`. The signal is the `Intent:` section at the end.
 
 ## Friction
 
-### 1. No CLI path to extract a package's export surface — `needs-design`
+### 1. No CLI path to extract a package's export surface (`needs-design`)
 
 `suss extract` requires `-f <framework>`. The `packageExports` discovery
 variant that produces keyable `library` summaries isn't reachable from
 the CLI, so `check:self` drives the adapter directly with a synthesized
 `packageExports` pack. This duplicates what `scripts/dogfood.mjs` already
-does — the second consumer to hand-roll the same pack. A first-class
+does, the second consumer to hand-roll the same pack. A built-in
 export-surface extraction (`suss extract --package-exports <package.json>`,
 or a framework that reads `package.json`) would let the intent workflow
 run without bespoke glue. Until then, any team pointing intent at a
 library boundary has to write the same driver.
 
-### 2. `suss check --dir` can't point at a committed .sussignore — `resolved`
+### 2. `suss check --dir` can't point at a committed .sussignore (`resolved`)
 
 `CheckDirOptions` carries `sussignore` and `noSuppressions`, but
 `runCheck`'s arg parser (packages/cli/src/run.ts) doesn't expose them.
@@ -62,7 +62,7 @@ the `check` command removes the copy step.
 **Resolved.** `check` now parses `--sussignore <path>` and
 `--no-suppressions`, threaded to both the two-file and `--dir` paths.
 
-### 3. Intent body vocabulary can't describe function return shapes — `resolved`
+### 3. Intent body vocabulary can't describe function return shapes (`resolved`)
 
 `BodyShapeSchema` (packages/intent-ir/src/schema.ts) is an object of
 primitive-typed properties. The task asks for "declared outcomes = return
@@ -74,26 +74,26 @@ shapes," but:
   vocabulary.
 - `checkPair`, `dedupeFindings`, `applyIntentSuppressions` return a bare
   array (`Finding[]` / `IntentFinding[]`). A top-level array isn't
-  expressible at all, so these outcomes are declared body-less — the
+  expressible at all, so these outcomes are declared body-less: the
   intent asserts only "a value is returned."
 
 The top-level declaration still bites: dropping or renaming a declared
 key makes the code's return shape stop satisfying the intent and fires
 `outcomeShapeMismatch` (verified against `checkAll` with a fabricated
 property). Extending the vocabulary to arrays, nested objects, and named
-`TypeShape` references would let function-call intent describe real return
+`TypeShape` references would let function-call intent describe actual return
 values instead of stopping at the outer keys.
 
 **Resolved.** The authoring vocabulary is now recursive: `type: array`
 (optional `items`) and `type: object` (nested `properties`) compose with
 the primitives, and a top-level body can be a bare array or object shape.
 The record shorthand (`properties:` with no `type:`) still loads. The
-first run with the richer declarations caught a genuine authoring error:
+first run with the richer declarations caught an authoring error:
 `checkAll`'s `unmatched` was declared an array but is an object of
 `providers` / `consumers` arrays. Named `TypeShape` references remain
 open.
 
-### 4. A body-less return must be written `returns: {}`, not `returns:` — `resolved`
+### 4. A body-less return must be written `returns: {}`, not `returns:` (`resolved`)
 
 Bare `returns:` parses as YAML null and fails Zod with
 `expected object, received null` at `transitions.0.returns`. Nothing tells
@@ -105,32 +105,32 @@ for a body-less return").
 now coerce a null value to `{}`, so `returns:` and `returns: {}` mean the
 same body-less outcome.
 
-### 5. The proposal's worked examples don't match the shipped schema — `fix-now`
+### 5. The proposal's worked examples don't match the shipped schema (`fix-now`)
 
 `docs/internal/proposals/intent-layer-examples/fastify-users/users-lookup.system.yaml`
 uses `output:` under each transition; the shipped schema uses `response:` /
 `returns:` / `throws:`, so the file fails the "exactly one outcome" refine
 and won't load. The sibling `user-profile-lookup.prd.yaml` uses `then:`
 where the schema now expects `expect:` for the human outcome and `link:`
-for the structured reference — it parses (unknown keys are stripped) but
+for the structured reference; it parses (unknown keys are stripped) but
 silently drops the `then` text and mislabels the structured ref. A
 first-time author copying either file hits a hard failure or a silent
-semantic mismatch. Left unfixed here — the examples belong to the
+semantic mismatch. Left unfixed here: the examples belong to the
 intent-layer feature set; flagged for that owner (see needs-alignment).
 
-### 6. The export-surface self-check buries its signal — `needs-design`
+### 6. The export-surface self-check buries its signal (`needs-design`)
 
 Extracting `@suss/checker` yields ~150 summaries: 26 keyed exports plus
 ~124 internal helpers the reachable-closure pass discovers (keyless,
 recognition `reachable`). The check render lists every keyless helper
 under "no boundary binding" before the `Intent:` section. Nothing is
-dropped — that is the correct surfacing behavior — but the export-surface
+dropped (that is the correct surfacing behavior), but the export-surface
 signal is hard to read. This is the inspect/check-collapse UX already on
 the backlog; the intent self-check is a concrete motivator for defaulting
 the no-binding list to a collapsed count. No summaries were filtered in
 the driver to make this go away.
 
-### 7. Module-level function-call boundaries can't be keyed — `needs-design` (accepted gap)
+### 7. Module-level function-call boundaries can't be keyed (`needs-design`, accepted gap)
 
 `describeBinding` is an internal `@suss/checker` helper, addressable only
 by `module` + `exportName`. `boundaryKey` (packages/ir-core/src/boundaryKey.ts)
@@ -146,4 +146,4 @@ checkable intent.
 - Friction 5 (stale worked examples) is a fix to the intent-layer feature's
   own artifacts. Whether to correct them in place, and how the PRD's
   `then` / `expect` / `link` remap should read, is the feature owner's
-  call — recorded here rather than changed unilaterally.
+  call, recorded here rather than changed unilaterally.

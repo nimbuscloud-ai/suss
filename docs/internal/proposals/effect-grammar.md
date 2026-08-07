@@ -54,24 +54,24 @@ Every effect becomes five things:
 Read it as a sentence: this code **verb**s a **family** resource named
 **target**, carrying **payload**, when **conditions** hold.
 
-- **family** — what kind of resource. Six to start: `storage`,
+- **family**: what kind of resource. Six to start: `storage`,
   `network`, `message`, `config`, `io`, `time`. These are kinds of
   infrastructure, never framework names. There will never be an
   "express" or "prisma" family.
-- **verb** — what is done to it. A small fixed set per family:
+- **verb**: what is done to it. A small fixed set per family:
   read / write / delete for storage and io, call for network,
   send / receive for message, read for config, schedule for time.
-- **target** — the specific thing touched: a table name, a host, a
-  queue, an env-var name, `stdout`, a file path. When the analyzer
+- **target**: the specific thing touched (a table name, a host, a
+  queue, an env-var name, `stdout`, a file path). When the analyzer
   cannot work the target out, it records `unresolved` with a reason.
   It never silently drops the effect. The unnamed-boundaries proposal
   spells this same state as null on today's binding identity fields;
   when pairing keys become targets, those nulls lift into `unresolved`
   with a reason, so the two documents state one rule.
-- **payload** — the shape of the data crossing, in TypeShape (the same
+- **payload**: the shape of the data crossing, in TypeShape (the same
   shape language bodies and intent declarations already use), when
   extractable.
-- **conditions** — the predicates on the transition the effect sits on.
+- **conditions**: the predicates on the transition the effect sits on.
   These already exist; the point of naming them here is that a
   capability is conditional: "sends to OrdersQueue **when total > 0**"
   is the whole fact.
@@ -93,8 +93,8 @@ the grammar one-for-one (storage-access with kind read becomes
 `(storage, read, table, fields)`, and so on down the list). Their
 per-class extras (which fields a query touched, whether a config read
 had a `??` default, whether a timer had a delay) move into
-family-specific payload metadata. The io rows are the only genuinely
-new extraction, and they are ordinary recognizers in the node runtime
+family-specific payload metadata. The io rows are the only new
+extraction, and they are ordinary recognizers in the node runtime
 pack.
 
 ## What it buys, in build order
@@ -118,7 +118,7 @@ pack.
    "added: network call to api.example.com; added: config read of
    PAYMENT_KEY". You learn what a change *reaches*, without reading
    the diff line by line. This is the highest-value item in the arc
-   and ships immediately after 2, since it just diffs capability
+   and ships immediately after 2, since it only diffs capability
    views.
 4. **Intent can declare effects.** The planned v0.2 intent shape lets
    an outcome be an effect: "on success, the order is queued". A PRD

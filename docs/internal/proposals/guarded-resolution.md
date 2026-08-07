@@ -6,8 +6,8 @@ Status: draft, seeking alignment. Nothing implemented.
 
 When the rules reach two different functions for one value, the store
 answers nothing, since picking one would make the answer depend on the
-order facts arrived in. That policy is right for genuine ambiguity and
-wrong for a choice the code spells out:
+order facts arrived in. That policy is right when the ambiguity is
+inherent and wrong for a choice the code spells out:
 
 ```ts
 export const handler = flag ? handlerA : handlerB;

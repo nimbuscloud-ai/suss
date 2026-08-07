@@ -9,7 +9,7 @@ Progress tracker. Updated as phases land.
 - ⬜ not started
 - ⏸ deferred / future
 
-## Phase 1 — Foundation
+## Phase 1: Foundation
 
 *Types, assembly engine, framework pack interface. No compiler, no AST.*
 
@@ -20,7 +20,7 @@ Progress tracker. Updated as phases land.
 | 1.3 `@suss/extractor` assembly engine | ✅ | `assembleSummary`, `detectGaps` (both directions), `assessConfidence`. Map-based converters. 9 tests. |
 | 1.4 `PatternPack` interface | ✅ | Lives in `@suss/extractor/framework`. |
 
-## Phase 2 — TypeScript Adapter
+## Phase 2: TypeScript Adapter
 
 *The hard part. Uses ts-morph. Four independently testable extraction functions.*
 
@@ -33,7 +33,7 @@ Progress tracker. Updated as phases land.
 | 2.5 Assembly wiring | ✅ | `extractRawBranches` + `extractDependencyCalls` (nested block traversal). Parameter extraction with input mapping. |
 | 2.5b Contract reading + adapter API | ✅ | `readContract` with cross-file import resolution. `createTypeScriptAdapter`: `extractFromFiles`, `extractAll`. Integration tests. |
 
-## Phase 3 — Framework Packs
+## Phase 3: Framework Packs
 
 *Declarative data for each framework. Mostly transcription.*
 
@@ -45,19 +45,19 @@ Progress tracker. Updated as phases land.
 
 *(Framework packs were implemented ahead of the adapter as declarative data. Enhanced during Phase 2 with additional terminal patterns: Express gained res.status().send(), res.sendStatus(), res.redirect(); React Router gained json(), data(), redirect() functionCall terminals.)*
 
-## Phase 4 — CLI + Fixtures
+## Phase 4: CLI + Fixtures
 
 | Task | Status | Notes |
 |------|--------|-------|
-| 4.1 `@suss/cli` — `extract` and `inspect` | ✅ | `suss extract` with dynamic framework resolution, `suss inspect` with human-readable output. 11 tests. |
+| 4.1 `@suss/cli`: `extract` and `inspect` | ✅ | `suss extract` with dynamic framework resolution, `suss inspect` with human-readable output. 11 tests. |
 | 4.2 ts-rest fixture set | ✅ | Handler + contract. Gap exercise (500 declared but unproduced). |
 | 4.3 react-router fixture set | ✅ | Loader + action with json/redirect helpers. |
 | 4.4 express fixture set | ✅ | Handler with guards, dep calls, nested conditions. |
 | 4.5 End-to-end integration test | ✅ | CLI tests run live extraction against all 3 fixture sets. |
 
-## Phase 5 — Cross-boundary checker
+## Phase 5: Cross-boundary checker
 
-*Pure function from two `BehavioralSummary`s to `Finding[]`. No AST dependency — operates on serialized IR.*
+*Pure function from two `BehavioralSummary`s to `Finding[]`. No AST dependency; operates on serialized IR.*
 
 | Task | Status | Notes |
 |------|--------|-------|
@@ -69,9 +69,9 @@ Progress tracker. Updated as phases land.
 | 5.6 `checkPair` entrypoint + fixture integration tests | ✅ | Composes all three checks; integration test exercises every finding kind in one pass. |
 | 5.7 `suss check` CLI command | ✅ | `suss check <provider.json> <consumer.json>` with `--json` / `-o` output; non-zero exit when any finding has `error` severity. |
 | 5.8 Structured body-shape extraction (provider side) | ✅ | Three-pass extraction: syntactic decomposition preserves literal narrowness (`{ type: "literal", value }` with `raw` for numerics); AST resolution follows identifiers / destructurings / single-return calls back to their defining values; type-checker fallback covers the rest. `record` vs `dictionary` distinguishes closed structs from index signatures. Wire-format caveats documented in `ir-reference.md#serialization-semantics`. |
-| 5.9 Body-shape matching in the checker | ✅ | `bodyShapesMatch(actual, declared)` returns `match` / `nomatch` / `unknown` with asymmetric subtyping semantics — literal widening (`"ok"` → `text`), integer ⊂ number, union variance, dictionary/array recursion, spreads and refs propagate `unknown`. ts-rest `c.type<T>()` is lifted into `RawDeclaredContract.responses[].body`, and `checkContractConsistency` now emits `providerContractViolation` for body mismatches and `lowConfidence` when the shape is indeterminate. |
+| 5.9 Body-shape matching in the checker | ✅ | `bodyShapesMatch(actual, declared)` returns `match` / `nomatch` / `unknown` with asymmetric subtyping semantics: literal widening (`"ok"` → `text`), integer ⊂ number, union variance, dictionary/array recursion, spreads and refs propagate `unknown`. ts-rest `c.type<T>()` is lifted into `RawDeclaredContract.responses[].body`, and `checkContractConsistency` now emits `providerContractViolation` for body mismatches and `lowConfidence` when the shape is indeterminate. |
 
-## Phase 6 — Consumer-side discovery
+## Phase 6: Consumer-side discovery
 
 *Discover client call sites, extract the enclosing function's branches, produce consumer `BehavioralSummary`s for cross-boundary checking.*
 
@@ -79,10 +79,10 @@ Progress tracker. Updated as phases land.
 |------|--------|-------|
 | 6.1 `clientCall` discovery match + consumer binding extractors | ✅ | New `DiscoveryMatch` variant `clientCall` in `PatternPack` interface. `BindingExtraction` gains `fromClientMethod`, `fromArgumentLiteral`, `fromArgumentProperty`. |
 | 6.2 `discoverByClientCall` in the TS adapter | ✅ | Finds matching call sites, walks to enclosing function, returns `DiscoveredUnit` with `callSite` metadata. Consumer binding extraction reads method/path from call args or contract. |
-| 6.3 `returnStatement` terminal match | ✅ | New `TerminalMatch` variant for any return statement (not just object-literal returns). Required because consumer functions return arbitrary values, not `{ status, body }` objects. |
+| 6.3 `returnStatement` terminal match | ✅ | New `TerminalMatch` variant for any return statement (not only object-literal returns). Required because consumer functions return arbitrary values, not `{ status, body }` objects. |
 | 6.4 `readContractForClientCall` | ✅ | Traces from `client.getUser()` → `const client = initClient(contract)` → contract object → endpoint definition for the called method. Reuses existing `resolveContractObject` + `extractEndpointContract`. |
 | 6.5 ts-rest consumer discovery pattern | ✅ | `@suss/framework-ts-rest` now includes a `consumer` `DiscoveryPattern` matching `initClient` from `@ts-rest/core`, binding method/path via `fromClientMethod`. |
-| 6.6 `@suss/client-web` package | ✅ | New package (not "framework" — fetch is a runtime built-in). Discovers `fetch()` calls with literal URL paths, extracts method from options object, defaults to GET. |
+| 6.6 `@suss/client-web` package | ✅ | New package (not "framework"; fetch is a runtime built-in). Discovers `fetch()` calls with literal URL paths, extracts method from options object, defaults to GET. |
 | 6.7 Consumer fixtures + end-to-end tests | ✅ | fetch consumer fixture, CLI integration test (`suss extract -f fetch`), end-to-end `extract + check` test. |
 
 ### Deferred within consumer-side discovery
@@ -93,7 +93,7 @@ Progress tracker. Updated as phases land.
 - **Recursive dependency extraction** → local function calls within the consumer are `invocation` effects, not recursively extracted into their own summaries.
 - **axios, tRPC, GraphQL clients** → additive; the mechanism is proven, more packs are data.
 
-## Phase 7 — Deepen cross-boundary analysis
+## Phase 7: Deepen cross-boundary analysis
 
 *Closes the gap between the IR's expressive power and the checker's actual analysis depth, so cross-boundary findings catch field-level, predicate-level, and semantic mismatches.*
 
@@ -106,12 +106,12 @@ Progress tracker. Updated as phases land.
 | 7.5 Automatic boundary pairing | ✅ | `normalizePath` (`:id` ↔ `{id}`), `pairSummaries`, `checkAll`. CLI: `suss check --dir summaries/`. Human-readable pairing report + `--json` structured output. |
 | 7.6 Error-to-response bridging | ✅ | Throw terminals with framework-extracted status codes are converted to response outputs at the extractor level. Behavioral contract (consumer sees HTTP status, not exception) takes priority over mechanism (code threw). Unhandled throws without status codes remain as throw outputs. |
 | 7.7 Subject resolution through intermediates | ✅ | `resolveSubject` follows non-call initializers (`const data = result.body` → recurse). Depth-bounded at 8 hops. |
-| 7.8 Semantic condition bridging | ✅ | `checkSemanticBridging`: literal discrimination, field-presence discrimination, truthiness checks, negated comparisons (`!== X`), fetch `.json()` body accessor, "any match suppresses" semantics. All 6 original aspirations resolved or reclassified — remaining gaps are Level 6 (local function inlining). See [`cross-boundary-checking.md`](cross-boundary-checking.md) §Level 5. |
+| 7.8 Semantic condition bridging | ✅ | `checkSemanticBridging`: literal discrimination, field-presence discrimination, truthiness checks, negated comparisons (`!== X`), fetch `.json()` body accessor, "any match suppresses" semantics. All 6 original aspirations resolved or reclassified; remaining gaps are Level 6 (local function inlining). See [`cross-boundary-checking.md`](cross-boundary-checking.md) §Level 5. |
 | 7.9 `PatternPack` rename + response property semantics | ✅ | `FrameworkPack` → `PatternPack` across all packages. `ResponsePropertyMapping` declares response property semantics (statusCode, statusRange, body, headers). Adapter resolves `.ok` → `status >= 200 && status <= 299` at extraction time. Pack-driven field filtering in `collectClientFieldAccesses` replaces hardcoded property lists. |
 | 7.10 Opaqueness reductions: instanceof, in, Array.includes | ✅ | `instanceof` → `typeCheck`, `in` → `propertyExists`, `[lit].includes(x)` → compound OR. Default status codes for Express/React Router implicit-200 terminals via `defaultStatusCode` in `TerminalExtraction`. |
 | 7.11 Behavioral summary format spec | ✅ | JSON Schema v0 (`packages/behavioral-ir/schema/behavioral-summary.schema.json`), format spec (`docs/behavioral-summary-format.md`), publishing convention (`suss.summaries` in package.json), portable relative paths, schema validation tests. Inspect rewrite: output-first behavioral descriptions with body shapes and contract display. |
 
-## Phase 8 — Real-world readiness
+## Phase 8: Real-world readiness
 
 *Production-grade coverage of the dominant ecosystem patterns: a second server framework, a second HTTP client with all the shapes typical codebases use, declared-contract stubs for cross-team and cross-org checking, governance scaffolding, and a runnable example.*
 
@@ -119,7 +119,7 @@ Progress tracker. Updated as phases land.
 |------|--------|-------|
 | 8.1 `@suss/framework-fastify` | ✅ | Full pack, 8 tests. `Fastify()` and named-import `fastify()` discovery, `reply.code/status(N).send(body)` chains, implicit-200 `reply.send(body)`, `reply.redirect(...)` with 1-arg/2-arg disambiguation, throw matcher, positional `(request, reply)` inputs. |
 | 8.2 `@suss/client-axios` | ✅ | Per-verb discovery via `methodFilter` + literal-method bindings, `factoryMethods: ["create"]` so `const api = axios.create(...); api.get(...)` is matched, AxiosResponse semantics (`.data` body, `.status` statusCode). 7 tests. |
-| 8.3 Adapter `clientCall` enhancements | ✅ | Direct method calls on the imported binding (`axios.get(...)`) and not just on call-result variables; each `DiscoveredUnit` carries the source pattern so kind-sharing patterns (per-verb axios) pick the right binding. |
+| 8.3 Adapter `clientCall` enhancements | ✅ | Direct method calls on the imported binding (`axios.get(...)`) and not only on call-result variables; each `DiscoveredUnit` carries the source pattern so kind-sharing patterns (per-verb axios) pick the right binding. |
 | 8.4 Template-literal path extraction | ✅ | `fromArgumentLiteral` matches `NoSubstitutionTemplateLiteral` and `TemplateExpression`; substitutions become OpenAPI-style `{name}` placeholders that pair with `:id`-style provider paths via the existing path normaliser. |
 | 8.5 Destructured response support | ✅ | `findResponseAccessor` returns identifier OR destructured shape (mapping local → underlying property); `collectPropertyAccesses` resolves bare destructured uses to property chains. Status check via destructured `status` is recognised in the checker (`refLooksLikeStatus`). |
 | 8.6 Pack-aware body unwrap | ✅ | Adapter records pack body-typed accessor names on each client summary's `metadata.http.bodyAccessors`; checker reads it and tries each accessor when unwrapping `expectedInput`. Falls back to `["body"]` for legacy summaries. Fixes false-positive body-shape findings for axios consumers. |
@@ -130,22 +130,22 @@ Progress tracker. Updated as phases land.
 | 8.11 `suss contract` CLI command | ✅ | `suss contract --from <openapi\|cloudformation> <spec>` with uniform loader registry. Plumbs into `suss check --dir` so stub providers and extracted consumers pair seamlessly. |
 | 8.12 Inspect refactor | ✅ | All five `switch (x.type)` dispatches in `inspect.ts` converted to typed `DispatchTable<T, R>` maps; `formatBodyShape` now renders all `TypeShape` variants (the prior switch silently dropped primitives like `text`, `integer`, leading to `{ [key]:  }` for dictionary values). |
 | 8.13 OSS governance | ✅ | `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `.github/ISSUE_TEMPLATE/` (bug + feature + config), `.github/PULL_REQUEST_TEMPLATE.md`, npm publish metadata across all packages. |
-| 8.14 Runnable end-to-end example | ✅ | `examples/petstore-axios-openapi/` — axios consumer + Petstore OpenAPI + Makefile that runs extract → stub → check. Doubles as a regression test for the full pipeline. |
+| 8.14 Runnable end-to-end example | ✅ | `examples/petstore-axios-openapi/`: axios consumer + Petstore OpenAPI + Makefile that runs extract → stub → check. Doubles as a regression test for the full pipeline. |
 
 ### Deferred within Phase 8
 
-- **`axios.create()` instances with `axios({ url, method })` bare-call form and `axios.request(config)`** — only per-verb method calls are matched.
-- **Aliased default imports** (`import myAxios from "axios"`) — pack matches the conventional `import axios from "axios"` only.
-- **Multi-hop wrapper expansion** (helper-of-helper) — single hop only.
-- **Method-as-parameter wrappers** (`fetch(method, path)`) — only path-passthrough is recognised.
-- **`BodyS3Location`** in CloudFormation — out-of-line OpenAPI bodies aren't fetched.
-- **Raw CDK source** — consume `cdk synth` output instead.
-- **Greedy `{proxy+}` paths** — extracted verbatim into the boundary path; the checker doesn't normalise them as wildcards, so consumer calls with concrete sub-paths won't pair against a `/{proxy+}` provider.
-- **`!Sub` partial resolution** — `!Sub "${ResourceLogicalId.Arn}"` and parameter interpolations are passed through as their raw template strings. Doesn't matter for path/method extraction (paths are usually literal in practice) but does mean integration URIs lose their resource references.
-- **`!ImportValue` cross-stack tracking** — silently passed through. Useful for graph extraction across stacks; not load-bearing for behavioural summaries within a single template.
-- **Non-HTTP triggers** (`AWS::Lambda::EventSourceMapping`, `AWS::Events::Rule`, `AWS::SNS::Subscription`) — would each warrant their own resource-semantics package (`@suss/contract-aws-sqs`, `@suss/contract-aws-eventbridge`, etc.) following the same reader/semantics split as `aws-apigateway`. Out of scope while the focus is HTTP boundaries.
+- **`axios.create()` instances with `axios({ url, method })` bare-call form and `axios.request(config)`**: only per-verb method calls are matched.
+- **Aliased default imports** (`import myAxios from "axios"`): pack matches the conventional `import axios from "axios"` only.
+- **Multi-hop wrapper expansion** (helper-of-helper): single hop only.
+- **Method-as-parameter wrappers** (`fetch(method, path)`): only path-passthrough is recognised.
+- **`BodyS3Location`** in CloudFormation: out-of-line OpenAPI bodies aren't fetched.
+- **Raw CDK source**: consume `cdk synth` output instead.
+- **Greedy `{proxy+}` paths**: extracted verbatim into the boundary path; the checker doesn't normalise them as wildcards, so consumer calls with concrete sub-paths won't pair against a `/{proxy+}` provider.
+- **`!Sub` partial resolution**: `!Sub "${ResourceLogicalId.Arn}"` and parameter interpolations are passed through as their raw template strings. Doesn't matter for path/method extraction (paths are usually literal in practice) but does mean integration URIs lose their resource references.
+- **`!ImportValue` cross-stack tracking**: silently passed through. Useful for graph extraction across stacks; not needed for behavioural summaries within a single template.
+- **Non-HTTP triggers** (`AWS::Lambda::EventSourceMapping`, `AWS::Events::Rule`, `AWS::SNS::Subscription`): would each warrant their own resource-semantics package (`@suss/contract-aws-sqs`, `@suss/contract-aws-eventbridge`, etc.) following the same reader/semantics split as `aws-apigateway`. Out of scope while the focus is HTTP boundaries.
 
-## Phase 9 — Package-export boundary (library provider + consumer pairing)
+## Phase 9: Package-export boundary (library provider + consumer pairing)
 
 *Treats a TypeScript package's public export surface as a boundary. Providers come from `packageExports` (resolving `package.json` entry points through `ts-morph`'s export graph); consumers come from `packageImport` (scanning import sites in the same repo or downstream repos that consume the published summaries). Unblocks suss-on-suss dogfooding and dependency-library analysis.*
 
@@ -155,7 +155,7 @@ Progress tracker. Updated as phases land.
 | 9.2 `function-call` identity extension | ✅ | `FunctionCallSemantics` gains optional `package` + `exportPath` alongside existing `module` / `exportName`; `packageExportBinding()` helper. |
 | 9.3 `packageExports` discovery variant | ✅ | Reads `package.json`, resolves reachable entry points (root + sub-path `exports`, `types` / `default` / `import` conditionals, fallback to `types`/`main`/`module`), maps `dist/*.d.ts` → `src/*.ts`, follows barrel re-exports via `getExportedDeclarations`. Pattern exports and `development` conditionals deferred (warnings). 7 resolver + handler tests. |
 | 9.4 `packageImport` discovery variant | ✅ | Walks named + default imports from a list of target package specs, records each bare-identifier call site, dedupes by (enclosing function × consumed binding). 2 tests. |
-| 9.5 `returnStatement` shape capture | ✅ | `tryMatchReturnStatement` now calls `extractShape(expr)` on the return expression so `Output.return.value` populates — prior gap left every non-object-literal return as `null`. Regression test covers three-branch string-literal classifier + record return. |
+| 9.5 `returnStatement` shape capture | ✅ | `tryMatchReturnStatement` now calls `extractShape(expr)` on the return expression so `Output.return.value` populates; a prior gap left every non-object-literal return as `null`. Regression test covers three-branch string-literal classifier + record return. |
 | 9.6 `boundaryKey` for `function-call` | ✅ | Checker keys by `fn:<package>::<exportPath>` when both are set; other function-call units (intra-repo React components) still return null. |
 | 9.7 `suss inspect` if/elif/else tree | ✅ | Renders transitions as a decision tree with shared prefix collapsed; deeply-branched functions (`bodyShapesMatch` 33 transitions, `resolveSubject` 24) become readable. |
 | 9.8 Cross-package dogfood | ✅ | `scripts/dogfood.mjs` runs both discoveries across every `@suss/*` package; pairs providers and consumers via `pairSummaries`. Current run: 87 provider + 79 consumer summaries across 19 packages, 79 paired edges. Top consumed exports visible in the report. |
@@ -163,11 +163,11 @@ Progress tracker. Updated as phases land.
 ### Deferred within Phase 9
 
 - **Factory-return follow-through.** `createTypeScriptAdapter()` returns an object whose methods aren't themselves top-level exports, so `packageExports` doesn't summarise them. Adding one-level return-type follow-through would capture factory-style APIs.
-- **Member-call chains on the consumer side.** `adapter.extractAll()` and `Schema.parse()` are not yet tracked — only bare-identifier calls are.
+- **Member-call chains on the consumer side.** `adapter.extractAll()` and `Schema.parse()` are not yet tracked; only bare-identifier calls are.
 - **Namespace imports.** `import * as X from "pkg"` isn't scanned.
-- **Pattern exports** (`./utils/*`) and `development` conditional resolution — surfaced as warnings.
+- **Pattern exports** (`./utils/*`) and `development` conditional resolution: surfaced as warnings.
 
-## Phase 10+ — Deferred
+## Phase 10+: Deferred
 
 | Item | Status | Notes |
 |------|--------|-------|

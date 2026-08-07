@@ -34,7 +34,7 @@ story, and it needs a different discovery strategy.
 
 **Export heuristic (shipped).** Every export whose body returns JSX,
 PascalCase, skipping story and test files. Cheap, syntactic, no entry
-point needed. Catches most components in a real codebase. Blind to
+point needed. Catches most components in a production codebase. Blind to
 non-exported components and to the render tree.
 
 **Root-walk (this proposal).** Start from where the app boots and follow
@@ -117,12 +117,12 @@ walk.
    two existing React discovery paths into named modes behind one list.
    No behavior change; this is the seam root-walk plugs into.
 2. **Root recognition and the reference walk.** Emit non-exported
-   components reachable from a root. Measured against a real app: how
+   components reachable from a root. Measured against an actual app: how
    many components does root-walk add over the heuristic, and how many
    references go unresolved.
 3. **Render edges with resolved targets.** Attach parent -> child
    identity and the props expression. Renders the tree in inspect with
-   real component names instead of bare element tags.
+   actual component names instead of bare element tags.
 4. **Props checking across the render edge.** A new checker pass: the
    props a parent passes vs the props the child reads. The child summary
    already carries a `props` parameter input and prop references
@@ -173,5 +173,5 @@ follow once edges are reliable.
    single-hop import plus single const binding covers the common case.
    HOCs, component maps, and `React.lazy` are the unresolved tail.
    Proposal: v1 resolves the three common cases, records the tail as
-   unresolved edges, and revisits once real-app numbers show which tail
+   unresolved edges, and revisits once production-app numbers show which tail
    cases are worth chasing.

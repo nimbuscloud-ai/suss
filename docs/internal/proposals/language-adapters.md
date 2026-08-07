@@ -98,7 +98,7 @@ hand-rolled resolver, prompted by the type-resolution worry. All
 three end declined, each for reasons worth keeping on file:
 
 - **Pyright.** TypeScript, so it passes the no-target-runtime rule,
-  and its import resolution is genuinely the hardened article. It
+  and its import resolution is the hardened article. It
   fails on packaging and on necessity: pyright-internal is marked
   private and never published, so consuming it means vendoring a
   monorepo subtree or trusting a one-maintainer republish, a bar

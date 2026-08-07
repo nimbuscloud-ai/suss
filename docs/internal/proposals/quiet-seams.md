@@ -46,8 +46,8 @@ returns an empty result and the next cannot tell "there was nothing
 there" from "I could not look."
 
 For a tool whose output is a report about someone's code, that is the
-failure mode with the highest cost. A crash gets reported. A clean
-report gets believed.
+failure mode with the highest cost. A crash gets reported. An
+error-free report gets believed.
 
 ## Part 1: extraction diagnostics
 

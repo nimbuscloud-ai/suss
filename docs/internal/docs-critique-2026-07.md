@@ -7,7 +7,7 @@ the conceptual docs).
 ## Verdict
 
 The messaging is mostly sound and the four-concept restructure improved
-the prose docs. Two real problems remain:
+the prose docs. Two problems remain:
 
 1. **House style has not been applied.** The docs predate the no-dash,
    plain-wording conventions and violate them at scale (roughly 600 em
@@ -125,7 +125,7 @@ glossary). The weak point is the one surface a new visitor sees first.
 - **Stale "stub" vocabulary.** contract-sources.md, ir-reference.md,
   behavioral-summary-format.md, and pipelines.md still say
   `confidence.source: "stub"` and "layered stub". The rename to
-  "contract" shipped; these are wrong, not just off-style. pipelines.md
+  "contract" shipped; these are wrong, not merely off-style. pipelines.md
   also still narrates a two-phase manifest reader that is now split into
   @suss/manifest-aws.
 

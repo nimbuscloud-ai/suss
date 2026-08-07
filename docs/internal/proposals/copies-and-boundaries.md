@@ -245,8 +245,9 @@ a `User.posts` field resolver, loses its Lambda attribution in the
 contract reader.
 
 The contract reader needs strictly more per resolver than the manifest
-reader does, so this is a layering job rather than a deletion. Real
-work, and it should fix both disagreements on the way through.
+reader does, so this is a layering job rather than a deletion.
+Substantial work, and it should fix both disagreements on the way
+through.
 
 ### 9. Twenty-nine peelers, eleven names, no two agreeing
 

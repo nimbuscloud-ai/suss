@@ -99,7 +99,7 @@ The provider declares a field that no consumer references. Per-domain instances:
   ```
   [WARNING] boundaryFieldUnused (aspect: read)
     User declares column "lastWriteAt" and code writes it, but no code
-    in the project reads it. Likely useless data — the application
+    in the project reads it. Likely useless data. The application
     stores values nothing downstream consumes.
   ```
 
