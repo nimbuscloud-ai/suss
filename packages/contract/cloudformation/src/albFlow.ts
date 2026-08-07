@@ -10,7 +10,10 @@
 //   answers(router, matchId, response)  a rule's or a listener's own
 //                                       non-forward action: the
 //                                       response a path gets without
-//                                       forwarding anywhere.
+//                                       forwarding anywhere. A rule's
+//                                       conditions and priority live on
+//                                       this record too; a listener's
+//                                       own default has neither.
 //   fronts(target, resource)            what a target group backs onto:
 //                                       an ECS container, a Lambda
 //                                       function, or another load
@@ -171,6 +174,8 @@ function buildMatchSummaries(opts: MatchSummariesOpts): BehavioralSummary[] {
           ? { unresolvedRouter: opts.unresolvedRouter }
           : {}),
         matchId: opts.matchId,
+        ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
+        conditions: opts.conditions,
         response: classification.response,
       }),
     ];
@@ -239,7 +244,9 @@ type ActionClassification =
  * An action list's terminal disposition: the forward action if the list
  * has one (auth actions such as authenticate-cognito may precede it;
  * v0 does not model the auth gate, only where traffic ends up), else
- * the non-forward response the first action states.
+ * the response the first non-authenticate action states. A list that is
+ * nothing but authenticate actions falls back to its first entry, so
+ * the row still records the only type the template names.
  */
 function classifyActions(actionsRaw: unknown): ActionClassification {
   const actions = Array.isArray(actionsRaw) ? actionsRaw : [];
@@ -252,7 +259,19 @@ function classifyActions(actionsRaw: unknown): ActionClassification {
   if (forward !== undefined) {
     return { kind: "forward", targets: readForwardTargets(forward) };
   }
-  return { kind: "answers", response: readResponse(actions[0]) };
+
+  const terminal = actions.find((action) => !isAuthenticateAction(action));
+  return { kind: "answers", response: readResponse(terminal ?? actions[0]) };
+}
+
+/** authenticate-cognito / authenticate-oidc: a gate before the action that answers, never the answer itself. */
+function isAuthenticateAction(action: unknown): boolean {
+  if (action === null || typeof action !== "object") {
+    return false;
+  }
+
+  const type = (action as { Type?: unknown }).Type;
+  return typeof type === "string" && type.startsWith("authenticate-");
 }
 
 /** A forward action's target group(s): the plain single-target shape, or a weighted ForwardConfig's list. */

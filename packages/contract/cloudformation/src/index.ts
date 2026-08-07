@@ -64,7 +64,7 @@ import { buildAlbFlowSummaries } from "./albFlow.js";
 import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, RoutingMetadata } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "@suss/contract-openapi";
 
 // Re-exported so existing consumers of the parse layer keep working;
@@ -179,7 +179,9 @@ export function cloudFormationToSummaries(
   const stackPath = options.stackPath ?? [];
   return stackPath.length === 0
     ? summaries
-    : summaries.map((summary) => deployedWithinStack(summary, stackPath));
+    : summaries.map((summary) =>
+        deployedWithinStack(summary, stackPath, resources),
+      );
 }
 
 /**
@@ -195,28 +197,25 @@ export function cloudFormationToSummaries(
  * declared the queue.
  *
  * A `fronts` edge's `resource` field follows the same rule as
- * `deployableUnit.instanceName`, not the channel rule, because a fronts
- * edge names a deployable unit's own identity (an ECS container's or a
- * Lambda's instanceName): the ALB flow reader and the runtime-config
- * reader must qualify it the same way for the two to still name the
- * same thing once nested. The router and target group logical ids on a
- * routing edge are ALB infrastructure nothing outside the template
- * ever names, so they stay bare, like a channel does.
+ * `deployableUnit.instanceName` when it names a deployable unit's own
+ * identity (an ECS container's or a Lambda's instanceName): the ALB
+ * flow reader and the runtime-config reader must qualify it the same
+ * way for the two to still name the same thing once nested. A fronted
+ * resource that is itself another load balancer (a TargetType alb
+ * group fronting one) is ALB infrastructure like the router and target
+ * group logical ids, which nothing outside the template ever names, so
+ * it stays bare the same way they do, like a channel does.
  */
 function deployedWithinStack(
   summary: BehavioralSummary,
   stackPath: string[],
+  resources: Record<string, CloudFormationResource>,
 ): BehavioralSummary {
   const unit = summary.identity.deployableUnit;
   const binding = summary.identity.boundaryBinding;
   const routing = readRoutingMetadata(summary);
   const frontedResource =
-    routing !== undefined &&
-    routing.edge === "fronts" &&
-    routing.resource !== undefined &&
-    routing.resource !== null
-      ? routing.resource
-      : null;
+    routing !== undefined ? frontedUnitResource(routing, resources) : null;
   if (
     unit === undefined &&
     binding?.semantics.name !== "runtime-config" &&
@@ -262,6 +261,32 @@ function deployedWithinStack(
         }
       : {}),
   };
+}
+
+/**
+ * A `fronts` edge's resource, when it names a deployable unit the stack
+ * path has to qualify. Null when the edge is not `fronts`, when nothing
+ * resolved, or when the resource is a declared load balancer, which
+ * stays bare.
+ */
+function frontedUnitResource(
+  routing: RoutingMetadata,
+  resources: Record<string, CloudFormationResource>,
+): string | null {
+  if (
+    routing.edge !== "fronts" ||
+    routing.resource === undefined ||
+    routing.resource === null
+  ) {
+    return null;
+  }
+
+  const declared = resources[routing.resource];
+  if (declared?.Type === "AWS::ElasticLoadBalancingV2::LoadBalancer") {
+    return null;
+  }
+
+  return routing.resource;
 }
 
 // ---------------------------------------------------------------------------

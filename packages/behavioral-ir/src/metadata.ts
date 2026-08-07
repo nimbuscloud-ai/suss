@@ -256,9 +256,9 @@ export const RoutingMetadataSchema = z.object({
    * a weighted forward action names more than one target group.
    */
   matchId: z.string().optional(),
-  /** routesTo: the rule's Priority. Absent for a listener's own default forward action, which CFN gives no priority. */
+  /** routesTo / answers: the rule's Priority. Absent for a listener's own default action, which CFN gives no priority. */
   priority: z.number().optional(),
-  /** routesTo: every condition field the rule declares. Empty when the rule (or the listener default) declares none. */
+  /** routesTo / answers: every condition field the rule declares. Empty when the rule (or the listener default) declares none. */
   conditions: z.array(RoutingMatchConditionSchema).optional(),
   /** routesTo: this target's share of a weighted ForwardConfig, when the action names more than one target group. */
   weight: z.number().optional(),

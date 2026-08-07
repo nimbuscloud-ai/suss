@@ -552,9 +552,165 @@ describe("fronts: unresolvable and chained shapes", () => {
     );
     expect(unit).toBeDefined();
   });
+
+  it("leaves a fronted load balancer bare under a stack path, matching router and target", () => {
+    // An NLB target group fronting an ALB inside a child stack: the
+    // fronted resource is ALB infrastructure, and every other edge
+    // names the balancer by its bare logical id, so this one does too.
+    const summaries = cloudFormationToSummaries(
+      {
+        Resources: {
+          InnerAlb: {
+            Type: "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            Properties: {},
+          },
+          NlbTargetGroup: {
+            Type: "AWS::ElasticLoadBalancingV2::TargetGroup",
+            Properties: {
+              TargetType: "alb",
+              Targets: [{ Id: { Ref: "InnerAlb" } }],
+            },
+          },
+          InnerListener: {
+            Type: "AWS::ElasticLoadBalancingV2::Listener",
+            Properties: { DefaultActions: [{ Type: "fixed-response" }] },
+          },
+          LonelyTargetGroup: {
+            Type: "AWS::ElasticLoadBalancingV2::TargetGroup",
+            Properties: { TargetType: "ip" },
+          },
+        },
+      },
+      { stackPath: ["EdgeStack"] },
+    );
+    const fronts = edgesOf(summaries, "fronts");
+    const byTarget = new Map(
+      fronts.map((entry) => [entry.routing.target, entry.routing]),
+    );
+    expect(byTarget.get("NlbTargetGroup")?.resource).toBe("InnerAlb");
+
+    // The stack path leaves the rest of the routing rows alone too: an
+    // answers row and an unresolved fronts row have no unit to qualify.
+    const answers = edgesOf(summaries, "answers");
+    expect(answers[0]?.routing.router).toBe("InnerListener");
+    expect(byTarget.get("LonelyTargetGroup")?.resource).toBeNull();
+  });
 });
 
 describe("answers: response shapes", () => {
+  it("records a rule-based answers row with its priority and conditions, a listener default with neither", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        MyListener: {
+          Type: "AWS::ElasticLoadBalancingV2::Listener",
+          Properties: { DefaultActions: [{ Type: "fixed-response" }] },
+        },
+        AdminBlockRule: {
+          Type: "AWS::ElasticLoadBalancingV2::ListenerRule",
+          Properties: {
+            ListenerArn: { Ref: "MyListener" },
+            Priority: 5,
+            Conditions: [
+              {
+                Field: "path-pattern",
+                PathPatternConfig: { Values: ["/admin/*"] },
+              },
+            ],
+            Actions: [
+              {
+                Type: "fixed-response",
+                FixedResponseConfig: { StatusCode: "403" },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const answers = edgesOf(summaries, "answers");
+
+    // The rule's own match data rides on its answers row, so a gated
+    // 403 is distinguishable from the listener's unconditional default.
+    const ruleRow = answers.find(
+      (entry) => entry.summary.identity.name === "AdminBlockRule",
+    );
+    expect(ruleRow?.routing).toMatchObject({
+      matchId: "AdminBlockRule",
+      priority: 5,
+      conditions: [
+        { field: "path-pattern", values: ["/admin/*"], evaluated: true },
+      ],
+      response: { type: "fixed-response", statusCode: 403 },
+    });
+
+    const defaultRow = answers.find(
+      (entry) => entry.routing.matchId === "MyListener#default",
+    );
+    expect(defaultRow?.routing.priority).toBeUndefined();
+    expect(defaultRow?.routing.conditions).toEqual([]);
+  });
+
+  it("reads past an authenticate action to the fixed-response that answers", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        AuthGatedListener: {
+          Type: "AWS::ElasticLoadBalancingV2::Listener",
+          Properties: {
+            DefaultActions: [
+              {
+                Type: "authenticate-oidc",
+                AuthenticateOidcConfig: {
+                  Issuer: "https://issuer.example.com",
+                },
+              },
+              {
+                Type: "fixed-response",
+                FixedResponseConfig: { StatusCode: "403" },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const answers = edgesOf(summaries, "answers");
+    expect(answers).toHaveLength(1);
+    expect(answers[0]?.routing.response).toMatchObject({
+      type: "fixed-response",
+      statusCode: 403,
+    });
+  });
+
+  it("falls back to an authenticate action's own type when nothing follows it", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        AuthOnlyListener: {
+          Type: "AWS::ElasticLoadBalancingV2::Listener",
+          Properties: {
+            DefaultActions: [{ Type: "authenticate-cognito" }],
+          },
+        },
+      },
+    });
+    const answers = edgesOf(summaries, "answers");
+    expect(answers[0]?.routing.response).toEqual({
+      type: "authenticate-cognito",
+    });
+  });
+
+  it("reads a malformed entry after an authenticate action as the null-typed response", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        MalformedListener: {
+          Type: "AWS::ElasticLoadBalancingV2::Listener",
+          Properties: {
+            DefaultActions: [{ Type: "authenticate-cognito" }, "garbage"],
+          },
+        },
+      },
+    });
+    const answers = edgesOf(summaries, "answers");
+    expect(answers[0]?.routing.response).toEqual({ type: null });
+  });
+
   it("records a listener default naming no action at all as the null-typed response", () => {
     const summaries = cloudFormationToSummaries({
       Resources: {

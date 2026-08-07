@@ -141,7 +141,13 @@ README change, not a side effect here.
 3. **The match pass and the rule.** The TypeScript admits pass with
    per-protocol matchers behind a dispatch table, then `reaches`
    over settled edges plus serving claims. The fixture's four rules
-   exercise both target kinds and both pattern shapes.
+   exercise both target kinds and both pattern shapes. Composing a
+   chained-balancer hop (a `fronts` edge ending at another load
+   balancer, the NLB-in-front-of-an-ALB shape) needs a fact slice 1
+   does not emit: which load balancer a listener belongs to, read
+   from the listener's LoadBalancerArn. Without it the walk stops at
+   the fronted balancer's logical id, so this slice adds that fact
+   as an input alongside the rule that consumes it.
 4. **The surface.** `suss inspect --flow`, rendering the chain with
    evidence, symbolic refs, and unevaluated condition fields shown
    as such.
