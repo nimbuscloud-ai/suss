@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 40,
-    "packagesWithExports": 39,
-    "exports": 290,
-    "internal": 1191,
-    "consumers": 447,
-    "pairs": 439
+    "packages": 42,
+    "packagesWithExports": 41,
+    "exports": 333,
+    "internal": 1213,
+    "consumers": 456,
+    "pairs": 448
   },
   "packages": {
     "packages/adapter/python": {
@@ -13,6 +13,12 @@
       "exports": 42,
       "internal": 35,
       "consumers": 10
+    },
+    "packages/adapter/ruby": {
+      "name": "@suss/adapter-ruby",
+      "exports": 41,
+      "internal": 22,
+      "consumers": 4
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
@@ -169,6 +175,12 @@
       "exports": 2,
       "internal": 0,
       "consumers": 4
+    },
+    "packages/framework/graphql-ruby": {
+      "name": "@suss/framework-graphql-ruby",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 5
     },
     "packages/framework/hono": {
       "name": "@suss/framework-hono",
