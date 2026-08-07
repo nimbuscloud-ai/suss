@@ -163,7 +163,7 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
     └─ @suss/checker         pairwise cross-boundary checker. IR-only consumer.
           │
        @suss/cli             thin wrapper over extractor + checkers + contracts.
-                             The orchestration seam: loads both artifact
+                             The CLI dispatch point: loads both artifact
                              streams (behavioral + intent) and dispatches to
                              the matching checker.
 ```
@@ -183,7 +183,7 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
 - `@suss/manifest-*` packages, parse deploy manifests (SAM/CFN templates) into plain data. No IR, no `@suss` dependencies. Both contract readers (manifest as specification) and framework packs (manifest as discovery index) read through them; the parse lives once, and neither witness depends on the other.
 - `@suss/contract-*` packages, depend only on the IR, plus on each other where they compose (`cloudformation` delegates to `openapi` + `aws-apigateway`). Produce `BehavioralSummary[]` from specs, manifests, schemas; carry `confidence.source: "derived"`. See [`contract-sources.md`](contract-sources.md).
 - `@suss/checker`: depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or packs, operates on the serialized IR.
-- `@suss/cli`: depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs. The CLI is the orchestration seam for multi-stream checking: it loads behavioral summaries and intent docs and dispatches each to its checker. The checkers stay IR-only consumers and never depend on each other.
+- `@suss/cli`: depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs. The CLI is the one place that loads both summary streams (behavioral and intent) and dispatches each to its checker. The checkers stay IR-only consumers and never depend on each other.
 
 ### Ownership rules
 

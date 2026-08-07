@@ -1,6 +1,6 @@
 # @suss/differential
 
-Differential fuzzer for extraction fidelity. Internal tool — a private
+Differential fuzzer for extraction fidelity. Internal tool: a private
 workspace package under `tools/`, never published.
 
 Full reference (architecture, adjudication semantics, tier/corpus
@@ -20,7 +20,7 @@ deterministic request battery; a three-valued interpreter (opaque →
 abstain, never guess) evaluates the summary's transition conditions
 against each concrete request and flags `falseClaim` / `uncovered`
 verdicts. Framework syntax lives entirely in `target.ts`
-(`FuzzTarget`) — Express and Fastify are wired, and the sound-tier
+(`FuzzTarget`); Express and Fastify are wired, and the sound-tier
 property runs against both.
 
 ## Layout

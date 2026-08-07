@@ -133,7 +133,7 @@ answer "all fine" for every one of them.
 The same evidence decides which stage an empty run is blamed on. A
 missing package explains nothing unless some file asked for it, so
 `firstEmptyStage` requires a candidate file before it blames
-resolution. Without that, a project that simply does not use Express
+resolution. Without that, a project that does not use Express at all
 was told that Express was not installed and to go install it, in the
 same output that said no file imports it.
 

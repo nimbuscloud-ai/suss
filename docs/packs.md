@@ -57,6 +57,6 @@ The distinction matters because the two shapes serve different needs:
 - A discovery-driven pack defines a *new boundary type*, Express endpoints become discoverable and pairable units. Without the pack, suss doesn't know Express handlers exist.
 - A recognizer-only pack adds *typed semantics to existing units*, runtime-node attaches "this is a scheduling effect" to a `setTimeout` call inside any unit, without claiming the call site as its own unit.
 
-A single pack can do both, but most don't. The clean separation is what lets recognizers fire across pack boundaries, runtime-node's `schedulingRecognizer` works inside an Express handler, a React component, a CLI entry point, anywhere.
+A single pack can do both, but most don't. That separation is what lets recognizers fire across pack boundaries, runtime-node's `schedulingRecognizer` works inside an Express handler, a React component, a CLI entry point, anywhere.
 
 For the full pattern catalogue and interface contracts, continue to [`reference/pack-patterns.md`](reference/pack-patterns.md). For step-by-step instructions on writing a new pack, see [`guides/writing-a-pack.md`](guides/writing-a-pack.md).

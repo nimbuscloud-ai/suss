@@ -1,7 +1,7 @@
 # Dogfooding: suss on suss
 
 What happens when you run suss against its own source. The goal
-isn't a shipping report — it's the "sit in the user's chair"
+isn't a shipping report; it's the "sit in the user's chair"
 exercise of asking "I have a TypeScript codebase, I want
 summaries, what happens?"
 
@@ -15,11 +15,11 @@ with `node scripts/dogfood.mjs` (after `npm run build`).
 The script walks every `@suss/*` package and, for each package,
 runs the adapter twice:
 
-- **`packageExports`** — produces `library`-kind provider
+- **`packageExports`**: produces `library`-kind provider
   summaries for the package's public API (reachable from
   `package.json` entry points, following barrel re-exports
   through `ts-morph`).
-- **`packageImport`** — produces `caller`-kind consumer
+- **`packageImport`**: produces `caller`-kind consumer
   summaries for every function in the package that calls into
   another `@suss/*` package.
 
@@ -69,14 +69,14 @@ Every edge is a behavioural pair: the provider summary describes
 what the called function does (per-branch conditions + outputs);
 the consumer summary describes what the enclosing function does
 around the call. The checker's existing pairing machinery does
-the matching — no new pairing rule, just a new `boundaryKey`
+the matching: no new pairing rule, only a new `boundaryKey`
 branch for `function-call` semantics with `package` + `exportPath`.
 
 ## What the output looks like
 
 ### Library provider
 
-`@suss/checker::predicatesMatch` is a fair mid-sized example — a
+`@suss/checker::predicatesMatch` is a fair mid-sized example, a
 4-branch dispatch that returns a string literal per branch:
 
 ```
@@ -97,7 +97,7 @@ Header reads "package `@suss/checker`, export `predicatesMatch`";
 provenance says the `package-exports:@suss/checker` pack produced
 a `library`-kind unit rooted at `predicates.ts:12`. Each branch
 shows the predicate that decides it and the literal return value
-for that path — no opaque conditions.
+for that path, with no opaque conditions.
 
 ### Consumer (caller)
 
@@ -115,7 +115,7 @@ checkDir → @suss/checker::checkAll
       -> return { findings, hasErrors, result }
 ```
 
-Header shape is `caller → target` — `checkDir` is the enclosing
+Header shape is `caller → target`: `checkDir` is the enclosing
 function that contains the call; `@suss/checker::checkAll` is
 what it consumes. Its own decision tree has three branches: two
 input-validation throws and a happy-path return with the
@@ -127,7 +127,7 @@ When you run the checker across the union of all summaries, that
 consumer summary pairs with the provider summary for
 `@suss/checker::checkAll` via the key
 `fn:@suss/checker::checkAll`. Same machinery the REST checker
-has used for HTTP boundaries since day one — the key just comes
+has used for HTTP boundaries since day one; the key comes
 from `function-call` semantics instead of `method + path`.
 
 For the full interpretation guide (header shapes, branch
@@ -135,18 +135,18 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## What this exercises
 
-- **`packageExports` discovery** — resolves `types` / `default` /
+- **`packageExports` discovery**: resolves `types` / `default` /
   `import` conditions on `exports`, falls back to `types` /
   `main` / `module` when `exports` isn't set, rewrites
   `dist/*.d.ts` → `src/*.ts`, follows barrel re-exports.
-- **`packageImport` discovery** — walks named + default imports
+- **`packageImport` discovery**: walks named + default imports
   from targeted packages, records bare-identifier call
   expressions, deduplicates by (enclosing function × consumed
   binding).
-- **`library` and `caller` `CodeUnitKind`s** — provider /
+- **`library` and `caller` `CodeUnitKind`s**: provider /
   consumer sides of the in-process `function-call` boundary.
   Both slot into `BOUNDARY_ROLE` correctly.
-- **Per-package contracts** — the generated
+- **Per-package contracts**: the generated
   `.suss/suss-summaries.json` files now contain both sides
   together; consumers of the published package can run their
   own summaries against the shipped contract via `suss check`.
@@ -300,14 +300,14 @@ workspace by extent.
 - **Declarative-data packs.** Framework packs (ts-rest, Express,
   Fastify, React, React Router, Apollo) export a single factory
   that returns a `PatternPack` data structure. Their public API
-  is structurally small — one summary per pack, trivially
-  bodied. That's correct: a pack is data, not behaviour. The
+  is structurally small: one summary per pack, each with a
+  minimal body. That's correct: a pack is data, not behaviour. The
   38/38 coverage counts them as analysed, not as substantive.
 
-## The in-process API still feels clean
+## The in-process API holds up
 
 Two discovery variants in one pack, fed into the adapter, out
-comes paired provider/consumer summaries — the same properties
+comes paired provider/consumer summaries: the same properties
 the original three-experiment dogfood highlighted. The one
 remaining friction: `PatternPack` still requires `languages` /
 `terminals` / `inputMapping` even for packs that don't care

@@ -102,7 +102,7 @@ Deliberately out of scope for this repository:
 - **Continuous monitoring.** suss runs on demand (locally, in CI). It doesn't run as a daemon or push findings to external systems.
 - **Authorial intent, mostly.** suss derives what the code does; it doesn't invent what the code *should* do. Team-authored intent docs are the one exception: they're a separate artifact stream compared against derivation rather than replacing it. See the [intent section of Contracts](/contracts#intent).
 
-The scope is narrow on purpose: produce clean, comparable, language-agnostic data, and provide enough built-in pairing and rendering to demonstrate the data is useful. Any further analysis layer, cross-service, continuous, organisation-scoped, consumes summaries as input. The value of every such layer scales with how many projects produce summaries, so suss's priority is that producing summaries is cheap, universal, and configuration-free.
+The scope is narrow on purpose: produce comparable, language-agnostic data, and provide enough built-in pairing and rendering to demonstrate the data is useful. Any further analysis layer, cross-service, continuous, organisation-scoped, consumes summaries as input. The value of every such layer scales with how many projects produce summaries, so suss's priority is that producing summaries is cheap, universal, and configuration-free.
 
 ## Relationship to prior work
 

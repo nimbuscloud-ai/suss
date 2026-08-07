@@ -48,7 +48,7 @@ Read it as: `reachable(callee) :- reachable(caller), calls(caller, callee).`
 
 ## Worked derivations
 
-The production rule sets are small enough to trace by hand. Three walks, each on the facts a real extraction emits.
+The production rule sets are small enough to trace by hand. Three walks, each on the facts an actual extraction emits.
 
 ### Reachability, round by round
 

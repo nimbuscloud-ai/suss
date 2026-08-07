@@ -18,8 +18,8 @@ interface PatternPack {
   languages: string[];
   /**
    * Wire transport used in BoundaryBinding.transport of discovered units.
-   * Required. Identifies the transport class — what shape the boundary
-   * crosses — not the framework itself.
+   * Required. Identifies the transport class (what shape the boundary
+   * crosses), not the framework itself.
    */
   protocol: string;
   discovery: DiscoveryPattern[];

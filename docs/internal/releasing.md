@@ -64,7 +64,7 @@ and a second copy in the tree is one more thing to keep in step.
 
 Trusted publishing, and nothing else. npm takes the workflow's OIDC
 token, hands it to the registry, and gets back a short-lived credential.
-Nothing is stored, and there is no automation token behind it — that is
+Nothing is stored, and there is no automation token behind it. That is
 deliberate, so there is no long-lived write credential to leak or
 rotate.
 
@@ -92,8 +92,8 @@ Trusted Publisher → GitHub Actions**, then
 | Environment name | *(leave empty)* |
 | Allowed actions | `npm publish` |
 
-The workflow filename is the name on its own — not
-`.github/workflows/release.yml` — and it keeps its extension. A package
+The workflow filename is the name on its own (not
+`.github/workflows/release.yml`), and it keeps its extension. A package
 can have only one trusted publisher at a time; changing providers means
 editing the existing entry rather than adding a second.
 
@@ -121,7 +121,7 @@ Once a package is across, set **Settings → Publishing access → Require
 two-factor authentication and disallow tokens** on it. That setting does
 not affect trusted publishing, which is not token authentication, and it
 means a stolen token cannot publish even if one is minted later. Do it
-only after a real release has gone out over OIDC — a dry run does not
+only after an actual release has gone out over OIDC; a dry run does not
 exercise the exchange.
 
 ## When a release fails

@@ -37,7 +37,7 @@ problems.
 
 ## What the first three have in common
 
-Each one is a boundary the project genuinely has, where the thing that
+Each one is a boundary the project does have, where the thing that
 would describe it sits outside the function suss is reading. In 1 it is
 inside a dependency. In 2 the vocabulary for the outcome is a
 dependency's. In 3 it is in a file next to the code rather than in it.
@@ -94,7 +94,7 @@ which of their boundaries are described by hand.
 ## The fourth one is a different thing
 
 A handler answering a set of methods is not a reading problem. The
-model holds one method per REST binding, and `pages/api` genuinely
+model holds one method per REST binding, and `pages/api`
 answers all of them. Express has the same shape with `app.all`, and
 API Gateway with `ANY`, which the Lambda pack handles today by refusing
 to bind such a function as a route.

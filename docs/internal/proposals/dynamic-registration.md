@@ -1,20 +1,20 @@
-# Dynamic registration — design proposal
+# Dynamic registration: design proposal
 
-A proposal for handling registration patterns that today's `registrationCall` discovery can't see: helper functions whose body registers N routes, loops over literal arrays of route specs, and config-driven app builders. These are the dominant shapes in production codebases — almost every non-trivial Express / Fastify / Hono backend has at least one — and their absence means suss reports zero routes for services that have many.
+A proposal for handling registration patterns that today's `registrationCall` discovery can't see: helper functions whose body registers N routes, loops over literal arrays of route specs, and config-driven app builders. These are the dominant shapes in production codebases (almost every non-trivial Express / Fastify / Hono backend has at least one), and their absence means suss reports zero routes for services that have many.
 
 ## Why this exists
 
 `registrationCall` matches the literal `app.get('/users', handler)` shape. It misses:
 
-- `registerCrud(app, 'users', handlers)` — helper that expands to N `app.X(...)` calls, with arguments substituted from the call site.
-- `for (const r of routes) app[r.method](r.path, r.handler)` — loop over a literal array of route specs.
-- `const app = buildApp({ routes: [...] })` — config-driven app builder where the route data lives in a config object.
+- `registerCrud(app, 'users', handlers)`: helper that expands to N `app.X(...)` calls, with arguments substituted from the call site.
+- `for (const r of routes) app[r.method](r.path, r.handler)`: loop over a literal array of route specs.
+- `const app = buildApp({ routes: [...] })`: config-driven app builder where the route data lives in a config object.
 
 Concretely, a team using a `registerCrud` helper for 12 resources today shows zero routes in suss. After this lands they show 48 (4 routes per resource × 12). When the frontend calls one of those routes and the path drifts, suss flags it; today it can't.
 
-The same problem applies to NestJS modules, tRPC routers built from records, and Hono builder chaining — but those have their own discovery shapes (decorators, record literals) addressed by separate packs. This proposal is for the imperative-helper / loop / config-driven cases that share one underlying mechanism.
+The same problem applies to NestJS modules, tRPC routers built from records, and Hono builder chaining, but those have their own discovery shapes (decorators, record literals) addressed by separate packs. This proposal is for the imperative-helper / loop / config-driven cases that share one underlying mechanism.
 
-## Scope — v0
+## Scope (v0)
 
 Two of the three sub-cases. The third (builder/router records) is its own pack family.
 
@@ -26,7 +26,7 @@ Pack authors declare templates that say "when you see this helper called with th
 {
   type: "registrationTemplate",
   helperName: "registerCrud",
-  importModule: "./crud-helper",  // optional — narrows by source
+  importModule: "./crud-helper",  // optional; narrows by source
   registrations: [
     { method: "GET",    pathTemplate: "/{0}",       handlerArg: "{1}.list" },
     { method: "POST",   pathTemplate: "/{0}",       handlerArg: "{1}.create" },
@@ -38,7 +38,7 @@ Pack authors declare templates that say "when you see this helper called with th
 
 `{0}`, `{1}` refer to positional arguments at the call site. The analyzer expands each template against the literal arguments, generating virtual `app.X(...)` units that feed into the existing `registrationCall` machinery.
 
-When a positional argument isn't a literal (variable, computed expression), the template's path slot becomes opaque with a reason — the registration still emits, just with an unresolved path. The handler reference can also be opaque if the argument isn't a literal handler / object.
+When a positional argument isn't a literal (variable, computed expression), the template's path slot becomes opaque with a reason: the registration still emits, only with an unresolved path. The handler reference can also be opaque if the argument isn't a literal handler / object.
 
 ### 2. Loop over a literal array of route specs
 
@@ -66,7 +66,7 @@ This is harder than templates because pattern-matching the loop shape is more in
 - **Decorator-based registration** (NestJS modules). Already partially handled by `decoratedRoute`. Out of scope here.
 - **Auto-detected registration helpers.** Recognizing "this function is a route registration helper" without a pack-author declaration would need to look inside the helper body, recognize `app.X(...)` calls, and infer the substitution mapping. Tractable but expensive, and produces opaque results when the helper has any conditional logic. Defer to v1, behind a separate flag.
 - **Loops over imported config** (`for (const r of importedRoutes)`). Needs cross-file literal evaluation. Defer.
-- **Conditional registration** (`if (env === 'prod') app.get(...)`). Affects pair confidence; not just a registration question. Defer.
+- **Conditional registration** (`if (env === 'prod') app.get(...)`). Affects pair confidence; not a registration question alone. Defer.
 - **Computed paths beyond simple template strings**. `${prefix}/${resource}/:id` where both `prefix` and `resource` are literal substitutions is fine; arbitrary string concatenation isn't.
 
 ## Mechanics
@@ -119,7 +119,7 @@ A separate variant for the loop pattern. More restrictive shape:
 
 The handler walks `ForOfStatement` / `ForStatement` nodes, validates the loop body matches the expected shape, and synthesizes registrations.
 
-This is a heavier handler than the template variant. It's optional in v0 — packs can declare templates without loops, or both. The loop variant probably ships behind a flag initially until we see how often it's actually needed in practice.
+This is a heavier handler than the template variant. It's optional in v0: packs can declare templates without loops, or both. The loop variant probably ships behind a flag initially until we see how often it's actually needed in practice.
 
 ## Confidence
 
@@ -139,7 +139,7 @@ Each derived registration also carries `confidence.source: "registration-templat
 
 ## Open questions
 
-- **`handlerArg` syntax.** `{1}.list` substitutes argument 1 (an identifier or expression) and reads its `list` property. What about `{1}.list.bind(this)` or other transforms applied at the helper site? Probably out of v0 — keep the substitution syntax to literal property access, defer expression-level substitutions until a real codebase needs them.
+- **`handlerArg` syntax.** `{1}.list` substitutes argument 1 (an identifier or expression) and reads its `list` property. What about `{1}.list.bind(this)` or other transforms applied at the helper site? Probably out of v0: keep the substitution syntax to literal property access, defer expression-level substitutions until a production codebase needs them.
 - **Path-template precedence.** If the helper accepts a `prefix` parameter (`registerCrud(app, '/v1', 'users', handlers)` → `/v1/users`), the template would need `{0}{1}` or similar. Two-arg substitution is fine; arbitrary concatenation gets murky. Keep templates string-literal-only; multi-arg paths join with `/` if both are simple identifiers.
 - **What about helper-of-helpers?** If `registerCrudV2` calls `registerCrud` internally, the template would need to expand transitively. v0 templates only fire on direct calls to the declared helper. A second pass that expands helpers found inside expanded calls is doable but introduces ordering problems; defer.
 - **Inspect output shape.** Derived registrations should display alongside literal ones but be visually distinguishable. UX choice: show a `↳ derived from ...` line, or a separate section, or a confidence-level filter. Decide when implementing inspect changes.
@@ -158,7 +158,7 @@ Each derived registration also carries `confidence.source: "registration-templat
 - Tests + integration test + dogfood validation: 1 day.
 - Inspect rendering for `derivedFrom`: half a day, separable.
 
-Total: 2.5–3.5 days for v0, depending on whether the loop variant ships in the same pass or follows. Smaller if we ship templates only and loop handler lands as a fast follow.
+Total: 2.5 to 3.5 days for v0, depending on whether the loop variant ships in the same pass or follows. Smaller if we ship templates only and loop handler lands as a fast follow.
 
 ## Sequencing
 
@@ -166,8 +166,8 @@ If the runtime-node pack ships first (per the other proposal), this can land aft
 
 The order I'd suggest, if both are on the table:
 
-1. `runtime-node` first — lower risk, smaller surface, cleaner test story.
-2. `registrationTemplate` next — bigger user-facing payoff (route counts on real backends), but needs careful template-author docs to avoid confusion about substitution syntax.
+1. `runtime-node` first: lower risk, smaller surface, simpler test story.
+2. `registrationTemplate` next: bigger user-facing payoff (route counts on production backends), but needs careful template-author docs to avoid confusion about substitution syntax.
 3. `registrationLoop` as a fast follow once templates are stable.
 
-The decision point isn't technical — it's whether the immediate pain is "we miss scheduled callbacks" or "we miss helper-registered routes." For most teams running suss against backends, it's the latter. For dogfood, it's the former (suss itself uses neither pattern much).
+The decision point isn't technical: it's whether the immediate pain is "we miss scheduled callbacks" or "we miss helper-registered routes." For most teams running suss against backends, it's the latter. For dogfood, it's the former (suss itself uses neither pattern much).

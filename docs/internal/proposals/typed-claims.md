@@ -63,8 +63,8 @@ const bus = readMessageBusMetadata(summary);   // typed or undefined
 
 A renamed field becomes a compile error at both ends. The namespaces
 also become documentable in one place, which closes a hole the
-legibility review found: several load-bearing namespaces appear in no
-doc at all.
+legibility review found: several namespaces the pipeline depends on
+appear in no doc at all.
 
 ### 2. References by id
 

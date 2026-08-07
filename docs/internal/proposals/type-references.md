@@ -342,7 +342,7 @@ conclude.
 
 ### What the adapter can actually resolve
 
-Probing this against a real project rather than reasoning about it, the
+Probing this against an actual project rather than reasoning about it, the
 answer splits along exactly the line the compiler already draws.
 
 **A type declared in a module under `node_modules` gives up all three
@@ -419,7 +419,7 @@ every declaration file, so nothing under `node_modules` is part of the
 key. A summary that embeds a dependency version would therefore go
 stale and stay stale: `npm install zod@4` with no source edit leaves
 every project file's mtime and size untouched, the tsconfig untouched
-and the pack digest untouched, so the run is a clean cache hit and
+and the pack digest untouched, so the run is a full cache hit and
 serves summaries stamped with the previous version indefinitely.
 
 Two changes fix it, and the first is required anyway because the `ref`
@@ -457,7 +457,7 @@ store rather than a second one.
 What the alternatives each fail to do: a flat hash gives equality and
 nothing else, provenance gives redemption but cannot localize, and
 carrying the full structure gives everything at exactly the cost the
-library-type fix just removed.
+library-type fix removed.
 
 ### A mismatch is not a finding
 
@@ -832,7 +832,7 @@ needs has to already be in the two files.
 ### The ladder
 
 Today `bodyShapesMatch` answers `match`, `nomatch`, or `unknown`, where
-`unknown` means "uncertainty that would mask a real mismatch". Under
+`unknown` means "uncertainty that would mask an actual mismatch". Under
 this model it walks five rungs and stops at the first that answers.
 
 1. **Root hashes equal, same normalization version.** `match`, nothing

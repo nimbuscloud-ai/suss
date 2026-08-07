@@ -1,6 +1,6 @@
 # Forward-looking backlog
 
-Items flagged as "think about later" — not scheduled, but
+Items flagged as "think about later": not scheduled, but
 referenced from the theory docs
 ([`concept-design.md`](concept-design.md),
 [`quality.md`](quality.md)) as aspirational arcs the shipped
@@ -27,7 +27,7 @@ library versions.
 
 Writing a pack today requires reading the pack interface,
 studying similar packs, and understanding the target framework.
-Facilitating new-pack creation — by humans or LLMs — depends on
+Facilitating new-pack creation (by humans or LLMs) depends on
 clear documentation and specification of the pattern vocabulary.
 Good specs make AI-assisted pack scaffolding tractable; bad specs
 make it impossible.
@@ -35,7 +35,7 @@ make it impossible.
 ### Factory discovery for dynamic endpoint registration
 
 Current discovery patterns (`registrationCall`, `namedExport`,
-etc.) assume mostly static registration. Real codebases
+etc.) assume mostly static registration. Production codebases
 frequently do `registerEndpoints(config)` where `config` is built
 programmatically. Need a pattern for "this factory call spawns N
 routes according to its argument."
@@ -88,7 +88,7 @@ higher bar than sampling.
 The engine records that evaluation derived a fact, not what
 derived it. So when a resolution comes out wrong, and `unwraps`
 over-approximates on purpose so some will, nobody can ask why
-suss believes an export is a particular function. The rules are
+the resolver picked a particular function for an export. The rules are
 readable and the fact base is not, which is the wrong way round
 for a tool whose product is explaining behaviour.
 
@@ -135,12 +135,12 @@ Primary dogfooding arc shipped (see
 [`dogfooding.md`](dogfooding.md)). Remaining extensions, all
 tracked as Phase 9 deferred in `status.md`:
 
-- **Factory-return follow-through** — `createAdapter().extractAll()`-style
+- **Factory-return follow-through**: `createAdapter().extractAll()`-style
   methods reachable only through a returned object.
-- **Member-call chain detection** on the consumer side — `adapter.extractAll()`
+- **Member-call chain detection** on the consumer side: `adapter.extractAll()`
   and `Schema.parse()` aren't tracked; only bare-identifier calls are.
-- **Namespace imports** — `import * as X from "pkg"` isn't scanned.
-- **Pattern exports and conditional resolution** — `./utils/*` and
+- **Namespace imports**: `import * as X from "pkg"` isn't scanned.
+- **Pattern exports and conditional resolution**: `./utils/*` and
   `development` conditionals surface as warnings today.
 
 ## The Jackson arc (aspirational, framework-grounded)
@@ -148,9 +148,9 @@ tracked as Phase 9 deferred in `status.md`:
 Items below trace back to
 [`concept-design.md`](concept-design.md) and
 [`quality.md`](quality.md). They form one coherent arc, not
-independent features — treat them that way when scheduling.
+independent features; treat them that way when scheduling.
 
-### Intent specification as a first-class data interface {#intent-specs}
+### Intent specification as a structured data interface {#intent-specs}
 
 A structured way to express *desired* behaviour: "this endpoint
 should return 404 for deleted users, 200 otherwise." Compare
@@ -162,7 +162,7 @@ intent?).
 Reframed via Jackson (see
 [`concept-design.md`](concept-design.md#prds-and-intent-specifications)):
 a PRD or intent spec is a *top-down concept declaration indexed
-to an audience* — name purpose, operational principle, state,
+to an audience*. It names purpose, operational principle, state,
 actions, role. Same well-formedness failure modes apply (fused
 purposes, non-terminating scenarios, state invoked but not
 owned, missing audience). Forward (derive vs spec), backward
@@ -171,16 +171,16 @@ are three distinct analyses on one data shape.
 
 Extended by [`quality.md`](quality.md): an intent spec that names
 only what the feature *does* captures half the contract. A
-fuller one names *how well* — error budget, acceptable latency,
+fuller one names *how well*: error budget, acceptable latency,
 edge-case handling, observability obligations. PRD-as-data
-should carry quality specifications as first-class too, not just
-capability specifications.
+should carry quality specifications too, not capability
+specifications alone.
 
 ### Arazzo workflows for cross-unit abstractions {#arazzo-workflows}
 
-Arazzo describes multi-step API workflows as first-class
+Arazzo describes multi-step API workflows as declared
 artifacts. Could represent "functionality as code units
-interacting over a bounded context" — a concept cluster in
+interacting over a bounded context", a concept cluster in
 Jackson terms, materialised as a comparable artifact. Likely
 relates to intent specs: an Arazzo workflow is an intent spec
 for a multi-endpoint operation.
@@ -202,7 +202,7 @@ Today suss pairs providers with consumers (two-node edges).
 Next: compose paired edges into named chains, treat them as
 candidate features, check them against intent specs / Arazzo
 workflows. Direct precursor to feature-level checking and to
-composite-quality analysis — specifically the
+composite-quality analysis, specifically the
 [*how*-at-workflow-level facet](quality.md#layer-1--impedance-quality-user-determined)
 and [feature-level quality](quality.md#aspirational-implications)
 in the quality doc.
@@ -215,7 +215,7 @@ phantom concepts (see
 
 - Smeared → many units sharing state lineage without a pairing
   binding between them.
-- Fused → one unit whose transitions split cleanly into
+- Fused → one unit whose transitions split into distinct
   sub-clusters by `subjects` lineage.
 - Phantom → a unit whose OP terminates only in invocations of
   *other* units' actions, never in a role-observable outcome.
@@ -226,7 +226,7 @@ checker extension.
 ### Event / temporal / absence sync packs {#non-call-syncs}
 
 Each needs a new `BoundarySemantics` variant (see
-[`boundary-semantics.md`](/boundary-semantics)). Largest lift —
+[`boundary-semantics.md`](/boundary-semantics)). Largest lift:
 the IR has no temporal notion, and event-name-as-key pairing is
 structurally different from the pairing suss has shipped for
 in-process, HTTP, and GraphQL. Closes the reach gap listed in
@@ -250,21 +250,21 @@ Stub that reads traces or production logs and emits
 boundaries. Lets `contractDisagreement`-style checks run across
 spec / derivation / observation triples. Foundation for the full
 epistemic split at the quality layer (see
-[`quality.md`](quality.md#epistemic)), not just capabilities.
+[`quality.md`](quality.md#epistemic)), not capabilities alone.
 
 ### Trade-off annotations {#tradeoff-annotations}
 
-A declared metadata layer — "this concept takes the consistency
-side of the consistency/latency surface" — that can be compared
+A declared metadata layer ("this concept takes the consistency
+side of the consistency/latency surface") that can be compared
 against derived behaviour and observed behaviour. Hard part: the
 taxonomy of trade-off surfaces (see
-[`quality.md`](quality.md#trade-offs-as-first-class)) has to be
+[`quality.md`](quality.md#trade-offs-as-named-surfaces)) has to be
 stable and extensible before annotations become useful.
 
 ## How to apply
 
 When designing a new feature or extension point, check whether
-it forecloses on any of these — especially pack authoring
+it forecloses on any of these, especially pack authoring
 tooling, factory discovery, intent specs, audience tagging, and
 sync chains. Prefer designs that leave room for them to land
 additively.
