@@ -1,22 +1,28 @@
 {
   "totals": {
-    "packages": 38,
-    "packagesWithExports": 37,
-    "exports": 243,
-    "internal": 1123,
-    "consumers": 418,
-    "pairs": 410
+    "packages": 40,
+    "packagesWithExports": 39,
+    "exports": 290,
+    "internal": 1191,
+    "consumers": 447,
+    "pairs": 439
   },
   "packages": {
+    "packages/adapter/python": {
+      "name": "@suss/adapter-python",
+      "exports": 42,
+      "internal": 35,
+      "consumers": 10
+    },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
-      "internal": 504,
+      "internal": 522,
       "consumers": 30
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 33,
+      "exports": 35,
       "internal": 10,
       "consumers": 3
     },
@@ -54,7 +60,7 @@
       "name": "@suss/client-web",
       "exports": 2,
       "internal": 0,
-      "consumers": 6
+      "consumers": 8
     },
     "packages/contract/appsync": {
       "name": "@suss/contract-appsync",
@@ -71,8 +77,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 43,
-      "consumers": 52
+      "internal": 58,
+      "consumers": 59
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -150,7 +156,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 0,
-      "consumers": 3
+      "consumers": 5
     },
     "packages/framework/fastify": {
       "name": "@suss/framework-fastify",
@@ -158,11 +164,17 @@
       "internal": 0,
       "consumers": 3
     },
+    "packages/framework/flask-restx": {
+      "name": "@suss/framework-flask-restx",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 4
+    },
     "packages/framework/hono": {
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 5
+      "consumers": 9
     },
     "packages/framework/nestjs-graphql": {
       "name": "@suss/framework-nestjs-graphql",
@@ -214,7 +226,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 31,
+      "exports": 32,
       "internal": 8,
       "consumers": 0
     },
