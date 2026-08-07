@@ -1,0 +1,45 @@
+name: Perf
+
+# Extraction wall time, peak memory, and packed tarball sizes, compared
+# against scripts/perf-baseline.json. Weekly rather than per pull
+# request: the measurements cost minutes of runner time, and the
+# thresholds are wide enough that a week of drift is still caught.
+# Saturday early morning UTC is a quiet slot, and the offset from the
+# top of the hour avoids the scheduling congestion GitHub warns about.
+on:
+  schedule:
+    - cron: "47 5 * * 6"
+  workflow_dispatch:
+
+# One run at a time. A manual dispatch during the scheduled run waits
+# for it instead of cancelling a measurement mid-flight.
+concurrency:
+  group: perf-tracking
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Fails past 2x the baseline's calibration-normalized wall time or
+      # raw peak RSS, or a tarball more than 15% or 250KB over baseline,
+      # whichever allowance is larger. The log carries what moved; if
+      # the growth is intended, refresh the baseline locally with
+      # `node scripts/checkPerfBaseline.mjs --update` and commit it.
+      - name: Measure against the committed baseline
+        run: npm run check:perf

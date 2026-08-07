@@ -177,7 +177,16 @@ async function extractOne(pkg) {
   };
 }
 
-const concurrency = Math.max(2, Math.min(packages.length, os.cpus().length));
+// DOGFOOD_CONCURRENCY pins the worker count. The perf gate sets it so
+// peak memory means the same thing on any machine class; unset, the run
+// uses every core the machine has. Zero reads as unset.
+const concurrency = Math.max(
+  2,
+  Math.min(
+    packages.length,
+    Number(process.env.DOGFOOD_CONCURRENCY) || os.cpus().length,
+  ),
+);
 console.log(
   `Extracting ${packages.length} @suss/* packages with concurrency ${concurrency}…`,
 );
