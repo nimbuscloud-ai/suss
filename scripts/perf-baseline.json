@@ -1,0 +1,234 @@
+{
+  "cores": 12,
+  "arch": "arm64",
+  "cpu": "Apple M2 Max",
+  "npm": "11.1.0",
+  "calibrationMs": 225,
+  "workloads": {
+    "fixtures": {
+      "targets": [
+        "express",
+        "fastify",
+        "hono",
+        "nestjs-rest",
+        "nestjs-graphql",
+        "nextjs",
+        "react",
+        "react-router",
+        "ts-rest",
+        "fetch",
+        "apollo-client",
+        "aws-sqs",
+        "aws-eventbridge"
+      ],
+      "wallMs": 10076,
+      "peakRssBytes": 298237952
+    },
+    "dogfood": {
+      "wallMs": 26400,
+      "peakRssBytes": 2528542720
+    }
+  },
+  "packages": {
+    "packages/adapter/python": {
+      "name": "@suss/adapter-python",
+      "packedBytes": 101979,
+      "unpackedBytes": 574172
+    },
+    "packages/adapter/typescript": {
+      "name": "@suss/adapter-typescript",
+      "packedBytes": 351042,
+      "unpackedBytes": 1942141
+    },
+    "packages/behavioral-ir": {
+      "name": "@suss/behavioral-ir",
+      "packedBytes": 75157,
+      "unpackedBytes": 479271
+    },
+    "packages/checker": {
+      "name": "@suss/checker",
+      "packedBytes": 52465,
+      "unpackedBytes": 240454
+    },
+    "packages/checker-intent": {
+      "name": "@suss/checker-intent",
+      "packedBytes": 10506,
+      "unpackedBytes": 46743
+    },
+    "packages/cli": {
+      "name": "@suss/cli",
+      "packedBytes": 72779,
+      "unpackedBytes": 275462
+    },
+    "packages/client/apollo": {
+      "name": "@suss/client-apollo",
+      "packedBytes": 6397,
+      "unpackedBytes": 21565
+    },
+    "packages/client/axios": {
+      "name": "@suss/client-axios",
+      "packedBytes": 6623,
+      "unpackedBytes": 19329
+    },
+    "packages/client/web": {
+      "name": "@suss/client-web",
+      "packedBytes": 6360,
+      "unpackedBytes": 19058
+    },
+    "packages/contract/appsync": {
+      "name": "@suss/contract-appsync",
+      "packedBytes": 11661,
+      "unpackedBytes": 60811
+    },
+    "packages/contract/aws-apigateway": {
+      "name": "@suss/contract-aws-apigateway",
+      "packedBytes": 11805,
+      "unpackedBytes": 62919
+    },
+    "packages/contract/cloudformation": {
+      "name": "@suss/contract-cloudformation",
+      "packedBytes": 34439,
+      "unpackedBytes": 168966
+    },
+    "packages/contract/graphql": {
+      "name": "@suss/contract-graphql",
+      "packedBytes": 11454,
+      "unpackedBytes": 56541
+    },
+    "packages/contract/intent": {
+      "name": "@suss/contract-intent",
+      "packedBytes": 7653,
+      "unpackedBytes": 23441
+    },
+    "packages/contract/openapi": {
+      "name": "@suss/contract-openapi",
+      "packedBytes": 11977,
+      "unpackedBytes": 52724
+    },
+    "packages/contract/prisma": {
+      "name": "@suss/contract-prisma",
+      "packedBytes": 7556,
+      "unpackedBytes": 28391
+    },
+    "packages/contract/storybook": {
+      "name": "@suss/contract-storybook",
+      "packedBytes": 7440,
+      "unpackedBytes": 27732
+    },
+    "packages/datalog": {
+      "name": "@suss/datalog",
+      "packedBytes": 23976,
+      "unpackedBytes": 84988
+    },
+    "packages/extractor": {
+      "name": "@suss/extractor",
+      "packedBytes": 51872,
+      "unpackedBytes": 168838
+    },
+    "packages/framework/apollo": {
+      "name": "@suss/framework-apollo",
+      "packedBytes": 6257,
+      "unpackedBytes": 20334
+    },
+    "packages/framework/aws-eventbridge": {
+      "name": "@suss/framework-aws-eventbridge",
+      "packedBytes": 7825,
+      "unpackedBytes": 31373
+    },
+    "packages/framework/aws-lambda": {
+      "name": "@suss/framework-aws-lambda",
+      "packedBytes": 10278,
+      "unpackedBytes": 43003
+    },
+    "packages/framework/aws-sqs": {
+      "name": "@suss/framework-aws-sqs",
+      "packedBytes": 8273,
+      "unpackedBytes": 34248
+    },
+    "packages/framework/drizzle": {
+      "name": "@suss/framework-drizzle",
+      "packedBytes": 8192,
+      "unpackedBytes": 34883
+    },
+    "packages/framework/express": {
+      "name": "@suss/framework-express",
+      "packedBytes": 6606,
+      "unpackedBytes": 22663
+    },
+    "packages/framework/fastify": {
+      "name": "@suss/framework-fastify",
+      "packedBytes": 6889,
+      "unpackedBytes": 22761
+    },
+    "packages/framework/flask-restx": {
+      "name": "@suss/framework-flask-restx",
+      "packedBytes": 6367,
+      "unpackedBytes": 18259
+    },
+    "packages/framework/hono": {
+      "name": "@suss/framework-hono",
+      "packedBytes": 6649,
+      "unpackedBytes": 24517
+    },
+    "packages/framework/nestjs-graphql": {
+      "name": "@suss/framework-nestjs-graphql",
+      "packedBytes": 6483,
+      "unpackedBytes": 20758
+    },
+    "packages/framework/nestjs-rest": {
+      "name": "@suss/framework-nestjs-rest",
+      "packedBytes": 6570,
+      "unpackedBytes": 21218
+    },
+    "packages/framework/nextjs": {
+      "name": "@suss/framework-nextjs",
+      "packedBytes": 7424,
+      "unpackedBytes": 25566
+    },
+    "packages/framework/prisma": {
+      "name": "@suss/framework-prisma",
+      "packedBytes": 7196,
+      "unpackedBytes": 25784
+    },
+    "packages/framework/react": {
+      "name": "@suss/framework-react",
+      "packedBytes": 7689,
+      "unpackedBytes": 28242
+    },
+    "packages/framework/react-router": {
+      "name": "@suss/framework-react-router",
+      "packedBytes": 7425,
+      "unpackedBytes": 27069
+    },
+    "packages/framework/ts-rest": {
+      "name": "@suss/framework-ts-rest",
+      "packedBytes": 6490,
+      "unpackedBytes": 20364
+    },
+    "packages/intent-ir": {
+      "name": "@suss/intent-ir",
+      "packedBytes": 11801,
+      "unpackedBytes": 66955
+    },
+    "packages/ir-core": {
+      "name": "@suss/ir-core",
+      "packedBytes": 42965,
+      "unpackedBytes": 166579
+    },
+    "packages/manifest/aws": {
+      "name": "@suss/manifest-aws",
+      "packedBytes": 13189,
+      "unpackedBytes": 66748
+    },
+    "packages/resolution": {
+      "name": "@suss/resolution",
+      "packedBytes": 11685,
+      "unpackedBytes": 53277
+    },
+    "packages/runtime/node": {
+      "name": "@suss/runtime-node",
+      "packedBytes": 11142,
+      "unpackedBytes": 56136
+    }
+  }
+}
