@@ -57,6 +57,8 @@ Two things go wrong when a project's name ships as a default. Every other user g
 
 Each pack declares its vocabulary in `vocabulary.json` at the package root: every identifier the pack's shipped source names, mapped to where in the library it comes from. `npm run check:vocabulary` fails when a pack names something that file does not declare, so a reviewer sees the claim in the diff. Names suss itself defines (IR kinds, roles, grammar tags) live once in `packages/extractor/vocabulary.json`. A name a project supplies through pack config never appears as a literal in the pack's source, so only the shipped defaults are policed.
 
+The language adapters answer to the same check inverted: an adapter's shipped source may not contain a string literal that a pack's vocabulary declares as its library's own name, because the adapter owns language syntax and scoping while every library-defined name reaches it through a typed pack field. Each adapter is matched against the framework packs that declare a dependency on it.
+
 ## Naming
 
 A name should say what the thing is for, so someone who has never opened the file can guess what it does before reading it.

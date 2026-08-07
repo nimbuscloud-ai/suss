@@ -1,29 +1,29 @@
-// discovery.ts: find graphql-ruby class DSL fields and turn each into a
+// discovery.ts: find class DSL field declarations and turn each into a
 // RawCodeStructure.
 //
-// v0 discovers a `field` call written directly in the body of a class
-// whose superclass names a pack-configured base class (graphql-ruby's
-// class DSL) and reads no further: the boundary binding and the
-// declared contract are what the call's own arguments state, nothing
-// traced through a resolver's `resolve` method body. That's the
-// existence-class shape the language-adapters proposal calls for: a
-// resolver low-confidence enough to state nothing about behavior
-// nobody read, transitionless (`branches: []`), enough to pair against
-// a client operation by (typeName, fieldName).
+// v0 discovers a field-declaring call written directly in the body of a
+// class whose superclass names a pack-configured base class and reads
+// no further: the boundary binding and the declared contract are what
+// the call's own arguments state, nothing traced through a method
+// body. That's the existence-class shape the language-adapters proposal
+// calls for: a summary low-confidence enough to state nothing about
+// behavior nobody read, transitionless (`branches: []`), enough to pair
+// against a client operation by (typeName, fieldName). Every call name,
+// keyword, and naming convention read here comes off the pack's
+// pattern (see pack.ts); this module hardcodes none of them.
 //
-// `field :x, mutation: Mutations::Y` and `field :x, resolver: Queries::Z`
-// are the one-hop exception: the field itself declares no type, so its
-// declared contract comes from the referenced class's own `type` call
-// (a Resolver's declared return type) or its own `field` calls (a
-// Mutation's payload, read as a record). The referenced class is
-// located by Rails' constant-to-path convention, parsed once per file
-// and cached, and read with the same per-statement reader this module
-// already uses for the discovering class's own body. A class reopened
-// more than once in that file (ordinary Ruby) contributes every block
-// to the same contract, in the order Ruby would evaluate them, and a
-// field or argument redefined along the way keeps its last-written
-// shape, the same registration semantics graphql-ruby's own field
-// storage has.
+// A field carrying one of the pack's wiring keywords is the one-hop
+// exception: the field itself declares no type, so its declared
+// contract comes from the referenced class's own type-declaring call
+// (a declared return type) or its own field-declaring calls (a payload,
+// read as a record). The referenced class is located by the pack's
+// constant-to-path convention, parsed once per file and cached, and
+// read with the same per-statement reader this module already uses for
+// the discovering class's own body. A class reopened more than once in
+// that file (ordinary Ruby) contributes every block to the same
+// contract, in the order Ruby would evaluate them, and a field or
+// argument redefined along the way keeps its last-written shape, the
+// same last-wins registration the class DSL itself has.
 
 import { dispatchByType, graphqlResolverBinding } from "@suss/behavioral-ir";
 
@@ -57,11 +57,12 @@ import type {
 } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { ClassInfo } from "./scope.js";
+import type { TypeReadContext } from "./typeShape.js";
 
 /**
- * A parsed file, kept by absolute path, so a `mutation:` / `resolver:`
- * class referenced from several fields (or a file that is both a
- * project file and someone else's one-hop target) is parsed once. See
+ * A parsed file, kept by absolute path, so a class referenced through a
+ * wiring keyword from several fields (or a file that is both a project
+ * file and someone else's one-hop target) is parsed once. See
  * `createFileCache`.
  */
 export interface FileCache {
@@ -100,11 +101,24 @@ interface FileScope {
   knownClasses: ReadonlySet<string>;
 }
 
-/** What a one-hop `mutation:` / `resolver:` lookup needs beyond the field's own scope: where to look, and how to read a name once found. */
+/** What a one-hop wiring lookup needs beyond the field's own scope: the pattern whose vocabulary is being read, and the parse cache. */
 interface FieldReadContext {
   pattern: GraphqlObjectFields;
   cache: FileCache;
-  camelizeDefault: boolean;
+}
+
+/** The pattern's scalar and naming vocabulary joined with one scope, the shape typeShape.ts reads against. */
+function typeContext(
+  scope: FileScope,
+  pattern: GraphqlObjectFields,
+): TypeReadContext {
+  return {
+    nesting: scope.nesting,
+    knownClasses: scope.knownClasses,
+    scalars: pattern.scalars,
+    scalarNamePrefixes: pattern.scalarNamePrefixes,
+    typeNameConvention: pattern.typeNameConvention,
+  };
 }
 
 export async function discoverUnits(
@@ -162,20 +176,19 @@ async function graphqlObjectFieldUnits(
   ) {
     return [];
   }
-  const typeName = graphqlTypeNameFromQualified(info.qualifiedName);
-  const ctx: FieldReadContext = {
-    pattern,
-    cache: options.cache,
-    camelizeDefault: pattern.camelize ?? true,
-  };
+  const typeName = graphqlTypeNameFromQualified(
+    info.qualifiedName,
+    pattern.typeNameConvention,
+  );
+  const ctx: FieldReadContext = { pattern, cache: options.cache };
   const scope: FileScope = { nesting: info.bodyNesting, knownClasses };
 
-  // graphql-ruby stores fields by name, so a field redefined later in
+  // The class DSL stores fields by name, so a field redefined later in
   // the same body replaces the earlier declaration rather than the two
   // coexisting. A Map keyed by the resolved field name keeps the
   // insertion order of the first sighting while letting a later
   // statement overwrite the stored declaration, so the discovered unit
-  // is the one graphql-ruby itself would end up with.
+  // is the one the library itself would end up with.
   const declsByName = new Map<string, FieldDeclaration>();
   for (const stmt of bodyStatements(info.bodyNode)) {
     const decl = await readFieldCall(stmt, scope, ctx);
@@ -207,11 +220,11 @@ interface FieldDeclaration {
 }
 
 /**
- * Read one `field` call from an object type's own body. A field name
- * this module can't read (anything but a plain symbol literal) means
- * there's no unit to discover at all; a field whose declared shape
- * this module can't read still gets discovered, with no declared
- * contract, per the language-adapters proposal's unresolved
+ * Read one field-declaring call from an object type's own body. A
+ * field name this module can't read (anything but a plain symbol
+ * literal) means there's no unit to discover at all; a field whose
+ * declared shape this module can't read still gets discovered, with no
+ * declared contract, per the language-adapters proposal's unresolved
  * convention: existence is known from the symbol alone, the shape is
  * not.
  */
@@ -223,7 +236,7 @@ async function readFieldCall(
   if (stmt.type !== "call" || field(stmt, "receiver") !== null) {
     return null;
   }
-  if (field(stmt, "method")?.text !== "field") {
+  if (field(stmt, "method")?.text !== ctx.pattern.fieldCallName) {
     return null;
   }
   const callArgs = readCallArgs(field(stmt, "arguments"));
@@ -234,26 +247,40 @@ async function readFieldCall(
   }
   const contract = await declaredContractFor(callArgs, scope, ctx);
   return {
-    fieldName: resolvedName(symbol, callArgs, ctx.camelizeDefault),
+    fieldName: resolvedName(symbol, callArgs, ctx.pattern),
     node: stmt,
     contract,
   };
 }
 
+/** The referenced-class node named by the first of the pattern's wiring keywords present on this call, or null when none is. */
+function wiringReference(
+  callArgs: CallArgs,
+  wiringKeywords: readonly string[],
+): RbNode | null {
+  for (const keyword of wiringKeywords) {
+    const ref = callArgs.keyword[keyword];
+    if (ref !== undefined) {
+      return ref;
+    }
+  }
+  return null;
+}
+
 /**
- * The field's own declared shape: a literal type argument, or, for
- * `mutation:` / `resolver:` wiring, the referenced class's own
- * declaration read from its file. Null when neither is readable (no
- * type argument and no wiring keyword, or a type expression that
- * isn't a literal constant path).
+ * The field's own declared shape: a literal type argument, or, for a
+ * call carrying one of the pattern's wiring keywords, the referenced
+ * class's own declaration read from its file. Null when neither is
+ * readable (no type argument and no wiring keyword, or a type
+ * expression that isn't a literal constant path).
  */
 async function declaredContractFor(
   callArgs: CallArgs,
   scope: FileScope,
   ctx: FieldReadContext,
 ): Promise<FieldContract | null> {
-  const oneHopRef = callArgs.keyword.mutation ?? callArgs.keyword.resolver;
-  if (oneHopRef !== undefined) {
+  const oneHopRef = wiringReference(callArgs, ctx.pattern.wiringKeywords);
+  if (oneHopRef !== null) {
     const target = qualifyConstantRef(oneHopRef, scope.nesting);
     return target === null ? null : readReferencedClass(target, ctx);
   }
@@ -264,25 +291,28 @@ async function declaredContractFor(
   }
   const returnType = typeShapeFromNode(
     typeArg,
-    scope.nesting,
-    scope.knownClasses,
+    typeContext(scope, ctx.pattern),
   );
   return returnType === null ? null : { returnType, args: [] };
 }
 
 /**
- * Locate `targetQualifiedName`'s file by the Rails constant-to-path
+ * Locate `targetQualifiedName`'s file by the pack's constant-to-path
  * convention, parse it, and read the declared shape off every class in
  * it with that exact qualified name. Null at any step that doesn't
  * resolve: no file at that path, no class in it with the exact
  * qualified name, or the matching class (or classes) states neither a
- * `type` call nor any `field` call.
+ * type-declaring call nor any field-declaring call.
  */
 async function readReferencedClass(
   targetQualifiedName: string,
   ctx: FieldReadContext,
 ): Promise<FieldContract | null> {
-  const filePath = resolveConstantFile(ctx.pattern.root, targetQualifiedName);
+  const filePath = resolveConstantFile(
+    ctx.pattern.root,
+    targetQualifiedName,
+    ctx.pattern.pathConvention,
+  );
   if (filePath === null) {
     return null;
   }
@@ -303,13 +333,13 @@ async function readReferencedClass(
     return null;
   }
   const knownClasses = new Set(allClasses.map((info) => info.qualifiedName));
-  return readClassContract(matches, knownClasses, ctx.camelizeDefault);
+  return readClassContract(matches, knownClasses, ctx.pattern);
 }
 
 interface ClassContractAccumulator {
-  /** Set by a `type` call (a Resolver's own declared return type). */
+  /** Set by a type-declaring call (a referenced class's own declared return type). */
   typeCallShape: TypeShape | null;
-  /** Built from `field` calls (a Mutation's own payload). */
+  /** Built from field-declaring calls (a referenced class's own payload). */
   fieldProperties: Record<string, TypeShape>;
   args: Map<string, ArgDeclaration>;
 }
@@ -317,86 +347,106 @@ interface ClassContractAccumulator {
 type ClassCallHandler = (
   callArgs: CallArgs,
   scope: FileScope,
-  camelizeDefault: boolean,
+  pattern: GraphqlObjectFields,
   out: ClassContractAccumulator,
 ) => void;
 
-const CLASS_CALL_HANDLERS: Record<string, ClassCallHandler> = {
-  type: (callArgs, scope, _camelizeDefault, out) => {
-    const typeArg = callArgs.positional[0];
-    if (typeArg !== undefined) {
-      out.typeCallShape = typeShapeFromNode(
-        typeArg,
-        scope.nesting,
-        scope.knownClasses,
-      );
-    }
-  },
-  field: (callArgs, scope, camelizeDefault, out) => {
-    const nameArg = callArgs.positional[0];
-    const symbol = nameArg !== undefined ? symbolValue(nameArg) : null;
-    const typeArg = callArgs.positional[1];
-    if (symbol === null || typeArg === undefined) {
-      return;
-    }
-    const name = resolvedName(symbol, callArgs, camelizeDefault);
-    out.fieldProperties[name] = typeShapeFromNode(
-      typeArg,
-      scope.nesting,
-      scope.knownClasses,
-    ) ?? { type: "unknown" };
-  },
-  argument: (callArgs, scope, camelizeDefault, out) => {
-    const nameArg = callArgs.positional[0];
-    const symbol = nameArg !== undefined ? symbolValue(nameArg) : null;
-    if (symbol === null) {
-      return;
-    }
-    const typeArg = callArgs.positional[1];
-    const shape =
-      typeArg !== undefined
-        ? typeShapeFromNode(typeArg, scope.nesting, scope.knownClasses)
-        : null;
-    const requiredNode = callArgs.keyword.required;
-    // graphql-ruby arguments are required by default; `required: false`
-    // is how a project opts out. Not a guess about project code, the
-    // library's own default.
-    const required =
-      requiredNode !== undefined
-        ? (booleanLiteralValue(requiredNode) ?? true)
-        : true;
-    const name = resolvedName(symbol, callArgs, camelizeDefault);
-    out.args.set(name, {
-      name,
-      type: shape ?? { type: "unknown" },
-      required,
-      typeText: typeArg?.text ?? null,
-    });
-  },
-};
+function readTypeCall(
+  callArgs: CallArgs,
+  scope: FileScope,
+  pattern: GraphqlObjectFields,
+  out: ClassContractAccumulator,
+): void {
+  const typeArg = callArgs.positional[0];
+  if (typeArg !== undefined) {
+    out.typeCallShape = typeShapeFromNode(typeArg, typeContext(scope, pattern));
+  }
+}
+
+function readPayloadFieldCall(
+  callArgs: CallArgs,
+  scope: FileScope,
+  pattern: GraphqlObjectFields,
+  out: ClassContractAccumulator,
+): void {
+  const nameArg = callArgs.positional[0];
+  const symbol = nameArg !== undefined ? symbolValue(nameArg) : null;
+  const typeArg = callArgs.positional[1];
+  if (symbol === null || typeArg === undefined) {
+    return;
+  }
+  const name = resolvedName(symbol, callArgs, pattern);
+  out.fieldProperties[name] = typeShapeFromNode(
+    typeArg,
+    typeContext(scope, pattern),
+  ) ?? { type: "unknown" };
+}
+
+function readArgumentCall(
+  callArgs: CallArgs,
+  scope: FileScope,
+  pattern: GraphqlObjectFields,
+  out: ClassContractAccumulator,
+): void {
+  const nameArg = callArgs.positional[0];
+  const symbol = nameArg !== undefined ? symbolValue(nameArg) : null;
+  if (symbol === null) {
+    return;
+  }
+  const typeArg = callArgs.positional[1];
+  const shape =
+    typeArg !== undefined
+      ? typeShapeFromNode(typeArg, typeContext(scope, pattern))
+      : null;
+  const requiredNode = callArgs.keyword[pattern.requiredKeyword];
+  // What an argument defaults to when the keyword is absent is the
+  // library's own registration default, so the pack states it.
+  const required =
+    requiredNode !== undefined
+      ? (booleanLiteralValue(requiredNode) ?? pattern.requiredDefault)
+      : pattern.requiredDefault;
+  const name = resolvedName(symbol, callArgs, pattern);
+  out.args.set(name, {
+    name,
+    type: shape ?? { type: "unknown" },
+    required,
+    typeText: typeArg?.text ?? null,
+  });
+}
+
+/** The per-call-name handler table for one pattern, keyed by the call names the pack declares. */
+function classCallHandlers(
+  pattern: GraphqlObjectFields,
+): Record<string, ClassCallHandler> {
+  return {
+    [pattern.typeCallName]: readTypeCall,
+    [pattern.fieldCallName]: readPayloadFieldCall,
+    [pattern.argumentCallName]: readArgumentCall,
+  };
+}
 
 /**
- * Read every matching block's `type` / `field` / `argument` calls into
- * one declared contract, processed in the order `matches` lists them
- * (source order, since `walkClasses` walks top to bottom): a `type`
- * call wins when present (the Resolver shape); otherwise the `field`
- * calls found become a record (the Mutation payload shape). A field or
- * argument named more than once, whether across reopened blocks or
- * within one, keeps its last-written declaration, both `Map`- and
- * object-key assignment naturally doing that as later statements
- * overwrite earlier ones under the same name. Null when nothing
- * matching states either shape.
+ * Read every matching block's type-, field-, and argument-declaring
+ * calls into one declared contract, processed in the order `matches`
+ * lists them (source order, since `walkClasses` walks top to bottom):
+ * a type-declaring call wins when present; otherwise the field calls
+ * found become a record. A field or argument named more than once,
+ * whether across reopened blocks or within one, keeps its last-written
+ * declaration, both `Map`- and object-key assignment naturally doing
+ * that as later statements overwrite earlier ones under the same name.
+ * Null when nothing matching states either shape.
  */
 function readClassContract(
   matches: ClassInfo[],
   knownClasses: ReadonlySet<string>,
-  camelizeDefault: boolean,
+  pattern: GraphqlObjectFields,
 ): FieldContract | null {
   const out: ClassContractAccumulator = {
     typeCallShape: null,
     fieldProperties: {},
     args: new Map(),
   };
+  const handlers = classCallHandlers(pattern);
 
   for (const match of matches) {
     if (match.bodyNode === null) {
@@ -408,17 +458,11 @@ function readClassContract(
         continue;
       }
       const method = field(stmt, "method")?.text;
-      const handler =
-        method !== undefined ? CLASS_CALL_HANDLERS[method] : undefined;
+      const handler = method !== undefined ? handlers[method] : undefined;
       if (handler === undefined) {
         continue;
       }
-      handler(
-        readCallArgs(field(stmt, "arguments")),
-        scope,
-        camelizeDefault,
-        out,
-      );
+      handler(readCallArgs(field(stmt, "arguments")), scope, pattern, out);
     }
   }
 
@@ -433,31 +477,26 @@ function readClassContract(
 }
 
 /**
- * graphql-ruby's own default field/argument naming: a symbol written
- * in Ruby's snake_case convention is exposed on the schema in
- * camelCase (`field :campaign_update` becomes the `campaignUpdate`
- * field, `argument :campaign_id` becomes `campaignId`). `camelizeDefault`
- * is the pack's own configured default (graphql-ruby's own default is
- * `true`; a project's schema-wide `camelize: false` sets it to
- * `false` through the pack's own `camelize` option); a `camelize:`
- * keyword on this specific call overrides that default for this one
- * name, the same as it overrides graphql-ruby's own schema-wide
- * setting at runtime.
+ * The schema name a field/argument symbol resolves to. Whether a
+ * snake_case symbol is exposed in camelCase by default, and which
+ * keyword overrides that default for one call, are both the pack's to
+ * state; the camelization itself is the ordinary snake_case-to-
+ * camelCase transform and stays here.
  */
 function resolvedName(
   symbol: string,
   callArgs: CallArgs,
-  camelizeDefault: boolean,
+  pattern: GraphqlObjectFields,
 ): string {
-  const override = callArgs.keyword.camelize;
+  const override = callArgs.keyword[pattern.camelizeKeyword];
   const camelizeThis =
     override !== undefined
-      ? (booleanLiteralValue(override) ?? camelizeDefault)
-      : camelizeDefault;
-  return camelizeThis ? camelize(symbol) : symbol;
+      ? (booleanLiteralValue(override) ?? pattern.camelizeDefault)
+      : pattern.camelizeDefault;
+  return camelizeThis ? toCamelCase(symbol) : symbol;
 }
 
-function camelize(name: string): string {
+function toCamelCase(name: string): string {
   const [first, ...rest] = name.split("_");
   return [
     first,

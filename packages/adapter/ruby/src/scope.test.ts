@@ -168,21 +168,26 @@ describe("shadowingClassFor", () => {
   });
 });
 
-describe("graphqlTypeNameFromQualified", () => {
+describe("graphqlTypeNameFromQualified: stripTypeSuffix", () => {
   it("strips a trailing Type from the class's own short name", () => {
-    expect(graphqlTypeNameFromQualified("Types::CampaignType")).toBe(
-      "Campaign",
-    );
-    expect(graphqlTypeNameFromQualified("Types::QueryType")).toBe("Query");
-    expect(graphqlTypeNameFromQualified("Types::MutationType")).toBe(
-      "Mutation",
-    );
+    expect(
+      graphqlTypeNameFromQualified("Types::CampaignType", "stripTypeSuffix"),
+    ).toBe("Campaign");
+    expect(
+      graphqlTypeNameFromQualified("Types::QueryType", "stripTypeSuffix"),
+    ).toBe("Query");
+    expect(
+      graphqlTypeNameFromQualified("Types::MutationType", "stripTypeSuffix"),
+    ).toBe("Mutation");
   });
 
   it("leaves a short name with no trailing Type unchanged", () => {
-    expect(graphqlTypeNameFromQualified("Mutations::CampaignUpdate")).toBe(
-      "CampaignUpdate",
-    );
+    expect(
+      graphqlTypeNameFromQualified(
+        "Mutations::CampaignUpdate",
+        "stripTypeSuffix",
+      ),
+    ).toBe("CampaignUpdate");
   });
 });
 

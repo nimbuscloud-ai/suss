@@ -23,6 +23,39 @@ export type PythonDiscoveryPattern =
   | DecoratedFunctionRoute;
 
 /**
+ * Conventions both route shapes share, each naming behavior the
+ * library defines, never a project's choice.
+ */
+export interface RouteConventions {
+  /**
+   * How the library spells a parameter inside a route path template,
+   * as a named syntax the adapter has a reader for: "braces" for
+   * `{name}` and `{name:converter}` (FastAPI's, via Starlette),
+   * "flaskConverters" for `<name>` / `<converter:name>` /
+   * `<converter(arguments):name>` (flask-restx's, via Werkzeug). The
+   * adapter canonicalizes a read template to the IR's bare-brace
+   * spelling and classifies parameters named in it as path parameters.
+   * Unset means the library declares no template syntax: paths stand
+   * as written and no parameter reads as a path parameter. Note for
+   * pack authors upgrading from 0.3: the adapter used to apply the
+   * brace reading unconditionally, so a pack that relied on that
+   * without declaring anything now has to state "braces" here. A named
+   * syntax the adapter has no reader for keeps the route discovered
+   * with no path and a stated gap, never a guessed reading.
+   */
+  pathParamSyntax?: string;
+  /**
+   * Whether a parameter annotated with a locally-defined class is the
+   * declared request body (FastAPI's Pydantic-model-parameter
+   * behavior). Library-defined: set it only when the library itself
+   * binds such a parameter to the body. Unset means no such
+   * convention, and the parameter reads as a query parameter, the
+   * weakest claim.
+   */
+  annotatedClassIsRequestBody?: boolean;
+}
+
+/**
  * A class carries a decorator resolving to a configured module, whose
  * call's first string-literal argument is the route path. Each
  * HTTP-verb-named method declared directly in the class body becomes
@@ -36,7 +69,7 @@ export type PythonDiscoveryPattern =
  * from (a per-method decorator there, the method's own name here), so
  * it isn't reused as-is.
  */
-export interface DecoratedClassRoute {
+export interface DecoratedClassRoute extends RouteConventions {
   type: "decoratedClassRoute";
   /**
    * Modules a project may have imported the decorator from, directly
@@ -65,7 +98,7 @@ export interface DecoratedClassRoute {
  * (`app.get(path, handler)`), never decorator-based with the verb
  * carried in the decorator's own name.
  */
-export interface DecoratedFunctionRoute {
+export interface DecoratedFunctionRoute extends RouteConventions {
   type: "decoratedFunctionRoute";
   importModule: string[];
   /** Decorator attribute name, mapped to the HTTP verb it names (e.g. { get: "GET", post: "POST" }). */

@@ -58,6 +58,13 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         type: "decoratedFunctionRoute",
         importModule: ["fastapi", ...(options.wrapperModules ?? [])],
         verbAttributeNames: VERB_ATTRIBUTE_NAMES,
+        // FastAPI paths spell a template parameter in Starlette's
+        // brace syntax (`/items/{item_id}`), and a parameter annotated
+        // with a Pydantic-style class is the request body; both are
+        // the library's own behavior, named here for the adapter's
+        // readers.
+        pathParamSyntax: "braces",
+        annotatedClassIsRequestBody: true,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
         routerComposition: {

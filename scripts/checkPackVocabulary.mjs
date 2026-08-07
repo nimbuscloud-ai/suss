@@ -18,6 +18,18 @@
 // literal in the pack's source, so this check cannot see it. A name it
 // can see is a name the package ships to everyone.
 //
+// The language adapters get the inverted rule: an adapter's shipped
+// source may not contain a string literal that a framework pack's
+// vocabulary declares as its library's own name, because that is the
+// mechanical signature of library vocabulary living adapter-side
+// instead of arriving through a typed pack field. Each adapter is
+// matched against the packs that declare a dependency on it; a name in
+// another language's pack coinciding with, say, a tree-sitter field
+// name is string overlap, not ownership leaking. Entries whose note
+// starts with "suss:" name suss's own tags and convention names, which
+// both sides legitimately spell, so they are excluded, as are shared-
+// vocabulary names and literals shorter than three characters.
+//
 // Run it with `npm run check:vocabulary`.
 
 import fs from "node:fs";
@@ -49,7 +61,15 @@ const KEYED_BY_IDENTIFIER = new Set([
   "methodDecoratorTypeMap",
   "knownProperties",
   "codes",
+  "scalars",
 ]);
+
+/**
+ * Adapter literals shorter than this are not matched: one- and
+ * two-character strings ("::", "id") collide with ordinary code too
+ * often to signal anything.
+ */
+const ADAPTER_SCAN_MIN_LENGTH = 3;
 
 /** A string that could be a symbol in someone's source. */
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -115,8 +135,13 @@ function keysOfIdentifierMap(node) {
     .filter((name) => name !== null);
 }
 
-/** Every identifier a file names, with the line it names it on. */
-function namesInFile(file) {
+/**
+ * Every identifier a file names, with the line it names it on. The
+ * pack scan reads both string literals and identifier-keyed map keys;
+ * the adapter scan reads literals only, because an adapter's own
+ * property names are its code structure, not a claim about a library.
+ */
+function namesInFile(file, { identifierMapKeys = true } = {}) {
   const source = ts.createSourceFile(
     file,
     fs.readFileSync(file, "utf8"),
@@ -144,8 +169,10 @@ function namesInFile(file) {
     ) {
       record(node.text, node);
     }
-    for (const key of keysOfIdentifierMap(node)) {
-      record(key, node);
+    if (identifierMapKeys) {
+      for (const key of keysOfIdentifierMap(node)) {
+        record(key, node);
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -205,7 +232,7 @@ for (const pack of packDirectories()) {
   if (declared === null) {
     problems.push(
       `${pack.name} names ${named.size} identifier(s) and has no ${VOCABULARY_BASENAME}.\n` +
-        `  Declare each one, with where in the library it comes from:\n` +
+        "  Declare each one, with where in the library it comes from:\n" +
         [...named].map(([name, where]) => `    ${name}  (${where})`).join("\n"),
     );
     continue;
@@ -216,8 +243,8 @@ for (const pack of packDirectories()) {
     if (note === undefined) {
       problems.push(
         `${pack.name}: ${where} names \`${name}\`, which ${VOCABULARY_BASENAME} does not declare.\n` +
-          `  Add it with the library symbol it comes from, or take a name this project chose\n` +
-          `  out of the shipped default and let a project supply it through pack config.`,
+          "  Add it with the library symbol it comes from, or take a name this project chose\n" +
+          "  out of the shipped default and let a project supply it through pack config.",
       );
       continue;
     }
@@ -229,7 +256,10 @@ for (const pack of packDirectories()) {
   }
 
   for (const name of Object.keys(declared)) {
-    if (!named.has(name)) {
+    // A shared-vocabulary name never lands in `named` (the scan skips
+    // it), but a pack whose library also defines that name may still
+    // declare it, with its own note saying where the library uses it.
+    if (!named.has(name) && !shared.has(name)) {
       problems.push(
         `${pack.name}: ${VOCABULARY_BASENAME} declares \`${name}\`, which the pack no longer names. Drop it.`,
       );
@@ -243,9 +273,105 @@ for (const name of sharedUnused) {
   );
 }
 
+/** Language adapter packages under packages/adapter, keyed by npm package name so a pack's dependency list can select one. */
+function adaptersByPackageName() {
+  const adapterFamilyDir = path.join(ROOT, "packages", "adapter");
+  const adapters = new Map();
+  for (const entry of fs.readdirSync(adapterFamilyDir, {
+    withFileTypes: true,
+  })) {
+    const dir = path.join(adapterFamilyDir, entry.name);
+    const packageFile = path.join(dir, "package.json");
+    if (!entry.isDirectory() || !fs.existsSync(packageFile)) {
+      continue;
+    }
+
+    adapters.set(readJson(packageFile).name, {
+      name: `adapter/${entry.name}`,
+      dir,
+    });
+  }
+  return adapters;
+}
+
+/**
+ * The library vocabulary each adapter must not name, gathered from the
+ * framework packs that declare a dependency on that adapter. Entries
+ * noted "suss:" are suss's own tags and convention names, spelled on
+ * both sides by design; shared-vocabulary names are suss's own too.
+ */
+function libraryNamesByAdapter(adapters) {
+  const byAdapter = new Map();
+  const frameworkDir = path.join(ROOT, "packages", "framework");
+  for (const entry of fs.readdirSync(frameworkDir, { withFileTypes: true })) {
+    const packDir = path.join(frameworkDir, entry.name);
+    const vocabularyFile = path.join(packDir, VOCABULARY_BASENAME);
+    const packageFile = path.join(packDir, "package.json");
+    if (
+      !entry.isDirectory() ||
+      !fs.existsSync(vocabularyFile) ||
+      !fs.existsSync(packageFile)
+    ) {
+      continue;
+    }
+
+    // devDependencies count too: most TypeScript packs hold the
+    // adapter as a devDependency (their pattern types come from
+    // @suss/extractor), and a pack that only tests against an adapter
+    // still drives it.
+    const manifest = readJson(packageFile);
+    const dependencies = {
+      ...(manifest.dependencies ?? {}),
+      ...(manifest.devDependencies ?? {}),
+    };
+    const driven = Object.keys(dependencies).filter((name) =>
+      adapters.has(name),
+    );
+    if (driven.length === 0) {
+      continue;
+    }
+
+    for (const [name, note] of Object.entries(readJson(vocabularyFile))) {
+      if (
+        (typeof note === "string" && note.startsWith("suss:")) ||
+        shared.has(name) ||
+        name.length < ADAPTER_SCAN_MIN_LENGTH
+      ) {
+        continue;
+      }
+      for (const adapterPackage of driven) {
+        const names = byAdapter.get(adapterPackage) ?? new Map();
+        byAdapter.set(adapterPackage, names);
+        names.set(name, `framework/${entry.name}`);
+      }
+    }
+  }
+  return byAdapter;
+}
+
+const adapters = adaptersByPackageName();
+const libraryNames = libraryNamesByAdapter(adapters);
+for (const [adapterPackage, names] of libraryNames) {
+  const adapter = adapters.get(adapterPackage);
+  for (const file of shippedSourceFiles(path.join(adapter.dir, "src"))) {
+    for (const [name, line] of namesInFile(file, {
+      identifierMapKeys: false,
+    })) {
+      const packName = names.get(name);
+      if (packName === undefined) {
+        continue;
+      }
+      problems.push(
+        `${adapter.name}: ${path.relative(ROOT, file)}:${line} names \`${name}\`, which ${packName}'s ${VOCABULARY_BASENAME} declares as its library's own.\n` +
+          "  Library vocabulary reaches an adapter through a typed pack field, never a literal in adapter source.",
+      );
+    }
+  }
+}
+
 if (problems.length === 0) {
   process.stdout.write(
-    "Every identifier a pack names is declared in its vocabulary.\n",
+    "Every identifier a pack names is declared in its vocabulary, and no adapter names a pack library's own.\n",
   );
   process.exit(0);
 }

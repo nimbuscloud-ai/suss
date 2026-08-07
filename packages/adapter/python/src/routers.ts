@@ -41,14 +41,14 @@ export interface BoundPythonFile {
 /**
  * What a decorator's base object turns out to be. `notRouter` covers
  * the app itself and anything the index never saw constructed, so the
- * decorator's own path stands as written; `prefix` is the composed
+ * decorator's own path stands as written; `composed` carries the
  * mount-plus-constructor prefix to put in front of that path;
  * `abstain` keeps the route pathless, with a reason phrased to follow
  * "the router this route is declared on ...".
  */
 export type RoutePrefixResolution =
   | { kind: "notRouter" }
-  | { kind: "prefix"; value: string }
+  | { kind: "composed"; value: string }
   | { kind: "abstain"; reason: string };
 
 export interface RouterIndex {
@@ -155,7 +155,7 @@ export function buildRouterIndex(
       }
 
       return {
-        kind: "prefix",
+        kind: "composed",
         value: mount.includePrefix + construction.ownPrefix,
       };
     },

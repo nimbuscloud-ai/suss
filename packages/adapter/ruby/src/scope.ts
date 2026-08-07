@@ -9,11 +9,11 @@
 // alone is recorded as the name it was written with, and callers treat
 // that as an unresolved reference rather than a guess.
 //
-// Two constant shapes appear in graphql-ruby source. A compound path
-// written out (`Types::BaseObject`, a `scope_resolution` node) names an
-// absolute path the way Ruby itself resolves it, regardless of where
-// it's written, so its text is the qualified name. A bare name (a
-// `constant` node, e.g. `BaseObject` written inside `module Types`) is
+// Two constant shapes appear in Ruby source. A compound path written
+// out (`Data::Record`, a `scope_resolution` node) names an absolute
+// path the way Ruby itself resolves it, regardless of where it's
+// written, so its text is the qualified name. A bare name (a
+// `constant` node, e.g. `Record` written inside `module Data`) is
 // nesting-relative.
 //
 // `Module.nesting` itself always prepends the newly opened class or
@@ -200,15 +200,35 @@ function visitModule(
   }
 }
 
+/** A GraphQL type-name derivation this adapter knows how to run. A pack selects the one its library documents; the algorithm lives here. */
+export type GraphqlTypeNameConvention = "stripTypeSuffix";
+
 /**
- * The GraphQL type name graphql-ruby derives by default for a class:
- * its own short name (the segment after the last `::`), with a
- * trailing `Type` stripped. `Types::CampaignType` reads as `Campaign`,
- * `Types::QueryType` as `Query`. This is the library's own
- * `default_graphql_name` convention (an explicit `graphql_name`
- * override is not read in v0).
+ * A class's short name (the segment after the last `::`), with a
+ * trailing `Type` stripped: `Types::CampaignType` reads as `Campaign`,
+ * `Types::QueryType` as `Query`.
  */
-export function graphqlTypeNameFromQualified(qualifiedName: string): string {
+function stripTypeSuffixName(qualifiedName: string): string {
   const shortName = qualifiedName.split("::").at(-1) ?? qualifiedName;
   return shortName.endsWith("Type") ? shortName.slice(0, -4) : shortName;
+}
+
+const TYPE_NAME_CONVENTIONS: Record<
+  GraphqlTypeNameConvention,
+  (qualifiedName: string) => string
+> = {
+  stripTypeSuffix: stripTypeSuffixName,
+};
+
+/**
+ * The GraphQL type name a class's own qualified name derives under the
+ * selected convention. Which convention applies is the library's own
+ * documented naming rule, so the pack states it; an explicit per-class
+ * name override is not read in v0.
+ */
+export function graphqlTypeNameFromQualified(
+  qualifiedName: string,
+  convention: GraphqlTypeNameConvention,
+): string {
+  return TYPE_NAME_CONVENTIONS[convention](qualifiedName);
 }

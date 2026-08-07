@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
 import { createFileCache, discoverUnits } from "./discovery.js";
 import { parseRuby } from "./parser.js";
 
@@ -26,17 +27,7 @@ function diskCache() {
   );
 }
 
-const OBJECT_PACK: RubyPack = {
-  name: "graphql-ruby",
-  protocol: "http-graphql",
-  discovery: [
-    {
-      type: "graphqlObjectFields",
-      baseClassNames: ["Types::BaseObject"],
-      root: "/app/graphql",
-    },
-  ],
-};
+const OBJECT_PACK: RubyPack = graphqlRubyTestPack();
 
 async function discover(source: string, pack: RubyPack = OBJECT_PACK) {
   const tree = await parseRuby(source);
@@ -200,17 +191,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ruby-onehop-"));
     graphqlRoot = path.join(tmpDir, "app", "graphql");
-    pack = {
-      name: "graphql-ruby",
-      protocol: "http-graphql",
-      discovery: [
-        {
-          type: "graphqlObjectFields",
-          baseClassNames: ["Types::BaseObject"],
-          root: graphqlRoot,
-        },
-      ],
-    };
+    pack = graphqlRubyTestPack({ root: graphqlRoot });
   });
 
   afterEach(() => {
@@ -402,18 +383,7 @@ describe("discoverUnits: camelize", () => {
   });
 
   it("leaves every field's name as written when the pack's own camelize option is false", async () => {
-    const pack: RubyPack = {
-      name: "graphql-ruby",
-      protocol: "http-graphql",
-      discovery: [
-        {
-          type: "graphqlObjectFields",
-          baseClassNames: ["Types::BaseObject"],
-          root: "/app/graphql",
-          camelize: false,
-        },
-      ],
-    };
+    const pack: RubyPack = graphqlRubyTestPack({ camelizeDefault: false });
     const units = await discover(
       "class Types::MutationType < Types::BaseObject\n" +
         "  field :campaign_update, String, null: true\n" +
@@ -424,18 +394,7 @@ describe("discoverUnits: camelize", () => {
   });
 
   it("a field's own camelize: true overrides the pack's false default for that one name", async () => {
-    const pack: RubyPack = {
-      name: "graphql-ruby",
-      protocol: "http-graphql",
-      discovery: [
-        {
-          type: "graphqlObjectFields",
-          baseClassNames: ["Types::BaseObject"],
-          root: "/app/graphql",
-          camelize: false,
-        },
-      ],
-    };
+    const pack: RubyPack = graphqlRubyTestPack({ camelizeDefault: false });
     const units = await discover(
       "class Types::MutationType < Types::BaseObject\n" +
         "  field :campaign_update, String, null: true, camelize: true\n" +
@@ -459,17 +418,7 @@ describe("discoverUnits: camelize", () => {
         "  field :campaign, Types::CampaignType, null: true\n" +
         "end\n",
     );
-    const pack: RubyPack = {
-      name: "graphql-ruby",
-      protocol: "http-graphql",
-      discovery: [
-        {
-          type: "graphqlObjectFields",
-          baseClassNames: ["Types::BaseObject"],
-          root: graphqlRoot,
-        },
-      ],
-    };
+    const pack: RubyPack = graphqlRubyTestPack({ root: graphqlRoot });
     const tree = await parseRuby(
       "class Types::MutationType < Types::BaseObject\n" +
         "  field :campaign_update, mutation: Mutations::CampaignUpdate\n" +

@@ -40,6 +40,7 @@ export type {
   DecoratedFunctionRoute,
   PythonDiscoveryPattern,
   PythonPack,
+  RouteConventions,
   RouterComposition,
 } from "./pack.js";
 export type { PyNode, PyTree } from "./parser.js";

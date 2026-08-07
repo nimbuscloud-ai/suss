@@ -49,7 +49,7 @@ export function symbolValue(node: RbNode): string | null {
   return node.type === "simple_symbol" ? node.text.slice(1) : null;
 }
 
-/** A `pair` node's key, when it is a bare `key:` shorthand symbol (the shape every graphql-ruby keyword argument in the measured corpus uses). Null for a string- or expression-keyed pair, which v0 does not read. */
+/** A `pair` node's key, when it is a bare `key:` shorthand symbol (the shape every class-DSL keyword argument in the measured corpus uses). Null for a string- or expression-keyed pair, which v0 does not read. */
 export function hashKeySymbolName(node: RbNode): string | null {
   return node.type === "hash_key_symbol" ? node.text : null;
 }

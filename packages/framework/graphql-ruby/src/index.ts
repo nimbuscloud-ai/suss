@@ -7,14 +7,21 @@
 // with each field declared by a `field` call in the class body. The
 // GraphQL type name comes from the class's own short name with a
 // trailing `Type` stripped, the library's own `default_graphql_name`
-// convention; there is nothing to configure for it. Root Query/Mutation
-// fields wired through `mutation:` / `resolver:` read their declared
-// shape from the referenced class's own file, located by Rails'
-// constant-to-path convention under `root`.
+// convention, which the pack selects as the adapter's `stripTypeSuffix`
+// naming. Root Query/Mutation fields wired through `mutation:` /
+// `resolver:` read their declared shape from the referenced class's own
+// file, located by the Rails constant-to-path convention (the adapter's
+// `railsUnderscore`) under `root`. Everything graphql-ruby names, the
+// `field`/`type`/`argument` calls, the `required:` and `camelize:`
+// keywords and their defaults, the built-in scalars and their
+// `GraphQL::Types::` spelling, is stated here; the adapter reads only
+// these fields.
 //
 // v0 scope: discovery and declared-shape reading only, per the
 // language-adapters proposal's Ruby slice. `routes.rb` is a separate,
 // much larger macro-expansion problem and is out of scope here.
+
+import { SCALAR_SHAPES } from "@suss/contract-graphql";
 
 import type { GraphqlObjectFields, RubyPack } from "@suss/adapter-ruby";
 
@@ -66,7 +73,31 @@ export function graphqlRubyFramework(
       ...(options.baseClassNames ?? []),
     ],
     root: options.root,
-    camelize: options.camelize ?? true,
+    pathConvention: "railsUnderscore",
+    fieldCallName: "field",
+    typeCallName: "type",
+    argumentCallName: "argument",
+    wiringKeywords: ["mutation", "resolver"],
+    requiredKeyword: "required",
+    // graphql-ruby registers an argument as required unless the call
+    // opts out with `required: false`; the library's own default, not
+    // a guess about project code.
+    requiredDefault: true,
+    camelizeKeyword: "camelize",
+    camelizeDefault: options.camelize ?? true,
+    // The five standard scalars come from @suss/contract-graphql's own
+    // SDL table, so a contract read from Ruby compares against one
+    // read from SDL without a vocabulary mismatch. `Integer` is
+    // graphql-ruby's own addition: a native Ruby class the library
+    // accepts as a convenience synonym for its `Int` scalar
+    // (`field :age, Integer, null: true`), coerced internally the
+    // same way `String` is.
+    scalars: {
+      ...SCALAR_SHAPES,
+      Integer: { type: "number" },
+    },
+    scalarNamePrefixes: ["GraphQL::Types::"],
+    typeNameConvention: "stripTypeSuffix",
   };
   return {
     name: "graphql-ruby",

@@ -36,8 +36,8 @@ export async function extractRubyProject(
 ): Promise<ExtractRubyResult> {
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
-  // One cache for the whole run: a `mutation:` / `resolver:` class
-  // referenced from a field parses once, whether it's also one of
+  // One cache for the whole run: a class referenced from a field
+  // through a wiring keyword parses once, whether it's also one of
   // `options.files` or reached only through the constant-to-path
   // convention.
   const cache = createFileCache(

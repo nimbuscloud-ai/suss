@@ -1,19 +1,20 @@
-// typeShape.ts: read a graphql-ruby type expression as a declared
+// typeShape.ts: read a type expression from a class DSL as a declared
 // shape.
 //
-// A `field`/`argument`/`type` call's type argument is a literal
-// constant (`String`, `Types::CampaignType`), a one-element array
-// literal wrapping one (`[Types::CampaignType]`, graphql-ruby's list
-// type), or, when a project writes it as a lambda or a method call
-// instead, an expression this module does not read. That last shape is
-// the one the language-adapters proposal calls out for Ruby: a field
-// whose type is anything other than a literal abstains rather than
-// guessing, the same convention the Python adapter's annotation reader
-// follows for a shape it doesn't recognize.
+// A DSL call's type argument is a literal constant (a scalar name the
+// pack declares, or a project class), a one-element array literal
+// wrapping one (the library's list type), or, when a project writes it
+// as a lambda or a method call instead, an expression this module does
+// not read. That last shape is the one the language-adapters proposal
+// calls out for Ruby: a field whose type is anything other than a
+// literal abstains rather than guessing, the same convention the
+// Python adapter's annotation reader follows for a shape it doesn't
+// recognize.
 //
-// Scalar names mirror @suss/contract-graphql's own SDL scalar mapping
-// (String/ID -> text, Int/Float -> number, Boolean -> boolean) so a
-// contract read here compares against one read from SDL without a
+// Which names count as scalars, which module prefixes may qualify
+// them, and how a class name derives its GraphQL type name are all
+// pack data (see pack.ts), carried here in a `TypeReadContext` so a
+// shape read from Ruby compares against one read from SDL without a
 // vocabulary mismatch.
 
 import {
@@ -24,32 +25,38 @@ import {
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { RbNode } from "./parser.js";
+import type { GraphqlTypeNameConvention } from "./scope.js";
 
-const BUILTIN_SCALARS: Record<string, TypeShape> = {
-  String: { type: "text" },
-  ID: { type: "text" },
-  Int: { type: "number" },
-  Float: { type: "number" },
-  Boolean: { type: "boolean" },
-  // Native Ruby classes graphql-ruby accepts as a convenience synonym
-  // for its own Int/Float scalars (`field :age, Integer, null: true`),
-  // coerced internally the same way `String` is.
-  Integer: { type: "number" },
-};
-
-const GRAPHQL_TYPES_PREFIX = "GraphQL::Types::";
+/** Everything a type expression needs to resolve: the lexical scope it sits in, and the pack's own scalar and naming vocabulary. */
+export interface TypeReadContext {
+  /** The `Module.nesting` chain in effect, innermost first. */
+  nesting: readonly string[];
+  /** Every class the surrounding file defines, by qualified name, for shadow detection. */
+  knownClasses: ReadonlySet<string>;
+  /** The pack's scalar table: type name to shape. */
+  scalars: Readonly<Record<string, TypeShape>>;
+  /** Module prefixes the pack's scalars are also reachable under. */
+  scalarNamePrefixes: readonly string[];
+  /** The pack's selected GraphQL type-name derivation. */
+  typeNameConvention: GraphqlTypeNameConvention;
+}
 
 /**
- * graphql-ruby's built-in scalars are reachable either bare (`String`)
- * or module-pathed (`GraphQL::Types::String`), the "including
- * module-pathed ones" case the language-adapters proposal names. Strip
- * the module path before the scalar lookup; anything else keeps its
- * full qualified name for the ref fallback.
+ * A scalar can be written bare or under one of the pack's module
+ * prefixes. Strip a matching prefix before the scalar lookup; a name
+ * under no prefix keeps its full qualified spelling for the ref
+ * fallback.
  */
-function scalarLookupName(qualifiedName: string): string {
-  return qualifiedName.startsWith(GRAPHQL_TYPES_PREFIX)
-    ? qualifiedName.slice(GRAPHQL_TYPES_PREFIX.length)
-    : qualifiedName;
+function scalarLookupName(
+  qualifiedName: string,
+  prefixes: readonly string[],
+): string {
+  for (const prefix of prefixes) {
+    if (qualifiedName.startsWith(prefix)) {
+      return qualifiedName.slice(prefix.length);
+    }
+  }
+  return qualifiedName;
 }
 
 /**
@@ -60,52 +67,60 @@ function scalarLookupName(qualifiedName: string): string {
  * expression produces no declared contract at all instead of a
  * confident-looking empty one.
  *
- * `knownClasses` is every class this file itself defines, by qualified
- * name (see scope.ts's `walkClasses`): a bare `constant` is checked
- * against `nesting` first, because a project class sitting at some
- * level of `Module.nesting` is exactly what Ruby itself would resolve
- * before it ever reaches a scalar inherited from a base class. Only
- * once nesting resolves nothing is the bare name tried against the
- * scalar table. A compound `scope_resolution` path is already
- * absolute and can't be shadowed by nesting, so it goes straight to
- * the (possibly module-pathed) scalar lookup.
+ * A bare `constant` is checked against `ctx.nesting` first, because a
+ * project class sitting at some level of `Module.nesting` is exactly
+ * what Ruby itself would resolve before it ever reaches a scalar
+ * inherited from a base class. Only once nesting resolves nothing is
+ * the bare name tried against the pack's scalar table. A compound
+ * `scope_resolution` path is already absolute and can't be shadowed by
+ * nesting, so it goes straight to the (possibly module-prefixed)
+ * scalar lookup.
  */
 export function typeShapeFromNode(
   node: RbNode,
-  nesting: readonly string[],
-  knownClasses: ReadonlySet<string>,
+  ctx: TypeReadContext,
 ): TypeShape | null {
   if (node.type === "array") {
     const inner = node.namedChild(0);
     if (inner === null) {
       return null;
     }
-    const items = typeShapeFromNode(inner, nesting, knownClasses);
+    const items = typeShapeFromNode(inner, ctx);
     return items === null ? null : { type: "array", items };
   }
 
   if (node.type === "constant") {
-    const shadow = shadowingClassFor(node, nesting, knownClasses);
+    const shadow = shadowingClassFor(node, ctx.nesting, ctx.knownClasses);
     if (shadow !== null) {
-      return { type: "ref", name: graphqlTypeNameFromQualified(shadow) };
+      return {
+        type: "ref",
+        name: graphqlTypeNameFromQualified(shadow, ctx.typeNameConvention),
+      };
     }
-    const bareScalar = BUILTIN_SCALARS[node.text];
+    const bareScalar = ctx.scalars[node.text];
     if (bareScalar !== undefined) {
       return bareScalar;
     }
-    const qualified = qualifyConstantRef(node, nesting);
+    const qualified = qualifyConstantRef(node, ctx.nesting);
     return qualified === null
       ? null
-      : { type: "ref", name: graphqlTypeNameFromQualified(qualified) };
+      : {
+          type: "ref",
+          name: graphqlTypeNameFromQualified(qualified, ctx.typeNameConvention),
+        };
   }
 
   if (node.type === "scope_resolution") {
     const qualified = node.text;
-    const scalar = BUILTIN_SCALARS[scalarLookupName(qualified)];
+    const scalar =
+      ctx.scalars[scalarLookupName(qualified, ctx.scalarNamePrefixes)];
     if (scalar !== undefined) {
       return scalar;
     }
-    return { type: "ref", name: graphqlTypeNameFromQualified(qualified) };
+    return {
+      type: "ref",
+      name: graphqlTypeNameFromQualified(qualified, ctx.typeNameConvention),
+    };
   }
 
   return null;

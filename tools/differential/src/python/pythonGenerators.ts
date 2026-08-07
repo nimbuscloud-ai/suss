@@ -62,6 +62,7 @@ const arbFastapiRoute: fc.Arbitrary<FastapiRouteSpec> = fc
     verb: fc.constantFrom(...VERBS),
     segment: fc.constantFrom(...SEGMENTS),
     hasPathParam: fc.boolean(),
+    pathParamTyped: fc.boolean(),
     pathComputed: fc.oneof(
       { weight: 4, arbitrary: fc.constant(false) },
       { weight: 1, arbitrary: fc.constant(true) },
@@ -167,6 +168,7 @@ const arbFlaskResource: fc.Arbitrary<FlaskResourceSpec> = fc
   .record({
     segment: fc.constantFrom(...SEGMENTS),
     hasPathParam: fc.boolean(),
+    converterArgs: fc.boolean(),
     pathComputed: fc.oneof(
       { weight: 4, arbitrary: fc.constant(false) },
       { weight: 1, arbitrary: fc.constant(true) },

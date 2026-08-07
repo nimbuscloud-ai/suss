@@ -15,6 +15,7 @@ const fastapiLike: PythonPack = {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
       verbAttributeNames: { get: "GET", post: "POST" },
+      pathParamSyntax: "braces",
       routerComposition: {
         routerConstructorName: "APIRouter",
         includeMethodName: "include_router",

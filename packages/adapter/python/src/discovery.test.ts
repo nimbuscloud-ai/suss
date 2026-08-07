@@ -20,6 +20,7 @@ const flaskRestxLike: PythonPack = {
         put: "PUT",
         delete: "DELETE",
       },
+      pathParamSyntax: "flaskConverters",
     },
   ],
 };
@@ -32,6 +33,8 @@ const fastapiLike: PythonPack = {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
       verbAttributeNames: { get: "GET", post: "POST" },
+      pathParamSyntax: "braces",
+      annotatedClassIsRequestBody: true,
       responseModelKeyword: "response_model",
       statusCodeKeyword: "status_code",
     },
@@ -96,12 +99,17 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
     expect(get?.bodyContent).toBe("statements");
   });
 
-  it("classifies a path parameter by name against the route's path template", async () => {
+  it("classifies a converter-typed path parameter and claims the path in canonical brace form", async () => {
+    // Written the way Flask itself spells a converter-typed template.
+    // The claim canonicalizes to the IR's brace form so it pairs with
+    // consumers, and the parameter the template names reads as a path
+    // parameter. A brace-only reading of this path sees no parameter
+    // at all, which is exactly the bug this pins.
     const orderSource = [
       "from myapp.wrappers.restx import route as api_route",
       "",
       "",
-      '@api_route("/orders/{order_id}")',
+      '@api_route("/orders/<int:order_id>")',
       "class OrderDetail:",
       "    def get(self, order_id):",
       "        return {}",
@@ -109,8 +117,155 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
     ].join("\n");
     const units = await unitsOf(orderSource, [flaskRestxLike]);
     const get = units.find((u) => u.identity.name === "OrderDetail.get");
+    expect(get?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/orders/{order_id}",
+    });
     expect(get?.parameters).toEqual([
       { name: "order_id", position: 1, role: "pathParams", typeText: null },
+    ]);
+  });
+
+  it("reads Werkzeug's converter-argument forms, lazily to the first closing parenthesis", async () => {
+    // <int(min=0):id> and <any(home,about):page> are Werkzeug's own
+    // documented converter-argument spelling; a reader without the
+    // parenthesized-arguments arm skips the whole segment and the
+    // parameter silently reads as a query parameter with no gap.
+    const argsSource = [
+      "from myapp.wrappers.restx import route",
+      "",
+      "",
+      '@route("/orders/<int(min=0):order_id>/<any(home,about):page>")',
+      "class OrderPage:",
+      "    def get(self, order_id, page):",
+      "        return {}",
+      "",
+    ].join("\n");
+    const units = await unitsOf(argsSource, [flaskRestxLike]);
+    const get = units.find((u) => u.identity.name === "OrderPage.get");
+    expect(get?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/orders/{order_id}/{page}",
+    });
+    expect(get?.parameters).toEqual([
+      { name: "order_id", position: 1, role: "pathParams", typeText: null },
+      { name: "page", position: 2, role: "pathParams", typeText: null },
+    ]);
+  });
+
+  it("leaves an annotated-class parameter a query parameter when the pattern declares no body convention", async () => {
+    // flask-restx has no Pydantic-model-parameter behavior, so its
+    // pattern leaves `annotatedClassIsRequestBody` unset and an
+    // annotated locally-defined class must not read as the request
+    // body the way it does under FastAPI's pattern.
+    const annotatedSource = [
+      "from myapp.wrappers.restx import route",
+      "",
+      "",
+      "class TodoPayload:",
+      "    title: str",
+      "",
+      "",
+      '@route("/todos")',
+      "class TodoList:",
+      "    def post(self, payload: TodoPayload):",
+      "        return {}, 201",
+      "",
+    ].join("\n");
+    const units = await unitsOf(annotatedSource, [flaskRestxLike]);
+    const post = units.find((u) => u.identity.name === "TodoList.post");
+    expect(post?.parameters).toEqual([
+      {
+        name: "payload",
+        position: 1,
+        role: "queryParams",
+        typeText: "TodoPayload",
+      },
+    ]);
+  });
+
+  it("reads a bare converter-less template parameter the same way", async () => {
+    const userSource = [
+      "from myapp.wrappers.restx import route",
+      "",
+      "",
+      '@route("/users/<name>")',
+      "class UserDetail:",
+      "    def get(self, name):",
+      "        return {}",
+      "",
+    ].join("\n");
+    const units = await unitsOf(userSource, [flaskRestxLike]);
+    const get = units.find((u) => u.identity.name === "UserDetail.get");
+    expect(get?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/users/{name}",
+    });
+    expect(get?.parameters).toEqual([
+      { name: "name", position: 1, role: "pathParams", typeText: null },
+    ]);
+  });
+
+  it("keeps a route whose pack declares an unknown template syntax discovered, pathless, with a stated gap", async () => {
+    const unknownSyntaxPack: PythonPack = {
+      name: "flask-restx",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedClassRoute",
+          importModule: ["myapp.wrappers.restx"],
+          decoratorName: "route",
+          verbMethodNames: { get: "GET" },
+          pathParamSyntax: "notASyntaxThisAdapterReads",
+        },
+      ],
+    };
+    const units = await unitsOf(source, [unknownSyntaxPack]);
+    const get = units.find((u) => u.identity.name === "TodoList.get");
+    expect(get).toBeDefined();
+    expect(get?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(get?.unreadBinding).toContain("notASyntaxThisAdapterReads");
+  });
+
+  it("reads a path as written, with no path parameters, when the pack declares no template syntax", async () => {
+    const noSyntaxPack: PythonPack = {
+      name: "flask-restx",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedClassRoute",
+          importModule: ["myapp.wrappers.restx"],
+          decoratorName: "route",
+          verbMethodNames: { get: "GET" },
+        },
+      ],
+    };
+    const orderSource = [
+      "from myapp.wrappers.restx import route",
+      "",
+      "",
+      '@route("/orders/<int:order_id>")',
+      "class OrderDetail:",
+      "    def get(self, order_id):",
+      "        return {}",
+      "",
+    ].join("\n");
+    const units = await unitsOf(orderSource, [noSyntaxPack]);
+    const get = units.find((u) => u.identity.name === "OrderDetail.get");
+    expect(get?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/orders/<int:order_id>",
+    });
+    expect(get?.parameters).toEqual([
+      { name: "order_id", position: 1, role: "queryParams", typeText: null },
     ]);
   });
 
@@ -208,6 +363,35 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
         role: "requestBody",
         typeText: "TodoResponse",
       },
+    ]);
+  });
+
+  it("reads Starlette's typed converters and drops the converter from the canonical path", async () => {
+    // {item_id:int} and {file_path:path} are Starlette's PARAM_REGEX
+    // spelling; a reader without the optional-converter arm skips the
+    // segment and the parameter silently reads as a query parameter
+    // with no gap.
+    const typedSource = [
+      "from fastapi import FastAPI",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      '@app.get("/files/{item_id:int}/{file_path:path}")',
+      "def read_file(item_id: int, file_path: str):",
+      "    pass",
+      "",
+    ].join("\n");
+    const units = await unitsOf(typedSource, [fastapiLike]);
+    const readFile = units.find((u) => u.identity.name === "read_file");
+    expect(readFile?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/files/{item_id}/{file_path}",
+    });
+    expect(readFile?.parameters).toEqual([
+      { name: "item_id", position: 0, role: "pathParams", typeText: "int" },
+      { name: "file_path", position: 1, role: "pathParams", typeText: "str" },
     ]);
   });
 
