@@ -14,6 +14,7 @@
 // to add a module here.
 
 import type { z } from "zod";
+import type { MatchResult } from "../typeShapeMatch.js";
 
 /**
  * How one semantics variant keys and pairs. Written once, in the
@@ -91,6 +92,17 @@ export interface BoundaryBehavior<S extends { name: string }> {
     claims(raw: string): boolean;
     normalize(raw: string): string;
   };
+
+  /**
+   * Whether a boundary this protocol declares would answer a concrete
+   * HTTP request, for the flow-reachability walk. Left undefined by a
+   * protocol whose boundaries are not addressed by method and path (a
+   * queue has no URL), which is different from "unknown": an undefined
+   * member means the question does not apply, an "unknown" answer
+   * means it applies and this declaration cannot settle it (an
+   * unnamed method or path).
+   */
+  servesRequest?(semantics: S, method: string, path: string): MatchResult;
 }
 
 /**

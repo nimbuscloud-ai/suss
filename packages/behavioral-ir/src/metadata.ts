@@ -230,16 +230,22 @@ const UnresolvedRoutingRefSchema = z.object({
  * summary states exactly one edge, the same way one CFN resource states
  * one thing.
  *
- *   routesTo  a listener rule, or a listener's own forward default
- *             action, naming the target group its match forwards to.
- *   answers   a listener rule's or a listener's own non-forward action:
- *             the response a matched (or unmatched, for a listener
- *             default) path gets without forwarding anywhere.
- *   fronts    a target group naming the resource that backs it.
+ *   routesTo   a listener rule, or a listener's own forward default
+ *              action, naming the target group its match forwards to.
+ *   answers    a listener rule's or a listener's own non-forward
+ *              action: the response a matched (or unmatched, for a
+ *              listener default) path gets without forwarding
+ *              anywhere.
+ *   fronts     a target group naming the resource that backs it.
+ *   belongsTo  a listener naming the load balancer it belongs to, so
+ *              a chain of balancers (an NLB fronting an ALB) composes:
+ *              a `fronts` edge ends at the fronted balancer's logical
+ *              id, and this edge is how a walk continues into that
+ *              balancer's own listeners.
  */
 export const RoutingMetadataSchema = z.object({
-  edge: z.enum(["routesTo", "answers", "fronts"]),
-  /** routesTo / answers: CFN logical id of the listener the match belongs to. */
+  edge: z.enum(["routesTo", "answers", "fronts", "belongsTo"]),
+  /** routesTo / answers: CFN logical id of the listener the match belongs to. belongsTo: the listener this record describes. */
   router: z.string().nullable().optional(),
   unresolvedRouter: UnresolvedRoutingRefSchema.optional(),
   /**
@@ -260,6 +266,16 @@ export const RoutingMetadataSchema = z.object({
   priority: z.number().optional(),
   /** routesTo / answers: every condition field the rule declares. Empty when the rule (or the listener default) declares none. */
   conditions: z.array(RoutingMatchConditionSchema).optional(),
+  /**
+   * routesTo / answers: which condition language the match's
+   * conditions are written in ("alb"), so a reachability pass can hand
+   * the record to the matcher that owns that language. The languages
+   * disagree in corners (an ALB `*` crosses `/`; Express changed its
+   * own rules across majors), so no matcher may evaluate a record
+   * outside its language: a match whose language has no matcher is
+   * reachable-unknown, never admitted and never refused.
+   */
+  matchLanguage: z.string().optional(),
   /** routesTo: this target's share of a weighted ForwardConfig, when the action names more than one target group. */
   weight: z.number().optional(),
   /** answers: the non-forward action's own response. */
@@ -268,8 +284,9 @@ export const RoutingMetadataSchema = z.object({
    * fronts: the resource backing the target group, an ECS container's
    * or a Lambda function's `instanceName`, or another load balancer's
    * logical id when a target group fronts one directly (an NLB in
-   * front of an ALB). Named the same way the resource's own summary
-   * names itself, so a later join finds it by string equality.
+   * front of an ALB). belongsTo: the load balancer the listener
+   * belongs to. Named the same way the resource's own summary names
+   * itself, so a later join finds it by string equality.
    */
   resource: z.string().nullable().optional(),
   unresolvedResource: UnresolvedRoutingRefSchema.optional(),
