@@ -30,6 +30,7 @@
 
 import path from "node:path";
 
+import { readRoutingMetadata, withRoutingMetadata } from "@suss/behavioral-ir";
 import {
   type AuthorizerConfig,
   type AuthorizerType,
@@ -59,6 +60,7 @@ import {
   unfollowedStackMessage,
 } from "@suss/manifest-aws";
 
+import { buildAlbFlowSummaries } from "./albFlow.js";
 import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 
@@ -166,6 +168,14 @@ export function cloudFormationToSummaries(
   //    interaction effects from @suss/framework-aws-sqs pair against these.
   summaries.push(...buildMessageBusSummaries(resources, sourceFile));
 
+  // 6. ALB flow walk: listener rules and a listener's own default
+  //    action emit routesTo / answers edges with their match recorded
+  //    as data; target groups emit fronts edges naming what backs
+  //    them. No boundaryBinding, since these are the fact base a
+  //    future reachability rule reads, not a pairing the checker
+  //    matches today.
+  summaries.push(...buildAlbFlowSummaries(resources, sourceFile));
+
   const stackPath = options.stackPath ?? [];
   return stackPath.length === 0
     ? summaries
@@ -183,6 +193,15 @@ export function cloudFormationToSummaries(
  * path. A channel keeps the name its document writes, because a queue
  * name is what the code says and the code cannot know which document
  * declared the queue.
+ *
+ * A `fronts` edge's `resource` field follows the same rule as
+ * `deployableUnit.instanceName`, not the channel rule, because a fronts
+ * edge names a deployable unit's own identity (an ECS container's or a
+ * Lambda's instanceName): the ALB flow reader and the runtime-config
+ * reader must qualify it the same way for the two to still name the
+ * same thing once nested. The router and target group logical ids on a
+ * routing edge are ALB infrastructure nothing outside the template
+ * ever names, so they stay bare, like a channel does.
  */
 function deployedWithinStack(
   summary: BehavioralSummary,
@@ -190,7 +209,19 @@ function deployedWithinStack(
 ): BehavioralSummary {
   const unit = summary.identity.deployableUnit;
   const binding = summary.identity.boundaryBinding;
-  if (unit === undefined && binding?.semantics.name !== "runtime-config") {
+  const routing = readRoutingMetadata(summary);
+  const frontedResource =
+    routing !== undefined &&
+    routing.edge === "fronts" &&
+    routing.resource !== undefined &&
+    routing.resource !== null
+      ? routing.resource
+      : null;
+  if (
+    unit === undefined &&
+    binding?.semantics.name !== "runtime-config" &&
+    frontedResource === null
+  ) {
     return summary;
   }
   return {
@@ -222,6 +253,14 @@ function deployedWithinStack(
           }
         : {}),
     },
+    ...(frontedResource !== null && routing !== undefined
+      ? {
+          metadata: withRoutingMetadata(summary.metadata, {
+            ...routing,
+            resource: qualifiedLogicalId(stackPath, frontedResource),
+          }),
+        }
+      : {}),
   };
 }
 

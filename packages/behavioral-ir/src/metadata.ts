@@ -178,6 +178,127 @@ export function readRuntimeContractMetadata(
   );
 }
 
+/**
+ * One condition a listener rule's (or a listener's own default action's)
+ * match tests: a CFN condition `Field` (`path-pattern`, `host-header`,
+ * `http-request-method`, `http-header`, `query-string`, `source-ip`, or
+ * null when the template names none) and the values it lists, ORed
+ * within the field. `evaluated` is true only for `path-pattern` and
+ * `host-header` in v0; every other field is still carried as data,
+ * without ever being treated as admitting a request, so a later
+ * matching pass has something to widen into rather than a silent gap.
+ */
+const RoutingMatchConditionSchema = z.object({
+  field: z.string().nullable(),
+  values: z.array(z.string()),
+  evaluated: z.boolean(),
+});
+
+/**
+ * A non-forward action's response: the fixed-response listener default
+ * the flow-reachability fixture uses gives a status, a content type,
+ * and a body. Other non-forward action types (redirect,
+ * authenticate-cognito, authenticate-oidc) still produce a record, with
+ * `type` set to the action's own CFN type string and no further fields,
+ * since v0 does not read them. Null when the template names no action
+ * at all.
+ */
+const RoutingResponseSchema = z.object({
+  type: z.string().nullable(),
+  statusCode: z.number().optional(),
+  contentType: z.string().optional(),
+  body: z.string().optional(),
+});
+
+/**
+ * A reference the template makes that the CFN reader could not resolve
+ * to a declared resource of the expected kind: the value as written (or
+ * its JSON when it is not a plain string), and why resolution stopped.
+ * Recorded rather than dropped, so an edge nothing in the template
+ * answers is a fact about the template rather than a gap in the reader.
+ */
+const UnresolvedRoutingRefSchema = z.object({
+  reference: z.string(),
+  reason: z.string(),
+});
+
+/**
+ * What the ALB flow contract reader records beside a summary's
+ * identity: one row per routing edge `docs/internal/proposals/
+ * flow-reachability.md` names. `edge` says which relation this summary
+ * states; the rest of the fields carry that relation's own data. One
+ * summary states exactly one edge, the same way one CFN resource states
+ * one thing.
+ *
+ *   routesTo  a listener rule, or a listener's own forward default
+ *             action, naming the target group its match forwards to.
+ *   answers   a listener rule's or a listener's own non-forward action:
+ *             the response a matched (or unmatched, for a listener
+ *             default) path gets without forwarding anywhere.
+ *   fronts    a target group naming the resource that backs it.
+ */
+export const RoutingMetadataSchema = z.object({
+  edge: z.enum(["routesTo", "answers", "fronts"]),
+  /** routesTo / answers: CFN logical id of the listener the match belongs to. */
+  router: z.string().nullable().optional(),
+  unresolvedRouter: UnresolvedRoutingRefSchema.optional(),
+  /**
+   * routesTo: CFN logical id of the forwarded-to target group. fronts:
+   * CFN logical id of the target group this record describes (always
+   * resolved, since it is the resource the reader is walking).
+   */
+  target: z.string().nullable().optional(),
+  unresolvedTarget: UnresolvedRoutingRefSchema.optional(),
+  /**
+   * routesTo / answers: identifies the match record this edge belongs
+   * to, a rule's own logical id, or `${listenerId}#default` for a
+   * listener's own action. Several routesTo rows share one matchId when
+   * a weighted forward action names more than one target group.
+   */
+  matchId: z.string().optional(),
+  /** routesTo: the rule's Priority. Absent for a listener's own default forward action, which CFN gives no priority. */
+  priority: z.number().optional(),
+  /** routesTo: every condition field the rule declares. Empty when the rule (or the listener default) declares none. */
+  conditions: z.array(RoutingMatchConditionSchema).optional(),
+  /** routesTo: this target's share of a weighted ForwardConfig, when the action names more than one target group. */
+  weight: z.number().optional(),
+  /** answers: the non-forward action's own response. */
+  response: RoutingResponseSchema.optional(),
+  /**
+   * fronts: the resource backing the target group, an ECS container's
+   * or a Lambda function's `instanceName`, or another load balancer's
+   * logical id when a target group fronts one directly (an NLB in
+   * front of an ALB). Named the same way the resource's own summary
+   * names itself, so a later join finds it by string equality.
+   */
+  resource: z.string().nullable().optional(),
+  unresolvedResource: UnresolvedRoutingRefSchema.optional(),
+});
+
+export type RoutingMetadata = z.infer<typeof RoutingMetadataSchema>;
+
+/**
+ * A metadata bag with the routing namespace set. Writes are strict: a
+ * field the schema does not name throws here, next to its cause. Reads
+ * stay lenient so older artifacts keep reading.
+ */
+export function withRoutingMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: RoutingMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    routing: RoutingMetadataSchema.strict().parse(value),
+  };
+}
+
+/** The summary's routing namespace, or undefined when absent or not an object. */
+export function readRoutingMetadata(
+  summary: BehavioralSummary,
+): RoutingMetadata | undefined {
+  return readNamespace(RoutingMetadataSchema, summary.metadata?.routing);
+}
+
 const GraphqlContractProvenanceSchema = z.enum(["derived", "independent"]);
 
 /**

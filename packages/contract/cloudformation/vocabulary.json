@@ -65,5 +65,17 @@
   "KUBERNETES_SERVICE_PORT": "Kubernetes: environment variable the kubelet sets",
   "KUBERNETES_PORT": "Kubernetes: environment variable the kubelet sets",
   "HOSTNAME": "POSIX: environment variable a container runtime sets",
-  "lambda": "API Gateway: integration kind, an AWS service integration onto Lambda"
+  "lambda": "API Gateway integration kind and ALB TargetGroup TargetType, an AWS service integration onto Lambda",
+  "alb": "ALB: TargetGroup TargetType naming another Application Load Balancer as the target, an NLB in front of an ALB",
+  "forward": "ALB: listener rule / default action type, forwards to a target group",
+  "PathPatternConfig": "ALB: listener rule condition property holding a path-pattern condition's Values",
+  "HostHeaderConfig": "ALB: listener rule condition property holding a host-header condition's Values",
+  "HttpRequestMethodConfig": "ALB: listener rule condition property holding an http-request-method condition's Values",
+  "HttpHeaderConfig": "ALB: listener rule condition property holding an http-header condition's Values",
+  "QueryStringConfig": "ALB: listener rule condition property holding a query-string condition's Key/Value pairs",
+  "SourceIpConfig": "ALB: listener rule condition property holding a source-ip condition's Values",
+  "untyped": "suss: marker for a resource with no CFN Type",
+  "routesTo": "suss: flow-reachability edge kind, a listener rule or default action forwarding to a target",
+  "answers": "suss: flow-reachability edge kind, a non-forward action's response",
+  "fronts": "suss: flow-reachability edge kind, what backs a target group"
 }
