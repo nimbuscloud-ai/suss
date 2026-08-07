@@ -3,9 +3,9 @@
     "packages": 40,
     "packagesWithExports": 39,
     "exports": 286,
-    "internal": 1158,
-    "consumers": 431,
-    "pairs": 423
+    "internal": 1176,
+    "consumers": 439,
+    "pairs": 431
   },
   "packages": {
     "packages/adapter/python": {
@@ -17,7 +17,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
-      "internal": 512,
+      "internal": 530,
       "consumers": 29
     },
     "packages/behavioral-ir": {
@@ -60,7 +60,7 @@
       "name": "@suss/client-web",
       "exports": 2,
       "internal": 0,
-      "consumers": 6
+      "consumers": 8
     },
     "packages/contract/appsync": {
       "name": "@suss/contract-appsync",
@@ -156,7 +156,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 0,
-      "consumers": 3
+      "consumers": 5
     },
     "packages/framework/fastify": {
       "name": "@suss/framework-fastify",
@@ -174,7 +174,7 @@
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 5
+      "consumers": 9
     },
     "packages/framework/nestjs-graphql": {
       "name": "@suss/framework-nestjs-graphql",
