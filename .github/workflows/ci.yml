@@ -9,14 +9,15 @@ jobs:
   ci:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
-          # The default GITHUB_TOKEN has contents: write for same-repo
-          # pushes, which is what the dogfood baseline refresh on main
-          # needs. fetch-depth: 0 gives that refresh a history to rebase
-          # onto when a concurrent push beats it to the remote.
+          # Both baseline gates default to comparing against HEAD, which
+          # a shallow checkout already carries. fetch-depth: 0 is what
+          # makes a remote ref like origin/main resolvable too, for
+          # whoever points DOGFOOD_BASELINE_REF or COVERAGE_BASELINE_REF
+          # at one.
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           # For pull_request events, checkout defaults to a detached
@@ -139,59 +140,3 @@ jobs:
       # package the branch never touched.
       - name: Coverage floor check
         run: npm run check:coverage
-
-      # Raise the dogfood floor on main so it keeps up with the source.
-      # Counts only ever act as a floor, so a merge that adds exports
-      # leaves the committed number below what a run now sees, and
-      # nothing on a branch refreshes it: the baseline belongs to the
-      # author, because lowering it is how they say a drop was meant.
-      #
-      # This is the only file CI writes back. Coverage summaries and
-      # badges belong to whoever changed the code they measure, and a
-      # bot that rewrote them on main both raced the merge button and
-      # overwrote a figure a reviewer had already read.
-      #
-      # Nothing reads this file from main, so a branch that has not
-      # picked up the raise still passes: `check:dogfood` compares
-      # against the branch's own HEAD.
-      #
-      # HUSKY=0 disables the local pre-commit and pre-push hooks the repo
-      # uses for developers. CI has already run their equivalents
-      # earlier in this workflow, and without it the bot's `git push`
-      # would run the whole test suite again.
-      #
-      # A concurrent push can land between the checkout and the push, so
-      # rebase against the remote tip and retry once. If it still races,
-      # skip: the next push to main picks the raise up.
-      - name: Raise the dogfood floor on main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          HUSKY: "0"
-        run: |
-          BASELINE=scripts/dogfood-baseline.json
-
-          if git diff --quiet "$BASELINE"; then
-            echo "Dogfood counts match the committed baseline, nothing to push."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$BASELINE"
-          git commit -m "chore: raise the dogfood baseline to what a run on main sees [skip ci]"
-
-          for attempt in 1 2; do
-            if git push origin HEAD:main; then
-              echo "Pushed the raise on attempt $attempt."
-              exit 0
-            fi
-            echo "Push rejected on attempt $attempt, rebasing and retrying."
-            git fetch origin main
-            git rebase origin/main || {
-              echo "Rebase failed, skipping. The next push to main re-triggers this."
-              exit 0
-            }
-          done
-
-          echo "Push still rejected after a rebase and a retry, skipping."
-          exit 0

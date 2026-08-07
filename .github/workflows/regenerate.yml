@@ -1,0 +1,115 @@
+name: Regenerate baselines
+
+# A branch's own check:dogfood and check:coverage compare a fresh run
+# against that branch's own HEAD, so a branch only ever needs to touch
+# scripts/dogfood-baseline.json, a package's coverage-summary.json, or a
+# badge when it is lowering a number on purpose. Nothing else needs
+# those files to move, and when two branches both moved them anyway they
+# collided on merge.
+#
+# This workflow is what keeps the three files caught up with main once
+# a branch that raised a count lands: it reruns the dogfood pass and the
+# test suite on main itself, and pushes back only if the fresh numbers
+# differ from what is committed.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      # This workflow's own commit lands on main and triggers this same
+      # `push` event. Its commit message carries `[skip ci]`, which stops
+      # GitHub from starting the run at all in the common case; this
+      # step catches whatever that misses, such as a bot commit made for
+      # some unrelated reason, so a loop can't build up.
+      - name: Stop if the last commit already regenerated
+        id: guard
+        run: |
+          AUTHOR=$(git log -1 --pretty=%an)
+          MESSAGE=$(git log -1 --pretty=%B)
+          if [ "$AUTHOR" = "github-actions[bot]" ] || echo "$MESSAGE" | grep -qF "[skip ci]"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Last commit is $AUTHOR: skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.guard.outputs.skip == 'false'
+        run: npm ci
+
+      # No turbo cache is restored here, but --force says so directly
+      # rather than relying on a fresh runner having nothing to hit.
+      - name: Build
+        if: steps.guard.outputs.skip == 'false'
+        run: npm run build -- --force
+
+      - name: Dogfood
+        if: steps.guard.outputs.skip == 'false'
+        run: npm run dogfood
+
+      - name: Test with coverage
+        if: steps.guard.outputs.skip == 'false'
+        run: npm run test:coverage
+
+      - name: Regenerate badges
+        if: steps.guard.outputs.skip == 'false'
+        run: npm run badges
+
+      # HUSKY=0 skips the local hooks: they exist for developers, and
+      # this push already ran what they'd check.
+      #
+      # Only these three path groups are staged. A dogfood run and a
+      # coverage run touch nothing else that git tracks, but staging by
+      # name rather than `git add -A` keeps it that way on purpose.
+      #
+      # A concurrent push can land between the checkout and the push
+      # below, so rebase against the remote tip and retry once. If it
+      # still races, skip: the next push to main re-triggers this.
+      - name: Commit and push if anything changed
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          HUSKY: "0"
+        run: |
+          git add scripts/dogfood-baseline.json '**/coverage/coverage-summary.json' .github/badges
+
+          if git diff --cached --quiet; then
+            echo "Regenerated numbers match what main already commits, nothing to push."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: regenerate baselines after merge [skip ci]"
+
+          for attempt in 1 2; do
+            if git push origin HEAD:main; then
+              echo "Pushed the regenerated baselines on attempt $attempt."
+              exit 0
+            fi
+            echo "Push rejected on attempt $attempt, rebasing and retrying."
+            git fetch origin main
+            git rebase origin/main || {
+              echo "Rebase failed, skipping. The next push to main re-triggers this."
+              exit 0
+            }
+          done
+
+          echo "Push still rejected after a rebase and a retry, skipping."
+          exit 0
