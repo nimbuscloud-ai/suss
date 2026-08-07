@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 6656,
-      "covered": 5706,
+      "total": 6539,
+      "covered": 5602,
       "skipped": 0,
-      "pct": 85.72
+      "pct": 85.67
     },
     "statements": {
-      "total": 6725,
-      "covered": 5771,
+      "total": 6606,
+      "covered": 5665,
       "skipped": 0,
-      "pct": 85.81
+      "pct": 85.75
     },
     "functions": {
-      "total": 832,
-      "covered": 778,
+      "total": 824,
+      "covered": 770,
       "skipped": 0,
-      "pct": 93.5
+      "pct": 93.44
     },
     "branches": {
-      "total": 5102,
-      "covered": 3936,
+      "total": 5040,
+      "covered": 3883,
       "skipped": 0,
-      "pct": 77.14
+      "pct": 77.04
     },
     "branchesTrue": {
       "total": 0,
@@ -1461,30 +1461,56 @@
       "pct": 76.27
     }
   },
-  "src/paths/pathConditions.ts": {
+  "src/paths/lowering.ts": {
     "lines": {
-      "total": 285,
-      "covered": 267,
+      "total": 125,
+      "covered": 121,
       "skipped": 0,
-      "pct": 93.68
+      "pct": 96.8
     },
     "functions": {
-      "total": 33,
-      "covered": 33,
+      "total": 19,
+      "covered": 19,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 290,
-      "covered": 272,
+      "total": 128,
+      "covered": 124,
       "skipped": 0,
-      "pct": 93.79
+      "pct": 96.87
     },
     "branches": {
-      "total": 185,
-      "covered": 165,
+      "total": 103,
+      "covered": 94,
       "skipped": 0,
-      "pct": 89.18
+      "pct": 91.26
+    }
+  },
+  "src/paths/pathConditions.ts": {
+    "lines": {
+      "total": 43,
+      "covered": 42,
+      "skipped": 0,
+      "pct": 97.67
+    },
+    "functions": {
+      "total": 6,
+      "covered": 6,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 43,
+      "covered": 42,
+      "skipped": 0,
+      "pct": 97.67
+    },
+    "branches": {
+      "total": 20,
+      "covered": 18,
+      "skipped": 0,
+      "pct": 90
     }
   },
   "src/resolve/astResolve.ts": {
