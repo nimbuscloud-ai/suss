@@ -51,7 +51,7 @@ describe("honoFramework — extraction", () => {
       frameworks: [honoFramework()],
       cacheDir: null,
     });
-    adapter.project.addSourceFileAtPath(FIXTURE);
+    adapter.tsProject.addSourceFileAtPath(FIXTURE);
     summaries = await adapter.extractAll();
   });
 

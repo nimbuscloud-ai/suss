@@ -25,8 +25,14 @@ import type {
   TypeShape,
   ValueRef,
 } from "@suss/behavioral-ir";
+import type { ConditionSource } from "./paths/structuredStatement.js";
 
 export { httpRouteDiscovery } from "./packHelpers.js";
+export {
+  enumerateStructuredPaths,
+  PathBudgetExceeded,
+  UnmodeledFlow,
+} from "./paths/enumeratePaths.js";
 
 export type {
   AccessRecognizer,
@@ -47,6 +53,20 @@ export type {
   TerminalPattern,
   TransparentWrapper,
 } from "./framework.js";
+export type { LanguageAdapter } from "./languageAdapter.js";
+export type {
+  StructuredPathConditionsInput,
+  StructuredPathConditionsResult,
+} from "./paths/enumeratePaths.js";
+export type {
+  CaseGroup,
+  ConditionHandle,
+  ConditionInfo,
+  ConditionSource,
+  ExitKind,
+  StatementBlock,
+  StructuredStatement,
+} from "./paths/structuredStatement.js";
 
 // =============================================================================
 // RawCodeStructure — the interface between language adapters and the engine
@@ -63,7 +83,7 @@ export interface RawCondition {
   sourceText: string;
   structured: Predicate | null;
   polarity: "positive" | "negative";
-  source: "explicit" | "earlyReturn" | "earlyThrow" | "catchBlock";
+  source: ConditionSource;
 }
 
 export interface RawTerminal {

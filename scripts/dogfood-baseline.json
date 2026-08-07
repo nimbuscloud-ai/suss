@@ -2,10 +2,10 @@
   "totals": {
     "packages": 40,
     "packagesWithExports": 39,
-    "exports": 286,
-    "internal": 1176,
-    "consumers": 439,
-    "pairs": 431
+    "exports": 290,
+    "internal": 1191,
+    "consumers": 447,
+    "pairs": 439
   },
   "packages": {
     "packages/adapter/python": {
@@ -17,12 +17,12 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
-      "internal": 530,
-      "consumers": 29
+      "internal": 522,
+      "consumers": 30
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 33,
+      "exports": 35,
       "internal": 10,
       "consumers": 3
     },
@@ -77,8 +77,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 5,
-      "internal": 43,
-      "consumers": 52
+      "internal": 58,
+      "consumers": 59
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -118,8 +118,8 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 8,
-      "internal": 11,
+      "exports": 9,
+      "internal": 19,
       "consumers": 2
     },
     "packages/framework/apollo": {
@@ -226,7 +226,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 31,
+      "exports": 32,
       "internal": 8,
       "consumers": 0
     },

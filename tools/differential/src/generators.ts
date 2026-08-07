@@ -10,12 +10,16 @@
 import fc from "fast-check";
 
 import type {
+  BlockBreakShape,
+  BlockNestedShape,
   Cond,
   FieldSource,
   FinalStmt,
   GuardStmt,
   HandlerProgram,
   ReqField,
+  SwitchClause,
+  SwitchDefaultClause,
   Terminal,
 } from "./program.js";
 
@@ -24,9 +28,15 @@ export interface FuzzTier {
   nested: boolean;
   /** Allow guards inside for-of loops (sound since the CFG path engine). */
   loops: boolean;
+  /** Allow switch guards, mixing the sound trailing-exit clause shapes with the block-wrapped ones lowering degrades or keeps opaque, matching the legacy scanner exactly either way. */
+  switches: boolean;
 }
 
-export const SOUND_TIER: FuzzTier = { nested: true, loops: true };
+export const SOUND_TIER: FuzzTier = {
+  nested: true,
+  loops: true,
+  switches: true,
+};
 
 const KEYS_BY_SOURCE: Record<FieldSource, string[]> = {
   params: ["id", "slug"],
@@ -155,6 +165,142 @@ export const arbLoopGuard: fc.Arbitrary<GuardStmt> = fc
       ),
   );
 
+/** Distinct case-label literals, positionally assigned to a program's clauses. */
+const SWITCH_CASE_VALUES = ["alpha", "beta", "gamma", "delta"];
+
+/**
+ * blockBreak's own two dimensions (see program.ts's BlockBreakShape):
+ * a leading sibling statement, on or off, and a nesting depth of one
+ * or two braces. Generated for every clause spec, whatever its type,
+ * so switching a spec's type to "blockBreak" (the fallthrough fixup
+ * below does this) never needs to backfill it.
+ */
+const arbBlockBreakShape: fc.Arbitrary<BlockBreakShape> = fc.record({
+  hasSibling: fc.boolean(),
+  depth: fc.constantFrom<1 | 2>(1, 2),
+});
+
+/**
+ * blockNested's own two dimensions (see program.ts's BlockNestedShape):
+ * a small if or switch inside the block, and whether the clause exits
+ * by breaking or returning. `cond`/`field` are generated for every
+ * clause spec regardless of type, same reasoning as blockBreakShape.
+ */
+const arbBlockNestedShape: fc.Arbitrary<BlockNestedShape> = fc.record({
+  nested: fc.constantFrom<BlockNestedShape["nested"]>("if", "switch"),
+  exit: fc.constantFrom<BlockNestedShape["exit"]>("break", "return"),
+  cond: arbCond,
+  field: arbField,
+});
+
+interface SwitchClauseSpec {
+  type: "break" | "blockBreak" | "blockNested" | "return" | "fallthrough";
+  terminal: Terminal;
+  blockBreakShape: BlockBreakShape;
+  blockNestedShape: BlockNestedShape;
+}
+
+const arbSwitchClauseSpec: fc.Arbitrary<SwitchClauseSpec> = fc.record({
+  type: fc.constantFrom<SwitchClauseSpec["type"]>(
+    "break",
+    "blockBreak",
+    "blockNested",
+    "return",
+    "fallthrough",
+  ),
+  terminal: arbTerminal,
+  blockBreakShape: arbBlockBreakShape,
+  blockNestedShape: arbBlockNestedShape,
+});
+
+function toSwitchClause(spec: SwitchClauseSpec, value: string): SwitchClause {
+  if (spec.type === "fallthrough") {
+    return { value, type: "fallthrough" };
+  }
+  if (spec.type === "blockBreak") {
+    return {
+      value,
+      type: "blockBreak",
+      terminal: spec.terminal,
+      ...spec.blockBreakShape,
+    };
+  }
+  if (spec.type === "blockNested") {
+    return {
+      value,
+      type: "blockNested",
+      terminal: spec.terminal,
+      ...spec.blockNestedShape,
+    };
+  }
+  return { value, type: spec.type, terminal: spec.terminal };
+}
+
+interface SwitchDefaultSpec {
+  type: "break" | "blockBreak" | "blockNested" | "return";
+  terminal: Terminal;
+  blockBreakShape: BlockBreakShape;
+  blockNestedShape: BlockNestedShape;
+}
+
+/** The default clause never falls through. A switch with no default would leave an unmatched value with no response at all. */
+const arbSwitchDefaultSpec: fc.Arbitrary<SwitchDefaultSpec> = fc.record({
+  type: fc.constantFrom<SwitchDefaultSpec["type"]>(
+    "break",
+    "blockBreak",
+    "blockNested",
+    "return",
+  ),
+  terminal: arbTerminal,
+  blockBreakShape: arbBlockBreakShape,
+  blockNestedShape: arbBlockNestedShape,
+});
+
+function toSwitchDefaultClause(spec: SwitchDefaultSpec): SwitchDefaultClause {
+  if (spec.type === "blockBreak") {
+    return {
+      type: "blockBreak",
+      terminal: spec.terminal,
+      ...spec.blockBreakShape,
+    };
+  }
+  if (spec.type === "blockNested") {
+    return {
+      type: "blockNested",
+      terminal: spec.terminal,
+      ...spec.blockNestedShape,
+    };
+  }
+  return { type: spec.type, terminal: spec.terminal };
+}
+
+export const arbSwitchGuard: fc.Arbitrary<GuardStmt> = fc
+  .record({
+    field: arbField,
+    specs: fc.array(arbSwitchClauseSpec, { minLength: 2, maxLength: 4 }),
+    defaultSpec: arbSwitchDefaultSpec,
+  })
+  .map(({ field, specs, defaultSpec }): GuardStmt => {
+    // A trailing fallthrough clause has nothing to stack into, so give
+    // the last clause a body instead. Every generated fallthrough
+    // clause then always stacks into a non-empty one, and is worth having.
+    const lastIndex = specs.length - 1;
+    const fixed = specs.map((spec, i) =>
+      i === lastIndex && spec.type === "fallthrough"
+        ? { ...spec, type: "break" as const }
+        : spec,
+    );
+    const clauses = fixed.map((spec, i) =>
+      toSwitchClause(spec, SWITCH_CASE_VALUES[i % SWITCH_CASE_VALUES.length]),
+    );
+    return {
+      type: "switchGuard",
+      field,
+      clauses,
+      defaultClause: toSwitchDefaultClause(defaultSpec),
+    };
+  });
+
 function arbGuardStmt(tier: FuzzTier): fc.Arbitrary<GuardStmt> {
   const arms: fc.WeightedArbitrary<GuardStmt>[] = [
     { weight: 4, arbitrary: arbGuard },
@@ -164,6 +310,9 @@ function arbGuardStmt(tier: FuzzTier): fc.Arbitrary<GuardStmt> {
   }
   if (tier.loops) {
     arms.push({ weight: 3, arbitrary: arbLoopGuard });
+  }
+  if (tier.switches) {
+    arms.push({ weight: 3, arbitrary: arbSwitchGuard });
   }
   return fc.oneof(...arms);
 }

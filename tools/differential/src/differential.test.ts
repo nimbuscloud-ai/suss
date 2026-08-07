@@ -21,6 +21,7 @@ import {
   arbLoopGuard,
   arbNestedGuard,
   arbProgramWithGapConstruct,
+  arbSwitchGuard,
   SOUND_TIER,
 } from "./generators.js";
 import { ALL_TARGETS } from "./target.js";
@@ -147,6 +148,24 @@ describe("differential fuzzer — promoted constructs stay sound", () => {
     { timeout: 300_000 },
     async () => {
       await assertConstructSound(arbProgramWithGapConstruct(arbLoopGuard), 100);
+    },
+  );
+
+  // Switch statements had no generator at all until the block-wrapped
+  // trailing-break lowering bug (a case body written as `{ ...; break; }`,
+  // fabricating path conditions instead of degrading) surfaced in
+  // review, not in a fuzz run. The generator's absence was the gap.
+  // This forces a switch guard into every program, mixing the sound
+  // trailing-break/return/fallthrough clause shapes with the
+  // block-wrapped one lowering now degrades, so both stay covered.
+  it(
+    "programs forced to contain a switch guard extract soundly",
+    { timeout: 300_000 },
+    async () => {
+      await assertConstructSound(
+        arbProgramWithGapConstruct(arbSwitchGuard),
+        100,
+      );
     },
   );
 });
