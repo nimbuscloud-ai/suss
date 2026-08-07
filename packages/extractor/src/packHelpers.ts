@@ -36,6 +36,12 @@ export function httpRouteDiscovery(opts: {
   methods: readonly string[];
   /** Defaults to "handler". Override for packs that want a different kind. */
   kind?: string;
+  /**
+   * How this framework's routable can itself be mounted onto another
+   * one under a path prefix, so a route declared on the mounted value
+   * summarizes with the prefix composed in. See `DiscoveryPattern.mount`.
+   */
+  mount?: DiscoveryPattern["mount"];
 }): DiscoveryPattern[] {
   const kind = opts.kind ?? "handler";
   return opts.importNames.map((importName) => ({
@@ -56,6 +62,7 @@ export function httpRouteDiscovery(opts: {
       },
       path: { type: "fromRegistration", position: 0 },
     },
+    ...(opts.mount !== undefined ? { mount: opts.mount } : {}),
     requiresImport: [opts.importModule],
   }));
 }

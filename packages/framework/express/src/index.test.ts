@@ -191,3 +191,37 @@ describe("expressFramework — integration", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Mount prefix composition, the aws-alb fixture's orders-app
+// ---------------------------------------------------------------------------
+
+describe("expressFramework, mount prefix composition (aws-alb fixture)", () => {
+  it("gives a route declared on a mounted router its full path", async () => {
+    const ordersAppDir = path.resolve(
+      __dirname,
+      "../../../../fixtures/aws-alb/src/orders-app",
+    );
+    const project = createFixtureProject(ordersAppDir, "**/*.ts");
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    const summaries = await adapter.extractAll();
+
+    const paths = summaries
+      .map((s) => s.identity.boundaryBinding?.semantics)
+      .filter(
+        (sem): sem is Extract<typeof sem, { name: "rest" }> =>
+          sem?.name === "rest",
+      )
+      .map((sem) => `${sem.method} ${sem.path}`)
+      .sort();
+
+    // ordersRouter's own /_health carries the app.use("/api/orders", ...)
+    // prefix it was mounted under. app.all keeps its own wildcard path,
+    // since nothing mounts app itself.
+    expect(paths).toEqual(["* /api/orders/*", "GET /api/orders/_health"]);
+  });
+});

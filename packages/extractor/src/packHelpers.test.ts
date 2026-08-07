@@ -74,4 +74,29 @@ describe("httpRouteDiscovery", () => {
       }),
     ).toEqual([]);
   });
+
+  it("carries the mount config onto every produced pattern when set", () => {
+    const patterns = httpRouteDiscovery({
+      importModule: "express",
+      importNames: ["Router", "express"],
+      methods: [".get"],
+      mount: { method: "use", prefixPosition: 0, targetPosition: 1 },
+    });
+    for (const pattern of patterns) {
+      expect(pattern.mount).toEqual({
+        method: "use",
+        prefixPosition: 0,
+        targetPosition: 1,
+      });
+    }
+  });
+
+  it("omits mount when the caller doesn't set it", () => {
+    const patterns = httpRouteDiscovery({
+      importModule: "express",
+      importNames: ["Router"],
+      methods: [".get"],
+    });
+    expect(patterns[0].mount).toBeUndefined();
+  });
 });
