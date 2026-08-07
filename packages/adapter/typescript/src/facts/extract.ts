@@ -24,7 +24,10 @@ import {
   declarationCarryingTheBody,
   isFunctionRoot,
 } from "../discovery/shared.js";
-import { exportedDeclarationsOf } from "../moduleExports.js";
+import {
+  exportedDeclarationsOf,
+  resolveAliasedSymbol,
+} from "../moduleExports.js";
 import { isWrittenAgain, writesToBinding } from "./assignments.js";
 
 import type { Database } from "@suss/datalog";
@@ -120,7 +123,7 @@ function importOriginsOf(callee: Node): string[] {
     ? callee.getNameNode().getSymbol()
     : undefined;
   for (const candidate of [named ?? symbol, symbol]) {
-    const aliased = candidate.getAliasedSymbol() ?? candidate;
+    const aliased = resolveAliasedSymbol(candidate) ?? candidate;
     for (const declaration of aliased.getDeclarations()) {
       if (!declaresAValue(declaration)) {
         continue;

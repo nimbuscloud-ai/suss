@@ -11,6 +11,7 @@ import {
 } from "ts-morph";
 
 import { isWrittenAgain } from "../facts/assignments.js";
+import { exportedDeclarationsOf } from "../moduleExports.js";
 import {
   couldStillNameAFunction,
   type DiscoveredUnit,
@@ -190,13 +191,13 @@ export function discoverNamedExports(
   }
 
   // 4. export { loader } re-export or any other form
-  // Use getExportedDeclarations for names we haven't already found
+  // Use the exported-declarations map for names we haven't already found
   for (const targetName of names) {
     if (satisfied.has(targetName)) {
       continue;
     }
 
-    const exported = sourceFile.getExportedDeclarations().get(targetName);
+    const exported = exportedDeclarationsOf(sourceFile).get(targetName);
     if (exported === undefined) {
       continue;
     }
