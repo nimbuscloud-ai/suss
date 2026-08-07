@@ -3,9 +3,9 @@
     "packages": 43,
     "packagesWithExports": 42,
     "exports": 345,
-    "internal": 1241,
-    "consumers": 491,
-    "pairs": 483
+    "internal": 1251,
+    "consumers": 509,
+    "pairs": 501
   },
   "packages": {
     "packages/adapter/python": {
@@ -23,7 +23,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
-      "internal": 522,
+      "internal": 530,
       "consumers": 30
     },
     "packages/behavioral-ir": {
@@ -59,8 +59,8 @@
     "packages/client/axios": {
       "name": "@suss/client-axios",
       "exports": 2,
-      "internal": 0,
-      "consumers": 10
+      "internal": 2,
+      "consumers": 28
     },
     "packages/client/web": {
       "name": "@suss/client-web",

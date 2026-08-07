@@ -72,7 +72,12 @@ function runPattern(
     );
   }
   if (pattern.match.type === "clientCall") {
-    return discoverClientCalls(sourceFile, pattern.match, pattern.kind);
+    return discoverClientCalls(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
   }
   if (pattern.match.type === "graphqlHookCall") {
     return discoverGraphqlHookCalls(
