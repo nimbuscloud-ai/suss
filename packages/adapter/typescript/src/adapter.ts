@@ -74,6 +74,10 @@ import {
   discoverUnits,
   unitDedupKey,
 } from "./discovery/index.js";
+import {
+  buildMountPrefixIndex,
+  type MountPrefixIndex,
+} from "./discovery/mountPrefix.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { ResolutionStore } from "./facts/store.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
@@ -773,6 +777,122 @@ function extractBindingMethod(
   return undefined;
 }
 
+// Matches a URL scheme through the "//" that opens an authority section
+// ("https://", "custom-scheme://", and so on).
+const URL_SCHEME = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//;
+
+// A head that is nothing but a scheme's authority opener, with nothing
+// between the "//" and the end of the literal text: the host itself
+// has to be coming from the first substitution, as in
+// `` `https://${host}/api/x` ``.
+const SCHEME_ONLY_HEAD = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\/$/;
+
+// Same as URL_SCHEME, but also consumes the host, so replacing a match
+// with "" leaves the path's own leading "/" in place: the same shape
+// `new URL(...).pathname` returns.
+const URL_ORIGIN = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\/[^/]*/;
+
+// A network-path reference ("//host/path"): the scheme is left to
+// whatever loads the page, but everything after reads like an
+// absolute URL.
+const PROTOCOL_RELATIVE = /^\/\//;
+const PROTOCOL_RELATIVE_ORIGIN = /^\/\/[^/]*/;
+
+function isAbsoluteUrlLiteral(text: string): boolean {
+  return URL_SCHEME.test(text) || PROTOCOL_RELATIVE.test(text);
+}
+
+function stripOriginManually(text: string): string {
+  if (URL_SCHEME.test(text)) {
+    return text.replace(URL_ORIGIN, "");
+  }
+  if (PROTOCOL_RELATIVE.test(text)) {
+    return text.replace(PROTOCOL_RELATIVE_ORIGIN, "");
+  }
+  return text;
+}
+
+function stripQueryAndFragment(text: string): string {
+  const idx = text.search(/[?#]/);
+  return idx === -1 ? text : text.slice(0, idx);
+}
+
+// The text between two substitutions can carry the tail end of a host
+// that got split by an interpolation ("${env}.example.com/api/x"):
+// only what's at or after the first "/" is path, the rest is leftover
+// host.
+function stripHostRemainder(text: string): string {
+  const slash = text.indexOf("/");
+  return slash === -1 ? "" : text.slice(slash);
+}
+
+// Appends `text` to `path`, stopping at the first "?" or "#": a query
+// string can start partway through a template literal's static text,
+// and nothing from there on, including a later substitution, belongs
+// to the path.
+function appendPathText(
+  path: string,
+  text: string,
+): { path: string; stop: boolean } {
+  const idx = text.search(/[?#]/);
+  if (idx === -1) {
+    return { path: path + text, stop: false };
+  }
+  return { path: path + text.slice(0, idx), stop: true };
+}
+
+/**
+ * The URL `text` names, parsed as absolute. Handles both a scheme the
+ * platform's own URL parser accepts outright and a protocol-relative
+ * string ("//host/path"), which needs a scheme grafted on before it
+ * will parse at all. Undefined when `text` isn't absolute, or is too
+ * malformed to parse even once a scheme is supplied.
+ */
+function parseAbsoluteUrl(text: string): URL | undefined {
+  try {
+    return new URL(text);
+  } catch {
+    // Falls through to the protocol-relative case below.
+  }
+  if (!PROTOCOL_RELATIVE.test(text)) {
+    return undefined;
+  }
+  try {
+    return new URL(`https:${text}`);
+  } catch {
+    return undefined;
+  }
+}
+
+function pathnameOfAbsoluteLiteral(text: string): string {
+  const parsed = parseAbsoluteUrl(text);
+  if (parsed !== undefined) {
+    return parsed.pathname;
+  }
+  // `new URL` rejects some strings that still open with a scheme or a
+  // protocol-relative "//" (a bare "https://" with nothing after it,
+  // say). Strip the origin by hand so it still narrows to a path.
+  return stripQueryAndFragment(stripOriginManually(text));
+}
+
+/**
+ * A URL literal argument, narrowed to the path a server route would
+ * name. A client calling an absolute URL, like
+ * `fetch("https://api.example.com/orders/1")`, has to land on the same
+ * boundary path as one calling `fetch("/orders/1")` for the two to
+ * pair, so the origin and any query string or fragment drop. An empty
+ * result, such as `fetch("myapp://host")` produces, means the literal
+ * names no path at all, so it comes back undefined rather than "": an
+ * empty string is invalid everywhere in the IR, and `restBinding`
+ * throws on one instead of accepting it silently.
+ */
+function pathFromLiteralUrl(text: string): string | undefined {
+  const path = isAbsoluteUrlLiteral(text)
+    ? pathnameOfAbsoluteLiteral(text)
+    : stripQueryAndFragment(text);
+  return path === "" ? undefined : path;
+}
+
 function extractBindingPath(
   binding: BindingExtraction,
   callSite: NonNullable<DiscoveredUnit["callSite"]>,
@@ -789,23 +909,55 @@ function extractBindingPath(
       return undefined;
     }
     if (Node.isStringLiteral(arg)) {
-      return arg.getLiteralValue();
+      return pathFromLiteralUrl(arg.getLiteralValue());
     }
     if (Node.isNoSubstitutionTemplateLiteral(arg)) {
-      return arg.getLiteralValue();
+      return pathFromLiteralUrl(arg.getLiteralValue());
     }
     if (Node.isTemplateExpression(arg)) {
-      // `/pet/${id}/comments/${commentId}` →
+      // `/pet/${id}/comments/${commentId}` becomes
       // `/pet/{id}/comments/{commentId}`. Each substitution becomes an
       // OpenAPI-style placeholder; the checker's path normalizer treats
       // `{id}` and `:id` as equivalent so this pairs with both Express
       // and ts-rest-style provider paths too.
-      let path = arg.getHead().getLiteralText();
-      for (const span of arg.getTemplateSpans()) {
+      //
+      // A scheme-prefixed head loses its origin the same way a plain
+      // literal does. When the head is nothing but the scheme's "//",
+      // the host itself is coming from the first substitution, as in
+      // `` `https://${host}/api/x` `` or
+      // `` `https://${env}.example.com/api/x` ``: that placeholder is
+      // dropped, and the text right after it is trimmed back to its
+      // own "/", so both compose `/api/x` rather than leaking the host
+      // into the path.
+      const headText = arg.getHead().getLiteralText();
+      const hostInSubstitution = SCHEME_ONLY_HEAD.test(headText);
+      const strippedHead = hostInSubstitution
+        ? ""
+        : stripOriginManually(headText);
+
+      const head = appendPathText("", strippedHead);
+      let path = head.path;
+      let stop = head.stop;
+
+      const spans = arg.getTemplateSpans();
+      for (let i = 0; i < spans.length && !stop; i++) {
+        const span = spans[i];
+        const tailText = span.getLiteral().getLiteralText();
+
+        if (hostInSubstitution && i === 0) {
+          const appended = appendPathText(path, stripHostRemainder(tailText));
+          path = appended.path;
+          stop = appended.stop;
+          continue;
+        }
+
         path += `{${placeholderName(span.getExpression())}}`;
-        path += span.getLiteral().getLiteralText();
+        const appended = appendPathText(path, tailText);
+        path = appended.path;
+        stop = appended.stop;
       }
-      return path;
+
+      return path === "" ? undefined : path;
     }
     return undefined;
   }
@@ -978,6 +1130,7 @@ function extractFromSourceFile(
   options?: ExtractorOptions,
   tallies?: Map<string, PackTally>,
   resolution?: ResolutionStore,
+  mountPrefixes?: MountPrefixIndex,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   // Aggregate recognizers from EVERY pack — a Prisma recognizer fires
@@ -1033,7 +1186,12 @@ function extractFromSourceFile(
       gatedIn.push(tally);
     }
 
-    const units = discoverUnits(sourceFile, pack.discovery, resolution);
+    const units = discoverUnits(
+      sourceFile,
+      pack.discovery,
+      resolution,
+      mountPrefixes,
+    );
 
     // Pack-supplied discovery callback (sibling of subUnits at the
     // discovery layer). Packs whose conventions don't fit a
@@ -2040,6 +2198,15 @@ export function createTypeScriptAdapter(
         computePackApplicability(sourceFiles, config.frameworks, resolution),
       );
 
+      // A route declared on a mounted router (Express `app.use`, Hono
+      // `app.route`) has to compose the mount's prefix into its path
+      // before the per-file walk below builds its boundary binding, so
+      // this runs first, over the same gated file set `preFilter` already
+      // settled.
+      const mountPrefixes = timer.time("mountPrefix", () =>
+        buildMountPrefixIndex(packsByFile, resolution),
+      );
+
       const claimedUnits = new Map<string, ClaimedUnit>();
       timer.time("extract per-file", () => {
         for (const sourceFile of sourceFiles) {
@@ -2055,6 +2222,7 @@ export function createTypeScriptAdapter(
               config.extractorOptions,
               tallies,
               resolution,
+              mountPrefixes,
             ),
           );
         }

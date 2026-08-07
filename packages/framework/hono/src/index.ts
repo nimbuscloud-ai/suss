@@ -41,9 +41,14 @@ export function honoFramework(): PatternPack {
     ],
 
     // `new Hono()` and `new OpenAPIHono()` both register the same way.
-    // Sub-apps mounted with `app.route(path, sub)` keep the path they
-    // were declared with, which is a gap worth naming: a route declared
-    // on a sub-app is reported without its mount prefix.
+    // Sub-apps mounted with `app.route(prefix, sub)` compose the
+    // prefix into a route declared on the sub-app, following the sub-app
+    // through an import when it's declared in another file. A mount
+    // nested more than one level deep composes too, since the same
+    // index a mount resolves to is asked again for its own mount; a
+    // mount the resolution store can't follow to a concrete sub-app,
+    // or whose prefix isn't a string literal, leaves the route's path
+    // as written.
     discovery: [
       ...httpRouteDiscovery({
         importModule: "hono",
@@ -57,6 +62,7 @@ export function honoFramework(): PatternPack {
           ".options",
           ".all",
         ],
+        mount: { method: "route", prefixPosition: 0, targetPosition: 1 },
       }),
       ...httpRouteDiscovery({
         importModule: "@hono/zod-openapi",
@@ -70,6 +76,7 @@ export function honoFramework(): PatternPack {
           ".options",
           ".all",
         ],
+        mount: { method: "route", prefixPosition: 0, targetPosition: 1 },
       }),
       {
         // app.openapi(route, handler), where the route is a

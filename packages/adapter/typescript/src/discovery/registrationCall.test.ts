@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
-import { discoverRegistrationCalls } from "./registrationCall.js";
+import { nodeId } from "../facts/extract.js";
+import { ResolutionStore } from "../facts/store.js";
+import {
+  discoverMountEdges,
+  discoverRegistrationCalls,
+  joinMountedPath,
+  type MountPrefixIndex,
+  registrationSubjectIdsOf,
+} from "./registrationCall.js";
 
 import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
 
@@ -277,5 +285,339 @@ describe("discoverRegistrationCalls — handler discovery", () => {
     expect(
       discoverRegistrationCalls(sf, expressMatch, "handler", httpBinding),
     ).toEqual([]);
+  });
+});
+
+const useMount = { method: "use", prefixPosition: 0, targetPosition: 1 };
+
+describe("discoverRegistrationCalls, mount prefix composition", () => {
+  it("composes the prefix an index reports for the route's own router", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const r = Router();
+      r.get("/_health", (req, res) => { res.json({}); });
+    `);
+    const routerInit = sf
+      .getVariableDeclarations()
+      .find((d) => d.getName() === "r")
+      ?.getInitializer();
+    if (routerInit === undefined) {
+      throw new Error("expected an initializer for r");
+    }
+
+    const mountPrefixes: MountPrefixIndex = {
+      effectivePrefixFor: (node) => (node === routerInit ? "/api/orders" : ""),
+    };
+
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+      undefined,
+      mountPrefixes,
+    );
+    expect(units[0]?.routeInfo).toEqual({
+      method: "GET",
+      path: "/api/orders/_health",
+    });
+  });
+
+  it("leaves the path alone when the index reports no prefix", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const r = Router();
+      r.get("/_health", (req, res) => { res.json({}); });
+    `);
+    const mountPrefixes: MountPrefixIndex = { effectivePrefixFor: () => "" };
+
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+      undefined,
+      mountPrefixes,
+    );
+    expect(units[0]?.routeInfo).toEqual({ method: "GET", path: "/_health" });
+  });
+
+  it("leaves the path alone when no index was built at all", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const r = Router();
+      r.get("/_health", (req, res) => { res.json({}); });
+    `);
+
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+    );
+    expect(units[0]?.routeInfo).toEqual({ method: "GET", path: "/_health" });
+  });
+});
+
+// express's own registrationCall matches, express() and Router(), the
+// two import names a mount's subject or target can resolve to. Tests
+// below union them the same way buildMountPrefixIndex does, so a
+// target tracked under either name is a known subject.
+const expressAppMatch: RegistrationMatch = {
+  type: "registrationCall",
+  importModule: "express",
+  importName: "express",
+  registrationChain: [".get"],
+};
+const expressRouterMatch: RegistrationMatch = {
+  type: "registrationCall",
+  importModule: "express",
+  importName: "Router",
+  registrationChain: [".get"],
+};
+
+function expressSubjectIds(sf: ReturnType<typeof sourceFile>) {
+  return registrationSubjectIdsOf(sf, [expressAppMatch, expressRouterMatch]);
+}
+
+describe("discoverMountEdges", () => {
+  it("finds a same-file mount and resolves both ends to their creation sites", () => {
+    const sf = sourceFile(`
+      import express, { Router } from "express";
+      const app = express();
+      const ordersRouter = Router();
+      app.use("/api/orders", ordersRouter);
+    `);
+    const store = new ResolutionStore();
+
+    const edges = discoverMountEdges(
+      sf,
+      expressAppMatch,
+      useMount,
+      expressSubjectIds(sf),
+      store,
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.prefix).toBe("/api/orders");
+  });
+
+  it("records an edge for every argument that resolves to a known subject", () => {
+    // app.use(prefix, r1, r2) mounts both r1 and r2 at prefix, the
+    // way Express itself applies every handler argument there.
+    const sf = sourceFile(`
+      import express, { Router } from "express";
+      const app = express();
+      const r1 = Router();
+      const r2 = Router();
+      app.use("/a", r1, r2);
+    `);
+    const store = new ResolutionStore();
+
+    const edges = discoverMountEdges(
+      sf,
+      expressAppMatch,
+      useMount,
+      expressSubjectIds(sf),
+      store,
+    );
+    expect(edges).toHaveLength(2);
+    expect(edges.every((edge) => edge.prefix === "/a")).toBe(true);
+
+    const r1Init = sf
+      .getVariableDeclarations()
+      .find((d) => d.getName() === "r1")
+      ?.getInitializer();
+    const r2Init = sf
+      .getVariableDeclarations()
+      .find((d) => d.getName() === "r2")
+      ?.getInitializer();
+    if (r1Init === undefined || r2Init === undefined) {
+      throw new Error("expected initializers for r1 and r2");
+    }
+    expect(edges.map((edge) => edge.childRouterId).sort()).toEqual(
+      [nodeId(r1Init), nodeId(r2Init)].sort(),
+    );
+  });
+
+  it("finds the router past middleware interposed between the prefix and it", () => {
+    const sf = sourceFile(`
+      import express, { Router } from "express";
+      declare function requireAuth(req: any, res: any, next: any): void;
+      const app = express();
+      const adminRouter = Router();
+      app.use("/admin", requireAuth, adminRouter);
+    `);
+    const store = new ResolutionStore();
+
+    const edges = discoverMountEdges(
+      sf,
+      expressAppMatch,
+      useMount,
+      expressSubjectIds(sf),
+      store,
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.prefix).toBe("/admin");
+
+    const adminRouterInit = sf
+      .getVariableDeclarations()
+      .find((d) => d.getName() === "adminRouter")
+      ?.getInitializer();
+    expect(adminRouterInit).toBeDefined();
+    if (adminRouterInit === undefined) {
+      throw new Error("expected an initializer for adminRouter");
+    }
+    // The edge names adminRouter, not requireAuth: requireAuth never
+    // resolves to a known subject, so it contributes no edge of its
+    // own.
+    expect(edges[0]?.childRouterId).toBe(nodeId(adminRouterInit));
+  });
+
+  it("skips a call-shaped middleware argument and still finds the router past it", () => {
+    // createAuthMiddleware() is a call expression, the same shape a
+    // router's own creation site is, so resolving it without checking
+    // subject membership would record a phantom edge nothing ever
+    // queries. With the membership check, the walk keeps going past
+    // it and still finds adminRouter.
+    const sf = sourceFile(`
+      import express, { Router } from "express";
+      declare function createAuthMiddleware(): any;
+      const app = express();
+      const adminRouter = Router();
+      app.use("/admin", createAuthMiddleware(), adminRouter);
+    `);
+    const store = new ResolutionStore();
+
+    const edges = discoverMountEdges(
+      sf,
+      expressAppMatch,
+      useMount,
+      expressSubjectIds(sf),
+      store,
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.prefix).toBe("/admin");
+  });
+
+  it("finds nothing when every candidate argument is unknown", () => {
+    const sf = sourceFile(`
+      import express from "express";
+      declare function requireAuth(req: any, res: any, next: any): void;
+      declare function createAuthMiddleware(): any;
+      const app = express();
+      app.use("/admin", requireAuth, createAuthMiddleware());
+    `);
+    const store = new ResolutionStore();
+
+    expect(
+      discoverMountEdges(
+        sf,
+        expressAppMatch,
+        useMount,
+        expressSubjectIds(sf),
+        store,
+      ),
+    ).toEqual([]);
+  });
+
+  it("records nothing for an inline router the subjects map never named", () => {
+    // Router() written directly at the call, with no variable
+    // holding it, is not in registrationSubjectsOf's map: nothing
+    // else in the file could ever ask "is this router mounted"
+    // about a node with no name to look it up by, so the mount
+    // scan does not track it either.
+    const sf = sourceFile(`
+      import express, { Router } from "express";
+      const app = express();
+      app.use("/api/orders", Router());
+    `);
+    const store = new ResolutionStore();
+
+    expect(
+      discoverMountEdges(
+        sf,
+        expressAppMatch,
+        useMount,
+        expressSubjectIds(sf),
+        store,
+      ),
+    ).toEqual([]);
+  });
+
+  it("records nothing when the prefix isn't a string literal", () => {
+    const sf = sourceFile(`
+      import express, { Router } from "express";
+      const app = express();
+      const ordersRouter = Router();
+      declare function computePrefix(): string;
+      const prefix = computePrefix();
+      app.use(prefix, ordersRouter);
+    `);
+    const store = new ResolutionStore();
+
+    expect(
+      discoverMountEdges(
+        sf,
+        expressAppMatch,
+        useMount,
+        expressSubjectIds(sf),
+        store,
+      ),
+    ).toEqual([]);
+  });
+
+  it("records nothing when the mounted value is a name nothing here resolves", () => {
+    // ordersRouter is declared ambiently and never imported here, so
+    // with no resolution store to follow it, the mount's target has
+    // to be written out at the position itself, which this isn't.
+    const sf = sourceFile(`
+      import express from "express";
+      const app = express();
+      declare const ordersRouter: unknown;
+      app.use("/api/orders", ordersRouter);
+    `);
+
+    expect(
+      discoverMountEdges(sf, expressAppMatch, useMount, expressSubjectIds(sf)),
+    ).toEqual([]);
+  });
+
+  it("returns nothing when nothing in the file is a registration subject", () => {
+    const sf = sourceFile(`
+      const app = somethingElse();
+      app.use("/api/orders", somethingElse());
+    `);
+
+    expect(
+      discoverMountEdges(sf, expressAppMatch, useMount, expressSubjectIds(sf)),
+    ).toEqual([]);
+  });
+});
+
+describe("joinMountedPath", () => {
+  it("joins a plain prefix and path", () => {
+    expect(joinMountedPath("/api/orders", "/_health")).toBe(
+      "/api/orders/_health",
+    );
+  });
+
+  it("strips the prefix's own trailing slash before joining", () => {
+    expect(joinMountedPath("/api/orders/", "/_health")).toBe(
+      "/api/orders/_health",
+    );
+  });
+
+  it("composes a root prefix to the path unchanged", () => {
+    expect(joinMountedPath("/", "/health")).toBe("/health");
+  });
+
+  it("leaves a root route's own slash in place, for the pairing engine's own normalizing to strip", () => {
+    // "/api/orders" + "/" composes to "/api/orders/". The pairing
+    // engine's path normalizer already strips a trailing slash off
+    // any path before comparing two, the same treatment a route
+    // written as "/api/orders" (no mount) gets, so this still pairs
+    // with "GET /api/orders" even though the composed string carries
+    // the trailing slash.
+    expect(joinMountedPath("/api/orders", "/")).toBe("/api/orders/");
   });
 });

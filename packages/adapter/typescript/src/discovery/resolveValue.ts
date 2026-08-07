@@ -124,6 +124,29 @@ function propertiesReached(
   });
 }
 
+/**
+ * The expression `value` is written as, whatever kind of expression
+ * that turns out to be, whether it names something or is written out
+ * where it's used. A mount call's target argument is sometimes a call
+ * or `new` expression right there (`app.use("/x", Router())`), and
+ * sometimes a name imported from wherever the sub-router is declared;
+ * a caller comparing the result's identity against another value's own
+ * creation site doesn't care which.
+ */
+export function writtenNodeOf(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): Node | null {
+  const written = factKeyOf(value);
+  if (Node.isCallExpression(written) || Node.isNewExpression(written)) {
+    return written;
+  }
+  if (resolution === undefined || !couldNameAValue(written)) {
+    return null;
+  }
+  return resolution.resolveWrittenValue(written);
+}
+
 /** The array literal this value is, whether written out here or named. */
 export function arrayLiteralOf(
   value: Node,

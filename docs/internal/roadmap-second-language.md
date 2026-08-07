@@ -65,3 +65,13 @@ Two places execute code, and only there:
 4. Write the first pack for the new language (the Flask or FastAPI analog of Express). Packs stay declarative data, so this is recognition only.
 5. Stand up the fuzzer target for the new language; the sound tier must run clean before anything ships.
 6. Emit facts. Rules and checking light up with no new work; this step existing at all is what the facts layer bought.
+
+## Amended
+
+The language-adapters proposal (`proposals/language-adapters.md`)
+grounds this design in a measured corpus and amends it in two
+places: the resolver includes repo-scoped module resolution, not
+only single-file classification, and the native-binary ban is
+superseded by the allowance for Rust behind TypeScript, with WASM
+as the shipped default. Where the two documents disagree, the
+proposal is current.

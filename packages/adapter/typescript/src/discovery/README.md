@@ -13,9 +13,11 @@ Runs after the bootstrap pre-filter has decided which files each pack applies to
 - `shared.ts:DiscoveredUnit` — the result type. Carries `func`, `kind`, `name`, plus optional pattern-specific payloads (`callSite`, `operationInfo`, `resolverInfo`, `packageExportInfo`, `routeInfo`).
 - `decoratedMembers.ts:decoratedCallablesOf`: the decorated callables a class declares, whether written as methods or as properties holding a function. Both decorator-driven handlers read a class through this.
 - `shared.ts:findEnclosingFunction` / `toFunctionRoot` — AST helpers most handlers need.
-- `resolveValue.ts:functionValueOf` / `objectLiteralOf` / `arrayLiteralOf` — the value a handler is looking at, whether it was written out at the position or named there. Every handler that reads an argument, a property or an iterable goes through these.
+- `resolveValue.ts:functionValueOf` / `objectLiteralOf` / `arrayLiteralOf` / `writtenNodeOf`, the value a handler is looking at, whether it was written out at the position or named there. Every handler that reads an argument, a property or an iterable goes through these.
 - `factoryTracking.ts:trackFactoryBindings` — scope-aware binding tracker used by `packageImport` to follow factory results through one syntactic hop.
 - `factorySurface.ts:surfaceMethods` — used by `packageExports` to enumerate methods on object-literal returns and class declarations.
+- `registrationCall.ts:registrationSubjectsOf`, the variables in a file that hold the routable a `DiscoveryPattern.match`'s import produces. Shared by route discovery and mount discovery, so both ask which variable is the routable the same way.
+- `mountPrefix.ts:buildMountPrefixIndex`, scans every file a pack's gate already applies to for mount calls (`DiscoveryPattern.mount`, Express `app.use`, Hono `app.route`) and builds the index route discovery composes a mounted router's prefix through. Follows the mounted value across a file when it names one, and chains through however many routers it was mounted onto in turn.
 
 ## Non-obvious things
 
@@ -27,6 +29,7 @@ Runs after the bootstrap pre-filter has decided which files each pack applies to
 - **A route can outlive its handler.** `func` is null on a unit whose registration states a route and hands over a handler the registering function was itself given. There is no chain to follow from there, so the summary carries the boundary, sits at the registration (`announcedAt`), and says through an `unreadOutcome` gap that nothing about the handler was read. A boundary reported with nothing behind it is worth more than no boundary at all. Every other unresolved argument stays unreported, because a chain nobody has followed yet is a missing rule rather than a fact about the code.
 - **A handler asks rather than follows.** Reading the syntax sitting at a position sees an identifier and stops, so a handler hands the value to `resolveValue.ts` and the fact layer follows it through a property read, an array element, an alias, an import and a barrel. Two candidates answer with neither, which is what keeps a wrong handler from being reported confidently. A handler run without a `ResolutionStore` therefore finds only what is written out at the position, and the adapter always supplies one.
 - **`packageImport` dedup happens at TWO layers.** Once inside the handler (collapses repeated calls to the same export within an enclosing function) and once in the dispatcher's bindingSuffix dedup (handles cross-pattern collisions). Both layers are necessary; removing either misses cases.
+- **Mount composition asks rather than follows, same as a handler.** A mount call's target argument goes through `resolveValue.ts:writtenNodeOf`, the same resolution store a handler argument goes through, so a router mounted through an import in another file resolves the same way a handler imported from another file does. A mount whose prefix isn't a string literal or whose target the store can't follow contributes nothing, the same convention `extractRouteInfoFromBinding` follows for a route's own path.
 
 ## Sibling modules
 

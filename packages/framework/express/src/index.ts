@@ -13,10 +13,14 @@ export function expressFramework(): PatternPack {
     // Express exposes the routable via either `Router()` (named) or
     // `express()` (default). Both drive handler registration the same
     // way; `httpRouteDiscovery` emits one DiscoveryPattern per name.
+    // Either can also be mounted onto another with `app.use(prefix,
+    // router)`, so a route declared on the mounted router summarizes
+    // with the mount's prefix composed in.
     discovery: httpRouteDiscovery({
       importModule: "express",
       importNames: ["Router", "express"],
       methods: [".get", ".post", ".put", ".delete", ".patch", ".all"],
+      mount: { method: "use", prefixPosition: 0, targetPosition: 1 },
     }),
 
     terminals: [
