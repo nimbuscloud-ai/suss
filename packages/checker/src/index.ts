@@ -64,6 +64,21 @@ export {
 export { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 export { checkProviderCoverage } from "./coverage/providerCoverage.js";
 export { dedupeFindings } from "./dedupe.js";
+export {
+  analyzeFlow,
+  FLOW_RULES,
+  type FlowAnalysis,
+  type FlowEndpointSets,
+  type FlowView,
+} from "./flow/reachability.js";
+export {
+  type AnsweredMatch,
+  collectFlowInputs,
+  type FlowInputs,
+  type RouterMatches,
+  type RoutingEdgeFacts,
+  type ServingClaimSite,
+} from "./flow/routingFacts.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
 export { checkMessageBus } from "./message-bus/messageBusPairing.js";
 export {

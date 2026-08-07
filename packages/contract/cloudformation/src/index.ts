@@ -80,6 +80,8 @@ export {
   type ServerlessNonHttpEvent,
 } from "@suss/manifest-aws";
 
+export { ALB_MATCH_LANGUAGE, albRouterSelector } from "./albMatch.js";
+
 export interface CloudFormationToSummariesOptions {
   /** Override the logical source file recorded on each summary. */
   source?: string;

@@ -29,6 +29,21 @@ import { fileInCodeScope } from "@suss/ir-core";
 
 import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
 
+export interface CodeScopeMetadata {
+  kind: "codeUri" | "unknown";
+  path?: string;
+}
+
+/** The code scope a declaring summary carries, or the unknown marker when it names none. */
+export function readCodeScope(summary: BehavioralSummary): CodeScopeMetadata {
+  const raw = (summary.metadata?.codeScope ?? null) as CodeScopeMetadata | null;
+  if (raw === null) {
+    return { kind: "unknown" };
+  }
+
+  return raw;
+}
+
 /** The units each file's code is deployed as, as its summaries name them. */
 export type UnitsByFile = ReadonlyMap<string, DeployableUnit[]>;
 

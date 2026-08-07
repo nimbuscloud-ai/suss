@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 941,
-      "covered": 870,
+      "total": 999,
+      "covered": 927,
       "skipped": 0,
-      "pct": 92.45
+      "pct": 92.79
     },
     "statements": {
-      "total": 944,
-      "covered": 873,
+      "total": 1005,
+      "covered": 933,
       "skipped": 0,
-      "pct": 92.47
+      "pct": 92.83
     },
     "functions": {
-      "total": 104,
-      "covered": 104,
+      "total": 123,
+      "covered": 123,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 866,
-      "covered": 754,
+      "total": 903,
+      "covered": 790,
       "skipped": 0,
-      "pct": 87.06
+      "pct": 87.48
     },
     "branchesTrue": {
       "total": 0,
@@ -33,28 +33,54 @@
   },
   "src/albFlow.ts": {
     "lines": {
-      "total": 153,
-      "covered": 151,
+      "total": 155,
+      "covered": 153,
       "skipped": 0,
-      "pct": 98.69
+      "pct": 98.7
     },
     "functions": {
-      "total": 28,
-      "covered": 28,
+      "total": 29,
+      "covered": 29,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 154,
-      "covered": 152,
+      "total": 156,
+      "covered": 154,
       "skipped": 0,
-      "pct": 98.7
+      "pct": 98.71
     },
     "branches": {
-      "total": 184,
-      "covered": 174,
+      "total": 186,
+      "covered": 176,
       "skipped": 0,
-      "pct": 94.56
+      "pct": 94.62
+    }
+  },
+  "src/albMatch.ts": {
+    "lines": {
+      "total": 56,
+      "covered": 55,
+      "skipped": 0,
+      "pct": 98.21
+    },
+    "functions": {
+      "total": 18,
+      "covered": 18,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 59,
+      "covered": 58,
+      "skipped": 0,
+      "pct": 98.3
+    },
+    "branches": {
+      "total": 35,
+      "covered": 34,
+      "skipped": 0,
+      "pct": 97.14
     }
   },
   "src/index.ts": {

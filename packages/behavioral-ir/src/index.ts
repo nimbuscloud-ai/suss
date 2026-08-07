@@ -103,6 +103,13 @@ export type {
   StorageRelationalSemantics,
   TypeShape,
 } from "@suss/ir-core";
+export type {
+  FlowRequest,
+  RouterMatchSelector,
+  RouterSelection,
+  RoutingMatchCondition,
+  RoutingMatchRecord,
+} from "./routing.js";
 
 // ---------------------------------------------------------------------------
 // Derived types (single source of truth: schemas.ts)

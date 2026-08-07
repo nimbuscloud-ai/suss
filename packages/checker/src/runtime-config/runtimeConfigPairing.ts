@@ -32,7 +32,12 @@
 import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
 
 import { makeSide } from "../coverage/responseMatch.js";
-import { contestedFiles, runsIn, unitsByFile } from "../scope/unitScope.js";
+import {
+  contestedFiles,
+  readCodeScope,
+  runsIn,
+  unitsByFile,
+} from "../scope/unitScope.js";
 
 import type {
   BehavioralSummary,
@@ -66,11 +71,6 @@ interface PlacedRuntime {
   runtime: BehavioralSummary;
   binding: BoundaryBinding;
   scope: UnitScope;
-}
-
-interface CodeScopeMetadata {
-  kind: "codeUri" | "unknown";
-  path?: string;
 }
 
 interface EnvVarRead {
@@ -270,14 +270,6 @@ function readNamesPerDocument(
 
 function isRuntimeConfigProvider(summary: BehavioralSummary): boolean {
   return summary.identity.boundaryBinding?.semantics.name === "runtime-config";
-}
-
-function readCodeScope(summary: BehavioralSummary): CodeScopeMetadata {
-  const raw = (summary.metadata?.codeScope ?? null) as CodeScopeMetadata | null;
-  if (raw === null) {
-    return { kind: "unknown" };
-  }
-  return raw;
 }
 
 function readProvidedEnvVars(summary: BehavioralSummary): string[] {

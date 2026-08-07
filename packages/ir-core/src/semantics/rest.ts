@@ -71,6 +71,41 @@ export function methodsAgree(a: string | null, b: string | null): boolean {
   return a === b || a === "*" || b === "*";
 }
 
+/**
+ * A normalized route path as a matcher for concrete request paths.
+ * `{param}` stands for exactly one path segment; `*` crosses segment
+ * boundaries and may be empty, which is how Express 4 reads a bare
+ * star. Everything else compares literally, on the normalized
+ * (static-lowercased, trailing-slash-stripped) forms of both sides.
+ */
+function routePathRegex(pattern: string): RegExp {
+  const source = pattern
+    .split(/(\{[^}]+\}|\*)/g)
+    .map((part) => {
+      if (part === "*") {
+        return ".*";
+      }
+
+      if (part.startsWith("{") && part.endsWith("}")) {
+        return "[^/]+";
+      }
+
+      return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    })
+    .join("");
+  return new RegExp(`^${source}$`);
+}
+
+/** Whether a declared route path admits a concrete request path. */
+export function routePathAdmits(
+  declaredPath: string,
+  requestPath: string,
+): boolean {
+  return routePathRegex(normalizePath(declaredPath)).test(
+    normalizePath(requestPath),
+  );
+}
+
 export const restSemantics = defineBoundarySemantics({
   name: "rest",
   schema: RestSemanticsSchema,
@@ -112,6 +147,24 @@ export const restSemantics = defineBoundarySemantics({
       const path =
         semantics.path === null ? "?" : normalizePath(semantics.path);
       return `${method} ${path}`;
+    },
+    /**
+     * A route with both halves named answers by its own match: the
+     * method through `methodsAgree` (so an `"*"` route answers every
+     * method) and the path through `routePathAdmits`. A route missing
+     * either half might still be the one that answers, and nothing
+     * here can settle it, so it abstains rather than refusing.
+     */
+    servesRequest(semantics, method, path) {
+      if (semantics.method === null || semantics.path === null) {
+        return "unknown";
+      }
+
+      if (!methodsAgree(semantics.method, method.toUpperCase())) {
+        return "nomatch";
+      }
+
+      return routePathAdmits(semantics.path, path) ? "match" : "nomatch";
     },
     ruleBoundary: {
       // "METHOD /path": one leading token, then an absolute path.

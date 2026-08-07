@@ -174,6 +174,31 @@ describe("the ALB flow template", () => {
       resource: "HealthFunction",
     });
   });
+
+  it("says which load balancer the listener belongs to", () => {
+    const summaries = summariesFromFixture();
+    const belongsTo = edgesOf(summaries, "belongsTo");
+    expect(belongsTo).toHaveLength(1);
+    expect(belongsTo[0]?.summary.identity.name).toBe(
+      "ShopHttpsListener#loadBalancer",
+    );
+    expect(belongsTo[0]?.routing).toMatchObject({
+      router: "ShopHttpsListener",
+      resource: "ShopAlb",
+    });
+  });
+
+  it("stamps the alb condition language on every match row", () => {
+    const summaries = summariesFromFixture();
+    const matches = [
+      ...edgesOf(summaries, "routesTo"),
+      ...edgesOf(summaries, "answers"),
+    ];
+    expect(matches.length).toBeGreaterThan(0);
+    expect(
+      matches.every((entry) => entry.routing.matchLanguage === "alb"),
+    ).toBe(true);
+  });
 });
 
 describe("routesTo: unresolvable and malformed shapes", () => {
@@ -419,6 +444,27 @@ describe("routesTo: unresolvable and malformed shapes", () => {
     expect(routesTo.map((entry) => entry.summary.identity.name).sort()).toEqual(
       ["RuleA", "RuleB"],
     );
+  });
+});
+
+describe("belongsTo: unresolvable shapes", () => {
+  it("records a listener naming no load balancer, per the unresolvable convention", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        LoneListener: {
+          Type: "AWS::ElasticLoadBalancingV2::Listener",
+          Properties: { DefaultActions: [{ Type: "fixed-response" }] },
+        },
+      },
+    });
+    const belongsTo = edgesOf(summaries, "belongsTo");
+    expect(belongsTo).toHaveLength(1);
+    expect(belongsTo[0]?.routing.router).toBe("LoneListener");
+    expect(belongsTo[0]?.routing.resource).toBeNull();
+    expect(belongsTo[0]?.routing.unresolvedResource).toMatchObject({
+      reference: "(none)",
+      reason: "no reference is set",
+    });
   });
 });
 
