@@ -252,32 +252,37 @@ function lowerSwitchGroups(
 /**
  * A case clause's body is a plain statement list in TypeScript's own
  * grammar, but a clause written with braces (`case "a": { ...; break; }`)
- * makes that list a single Block statement. Left as one Block, it
- * lowers to one opaque node: the trailing-break check never sees a
- * break at the top of the clause (the Block isn't one), and the
- * engine's stray-break scan can't see past an opaque node either, so
- * a break buried inside the block goes unnoticed by both. Unwrap a
- * single-statement Block clause body into its own statements, the way
- * `statementsOf` already unwraps a single-statement if/loop body, so
- * the clause's actual last statement is what both checks see.
+ * makes some or all of that list Block statements, at any position
+ * and nested to any depth (`log(); { { tag(); break; } }` is legal).
+ * Left as Blocks, they lower to opaque nodes: the engine's stray-break
+ * scan can't see past an opaque node, so a break buried inside one
+ * goes unnoticed. Flatten every Block in the list into its own
+ * statements, recursively, so whatever statement sequence the clause
+ * actually runs is what the engine sees. Only Block unwraps this way.
+ * An if/try/loop/switch nested in the body keeps its own control flow
+ * and is lowered normally, same as everywhere else.
  */
-function unwrapSingleBlockClauseBody(stmts: Statement[]): Statement[] {
-  const [only] = stmts;
-  if (stmts.length === 1 && only !== undefined && Node.isBlock(only)) {
-    return only.getStatements();
-  }
-  return stmts;
+function flattenBlocks(stmts: readonly Statement[]): Statement[] {
+  return stmts.flatMap((stmt) =>
+    Node.isBlock(stmt) ? flattenBlocks(stmt.getStatements()) : [stmt],
+  );
 }
 
 function lowerGroupBody(
   stmts: Statement[],
   rawToStructured: Map<Node, StructuredStatement<Expression>>,
 ): { hasTrailingBreak: boolean; body: StructuredStatement<Expression>[] } {
+  // hasTrailingBreak matches the legacy scanner's own check exactly: a
+  // bare break as the clause's own literal last statement, before any
+  // block-flattening. A break sitting inside a block anywhere in the
+  // body, however deep, was never "trailing" to the legacy scanner
+  // either. It always degraded that shape, so it has to surface below
+  // as a stray break instead, never as a trailing one.
   const last = stmts[stmts.length - 1];
   const hasTrailingBreak = last !== undefined && Node.isBreakStatement(last);
   const kept = hasTrailingBreak ? stmts.slice(0, -1) : stmts;
-  const unwrapped = unwrapSingleBlockClauseBody(kept);
-  const body = lowerList(unwrapped, rawToStructured);
+  const flattened = flattenBlocks(kept);
+  const body = lowerList(flattened, rawToStructured);
   // A trailing break still gets lowered (registered), even though it's
   // excluded from `body` and never enumerated, matching the legacy
   // collector, which also marked it "visited" so a caller-given

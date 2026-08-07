@@ -33,16 +33,36 @@ export interface Terminal {
 }
 
 /**
+ * `blockBreak`'s own two dimensions: whether an unrelated statement
+ * runs before the braced block in the same clause body (the shape
+ * that hides a break behind a leading sibling statement, not only
+ * behind the block itself), and how many braces wrap the break, one
+ * block or a block nested inside another. Lowering's block-flattening
+ * has to see a break through either, at any depth, so both are worth
+ * generating.
+ */
+export interface BlockBreakShape {
+  hasSibling: boolean;
+  depth: 1 | 2;
+}
+
+/**
  * One switch/case clause. `break` and `return` are the sound
  * trailing-exit shapes; `blockBreak` wraps the same body in braces
- * (`case v: { respond; break; }`), the shape lowering unwraps so the
- * engine's stray-break scan can see the break instead of an opaque
- * block; `fallthrough` is an empty clause that stacks its label onto
- * the next non-empty one, TypeScript's own case-grouping grammar.
+ * (`case v: { respond; break; }`, optionally preceded by a sibling
+ * statement and nested one block deeper), the shape lowering unwraps
+ * so the engine's stray-break scan can see the break instead of an
+ * opaque block; `fallthrough` is an empty clause that stacks its
+ * label onto the next non-empty one, TypeScript's own case-grouping
+ * grammar.
  */
 export type SwitchClause =
   | { value: string; type: "break"; terminal: Terminal }
-  | { value: string; type: "blockBreak"; terminal: Terminal }
+  | ({
+      value: string;
+      type: "blockBreak";
+      terminal: Terminal;
+    } & BlockBreakShape)
   | { value: string; type: "return"; terminal: Terminal }
   | { value: string; type: "fallthrough" };
 
@@ -56,10 +76,10 @@ export type SwitchClause =
  * matched-and-broken clause has the same problem, closed the same
  * way, in the renderer below.
  */
-export interface SwitchDefaultClause {
-  type: "break" | "blockBreak" | "return";
-  terminal: Terminal;
-}
+export type SwitchDefaultClause =
+  | { type: "break"; terminal: Terminal }
+  | ({ type: "blockBreak"; terminal: Terminal } & BlockBreakShape)
+  | { type: "return"; terminal: Terminal };
 
 /**
  * Statements that may appear before the final response.
@@ -151,29 +171,57 @@ export function renderCond(cond: Cond): string {
 export type TerminalRenderer = (terminal: Terminal) => string;
 
 /**
- * The lines a clause's body renders to, once its exit shape (break /
- * blockBreak / return) is known. Shared between case clauses and the
- * mandatory default clause, which carry the same three exit shapes.
+ * The lines a "break" or "return" clause body renders to. "blockBreak"
+ * needs its own two extra dimensions (a leading sibling statement, a
+ * nesting depth), so it renders separately, below.
  */
-const EXIT_BODY_LINES: Record<
-  "break" | "blockBreak" | "return",
+const SIMPLE_EXIT_LINES: Record<
+  "break" | "return",
   (terminal: Terminal, renderTerminal: TerminalRenderer) => string[]
 > = {
   break: (terminal, renderTerminal) => [
     `    ${renderTerminal(terminal)};`,
     "    break;",
   ],
-  blockBreak: (terminal, renderTerminal) => [
-    "    {",
-    `      ${renderTerminal(terminal)};`,
-    "      break;",
-    "    }",
-  ],
   return: (terminal, renderTerminal) => [
     `    ${renderTerminal(terminal)};`,
     "    return;",
   ],
 };
+
+/** A side-effecting statement unrelated to the response, standing in for whatever an application's own clause body runs ahead of its exit. */
+const SIBLING_STATEMENT_LINE = '    console.log("entering case");';
+
+function renderBlockBreakBody(
+  terminal: Terminal,
+  shape: BlockBreakShape,
+  renderTerminal: TerminalRenderer,
+): string[] {
+  const open = shape.depth === 2 ? ["    {", "      {"] : ["    {"];
+  const close = shape.depth === 2 ? ["      }", "    }"] : ["    }"];
+  const innerIndent = shape.depth === 2 ? "        " : "      ";
+  return [
+    ...(shape.hasSibling ? [SIBLING_STATEMENT_LINE] : []),
+    ...open,
+    `${innerIndent}${renderTerminal(terminal)};`,
+    `${innerIndent}break;`,
+    ...close,
+  ];
+}
+
+/** Shared between case clauses and the mandatory default clause, which carry the same three exit shapes. */
+function renderClauseExitBody(
+  clause:
+    | { type: "break"; terminal: Terminal }
+    | ({ type: "blockBreak"; terminal: Terminal } & BlockBreakShape)
+    | { type: "return"; terminal: Terminal },
+  renderTerminal: TerminalRenderer,
+): string[] {
+  if (clause.type === "blockBreak") {
+    return renderBlockBreakBody(clause.terminal, clause, renderTerminal);
+  }
+  return SIMPLE_EXIT_LINES[clause.type](clause.terminal, renderTerminal);
+}
 
 function renderSwitchClause(
   clause: SwitchClause,
@@ -183,23 +231,14 @@ function renderSwitchClause(
   if (clause.type === "fallthrough") {
     return [caseLine];
   }
-  return [
-    caseLine,
-    ...EXIT_BODY_LINES[clause.type](clause.terminal, renderTerminal),
-  ];
+  return [caseLine, ...renderClauseExitBody(clause, renderTerminal)];
 }
 
 function renderSwitchDefaultClause(
   defaultClause: SwitchDefaultClause,
   renderTerminal: TerminalRenderer,
 ): string[] {
-  return [
-    "  default:",
-    ...EXIT_BODY_LINES[defaultClause.type](
-      defaultClause.terminal,
-      renderTerminal,
-    ),
-  ];
+  return ["  default:", ...renderClauseExitBody(defaultClause, renderTerminal)];
 }
 
 function guardRenderers(

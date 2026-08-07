@@ -10,6 +10,7 @@
 import fc from "fast-check";
 
 import type {
+  BlockBreakShape,
   Cond,
   FieldSource,
   FinalStmt,
@@ -166,9 +167,22 @@ export const arbLoopGuard: fc.Arbitrary<GuardStmt> = fc
 /** Distinct case-label literals, positionally assigned to a program's clauses. */
 const SWITCH_CASE_VALUES = ["alpha", "beta", "gamma", "delta"];
 
+/**
+ * blockBreak's own two dimensions (see program.ts's BlockBreakShape):
+ * a leading sibling statement, on or off, and a nesting depth of one
+ * or two braces. Generated for every clause spec, whatever its type,
+ * so switching a spec's type to "blockBreak" (the fallthrough fixup
+ * below does this) never needs to backfill it.
+ */
+const arbBlockBreakShape: fc.Arbitrary<BlockBreakShape> = fc.record({
+  hasSibling: fc.boolean(),
+  depth: fc.constantFrom<1 | 2>(1, 2),
+});
+
 interface SwitchClauseSpec {
   type: "break" | "blockBreak" | "return" | "fallthrough";
   terminal: Terminal;
+  blockBreakShape: BlockBreakShape;
 }
 
 const arbSwitchClauseSpec: fc.Arbitrary<SwitchClauseSpec> = fc.record({
@@ -179,43 +193,77 @@ const arbSwitchClauseSpec: fc.Arbitrary<SwitchClauseSpec> = fc.record({
     "fallthrough",
   ),
   terminal: arbTerminal,
+  blockBreakShape: arbBlockBreakShape,
 });
 
-const toSwitchClause = (spec: SwitchClauseSpec, value: string): SwitchClause =>
-  spec.type === "fallthrough"
-    ? { value, type: "fallthrough" }
-    : { value, type: spec.type, terminal: spec.terminal };
+function toSwitchClause(spec: SwitchClauseSpec, value: string): SwitchClause {
+  if (spec.type === "fallthrough") {
+    return { value, type: "fallthrough" };
+  }
+  if (spec.type === "blockBreak") {
+    return {
+      value,
+      type: "blockBreak",
+      terminal: spec.terminal,
+      ...spec.blockBreakShape,
+    };
+  }
+  return { value, type: spec.type, terminal: spec.terminal };
+}
+
+interface SwitchDefaultSpec {
+  type: "break" | "blockBreak" | "return";
+  terminal: Terminal;
+  blockBreakShape: BlockBreakShape;
+}
 
 /** The default clause never falls through. A switch with no default would leave an unmatched value with no response at all. */
-const arbSwitchDefaultSpec: fc.Arbitrary<SwitchDefaultClause> = fc.record({
-  type: fc.constantFrom<SwitchDefaultClause["type"]>(
+const arbSwitchDefaultSpec: fc.Arbitrary<SwitchDefaultSpec> = fc.record({
+  type: fc.constantFrom<SwitchDefaultSpec["type"]>(
     "break",
     "blockBreak",
     "return",
   ),
   terminal: arbTerminal,
+  blockBreakShape: arbBlockBreakShape,
 });
+
+function toSwitchDefaultClause(spec: SwitchDefaultSpec): SwitchDefaultClause {
+  if (spec.type === "blockBreak") {
+    return {
+      type: "blockBreak",
+      terminal: spec.terminal,
+      ...spec.blockBreakShape,
+    };
+  }
+  return { type: spec.type, terminal: spec.terminal };
+}
 
 export const arbSwitchGuard: fc.Arbitrary<GuardStmt> = fc
   .record({
     field: arbField,
     specs: fc.array(arbSwitchClauseSpec, { minLength: 2, maxLength: 4 }),
-    defaultClause: arbSwitchDefaultSpec,
+    defaultSpec: arbSwitchDefaultSpec,
   })
-  .map(({ field, specs, defaultClause }): GuardStmt => {
+  .map(({ field, specs, defaultSpec }): GuardStmt => {
     // A trailing fallthrough clause has nothing to stack into, so give
     // the last clause a body instead. Every generated fallthrough
     // clause then always stacks into a non-empty one, and is worth having.
     const lastIndex = specs.length - 1;
     const fixed = specs.map((spec, i) =>
       i === lastIndex && spec.type === "fallthrough"
-        ? ({ type: "break", terminal: spec.terminal } as SwitchClauseSpec)
+        ? { ...spec, type: "break" as const }
         : spec,
     );
     const clauses = fixed.map((spec, i) =>
       toSwitchClause(spec, SWITCH_CASE_VALUES[i % SWITCH_CASE_VALUES.length]),
     );
-    return { type: "switchGuard", field, clauses, defaultClause };
+    return {
+      type: "switchGuard",
+      field,
+      clauses,
+      defaultClause: toSwitchDefaultClause(defaultSpec),
+    };
   });
 
 function arbGuardStmt(tier: FuzzTier): fc.Arbitrary<GuardStmt> {

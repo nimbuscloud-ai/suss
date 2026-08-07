@@ -738,4 +738,64 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
       );
     }
   });
+
+  it("degrades when a sibling statement sits before the block", () => {
+    const fn = getFunction(`
+      export function handler(req: { query: { kind: string } }, res: any) {
+        switch (req.query.kind) {
+          case "a":
+            return res.status(200).json({ ok: true });
+          case "b":
+            console.log("entering b");
+            {
+              const tag = "b-like";
+              console.log(tag);
+              break;
+            }
+          default:
+            return res.status(400).json({ error: "bad" });
+        }
+        return res.status(204).json({ ok: true });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    expect(terminals).toHaveLength(3);
+    const result = computePathConditions(fn, terminals);
+    for (const terminal of terminals) {
+      const [only] = result.byTerminal.get(terminal) ?? [];
+      expect(only?.[only.length - 1]?.sourceText).toContain(
+        "unmodeled control flow (non-trailing break in switch clause)",
+      );
+    }
+  });
+
+  it("degrades when the block is nested two deep", () => {
+    const fn = getFunction(`
+      export function handler(req: { query: { kind: string } }, res: any) {
+        switch (req.query.kind) {
+          case "a":
+            return res.status(200).json({ ok: true });
+          case "b": {
+            {
+              const tag = "b-like";
+              console.log(tag);
+              break;
+            }
+          }
+          default:
+            return res.status(400).json({ error: "bad" });
+        }
+        return res.status(204).json({ ok: true });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    expect(terminals).toHaveLength(3);
+    const result = computePathConditions(fn, terminals);
+    for (const terminal of terminals) {
+      const [only] = result.byTerminal.get(terminal) ?? [];
+      expect(only?.[only.length - 1]?.sourceText).toContain(
+        "unmodeled control flow (non-trailing break in switch clause)",
+      );
+    }
+  });
 });
