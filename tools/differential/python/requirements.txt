@@ -1,0 +1,8 @@
+# The frameworks the Python differential's generated apps run on, and
+# the client its observer probes them with. Installed in the fuzz
+# workflow's CI image (and by anyone running fuzz:python locally),
+# never shipped with any package.
+flask==3.0.3
+flask-restx==1.3.0
+fastapi==0.115.0
+httpx==0.27.2

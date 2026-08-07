@@ -229,18 +229,46 @@ abstention until extraction models them).
 
 ## Other languages
 
-The plan's eventual Python adapter (status.md Phase 10) slots in the
-same way, because the harness seams are the pipeline's seams:
+The Python target (implemented, `src/python/`) is the first
+second-language differential, adjudicating what the v0 Python
+adapter actually claims: boundary declarations, not condition-gated
+transitions. Its seams:
 
-- `RawCodeStructure` is the adapter boundary (decision #7) — a Python
-  target supplies a DSL renderer that emits Flask/FastAPI-shaped
-  source and an execution harness for it (a `python -c` subprocess
-  instead of `node:vm`). Everything downstream of the summary — the
-  interpreter, the adjudicator, the corpus — operates on serialized
-  IR and does not change.
-- The generators' construct set (guards, compound conditions,
-  early returns) is language-generic by design; per-language arms
-  cover syntax that doesn't exist in TS.
+- **Program DSL + generators** (`pythonProgram.ts`,
+  `pythonGenerators.ts`). Specs cover the shapes the shipped
+  flask-restx and fastapi packs read (decorated resource classes
+  behind a direct import or a project wrapper module; decorated
+  functions on the app or on mounted routers, with `response_model`
+  / `status_code` and prefix composition) and the shapes those packs
+  document as abstentions: a non-literal path, a computed prefix, a
+  reassigned router variable, a router mounted twice or never or
+  onto another router. Rendering emits the program's files plus one
+  intent per route saying where the running app serves it and which
+  tier the shape sits in.
+- **Extraction** runs the same pipeline `suss extract` runs for
+  Python (tree-sitter, binder, router index, the shipped pack) over
+  the same files on disk the runtime side imports.
+- **Observation** (`pythonObserve.ts`) shells out to python3 (the CI
+  image's or the developer's own, never anything shipped) and asks
+  the frameworks themselves what is served (flask's `url_map`,
+  fastapi's route table), probing each route once with a well-formed
+  request. One interpreter process observes a whole batch, since
+  importing the frameworks dominates per-program cost.
+- **Adjudication** (`pythonJudge.ts`) keeps the protocol: a claimed
+  method+path the app does not serve, or a declared literal status a
+  probe contradicts, is `falseClaim`; a served route nothing claims
+  or abstains over is `uncovered`; abstention is never a finding and
+  is reported as the run's cost metric (the abstention rate). Its
+  first catch: a non-literal `status_code=` keyword plus a return
+  annotation made the adapter fabricate a literal-200 claim the
+  running app contradicted; the adapter now abstains there.
+
+Per-pull-request CI holds the static half only
+(`pythonExtraction.test.ts`: claim-tier shapes extract their served
+path, abstention-tier shapes extract no path claim, same promotion
+protocol as the shape tiers). The full differential runs in the fuzz
+workflow via `fuzzPython.mjs`, which installs the target frameworks
+from `python/requirements.txt`.
 
 The rule of thumb the harness encodes: **one differential per
 boundary-shape** (HTTP request/response, render, and later

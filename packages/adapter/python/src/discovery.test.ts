@@ -225,6 +225,34 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     expect(branch?.conditions).toEqual([]);
   });
 
+  it("claims no status when the decorator writes one the reader cannot read", async () => {
+    // status_code=CODE runs at whatever CODE holds. Found by the
+    // Python differential fuzzer: defaulting to 200 here promised a
+    // status the running app contradicted.
+    const computedStatus = [
+      "from fastapi import FastAPI",
+      "",
+      "app = FastAPI()",
+      "",
+      "CODE = 201",
+      "",
+      "",
+      "class TodoResponse:",
+      "    id: int",
+      "",
+      "",
+      '@app.post("/items", status_code=CODE)',
+      "def create_item() -> TodoResponse:",
+      "    pass",
+      "",
+    ].join("\n");
+    const units = await unitsOf(computedStatus, [fastapiLike]);
+    const createItem = units.find((u) => u.identity.name === "create_item");
+    expect(createItem?.branches).toHaveLength(1);
+    expect(createItem?.branches[0]?.terminal.statusCode).toBeNull();
+    expect(createItem?.branches[0]?.terminal.body?.shape?.type).toBe("ref");
+  });
+
   it("defaults an unstated status to 200 once a response shape is known", async () => {
     const units = await unitsOf(source, [fastapiLike]);
     const readItem = units.find((u) => u.identity.name === "read_item");
@@ -290,5 +318,48 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
       type: "record",
       properties: { id: { type: "integer" }, title: { type: "text" } },
     });
+  });
+
+  it("matches each pattern only against its own definition shape", async () => {
+    // The class-route decorator sitting on a function, and the
+    // verb-attribute decorator sitting on a class: both resolve to a
+    // configured module, and neither shape is the one its pattern
+    // reads, so neither may produce a unit.
+    const mixed = [
+      "from myapp.wrappers.restx import route",
+      "from fastapi import FastAPI",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      '@route("/todos")',
+      "class TodoList:",
+      "    def get(self):",
+      "        return []",
+      "",
+      "",
+      '@route("/helpers")',
+      "def helper():",
+      "    pass",
+      "",
+      "",
+      '@app.get("/items")',
+      "def list_items():",
+      "    pass",
+      "",
+      "",
+      '@app.get("/legacy")',
+      "class Legacy:",
+      "    def get(self):",
+      "        return []",
+      "",
+    ].join("\n");
+    const units = await unitsOf(mixed, [flaskRestxLike, fastapiLike]);
+    expect(
+      units.map((u) => [u.identity.name, u.boundaryBinding?.recognition]),
+    ).toEqual([
+      ["TodoList.get", "flask-restx"],
+      ["list_items", "fastapi-test"],
+    ]);
   });
 });
