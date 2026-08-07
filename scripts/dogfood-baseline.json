@@ -1,17 +1,17 @@
 {
   "totals": {
-    "packages": 42,
-    "packagesWithExports": 41,
-    "exports": 333,
-    "internal": 1213,
-    "consumers": 456,
-    "pairs": 448
+    "packages": 43,
+    "packagesWithExports": 42,
+    "exports": 337,
+    "internal": 1222,
+    "consumers": 460,
+    "pairs": 452
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
-      "exports": 42,
-      "internal": 35,
+      "exports": 44,
+      "internal": 44,
       "consumers": 10
     },
     "packages/adapter/ruby": {
@@ -163,6 +163,12 @@
       "exports": 2,
       "internal": 0,
       "consumers": 5
+    },
+    "packages/framework/fastapi": {
+      "name": "@suss/framework-fastapi",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 4
     },
     "packages/framework/fastify": {
       "name": "@suss/framework-fastify",

@@ -79,4 +79,35 @@ export interface DecoratedFunctionRoute {
   responseModelKeyword?: string;
   /** Keyword argument on the decorator call naming a literal response status code (FastAPI's `status_code`). */
   statusCodeKeyword?: string;
+  /**
+   * How a route declared on a sub-router composes its full path.
+   * Unset means the library has no router mounting, and a route's
+   * decorator path stands as written.
+   */
+  routerComposition?: RouterComposition;
+}
+
+/**
+ * The names a library gives router mounting, so the route path a
+ * reader would see at the wire composes from up to two literal
+ * prefixes: the router constructor's own, and the one at the single
+ * call that mounts the router (FastAPI's `APIRouter(prefix=...)` plus
+ * `app.include_router(router, prefix=...)`). Anything the composition
+ * cannot read as one construction, one mount, and literal prefixes
+ * abstains: the route is still discovered by name, with no path (see
+ * routers.ts).
+ */
+export interface RouterComposition {
+  /** Constructor whose call builds a mountable router, as the library exports it (FastAPI's `APIRouter`). */
+  routerConstructorName: string;
+  /** Method that mounts a router onto the app, as the library defines it (FastAPI's `include_router`). */
+  includeMethodName: string;
+  /**
+   * Keyword naming the literal path prefix, on the constructor and on
+   * the mount call alike (FastAPI's `prefix`). One name serving both
+   * sites is an assumption FastAPI happens to satisfy; a library that
+   * spells the constructor's prefix differently from the mount's
+   * needs this split into two fields.
+   */
+  prefixKeyword: string;
 }

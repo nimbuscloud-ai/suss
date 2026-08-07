@@ -64,6 +64,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
 | [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | ![](../../.github/badges/coverage-aws-lambda.svg) |
 | [`@suss/framework-flask-restx`](../../packages/framework/flask-restx) | flask-restx `Resource` routes (Python), including a project's own wrapper module re-exporting the route decorator. | ![](../../.github/badges/coverage-flask-restx.svg) |
+| [`@suss/framework-fastapi`](../../packages/framework/fastapi) | FastAPI routes (Python): the verb from the decorator's own attribute name, `APIRouter` prefixes composed one `include_router` hop deep, `response_model` / `status_code` read as the declared contract. | ![](../../.github/badges/coverage-fastapi.svg) |
 | [`@suss/framework-graphql-ruby`](../../packages/framework/graphql-ruby) | graphql-ruby class-based field DSL (Ruby), including `mutation:` / `resolver:` one-hop wiring to the referenced class's own declared shape. | ![](../../.github/badges/coverage-graphql-ruby.svg) |
 
 ## Clients

@@ -14,10 +14,10 @@
 // from Python, so the same bucketing works across languages once both
 // sides extract.
 //
-// The FastAPI-style file isn't wired to a shipped pack yet (that's a
-// later slice per the proposal); the inline `fastapiPack` below proves
-// the same adapter mechanism (decoratedFunctionRoute, response_model /
-// status_code reading) covers it once one ships.
+// The FastAPI-style file is read through the inline `fastapiPack`
+// below rather than the shipped `@suss/framework-fastapi`, which has
+// its own fixture and extraction test: depending on a sibling pack
+// here would only re-test it.
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,11 +43,11 @@ const repoRoot = path.resolve(
 const fixtureRoot = path.join(repoRoot, "fixtures", "python-webapp");
 
 /**
- * Not a shipped pack: proves the same `decoratedFunctionRoute`
- * mechanism the flask-restx pack's sibling variant uses also covers
- * FastAPI's shape (verb in the decorator's own attribute name,
- * `response_model` / `status_code` keywords). `@suss/framework-fastapi`
- * ships in a later slice per the language-adapters proposal.
+ * Not the shipped `@suss/framework-fastapi`: an inline config proving
+ * the same `decoratedFunctionRoute` mechanism (verb in the decorator's
+ * own attribute name, `response_model` / `status_code` keywords)
+ * covers both route shapes in one extraction, without a cross-pack
+ * dependency on a sibling that has its own extraction test.
  */
 const fastapiPack: PythonPack = {
   name: "fastapi-inline-test-pack",

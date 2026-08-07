@@ -97,6 +97,101 @@ describe("extractPythonProject", () => {
     expect(summaries).toEqual([]);
   });
 
+  it("composes a router's path across files, and abstains where a prefix is computed", async () => {
+    const fastapiLike: PythonPack = {
+      name: "fastapi-test",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedFunctionRoute",
+          importModule: ["fastapi"],
+          verbAttributeNames: { get: "GET" },
+          routerComposition: {
+            routerConstructorName: "APIRouter",
+            includeMethodName: "include_router",
+            prefixKeyword: "prefix",
+          },
+        },
+      ],
+    };
+    const items = write(
+      "shop/routers/items.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const admin = write(
+      "shop/routers/admin.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        'router = APIRouter(prefix="/admin")',
+        "",
+        "",
+        '@router.get("/stats")',
+        "def admin_stats():",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const main = write(
+      "shop/main.py",
+      [
+        "from fastapi import FastAPI",
+        "",
+        "from shop.routers.admin import router as admin_router",
+        "from shop.routers.items import router as items_router",
+        "",
+        "app = FastAPI()",
+        "",
+        "",
+        "def admin_prefix():",
+        '    return "/internal"',
+        "",
+        "",
+        'app.include_router(items_router, prefix="/api")',
+        "app.include_router(admin_router, prefix=admin_prefix())",
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [admin, items, main],
+      packs: [fastapiLike],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+
+    const readItem = summaries.find((s) => s.identity.name === "read_item");
+    expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/api/items/{item_id}",
+    });
+
+    const adminStats = summaries.find((s) => s.identity.name === "admin_stats");
+    expect(adminStats?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(
+      adminStats?.gaps.some(
+        (gap) =>
+          gap.type === "unreadOutcome" &&
+          gap.description.includes("not a string literal"),
+      ),
+    ).toBe(true);
+  });
+
   it("keeps location.file absolute when no workspaceRoot is given", async () => {
     const todos = write(
       "myapp/routes/todos.py",

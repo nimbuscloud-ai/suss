@@ -42,6 +42,7 @@ export const coveragePackages = [
   ["packages/framework/aws-eventbridge", "aws-eventbridge"],
   ["packages/framework/aws-lambda", "aws-lambda"],
   ["packages/framework/flask-restx", "flask-restx"],
+  ["packages/framework/fastapi", "fastapi"],
   ["packages/framework/graphql-ruby", "graphql-ruby"],
   // Clients
   ["packages/client/web", "web"],

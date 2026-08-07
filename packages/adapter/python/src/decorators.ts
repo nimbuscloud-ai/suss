@@ -39,6 +39,13 @@ export interface DecoratorClassification {
   importedName: string | null;
   /** Dotted module the name was imported from; null alongside a null `importedName`. */
   module: string | null;
+  /**
+   * The local variable a resolved attribute decorator hangs on (`app`
+   * in `@app.get(...)`), so discovery can ask what that variable was
+   * constructed as (a router with a prefix, say). Null when the
+   * decorator was a plain name rather than an attribute.
+   */
+  objectName: string | null;
   relativeLevel: number;
   /** Positional call arguments, in order; empty for a bare decorator (`@staticmethod`). */
   args: DecoratorArg[];
@@ -71,7 +78,13 @@ function readArg(node: PyNode): DecoratorArg {
   return { kind: "other" };
 }
 
-function readCallArguments(argumentList: PyNode | null): {
+/**
+ * Positional and keyword arguments of any call's argument list, read
+ * the same way for a decorator call and for a router mount call
+ * (routers.ts): literals become values, bare names stay names, and
+ * anything else is `other`.
+ */
+export function readCallArguments(argumentList: PyNode | null): {
   args: DecoratorArg[];
   keywordArgs: Record<string, DecoratorArg>;
 } {
@@ -99,10 +112,11 @@ function readCallArguments(argumentList: PyNode | null): {
 
 const UNRESOLVED: Pick<
   DecoratorClassification,
-  "importedName" | "module" | "relativeLevel"
+  "importedName" | "module" | "objectName" | "relativeLevel"
 > = {
   importedName: null,
   module: null,
+  objectName: null,
   relativeLevel: 0,
 };
 
@@ -152,13 +166,17 @@ function resolveObjectModule(
 function resolveCallee(
   expr: PyNode,
   scope: Scope,
-): Pick<DecoratorClassification, "importedName" | "module" | "relativeLevel"> {
+): Pick<
+  DecoratorClassification,
+  "importedName" | "module" | "objectName" | "relativeLevel"
+> {
   if (expr.type === "identifier") {
     const binding = resolveName(scope, expr.text);
     if (binding?.kind === "importFrom") {
       return {
         importedName: binding.importedName,
         module: binding.module,
+        objectName: null,
         relativeLevel: binding.relativeLevel,
       };
     }
@@ -181,6 +199,7 @@ function resolveCallee(
     return {
       importedName: attribute.text,
       module: origin.module,
+      objectName: object.text,
       relativeLevel: origin.relativeLevel,
     };
   }

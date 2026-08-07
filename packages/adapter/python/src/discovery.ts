@@ -37,12 +37,20 @@ import type {
   PythonPack,
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
+import type { RouterIndex } from "./routers.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 
 export interface DiscoveryOptions {
   packs: PythonPack[];
   /** Repo-relative or absolute path recorded on each summary's `location.file`. */
   filePath: string;
+  /**
+   * Cross-file router mounts, built once per project by
+   * `extractPythonProject` (see routers.ts). Without it, a pattern's
+   * `routerComposition` has nothing to consult and every route object
+   * reads as the app itself, paths as written.
+   */
+  routerIndex?: RouterIndex;
 }
 
 export function discoverUnits(
@@ -75,7 +83,7 @@ export function discoverUnits(
               classification,
               definition,
               module,
-              options.filePath,
+              options,
             ),
           );
         }
@@ -92,7 +100,7 @@ function unitsFor(
   classification: ReturnType<typeof classifyDecorator>,
   definition: PyNode,
   module: ModuleBinding,
-  filePath: string,
+  options: DiscoveryOptions,
 ): RawCodeStructure[] {
   if (!pattern.importModule.includes(decoratorModule)) {
     return [];
@@ -115,7 +123,7 @@ function unitsFor(
         classification,
         definition,
         module,
-        filePath,
+        options.filePath,
       );
     },
     decoratedFunctionRoute: (p) => {
@@ -136,7 +144,7 @@ function unitsFor(
         classification,
         definition,
         module,
-        filePath,
+        options,
       );
     },
   };
@@ -207,6 +215,49 @@ function classRouteUnits(
   return units;
 }
 
+/** The path a function route claims once composition has its say, or the abstention that keeps the route pathless. */
+function readRoutePath(
+  pattern: DecoratedFunctionRoute,
+  classification: ReturnType<typeof classifyDecorator>,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+): { path: string | null; unreadBinding?: string } {
+  const literal = firstStringArg(classification.args);
+  if (literal === null) {
+    return {
+      path: null,
+      unreadBinding:
+        "The path in this route's decorator is not a string literal, so the binding names no path and nothing pairs with it",
+    };
+  }
+
+  if (
+    pattern.routerComposition === undefined ||
+    options.routerIndex === undefined ||
+    classification.objectName === null
+  ) {
+    return { path: literal };
+  }
+
+  const resolution = options.routerIndex.resolve(
+    pattern,
+    module,
+    classification.objectName,
+  );
+  if (resolution.kind === "abstain") {
+    return {
+      path: null,
+      unreadBinding: `The router this route is declared on ${resolution.reason}, so the binding names no path and nothing pairs with it`,
+    };
+  }
+
+  if (resolution.kind === "prefix") {
+    return { path: resolution.value + literal };
+  }
+
+  return { path: literal };
+}
+
 function functionRouteUnits(
   pattern: DecoratedFunctionRoute,
   pack: PythonPack,
@@ -214,13 +265,19 @@ function functionRouteUnits(
   classification: ReturnType<typeof classifyDecorator>,
   functionNode: PyNode,
   module: ModuleBinding,
-  filePath: string,
+  options: DiscoveryOptions,
 ): RawCodeStructure[] {
-  const path = firstStringArg(classification.args);
   const functionName = field(functionNode, "name")?.text;
-  if (path === null || functionName === undefined) {
+  if (functionName === undefined) {
     return [];
   }
+
+  const { path, unreadBinding } = readRoutePath(
+    pattern,
+    classification,
+    module,
+    options,
+  );
 
   const ctx = createAnnotationContext(module.scopeFor);
   let responseShape: TypeShape | null = null;
@@ -248,10 +305,11 @@ function functionRouteUnits(
     exportPath: [functionName],
     method: verb,
     path,
+    unreadBinding,
     definitionNode: functionNode,
     enclosingScope: module.moduleScope,
     module,
-    filePath,
+    filePath: options.filePath,
     skipReceiverParam: false,
     responseShape,
     statusCode,
@@ -265,7 +323,9 @@ interface BuildRouteUnitOptions {
   name: string;
   exportPath: string[];
   method: string;
-  path: string;
+  /** Null when the route abstained from naming one; `unreadBinding` then says why. */
+  path: string | null;
+  unreadBinding?: string | undefined;
   definitionNode: PyNode;
   enclosingScope: Scope;
   module: ModuleBinding;
@@ -283,6 +343,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     exportPath,
     method,
     path,
+    unreadBinding,
     definitionNode,
     enclosingScope,
     module,
@@ -355,6 +416,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     bodyContent: bodyNode !== null ? bodyContentOf(bodyNode) : "statements",
     dependencyCalls: [],
     declaredContract: null,
+    ...(unreadBinding !== undefined ? { unreadBinding } : {}),
     ...(collectedDefinitions(ctx) !== null
       ? { definitions: collectedDefinitions(ctx) }
       : {}),
@@ -382,15 +444,17 @@ function readParameters(
   definitionNode: PyNode,
   scope: Scope,
   ctx: ReturnType<typeof createAnnotationContext>,
-  path: string,
+  path: string | null,
   skipReceiverParam: boolean,
 ): RawParameter[] {
   const parametersNode = field(definitionNode, "parameters");
   if (parametersNode === null) {
     return [];
   }
+  // A pathless (abstained) route names no path parameters either, so
+  // its parameters read as query parameters, the weakest claim left.
   const pathParamNames = new Set(
-    Array.from(path.matchAll(/\{([A-Za-z_]\w*)\}/g)).map((m) => m[1]),
+    Array.from((path ?? "").matchAll(/\{([A-Za-z_]\w*)\}/g)).map((m) => m[1]),
   );
 
   const out: RawParameter[] = [];
