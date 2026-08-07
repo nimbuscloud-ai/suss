@@ -11,6 +11,7 @@
 import { allBehaviors, behaviorOf } from "./semantics/registry.js";
 
 import type { BoundaryBinding, Semantics } from "./index.js";
+import type { MatchResult } from "./typeShapeMatch.js";
 
 /** The stable identity key a reader sees and a suppression targets. */
 export function boundaryKey(binding: BoundaryBinding): string | null {
@@ -71,4 +72,24 @@ export function normalizeRuleBoundary(raw: string): string {
     }
   }
   return trimmed;
+}
+
+/**
+ * Whether a binding's declared boundary would answer a concrete HTTP
+ * request, by the protocol's own matching. Null when the protocol
+ * does not address its boundaries by method and path at all, so a
+ * caller can tell "not that kind of boundary" apart from "that kind,
+ * but this declaration cannot settle it".
+ */
+export function servesRequest(
+  binding: BoundaryBinding,
+  method: string,
+  path: string,
+): MatchResult | null {
+  const serves = behaviorOf(binding.semantics).servesRequest;
+  if (serves === undefined) {
+    return null;
+  }
+
+  return serves(binding.semantics, method, path);
 }

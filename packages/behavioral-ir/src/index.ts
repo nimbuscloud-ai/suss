@@ -83,6 +83,15 @@ export {
   withRoutingMetadata,
   withRuntimeContractMetadata,
 } from "./metadata.js";
+export {
+  type FlowRequest,
+  nestedDocumentLabel,
+  type RouterMatchSelector,
+  type RouterSelection,
+  type RoutingMatchCondition,
+  type RoutingMatchRecord,
+  rootDocumentLabel,
+} from "./routing.js";
 export { type SummaryIdParts, summaryIdFromParts } from "./summaryId.js";
 
 export type {

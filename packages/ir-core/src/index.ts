@@ -90,6 +90,7 @@ export {
   displayLabel,
   pairingKey,
   semanticsAgree,
+  servesRequest,
 } from "./boundaryKey.js";
 export {
   busesAgree,
@@ -99,7 +100,11 @@ export {
 } from "./channel.js";
 export { codeScopePath, fileInCodeScope } from "./codeScope.js";
 export { type DispatchTable, dispatchByType } from "./dispatch.js";
-export { methodsAgree, normalizePath } from "./semantics/rest.js";
+export {
+  methodsAgree,
+  normalizePath,
+  routePathAdmits,
+} from "./semantics/rest.js";
 export {
   applySuppressionsToFindings,
   countsForThreshold,

@@ -19,6 +19,14 @@
 //                                       function, or another load
 //                                       balancer (an NLB in front of an
 //                                       ALB).
+//   belongsTo(listener, loadBalancer)   which load balancer a listener
+//                                       belongs to, read from its
+//                                       LoadBalancerArn, so a chain of
+//                                       balancers composes: a fronts
+//                                       edge ends at a balancer's
+//                                       logical id and this edge is how
+//                                       the walk continues into that
+//                                       balancer's own listeners.
 //
 // One summary states exactly one edge, carried in the `routing`
 // metadata namespace (@suss/behavioral-ir). No boundaryBinding: these
@@ -36,6 +44,8 @@
 import { withRoutingMetadata } from "@suss/behavioral-ir";
 import { ecsContainerInstanceName } from "@suss/ir-core";
 import { refTarget } from "@suss/manifest-aws";
+
+import { ALB_MATCH_LANGUAGE } from "./albMatch.js";
 
 import type { BehavioralSummary, RoutingMetadata } from "@suss/behavioral-ir";
 import type { CloudFormationResource } from "@suss/manifest-aws";
@@ -71,8 +81,8 @@ const EVALUATED_CONDITION_FIELDS = new Set(["path-pattern", "host-header"]);
 /**
  * Walk a template's ALB resources and emit one `library`-kind summary
  * per routing edge: a `routesTo` or `answers` row per listener rule and
- * per listener's own default action, and a `fronts` row per target
- * group.
+ * per listener's own default action, a `belongsTo` row per listener,
+ * and a `fronts` row per target group.
  */
 export function buildAlbFlowSummaries(
   resources: Record<string, CloudFormationResource>,
@@ -94,6 +104,7 @@ export function buildAlbFlowSummaries(
         resources,
         sourceFile,
       }),
+      buildBelongsToSummary(listenerId, resource, resources, sourceFile),
     );
   }
 
@@ -176,6 +187,7 @@ function buildMatchSummaries(opts: MatchSummariesOpts): BehavioralSummary[] {
         matchId: opts.matchId,
         ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
         conditions: opts.conditions,
+        matchLanguage: ALB_MATCH_LANGUAGE,
         response: classification.response,
       }),
     ];
@@ -197,6 +209,7 @@ function buildMatchSummaries(opts: MatchSummariesOpts): BehavioralSummary[] {
         matchId: opts.matchId,
         ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
         conditions: opts.conditions,
+        matchLanguage: ALB_MATCH_LANGUAGE,
       }),
     ];
   }
@@ -224,6 +237,7 @@ function buildMatchSummaries(opts: MatchSummariesOpts): BehavioralSummary[] {
       matchId: opts.matchId,
       ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
       conditions: opts.conditions,
+      matchLanguage: ALB_MATCH_LANGUAGE,
       ...(forwardTarget.weight !== undefined
         ? { weight: forwardTarget.weight }
         : {}),
@@ -423,6 +437,36 @@ function flattenConditionValue(entry: unknown): string | null {
   return typeof props.Key === "string"
     ? `${props.Key}=${props.Value}`
     : props.Value;
+}
+
+// ---------------------------------------------------------------------------
+// belongsTo
+// ---------------------------------------------------------------------------
+
+/**
+ * The listener's own membership: which load balancer its
+ * LoadBalancerArn names. One row per listener, named apart from the
+ * listener's default-action row so the two summaries stay two facts.
+ */
+function buildBelongsToSummary(
+  listenerId: string,
+  resource: CloudFormationResource,
+  resources: Record<string, CloudFormationResource>,
+  sourceFile: string,
+): BehavioralSummary {
+  const loadBalancer = resolveRefOfType(
+    resource.Properties?.LoadBalancerArn,
+    resources,
+    "AWS::ElasticLoadBalancingV2::LoadBalancer",
+  );
+  return buildRoutingSummary(`${listenerId}#loadBalancer`, sourceFile, {
+    edge: "belongsTo",
+    router: listenerId,
+    resource: loadBalancer.logicalId,
+    ...(loadBalancer.unresolved !== undefined
+      ? { unresolvedResource: loadBalancer.unresolved }
+      : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------

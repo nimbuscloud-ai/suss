@@ -77,5 +77,8 @@
   "untyped": "suss: marker for a resource with no CFN Type",
   "routesTo": "suss: flow-reachability edge kind, a listener rule or default action forwarding to a target",
   "answers": "suss: flow-reachability edge kind, a non-forward action's response",
-  "fronts": "suss: flow-reachability edge kind, what backs a target group"
+  "fronts": "suss: flow-reachability edge kind, what backs a target group",
+  "belongsTo": "suss: flow-reachability edge kind, which load balancer a listener belongs to",
+  "match": "suss: MatchResult value, a condition or match this selector settles as admitting",
+  "nomatch": "suss: MatchResult value, a condition or match this selector settles as refusing"
 }

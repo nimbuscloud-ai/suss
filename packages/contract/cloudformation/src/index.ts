@@ -30,7 +30,11 @@
 
 import path from "node:path";
 
-import { readRoutingMetadata, withRoutingMetadata } from "@suss/behavioral-ir";
+import {
+  nestedDocumentLabel,
+  readRoutingMetadata,
+  withRoutingMetadata,
+} from "@suss/behavioral-ir";
 import {
   type AuthorizerConfig,
   type AuthorizerType,
@@ -79,6 +83,8 @@ export {
   type ServerlessHttpRoute,
   type ServerlessNonHttpEvent,
 } from "@suss/manifest-aws";
+
+export { ALB_MATCH_LANGUAGE, albRouterSelector } from "./albMatch.js";
 
 export interface CloudFormationToSummariesOptions {
   /** Override the logical source file recorded on each summary. */
@@ -1135,19 +1141,8 @@ export function cloudFormationFileToSummaries(
     `cloudformation:${path.basename(path.resolve(templatePath))}`;
   return tree.documents.flatMap((document) =>
     cloudFormationToSummaries(document.template, {
-      source: documentLabel(rootLabel, document.stackPath),
+      source: nestedDocumentLabel(rootLabel, document.stackPath),
       stackPath: document.stackPath,
     }),
   );
-}
-
-/**
- * The label summaries from one document carry. The root keeps the label
- * the caller asked for, and a child adds the path that reaches it,
- * which stays distinct even when two stack resources embed one file.
- */
-function documentLabel(rootLabel: string, stackPath: string[]): string {
-  return stackPath.length === 0
-    ? rootLabel
-    : `${rootLabel}#${stackPath.join("/")}`;
 }
