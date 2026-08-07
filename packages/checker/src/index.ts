@@ -77,6 +77,8 @@ export {
   type FlowInputs,
   type RouterMatches,
   type RoutingEdgeFacts,
+  type ScopedAnswer,
+  type ScopedUnit,
   type ServingClaimSite,
 } from "./flow/routingFacts.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";

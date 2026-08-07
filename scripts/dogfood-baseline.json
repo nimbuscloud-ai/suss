@@ -2,10 +2,10 @@
   "totals": {
     "packages": 43,
     "packagesWithExports": 42,
-    "exports": 343,
-    "internal": 1240,
-    "consumers": 485,
-    "pairs": 477
+    "exports": 345,
+    "internal": 1241,
+    "consumers": 491,
+    "pairs": 483
   },
   "packages": {
     "packages/adapter/python": {
@@ -28,15 +28,15 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 35,
+      "exports": 37,
       "internal": 10,
       "consumers": 3
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 30,
-      "internal": 113,
-      "consumers": 66
+      "internal": 115,
+      "consumers": 67
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -83,8 +83,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 6,
-      "internal": 69,
-      "consumers": 79
+      "internal": 68,
+      "consumers": 84
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",

@@ -31,6 +31,27 @@ priority tie, a match language nobody can evaluate. Everything `reaches`
 derives, `mayReach` derives too, so "possible but not certain" is a set
 difference and an unevaluated condition can never turn into reachable-no.
 
+## Identity
+
+Every node the walk joins on is keyed by (document scope, name). A logical id
+is unique inside one document and nowhere else, so two unrelated stacks that
+both declare an `HttpListener` are two nodes, and neither can answer for the
+other. The scope is the root document label read off each summary's own
+provenance (`rootDocumentLabel` in `@suss/behavioral-ir`), so every document
+of one nested-stack tree shares one scope and joins within the tree still
+hold, a fronted balancer's listeners included.
+
+The summaries themselves keep the bare names their documents wrote, and the
+pairing-side identity rules are untouched: a `fronts` edge's resource still
+matches a unit's stack-path-qualified `instanceName`, and a message-bus
+channel still keeps the name the code says, whichever document declared the
+queue. Only the walk's keying is scoped. A query whose entry name two
+documents both declare is refused until the caller passes the document scope,
+because merging them would answer one stack's question from another stack's
+rules; the two residual holes are documents whose provenance labels collide
+(two trees read with one default label) and names that cross documents by
+design, like channels.
+
 ## Key files
 
 - `routingFacts.ts` reads the routing metadata namespace into joinable

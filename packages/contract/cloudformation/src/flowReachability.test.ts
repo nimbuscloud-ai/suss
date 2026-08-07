@@ -3,8 +3,10 @@
 // serves each URL out. The pathological templates ride along: a cycle
 // of balancers terminates, a chain composes through belongsTo, a
 // duplicate priority admits nothing outright, a weighted forward
-// reaches every target its weights let carry traffic, and an
-// unevaluated condition leaves targets possible, never unreachable.
+// reaches every target its weights let carry traffic, an unevaluated
+// condition leaves targets possible, never unreachable, and two
+// unrelated stacks that spell a listener the same way stay two
+// listeners.
 
 import path from "node:path";
 
@@ -370,5 +372,86 @@ describe("weighted forwards", () => {
 
     expect(view.nodes.certain).toEqual(["TgA"]);
     expect(view.nodes.possible).toEqual([]);
+  });
+});
+
+describe("two top-level stacks sharing a logical id", () => {
+  // The reviewer's probe: a multi-service monorepo where each service's
+  // template names its listener HttpListener. The walk must keep them
+  // two nodes and answer each stack's question from its own rules only.
+  function serviceTemplate(pattern: string, targetGroup: string) {
+    return {
+      Resources: {
+        HttpListener: {
+          Type: "AWS::ElasticLoadBalancingV2::Listener",
+          Properties: {
+            DefaultActions: [
+              {
+                Type: "fixed-response",
+                FixedResponseConfig: { StatusCode: "404" },
+              },
+            ],
+          },
+        },
+        ApiRule: {
+          Type: "AWS::ElasticLoadBalancingV2::ListenerRule",
+          Properties: {
+            ListenerArn: { Ref: "HttpListener" },
+            Priority: 1,
+            Conditions: [
+              {
+                Field: "path-pattern",
+                PathPatternConfig: { Values: [pattern] },
+              },
+            ],
+            Actions: [
+              { Type: "forward", TargetGroupArn: { Ref: targetGroup } },
+            ],
+          },
+        },
+        [targetGroup]: {
+          Type: "AWS::ElasticLoadBalancingV2::TargetGroup",
+          Properties: { TargetType: "ip" },
+        },
+      },
+    };
+  }
+
+  const combined = [
+    ...cloudFormationToSummaries(serviceTemplate("/alpha/*", "TgAlpha"), {
+      source: "services/alpha/template.yaml",
+    }),
+    ...cloudFormationToSummaries(serviceTemplate("/beta/*", "TgBeta"), {
+      source: "services/beta/template.yaml",
+    }),
+  ];
+
+  it("answers each stack's query from its own rules only", () => {
+    const analysis = analyzeFlow(combined, get("/alpha/1"), SELECTORS);
+
+    const alpha = analysis.from("HttpListener", "services/alpha/template.yaml");
+    expect(alpha.nodes).toEqual({ certain: ["TgAlpha"], possible: [] });
+    expect(alpha.answers).toEqual({ certain: [], possible: [] });
+
+    // The same request through the other stack's listener never sees
+    // alpha's rules: beta's own rule refuses /alpha/1, so its declared
+    // default answers.
+    const beta = analysis.from("HttpListener", "services/beta/template.yaml");
+    expect(beta.nodes).toEqual({ certain: [], possible: [] });
+    expect(beta.answers.certain).toEqual([
+      {
+        matchId: "HttpListener#default",
+        router: "HttpListener",
+        response: { type: "fixed-response", statusCode: 404 },
+      },
+    ]);
+  });
+
+  it("refuses the bare listener name both stacks declare", () => {
+    const analysis = analyzeFlow(combined, get("/alpha/1"), SELECTORS);
+
+    expect(() => analysis.from("HttpListener")).toThrow(
+      /2 documents declare a node named "HttpListener"/,
+    );
   });
 });

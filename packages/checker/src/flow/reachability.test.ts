@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { withRoutingMetadata } from "@suss/behavioral-ir";
 
 import { analyzeFlow } from "./reachability.js";
-import { collectFlowInputs } from "./routingFacts.js";
+import { collectFlowInputs, scopedFlowNode } from "./routingFacts.js";
 
 import type {
   BehavioralSummary,
@@ -17,14 +17,17 @@ import type {
   RoutingMetadata,
 } from "@suss/behavioral-ir";
 
+const DOCUMENT = "infra/template.yaml";
+
 function routingSummary(
   name: string,
   routing: RoutingMetadata,
+  file: string = DOCUMENT,
 ): BehavioralSummary {
   return {
     kind: "library",
     location: {
-      file: "infra/template.yaml",
+      file,
       range: { start: 1, end: 1 },
       exportName: null,
     },
@@ -129,7 +132,11 @@ describe("collectFlowInputs", () => {
     expect(inputs.edges.fronts).toEqual([]);
     // The match record is still there: the rule exists even though its
     // target does not resolve, and a selector may still rank it.
-    expect(inputs.edges.routers.get("L")?.records.has("R1")).toBe(true);
+    expect(
+      inputs.edges.routers
+        .get(scopedFlowNode(DOCUMENT, "L"))
+        ?.records.has("R1"),
+    ).toBe(true);
   });
 
   it("collapses a weighted forward's rows into one match record and drops only the weight-0 edge", () => {
@@ -156,8 +163,16 @@ describe("collectFlowInputs", () => {
       }),
     ]);
 
-    expect(inputs.edges.routesTo).toEqual([["L", "TgA", "split"]]);
-    expect(inputs.edges.routers.get("L")?.records.size).toBe(1);
+    expect(inputs.edges.routesTo).toEqual([
+      [
+        scopedFlowNode(DOCUMENT, "L"),
+        scopedFlowNode(DOCUMENT, "TgA"),
+        scopedFlowNode(DOCUMENT, "split"),
+      ],
+    ]);
+    expect(
+      inputs.edges.routers.get(scopedFlowNode(DOCUMENT, "L"))?.records.size,
+    ).toBe(1);
   });
 
   it("reads units off summaries that declare both a unit and its code scope", () => {
@@ -177,12 +192,14 @@ describe("collectFlowInputs", () => {
       }),
     ]);
 
-    expect(inputs.units).toEqual(new Set(["Task/app"]));
+    expect(inputs.units).toEqual(
+      new Set([scopedFlowNode(DOCUMENT, "Task/app")]),
+    );
     expect(inputs.claims).toEqual([
       {
         ref: "src/app/routes.ts::r",
         binding: expect.objectContaining({ transport: "http" }),
-        units: ["Task/app"],
+        units: [{ scope: DOCUMENT, instanceName: "Task/app" }],
       },
     ]);
   });
@@ -370,5 +387,95 @@ describe("possible chains and serving claims", () => {
         response: { type: "fixed-response", statusCode: 403 },
       },
     ]);
+  });
+});
+
+describe("document scoping", () => {
+  // Two unrelated documents, same router and matchId spellings,
+  // different targets. Nothing may join across them.
+  const summaries = [
+    routingSummary(
+      "edge",
+      {
+        edge: "routesTo",
+        router: "L",
+        target: "TgAlpha",
+        matchId: "yes-1",
+        conditions: [],
+        matchLanguage: "toy",
+      },
+      "services/alpha/template.yaml",
+    ),
+    routingSummary(
+      "edge",
+      {
+        edge: "routesTo",
+        router: "L",
+        target: "TgBeta",
+        matchId: "yes-1",
+        conditions: [],
+        matchLanguage: "toy",
+      },
+      "services/beta/template.yaml",
+    ),
+  ];
+
+  it("answers each document's router from its own edges only", () => {
+    const analysis = analyzeFlow(summaries, REQUEST, TOY);
+
+    expect(analysis.from("L", "services/alpha/template.yaml").nodes).toEqual({
+      certain: ["TgAlpha"],
+      possible: [],
+    });
+    expect(analysis.from("L", "services/beta/template.yaml").nodes).toEqual({
+      certain: ["TgBeta"],
+      possible: [],
+    });
+  });
+
+  it("refuses a bare entry two documents both declare", () => {
+    const analysis = analyzeFlow(summaries, REQUEST, TOY);
+
+    expect(() => analysis.from("L")).toThrow(
+      /2 documents declare a node named "L"/,
+    );
+  });
+
+  it("answers an empty view for a name no document declares", () => {
+    const view = analyzeFlow(summaries, REQUEST, TOY).from("Nowhere");
+
+    expect(view.nodes).toEqual({ certain: [], possible: [] });
+  });
+
+  it("shares one scope across a nested tree, so in-tree joins still hold", () => {
+    // A child document's summaries carry the root label plus the stack
+    // path that reaches them; the walk scopes by the root part, so a
+    // routing edge and the unit it fronts, both in the child, join.
+    const child = "cloudformation:root.yaml#OrdersStack";
+    const nested = [
+      routingSummary(
+        "edge",
+        {
+          edge: "routesTo",
+          router: "L",
+          target: "Tg",
+          matchId: "yes-1",
+          conditions: [],
+          matchLanguage: "toy",
+        },
+        child,
+      ),
+      routingSummary(
+        "backing",
+        { edge: "fronts", target: "Tg", resource: "OrdersStack/Task/app" },
+        child,
+      ),
+    ];
+    const view = analyzeFlow(nested, REQUEST, TOY).from(
+      "L",
+      "cloudformation:root.yaml",
+    );
+
+    expect(view.nodes.certain).toEqual(["OrdersStack/Task/app", "Tg"]);
   });
 });

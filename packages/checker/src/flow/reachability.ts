@@ -21,7 +21,7 @@
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import { servesRequest } from "@suss/ir-core";
 
-import { collectFlowInputs } from "./routingFacts.js";
+import { collectFlowInputs, scopedFlowNode } from "./routingFacts.js";
 
 import type {
   BehavioralSummary,
@@ -163,7 +163,15 @@ export interface FlowView {
 }
 
 export interface FlowAnalysis {
-  from(entry: string): FlowView;
+  /**
+   * The view from one entry node, a client-facing listener being the
+   * usual one. A bare `entry` resolves against every document in the
+   * summary set; when two documents both declare the name, the caller
+   * has to say which document it is asking about by passing that
+   * summary's root document label as `documentScope`, because merging
+   * them would answer one stack's question from another stack's rules.
+   */
+  from(entry: string, documentScope?: string): FlowView;
 }
 
 interface Admissions {
@@ -190,6 +198,10 @@ function routerLanguage(matches: RouterMatches): string | undefined {
  * A router with no usable selector abstains: every one of its matches
  * stays possible, never admitted and never refused, the same standing
  * an unevaluated condition has.
+ *
+ * A selector sees and answers with the bare matchIds its document
+ * wrote; the admission sets carry them scoped, so two documents'
+ * same-named matches stay two admissions.
  */
 function selectAdmissions(
   routers: Map<string, RouterMatches>,
@@ -203,7 +215,7 @@ function selectAdmissions(
     const selector = language === undefined ? undefined : selectors[language];
     if (selector === undefined) {
       for (const matchId of matches.records.keys()) {
-        may.add(matchId);
+        may.add(scopedFlowNode(matches.scope, matchId));
       }
 
       continue;
@@ -212,13 +224,13 @@ function selectAdmissions(
     const selection = selector([...matches.records.values()], request);
     for (const matchId of selection.admitted) {
       if (matches.records.has(matchId)) {
-        admits.add(matchId);
+        admits.add(scopedFlowNode(matches.scope, matchId));
       }
     }
 
     for (const matchId of selection.possible) {
       if (matches.records.has(matchId)) {
-        may.add(matchId);
+        may.add(scopedFlowNode(matches.scope, matchId));
       }
     }
   }
@@ -243,8 +255,8 @@ function assertFacts(
     db.add("belongsTo", tuple);
   }
 
-  for (const answered of inputs.edges.answers.values()) {
-    db.add("answers", [answered.router, answered.matchId]);
+  for (const [scopedMatchId, scoped] of inputs.edges.answers) {
+    db.add("answers", [scoped.router, scopedMatchId]);
   }
 
   for (const matchId of admissions.admits) {
@@ -262,7 +274,10 @@ function assertFacts(
     }
 
     for (const unit of claim.units) {
-      db.add("serves", [unit, claim.ref]);
+      db.add("serves", [
+        scopedFlowNode(unit.scope, unit.instanceName),
+        claim.ref,
+      ]);
     }
 
     db.add(outcome === "match" ? "admitsServe" : "mayServe", [claim.ref]);
@@ -277,13 +292,60 @@ function targetsOf(db: Database, relation: string, entry: string): Set<string> {
   return found;
 }
 
+/**
+ * A view's name lists, rendered bare. Every node one view holds shares
+ * the entry's document scope, because edges never cross scopes, so
+ * stripping the scope for display loses nothing a reader needed.
+ */
 function endpointSets(
   certain: Set<string>,
   may: Set<string>,
+  bare: (key: string) => string,
 ): FlowEndpointSets {
-  const possible = [...may].filter((name) => !certain.has(name));
-  return { certain: [...certain].sort(), possible: possible.sort() };
+  const possible = [...may].filter((key) => !certain.has(key));
+  return {
+    certain: [...certain].map(bare).sort(),
+    possible: possible.map(bare).sort(),
+  };
 }
+
+/**
+ * The scoped node a query's entry names, or null when the name is
+ * declared nowhere. A bare name declared by two documents is refused
+ * rather than resolved, because whichever document was picked, the
+ * other stack's question would be answered from the wrong rules.
+ */
+function resolveEntry(
+  inputs: FlowInputs,
+  entry: string,
+  documentScope: string | undefined,
+): string | null {
+  if (documentScope !== undefined) {
+    return scopedFlowNode(documentScope, entry);
+  }
+
+  const scopes = inputs.nodeScopes.get(entry);
+  if (scopes === undefined) {
+    return null;
+  }
+
+  if (scopes.size > 1) {
+    const listed = [...scopes].sort().join(", ");
+    throw new Error(
+      `${scopes.size} documents declare a node named "${entry}" (${listed}); pass the document scope to say which one the question is about`,
+    );
+  }
+
+  const [only] = scopes;
+  return scopedFlowNode(only, entry);
+}
+
+const EMPTY_VIEW: FlowView = {
+  nodes: { certain: [], possible: [] },
+  units: { certain: [], possible: [] },
+  answers: { certain: [], possible: [] },
+  claims: { certain: [], possible: [] },
+};
 
 /**
  * Walk the summary set's routing edges for one request. `selectors`
@@ -304,32 +366,45 @@ export function analyzeFlow(
   evaluate(db, FLOW_RULES);
 
   return {
-    from(entry: string): FlowView {
-      const certainNodes = targetsOf(db, "reaches", entry);
-      const mayNodes = targetsOf(db, "mayReach", entry);
-      const isUnit = (name: string): boolean => inputs.units.has(name);
+    from(entry: string, documentScope?: string): FlowView {
+      const entryNode = resolveEntry(inputs, entry, documentScope);
+      if (entryNode === null) {
+        return EMPTY_VIEW;
+      }
 
-      const certainAnswers = targetsOf(db, "reachesAnswer", entry);
-      const mayAnswers = targetsOf(db, "mayReachAnswer", entry);
-      const answered = (matchId: string): AnsweredMatch =>
-        inputs.edges.answers.get(matchId) ?? { matchId, router: entry };
+      const bare = (key: string): string => inputs.nodeNames.get(key) ?? key;
+      const certainNodes = targetsOf(db, "reaches", entryNode);
+      const mayNodes = targetsOf(db, "mayReach", entryNode);
+      const isUnit = (key: string): boolean => inputs.units.has(key);
+
+      const certainAnswers = targetsOf(db, "reachesAnswer", entryNode);
+      const mayAnswers = targetsOf(db, "mayReachAnswer", entryNode);
+      const answered = (scopedMatchId: string): AnsweredMatch =>
+        inputs.edges.answers.get(scopedMatchId)?.answer ?? {
+          matchId: scopedMatchId,
+          router: entry,
+        };
+      const byMatchId = (a: AnsweredMatch, b: AnsweredMatch): number =>
+        a.matchId.localeCompare(b.matchId);
 
       return {
-        nodes: endpointSets(certainNodes, mayNodes),
+        nodes: endpointSets(certainNodes, mayNodes, bare),
         units: endpointSets(
           new Set([...certainNodes].filter(isUnit)),
           new Set([...mayNodes].filter(isUnit)),
+          bare,
         ),
         answers: {
-          certain: [...certainAnswers].sort().map(answered),
+          certain: [...certainAnswers].map(answered).sort(byMatchId),
           possible: [...mayAnswers]
-            .filter((matchId) => !certainAnswers.has(matchId))
-            .sort()
-            .map(answered),
+            .filter((scopedMatchId) => !certainAnswers.has(scopedMatchId))
+            .map(answered)
+            .sort(byMatchId),
         },
         claims: endpointSets(
-          targetsOf(db, "servedBy", entry),
-          targetsOf(db, "mayServedBy", entry),
+          targetsOf(db, "servedBy", entryNode),
+          targetsOf(db, "mayServedBy", entryNode),
+          (key) => key,
         ),
       };
     },

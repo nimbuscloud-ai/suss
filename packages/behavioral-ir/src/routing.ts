@@ -63,3 +63,36 @@ export type RouterMatchSelector = (
   records: RoutingMatchRecord[],
   request: FlowRequest,
 ) => RouterSelection;
+
+/**
+ * The label a nested document's summaries carry: the root document's
+ * own label, then the stack path that reaches this document. A logical
+ * id is unique inside one document and nowhere else, so the label is
+ * what tells two documents' resources apart, and the reachability walk
+ * scopes its nodes by the root part: one source template family, one
+ * scope, however many nested documents it embeds.
+ *
+ * The convention lives here, beside the routing contract, so a reader
+ * composing labels and the walk decomposing them cannot drift apart.
+ */
+export function nestedDocumentLabel(
+  rootLabel: string,
+  stackPath: string[],
+): string {
+  return stackPath.length === 0
+    ? rootLabel
+    : `${rootLabel}#${stackPath.join("/")}`;
+}
+
+/**
+ * The root label a document label was composed from: everything before
+ * the first stack-path marker, or the whole label for a root document.
+ */
+export function rootDocumentLabel(label: string): string {
+  const marker = label.indexOf("#");
+  if (marker === -1) {
+    return label;
+  }
+
+  return label.slice(0, marker);
+}
