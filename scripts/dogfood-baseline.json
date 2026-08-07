@@ -1,13 +1,19 @@
 {
   "totals": {
-    "packages": 38,
-    "packagesWithExports": 37,
-    "exports": 242,
-    "internal": 1141,
-    "consumers": 425,
-    "pairs": 417
+    "packages": 40,
+    "packagesWithExports": 39,
+    "exports": 286,
+    "internal": 1176,
+    "consumers": 439,
+    "pairs": 431
   },
   "packages": {
+    "packages/adapter/python": {
+      "name": "@suss/adapter-python",
+      "exports": 42,
+      "internal": 35,
+      "consumers": 10
+    },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
@@ -157,6 +163,12 @@
       "exports": 2,
       "internal": 0,
       "consumers": 3
+    },
+    "packages/framework/flask-restx": {
+      "name": "@suss/framework-flask-restx",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 4
     },
     "packages/framework/hono": {
       "name": "@suss/framework-hono",
