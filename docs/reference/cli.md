@@ -80,7 +80,7 @@ suss extract [-p TSCONFIG | --dir DIR] -f FRAMEWORK [-f FRAMEWORK ...]
 | `--dir PATH` | no | Read this directory directly, for a project with no tsconfig. |
 | `-o`, `--output PATH` | no | Write JSON to file. Default: stdout. Parent dirs created automatically. |
 | `--files F1 F2 ...` | no | Scope extraction to specific files. Default: every file in the tsconfig. Paths are resolved relative to cwd. |
-| `--gaps MODE` | no | `permissive` (default) records gaps in the summary where conditions can't be decomposed. `strict` behaves the same today. `silent` skips gap detection entirely. |
+| `--gaps MODE` | no | `permissive` (default) records gaps in the summary: returns and declared statuses the pack couldn't account for. `strict` records the same gaps, then exits non-zero if the run recorded any. `silent` skips gap detection entirely, recording none. |
 | `--explain` | no | Print the extraction funnel, file by file and pack by pack, so you can see where summaries came from. A run that produced nothing prints it either way. |
 | `--timing` | no | Print the per-phase wall-clock breakdown to stderr. |
 | `--no-cache` | no | Skip the on-disk extraction cache for this run. Normal runs benefit from it; reach for this when debugging cache invalidation. |
@@ -196,8 +196,8 @@ the same property.
 
 ### Exit codes
 
-- `0`: extraction succeeded (regardless of how many summaries emerged).
-- Non-zero, extraction threw (invalid tsconfig, unknown framework, missing files).
+- `0`: extraction succeeded (regardless of how many summaries emerged) and none of `--fail-on-empty`, `--fail-on-pack-error`, or `--gaps strict` found something to fail on.
+- Non-zero: extraction threw (invalid tsconfig, unknown framework, missing files), or one of those flags fired.
 
 ## `suss contract`
 
