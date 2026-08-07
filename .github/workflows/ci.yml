@@ -5,18 +5,26 @@ on:
     branches: [main]
   pull_request:
 
+# A force-push (or a quick follow-up push) supersedes whatever run is
+# already going for the same ref. Cancelling it instead of letting it
+# finish saves minutes nobody is going to read the result of.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
-          # The default GITHUB_TOKEN has contents: write for same-repo
-          # pushes, which is what the dogfood baseline refresh on main
-          # needs. fetch-depth: 0 gives that refresh a history to rebase
-          # onto when a concurrent push beats it to the remote.
+          # Both baseline gates default to comparing against HEAD, which
+          # a shallow checkout already carries. fetch-depth: 0 is what
+          # makes a remote ref like origin/main resolvable too, for
+          # whoever points DOGFOOD_BASELINE_REF or COVERAGE_BASELINE_REF
+          # at one.
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           # For pull_request events, checkout defaults to a detached
@@ -25,6 +33,55 @@ jobs:
           # committed alongside it, so they have to run on the tree the
           # author committed rather than on a merge nobody wrote.
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
+
+      # A doc-only change doesn't need a build or a test run. This diffs
+      # against the merge base and, when every changed path is under
+      # docs/, ends in .md, or sits under .github/badges or
+      # .github/ISSUE_TEMPLATE, every step below that only a code change
+      # needs is skipped. The two checks that read docs content still
+      # run: diagram geometry walks the SVG in docs/, and the coverage
+      # list check reads the package table in docs/reference/, so a
+      # docs-only diff is exactly what they exist to catch. The skip
+      # lives inside the job, as a condition on each step, rather than
+      # as a paths filter on the workflow: ci is a required check, and a
+      # workflow a paths filter stops from running never reports, which
+      # leaves the PR stuck. This way the job still runs and succeeds,
+      # so the required check gets a result.
+      - name: Detect a docs-only diff
+        id: diff
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.event.pull_request.base.ref }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+
+          MERGE_BASE=$(git merge-base HEAD "$BASE" 2>/dev/null) || MERGE_BASE=""
+          if [ -z "$MERGE_BASE" ]; then
+            echo "Could not resolve a merge base against $BASE, running the full pipeline."
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! CHANGED=$(git diff --name-only "$MERGE_BASE" HEAD); then
+            echo "Could not diff against $MERGE_BASE, running the full pipeline."
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Changed paths against $MERGE_BASE:"
+          echo "$CHANGED"
+
+          NON_DOCS=$(echo "$CHANGED" | grep -vE '^docs/|\.md$|^\.github/badges/|^\.github/ISSUE_TEMPLATE/' || true)
+          if [ -z "$NON_DOCS" ]; then
+            echo "Every changed path is docs/, a *.md file, a badge, or an issue template."
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Docs-only diff, nothing to build or test
+        if: steps.diff.outputs.docs_only == 'true'
+        run: echo "Only docs, markdown, badges, or issue templates changed. Skipping the build and test steps; the diagram geometry and coverage list checks still run."
 
       - uses: actions/setup-node@v4
         with:
@@ -42,6 +99,7 @@ jobs:
       # automatically when package-lock.json changes (dependency churn
       # affects task hashes).
       - name: Cache turbo
+        if: steps.diff.outputs.docs_only != 'true'
         uses: actions/cache@v4
         with:
           path: .turbo
@@ -51,34 +109,42 @@ jobs:
             turbo-${{ runner.os }}-
 
       - name: Lint
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run lint
 
       - name: Typecheck
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run typecheck
 
       - name: Build
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run build
 
       # A package that drifts back to private, or picks up a "*" range on
       # a sibling, only fails at publish time. Catching it on every PR
       # keeps the release step boring.
       - name: Publish readiness
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:publish
 
       # A package left out of the coverage list has no badge and no
       # baseline, so its coverage can fall to zero and the regression
-      # gate will not notice. Four packages shipped that way.
+      # gate will not notice. Four packages shipped that way. This also
+      # validates the package table in docs/reference/, so it runs on
+      # docs-only diffs too; it needs nothing from the build.
       - name: Coverage list completeness
         run: npm run check:coverage-packages
 
       # Hand-authored SVG buys layout control and costs the guarantee
       # that a label fits where it was put. Two collisions shipped before
-      # this ran.
+      # this ran. The SVG it walks lives in docs/, so it runs on
+      # docs-only diffs too; it needs nothing from the build.
       - name: Diagram geometry
         run: npm run check:diagrams
 
       # The style rules Biome has no rule for.
       - name: Style conventions
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:style
 
       # A pack that names an identifier its own library does not define
@@ -86,6 +152,7 @@ jobs:
       # measured against the codebase the name came from. Three packs
       # shipped one project's wrapper names before this ran.
       - name: Pack vocabulary
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:vocabulary
 
       # A generic file branching on a protocol name is how one route
@@ -94,6 +161,7 @@ jobs:
       # semantics registry; the pre-existing sites carry counts that
       # only go down.
       - name: Protocol dispatch
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:dispatch
 
       # The fixed-seed fuzz run: a few thousand generated programs
@@ -102,9 +170,11 @@ jobs:
       # lands, and the failure prints the minimized program rather than
       # whatever the sample happened to draw.
       - name: Fuzz (fixed seed)
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:fuzz
 
       - name: Test
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run test:coverage
 
       # Run suss against its own 38 packages. This is the widest test in
@@ -118,6 +188,7 @@ jobs:
       # with no pairing key, a consumer that will not pair with the
       # provider next to it. None of those depend on a baseline.
       - name: Dogfood
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run dogfood
 
       # Fail when a count came out below the baseline committed in this
@@ -125,12 +196,14 @@ jobs:
       # exports refreshes the baseline in the same branch and the drop
       # lands in the pull request diff for a reviewer to agree with.
       - name: Dogfood count check
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:dogfood
 
       # vitest writes coverage keyed by absolute path and minified. This
       # step rewrites it into the form the repo commits, so the check
       # below reads the same shape on both sides of the comparison.
       - name: Normalize coverage and regenerate badges
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run badges
 
       # Fail when a package's line coverage came out below the figure
@@ -138,60 +211,5 @@ jobs:
       # check above, against the same ref, so neither gate can fail on a
       # package the branch never touched.
       - name: Coverage floor check
+        if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:coverage
-
-      # Raise the dogfood floor on main so it keeps up with the source.
-      # Counts only ever act as a floor, so a merge that adds exports
-      # leaves the committed number below what a run now sees, and
-      # nothing on a branch refreshes it: the baseline belongs to the
-      # author, because lowering it is how they say a drop was meant.
-      #
-      # This is the only file CI writes back. Coverage summaries and
-      # badges belong to whoever changed the code they measure, and a
-      # bot that rewrote them on main both raced the merge button and
-      # overwrote a figure a reviewer had already read.
-      #
-      # Nothing reads this file from main, so a branch that has not
-      # picked up the raise still passes: `check:dogfood` compares
-      # against the branch's own HEAD.
-      #
-      # HUSKY=0 disables the local pre-commit and pre-push hooks the repo
-      # uses for developers. CI has already run their equivalents
-      # earlier in this workflow, and without it the bot's `git push`
-      # would run the whole test suite again.
-      #
-      # A concurrent push can land between the checkout and the push, so
-      # rebase against the remote tip and retry once. If it still races,
-      # skip: the next push to main picks the raise up.
-      - name: Raise the dogfood floor on main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          HUSKY: "0"
-        run: |
-          BASELINE=scripts/dogfood-baseline.json
-
-          if git diff --quiet "$BASELINE"; then
-            echo "Dogfood counts match the committed baseline, nothing to push."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$BASELINE"
-          git commit -m "chore: raise the dogfood baseline to what a run on main sees [skip ci]"
-
-          for attempt in 1 2; do
-            if git push origin HEAD:main; then
-              echo "Pushed the raise on attempt $attempt."
-              exit 0
-            fi
-            echo "Push rejected on attempt $attempt, rebasing and retrying."
-            git fetch origin main
-            git rebase origin/main || {
-              echo "Rebase failed, skipping. The next push to main re-triggers this."
-              exit 0
-            }
-          done
-
-          echo "Push still rejected after a rebase and a retry, skipping."
-          exit 0
