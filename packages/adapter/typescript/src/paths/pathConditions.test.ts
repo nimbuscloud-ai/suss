@@ -798,4 +798,157 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
       );
     }
   });
+
+  it("degrades when the break sits inside an if inside a block", () => {
+    const fn = getFunction(`
+      export function handler(req: { query: { kind: string }; x: boolean }, res: any) {
+        switch (req.query.kind) {
+          case "a":
+            return res.status(200).json({ ok: true });
+          case "b": {
+            if (req.x) {
+              break;
+            }
+          }
+          default:
+            return res.status(400).json({ error: "bad" });
+        }
+        return res.status(204).json({ ok: true });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    expect(terminals).toHaveLength(3);
+    const result = computePathConditions(fn, terminals);
+    for (const terminal of terminals) {
+      const [only] = result.byTerminal.get(terminal) ?? [];
+      expect(only?.[only.length - 1]?.sourceText).toContain(
+        "unmodeled control flow (non-trailing break in switch clause)",
+      );
+    }
+  });
+
+  it("degrades on a break three blocks deep in the middle of the clause", () => {
+    const fn = getFunction(`
+      export function handler(req: { query: { kind: string } }, res: any) {
+        switch (req.query.kind) {
+          case "a":
+            return res.status(200).json({ ok: true });
+          case "b":
+            console.log("before");
+            {
+              {
+                {
+                  break;
+                }
+              }
+            }
+            console.log("after");
+            break;
+          default:
+            return res.status(400).json({ error: "bad" });
+        }
+        return res.status(204).json({ ok: true });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    expect(terminals).toHaveLength(3);
+    const result = computePathConditions(fn, terminals);
+    for (const terminal of terminals) {
+      const [only] = result.byTerminal.get(terminal) ?? [];
+      expect(only?.[only.length - 1]?.sourceText).toContain(
+        "unmodeled control flow (non-trailing break in switch clause)",
+      );
+    }
+  });
+
+  it("degrades a block-wrapped continue inside a loop-wrapped switch, matching the legacy fallthrough reading", () => {
+    const fn = getFunction(`
+      export function handler(items: string[], res: any) {
+        for (const item of items) {
+          switch (item) {
+            case "skip": {
+              continue;
+            }
+            default:
+              return res.status(400).json({ error: "bad" });
+          }
+        }
+        return res.status(200).json({ ok: true });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    expect(terminals).toHaveLength(2);
+    const result = computePathConditions(fn, terminals);
+    for (const terminal of terminals) {
+      const [only] = result.byTerminal.get(terminal) ?? [];
+      // A block hiding a continue is never recognized as ending the
+      // clause's path (legacy's stepStatement dispatch never looks
+      // inside a block either), so it reads the same as any other
+      // non-empty clause with no trailing break: unsafe to fall
+      // through into whatever clause follows.
+      expect(only?.[only.length - 1]?.sourceText).toContain(
+        "unmodeled control flow (fallthrough into a non-empty switch clause)",
+      );
+    }
+  });
+
+  it("does not degrade on an empty block ahead of a genuine trailing break", () => {
+    const fn = getFunction(`
+      export function handler(req: { query: { kind: string } }, res: any) {
+        switch (req.query.kind) {
+          case "a": {
+          }
+            break;
+          default:
+            return res.status(400).json({ error: "bad" });
+        }
+        return res.status(200).json({ ok: true });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    // The default's return is gated on kind !== "a"; the empty block
+    // ahead of the trailing break contributes nothing, so "a" reads
+    // exactly as a bare `case "a": break;` would.
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      'negative:explicit:req.query.kind === "a"',
+    ]);
+  });
+
+  it("keeps legacy's single flat transition for a block-wrapped nested switch with no stray break and no direct terminal", () => {
+    const fn = getFunction(`
+      export function handler(req: { query: { kind: string } }, res: any) {
+        switch (req.query.kind) {
+          case "b": {
+            switch (req.query.kind) {
+              case "x":
+                console.log("x");
+                break;
+              default:
+                console.log("other");
+            }
+          }
+        }
+        return res.status(200).json({ ok: true });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    const paths = pathSigs(result?.byTerminal.get(terminals[0]));
+    // Legacy never looked inside a block for control-flow structure,
+    // only for a break its descendant scan could find. The nested
+    // switch inside the block owns its own break (switches are
+    // skipped by that scan), so the clause reads as one flat
+    // "kind === b" match, with no trace of the inner switch's own
+    // "x" / default distinction. The whole block is one pass-through,
+    // and since nothing inside it returns or throws, the negation
+    // reads as an ordinary explicit non-match, not an early return.
+    expect(paths).toEqual([
+      'negative:explicit:req.query.kind === "b"',
+      'positive:explicit:req.query.kind === "b"',
+    ]);
+    for (const path of paths) {
+      expect(path).not.toContain('=== "x"');
+    }
+  });
 });

@@ -250,39 +250,52 @@ function lowerSwitchGroups(
 }
 
 /**
- * A case clause's body is a plain statement list in TypeScript's own
- * grammar, but a clause written with braces (`case "a": { ...; break; }`)
- * makes some or all of that list Block statements, at any position
- * and nested to any depth (`log(); { { tag(); break; } }` is legal).
- * Left as Blocks, they lower to opaque nodes: the engine's stray-break
- * scan can't see past an opaque node, so a break buried inside one
- * goes unnoticed. Flatten every Block in the list into its own
- * statements, recursively, so whatever statement sequence the clause
- * actually runs is what the engine sees. Only Block unwraps this way.
- * An if/try/loop/switch nested in the body keeps its own control flow
- * and is lowered normally, same as everywhere else.
+ * Every break in a clause body must be the clause's own literal last
+ * statement, unbraced, or the whole switch degrades. This is a direct
+ * port of the legacy scanner: a descendant walk that skips only a
+ * nested function, switch, or loop (each owns its own break), so a
+ * break hidden behind any depth of block, if, or try nesting still
+ * counts. This is deliberately a raw-node scan, separate from what
+ * gets lowered into the clause's structured body: legacy never looked
+ * inside a block for control-flow structure, only for a break, and a
+ * control-flow construct sitting behind a block has to stay opaque in
+ * the lowered tree the same way, so this is the only place a break
+ * behind one gets found at all.
  */
-function flattenBlocks(stmts: readonly Statement[]): Statement[] {
-  return stmts.flatMap((stmt) =>
-    Node.isBlock(stmt) ? flattenBlocks(stmt.getStatements()) : [stmt],
-  );
+function validateClauseBreaks(stmts: readonly Statement[]): void {
+  const last = stmts[stmts.length - 1];
+  for (const stmt of stmts) {
+    if (stmt === last && Node.isBreakStatement(stmt)) {
+      continue;
+    }
+    stmt.forEachDescendant((node, traversal) => {
+      if (
+        isFunctionBoundary(node) ||
+        Node.isSwitchStatement(node) ||
+        isLoop(node)
+      ) {
+        traversal.skip();
+        return;
+      }
+      if (Node.isBreakStatement(node)) {
+        throw new UnmodeledFlow("non-trailing break in switch clause");
+      }
+    });
+    if (Node.isBreakStatement(stmt)) {
+      throw new UnmodeledFlow("non-trailing break in switch clause");
+    }
+  }
 }
 
 function lowerGroupBody(
   stmts: Statement[],
   rawToStructured: Map<Node, StructuredStatement<Expression>>,
 ): { hasTrailingBreak: boolean; body: StructuredStatement<Expression>[] } {
-  // hasTrailingBreak matches the legacy scanner's own check exactly: a
-  // bare break as the clause's own literal last statement, before any
-  // block-flattening. A break sitting inside a block anywhere in the
-  // body, however deep, was never "trailing" to the legacy scanner
-  // either. It always degraded that shape, so it has to surface below
-  // as a stray break instead, never as a trailing one.
+  validateClauseBreaks(stmts);
   const last = stmts[stmts.length - 1];
   const hasTrailingBreak = last !== undefined && Node.isBreakStatement(last);
   const kept = hasTrailingBreak ? stmts.slice(0, -1) : stmts;
-  const flattened = flattenBlocks(kept);
-  const body = lowerList(flattened, rawToStructured);
+  const body = lowerList(kept, rawToStructured);
   // A trailing break still gets lowered (registered), even though it's
   // excluded from `body` and never enumerated, matching the legacy
   // collector, which also marked it "visited" so a caller-given

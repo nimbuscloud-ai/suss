@@ -37,9 +37,9 @@ export interface Terminal {
  * runs before the braced block in the same clause body (the shape
  * that hides a break behind a leading sibling statement, not only
  * behind the block itself), and how many braces wrap the break, one
- * block or a block nested inside another. Lowering's block-flattening
- * has to see a break through either, at any depth, so both are worth
- * generating.
+ * block or a block nested inside another. Lowering's own break scan
+ * has to find the break through either, at any depth, so both are
+ * worth generating.
  */
 export interface BlockBreakShape {
   hasSibling: boolean;
@@ -47,14 +47,34 @@ export interface BlockBreakShape {
 }
 
 /**
+ * `blockNested`'s own two dimensions: whether the block wraps a small
+ * if or a small switch (both side-effect only, so this clause's own
+ * response always fires exactly once regardless of which branch the
+ * nested construct takes), and whether the clause exits by breaking
+ * out of the switch or returning from the function directly. Lowering
+ * treats a control-flow construct sitting behind a block the same way
+ * it treats the block itself: opaque, decomposed into nothing, the
+ * same shape a bare pass-through statement there would produce.
+ */
+export interface BlockNestedShape {
+  nested: "if" | "switch";
+  exit: "break" | "return";
+  /** The nested if's own condition; ignored when `nested` is "switch". */
+  cond: Cond;
+  /** The nested switch's own discriminant field; ignored when `nested` is "if". */
+  field: ReqField;
+}
+
+/**
  * One switch/case clause. `break` and `return` are the sound
  * trailing-exit shapes; `blockBreak` wraps the same body in braces
  * (`case v: { respond; break; }`, optionally preceded by a sibling
- * statement and nested one block deeper), the shape lowering unwraps
- * so the engine's stray-break scan can see the break instead of an
- * opaque block; `fallthrough` is an empty clause that stacks its
- * label onto the next non-empty one, TypeScript's own case-grouping
- * grammar.
+ * statement and nested one block deeper), a shape lowering declines
+ * to model and degrades, the same way the legacy scanner always did;
+ * `blockNested` wraps a small if or switch in braces alongside this
+ * clause's own response, a shape lowering keeps opaque rather than
+ * decomposing; `fallthrough` is an empty clause that stacks its label
+ * onto the next non-empty one, TypeScript's own case-grouping grammar.
  */
 export type SwitchClause =
   | { value: string; type: "break"; terminal: Terminal }
@@ -63,6 +83,11 @@ export type SwitchClause =
       type: "blockBreak";
       terminal: Terminal;
     } & BlockBreakShape)
+  | ({
+      value: string;
+      type: "blockNested";
+      terminal: Terminal;
+    } & BlockNestedShape)
   | { value: string; type: "return"; terminal: Terminal }
   | { value: string; type: "fallthrough" };
 
@@ -79,6 +104,7 @@ export type SwitchClause =
 export type SwitchDefaultClause =
   | { type: "break"; terminal: Terminal }
   | ({ type: "blockBreak"; terminal: Terminal } & BlockBreakShape)
+  | ({ type: "blockNested"; terminal: Terminal } & BlockNestedShape)
   | { type: "return"; terminal: Terminal };
 
 /**
@@ -209,16 +235,57 @@ function renderBlockBreakBody(
   ];
 }
 
-/** Shared between case clauses and the mandatory default clause, which carry the same three exit shapes. */
+/**
+ * A small if or switch, doing side-effect-only work so this clause's
+ * own response after it stays unconditional either way. Nested inside
+ * a block alongside the clause's own terminal and exit, so the whole
+ * thing renders as one braced body with a control-flow construct
+ * inside it, the shape lowering is required to keep opaque.
+ */
+function renderBlockNestedBody(
+  terminal: Terminal,
+  shape: BlockNestedShape,
+  renderTerminal: TerminalRenderer,
+): string[] {
+  const nestedLines =
+    shape.nested === "if"
+      ? [
+          `      if (${renderCond(shape.cond)}) {`,
+          '        console.log("nested");',
+          "      }",
+        ]
+      : [
+          `      switch (${renderField(shape.field)}) {`,
+          '        case "nested-match":',
+          '          console.log("nested-match");',
+          "          break;",
+          "        default:",
+          '          console.log("nested-other");',
+          "      }",
+        ];
+  return [
+    "    {",
+    ...nestedLines,
+    `      ${renderTerminal(terminal)};`,
+    shape.exit === "return" ? "      return;" : "      break;",
+    "    }",
+  ];
+}
+
+/** Shared between case clauses and the mandatory default clause, which carry the same four exit shapes. */
 function renderClauseExitBody(
   clause:
     | { type: "break"; terminal: Terminal }
     | ({ type: "blockBreak"; terminal: Terminal } & BlockBreakShape)
+    | ({ type: "blockNested"; terminal: Terminal } & BlockNestedShape)
     | { type: "return"; terminal: Terminal },
   renderTerminal: TerminalRenderer,
 ): string[] {
   if (clause.type === "blockBreak") {
     return renderBlockBreakBody(clause.terminal, clause, renderTerminal);
+  }
+  if (clause.type === "blockNested") {
+    return renderBlockNestedBody(clause.terminal, clause, renderTerminal);
   }
   return SIMPLE_EXIT_LINES[clause.type](clause.terminal, renderTerminal);
 }
