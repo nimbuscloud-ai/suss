@@ -475,6 +475,93 @@ describe("computePathConditions — switch lowering", () => {
       "<unconditional>",
     ]);
   });
+
+  it("models loop continues as path enders too", () => {
+    const fn = getFunction(`
+      export function handler(items: string[]) {
+        for (const item of items) {
+          if (item === "skip") {
+            continue;
+          }
+        }
+        return { status: 200 };
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      "<unconditional>",
+    ]);
+  });
+
+  it("degrades on a default clause that isn't last", () => {
+    const fn = getFunction(`
+      export function handler(kind: string) {
+        switch (kind) {
+          default:
+            return { status: 400 };
+          case "a":
+            return { status: 200 };
+        }
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    const [only] = result.byTerminal.get(terminals[0]) ?? [];
+    expect(only?.[only.length - 1]?.sourceText).toContain(
+      "unmodeled control flow",
+    );
+  });
+
+  it("an empty default clause behaves like no default at all", () => {
+    const fn = getFunction(`
+      export function handler(kind: string) {
+        switch (kind) {
+          case "a":
+            return { status: 200 };
+          default:
+        }
+        return { status: 500 };
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
+      'negative:earlyReturn:kind === "a"',
+    ]);
+  });
+});
+
+describe("computePathConditions, a terminal outside the given function", () => {
+  it("degrades when a caller-given terminal isn't reachable from this body", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+        export function handler(a: boolean) {
+          if (a) {
+            return { status: 200 };
+          }
+          return { status: 400 };
+        }
+        export function other() {
+          return { status: 500 };
+        }
+      `,
+    );
+    const [handler, other] = file.getFunctions();
+    const foreignTerminal = other
+      .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+      .at(0);
+    if (handler === undefined || foreignTerminal === undefined) {
+      throw new Error("fixture functions not found");
+    }
+    const result = computePathConditions(handler, [foreignTerminal]);
+    const [only] = result.byTerminal.get(foreignTerminal) ?? [];
+    expect(only?.[only.length - 1]?.sourceText).toContain(
+      "unmodeled control flow",
+    );
+  });
 });
 
 describe("computePathConditions — try/catch", () => {
@@ -562,5 +649,46 @@ describe("computePathConditions — try/catch", () => {
     expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
       "<unconditional>",
     ]);
+  });
+});
+
+describe("computePathConditions, no body to read", () => {
+  it("an ambient declaration has nothing to enumerate", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      "export declare function handler(a: boolean): void;",
+    );
+    const fn = file.getFunctions().find((f) => f.isExported());
+    if (fn === undefined) {
+      throw new Error("fixture function not found");
+    }
+    const result = computePathConditions(fn, []);
+    expect(result.byTerminal.size).toBe(0);
+    expect(result.fallthrough).toEqual([]);
+  });
+
+  it("a degraded result skips the synthetic fallthrough terminal, same as a sound one", () => {
+    const fn = getFunction(`
+      export function handler(a: boolean) {
+        outer: for (const x of [a]) {
+          if (x) {
+            break outer;
+          }
+        }
+        return { status: 200 };
+      }
+    `);
+    const body = fn.getBody();
+    if (body === undefined) {
+      throw new Error("fixture body not found");
+    }
+    // Mirrors makeFallthroughTerminal: the body itself stands in for
+    // the implicit fall-through return, and never gets its own entry.
+    const result = computePathConditions(fn, [body]);
+    expect(result.byTerminal.has(body)).toBe(false);
+    expect(result.fallthrough[0]?.[0]?.sourceText).toContain(
+      "unmodeled control flow",
+    );
   });
 });

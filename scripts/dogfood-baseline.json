@@ -1,24 +1,18 @@
 {
   "totals": {
-    "packages": 40,
-    "packagesWithExports": 39,
-    "exports": 286,
-    "internal": 1176,
-    "consumers": 439,
-    "pairs": 431
+    "packages": 38,
+    "packagesWithExports": 37,
+    "exports": 243,
+    "internal": 1122,
+    "consumers": 418,
+    "pairs": 410
   },
   "packages": {
-    "packages/adapter/python": {
-      "name": "@suss/adapter-python",
-      "exports": 42,
-      "internal": 35,
-      "consumers": 10
-    },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
-      "internal": 530,
-      "consumers": 29
+      "internal": 503,
+      "consumers": 30
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -60,7 +54,7 @@
       "name": "@suss/client-web",
       "exports": 2,
       "internal": 0,
-      "consumers": 8
+      "consumers": 6
     },
     "packages/contract/appsync": {
       "name": "@suss/contract-appsync",
@@ -118,8 +112,8 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 8,
-      "internal": 11,
+      "exports": 9,
+      "internal": 19,
       "consumers": 2
     },
     "packages/framework/apollo": {
@@ -156,7 +150,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 0,
-      "consumers": 5
+      "consumers": 3
     },
     "packages/framework/fastify": {
       "name": "@suss/framework-fastify",
@@ -164,17 +158,11 @@
       "internal": 0,
       "consumers": 3
     },
-    "packages/framework/flask-restx": {
-      "name": "@suss/framework-flask-restx",
-      "exports": 2,
-      "internal": 0,
-      "consumers": 4
-    },
     "packages/framework/hono": {
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 9
+      "consumers": 5
     },
     "packages/framework/nestjs-graphql": {
       "name": "@suss/framework-nestjs-graphql",

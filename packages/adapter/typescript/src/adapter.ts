@@ -31,6 +31,7 @@ import {
   type ExtractorOptions,
   type InputMappingPattern,
   type InvocationRecognizer,
+  type LanguageAdapter,
   type PatternPack,
   type RawBranch,
   type RawCodeStructure,
@@ -1950,8 +1951,17 @@ export interface TypeScriptAdapterConfig {
   cacheDir?: string | null;
 }
 
-export interface TypeScriptAdapter {
-  project: Project;
+/**
+ * The TypeScript adapter's surface: `LanguageAdapter`'s two methods,
+ * shared with every future language, plus `tsProject`, a TS-only
+ * accessor. `LanguageAdapter` never carries a ts-morph field so a
+ * second language's adapter isn't shaped around this one's tooling;
+ * a caller that genuinely needs the underlying `Project` (`suss
+ * corroborate`, to run the user's own handlers in a sandbox) reaches
+ * for `tsProject` explicitly, naming what it depends on.
+ */
+export interface TypeScriptAdapter extends LanguageAdapter {
+  readonly tsProject: Project;
   /**
    * Extract summaries from a specific list of files. Returns a
    * Promise so the implementation can do concurrent I/O during
@@ -2062,7 +2072,7 @@ export function createTypeScriptAdapter(
   );
 
   return {
-    project,
+    tsProject: project,
 
     async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
       const summaries: BehavioralSummary[] = [];

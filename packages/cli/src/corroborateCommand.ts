@@ -184,7 +184,7 @@ export async function corroborate(
   for (const summary of summaries) {
     const inScope = await corroborateSummary(
       summary,
-      adapter.project,
+      adapter.tsProject,
       engineOptions,
     );
     if (inScope) {
