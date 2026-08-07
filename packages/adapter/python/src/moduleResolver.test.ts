@@ -83,10 +83,8 @@ describe("resolveRelativeModule", () => {
     write("myapp/routes/todos.py");
     const result = resolveRelativeModule(
       path.join(tmpDir, "myapp/routes/todos.py"),
-      {
-        module: "wrapper",
-        relativeLevel: 1,
-      },
+      { module: "wrapper", relativeLevel: 1 },
+      { roots: [tmpDir] },
     );
     expect(result).toEqual({
       status: "resolved",
@@ -99,10 +97,8 @@ describe("resolveRelativeModule", () => {
     write("myapp/routes/todos.py");
     const result = resolveRelativeModule(
       path.join(tmpDir, "myapp/routes/todos.py"),
-      {
-        module: "",
-        relativeLevel: 1,
-      },
+      { module: "", relativeLevel: 1 },
+      { roots: [tmpDir] },
     );
     expect(result).toEqual({
       status: "resolved",
@@ -115,10 +111,8 @@ describe("resolveRelativeModule", () => {
     write("myapp/routes/todos.py");
     const result = resolveRelativeModule(
       path.join(tmpDir, "myapp/routes/todos.py"),
-      {
-        module: "shared",
-        relativeLevel: 2,
-      },
+      { module: "shared", relativeLevel: 2 },
+      { roots: [tmpDir] },
     );
     expect(result).toEqual({
       status: "resolved",
@@ -130,12 +124,56 @@ describe("resolveRelativeModule", () => {
     write("myapp/routes/todos.py");
     const result = resolveRelativeModule(
       path.join(tmpDir, "myapp/routes/todos.py"),
-      {
-        module: "missing",
-        relativeLevel: 1,
-      },
+      { module: "missing", relativeLevel: 1 },
+      { roots: [tmpDir] },
     );
     expect(result).toEqual({ status: "unresolved", reason: "external" });
+  });
+
+  it("resolves when the walk lands exactly on a configured root (inclusive boundary)", () => {
+    // "proj" is the configured root itself; a 3-dot import from
+    // proj/myapp/routes/todos.py walks up to proj exactly, which is
+    // still inside it, not past it.
+    write("proj/__init__.py");
+    write("proj/myapp/routes/todos.py");
+    const result = resolveRelativeModule(
+      path.join(tmpDir, "proj/myapp/routes/todos.py"),
+      { module: "", relativeLevel: 3 },
+      { roots: [path.join(tmpDir, "proj")] },
+    );
+    expect(result).toEqual({
+      status: "resolved",
+      file: path.join(tmpDir, "proj/__init__.py"),
+    });
+  });
+
+  it("abstains instead of escaping every configured root on a too-deep relative import", () => {
+    // Reviewer-reported shape: a four-dot relative import from a file
+    // nested two directories inside the one configured root
+    // (proj/myapp/routes/todos.py) walks past "proj" itself on the
+    // fourth dot, landing on the parent of "proj", outside every
+    // configured root. An unrelated file sitting there (a sibling
+    // checkout that happens to share a module name) must not be
+    // reported as this import's answer.
+    const root = path.join(tmpDir, "proj");
+    write("proj/myapp/routes/todos.py");
+    write("sibling.py");
+    const result = resolveRelativeModule(
+      path.join(tmpDir, "proj/myapp/routes/todos.py"),
+      { module: "sibling", relativeLevel: 4 },
+      { roots: [root] },
+    );
+    expect(result).toEqual({ status: "unresolved", reason: "outsideRoots" });
+  });
+
+  it("abstains immediately when the importing file itself is outside every configured root", () => {
+    write("outside/todos.py");
+    const result = resolveRelativeModule(
+      path.join(tmpDir, "outside/todos.py"),
+      { module: "wrapper", relativeLevel: 1 },
+      { roots: [path.join(tmpDir, "proj")] },
+    );
+    expect(result).toEqual({ status: "unresolved", reason: "outsideRoots" });
   });
 });
 
@@ -146,7 +184,7 @@ describe("resolveModule", () => {
     const result = resolveModule(
       path.join(tmpDir, "myapp/routes/todos.py"),
       { module: "wrapper", relativeLevel: 1 },
-      { roots: [] },
+      { roots: [tmpDir] },
     );
     expect(result.status).toBe("resolved");
   });

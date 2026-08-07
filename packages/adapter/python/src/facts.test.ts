@@ -119,11 +119,34 @@ describe("emitModuleImportFacts", () => {
     const module = bindModule(tree.rootNode);
 
     const db = new Database();
-    emitModuleImportFacts(db, importingFile, module, { roots: [] });
+    emitModuleImportFacts(db, importingFile, module, { roots: [tmpDir] });
 
     expect(db.facts("pyImport")).toEqual([
       [importingFile, ".wrapper", "resolved"],
     ]);
+  });
+
+  it("records a relative import as outsideRoots when no configured root reaches it", async () => {
+    write("myapp/routes/wrapper.py");
+    const importingFile = write(
+      "myapp/routes/todos.py",
+      "from .wrapper import route\n",
+    );
+    const tree = await parsePython(fs.readFileSync(importingFile, "utf8"));
+    const module = bindModule(tree.rootNode);
+
+    const db = new Database();
+    // No configured root covers the importing file at all, so even a
+    // one-dot relative import (which never walks past its own
+    // directory) has nothing to be judged inside of.
+    emitModuleImportFacts(db, importingFile, module, {
+      roots: [path.join(tmpDir, "unrelated")],
+    });
+
+    expect(db.facts("pyImport")).toEqual([
+      [importingFile, ".wrapper", "outsideRoots"],
+    ]);
+    expect(db.facts("pyImportResolved")).toEqual([]);
   });
 
   it("records an open import from a wildcard from-import", async () => {

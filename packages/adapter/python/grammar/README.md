@@ -22,10 +22,16 @@ Provenance, so a grammar bump is a deliberate, checkable act:
   package's own `tree-sitter build --wasm`, published pre-built).
 - SHA-256: `8c93692fb368e288a5824cee55773c9b3602804f513bda48c97661e52e9c2da2`.
 
+tree-sitter-python is MIT-licensed. [`NOTICE`](./NOTICE) in this
+directory reproduces its copyright and permission notice in full, and
+ships in the published tarball alongside the `.wasm` file (both sit
+under `grammar/`, which the package's `files` field includes), so the
+attribution its license requires travels with the binary it covers.
+
 To pick up a newer grammar: `npm pack tree-sitter-python@<version>`,
 extract it, copy `tree-sitter-python.wasm` here, update the version and
-hash above, and re-run the adapter's test suite. A grammar change that
-renames or restructures a node type used in `src/ast.ts` will fail
-loudly there. The fuzzer's parse-failure-rate reporting (per the
-language-adapters proposal) is the longer-term signal for when a bump
-is worth doing.
+hash above, check `NOTICE` still matches that version's `LICENSE` file,
+and re-run the adapter's test suite. A grammar change that renames or
+restructures a node type used in `src/ast.ts` will fail loudly there.
+The fuzzer's parse-failure-rate reporting (per the language-adapters
+proposal) is the longer-term signal for when a bump is worth doing.

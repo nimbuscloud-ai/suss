@@ -32,8 +32,13 @@ export type ModuleResolution =
        * "ambiguous": more than one configured root names it, and
        * guessing which one runs at import time is exactly the kind of
        * wrong answer this resolver exists to avoid.
+       * "outsideRoots": a relative import's dot count walked the
+       * search directory above every configured root. Nothing past a
+       * project's own boundary is this reader's to name, so it stops
+       * rather than reporting whatever unrelated file happens to sit
+       * there (a sibling checkout, a parent monorepo, …).
        */
-      reason: "external" | "ambiguous";
+      reason: "external" | "ambiguous" | "outsideRoots";
     };
 
 export interface ModuleResolverOptions {
@@ -44,6 +49,24 @@ export interface ModuleResolverOptions {
    * `sys.path` order is a runtime fact this reader doesn't have.
    */
   roots: string[];
+}
+
+/**
+ * Whether `dir` is the root itself or somewhere under it. The boundary
+ * is inclusive: a relative import landing exactly on a configured root
+ * (the common case for a project's top-level package) is still inside
+ * it, not past it.
+ */
+function isWithinRoot(dir: string, root: string): boolean {
+  const relative = path.relative(root, dir);
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
+function isInsideAnyRoot(dir: string, roots: readonly string[]): boolean {
+  return roots.some((root) => isWithinRoot(dir, root));
 }
 
 /** The file(s) a dotted path names under one root, package (`__init__.py`) or plain module, most specific first. */
@@ -91,18 +114,30 @@ export function resolveAbsoluteModule(
 
 /**
  * Resolve a relative import (`from . import x`, `from ..pkg import x`)
- * against the file that wrote it. Relative imports are anchored to the
- * importing file's own containing directory regardless of configured
- * roots, the same way Python resolves them against `__package__`
- * rather than `sys.path`.
+ * against the file that wrote it. The starting directory is the
+ * importing file's own containing directory, not a configured root
+ * (Python resolves a relative import against `__package__`, not
+ * `sys.path`); `options.roots` instead bounds how far the dot count is
+ * allowed to walk upward. A dot count deep enough to step above every
+ * configured root abstains rather than searching whatever directory it
+ * lands on next: nothing prunes that walk otherwise, so a four-dot
+ * import from a nested file would otherwise happily resolve against an
+ * unrelated sibling checkout that happens to share a module name.
  */
 export function resolveRelativeModule(
   importingFile: string,
   spec: RelativeModuleSpec,
+  options: ModuleResolverOptions,
 ): ModuleResolution {
   let dir = path.dirname(importingFile);
+  if (!isInsideAnyRoot(dir, options.roots)) {
+    return { status: "unresolved", reason: "outsideRoots" };
+  }
   for (let i = 1; i < spec.relativeLevel; i++) {
     dir = path.dirname(dir);
+    if (!isInsideAnyRoot(dir, options.roots)) {
+      return { status: "unresolved", reason: "outsideRoots" };
+    }
   }
   const candidates = candidatesUnderRoot(dir, spec.module);
   if (candidates.length === 0) {
@@ -118,7 +153,7 @@ export function resolveModule(
   options: ModuleResolverOptions,
 ): ModuleResolution {
   if (spec.relativeLevel > 0) {
-    return resolveRelativeModule(importingFile, spec);
+    return resolveRelativeModule(importingFile, spec, options);
   }
   return resolveAbsoluteModule(spec.module, options);
 }
