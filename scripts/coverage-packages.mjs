@@ -21,6 +21,7 @@ export const coveragePackages = [
   ["packages/extractor", "extractor"],
   ["packages/adapter/typescript", "typescript"],
   ["packages/adapter/python", "python"],
+  ["packages/adapter/ruby", "ruby"],
   ["packages/checker", "checker"],
   ["packages/checker-intent", "checker-intent"],
   ["packages/cli", "cli"],
@@ -41,6 +42,7 @@ export const coveragePackages = [
   ["packages/framework/aws-eventbridge", "aws-eventbridge"],
   ["packages/framework/aws-lambda", "aws-lambda"],
   ["packages/framework/flask-restx", "flask-restx"],
+  ["packages/framework/graphql-ruby", "graphql-ruby"],
   // Clients
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],
