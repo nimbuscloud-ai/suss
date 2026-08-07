@@ -55,6 +55,8 @@ export type Corroboration = z.infer<typeof CorroborationSchema>;
 export type SourceLocation = z.infer<typeof SourceLocationSchema>;
 export type BoundaryBinding = z.infer<typeof BoundaryBindingSchema>;
 
+export { ecsContainerInstanceName } from "./deployableUnit.js";
+
 export type { DeployableUnit } from "./deployableUnit.js";
 // TypeShape is a hand-written named recursive type in ./schemas (re-exported
 // here) rather than a `z.infer`, so cross-package declarations reference it

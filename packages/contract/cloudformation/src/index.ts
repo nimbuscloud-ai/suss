@@ -30,6 +30,7 @@
 
 import path from "node:path";
 
+import { readRoutingMetadata, withRoutingMetadata } from "@suss/behavioral-ir";
 import {
   type AuthorizerConfig,
   type AuthorizerType,
@@ -59,10 +60,11 @@ import {
   unfollowedStackMessage,
 } from "@suss/manifest-aws";
 
+import { buildAlbFlowSummaries } from "./albFlow.js";
 import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, RoutingMetadata } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "@suss/contract-openapi";
 
 // Re-exported so existing consumers of the parse layer keep working;
@@ -166,10 +168,20 @@ export function cloudFormationToSummaries(
   //    interaction effects from @suss/framework-aws-sqs pair against these.
   summaries.push(...buildMessageBusSummaries(resources, sourceFile));
 
+  // 6. ALB flow walk: listener rules and a listener's own default
+  //    action emit routesTo / answers edges with their match recorded
+  //    as data; target groups emit fronts edges naming what backs
+  //    them. No boundaryBinding, since these are the fact base a
+  //    future reachability rule reads, not a pairing the checker
+  //    matches today.
+  summaries.push(...buildAlbFlowSummaries(resources, sourceFile));
+
   const stackPath = options.stackPath ?? [];
   return stackPath.length === 0
     ? summaries
-    : summaries.map((summary) => deployedWithinStack(summary, stackPath));
+    : summaries.map((summary) =>
+        deployedWithinStack(summary, stackPath, resources),
+      );
 }
 
 /**
@@ -183,14 +195,32 @@ export function cloudFormationToSummaries(
  * path. A channel keeps the name its document writes, because a queue
  * name is what the code says and the code cannot know which document
  * declared the queue.
+ *
+ * A `fronts` edge's `resource` field follows the same rule as
+ * `deployableUnit.instanceName` when it names a deployable unit's own
+ * identity (an ECS container's or a Lambda's instanceName): the ALB
+ * flow reader and the runtime-config reader must qualify it the same
+ * way for the two to still name the same thing once nested. A fronted
+ * resource that is itself another load balancer (a TargetType alb
+ * group fronting one) is ALB infrastructure like the router and target
+ * group logical ids, which nothing outside the template ever names, so
+ * it stays bare the same way they do, like a channel does.
  */
 function deployedWithinStack(
   summary: BehavioralSummary,
   stackPath: string[],
+  resources: Record<string, CloudFormationResource>,
 ): BehavioralSummary {
   const unit = summary.identity.deployableUnit;
   const binding = summary.identity.boundaryBinding;
-  if (unit === undefined && binding?.semantics.name !== "runtime-config") {
+  const routing = readRoutingMetadata(summary);
+  const frontedResource =
+    routing !== undefined ? frontedUnitResource(routing, resources) : null;
+  if (
+    unit === undefined &&
+    binding?.semantics.name !== "runtime-config" &&
+    frontedResource === null
+  ) {
     return summary;
   }
   return {
@@ -222,7 +252,41 @@ function deployedWithinStack(
           }
         : {}),
     },
+    ...(frontedResource !== null && routing !== undefined
+      ? {
+          metadata: withRoutingMetadata(summary.metadata, {
+            ...routing,
+            resource: qualifiedLogicalId(stackPath, frontedResource),
+          }),
+        }
+      : {}),
   };
+}
+
+/**
+ * A `fronts` edge's resource, when it names a deployable unit the stack
+ * path has to qualify. Null when the edge is not `fronts`, when nothing
+ * resolved, or when the resource is a declared load balancer, which
+ * stays bare.
+ */
+function frontedUnitResource(
+  routing: RoutingMetadata,
+  resources: Record<string, CloudFormationResource>,
+): string | null {
+  if (
+    routing.edge !== "fronts" ||
+    routing.resource === undefined ||
+    routing.resource === null
+  ) {
+    return null;
+  }
+
+  const declared = resources[routing.resource];
+  if (declared?.Type === "AWS::ElasticLoadBalancingV2::LoadBalancer") {
+    return null;
+  }
+
+  return routing.resource;
 }
 
 // ---------------------------------------------------------------------------

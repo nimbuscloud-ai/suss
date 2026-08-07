@@ -4,10 +4,12 @@ import {
   readGraphqlMetadata,
   readHttpMetadata,
   readMessageBusMetadata,
+  readRoutingMetadata,
   readRuntimeContractMetadata,
   withGraphqlMetadata,
   withHttpMetadata,
   withMessageBusMetadata,
+  withRoutingMetadata,
   withRuntimeContractMetadata,
 } from "./index.js";
 
@@ -154,6 +156,60 @@ describe("the runtimeContract metadata namespace", () => {
         // @ts-expect-error a renamed field fails to compile; the parse
         // catches a caller that casts around the type.
         envVariables: ["ORDERS_QUEUE_URL"],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("the routing metadata namespace", () => {
+  it("round-trips what a writer sets", () => {
+    const metadata = withRoutingMetadata(undefined, {
+      edge: "routesTo",
+      router: "ShopHttpsListener",
+      target: "OrdersTargetGroup",
+      matchId: "OrdersListenerRule",
+      priority: 10,
+      conditions: [
+        { field: "path-pattern", values: ["/api/orders/*"], evaluated: true },
+      ],
+    });
+    const read = readRoutingMetadata(summaryWith(metadata));
+    expect(read?.edge).toBe("routesTo");
+    expect(read?.target).toBe("OrdersTargetGroup");
+    expect(read?.priority).toBe(10);
+    expect(read?.conditions).toEqual([
+      { field: "path-pattern", values: ["/api/orders/*"], evaluated: true },
+    ]);
+  });
+
+  it("answers undefined when the namespace is absent or not an object", () => {
+    expect(readRoutingMetadata(summaryWith(undefined))).toBeUndefined();
+    expect(readRoutingMetadata(summaryWith({ routing: 42 }))).toBeUndefined();
+  });
+
+  it("drops a field that does not parse and keeps its siblings", () => {
+    const read = readRoutingMetadata(
+      summaryWith({
+        routing: {
+          edge: "fronts",
+          target: "OrdersTargetGroup",
+          resource: 42,
+        },
+      }),
+    );
+    expect(read?.edge).toBe("fronts");
+    expect(read?.target).toBe("OrdersTargetGroup");
+    expect(read?.resource).toBeUndefined();
+  });
+
+  it("refuses a value the schema does not name at write time", () => {
+    expect(() =>
+      withRoutingMetadata(undefined, {
+        edge: "fronts",
+        target: "OrdersTargetGroup",
+        // @ts-expect-error a renamed field fails to compile; the parse
+        // catches a caller that casts around the type.
+        backedBy: "OrdersTaskDefinition/orders-app",
       }),
     ).toThrow();
   });
