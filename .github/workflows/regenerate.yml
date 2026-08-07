@@ -15,6 +15,14 @@ on:
   push:
     branches: [main]
 
+# One run at a time; a newer push to main waits for the run in
+# progress instead of cancelling it. Deliberately no cancel-in-progress
+# here: a cancelled run throws away a finished regeneration right
+# before it pushes, and could interrupt the commit-and-push step
+# partway through.
+concurrency:
+  group: regenerate-baselines
+
 permissions:
   contents: write
 
