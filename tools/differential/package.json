@@ -24,9 +24,11 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "check:fuzz": "vitest run",
-    "fuzz:long": "node longFuzz.mjs"
+    "fuzz:long": "node longFuzz.mjs",
+    "fuzz:python": "node fuzzPython.mjs"
   },
   "dependencies": {
+    "@suss/adapter-python": "*",
     "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
     "@suss/checker": "*",
@@ -35,7 +37,9 @@
     "@suss/framework-aws-lambda": "*",
     "@suss/framework-aws-sqs": "*",
     "@suss/framework-express": "*",
+    "@suss/framework-fastapi": "*",
     "@suss/framework-fastify": "*",
+    "@suss/framework-flask-restx": "*",
     "@suss/framework-nestjs-graphql": "*",
     "@suss/framework-nestjs-rest": "*",
     "@suss/framework-react": "*",

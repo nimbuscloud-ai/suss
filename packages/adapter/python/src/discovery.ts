@@ -291,13 +291,11 @@ function functionRouteUnits(
     }
   }
 
-  let statusCode: number | null = null;
-  if (pattern.statusCodeKeyword !== undefined) {
-    const statusArg = classification.keywordArgs[pattern.statusCodeKeyword];
-    if (statusArg?.kind === "number") {
-      statusCode = statusArg.value;
-    }
-  }
+  const statusArg =
+    pattern.statusCodeKeyword !== undefined
+      ? classification.keywordArgs[pattern.statusCodeKeyword]
+      : undefined;
+  const statusCode = statusArg?.kind === "number" ? statusArg.value : null;
 
   const unit = buildRouteUnit({
     pack,
@@ -313,6 +311,13 @@ function functionRouteUnits(
     skipReceiverParam: false,
     responseShape,
     statusCode,
+    // The decorator wrote a status the reader could not turn into a
+    // number (a variable, a call). Falling back to the framework's
+    // default 200 would fabricate a claim the running app contradicts
+    // whenever that value is anything else, so the status stays
+    // unclaimed instead.
+    statusDeclaredUnread:
+      statusArg !== undefined && statusArg.kind !== "number",
     definitionsCtx: ctx,
   });
   return [unit];
@@ -333,6 +338,8 @@ interface BuildRouteUnitOptions {
   skipReceiverParam: boolean;
   responseShape: TypeShape | null;
   statusCode: number | null;
+  /** True when the decorator states a status the reader could not read as a literal, which suppresses the 200 default below. */
+  statusDeclaredUnread?: boolean;
   definitionsCtx?: ReturnType<typeof createAnnotationContext>;
 }
 
@@ -366,7 +373,11 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   if (responseShape === null && returnTypeNode !== null) {
     responseShape = annotationToShape(returnTypeNode, enclosingScope, ctx);
   }
-  if (statusCode === null && responseShape !== null) {
+  if (
+    statusCode === null &&
+    responseShape !== null &&
+    options.statusDeclaredUnread !== true
+  ) {
     statusCode = 200;
   }
 

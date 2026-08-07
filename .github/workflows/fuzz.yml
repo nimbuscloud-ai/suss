@@ -11,6 +11,9 @@ on:
       programs:
         description: Programs per family
         default: "2000"
+      pythonPrograms:
+        description: Programs for the Python differential
+        default: "1000"
 
 jobs:
   fuzz:
@@ -38,3 +41,21 @@ jobs:
         run: npm run fuzz:long
         env:
           FUZZ_PROGRAMS: ${{ inputs.programs || '4000' }}
+
+      # The Python differential needs an interpreter and the target
+      # frameworks, which only this workflow installs: the runtime
+      # side of a fuzz target lives in CI, never in any shipped
+      # package. It runs even when the TypeScript families failed, so
+      # one family's finding does not hide the other's.
+      - uses: actions/setup-python@v5
+        if: ${{ !cancelled() }}
+        with:
+          python-version: "3.12"
+
+      - name: Install the Python differential's frameworks
+        if: ${{ !cancelled() }}
+        run: python3 -m pip install -r tools/differential/python/requirements.txt
+
+      - name: The Python differential, at a seed from the clock
+        if: ${{ !cancelled() }}
+        run: npm run check:fuzz-python -- "${{ inputs.pythonPrograms || '1000' }}" "$(date +%s)"
