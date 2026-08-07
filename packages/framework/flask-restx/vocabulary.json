@@ -1,0 +1,5 @@
+{
+  "flask_restx": "flask-restx: the package route decorators are imported from",
+  "route": "flask-restx: Namespace.route / Api.route, the class decorator naming a resource's path",
+  "decoratedClassRoute": "suss: PythonDiscoveryPattern variant tag, defined in @suss/adapter-python"
+}

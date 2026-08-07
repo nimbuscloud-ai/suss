@@ -20,6 +20,7 @@ export const coveragePackages = [
   ["packages/intent-ir", "intent-ir"],
   ["packages/extractor", "extractor"],
   ["packages/adapter/typescript", "typescript"],
+  ["packages/adapter/python", "python"],
   ["packages/checker", "checker"],
   ["packages/checker-intent", "checker-intent"],
   ["packages/cli", "cli"],
@@ -39,6 +40,7 @@ export const coveragePackages = [
   ["packages/framework/aws-sqs", "aws-sqs"],
   ["packages/framework/aws-eventbridge", "aws-eventbridge"],
   ["packages/framework/aws-lambda", "aws-lambda"],
+  ["packages/framework/flask-restx", "flask-restx"],
   // Clients
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],
