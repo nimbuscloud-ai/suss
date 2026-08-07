@@ -37,7 +37,9 @@ property runs against both.
 | `src/differential.test.ts` | sound-tier properties (all targets) + gap-rediscovery milestones |
 | `src/corpus.test.ts` | permanent shrunk-counterexample corpus |
 | `src/jsx/*` | the render boundary: component DSL, TSX transpile + stub `createElement` execution, tree-admissibility judge, its own sound tier / milestone / corpus |
+| `src/python/*` | the Python target: Flask/FastAPI program DSL + generators, extraction through `@suss/adapter-python`, a python3 observer harness, and the route-claim adjudicator |
 | `longrun.mjs` | exploratory random-seed sessions (`node longrun.mjs jsx 800 3`) |
+| `fuzzPython.mjs` | the Python differential run (`node fuzzPython.mjs 200 42`); needs python3 with `python/requirements.txt` installed |
 
 ## The families under `src/shape`
 
@@ -69,4 +71,5 @@ SUSS_FUZZ_RUNS=500 npx vitest run src/differential.test.ts
 SUSS_FUZZ_SEED=12345 npx vitest run     # reproduce a specific CI run
 npx tsup && node longrun.mjs sound 1500 4 fastify   # exploratory session
 node longFuzz.mjs 4000                  # the scheduled run, every family
+node fuzzPython.mjs 200                 # the Python differential (needs python3 + python/requirements.txt)
 ```
