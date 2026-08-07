@@ -3,15 +3,15 @@
     "packages": 38,
     "packagesWithExports": 37,
     "exports": 242,
-    "internal": 1133,
-    "consumers": 423,
-    "pairs": 415
+    "internal": 1141,
+    "consumers": 425,
+    "pairs": 417
   },
   "packages": {
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
-      "internal": 522,
+      "internal": 530,
       "consumers": 29
     },
     "packages/behavioral-ir": {
@@ -54,7 +54,7 @@
       "name": "@suss/client-web",
       "exports": 2,
       "internal": 0,
-      "consumers": 6
+      "consumers": 8
     },
     "packages/contract/appsync": {
       "name": "@suss/contract-appsync",
