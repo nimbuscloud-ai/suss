@@ -1121,6 +1121,263 @@ describe("clientCall — imported client", () => {
 });
 
 // ---------------------------------------------------------------------------
+// clientCall, an instance imported from another file
+// ---------------------------------------------------------------------------
+
+function makeAxiosLikePattern(): DiscoveryPattern {
+  return {
+    kind: "client",
+    match: {
+      type: "clientCall",
+      importModule: "axios",
+      importName: "axios",
+      factoryMethods: ["create"],
+    },
+  };
+}
+
+describe("clientCall, an instance imported from another file", () => {
+  it("resolves a subject brought in by a named import", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      export const client = axios.create({ baseURL: "/api" });
+    `,
+    );
+    const file = project.createSourceFile(
+      "consumer.ts",
+      `
+      import { client } from "./api";
+
+      export async function getUser(id: string) {
+        return client.get("/users/" + id);
+      }
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeAxiosLikePattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("getUser");
+    expect(units[0].callSite?.methodName).toBe("get");
+  });
+
+  it("resolves a subject brought in by a default import", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      export default axios.create({ baseURL: "/api" });
+    `,
+    );
+    const file = project.createSourceFile(
+      "consumer.ts",
+      `
+      import api from "./api";
+
+      export async function listOrders() {
+        return api.get("/orders");
+      }
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeAxiosLikePattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("listOrders");
+  });
+
+  it("resolves a subject brought in by an aliased named import", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      export const client = axios.create({ baseURL: "/api" });
+    `,
+    );
+    const file = project.createSourceFile(
+      "consumer.ts",
+      `
+      import { client as http } from "./api";
+
+      export async function getUser() {
+        return http.get("/users/1");
+      }
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeAxiosLikePattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("getUser");
+  });
+
+  it("resolves a subject re-exported through a barrel", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      export const client = axios.create({ baseURL: "/api" });
+    `,
+    );
+    project.createSourceFile(
+      "barrel.ts",
+      `
+      export { client } from "./api";
+    `,
+    );
+    const file = project.createSourceFile(
+      "consumer.ts",
+      `
+      import { client } from "./barrel";
+
+      export async function getReport() {
+        return client.get("/reports/weekly");
+      }
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeAxiosLikePattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("getReport");
+  });
+
+  it("resolves an instance whose creating file aliases the default import", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import ax from "axios";
+      export const client = ax.create({ baseURL: "/api" });
+    `,
+    );
+    const file = project.createSourceFile(
+      "consumer.ts",
+      `
+      import { client } from "./api";
+
+      export async function getUser() {
+        return client.get("/users/1");
+      }
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeAxiosLikePattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("getUser");
+  });
+
+  it("stays silent on a subject the store never ties to a construction", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "other.ts",
+      `
+      function someOtherFactory() {
+        return { get: (url: string) => Promise.resolve(url) };
+      }
+      export const notAClient = someOtherFactory();
+    `,
+    );
+    const file = project.createSourceFile(
+      "consumer.ts",
+      `
+      import { notAClient } from "./other";
+
+      export async function getUser() {
+        return notAClient.get("/users/1");
+      }
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeAxiosLikePattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(0);
+  });
+
+  it("resolves a path-shaped factory module by the file it names, and reuses that answer", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "apiClient.ts",
+      `
+      import axios from "axios";
+      export function createApiClient() {
+        return axios.create({ baseURL: "/api" });
+      }
+    `,
+    );
+    const first = project.createSourceFile(
+      "nested/dir/consumer.ts",
+      `
+      import { createApiClient } from "../../apiClient";
+
+      const api = createApiClient();
+
+      export async function getUser() {
+        return api.get("/users/1");
+      }
+    `,
+    );
+    const second = project.createSourceFile(
+      "nested/other.ts",
+      `
+      import { createApiClient } from "../apiClient";
+
+      const api = createApiClient();
+
+      export async function listOrders() {
+        return api.get("/orders");
+      }
+    `,
+    );
+
+    const factoryPattern: DiscoveryPattern = {
+      kind: "client",
+      match: {
+        type: "clientCall",
+        importModule: "./apiClient",
+        importName: "createApiClient",
+      },
+    };
+
+    // One store across both files, so the second lookup reads the
+    // module resolution the first one cached.
+    const store = new ResolutionStore();
+    const firstUnits = discoverUnits(first, [factoryPattern], store);
+    expect(firstUnits).toHaveLength(1);
+    expect(firstUnits[0].name).toBe("getUser");
+
+    const secondUnits = discoverUnits(second, [factoryPattern], store);
+    expect(secondUnits).toHaveLength(1);
+    expect(secondUnits[0].name).toBe("listOrders");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // multiple patterns combined
 // ---------------------------------------------------------------------------
 

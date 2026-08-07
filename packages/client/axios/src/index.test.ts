@@ -1,7 +1,9 @@
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { createTestProject } from "@suss/test-project";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { axiosPack } from "./index.js";
 
@@ -190,5 +192,415 @@ describe("axiosPack — integration", () => {
     const del = summaries.find((s) => s.identity.name === "deleteUser");
     const delSem = del?.identity.boundaryBinding?.semantics;
     expect(delSem?.name === "rest" ? delSem.method : null).toBe("DELETE");
+  });
+});
+
+describe("axiosPack — instance built in another file", () => {
+  it("discovers a client boundary through an instance imported from another file", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "client.ts",
+      `
+      import axios from "axios";
+      export const api = axios.create({ baseURL: "/api" });
+    `,
+    );
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { api } from "./client";
+
+      export async function getUser(id: string) {
+        return api.get(\`/users/\${id}\`);
+      }
+
+      export async function deleteUser(id: string) {
+        await api.delete(\`/users/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+
+    const get = summaries.find((s) => s.identity.name === "getUser");
+    expect(get?.kind).toBe("client");
+    expect(get?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "axios",
+    });
+
+    const del = summaries.find((s) => s.identity.name === "deleteUser");
+    expect(del?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "DELETE", path: "/users/{id}" },
+      recognition: "axios",
+    });
+  });
+
+  it("resolves a wrapper method whose body forwards to an instance built in another file", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "client.ts",
+      `
+      import axios from "axios";
+      export const api = axios.create({ baseURL: "/api" });
+    `,
+    );
+    project.createSourceFile(
+      "wrapper.ts",
+      `
+      import { api } from "./client";
+
+      export class Api {
+        static get(route: string) {
+          return api.get(route);
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { Api } from "./wrapper";
+
+      export async function getUser(id: string) {
+        return Api.get(\`/users/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+
+    // The wrapper method itself: method extracted, path unresolved
+    // (the path is a forwarded parameter, not a literal).
+    const wrapper = summaries.find((s) => s.identity.name === "get");
+    expect(wrapper).toBeDefined();
+    const wrapperSem = wrapper?.identity.boundaryBinding?.semantics;
+    expect(wrapperSem?.name === "rest" ? wrapperSem.path : "unset").toBeNull();
+
+    // The caller, synthesised by wrapper expansion from its own
+    // literal-path call site.
+    const caller = summaries.find((s) => s.identity.name === "getUser");
+    expect(caller).toBeDefined();
+    expect(caller?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "axios",
+    });
+    expect(
+      (caller?.metadata as { derivedFromWrapper?: { name: string } })
+        ?.derivedFromWrapper?.name,
+    ).toBe("get");
+  });
+
+  it("produces nothing for a call on a subject that never resolves to a known instance", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "client.ts",
+      `
+      function someOtherFactory() {
+        return { get: (url: string) => Promise.resolve(url) };
+      }
+      export const notAnAxiosInstance = someOtherFactory();
+    `,
+    );
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { notAnAxiosInstance } from "./client";
+
+      export async function getUser(id: string) {
+        return notAnAxiosInstance.get(\`/users/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(
+      summaries.find((s) => s.identity.name === "getUser"),
+    ).toBeUndefined();
+  });
+
+  it("honors a configured factory naming a project's own instance-building function", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "apiClient.ts",
+      `
+      import axios from "axios";
+      export function createApiClient() {
+        return axios.create({ baseURL: "/api" });
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { createApiClient } from "./apiClient";
+      export const api = createApiClient();
+    `,
+    );
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { api } from "./client";
+
+      export async function getUser(id: string) {
+        return api.get(\`/users/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [
+        axiosPack({
+          factories: [{ module: "./apiClient", export: "createApiClient" }],
+        }),
+      ],
+    });
+    const summaries = await adapter.extractAll();
+
+    const summary = summaries.find((s) => s.identity.name === "getUser");
+    expect(summary).toBeDefined();
+    expect(summary?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "axios",
+    });
+  });
+
+  it("does not recognize a configured factory when the pack isn't told about it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "apiClient.ts",
+      `
+      import axios from "axios";
+      export function createApiClient() {
+        return axios.create({ baseURL: "/api" });
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { createApiClient } from "./apiClient";
+      export const api = createApiClient();
+    `,
+    );
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { api } from "./client";
+
+      export async function getUser(id: string) {
+        return api.get(\`/users/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(
+      summaries.find((s) => s.identity.name === "getUser"),
+    ).toBeUndefined();
+  });
+
+  it("resolves an instance whose creating file aliases the axios import", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "client.ts",
+      `
+      import ax from "axios";
+      export const api = ax.create({ baseURL: "/api" });
+    `,
+    );
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { api } from "./client";
+
+      export async function getUser(id: string) {
+        return api.get(\`/users/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+
+    const summary = summaries.find((s) => s.identity.name === "getUser");
+    expect(summary).toBeDefined();
+    expect(summary?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "axios",
+    });
+  });
+
+  it("honors a configured factory whose module path differs from how a nested consumer writes it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "apiClient.ts",
+      `
+      import axios from "axios";
+      export function createApiClient() {
+        return axios.create({ baseURL: "/api" });
+      }
+    `,
+    );
+    project.createSourceFile(
+      "nested/dir/consumer.ts",
+      `
+      import { createApiClient } from "../../apiClient";
+
+      const api = createApiClient();
+
+      export async function getUser(id: string) {
+        return api.get(\`/users/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [
+        axiosPack({
+          factories: [{ module: "./apiClient", export: "createApiClient" }],
+        }),
+      ],
+    });
+    const summaries = await adapter.extractAll();
+
+    const summary = summaries.find((s) => s.identity.name === "getUser");
+    expect(summary).toBeDefined();
+    expect(summary?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "axios",
+    });
+  });
+
+  it("still gates a bare-specifier factory by its literal import text", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { createApiClient } from "@acme/api-client";
+
+      const api = createApiClient();
+
+      export async function getUser(id: string) {
+        return api.get(\`/users/\${id}\`);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [
+        axiosPack({
+          factories: [
+            { module: "@acme/api-client", export: "createApiClient" },
+          ],
+        }),
+      ],
+    });
+    const summaries = await adapter.extractAll();
+
+    const summary = summaries.find((s) => s.identity.name === "getUser");
+    expect(summary).toBeDefined();
+    expect(summary?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "axios",
+    });
+  });
+});
+
+describe("axiosPack fixtures", () => {
+  const fixturesDir = path.resolve(__dirname, "../../../../fixtures/axios");
+
+  async function extractFixtures() {
+    const project = createFixtureProject(fixturesDir, "*.ts");
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    return adapter.extractAll();
+  }
+
+  it("summarizes a call on the instance a named import brings in", async () => {
+    const summaries = await extractFixtures();
+    const summary = summaries.find((s) => s.identity.name === "getUser");
+    expect(summary?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "axios",
+    });
+  });
+
+  it("summarizes a call on the instance a default import brings in", async () => {
+    const summaries = await extractFixtures();
+    const summary = summaries.find((s) => s.identity.name === "listOrders");
+    expect(summary?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/orders" },
+      recognition: "axios",
+    });
+  });
+
+  it("summarizes a call on the instance an aliased import brings in", async () => {
+    const summaries = await extractFixtures();
+    const summary = summaries.find((s) => s.identity.name === "createUser");
+    expect(summary?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "POST", path: "/users" },
+      recognition: "axios",
+    });
+  });
+
+  it("summarizes a call on the instance a barrel re-export brings in", async () => {
+    const summaries = await extractFixtures();
+    const summary = summaries.find((s) => s.identity.name === "getReport");
+    expect(summary?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/reports/weekly" },
+      recognition: "axios",
+    });
+  });
+
+  it("keeps the call-site path, and only that, for a dynamic-base instance", async () => {
+    const summaries = await extractFixtures();
+    const summary = summaries.find((s) => s.identity.name === "getSettings");
+    // The base URL is a runtime value. The call site is still a
+    // boundary, and its path is the one written at the call site; the
+    // base never becomes part of the summary, the same as a literal
+    // base on the same-file shape.
+    expect(summary?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/settings" },
+      recognition: "axios",
+    });
   });
 });
