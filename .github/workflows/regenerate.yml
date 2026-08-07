@@ -30,9 +30,13 @@ jobs:
   regenerate:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
+      # The push below must clear the main ruleset, which blocks direct
+      # pushes. The workflow token cannot bypass it (the Actions app is
+      # not addable as a bypass actor), so the checkout authenticates
+      # with a write deploy key, and the ruleset exempts deploy keys.
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ssh-key: ${{ secrets.REGENERATE_DEPLOY_KEY }}
           fetch-depth: 0
 
       # This workflow's own commit lands on main and triggers this same
@@ -88,8 +92,9 @@ jobs:
       # name rather than `git add -A` keeps it that way on purpose.
       #
       # A concurrent push can land between the checkout and the push
-      # below, so rebase against the remote tip and retry once. If it
-      # still races, skip: the next push to main re-triggers this.
+      # below, so rebase against the remote tip and retry once. A
+      # rejection that survives the retry fails the run: a rejection
+      # that kept no-oping green would let baselines drift unnoticed.
       - name: Commit and push if anything changed
         if: steps.guard.outputs.skip == 'false'
         env:
@@ -119,5 +124,5 @@ jobs:
             }
           done
 
-          echo "Push still rejected after a rebase and a retry, skipping."
-          exit 0
+          echo "Push still rejected after a rebase and a retry. Failing so the rejection is visible instead of drifting silently."
+          exit 1
