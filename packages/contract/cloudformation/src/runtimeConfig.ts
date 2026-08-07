@@ -21,7 +21,7 @@ import {
   runtimeConfigBinding,
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
-import { codeScopePath } from "@suss/ir-core";
+import { codeScopePath, ecsContainerInstanceName } from "@suss/ir-core";
 import { refTarget } from "@suss/manifest-aws";
 
 import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
@@ -174,8 +174,10 @@ function buildEcsTaskSummaries(
     const templateVars = readEcsEnvironmentList(envEntries);
     const summary = buildSummary({
       // ECS gives one summary per container, distinguished by the
-      // composed instance name `${TaskLogicalId}/${ContainerName}`.
-      logicalId: `${logicalId}/${containerName}`,
+      // composed instance name. The ALB flow reader's `fronts` edges
+      // name the same container the same way, so the two agree without
+      // either one importing the other.
+      logicalId: ecsContainerInstanceName(logicalId, containerName),
       sourceFile,
       deploymentTarget: "ecs-task",
       templateVars,

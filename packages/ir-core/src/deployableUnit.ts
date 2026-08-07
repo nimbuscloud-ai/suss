@@ -22,3 +22,17 @@ export const DeployableUnitSchema = z.object({
 });
 
 export type DeployableUnit = z.infer<typeof DeployableUnitSchema>;
+
+/**
+ * The `instanceName` an ECS task's container carries: the task
+ * definition's own logical id and the container name CFN's
+ * `ContainerDefinitions[*].Name` declares, composed the one way every
+ * writer of an ECS `DeployableUnit` and every reader matching a
+ * routing edge against one has to agree on.
+ */
+export function ecsContainerInstanceName(
+  taskDefinitionLogicalId: string,
+  containerName: string,
+): string {
+  return `${taskDefinitionLogicalId}/${containerName}`;
+}
