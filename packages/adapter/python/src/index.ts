@@ -24,6 +24,7 @@ export {
 } from "./moduleResolver.js";
 export { parsePython } from "./parser.js";
 export { extractPythonProject, findPythonFiles } from "./project.js";
+export { buildRouterIndex } from "./routers.js";
 export { bindModule, resolveName } from "./scope.js";
 
 export type { AnnotationContext } from "./annotations.js";
@@ -39,7 +40,13 @@ export type {
   DecoratedFunctionRoute,
   PythonDiscoveryPattern,
   PythonPack,
+  RouterComposition,
 } from "./pack.js";
 export type { PyNode, PyTree } from "./parser.js";
 export type { ExtractPythonOptions, ExtractPythonResult } from "./project.js";
+export type {
+  BoundPythonFile,
+  RoutePrefixResolution,
+  RouterIndex,
+} from "./routers.js";
 export type { Binding, ModuleBinding, Scope, ScopeKind } from "./scope.js";

@@ -1,9 +1,8 @@
 """A FastAPI-style route file, for the annotation-reading side of the
 Python adapter's v0 slice: parameter annotations, a return annotation,
-and a response model class read as a declared shape. Not wired to a
-shipped FastAPI pack yet (that's a later slice); the adapter's generic
-decorated-function-route discovery covers it once a pack config names
-"fastapi" as an accepted module.
+and a response model class read as a declared shape. Read through an
+inline pack config in the flask-restx package's extraction test; the
+shipped FastAPI pack (@suss/framework-fastapi) has its own fixture.
 """
 
 from typing import Optional

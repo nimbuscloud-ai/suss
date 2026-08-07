@@ -16,10 +16,12 @@ import { assembleSummary } from "@suss/extractor";
 import { discoverUnits } from "./discovery.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
+import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PythonPack } from "./pack.js";
+import type { BoundPythonFile } from "./routers.js";
 
 export interface ExtractPythonOptions {
   /** Absolute paths of the files to parse and extract. */
@@ -42,10 +44,26 @@ export async function extractPythonProject(
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
 
+  // Parse and bind everything first: a route's path can depend on a
+  // mount call in another file (a router constructed here, included
+  // there), so the router index has to see the whole project before
+  // any file's discovery runs.
+  const bound: BoundPythonFile[] = [];
   for (const file of options.files) {
     const source = fs.readFileSync(file, "utf8");
     const tree = await parsePython(source);
-    const moduleBinding = bindModule(tree.rootNode);
+    bound.push({
+      file,
+      root: tree.rootNode,
+      module: bindModule(tree.rootNode),
+    });
+  }
+
+  const routerIndex = buildRouterIndex(bound, options.packs, {
+    roots: options.roots,
+  });
+
+  for (const { file, root, module: moduleBinding } of bound) {
     // Facts key on the filesystem path throughout, since they're an
     // internal join surface rather than user-facing text. The
     // summary's own `location.file` is what a project's workspace
@@ -55,9 +73,10 @@ export async function extractPythonProject(
         ? path.relative(options.workspaceRoot, file)
         : file;
 
-    const rawUnits = discoverUnits(tree.rootNode, moduleBinding, {
+    const rawUnits = discoverUnits(root, moduleBinding, {
       packs: options.packs,
       filePath: displayPath,
+      routerIndex,
     });
     for (const raw of rawUnits) {
       const summary = assembleSummary(raw, { gapHandling: "permissive" });

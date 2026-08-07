@@ -1,0 +1,61 @@
+{
+  "name": "@suss/framework-fastapi",
+  "version": "0.3.2",
+  "type": "module",
+  "description": "Pattern pack for extracting suss behavioral summaries from FastAPI routes, composing APIRouter prefixes one include hop deep.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "framework-pack",
+    "fastapi",
+    "python",
+    "static-analysis"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/fastapi#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/framework/fastapi"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/adapter-python": "0.3.2"
+  },
+  "devDependencies": {
+    "@suss/checker": "*",
+    "@suss/behavioral-ir": "*",
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

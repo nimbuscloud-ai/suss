@@ -1,0 +1,9 @@
+{
+  "fastapi": "FastAPI: the package the app and router constructors are imported from, and this pack's name",
+  "APIRouter": "FastAPI: the mountable router constructor",
+  "include_router": "FastAPI: the method that mounts a router onto the app",
+  "prefix": "FastAPI: the path-prefix keyword on APIRouter(...) and include_router(...)",
+  "response_model": "FastAPI: route-decorator keyword naming the declared response body model",
+  "status_code": "FastAPI: route-decorator keyword naming the declared response status",
+  "decoratedFunctionRoute": "suss: PythonDiscoveryPattern variant tag, defined in @suss/adapter-python"
+}

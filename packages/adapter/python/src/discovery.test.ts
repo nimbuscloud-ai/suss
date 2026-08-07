@@ -256,6 +256,31 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     expect(listItems?.branches[0]?.terminal.body?.shape?.type).toBe("ref");
   });
 
+  it("keeps a route whose path is not a literal, with no path and a stated gap", async () => {
+    const dynamicPath = [
+      "from fastapi import FastAPI",
+      "",
+      "app = FastAPI()",
+      "",
+      'SECTION = "summary"',
+      "",
+      "",
+      '@app.get("/reports/" + SECTION)',
+      "def report():",
+      "    pass",
+      "",
+    ].join("\n");
+    const units = await unitsOf(dynamicPath, [fastapiLike]);
+    const report = units.find((u) => u.identity.name === "report");
+    expect(report).toBeDefined();
+    expect(report?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(report?.unreadBinding).toContain("not a string literal");
+  });
+
   it("carries the response model's record shape in definitions", async () => {
     const units = await unitsOf(source, [fastapiLike]);
     const createItem = units.find((u) => u.identity.name === "create_item");
