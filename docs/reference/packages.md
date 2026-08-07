@@ -2,7 +2,7 @@
 
 suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and contract sources a project uses. Install the CLI and only the packs you need; nothing pulls in the whole set.
 
-Nineteen packs read code today, across fifteen frameworks, three HTTP and GraphQL clients, and the Node runtime. Seven contract readers turn a declared artifact into the same summary shape. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
+Twenty packs read code today, across sixteen frameworks, three HTTP and GraphQL clients, and the Node runtime. Seven contract readers turn a declared artifact into the same summary shape. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
 
 ## Install by stack
 
@@ -38,6 +38,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/resolution`](../../packages/resolution) | Datalog rules for following a value to the function it comes down to: a factory's argument, a re-exported wrapper, a closure three levels down. Language-neutral, so an adapter supplies facts and inherits the rules. | ![](../../.github/badges/coverage-resolution.svg) |
 | [`@suss/extractor`](../../packages/extractor) | Assembly engine. Converts raw extracted structure into `BehavioralSummary`. | ![](../../.github/badges/coverage-extractor.svg) |
 | [`@suss/adapter-typescript`](../../packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](../../.github/badges/coverage-typescript.svg) |
+| [`@suss/adapter-python`](../../packages/adapter/python) | Python language adapter: tree-sitter (WASM) parsing, a lexical binder, repo-scoped module resolution. v0, no path-engine work yet. | ![](../../.github/badges/coverage-python.svg) |
 | [`@suss/checker`](../../packages/checker) | Pairwise cross-boundary checker (behavioral). | ![](../../.github/badges/coverage-checker.svg) |
 | [`@suss/checker-intent`](../../packages/checker-intent) | Pairs team-authored intent against derived code; emits `IntentFinding` coverage. | ![](../../.github/badges/coverage-checker-intent.svg) |
 | [`@suss/cli`](../../packages/cli) | CLI wrapper. | ![](../../.github/badges/coverage-cli.svg) |
@@ -61,6 +62,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls, emits message-send interactions. | ![](../../.github/badges/coverage-aws-sqs.svg) |
 | [`@suss/framework-aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
 | [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | ![](../../.github/badges/coverage-aws-lambda.svg) |
+| [`@suss/framework-flask-restx`](../../packages/framework/flask-restx) | flask-restx `Resource` routes (Python), including a project's own wrapper module re-exporting the route decorator. | ![](../../.github/badges/coverage-flask-restx.svg) |
 
 ## Clients
 
