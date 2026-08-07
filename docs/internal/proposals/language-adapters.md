@@ -166,23 +166,26 @@ responseSemantics, vocabulary) are declared as such so only match
 shapes fork; and every new Python match type records its TS
 analogue or states that none exists.
 
-**Ruby's risk named precisely.** `routes.rb` is not a manifest; it
-is an executable DSL where `resources :orders` expands to up to
-seven routes under the interaction of nesting, `only`, `member`,
-and concerns, evaluated by Rails at boot. Recovering routes
-statically means modeling that macro expansion by hand, and the
-TypeScript adapter treats its nearest analogue (registration
-loops) as a scoped-down edge case, where for Ruby it would be the
-primary boundary source. The Ruby baseline exists to price exactly
-this, and no Ruby commitment lands before it does. The target
-profile is Rails including its GraphQL side: graphql-ruby declares
-types and fields through a class-based DSL (field and argument
-calls with literal names and types), which is statically readable
-the way decorator routes are, and the graphql semantics variants
-already in the registry mean a Ruby resolver pairs against a
-TypeScript client with no new checker work. The Ruby corpus is the
-platform repo; it gets the same read-only characterization when
-reachable.
+**Ruby, now measured.** The baseline ran over the two private
+Rails repos and inverted the guessed priorities. The dominant
+surface is graphql-ruby, not routes: two thousand field
+declarations, effectively all of them literal type references,
+directly or one named-class hop away, none computed. The corpus
+never uses the resources macro at all, so the priced
+macro-expansion risk retires for these repos; the route risks that
+exist are gem macros (an auth gem's route helper), mounted
+engines, constraint blocks, and route data indirected through a
+checked-in JSON file, and a reader records those as unbounded
+rather than silently dropping them, since the baseline showed one
+concrete false negative from an unexpanded macro. The Ruby slice
+order therefore flips: a graphql-ruby field and type reader first,
+pairing immediately against the apollo-client extraction that
+already works on their frontends, then routes.rb with the opacity
+conventions above. Pairing off checked-in SDL dumps works today;
+the adapter's value is source truth and backend scoping, since the
+baseline caught a wrong-provider false positive where one frontend
+speaks to two GraphQL backends and only source-level scoping tells
+them apart.
 
 **Verification, restated so this document stands alone.** The
 roadmap's answer carries over unchanged and is the answer here
