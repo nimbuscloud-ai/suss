@@ -492,6 +492,57 @@ describe("enumerateStructuredPaths, switch", () => {
       'positive:explicit:kind === "a"',
     ]);
   });
+
+  it("degrades on a break sitting in a group's own body, even when hasTrailingBreak says false", () => {
+    // A lowering that reports hasTrailingBreak: false must still put a
+    // break it finds into the group's own body for the engine to see,
+    // not drop it (a block-wrapped `case "a": { const tag = f(); break; }`
+    // unwraps this way: the break was never the clause's own top-level
+    // last statement, so hasTrailingBreak is false, but it still ends up
+    // as the last node of `body`). The engine's own stray-break scan is
+    // what has to catch this, whatever a lowering hands it.
+    const statements = [
+      mkSwitch([group('kind === "a"', false, [opq(), brk()])]),
+    ];
+
+    expect(() =>
+      enumerateStructuredPaths({ statements, terminalsByStmt: new Map() }),
+    ).toThrow(UnmodeledFlow);
+  });
+
+  it("degrades the same way whether the group is last or has a group after it", () => {
+    const withFollowingGroup = [
+      mkSwitch([
+        group('kind === "a"', false, [opq(), brk()]),
+        group(null, false, [ret()]),
+      ]),
+    ];
+    const withoutFollowingGroup = [
+      mkSwitch([group('kind === "a"', false, [opq(), brk()])]),
+    ];
+
+    let lastReason: string | null = null;
+    let onlyReason: string | null = null;
+    try {
+      enumerateStructuredPaths({
+        statements: withFollowingGroup,
+        terminalsByStmt: new Map(),
+      });
+    } catch (err) {
+      lastReason = err instanceof Error ? err.message : String(err);
+    }
+    try {
+      enumerateStructuredPaths({
+        statements: withoutFollowingGroup,
+        terminalsByStmt: new Map(),
+      });
+    } catch (err) {
+      onlyReason = err instanceof Error ? err.message : String(err);
+    }
+
+    expect(lastReason).toBe("non-trailing break in switch clause");
+    expect(onlyReason).toBe("non-trailing break in switch clause");
+  });
 });
 
 describe("enumerateStructuredPaths, path budget", () => {

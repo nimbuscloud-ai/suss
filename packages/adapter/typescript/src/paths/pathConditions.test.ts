@@ -692,3 +692,50 @@ describe("computePathConditions, no body to read", () => {
     );
   });
 });
+
+describe("computePathConditions, a block-wrapped case body ending in break", () => {
+  it("degrades even when the block-wrapped clause is the only one (no default follows)", () => {
+    const fn = getFunction(`
+      export function handler(req: { query: { kind: string } }, res: any) {
+        switch (req.query.kind) {
+          case "a": {
+            const tag = computeTag();
+            break;
+          }
+        }
+        return res.status(200).json({ ok: true });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    const [only] = result.byTerminal.get(terminals[0]) ?? [];
+    expect(only?.[only.length - 1]?.sourceText).toContain(
+      "unmodeled control flow (non-trailing break in switch clause)",
+    );
+  });
+
+  it("degrades the whole function, matching the legacy scanner exactly", () => {
+    const fn = getFunction(`
+      export function handler(req: { query: { kind: string } }, res: any) {
+        switch (req.query.kind) {
+          case "a": {
+            const tag = computeTag();
+            break;
+          }
+          default:
+            return res.status(400).json({ error: "bad" });
+        }
+        return res.status(200).json({ ok: true });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    expect(terminals).toHaveLength(2);
+    const result = computePathConditions(fn, terminals);
+    for (const terminal of terminals) {
+      const [only] = result.byTerminal.get(terminal) ?? [];
+      expect(only?.[only.length - 1]?.sourceText).toContain(
+        "unmodeled control flow (non-trailing break in switch clause)",
+      );
+    }
+  });
+});

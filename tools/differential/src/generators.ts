@@ -16,6 +16,8 @@ import type {
   GuardStmt,
   HandlerProgram,
   ReqField,
+  SwitchClause,
+  SwitchDefaultClause,
   Terminal,
 } from "./program.js";
 
@@ -24,9 +26,15 @@ export interface FuzzTier {
   nested: boolean;
   /** Allow guards inside for-of loops (sound since the CFG path engine). */
   loops: boolean;
+  /** Allow switch guards, including the block-wrapped clause shape lowering unwraps (sound since that unwrap landed). */
+  switches: boolean;
 }
 
-export const SOUND_TIER: FuzzTier = { nested: true, loops: true };
+export const SOUND_TIER: FuzzTier = {
+  nested: true,
+  loops: true,
+  switches: true,
+};
 
 const KEYS_BY_SOURCE: Record<FieldSource, string[]> = {
   params: ["id", "slug"],
@@ -155,6 +163,61 @@ export const arbLoopGuard: fc.Arbitrary<GuardStmt> = fc
       ),
   );
 
+/** Distinct case-label literals, positionally assigned to a program's clauses. */
+const SWITCH_CASE_VALUES = ["alpha", "beta", "gamma", "delta"];
+
+interface SwitchClauseSpec {
+  type: "break" | "blockBreak" | "return" | "fallthrough";
+  terminal: Terminal;
+}
+
+const arbSwitchClauseSpec: fc.Arbitrary<SwitchClauseSpec> = fc.record({
+  type: fc.constantFrom<SwitchClauseSpec["type"]>(
+    "break",
+    "blockBreak",
+    "return",
+    "fallthrough",
+  ),
+  terminal: arbTerminal,
+});
+
+const toSwitchClause = (spec: SwitchClauseSpec, value: string): SwitchClause =>
+  spec.type === "fallthrough"
+    ? { value, type: "fallthrough" }
+    : { value, type: spec.type, terminal: spec.terminal };
+
+/** The default clause never falls through. A switch with no default would leave an unmatched value with no response at all. */
+const arbSwitchDefaultSpec: fc.Arbitrary<SwitchDefaultClause> = fc.record({
+  type: fc.constantFrom<SwitchDefaultClause["type"]>(
+    "break",
+    "blockBreak",
+    "return",
+  ),
+  terminal: arbTerminal,
+});
+
+export const arbSwitchGuard: fc.Arbitrary<GuardStmt> = fc
+  .record({
+    field: arbField,
+    specs: fc.array(arbSwitchClauseSpec, { minLength: 2, maxLength: 4 }),
+    defaultClause: arbSwitchDefaultSpec,
+  })
+  .map(({ field, specs, defaultClause }): GuardStmt => {
+    // A trailing fallthrough clause has nothing to stack into, so give
+    // the last clause a body instead. Every generated fallthrough
+    // clause then always stacks into a non-empty one, and is worth having.
+    const lastIndex = specs.length - 1;
+    const fixed = specs.map((spec, i) =>
+      i === lastIndex && spec.type === "fallthrough"
+        ? ({ type: "break", terminal: spec.terminal } as SwitchClauseSpec)
+        : spec,
+    );
+    const clauses = fixed.map((spec, i) =>
+      toSwitchClause(spec, SWITCH_CASE_VALUES[i % SWITCH_CASE_VALUES.length]),
+    );
+    return { type: "switchGuard", field, clauses, defaultClause };
+  });
+
 function arbGuardStmt(tier: FuzzTier): fc.Arbitrary<GuardStmt> {
   const arms: fc.WeightedArbitrary<GuardStmt>[] = [
     { weight: 4, arbitrary: arbGuard },
@@ -164,6 +227,9 @@ function arbGuardStmt(tier: FuzzTier): fc.Arbitrary<GuardStmt> {
   }
   if (tier.loops) {
     arms.push({ weight: 3, arbitrary: arbLoopGuard });
+  }
+  if (tier.switches) {
+    arms.push({ weight: 3, arbitrary: arbSwitchGuard });
   }
   return fc.oneof(...arms);
 }

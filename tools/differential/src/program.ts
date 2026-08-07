@@ -33,12 +33,48 @@ export interface Terminal {
 }
 
 /**
+ * One switch/case clause. `break` and `return` are the sound
+ * trailing-exit shapes; `blockBreak` wraps the same body in braces
+ * (`case v: { respond; break; }`), the shape lowering unwraps so the
+ * engine's stray-break scan can see the break instead of an opaque
+ * block; `fallthrough` is an empty clause that stacks its label onto
+ * the next non-empty one, TypeScript's own case-grouping grammar.
+ */
+export type SwitchClause =
+  | { value: string; type: "break"; terminal: Terminal }
+  | { value: string; type: "blockBreak"; terminal: Terminal }
+  | { value: string; type: "return"; terminal: Terminal }
+  | { value: string; type: "fallthrough" };
+
+/**
+ * The switch's mandatory `default` clause. A `switchGuard` always
+ * carries one (never `fallthrough`, never absent), so the switch is
+ * exhaustive: every possible field value produces exactly one
+ * response from inside it. A "break" clause only exits the switch,
+ * not the function, so an unmatched value with no default would fall
+ * through to whatever guard or final statement comes next. A
+ * matched-and-broken clause has the same problem, closed the same
+ * way, in the renderer below.
+ */
+export interface SwitchDefaultClause {
+  type: "break" | "blockBreak" | "return";
+  terminal: Terminal;
+}
+
+/**
  * Statements that may appear before the final response.
  *
  * - `guard` is the sound construct: a top-level `if (c) { respond; return; }`.
  * - `nestedGuard` and `blockGuard` are the documented nested-guard gap
  *   shapes (guards one block deep).
  * - `loopGuard` is the documented loop-return gap shape.
+ * - `switchGuard` dispatches on one field's literal value; clauses mix
+ *   the sound trailing-break/return/fallthrough shapes with the
+ *   block-wrapped one, which lowering declines and degrades rather
+ *   than modeling. Rendered with a mandatory `default` and an
+ *   unconditional `return` right after the switch, so it always
+ *   produces exactly one response and never falls through to
+ *   whatever's next, matching every other guard shape's own contract.
  */
 export type GuardStmt =
   | { type: "guard"; cond: Cond; terminal: Terminal }
@@ -55,6 +91,12 @@ export type GuardStmt =
       source: FieldSource;
       keys: string[];
       terminal: Terminal;
+    }
+  | {
+      type: "switchGuard";
+      field: ReqField;
+      clauses: SwitchClause[];
+      defaultClause: SwitchDefaultClause;
     };
 
 export type FinalStmt =
@@ -108,6 +150,58 @@ export function renderCond(cond: Cond): string {
  */
 export type TerminalRenderer = (terminal: Terminal) => string;
 
+/**
+ * The lines a clause's body renders to, once its exit shape (break /
+ * blockBreak / return) is known. Shared between case clauses and the
+ * mandatory default clause, which carry the same three exit shapes.
+ */
+const EXIT_BODY_LINES: Record<
+  "break" | "blockBreak" | "return",
+  (terminal: Terminal, renderTerminal: TerminalRenderer) => string[]
+> = {
+  break: (terminal, renderTerminal) => [
+    `    ${renderTerminal(terminal)};`,
+    "    break;",
+  ],
+  blockBreak: (terminal, renderTerminal) => [
+    "    {",
+    `      ${renderTerminal(terminal)};`,
+    "      break;",
+    "    }",
+  ],
+  return: (terminal, renderTerminal) => [
+    `    ${renderTerminal(terminal)};`,
+    "    return;",
+  ],
+};
+
+function renderSwitchClause(
+  clause: SwitchClause,
+  renderTerminal: TerminalRenderer,
+): string[] {
+  const caseLine = `  case ${JSON.stringify(clause.value)}:`;
+  if (clause.type === "fallthrough") {
+    return [caseLine];
+  }
+  return [
+    caseLine,
+    ...EXIT_BODY_LINES[clause.type](clause.terminal, renderTerminal),
+  ];
+}
+
+function renderSwitchDefaultClause(
+  defaultClause: SwitchDefaultClause,
+  renderTerminal: TerminalRenderer,
+): string[] {
+  return [
+    "  default:",
+    ...EXIT_BODY_LINES[defaultClause.type](
+      defaultClause.terminal,
+      renderTerminal,
+    ),
+  ];
+}
+
 function guardRenderers(
   renderTerminal: TerminalRenderer,
 ): DispatchTable<GuardStmt, string[]> {
@@ -143,6 +237,19 @@ function guardRenderers(
       "    return;",
       "  }",
       "}",
+    ],
+    switchGuard: (stmt) => [
+      `switch (${renderField(stmt.field)}) {`,
+      ...stmt.clauses.flatMap((clause) =>
+        renderSwitchClause(clause, renderTerminal),
+      ),
+      ...renderSwitchDefaultClause(stmt.defaultClause, renderTerminal),
+      "}",
+      // Every case either returns directly or breaks out of the
+      // switch, and the mandatory default catches every value the
+      // case clauses don't, so this line is always reached exactly
+      // once a case has already responded, never before.
+      "return;",
     ],
   };
 }
@@ -209,6 +316,7 @@ const GUARD_FIELDS: DispatchTable<GuardStmt, ReqField[]> = {
   nestedGuard: (stmt) => [...condFields(stmt.outer), ...condFields(stmt.inner)],
   blockGuard: (stmt) => [...condFields(stmt.outer), ...condFields(stmt.inner)],
   loopGuard: (stmt) => stmt.keys.map((key) => ({ source: stmt.source, key })),
+  switchGuard: (stmt) => [stmt.field],
 };
 
 const FINAL_FIELDS: DispatchTable<FinalStmt, ReqField[]> = {
@@ -267,6 +375,10 @@ const GUARD_COMPARED: DispatchTable<GuardStmt, (field: ReqField) => string[]> =
       ...condComparedValues(stmt.inner, field),
     ],
     loopGuard: () => () => [],
+    switchGuard: (stmt) => (field) =>
+      stmt.field.source === field.source && stmt.field.key === field.key
+        ? stmt.clauses.map((clause) => clause.value)
+        : [],
   };
 
 const FINAL_COMPARED: DispatchTable<FinalStmt, (field: ReqField) => string[]> =
