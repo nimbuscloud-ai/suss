@@ -1,6 +1,6 @@
 # @suss/checker
 
-Pairwise cross-boundary checker. Given two `BehavioralSummary` objects (one provider, one consumer) produces a list of `Finding`s describing mismatches.
+Pairwise cross-boundary checker. Given two `BehavioralSummary` objects (one provider, one consumer), it produces a list of `Finding`s describing mismatches.
 
 ## What this package is
 
@@ -17,15 +17,15 @@ const result = checkAll(summaries);
 // result.findings, result.pairs, result.unmatched
 ```
 
-No I/O, no persistence, no opinions about where the summaries came from. Hand-authored JSON, extractor output, or pinned baselines: they're all the same shape.
+The checker does no I/O, keeps nothing on disk, and takes no view on where the summaries came from. Hand-authored JSON, extractor output, and pinned baselines all have the same structure.
 
-## Where it sits in suss
+## Where it fits in suss
 
-Depends only on `@suss/behavioral-ir`. The extractor, adapters, and framework packs produce the summaries it consumes, but the checker has no runtime dependency on them; it operates on the serialized IR rather than AST or compiler state. See [`docs/architecture.md`](../../docs/architecture.md).
+The checker depends only on `@suss/behavioral-ir`. The extractor, adapters, and framework packs produce the summaries it consumes, but the checker has no runtime dependency on them. It works on the serialized IR rather than on the AST or compiler state. See [`docs/architecture.md`](../../docs/architecture.md).
 
 ## Status
 
-Six checks: provider coverage (with sub-case analysis), consumer satisfaction, contract consistency (status + body shapes), body compatibility (field presence), semantic condition bridging (Level 5). Automatic boundary pairing via `checkAll` / `pairSummaries` with path normalization (`:id` ↔ `{id}`). See [`docs/status.md`](../../docs/status.md).
+The checker runs six checks: provider coverage (with sub-case analysis), consumer satisfaction, contract consistency (status and body shapes), body compatibility (field presence), and semantic condition bridging (Level 5). It pairs boundaries automatically through `checkAll` / `pairSummaries`, normalizing paths as it goes (`:id` ↔ `{id}`). See [`docs/status.md`](../../docs/status.md).
 
 ## Coverage
 

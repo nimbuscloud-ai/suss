@@ -25,19 +25,19 @@ export const getUser = async ({ params }: { params: { id: string } }) => {
 };
 ```
 
-becomes two transitions: one returns 404 when `user` is null, the other returns 200 with a `User` shape. The output isn't "this returns a Promise<{ status, body }>", it's the conditions under which each shape comes out, expressed structurally enough to compare against the contract on the other side.
+becomes two transitions: one returns 404 when `user` is null, the other returns 200 with a `User` body. The output isn't "this returns a Promise<{ status, body }>", it's the conditions under which each result comes out, expressed structurally enough to compare against the contract on the other side.
 
 ### What counts as a boundary
 
-The example above is HTTP, but suss treats "boundary" generally, anywhere code interacts with something whose other side might disagree. The HTTP example is one shape. A package export is another: you publish `parseConfig(input: string)`, someone imports it, the boundary is the function signature and the consumers are every call site in every package that imports it. Same machinery in both cases, discover the producer, discover the consumers, extract behavior, pair, compare.
+The example above is HTTP, but suss treats "boundary" generally, anywhere code interacts with something whose other side might disagree. The HTTP example is one kind of boundary. A package export is another: you publish `parseConfig(input: string)`, someone imports it, the boundary is the function signature and the consumers are every call site in every package that imports it. The machinery is the same in both cases: discover the producer, discover the consumers, extract behavior, pair the two sides, compare them.
 
 ### What pairing summaries lets you do
 
-Two summaries from anywhere in the system get compared by the same checker. Frontend ↔ backend, declared contract ↔ implementation, library ↔ caller. The summary format being uniform is what makes the comparisons composable; the checker doesn't care which frameworks produced its inputs.
+Two summaries from anywhere in the system get compared by the same checker. Frontend ↔ backend, declared contract ↔ implementation, library ↔ caller. Because every summary comes out in the same format, the comparisons compose; the checker doesn't care which frameworks produced its inputs.
 
 ## Data flow
 
-Extraction is a straight line with one intermediate data shape, `RawCodeStructure`, between the AST-shaped layer (the adapter) and the assembly layer (the extractor):
+Extraction is a straight line with one intermediate data structure, `RawCodeStructure`, between the layer that touches the AST (the adapter) and the assembly layer (the extractor):
 
 <svg class="suss-diagram" viewBox="0 0 660 412" role="img" aria-labelledby="pipeline-title pipeline-desc">
   <title id="pipeline-title">The extraction pipeline</title>
@@ -84,7 +84,7 @@ Extraction is a straight line with one intermediate data shape, `RawCodeStructur
 
 See [`pipelines.md`](pipelines.md) for per-CLI-action walkthroughs.
 
-The split between adapter and extractor is deliberate. The extractor never sees an AST node, it works on `RawCodeStructure`, a plain data shape. This means:
+The split between adapter and extractor is deliberate. The extractor never sees an AST node, it works on `RawCodeStructure`, a plain data structure. This means:
 
 1. **The extractor is directly testable** with hand-crafted input. Tests run in milliseconds, no compiler involved.
 2. **Adding a new language** means writing a new adapter that produces `RawCodeStructure`. The extractor doesn't change.
@@ -172,17 +172,17 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
 
 - `@suss/ir-core`: one peer dep on `zod`. Primitives both IRs share (`TypeShape`, `BoundaryBinding` + `boundaryKey`, `SourceLocation`, `ConfidenceInfo`) plus the comparison primitives both checkers share (`bodyShapesMatch`). Intent and behavior describe boundaries the same way because they build on the same vocabulary; neither IR depends on the other.
 - `@suss/behavioral-ir`: one peer dep on `zod`. Runtime validators (`parseSummaries`, `safeParseSummaries`) and the generated JSON Schema both come from the zod schemas. This is what downstream consumers install.
-- `@suss/intent-ir`: depends on `ir-core` only. Authoring schema (`IntentDoc`), checkable form (`IntentSummary`), and the intent finding shape (`IntentFinding`, deliberately not the behavioral `Finding`, which is a two-sided peer comparison; intent findings are one-sided coverage).
+- `@suss/intent-ir`: depends on `ir-core` only. Authoring schema (`IntentDoc`), checkable form (`IntentSummary`), and the type for intent findings (`IntentFinding`, deliberately not the behavioral `Finding`, which is a two-sided peer comparison; intent findings are one-sided coverage).
 - `@suss/contract-intent`: reader for `*.intent` / `*.prd` files. Unlike the other `contract-*` readers it produces `IntentSummary`, not `BehavioralSummary`: intent is a separate artifact stream that gets *compared against* behavior, not folded into it.
-- `@suss/checker-intent`: depends on both IRs (it compares them) and `ir-core`. Pure function `checkIntentAgreement(intents, code)` → findings + checked / unchecked accounting. Peer of `@suss/checker`, not a dependency of it.
+- `@suss/checker-intent`: depends on both IRs (it compares them) and `ir-core`. It exposes one pure function, `checkIntentAgreement(intents, code)`, which returns findings plus the checked / unchecked accounting. Peer of `@suss/checker`, not a dependency of it.
 - `@suss/extractor`: depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript`: depends on IR, extractor, ts-morph, `@suss/datalog` for its whole-program passes, and `@suss/resolution` for the rules those passes join on. The heavyweight package.
-- `@suss/datalog`: zero dependencies. A small semi-naive Datalog evaluator with stratified negation; rules are plain data. Knows nothing about the IR or the AST, which is the point: analyses written against fact shapes stay language-independent.
-- `@suss/resolution`: a list of Datalog rules and nothing else. No parser, no language, no files. The rules answer one question, which function does this value come down to, and they compose one hop at a time, so a factory handing off to another factory or a barrel re-exporting a wrapper resolves without a rule naming that shape. An adapter reads source into facts (`binds`, `paramOf`, `callArg`, `reExports`, and a handful more), concatenates its own rules, and evaluates on `@suss/datalog`. When an answer comes back empty, suspect the facts before the rules. See `packages/resolution/README.md` for the fact vocabulary and the shapes deliberately left unresolved.
+- `@suss/datalog`: zero dependencies. A small semi-naive Datalog evaluator with stratified negation; rules are plain data. It knows nothing about the IR or the AST, which is the point: analyses written against fact patterns stay language-independent.
+- `@suss/resolution`: a list of Datalog rules and nothing else. No parser, no language, no files. The rules answer one question, which function does this value come down to, and they compose one hop at a time, so a factory handing off to another factory, or a barrel re-exporting a wrapper, resolves without a rule written for that case specifically. An adapter reads source into facts (`binds`, `paramOf`, `callArg`, `reExports`, and a handful more), concatenates its own rules, and evaluates on `@suss/datalog`. When an answer comes back empty, suspect the facts before the rules. See `packages/resolution/README.md` for the fact vocabulary and the cases deliberately left unresolved.
 - **All pack kinds** (framework, client, runtime), depend only on `@suss/extractor` for the `PatternPack` type, plus `@suss/manifest-*` packages where discovery is manifest-driven. They're data, not logic.
-- `@suss/manifest-*` packages, parse deploy manifests (SAM/CFN templates) into plain data. No IR, no `@suss` dependencies. Both contract readers (manifest as specification) and framework packs (manifest as discovery index) read through them; the parse lives once, and neither witness depends on the other.
-- `@suss/contract-*` packages, depend only on the IR, plus on each other where they compose (`cloudformation` delegates to `openapi` + `aws-apigateway`). Produce `BehavioralSummary[]` from specs, manifests, schemas; carry `confidence.source: "derived"`. See [`contract-sources.md`](contract-sources.md).
-- `@suss/checker`: depends only on the IR. Pure function over two `BehavioralSummary` values → `Finding[]`. Knows nothing about extraction, AST, or packs, operates on the serialized IR.
+- `@suss/manifest-*` packages, parse deploy manifests (SAM/CFN templates) into plain data. No IR, no `@suss` dependencies. Both contract readers (manifest as specification) and framework packs (manifest as discovery index) read through them; the parsing happens in one place, and neither side depends on the other.
+- `@suss/contract-*` packages, depend only on the IR, plus on each other where they compose (`cloudformation` delegates to `openapi` + `aws-apigateway`). They produce `BehavioralSummary[]` from specs, manifests and schemas, and mark what they produce `confidence.source: "derived"`. See [`contract-sources.md`](contract-sources.md).
+- `@suss/checker`: depends only on the IR. A pure function over two `BehavioralSummary` values → `Finding[]`. It knows nothing about extraction, the AST, or packs; it works on the serialized IR.
 - `@suss/cli`: depends on everything; dynamically imports the adapter so CLI startup doesn't pay the ts-morph cost unless extraction actually runs. The CLI is the one place that loads both summary streams (behavioral and intent) and dispatches each to its checker. The checkers stay IR-only consumers and never depend on each other.
 
 ### Ownership rules
@@ -191,24 +191,24 @@ What goes where, when adding new behavior:
 
 - **Adapter** owns the language spec, both syntax and the runtime-semantic built-ins ECMAScript defines (Promise and its prototype methods, Array prototype methods, async/await, generators). If TC39 says it, the adapter handles it. Two concrete cases: the unit-body walkers descend into nested function expressions and arrows (Promise executors, `.then` callbacks, `forEach` bodies) so recognizers and effects inside them attach to the enclosing unit; and a `.then` callback's first parameter binds to the resolved value of the upstream promise. A pack-declared sub-unit boundary is the one opt-out, the walker stops there so the sub-unit's behavior lands on its own summary. See `docs/internal/proposals/adapter-ecmascript-spec.md`.
 - **Runtime packs** own behavior the runtime defines. `setTimeout`, `setImmediate`, `process.*` for Node. `requestAnimationFrame`, DOM APIs for browser. Even when names overlap across runtimes (setTimeout exists in both Node and browsers), each runtime owns its own, no shared "language base" pack.
-- **Framework packs** own framework-specific patterns: how handlers are registered, what response shapes look like, how inputs are delivered.
+- **Framework packs** own framework-specific patterns: how handlers are registered, what a response looks like, how inputs are delivered.
 - **Client packs** own consumer-side discovery: fetch call sites, axios calls, GraphQL clients.
 - **Contract packs** own translating external specifications (OpenAPI documents, GraphQL SDL, CloudFormation templates, Prisma schemas) into the IR.
 
-A pack that exists only to translate the language spec doesn't exist, that work goes in the adapter.
+There is no pack whose only job is to translate the language spec; that work goes in the adapter.
 
 ### Provider-shape carries client patterns (known tension)
 
-The `PatternPack` interface was designed around provider-side extraction. Client/consumer discovery was added via `clientCall` match and `returnStatement` terminal, which works correctly but creates structural noise: `inputMapping` is meaningless for clients (they don't receive framework-structured inputs), the `returnStatement` + `throwExpression` terminals are boilerplate every client pack repeats, and `contractReading` is provider-only but lives at the top level.
+The `PatternPack` interface was designed around provider-side extraction. Client and consumer discovery came later, through the `clientCall` match and the `returnStatement` terminal. That works correctly, but it leaves structural noise behind. `inputMapping` means nothing for a client, since clients don't receive framework-structured inputs. The `returnStatement` and `throwExpression` terminals are boilerplate every client pack repeats. And `contractReading` applies only to providers, yet it lives at the top level.
 
-This isn't worth refactoring while there are three client packs (web, axios, apollo). If a fourth ships and the boilerplate becomes a pattern, the right move is to split `PatternPack` into `provider` / `client` sub-shapes with sensible defaults for client terminals.
+This isn't worth refactoring while there are three client packs (web, axios, apollo). If a fourth ships and the boilerplate becomes a pattern, the right move is to split `PatternPack` into `provider` and `client` sub-interfaces, with sensible defaults for client terminals.
 
 ## The extraction algorithm
 
 For each code unit, the adapter runs four independently testable steps, then assembles them:
 
 1. **Terminal discovery**, use pack patterns to find all AST nodes that produce observable output.
-2. **Path enumeration**, the path engine enumerates every entry-to-terminal control-flow path over the function's structured statements (`if`/`else`, `switch`, loops, `try`/`catch`, `break`/`continue`) and produces one condition list per path. Facts that aren't statically decidable (which loop iteration, which statement threw) become opaque conditions, and the few shapes the engine declines degrade to enclosure conditions plus an explicit unmodeled-control-flow marker.
+2. **Path enumeration**, the path engine enumerates every entry-to-terminal control-flow path over the function's structured statements (`if`/`else`, `switch`, loops, `try`/`catch`, `break`/`continue`) and produces one condition list per path. Facts that aren't statically decidable (which loop iteration, which statement threw) become opaque conditions, and the few cases the engine declines degrade to enclosure conditions plus an explicit unmodeled-control-flow marker.
 3. **Expression-level condition collection**, ternaries, `&&` / `||` short-circuits, and conditions inside nested callbacks are read below the statement level and appended to each path's list.
 4. **Condition expression parsing**, decompose each condition AST node into a structured `Predicate`, resolving subjects via the symbol table. Fall back to `opaque` when decomposition fails.
 
@@ -235,7 +235,7 @@ Extraction's correctness principles are checked mechanically, not by review alon
 
 ## Why `RawCodeStructure` exists
 
-The adapter produces `RawCodeStructure` (plain data). The extractor consumes it and produces `BehavioralSummary`. You might ask: why not skip the intermediate shape and produce `BehavioralSummary` directly from the adapter?
+The adapter produces `RawCodeStructure` (plain data). The extractor consumes it and produces `BehavioralSummary`. You might ask: why not skip the intermediate step and produce `BehavioralSummary` directly from the adapter?
 
 Three reasons:
 
@@ -250,13 +250,13 @@ The pipeline contract is strict: the adapter fills in `RawCodeStructure` (includ
 Static analysis of production codebases is always imperfect. suss handles this explicitly:
 
 - **Opaque predicates**: when the adapter can't decompose a condition expression, it preserves the source text and marks the predicate `opaque`. Downstream tools see an explicit "we don't know" rather than a fabricated decomposition.
-- **Gaps**: two kinds, and they say different things. An `unhandledCase` is about the code: the contract declares a 500 the handler never produces, or the handler produces a 418 the contract never declared. An `unreadOutcome` is about the reading: a `return` matched none of the terminal shapes the pack looks for, so what it produces went undescribed. Both are top-level output, not errors.
+- **Gaps**: two kinds, and they say different things. An `unhandledCase` is about the code: the contract declares a 500 the handler never produces, or the handler produces a 418 the contract never declared. An `unreadOutcome` is about how much suss could read: a `return` matched none of the terminal patterns the pack looks for, so what it produces went undescribed. Both are top-level output, not errors.
 - **Confidence levels** (`high` / `medium` / `low`). A return nobody could read drops the summary straight to `low`, since a function whose returns all went unread has no conditions either and would otherwise score as certain. Otherwise the level comes from the ratio of opaque to structured predicates. A summary with 80% opaque conditions is labeled low confidence so consumers can treat it with appropriate skepticism.
 - **Layered dependency resolution**: in-project code gets full extraction; typed external dependencies get type info; untyped ones become opaque predicates. No configuration needed.
 
 ## Boundary semantics today
 
-The IR types are mostly protocol-agnostic, every `Output` is a typed shape, every `Predicate` operates on `ValueRef`s. Seven semantics variants ship, each as its own module under `packages/ir-core/src/semantics/` composed by a registry:
+The IR types are mostly protocol-agnostic, every `Output` is a typed structure, every `Predicate` operates on `ValueRef`s. Seven semantics variants ship, each as its own module under `packages/ir-core/src/semantics/` composed by a registry:
 
 - **`rest`**: `(method, normalizedPath)` as the identity, `"*"` as the method wildcard; two sides pair when their paths bucket together and their methods agree. Metadata namespaced under `metadata.http.*`.
 - **`graphql-resolver`**: the parent type name + field as the identity (`Query.user`, but also `User.posts`), with contract derivation from inline SDL. Metadata under `metadata.graphql.*`. **`graphql-operation`** describes the client side; the contract checker pairs it rather than the key engine.
@@ -264,7 +264,7 @@ The IR types are mostly protocol-agnostic, every `Output` is a typed shape, ever
 - **`function-call`**: keyed by package + export path when both are known.
 - **`runtime-config`** and **`storage-relational`**: no identity key; their checkers pair by deployable unit and by relation.
 
-Each variant declares its identity key, its pairing key, and how two sides agree; the pairing engine in `@suss/checker` dispatches through the registry rather than assuming any one protocol. A new boundary type adds a variant instead of stretching an existing one. [`boundary-semantics.md`](boundary-semantics.md) covers the shape of a variant and what adding one involves.
+Each variant declares its identity key, its pairing key, and how two sides agree; the pairing engine in `@suss/checker` dispatches through the registry rather than assuming any one protocol. A new boundary type adds a variant instead of stretching an existing one. [`boundary-semantics.md`](boundary-semantics.md) covers what a variant looks like and what adding one involves.
 
 ## What's deliberately not here
 
@@ -272,5 +272,5 @@ Each variant declares its identity key, its pairing key, and how two sides agree
 - **Cross-service aggregation.** `@suss/checker` compares two summaries at a time (one provider, one consumer). Aggregating across an organization, tracking boundaries over commits, or alerting on regressions are separate concerns that consume pairwise findings as input. See [`cross-boundary-checking.md`](cross-boundary-checking.md).
 - **Runtime tracing.** Everything is static. No instrumentation, no production data.
 - **Semantic understanding of dependency calls.** When the extractor sees `await db.findById(id)`, it knows the subject is "the result of `db.findById`." It doesn't know what Prisma's `findById` actually does. That's fine, cross-boundary comparison only needs subjects to be *stable*, not *semantically understood*.
-- **A shared adapter abstraction layer.** Three adapters ship, for TypeScript, Python and Ruby, and each carries its own analysis logic over its own parser. What they share today is the layer above them: `assembleSummary` in `@suss/extractor` turns a `RawCodeStructure` into a summary for all three, so gap detection and confidence scoring have one implementation. Some tree-walking patterns are conceptually language-agnostic ("find all property accesses on a variable within a subtree"), and a shared `@suss/adapter-core` for those waits until the same pattern has been written twice for a reason, not because it looked shareable.
+- **A shared adapter abstraction layer.** Three adapters ship, for TypeScript, Python and Ruby, and each has its own analysis logic over its own parser. What they share today is the layer above them: `assembleSummary` in `@suss/extractor` turns a `RawCodeStructure` into a summary for all three, so gap detection and confidence scoring have one implementation. Some tree-walking patterns are conceptually language-agnostic ("find all property accesses on a variable within a subtree"), and a shared `@suss/adapter-core` for those waits until the same pattern has been written twice for a reason, not because it looked shareable.
 - **A linter.** Findings describe what a contract pair disagrees on. They aren't style rules, code-quality opinions, or unsafe-pattern warnings. The summary is the product; what gets built on top of it is a downstream concern.

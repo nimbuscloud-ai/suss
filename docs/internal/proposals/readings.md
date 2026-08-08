@@ -4,14 +4,15 @@
 
 Five bugs shipped in one batch of builder branches, every one caught in
 review or by the fuzzer, every one the same mechanical failure. A reader
-answered with a value the source did not state.
+returned a value the source did not state.
 
 - A written but non-literal `status_code` fell through to a fabricated
   literal 200 claim. The running app contradicts it.
 - The ALB reader took `actions[0]` as the response behind an auth gate,
   reporting the gate instead of the terminal action.
-- The Ruby scalar table answered before nesting was consulted, so a
-  project class named `String` was silently read as the builtin.
+- The Ruby scalar table returned an answer before anything checked
+  nesting, so a project class named `String` was silently read as the
+  builtin.
 - A reassigned FastAPI router variable produced a confident wrong path,
   because the binder keeps one binding per name and both readers agreed
   on the wrong one.
@@ -30,10 +31,10 @@ three different things that demand three different behaviors:
 
 Every bug above is a conflation of these. The fabricated 200 treated
 unreadable as absent. The scalar and router bugs resolved ambiguity
-silently. The `actions[0]` bug assumed a position where the reading was
+silently. The `actions[0]` bug assumed a position where the result was
 ambiguous. Review keeps catching the class because nothing in the types
-distinguishes the cases; each new reader re-makes the same decision, and
-some fraction re-makes it wrong.
+tells the cases apart. Each new reader makes the same decision over
+again, and some of them make it wrong.
 
 ## The design
 
@@ -60,13 +61,13 @@ a summary field, and its collapse rule is fixed:
   and stops there, because the IR has no per-claim provenance field to
   put it in. Adding one is its own change.
 - `absent` may take a default only when the pack declares that default
-  as data. The default is then library-defined and sits in the pack's
+  as data. The library defines that default, and it lives in the pack's
   config next to the names it already declares, where review reads it.
-  No default declared, no claim. The vocabulary check does not police
-  it: that check matches identifiers, and a default like a status code
-  is a number. The differential fuzzer is what catches a wrong one,
-  which it does, by running the generated program and comparing the
-  claim against what the app answers.
+  If no default is declared, there is no claim. The vocabulary check
+  does not police it: that check matches identifiers, and a default
+  like a status code is a number. The differential fuzzer is what
+  catches a wrong one, which it does, by running the generated program
+  and comparing the claim against what the app returns.
 - `unreadable` and `ambiguous` always become gaps, with the reason
   threaded onto the summary the way `unreadBinding` sentences already
   are.
@@ -76,62 +77,64 @@ the builder module and are not exported. Writing the fabricated-200 bug
 under this regime requires one of two visible acts: declaring a false
 default in pack data, where review reads it, or adding an escape hatch,
 which is a named function whose call count the dispatch-style ratchet
-holds at its current number.
+keeps at its current number.
 
 One reader does need a written value before there is a summary field to
-fill, because a route's path names its own parameters and that decides
-what each function parameter is. `valueToReadFurtherFrom` is the
-sanctioned way to do it: it applies no default and states no reason, so
-what it returns is not a claim. The identity fields of a boundary
-binding are the exception it also covers, since a binding either names
-where a unit sits or names nothing and pairs with nothing, and no pack
-declares a default for what a boundary is called.
+fill, because a route's path gives its own parameters their names, and
+that decides what each function parameter is. `valueToReadFurtherFrom`
+is the sanctioned way to do it: it applies no default and states no
+reason, so what it returns is not a claim. The identity fields of a
+boundary binding are the exception it also covers, since a binding
+either says where a unit lives or says nothing and pairs with nothing,
+and no pack declares a default for what a boundary is called.
 
 Two details the first implementation settled. `firstWritten` hands back
-the readings it passed over alongside the one it chose, so a value that
-arrived from a second source does not bury the first source's failure.
-And the `ambiguous` variant carries a range like `unreadable` does, so
-a chained read can run against each candidate and keep the ones that
+the `Reading` values it passed over alongside the one it chose, so a
+value that arrived from a second source does not bury the first source's
+failure. And the `ambiguous` variant has a range like `unreadable` does,
+so a chained read can run against each candidate and keep the ones that
 survive.
 
 ## What this does not cover
 
-A reading can be confidently well-formed and semantically wrong. A glob
-matcher with wrong semantics returns `written` and lies. The type does
-not help there; the differential fuzzer does, and it already caught one
-bug of exactly that class this batch. The two mechanisms split the
-space: the type kills the conflation family at compile time, the fuzzer
-catches the semantics family at run time.
+A result can be well-formed and confident and still be semantically
+wrong. A glob matcher with wrong semantics returns `written` and lies.
+The type does not help there. The differential fuzzer does, and it
+already caught one bug of exactly that class this batch. The two
+mechanisms split the space: the type kills the conflation family at
+compile time, and the fuzzer catches the semantics family at run time.
 
-A mutation harness becomes cheap on top of this. "Mutate a recognized
-shape into an unrecognizable variant and the adapter must answer
-`unreadable`, not `written`" is a property of one type, writable once
-against the Reading seam rather than per adapter.
+A mutation harness becomes cheap on top of this. "Mutate something the
+adapter recognizes into a variant it does not, and the adapter must
+return `unreadable` rather than `written`" is a property of one type,
+and you write it once against the `Reading` seam rather than once per
+adapter.
 
 ## Adoption order
 
 1. Define `Reading` and the collapse seam in the extractor core.
 2. Retrofit the Python adapter's readers. It is small, recently built,
    and its `statusDeclaredUnread` flag is already a hand-rolled
-   two-state version of this; the retrofit deletes that special case.
+   two-state version of this. The retrofit deletes that special case.
 3. Retrofit the Ruby adapter alongside the pack-ownership rework,
    which rewrites the same reader signatures anyway.
-4. The CFN reader next; `unresolved-ref` handling is already close to
-   `unreadable` in spirit and converges on one vocabulary.
+4. The CFN reader next. The way it handles `unresolved-ref` is already
+   close to `unreadable` in spirit, and the two come together on one
+   vocabulary.
 5. The TypeScript adapter incrementally, seam by seam, with the escape
-   hatch ratchet holding the count of un-migrated readers and burning
-   down the way the dispatch ratchet does.
+   hatch ratchet keeping the count of un-migrated readers and burning
+   it down the way the dispatch ratchet does.
 
 ## Risks
 
 - **Ergonomics.** Readers compose worse as unions than as nullables.
   A small set of combinators (map, andThen, first-of) covers the
-  patterns the current readers actually use; anything fancier is a
+  patterns the current readers actually use. Anything fancier is a
   smell.
-- **Retrofit cost in the TS adapter.** It is the largest surface and
-  carries the most existing correctness evidence, which is why it goes
+- **Retrofit cost in the TS adapter.** It is the largest surface and it
+  has the most existing evidence of correctness, which is why it goes
   last and incrementally rather than in one rewrite.
-- **Provenance weight.** Carrying a range on every written value costs
-  little at extraction time and pays for itself the first time a wrong
-  claim needs explaining; the perf baseline job will say if that
-  estimate is wrong.
+- **Provenance weight.** Keeping a range on every written value costs
+  little at extraction time, and it pays for itself the first time
+  somebody has to explain a wrong claim. The perf baseline job will
+  tell us if that estimate is wrong.

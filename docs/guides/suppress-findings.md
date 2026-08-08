@@ -1,9 +1,9 @@
 # Suppress a finding
 
-For findings you've reviewed and accepted, a legacy endpoint,
-a planned migration, a known issue with a documented owner.
-Suppressions live in a `.sussignore` file that travels with the
-code.
+Suppress a finding you have reviewed and accepted: a legacy
+endpoint, a planned migration, a known issue with a documented
+owner. Suppressions live in a `.sussignore` file that travels with
+the code.
 
 Put it at the project root, next to `package.json`. `suss check`
 starts looking where it reads the summaries and walks up to the
@@ -21,7 +21,7 @@ matches a finding:
 
 | Effect | Shown in output? | Counts toward exit code? | Use when |
 |---|---|---|---|
-| `mark` | yes (annotated as suppressed) | no | you want the finding visible in reports but don't want CI to fail on it |
+| `mark` | yes (marked as suppressed) | no | you want the finding visible in reports but don't want CI to fail on it |
 | `downgrade` | yes, at the new severity | yes, at the downgraded severity | the finding is real but not blocking |
 | `hide` | no (filtered entirely) | no | the finding is noise you want out of the way, rare; prefer `mark` |
 
@@ -52,7 +52,7 @@ rules:
 ```
 
 The rule matches that finding and no other, because the transition
-id names one branch of one function.
+id points at one branch of one function.
 
 Every file starts with `version: 1`. Leave it off and `suss check`
 stops and tells you to add it.
@@ -63,8 +63,8 @@ first one it finds.
 
 ## Pattern 2: downgrade instead of silence
 
-Often better than hiding: let the finding keep showing, but not
-fail the build.
+This is often better than hiding it. The finding keeps showing, but
+it doesn't fail the build.
 
 ```yaml
 version: 1
@@ -77,8 +77,8 @@ rules:
     reason: 503 branch is defensive; keep the finding visible as info
 ```
 
-After downgrade, `deadConsumerBranch` at `error` shows as
-`warning`, the `--fail-on` threshold still counts it, but at
+After a downgrade, `deadConsumerBranch` at `error` shows as
+`warning`. The `--fail-on` threshold still counts it, but at
 the downgraded severity.
 
 ## Pattern 3: broad-scope category rule
@@ -102,8 +102,8 @@ to prevent accidentally-wide matches. Broad rules opt in with
 
 ## Pattern 4: match one branch, on either side
 
-Useful when the same boundary has several branches and only one
-needs suppression. A finding about a branch of the caller carries
+This is useful when the same boundary has several branches and only
+one needs suppression. A finding about a branch of the caller puts
 its transition id on the consumer side:
 
 ```yaml
@@ -115,7 +115,7 @@ rules:
     reason: ops team retired the 503 path; branch kept for one more release
 ```
 
-A finding about a status the provider produces carries it on the
+A finding about a status the provider produces puts it on the
 provider side, and a rule keyed on the consumer never matches one
 of those:
 
@@ -135,14 +135,14 @@ come from the summary file. Inspect to find them:
 npx suss inspect summaries/consumer.json
 ```
 
-Each `-> output when conditions` line is a transition; the ID is
+Each `-> output when conditions` line is a transition. The ID is
 deterministic per `(function name, terminal kind, status key,
 condition hash)`, see [Behavioral summary format](/behavioral-summary-format).
 
 ## Naming a summary read from a deploy template
 
-A rule can name a summary directly, and a summary read from a template
-is named by the document it came from:
+A rule can point at a summary directly, and a summary read from a
+template is named after the document it came from:
 `cloudformation:services/orders/template.yaml::GetOrders`. Documents
 used to be named by file name alone
 (`cloudformation:template.yaml::GetOrders`), which made every
@@ -154,10 +154,10 @@ Writing the path pins the rule to one document.
 ## Reasons are required
 
 Every rule needs a `reason` string. No default, no elision. The
-point is that suppressions travel with context, a human reader
+point is that suppressions travel with context. A human reader
 (you, or a future maintainer) gets to see *why* this was accepted.
 
-If you can't write a reason, the finding isn't accepted, fix the
+If you can't write a reason, the finding isn't accepted. Fix the
 underlying issue instead.
 
 ## Verify it worked
@@ -167,7 +167,7 @@ npx suss check --dir summaries/
 ```
 
 A `mark` suppression keeps the finding in the report and tags the
-severity. The reason sits under the description:
+severity. The reason appears under the description:
 
 ```
 [ERROR, suppressed] unhandledProviderCase
@@ -178,7 +178,7 @@ severity. The reason sits under the description:
   boundary: hono (http) GET /users/:id
 ```
 
-A `downgrade` names both severities:
+A `downgrade` shows both severities:
 
 ```
 [WARNING, downgraded from ERROR] unhandledProviderCase
@@ -188,7 +188,7 @@ A `downgrade` names both severities:
 
 The `countsForThreshold` test in `@suss/checker` is the
 authoritative check for whether a finding counts at the CLI
-level; behavior mirrors the `--fail-on` threshold.
+level, and its behavior mirrors the `--fail-on` threshold.
 
 ## What suppressions are *not*
 

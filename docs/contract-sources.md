@@ -19,7 +19,7 @@ A contract source describes the **boundary contract** of a system: the set of ob
 
 A contract source is not:
 
-- A fallback for when extraction fails. contract sources are a complementary path, often *higher* fidelity than extraction (a clean OpenAPI spec is sharper than ambiguous TypeScript).
+- A fallback for when extraction fails. Contract sources are a complementary path, often *higher* fidelity than extraction (a well-formed OpenAPI spec is more precise than ambiguous TypeScript).
 - A guess or placeholder. Every transition a contract source emits should be a behavior the system genuinely produces under the conditions described.
 - Implementation-specific. Two contract sources of the same boundary written from different source formats (CFN vs CDK synth) should produce equivalent summaries.
 
@@ -30,7 +30,7 @@ Contract sources draw from one of four categories:
 | Category | Examples | Characteristics |
 |---|---|---|
 | **Specs** | OpenAPI, GraphQL SDL, AsyncAPI, `.proto` | Machine-readable, intended for tooling. Coverage gaps in the spec become coverage gaps in the summary. |
-| **Manifests** | CloudFormation, CDK synth output, Terraform plan, Kubernetes manifests | Deployment artifacts that describe a system's surface as a side effect. Often share underlying resources across formats, see "Manifest readers vs resource semantics" below. |
+| **Manifests** | CloudFormation, CDK synth output, Terraform plan, Kubernetes manifests | Deployment artifacts that describe a system's surface as a side effect. They often share underlying resources across formats, see "Manifest readers vs resource semantics" below. |
 | **Vendor docs** | AWS service behavior, Stripe API reference, GitHub API docs | Authoritative behavior for an external system, transcribed into a summary. The "spec" lives in the vendor's documentation. |
 | **Hand-authored** | Internal team contracts, `.suss.yaml` files | Used when no machine-readable source exists yet, or when the team wants to publish a contract independent of any one implementation. |
 
@@ -38,10 +38,10 @@ Each category has different update cadence and different fidelity characteristic
 
 ## `confidence.source: "derived"`
 
-Every transition a contract source emits carries `confidence: { source: "derived", level: <high|medium|low> }`.
+Every transition a contract source emits has `confidence: { source: "derived", level: <high|medium|low> }` on it.
 
 - `source: "derived"` tells downstream consumers (checker, inspect, diff) that this transition came from a contract, not from observed code structure. The checker treats it identically, pairing is by `(method, normalizedPath)` regardless of source, but tooling can filter or display by source.
-- `level` reflects how precisely the source declared the behavior. An OpenAPI `200` response with a typed body schema is `high`. A `2XX` range expansion or a body shape with `additionalProperties: true` may be `medium` or `low`.
+- `level` reflects how precisely the source declared the behavior. An OpenAPI `200` response with a typed body schema is `high`. A `2XX` range expansion, or a body described with `additionalProperties: true`, may be `medium` or `low`.
 
 A contract source being marked `"derived"` does not imply lower fidelity than extracted code. It tells you *where the description came from*, not *how trustworthy it is*.
 
@@ -49,8 +49,8 @@ A contract source being marked `"derived"` does not imply lower fidelity than ex
 
 When the same underlying resource can be authored in multiple source formats, split the contract package along this seam:
 
-- **Manifest reader**: knows how to parse one source format. Walks the source tree, resolves cascading defaults (stage → method, API → endpoint), normalizes references, and builds a per-resource config. Calls into the resource-semantics layer.
-- **Resource semantics**: knows what the underlying resource actually does. Manifest-agnostic. Takes a normalized config, emits `BehavioralSummary[]` reflecting the full contract of that resource type.
+- **Manifest reader**: it knows how to parse one source format. It walks the source tree, resolves cascading defaults (stage → method, API → endpoint), normalizes references, and builds a per-resource config, then calls into the resource-semantics layer.
+- **Resource semantics**: it knows what the underlying resource actually does, and it is manifest-agnostic. It takes a normalized config and emits `BehavioralSummary[]` reflecting the full contract of that resource type.
 
 Worked example for AWS API Gateway:
 
@@ -82,7 +82,7 @@ suss check --dir summaries/
 
 Fragment spreads resolve against every fragment definition in the read set and are inlined into the stored document, so the pairing pass sees the selected fields directly. A spread the reader cannot expand stays in the document as written and becomes a gap on that summary rather than an error.
 
-Each operation summary carries its document text at `metadata.graphql.document`, the same place the TypeScript adapter puts documents it recovers from client call sites. The checker reads both the same way, so a repo can move an operation from a call site into a file without the findings changing.
+Each operation summary stores its document text at `metadata.graphql.document`, the same place the TypeScript adapter puts documents it recovers from client call sites. The checker reads both the same way, so a repo can move an operation from a call site into a file without the findings changing.
 
 ## Configuration drives behavior
 
@@ -91,7 +91,7 @@ A contract source must capture *configuration-driven* behavior, not just the str
 For each behavioral knob in the source format, identify:
 
 1. What configuration enables it
-2. What status codes, headers, or body shapes it can produce
+2. What status codes, headers, or body structures it can produce
 3. Whether it interacts with handler-attributed transitions or stands alone
 
 API Gateway example:
@@ -139,7 +139,7 @@ Stable namespacing means inspect/diff can group related transitions across contr
 
 ## Per-transition metadata
 
-Contract sources use `Transition.metadata` (added to the IR for this purpose, but available to any producer) to carry provenance and aggregated attribution:
+Contract sources use `Transition.metadata` (added to the IR for this purpose, but available to any producer) to record provenance and aggregated attribution:
 
 ```json
 {
@@ -180,7 +180,7 @@ Emit these as standalone `BehavioralSummary` entries:
 - One per unique path
 - `boundaryBinding`: `method: "OPTIONS"`, path matching the resource path
 - One transition: appropriate status (204 for CORS preflight), headers populated from configuration
-- `metadata.synthetic` naming the synthesis rule (e.g., `"cors-preflight"`)
+- `metadata.synthetic` set to the synthesis rule (e.g., `"cors-preflight"`)
 
 A synthesized summary is not a fiction. The platform genuinely responds at that boundary. Treating it like any other boundary lets a TypeScript consumer that does `fetch(path, { method: "OPTIONS" })` pair with it through the same matching rules.
 
@@ -209,7 +209,7 @@ Two questions to answer before you write code:
 
 Then for each behavioral knob the source format expresses:
 
-1. List the status codes / headers / body shapes it can produce
+1. List the status codes / headers / body structures it can produce
 2. Decide whether it interacts with handler-attributed transitions or stands alone
 3. Pick the opaque predicate `sourceText` namespace
 4. Decide what attribution to put in `Transition.metadata`
@@ -217,7 +217,7 @@ Then for each behavioral knob the source format expresses:
 Conventions:
 
 - Package name: `@suss/contract-<source-format>` for spec/manifest readers, `@suss/contract-<vendor>-<service>` for resource-semantics layers
-- All transitions carry `confidence.source: "derived"`
-- All synthesized boundaries carry `metadata.synthetic` naming the synthesis rule
+- Every transition has `confidence.source: "derived"`
+- Every synthesized boundary has `metadata.synthetic` set to the synthesis rule
 - All platform-injected predicates use the namespaced opaque convention
 - Tests should cover each configuration knob's effect on the emitted summary, including default-cascading behavior when applicable

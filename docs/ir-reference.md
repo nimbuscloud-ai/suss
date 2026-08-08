@@ -1,6 +1,6 @@
 # IR Reference
 
-A type-by-type walkthrough of `@suss/behavioral-ir`. The authoritative source is `packages/behavioral-ir/src/index.ts`; this document explains *why* each type has the shape it does, when to use which variant, and how they compose.
+A type-by-type walkthrough of `@suss/behavioral-ir`. The authoritative source is `packages/behavioral-ir/src/index.ts`; each type below comes with *why* it has the form it does, when to use which variant, and how they compose.
 
 ## `BehavioralSummary`
 
@@ -19,9 +19,9 @@ interface BehavioralSummary {
 
 This is what extraction produces and what downstream tools consume. It's a flat, JSON-serializable structure with no cycles (except for the recursive `ValueRef` and `Predicate` types, which are trees).
 
-**Why `metadata` is an unstructured bag.** Framework-specific information that doesn't fit the universal shape goes here, declared contracts, source file paths relative to the project, framework-specific annotations. Downstream tools can look at it if they care; if they don't, they can ignore it. The core shape stays clean.
+**Why `metadata` is an unstructured bag.** Framework-specific information that doesn't fit the universal structure goes here, declared contracts, source file paths relative to the project, framework-specific annotations. Downstream tools can look at it if they care; if they don't, they can ignore it. The core structure stays uncluttered.
 
-**Keys are namespaced by boundary semantics.** HTTP-scoped entries live under `metadata.http.{declaredContract, bodyAccessors, statusAccessors}`. Future semantics (GraphQL, Lambda-invoke, queue messages) would own sibling namespaces (`metadata.graphql.*`, `metadata.lambda.*`). Semantics-neutral keys (e.g. `metadata.derivedFromWrapper` recording wrapper-expansion provenance) stay at the top level. See [`boundary-semantics.md`](boundary-semantics.md).
+**Keys are namespaced by boundary semantics.** HTTP-scoped entries live under `metadata.http.{declaredContract, bodyAccessors, statusAccessors}`. Future semantics (GraphQL, Lambda-invoke, queue messages) would own sibling namespaces (`metadata.graphql.*`, `metadata.lambda.*`). Semantics-neutral keys (e.g. `metadata.derivedFromWrapper`, which records where a wrapper expansion came from) stay at the top level. See [`boundary-semantics.md`](boundary-semantics.md).
 
 ## `CodeUnitKind`
 
@@ -43,13 +43,13 @@ type CodeUnitKind =
 
 The kind determines the behavioral model, specifically, how inputs arrive and what counts as output. Handlers take a request and produce a response. Components take props and state and produce a UI tree. Consumers take a message and produce effects. Clients call an upstream API and branch on the response.
 
-**`consumer` vs `client`.** Both sit on the receiving side of a boundary, but the behavioral model differs. A `consumer` receives a message and produces effects (mutation, emission, delegation). A `client` makes a request, branches on the response status, and reads fields from the response body, the interesting behavior is *what does the client expect the response to look like*, which feeds into cross-boundary body-shape comparison. The distinction matters because the checker applies different rules: client transitions carry `expectedInput` (the body shape the client reads), while consumer transitions carry effects.
+**`consumer` vs `client`.** Both are on the receiving side of a boundary, but the behavioral model differs. A `consumer` receives a message and produces effects (mutation, emission, delegation). A `client` makes a request, branches on the response status, and reads fields from the response body, the interesting behavior is *what does the client expect the response to look like*, which feeds into cross-boundary body-shape comparison. The distinction matters because the checker applies different rules: client transitions have `expectedInput` (the body shape the client reads), while consumer transitions have effects.
 
-**`library`.** Provider side of an in-process `function-call` boundary, a function reached through a package's public export surface. Produced by the `packageExports` discovery variant (see `reference/pack-patterns.md`); the resulting binding carries `package` + `exportPath` identity. Distinct from `handler` (no HTTP shape), `component` (no JSX), and `hook` (not a React convention).
+**`library`.** This is the provider side of an in-process `function-call` boundary, a function reached through a package's public export surface. The `packageExports` discovery variant produces it (see `reference/pack-patterns.md`), and the resulting binding has `package` + `exportPath` identity. It is distinct from `handler` (no HTTP form), `component` (no JSX), and `hook` (not a React convention).
 
-**`caller`.** Consumer side of the same in-process `function-call` boundary, a function that calls into another package's public export surface. Produced by the `packageImport` discovery variant. One `caller` unit per (enclosing function × consumed binding). Pairs with `library` providers by `fn:<package>::<exportPath>`.
+**`caller`.** This is the consumer side of the same in-process `function-call` boundary, a function that calls into another package's public export surface. The `packageImport` discovery variant produces it. There is one `caller` unit per (enclosing function × consumed binding). It pairs with `library` providers by `fn:<package>::<exportPath>`.
 
-**Why it's a closed union.** Open strings would lose type safety. Framework packs can't invent new kinds; if a new framework needs a new kind, it needs an IR update first. This is deliberate, each kind carries assumptions about how the rest of the extraction works, and those assumptions need to be explicit.
+**Why it's a closed union.** Open strings would lose type safety. Framework packs can't invent new kinds; if a new framework needs a new kind, it needs an IR update first. This is deliberate, each kind comes with assumptions about how the rest of the extraction works, and those assumptions need to be explicit.
 
 ## `SourceLocation` and `CodeUnitIdentity`
 
@@ -79,9 +79,9 @@ Location is file + line range. Identity is symbolic: *what* is this code unit, r
 
 **`boundaryBinding` is explicitly nullable.** Utility functions, custom hooks, and internal helpers don't participate in cross-service contracts. They can still have behavioral summaries, but they don't have a boundary to bind to. Explicit `null` forces consumers to handle that case.
 
-**`deployableUnit` names the thing that runs this code**, when the pack knows it: the Lambda's logical id from a SAM template, the container or deployment name elsewhere. It answers a question a boundary cannot. Several Lambdas can subscribe to one subject with a handler each, and the subject alone does not say which handler runs where, so every handler looks like it might answer every subscription.
+**`deployableUnit` says what runs this code**, when the pack knows it: the Lambda's logical id from a SAM template, the container or deployment name elsewhere. It tells you something the boundary alone cannot. Several Lambdas can subscribe to one subject with a handler each, and the subject alone does not say which handler runs where, so every handler looks like it might be the one handling every subscription.
 
-The checker joins on it: message-bus pairing scopes producers to the runtime they deploy with, and runtime-config pairing keys on it. It names the function a piece of code runs as, which is what lets a check ask whether the code of a wired-up function handles what the template routes to it. `runtime-config` boundaries already carry the same pair in their semantics, since it is what keys that boundary, and both come from one value.
+The checker joins on it. Message-bus pairing scopes producers to the runtime they deploy with, and runtime-config pairing keys on it. It tells you which deployed function a piece of code runs as, and that is what lets a check ask whether the code of a wired-up function handles what the template routes to it. `runtime-config` boundaries already have the same pair in their semantics, since that pair is what keys the boundary, and both come from one value.
 
 Optional rather than nullable: a React component or a library export is never deployed on its own, so there is nothing for it to say.
 
@@ -108,7 +108,7 @@ type Semantics =
 
 Where a code unit connects to the outside world. A REST endpoint is the same boundary whether it's served at `/api/v1/users` or `/api/v2/members`, the *identity* of the boundary is separate from the address. For v0, we use the address as the identity; adding stable boundary IDs is a future concern.
 
-An identity field is null when the source does not name it; the empty string is invalid there, and REST's method also admits `"*"`, the wildcard for a handler that answers every method. [`boundary-semantics.md`](boundary-semantics.md) covers each variant's pairing rule and the builder helpers packs use.
+An identity field is null when the source does not give it a value; the empty string is invalid there. REST's method also allows `"*"`, the wildcard for a handler that serves every method. [`boundary-semantics.md`](boundary-semantics.md) covers each variant's pairing rule and the builder helpers packs use.
 
 ## `Transition`
 
@@ -166,7 +166,7 @@ type Predicate =
   | { type: "opaque"; sourceText: string; reason: OpaqueReason };
 ```
 
-Conditions that gate transitions. A discriminated union over test types, where each variant carries exactly the fields it needs, no optional bag of fields.
+Conditions that gate transitions. A discriminated union over test types, where each variant has exactly the fields it needs, no optional bag of fields.
 
 **`truthinessCheck` vs. `nullCheck`.** JavaScript's `if (x)` tests truthiness, which is *not* the same as `x != null`, `0`, `""`, and `false` are also falsy. These are kept separate because cross-boundary reasoning about them is different: a nullness check is about the *value's existence*; a truthiness check is about its usefulness. Conflating them would cause false matches.
 
@@ -202,7 +202,7 @@ A reference to a value within a code unit. Each variant identifies where the val
 
 **`unresolved`**, the extractor couldn't determine the origin. The source text is preserved so the opaque fallback still shows *what* was tested, even if we don't know *where it came from*.
 
-**Why the shape is shallow.** The goal is cross-boundary comparison, not full semantic understanding. Two predicates that both test `the result of db.findById(id).deletedAt` should be recognizable as referring to the same subject, even if the extractor has no idea what `findById` does semantically. Shallow references are:
+**Why the structure is shallow.** The goal is cross-boundary comparison, not full semantic understanding. Two predicates that both test `the result of db.findById(id).deletedAt` should be recognizable as referring to the same subject, even if the extractor has no idea what `findById` does semantically. Shallow references are:
 
 1. **Stable**, mechanical renames don't change them
 2. **Cheap to compute**, no type inference, no deep following of calls
@@ -223,13 +223,13 @@ type Output =
   | { type: "void" };
 ```
 
-What terminals produce, the universal set of output shapes. The framework pack determines which variants matter; the output type itself is framework-agnostic.
+What terminals produce, the universal set of output forms. The framework pack determines which variants matter; the output type itself is framework-agnostic.
 
 **`response`**, an HTTP response. `statusCode` is a `ValueRef` (not a raw number) because it might be a dynamic value (`res.status(code).json(...)`). A literal 200 comes through as `{ type: "literal", value: 200 }`. This is a recent fix, earlier versions used `number | null` and lost the ability to represent dynamic codes.
 
 **`throw`**, an exception. `exceptionType` is the constructor expression text (e.g., `"HttpError.NotFound"`, `"new Error(...)"`). Not the actual JavaScript class, we can't resolve that statically in general.
 
-**`render`**, a component render result. Used for React components, Vue render functions, etc. The optional `root` field carries the full structured `RenderNode` tree (JSX subtree, conditional sub-renders, child component invocations); packs that understand their source language's render form populate it so cross-boundary checking can compare structural output against contract sources (snapshots, Storybook stories, Figma variants). Consumers that only care about the root element read `component`; those that want the full tree read `root`.
+**`render`**, a component render result. Used for React components, Vue render functions, etc. The optional `root` field contains the full structured `RenderNode` tree (JSX subtree, conditional sub-renders, child component invocations); packs that understand their source language's render form populate it so cross-boundary checking can compare structural output against contract sources (snapshots, Storybook stories, Figma variants). Consumers that only care about the root element read `component`; those that want the full tree read `root`.
 
 **`return`**, a plain return value. `value` is a `TypeShape` because for functions like hooks and utilities, the shape is the contract.
 
@@ -272,7 +272,7 @@ A simplified type shape, sufficient for describing response bodies and return va
 
 `TypeShape` describes values **as they cross a serialization boundary**, HTTP response bodies, messages on a queue, return values inspected by a caller. This is not the in-memory type system of the source language. Two consequences fall out of that:
 
-1. **Numeric precision.** JavaScript's `number` is IEEE 754 double. Integers beyond `Number.MAX_SAFE_INTEGER` (2^53 − 1), high-precision decimals, hex / scientific notation, and underscore separators all lose information through `number` coercion. For numeric `literal` shapes, the `raw` field carries the exact source text so a consumer needing precision or faithful wire representation never has to re-parse or guess. Strings and booleans roundtrip losslessly and have no `raw`.
+1. **Numeric precision.** JavaScript's `number` is IEEE 754 double. Integers beyond `Number.MAX_SAFE_INTEGER` (2^53 − 1), high-precision decimals, hex / scientific notation, and underscore separators all lose information through `number` coercion. For numeric `literal` shapes, the `raw` field contains the exact source text so a consumer needing precision or faithful wire representation never has to re-parse or guess. Strings and booleans roundtrip losslessly and have no `raw`.
 
 2. **Types without a native wire form.** `BigInt`, `Date`, `Map`, `Set`, `Buffer`, `Error`, regexes, etc. have no canonical JSON representation. The extractor surfaces them as `ref` with the declared type name (`"bigint"`, `"Date"`, …) rather than inventing a structural expansion. The wire format for these is **consumer-defined**: a `Date` may be serialized as an ISO 8601 string by `toJSON`, as an epoch number, or not at all, that contract lives between the producer and consumer, not in the IR.
 
@@ -312,16 +312,16 @@ Side effects observed within a transition. Two layers of detail today:
 
 **Coarse effects** (`mutation`, `invocation`, `emission`, `stateChange`) record that *something* happened, a call fired, a state variable was set, an event was emitted. The downstream value is impact analysis: "this PR changes a handler that writes to `users`; here are consumers of `users`."
 
-**`interaction` effects** are the typed boundary-crossing effects. Each one carries the `BoundaryBinding` of the thing it talks to, plus a discriminated `interaction.class` payload describing the operation. The four classes today are:
+**`interaction` effects** are the typed boundary-crossing effects. Each one contains the `BoundaryBinding` of the thing it talks to, plus a discriminated `interaction.class` payload describing the operation. The four classes today are:
 
 - **`storage-access`**, Prisma client calls, Drizzle queries, raw SQL. Pairs against storage-relational provider summaries (Prisma schema, etc.) by `(storageSystem, scope, table)`.
 - **`service-call`**: fetch / axios / ts-rest client / Apollo client. Pairs against REST or GraphQL providers.
 - **`message-send`**, SQS / Kafka / BullMQ producers. Pairs against message-bus consumer summaries by `(messageBus, channel)`.
 - **`config-read`**, `process.env.X` accesses. Pairs against runtime-config provider summaries by env-var name + codeScope.
 
-Adding a class is a strictly additive IR change. Each class maps 1:1 to a `binding.semantics.name` (`storage-relational`, `rest`, `message-bus`, `runtime-config`) by convention; not enforced by the IR but every shipped recognizer follows it. See [`reference/pack-patterns.md`](reference/pack-patterns.md#recognizers) for the recognizer primitive that emits these (`invocationRecognizers` and `accessRecognizers`).
+Adding a class is a strictly additive IR change. Each class maps 1:1 to a `binding.semantics.name` (`storage-relational`, `rest`, `message-bus`, `runtime-config`) by convention; the IR does not enforce that, but every shipped recognizer follows it. See [`reference/pack-patterns.md`](reference/pack-patterns.md#recognizers) for the recognizer primitive that emits these (`invocationRecognizers` and `accessRecognizers`).
 
-`preconditions` on `invocation` and `interaction` carry ancestor conditions that gate reaching the effect within its enclosing transition, populated for calls nested inside conditional blocks or loop bodies.
+`preconditions` on `invocation` and `interaction` contain the ancestor conditions that gate reaching the effect within its enclosing transition. The extractor populates them for calls nested inside conditional blocks or loop bodies.
 
 `EffectArg` (the recursive value-tree referenced under `invocation.args`) is defined in `@suss/extractor`, not in the IR, see `packages/extractor/src/index.ts`. It's the structured representation of source-text arguments (objects preserve fields, identifiers and call-chains preserve composition) and is what powers the typed `interaction` payloads above.
 
@@ -336,7 +336,7 @@ type Input =
   | { type: "closure"; name: string };
 ```
 
-How inputs reach a code unit. Most of these are for React/Vue components; HTTP handlers typically only have `parameter` inputs. The `role` field on parameters carries framework-specific meaning (`"request"`, `"response"`, `"pathParams"`, `"requestBody"`, etc.), it's what `InputMappingPattern` in the framework pack sets. It is null when nobody could read which role a parameter has, the same thing a null `path` says on a binding: a role often follows from something else the reader has to have read first, and a route whose path went unread cannot tell a path parameter from a query parameter. A summary that says null carries a gap saying why.
+How inputs reach a code unit. Most of these are for React/Vue components; HTTP handlers typically only have `parameter` inputs. The `role` field on parameters says what the parameter means to the framework (`"request"`, `"response"`, `"pathParams"`, `"requestBody"`, etc.), and it's what `InputMappingPattern` in the framework pack sets. It is null when suss could not work out which role a parameter has, which is what a null `path` on a binding means too. A role often follows from something else the reader has to have read first, and a route whose path went unread cannot tell a path parameter from a query parameter. A summary with a null role comes with a gap saying why.
 
 **`hookReturn`, `contextValue`, `closure`** are for components and hooks. A hook call like `const [user, setUser] = useUser()` produces a `hookReturn` input with `destructuredFields: ["user", "setUser"]`. The React pack discovers components, hooks, and event handlers and fills these in; see the `component` and `hook` entries under `CodeUnitKind`.
 
@@ -367,7 +367,7 @@ Something the summary could not account for. Gaps are top-level output, not erro
 
 The checker turns each of these into a `providerContractViolation` at error severity. Something is wrong with the handler or with its contract.
 
-**`unreadOutcome`** is a statement about the reading. A `return` in the function matched none of the terminal shapes the pack looks for, so nothing describes what it produces:
+**`unreadOutcome`** is a statement about how suss read the code. A `return` in the function matched none of the terminal shapes the pack looks for, so nothing describes what it produces:
 
 ```json
 {
@@ -377,7 +377,7 @@ The checker turns each of these into a `providerContractViolation` at error seve
 }
 ```
 
-The handler may be answering correctly in a shape nobody taught the pack. Holding that against it fails checks on working code, so the checker reports `lowConfidence` at info severity instead. Teaching the pack that terminal shape is what makes it go away.
+The handler may be responding correctly in a form nobody taught the pack. Holding that against it would fail checks on working code, so the checker reports `lowConfidence` at info severity instead. Teaching the pack that terminal shape is what makes it go away.
 
 **`consequence`** tells you what actually happens in the unhandled case:
 
@@ -446,7 +446,7 @@ interface Finding {
 }
 ```
 
-What the pairwise checker emits. Each finding names the boundary, both sides of it, and a human-readable description.
+What the pairwise checker emits. Each finding gives the boundary, both sides of it, and a human-readable description.
 
 The `kind` enum is open-ended in this doc on purpose, the canonical list spans REST, GraphQL, React, storage, message-bus, runtime-config, and meta domains and changes as new packs ship. The authoritative enumeration is `FindingKindSchema` in `packages/behavioral-ir/src/schemas.ts`; the [findings catalog](/reference/findings) groups every kind by domain with severity, emitter, and a concrete example.
 
@@ -456,13 +456,13 @@ The `kind` enum is open-ended in this doc on purpose, the canonical list spans R
 
 **`suppressed`** is set when a `.sussignore` rule matched. The `effect` field tells downstream tools how the finding was handled (`mark` keeps it visible but excludes from exit-code; `downgrade` drops one severity level; `hide` removes it entirely). See [Suppressions](/suppressions) for the rule format.
 
-**Why findings live in `@suss/behavioral-ir`, not in the checker package.** Other tools (diff viewers, aggregation layers, the product) consume findings the same way they consume summaries. Keeping the shape in the IR package means no downstream consumer depends on `@suss/checker` only to read a finding.
+**Why findings live in `@suss/behavioral-ir`, not in the checker package.** Other tools (diff viewers, aggregation layers, the product) consume findings the same way they consume summaries. Keeping the finding's structure in the IR package means no downstream consumer depends on `@suss/checker` only to read a finding.
 
 **Severity drives CLI exit codes.** `suss check` exits non-zero when any `error`-severity finding is present; `warning` and `info` are reported but don't fail the process. The default severity per kind is in the [findings catalog](/reference/findings); `--fail-on warning` (or `info`) raises the gate, `.sussignore` `effect: downgrade` lowers individual ones.
 
 ## `RawCodeStructure`
 
-The adapter-to-extractor interface. Defined in `@suss/extractor`, not `@suss/behavioral-ir`, because it's an implementation boundary inside the pipeline rather than part of the public output.
+The adapter-to-extractor interface. It's defined in `@suss/extractor`, not `@suss/behavioral-ir`, because it's an implementation boundary inside the pipeline rather than part of the public output.
 
 ```typescript
 interface RawCodeStructure {
@@ -484,14 +484,14 @@ interface RawBranch {
 }
 ```
 
-Every field is plain JSON, no AST nodes, no compiler types. An adapter's job is to read source code and produce this shape; the extractor's job is to turn this shape into a `BehavioralSummary`.
+Every field is plain JSON, no AST nodes, no compiler types. An adapter's job is to read source code and produce this structure; the extractor's job is to turn that structure into a `BehavioralSummary`.
 
-**`RawBranch.expectedInput`** is populated by the adapter for client code units. After branching on a response status code, the consumer accesses fields on the response body, the adapter traces those accesses and builds a `TypeShape`. The extractor copies `expectedInput` through to `Transition.expectedInput` during assembly. This ensures the pipeline contract is preserved: everything the summary needs comes through `RawCodeStructure`, no post-assembly patching.
+**`RawBranch.expectedInput`** is populated by the adapter for client code units. After branching on a response status code, the consumer accesses fields on the response body, and the adapter traces those accesses and builds a `TypeShape`. The extractor copies `expectedInput` through to `Transition.expectedInput` during assembly. This keeps the pipeline contract intact: everything the summary needs comes through `RawCodeStructure`, with no patching after assembly.
 
 This split exists for three reasons:
 
 1. **The extractor can be tested without a compiler.** Hand-written `RawCodeStructure` values drive the whole test suite in milliseconds.
-2. **Logic lives in one place.** Opaque wrapping, gap detection, confidence assessment, `expectedInput` pass-through, and the final `BehavioralSummary` shape are all decided in the extractor. Adapters don't re-implement them.
+2. **Logic lives in one place.** Opaque wrapping, gap detection, confidence assessment, `expectedInput` pass-through, and the final `BehavioralSummary` structure are all decided in the extractor. Adapters don't re-implement them.
 3. **Adding a language is adding an adapter.** A Python adapter produces the same `RawCodeStructure`; the extractor doesn't know or care which compiler filled it in. Client field tracking works automatically for any adapter that populates `RawBranch.expectedInput`.
 
 See `docs/extraction-algorithm.md` for how the TypeScript adapter produces `RawCodeStructure` from source files.

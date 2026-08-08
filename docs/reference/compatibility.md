@@ -46,7 +46,7 @@ need them; the rest do not.
 | Dependencies installed | Everything works |
 | Not installed, pack reads a file on disk | Works. The AWS pack finds handlers through your SAM template. |
 | Not installed, pack resolves symbols | Finds nothing, and tells you why |
-| A library with no pack | The call is marked unknown. The rest of the handler still comes through. |
+| A library with no pack | suss marks the call unknown. The rest of the handler still comes through. |
 
 If a pack needs a package you have not installed, suss tells you which one:
 
@@ -72,8 +72,8 @@ return json(200, { id, name: thing.name });      // read
 ## Your own response helpers
 
 Most handlers build a response through a helper rather than at the
-return site. suss follows the call and reads the helper, so your
-argument order is whatever you wrote it as:
+return site. suss follows the call and reads the helper, so it works
+with whatever argument order you wrote:
 
 ```ts
 return json(200, { status: "ok" });   // json(statusCode, payload)
@@ -83,9 +83,9 @@ return json({ status: "ok" }, 200);   // json(payload, statusCode)
 Both come out as 200 with a body of `{ status }`. The name does not
 matter either, so `respond`, `ok`, and `send` all work.
 
-A helper that branches is read branch by branch. Each branch that can
-run becomes its own outcome, and a branch the caller's arguments cannot
-reach is left out:
+suss reads a helper that branches one branch at a time. Each branch that
+can run becomes its own outcome, and a branch the caller's arguments
+cannot reach is left out:
 
 ```ts
 function json(statusCode, payload) {
@@ -101,12 +101,12 @@ return json(code, payload);           // both, since `code` is unknown here.
 ```
 
 One thing it will not do yet: follow a helper reached through an
-object, like `responses.json(...)`. A helper called by name is read.
+object, like `responses.json(...)`. It does read a helper called by name.
 
 ## Several services in one folder
 
 suss identifies an HTTP boundary by its method and path, and nothing
-else. Two services that both expose `GET /users` read as one boundary,
+else. Two services that both expose `GET /users` count as one boundary,
 so a client of either pairs against both:
 
 ```

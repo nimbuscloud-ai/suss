@@ -14,7 +14,7 @@ Framework pack for [Fastify](https://fastify.dev/) handlers. Declarative pattern
 
 - The "return value becomes the body" pattern (`return user`, where Fastify serializes the return) is **not** matched as a response terminal. Only `reply.<method>(...)` chains are recognized today. Workaround: use `return reply.send(value)` (also valid Fastify) when you want suss to see the response.
 
-## Where it sits in suss
+## Where it fits in suss
 
 Depends only on `@suss/extractor` (for the `PatternPack` type). Contains no analysis logic.
 

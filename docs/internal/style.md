@@ -1,6 +1,6 @@
 # Style Guide
 
-Conventions for the suss codebase. Enforced by Biome (`biome.json`) and TypeScript strict mode (`tsconfig.base.json`). Pre-commit hook (husky + lint-staged) runs `biome check --write` on staged files.
+Conventions for the suss codebase. Biome (`biome.json`) and TypeScript strict mode (`tsconfig.base.json`) enforce them. A pre-commit hook (husky + lint-staged) runs `biome check --write` on staged files.
 
 ## Tooling
 
@@ -31,7 +31,7 @@ Prefer `import type` for type-only imports: Biome enforces this and it keeps run
 
 - Discriminated unions use `type` as the discriminant field, consistently. Never `kind`, never `style`.
 - Prefer discriminated unions over loose interfaces with optional fields. A `{ type: "X"; requiredField: string }` variant is better than `{ type: "X"; requiredField?: string }` with documentation.
-- **DispatchTable over `switch`.** For dispatch on a discriminated union, use a `Record` keyed by the discriminant (e.g. `const handlers: Record<Event["type"], Handler> = { created, deleted, … }`) rather than a `switch` statement. We call this the *DispatchTable* pattern; it makes exhaustiveness a type error when a new variant lands, and keeps each handler a named, independently testable function.
+- **DispatchTable over `switch`.** For dispatch on a discriminated union, use a `Record` keyed by the discriminant (e.g. `const handlers: Record<Event["type"], Handler> = { created, deleted, … }`) rather than a `switch` statement. We call this the *DispatchTable* pattern. It turns a missing case into a type error when someone adds a new variant, and it keeps each handler a named function you can test on its own.
 - `as const` for literal narrowing when necessary, but prefer proper typing at the declaration site.
 - Avoid `any`. Use `unknown` for data whose shape you don't know and narrow at the boundary.
 - Avoid type assertions (`as X`) unless you've exhausted type narrowing. If you need them, comment why.
@@ -47,33 +47,33 @@ Prefer `import type` for type-only imports: Biome enforces this and it keeps run
 - Use `Number.parseInt` / `Number.isNaN` etc. (`useNumberNamespace`) instead of the globals.
 - `noUnusedImports` and `noUnusedVariables` are errors: remove unused code as you go.
 - **Object arguments for 4+ params.** Functions that take four or more parameters should accept a single options object so call sites are self-documenting. `extractStatusCode({ extraction, exceptionType, calls })` beats `extractStatusCode(extraction, null, null, calls, null)`. Three-or-fewer params is fine positional when the order follows a standard pattern (input → filter → label, left → op → right). Callback-style functions (`map`, reducers) are exempt: they have a conventional positional contract.
-- **No if-else chains assigning to a variable.** `let x; if (...) { x = a } else if (...) { x = b } else { x = c }` is a code smell: extract a helper function that returns the value directly per branch. The assign-in-branches shape hides the "one of several results" intent, loses per-branch type narrowing, and makes `x` mutable for no reason. This complements the DispatchTable rule above: DispatchTable for discriminated-union dispatch, early-return helpers for everything else (boolean conditions, string-compare chains, heterogeneous predicates). Two-branch cases that reduce to a ternary are fine to leave inline.
+- **No if-else chains assigning to a variable.** `let x; if (...) { x = a } else if (...) { x = b } else { x = c }` is a code smell: extract a helper function that returns the value directly in each branch. Assigning in branches hides the fact that you are picking one of several results, it loses the type narrowing each branch would otherwise give you, and it makes `x` mutable for no reason. This complements the DispatchTable rule above: use a DispatchTable to dispatch on a discriminated union, and a helper with early returns for everything else (boolean conditions, string-compare chains, mixed predicates). Two-branch cases that reduce to a ternary are fine to leave inline.
 
 ## Identifiers a pack names
 
-A pack may hardcode an identifier only when the library that pack is about defines it. Anything a specific codebase names goes in per-project configuration, through the pack's options and `-f <pack>=config.json`.
+A pack may hardcode an identifier only when the library that pack is about defines it. An identifier that comes from one specific codebase belongs in per-project configuration instead, which you set through the pack's options and `-f <pack>=config.json`.
 
-Two things go wrong when a project's name ships as a default. Every other user gets false matches, because any class called `WidgetController` or any function called `makeWidgetHandler` matches whatever it actually does. And coverage measured against the codebase the name came from is inflated, because discovery found those units by name rather than by pattern.
+Two things go wrong when one project's identifier ships as a default. Every other user gets false matches, because any class called `WidgetController` or any function called `makeWidgetHandler` will match no matter what it actually does. And coverage measured against the codebase the identifier came from is inflated, because discovery found those units by their names rather than by a pattern.
 
-Each pack declares its vocabulary in `vocabulary.json` at the package root: every identifier the pack's shipped source names, mapped to where in the library it comes from. `npm run check:vocabulary` fails when a pack names something that file does not declare, so a reviewer sees the claim in the diff. Names suss itself defines (IR kinds, roles, grammar tags) live once in `packages/extractor/vocabulary.json`. A name a project supplies through pack config never appears as a literal in the pack's source, so only the shipped defaults are policed.
+Each pack declares its vocabulary in `vocabulary.json` at the package root: every identifier that appears in the pack's shipped source, mapped to where in the library it comes from. `npm run check:vocabulary` fails when a pack uses an identifier that file does not declare, so a reviewer sees the claim in the diff. Identifiers suss itself defines (IR kinds, roles, grammar tags) live once in `packages/extractor/vocabulary.json`. An identifier a project supplies through pack config never appears as a literal in the pack's source, so the check only polices the shipped defaults.
 
-The language adapters answer to the same check inverted: an adapter's shipped source may not contain a string literal that a pack's vocabulary declares as its library's own name, because the adapter owns language syntax and scoping while every library-defined name reaches it through a typed pack field. Each adapter is matched against the framework packs that declare a dependency on it.
+The same check runs against the language adapters, the other way round. An adapter's shipped source may not contain a string literal that some pack's vocabulary declares as belonging to its library. The adapter owns language syntax and scoping, and every library-defined identifier reaches it through a typed pack field instead. Each adapter is checked against the framework packs that declare a dependency on it.
 
 ## Naming
 
 A name should say what the thing is for, so someone who has never opened the file can guess what it does before reading it.
 
-**Packages** take the job they do. When several packages do the same job against different targets, the family comes first in the name: `@suss/framework-hono` reads Hono apps, `@suss/client-axios` reads axios call sites, `@suss/contract-openapi` reads OpenAPI documents, `@suss/runtime-node` reads what the Node runtime exposes. A package with no siblings takes a bare noun: `@suss/checker`, `@suss/extractor`, `@suss/resolution`.
+**Packages** are named for the job they do. When several packages do the same job against different targets, the family comes first in the name: `@suss/framework-hono` reads Hono apps, `@suss/client-axios` reads axios call sites, `@suss/contract-openapi` reads OpenAPI documents, `@suss/runtime-node` reads what the Node runtime exposes. A package with no siblings gets a bare noun: `@suss/checker`, `@suss/extractor`, `@suss/resolution`.
 
-Two packages break this. `@suss/datalog` and `@suss/differential` are named for the technique they use rather than the job they do. Both predate the convention and keep their names; don't take them as the pattern for a new package.
+Two packages break this. `@suss/datalog` and `@suss/differential` are named for the technique they use rather than the job they do. Both predate the convention and keep their names, so don't copy them for a new package.
 
 **Directories under `packages/`** spell out the package name minus the `@suss/` scope. `@suss/behavioral-ir` lives in `packages/behavioral-ir`, and `@suss/checker` lives in `packages/checker`. A family prefix becomes the parent directory, so `@suss/framework-hono` lives in `packages/framework/hono`. Someone following an import should be able to find the directory by reading the package name.
 
-**Datalog relations** read as a sentence about a single fact, verb first, stating what is true. `binds(x, y)` says the name `x` is declared as `y`. `holdsProperty(o, n, x)` says object `o` holds `x` under the name `n`. `comesTo(x, z)` says following the name `x` arrives at `z`. Avoid relation names that sound like an instruction to the engine (`resolveBinding`, `doLookup`); a rule states a fact, and the engine decides when to derive it.
+**Datalog relations** are written as a sentence about a single fact, verb first, saying what is true. `binds(x, y)` says the name `x` is declared as `y`. `holdsProperty(o, n, x)` says object `o` holds `x` under the name `n`. `comesTo(x, z)` says following the name `x` arrives at `z`. Avoid relation names that sound like an instruction to the engine (`resolveBinding`, `doLookup`); a rule states a fact, and the engine decides when to derive it.
 
-**Functions** are named for the answer they give back. `routePathFromFile` gives the route path a file maps to. `returnPositionOf` gives the position a node returns from. `providersOf` gives the providers of a boundary. Predicates read as the question the caller is asking: `isGrouping`, `startsItsOwnScope`. Skip `get`, `compute`, and `handle` prefixes on new names, since they describe the machinery instead of the answer.
+**Functions** are named for the answer they return. `routePathFromFile` returns the route path a file maps to. `returnPositionOf` returns the position a node returns from. `providersOf` returns the providers of a boundary. A predicate is named after the question the caller is asking: `isGrouping`, `startsItsOwnScope`. Skip `get`, `compute`, and `handle` prefixes on new names, since they describe the machinery instead of the answer.
 
-**Concepts** are plain English, one word, drawn from the vocabulary already in the codebase: boundary, summary, gap, terminal, transition, pack. Before naming a new concept, grep for how the code already talks about it. A second word for an idea that already has one costs every later reader a lookup.
+**Concepts** are plain English, one word, drawn from the vocabulary already in the codebase: boundary, summary, gap, terminal, transition, pack. Before you name a new concept, grep for how the code already talks about it. A second word for an idea that already has one costs every later reader a lookup.
 
 ## Comments and docs
 
@@ -87,7 +87,7 @@ Two packages break this. `@suss/datalog` and `@suss/differential` are named for 
 - Test file naming: `index.test.ts` next to `index.ts`. One test file per source file is typical but not required.
 - Prefer hand-crafted data fixtures over file-based fixtures when the data is small enough to read in one screen; it's easier to understand and update.
 - Tests describe *behavior*, not implementation: `it("wraps null-structured conditions as opaque")` not `it("assembleSummary works")`.
-- A test that parses fixture source takes its ts-morph project from `@suss/test-project`, so every test reads the same language the adapter reads. `createTestProject()` gives what suss configures for a codebase with no tsconfig; `createStrictTestProject()` gives what a codebase whose tsconfig turns strictness on gets, and only a test about nullability needs it. Both hand back a project reused between calls with everything the last caller wrote removed, so hold onto yours only until the next call. A test reading fixture files off disk builds its own project with `testCompilerOptions`.
+- A test that parses fixture source gets its ts-morph project from `@suss/test-project`, so every test reads the same language the adapter reads. `createTestProject()` returns the setup suss uses for a codebase with no tsconfig. `createStrictTestProject()` returns the setup a codebase gets when its tsconfig turns strictness on, and only a test about nullability needs that one. Both return a project that is reused between calls, with everything the previous caller wrote deleted from it, so don't keep a reference to yours past your next call. A test that reads fixture files off disk builds its own project with `testCompilerOptions`.
 
 ## Commits
 
@@ -101,7 +101,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/). Format:
 
 **Types:** `feat`, `fix`, `docs`, `test`, `chore`, `refactor`, `perf`
 
-**Scopes** (optional but encouraged in a monorepo): the affected package name, e.g. `ir`, `adapter`, `extractor`, `checker`, `cli`, any framework pack (`ts-rest`, `express`, `fastify`, `react`, `react-router`, `apollo`, …), any runtime pack (`axios`, `web`, `apollo-client`), any stub source (`openapi`, `cloudformation`, `storybook`, `appsync`, …), or `docs` / `scripts` when the change lives outside packages. This list is illustrative, not exhaustive; use the shortest scope that names what changed, combine with commas when a commit cuts across several, and omit scope entirely for changes that cut across the whole repo.
+**Scopes** (optional but encouraged in a monorepo): the affected package name, e.g. `ir`, `adapter`, `extractor`, `checker`, `cli`, any framework pack (`ts-rest`, `express`, `fastify`, `react`, `react-router`, `apollo`, …), any runtime pack (`axios`, `web`, `apollo-client`), any stub source (`openapi`, `cloudformation`, `storybook`, `appsync`, …), or `docs` / `scripts` when the change lives outside packages. This list is illustrative, not exhaustive. Use the shortest scope that says what changed. Combine scopes with commas when one commit touches several of them, and leave the scope off entirely when a change touches the whole repo.
 
 **Guidelines:**
 - Each commit should have a single primary intent. Split mixed changes (e.g. a feature + a doc update + a test fix) into separate commits.

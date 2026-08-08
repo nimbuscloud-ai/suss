@@ -66,8 +66,8 @@ transitions:
 
 Each transition declares exactly one outcome: `response` (REST status +
 body), `returns` (a function/handler return value), or `throws` (an
-error). PRD docs (`kind: prd`) carry `when` / `expect` scenarios that
-optionally `link` to a system-intent outcome by `<name>.<id>`.
+error). PRD docs (`kind: prd`) contain `when` / `expect` scenarios that
+can `link` to a system-intent outcome by `<name>.<id>`.
 
 Body properties accept the primitive type names `string`, `integer`,
 `number`, `boolean`, `null`, and `unknown`.

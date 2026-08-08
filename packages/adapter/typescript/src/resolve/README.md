@@ -4,10 +4,10 @@ AST walking, symbol resolution, and post-discovery passes that fill in cross-fun
 
 ## Place in the pipeline
 
-Runs after discovery and during summary assembly. Three roles:
+This layer runs after discovery and during summary assembly. It has three roles:
 
 1. **Effect extraction.** `invocationEffects.ts` walks each unit's body for `CallExpression` nodes and produces `RawEffect` objects (one for each captured call). Pack recognizers fire here.
-2. **Shape resolution.** `astResolve.ts` follows AST declaration chains (variable initializers, property access, single-return function bodies) to preserve literal narrowness that the type checker would widen. Used by `shapes/` as the first attempt before falling back to the type checker.
+2. **Shape resolution.** `astResolve.ts` follows AST declaration chains (variable initializers, property access, single-return function bodies) to preserve literal narrowness that the type checker would widen. `shapes/` tries this first, before it falls back to the type checker.
 3. **Post-extraction enrichment.** `reachableClosure.ts` synthesizes `library`-kind summaries for functions reachable from already-discovered units. `rethrowEnrichment.ts` post-processes throw transitions to add `possibleSources` from try-block callees.
 
 ## Key files
@@ -22,11 +22,11 @@ Runs after discovery and during summary assembly. Three roles:
 ## Non-obvious things
 
 - **astResolve and shapes call each other.** `extractShape` (in `shapes/shapes.ts`) calls `resolveNodeFromAst`; `resolveNodeFromAst` calls `extractShape` back. Each entry to `resolveNodeFromAst` resets its own `seen`/`hops` context, so the cycle detection there doesn't catch cross-extractor recursion. `shapes/shapes.ts` has a module-local depth guard (`MAX_EXTRACT_DEPTH`) as the safety net for self-referential call graphs.
-- **`isInformativeInitializer` filter.** When walking a variable's initializer, we only descend into call/await/new — those are the cases where the AST tells you something the type checker wouldn't (e.g. `const u = await db.find()` returns `T | null`; past a null guard the use site is just `T`). For other initializers (literals, expressions), defer to the use-site type.
+- **`isInformativeInitializer` filter.** When walking a variable's initializer, we only descend into call/await/new — those are the cases where the AST tells you something the type checker wouldn't (e.g. `const u = await db.find()` returns `T | null`; past a null guard the use site is only `T`). For other initializers (literals, expressions), we defer to the use-site type.
 - **Recognizer error isolation.** A recognizer that throws is caught, logged to stderr with file:line, and skipped for that call. The extraction continues — buggy recognizers don't crash the run.
 - **Closure walk is one-hop only.** `reachableClosure` resolves immediate callees of discovered units to library summaries. Transitive throws (`A` throws because `A → B → C` throws) are deferred to `rethrowEnrichment`, which only walks try-blocks one level deep.
 - **Container-building calls are flagged `neverTerminal`.** Calls like `someBuilder()` that return arrays/objects become invocation effects but shouldn't compete with `return` / `throw` in the terminal-line dedup. The flag tells assembly to keep them as effects, not collapse them into the unit's terminal output.
-- **Rethrow lookup is by line range, not symbol.** `summary.location.range` (`startLine-endLine`) is the lookup key — not function name or symbol identity. Works because we never have two summaries for the same function at the same line range.
+- **Rethrow lookup is by line range, not symbol.** `summary.location.range` (`startLine-endLine`) is the lookup key, not the function name or symbol identity. That works because we never have two summaries for the same function at the same line range.
 
 ## Sibling modules
 

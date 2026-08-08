@@ -1,35 +1,35 @@
 # message-bus/
 
-Pairs queue and topic providers (CloudFormation / SAM / similar) against producer code (sending messages) and consumer code (receiving messages). Resolves env-var-named channels to declared resource ids and checks body-shape compatibility between sender and receiver.
+This check pairs queue and topic providers (CloudFormation / SAM / similar) against producer code (the code that sends messages) and consumer code (the code that receives them). It resolves channels written as env-var names to declared resource ids, and it checks that the sender's and the receiver's body shapes are compatible.
 
 ## Place in the pipeline
 
-Runs in `checkAll()` after pairing. Consumes:
+`checkAll()` runs it after pairing. It takes:
 - Queue providers (`kind = library`, `message-bus` semantics) from contract sources.
-- Lambda consumers (`kind = consumer`, `message-bus` semantics) — the recipients.
-- Producer code with `message-send` interaction effects (sending into the queue).
-- Runtime-config providers carrying `envVarTargets` metadata for channel resolution.
+- Lambda consumers (`kind = consumer`, `message-bus` semantics), the recipients.
+- Producer code with `message-send` interaction effects (the code sending into the queue).
+- Runtime-config providers with `envVarTargets` metadata, used to resolve channels.
 - Code summaries scoped under each consumer's CodeUri.
 
-Emits `messageBusProducerOrphan`, `messageBusConsumerOrphan`, `messageBusUnused`, and `boundaryFieldUnknown` (aspect: receive) findings.
+It emits `messageBusProducerOrphan`, `messageBusConsumerOrphan`, `messageBusUnused`, and `boundaryFieldUnknown` (aspect: receive) findings.
 
 ## Key files
 
-- `messageBusPairing.ts:checkMessageBus` — main orchestrator.
-- `channelPairing.ts` holds the channel index (`ChannelSet`, `addChannel`, `hasPair`). The split and the pairing rule themselves are `parseChannel` and `channelsPair` in `@suss/ir-core`, re-exported here, because `boundaryKey` builds the pairing key from the same split.
-- `messageBusPairing.ts:resolveProducerChannels` — maps env-var names (what the recognizer saw) to CFN logical ids via runtime-config metadata.
-- `messageBusPairing.ts:checkBodyShapes` — field-set comparison between producer sends and consumer receives.
+- `messageBusPairing.ts:checkMessageBus` is the main orchestrator.
+- `channelPairing.ts` contains the channel index (`ChannelSet`, `addChannel`, `hasPair`). The split itself and the pairing rule are `parseChannel` and `channelsPair` in `@suss/ir-core`, re-exported here, because `boundaryKey` builds the pairing key from the same split.
+- `messageBusPairing.ts:resolveProducerChannels` maps env-var names (what the recognizer saw) to CFN logical ids through runtime-config metadata.
+- `messageBusPairing.ts:checkBodyShapes` compares the field sets of what producers send and what consumers receive.
 
 ## Non-obvious things
 
-- **Channels pair on the subject; the bus has to agree only when both sides name one.** A channel is written `${bus}#${subject}`, and the bus segment is optional. The template names both (`default#order.placed`), so two buses routing the same detail-type stay apart. A handler's code names only the subject it expects (`order.placed`), because which bus reaches it is deployment configuration, so a bus-less channel pairs with that subject on any bus. Queue-id channels (`OrdersQueue`) carry no separator and pair by equality as before.
-- **This pass owns every message-bus finding; the generic pairing pass owns the pair list.** `boundaryKey` gives a message-bus binding a key, so `suss check` now reports which handler answers a declared subscriber. Those pairs skip `checkPair`, and message-bus summaries that paired with nothing are kept out of the unmatched lists, because `messageBusUnused` and the orphan findings here already say it with a severity.
-- **Channel resolution is two-phase.** Producer code emits a `message-send` effect with `channel = ORDERS_QUEUE_URL` (the env-var name). Pairing first looks for an exact match against a declared queue's logical id; if that fails, runtime-config metadata (when in scope) maps the env-var to its declared resource id and pairing retries. Orphans are expected when neither resolves.
-- **Body-shape comparison is opt-in by shape.** Only `kind = "object"` bodies (with extracted `fields`) get compared. Identifier-shaped args (`send(payload)` where payload is a variable), call-shaped args (`send(buildPayload())`), and absent bodies skip silently. False positives on opaque shapes are worse than missed findings.
-- **Consumer code scope comes from metadata.** Consumer's `metadata.codeScope.kind === "codeUri"` (Lambda CodeUri or container path) determines which code summaries are in-scope for receive-side body extraction. Without scope, body-shape comparison can't run.
-- **Platform-injected env vars are tagged.** AWS auto-injects `AWS_REGION`, `LAMBDA_TASK_ROOT`, etc. The runtime-config provider marks these as `source: "platform"` in `envVarSources`. The check uses this to suppress `envVarUnused` warnings for vars the platform set, even if no code reads them.
+- **Channels pair on the subject; the bus has to agree only when both sides give one.** A channel is written `${bus}#${subject}`, and the bus segment is optional. A template gives both (`default#order.placed`), so two buses routing the same detail-type stay apart. A handler's code gives only the subject it expects (`order.placed`), because which bus reaches it is decided by deployment configuration, so a channel with no bus pairs with that subject on any bus. Queue-id channels (`OrdersQueue`) have no separator and pair by equality, as before.
+- **This pass owns every message-bus finding; the generic pairing pass owns the pair list.** `boundaryKey` gives a message-bus binding a key, so `suss check` now reports which handler matches a declared subscriber. Those pairs skip `checkPair`, and message-bus summaries that paired with nothing stay out of the unmatched lists, because `messageBusUnused` and the orphan findings here already report it with a severity.
+- **Channel resolution is two-phase.** Producer code emits a `message-send` effect with `channel = ORDERS_QUEUE_URL` (the env-var name). Pairing first looks for an exact match against a declared queue's logical id. If that fails, runtime-config metadata (when it is in scope) maps the env-var to its declared resource id, and pairing tries again. When neither one resolves, an orphan is what you should expect.
+- **Body-shape comparison is opt-in by shape.** Only `kind = "object"` bodies (the ones with extracted `fields`) get compared. An argument that is a bare identifier (`send(payload)`, where payload is a variable), an argument that is a call (`send(buildPayload())`), and a missing body are all skipped without a word. False positives on bodies we cannot see into are worse than findings we miss.
+- **Consumer code scope comes from metadata.** The consumer's `metadata.codeScope.kind === "codeUri"` (a Lambda CodeUri or a container path) decides which code summaries are in scope for extracting the receive-side body. Without a scope, the body-shape comparison can't run.
+- **Platform-injected env vars are tagged.** AWS injects `AWS_REGION`, `LAMBDA_TASK_ROOT`, and others by itself. The runtime-config provider marks these as `source: "platform"` in `envVarSources`, and the check uses that to suppress `envVarUnused` warnings for variables the platform set, even when no code reads them.
 
 ## Sibling modules
 
-- `interactions/dispatcher.ts` — `providersOf` and `interactionsOf` are the lookup primitives.
-- `runtime-config/runtimeConfigPairing.ts` — supplies the `envVarTargets` metadata for channel resolution.
+- `interactions/dispatcher.ts` provides `providersOf` and `interactionsOf`, the lookup primitives.
+- `runtime-config/runtimeConfigPairing.ts` supplies the `envVarTargets` metadata used to resolve channels.

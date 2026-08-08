@@ -1,16 +1,16 @@
 # Pack capability registration: design proposal
 
-A declarative `capabilities` field on `PatternPack` describing what a pack might emit (summary kinds, boundary semantics, interaction classes, finding kinds it can trigger downstream) and what it pairs against. The adapter and checker read it before walking source files; the result drives configuration validation, output prediction, work-skipping in the producer, and a foothold for cross-pack-version compatibility.
+A declarative `capabilities` field on `PatternPack` describing what a pack might emit (summary kinds, boundary semantics, interaction classes, finding kinds it can trigger downstream) and what it pairs against. The adapter and checker read it before walking source files. What comes out of it drives configuration validation, output prediction, and work-skipping in the producer, and it gives us a foothold for checking compatibility between pack versions.
 
 ## Why this exists
 
-Today a `PatternPack` declares discovery patterns, terminals, recognizers, and an optional `discoverUnits` callback, i.e. WHAT it discovers and HOW. It does not declare WHAT KIND of summaries it produces or WHAT it consumes. The set of emitted `BoundaryBinding.semantics`, `Effect.interaction.class`, and downstream `FindingKind` values is implicit, learned only after extraction runs.
+Today a `PatternPack` declares discovery patterns, terminals, recognizers, and an optional `discoverUnits` callback, i.e. WHAT it discovers and HOW. It does not declare WHAT KIND of summaries it produces or WHAT it consumes. Nothing says which `BoundaryBinding.semantics`, `Effect.interaction.class`, and downstream `FindingKind` values it emits, so we only learn them after extraction runs.
 
 Four things break because of this:
 
 1. **Configuration validation.** A user who runs `suss check -f apollo-client` without a GraphQL provider pack gets zero pairings and no explanation. The CLI cannot say "your hook calls have no resolvers / contracts to pair against." Today the failure mode is silent under-reporting.
 
-2. **Output prediction.** `suss inspect --packs <list>` cannot answer "with this configuration, expect summaries of kind X / Y and findings of kind A / B." Useful for CI gating ("fail when no message-bus producer / consumer pair shows up, because we know we loaded both packs"), useful for previewing the surface a new pack adds.
+2. **Output prediction.** `suss inspect --packs <list>` cannot answer "with this configuration, expect summaries of kind X / Y and findings of kind A / B." That is useful for CI gating ("fail when no message-bus producer / consumer pair shows up, because we know we loaded both packs"), and useful for previewing the surface a new pack adds.
 
 3. **Work-skipping.** A pack that emits `interaction(class: "schedule")` effects has nothing to pair against if no consumer pack reads them. The producer could skip emission entirely. Today every recognizer fires regardless of downstream interest.
 
@@ -49,9 +49,9 @@ type ProducedCapability =
 ```
 
 - `code-unit`: `BehavioralSummary.kind` values the pack will produce (`handler`, `component`, `library`, etc.)
-- `boundary`: `binding.semantics.name` values, with `role` distinguishing producer-side (the boundary IS this pack) from consumer-side (the pack calls across this boundary). Same semantics name can appear twice if a pack covers both sides.
+- `boundary`: `binding.semantics.name` values, with `role` distinguishing producer-side (the boundary IS this pack) from consumer-side (the pack calls across this boundary). The same semantics name can appear twice if a pack covers both sides.
 - `effect`: `Effect.interaction.class` values emitted by the pack's recognizers (`storage-access`, `service-call`, `message-send`, `config-read`, `schedule`)
-- `finding`: `FindingKind` values the pack's checker emitters can produce. Most packs leave this empty (the checker, not the pack, emits findings); reserved for future plugin-checkers.
+- `finding`: `FindingKind` values the pack's checker emitters can produce. Most packs leave this empty (the checker, not the pack, emits findings), and it is reserved for future plugin-checkers.
 
 `consumes` declares what the pack pairs against, i.e. what it expects OTHER packs to produce:
 
@@ -85,23 +85,23 @@ Three checkpoints:
 
 1. **At pack-loader startup (CLI).** Walk the loaded pack list, build a `produces` index and a `consumes` index, diff them. Each `consumes` entry with no matching `produces` entry from another pack becomes a `MissingCapabilityWarning` printed to stderr before extraction starts. This catches "loaded apollo-client but no GraphQL provider" and "loaded prisma framework but no contract source for the schema."
 
-2. **At extract time (adapter).** When dispatching recognizers, the adapter checks: for each effect a recognizer would emit, is any loaded pack's `consumes` set interested? If not (and the pack opted in via `skipUnconsumed: true` on the capability), skip the emission. This is the work-skipping path. Off by default in v0; opt-in per pack until we measure the wins.
+2. **At extract time (adapter).** When dispatching recognizers, the adapter checks: for each effect a recognizer would emit, is any loaded pack's `consumes` set interested? If not (and the pack opted in via `skipUnconsumed: true` on the capability), skip the emission. This is the work-skipping path. It is off by default in v0, and opt-in per pack until we measure the wins.
 
 3. **At check time (checker).** Build the predicted `FindingKind` set from the loaded packs' boundary capabilities (each `boundary` produces a known finding-kind set; e.g. any `boundary: storage-relational` pack wires up `boundaryFieldUnknown` / `boundaryFieldUnused`). Surface this as the "predicted findings" preview for `suss inspect`.
 
 ### Decentralizing checker dispatch
 
-Today `checkAll` is a hardcoded chain: `findings.push(...checkProviderCoverage(...))`, `findings.push(...checkContractAgreement(summaries))`, repeated per checker pass. Same centralization problem the discovery layer had before `discoverUnits` callbacks. Each new finding source requires editing `checkAll`, and the checker has to know about every per-domain pass up front.
+Today `checkAll` is a hardcoded chain: `findings.push(...checkProviderCoverage(...))`, `findings.push(...checkContractAgreement(summaries))`, repeated per checker pass. This is the same centralization problem the discovery layer had before `discoverUnits` callbacks. Each new finding source requires editing `checkAll`, and the checker has to know about every per-domain pass up front.
 
-The capability mechanism is the natural lever to decentralize this. A pack that produces `boundary: storage-relational` already implies `boundaryFieldUnknown(read)` / `boundaryFieldUnused` checking exists; today the checker hardcodes which function runs that check. A less centralized model:
+The capability mechanism is the natural lever to decentralize this. A pack that produces `boundary: storage-relational` already implies that `boundaryFieldUnknown(read)` / `boundaryFieldUnused` checking exists, and today the checker hardcodes which function runs that check. A less centralized model:
 
 - Each per-domain checker registers itself against the boundary semantics it consumes: `checkRelationalStorage` declares "I run on summary sets containing `storage-relational` providers."
 - The dispatch in `checkAll` becomes a loop over the loaded packs' `produces` / `consumes` capability index, calling registered checkers when the relevant semantics exist.
 - New checkers ship with their pack rather than being added to the central `checkAll` body. Pack authors who add a new `boundary` semantics also ship the checker that pairs against it.
 
-Trade-off: today's `checkAll` is greppable; every pass appears in one file. Decentralizing splits dispatch across packs, less locality. Mitigated by the capability index doubling as the discovery surface: `suss inspect --packs` already lists what's loaded; extending it to list registered checker passes is a small addition.
+Trade-off: today's `checkAll` is greppable, and every pass appears in one file. Decentralizing splits the dispatch across packs, so there is less locality. The capability index makes up for that by also being the place you look: `suss inspect --packs` already lists what's loaded, and extending it to list registered checker passes is a small addition.
 
-This is a v1 deliverable on top of v0 capabilities. The v0 version uses the capability index for prediction + validation only; the registry-based dispatch lands once the capability shape proves stable.
+This is a v1 deliverable on top of v0 capabilities. The v0 version uses the capability index for prediction + validation only, and the registry-based dispatch lands once the capability format proves stable.
 
 ### Back-compat for missing `capabilities`
 
@@ -115,11 +115,11 @@ This means:
 
 ## Out of scope, deferred
 
-- **Pack-version compat ranges.** A `compatibleWith: { "@suss/contract-prisma": "^2.0.0" }` field on `consumes` would let a framework pack refuse to load against an incompatible contract pack. Needs semver discipline across packs that doesn't yet exist; defer until the pack ecosystem has external authors.
-- **Auto-discovery of pack capability via dry-run extraction.** The observation-based fallback above already does this on actual input; running a synthetic dry-run to populate the capability index ahead of extraction is a more elaborate variant. Defer until the lazy fallback proves insufficient.
-- **Pack-pack composition rules.** "Loading `@suss/framework-prisma` requires `@suss/contract-prisma`", a hard dependency declaration. The `consumes` field surfaces it as a warning today; promoting to a load-time error needs a way to express conditional requirements ("required when you have any Prisma-using code, otherwise optional"). Defer.
+- **Pack-version compat ranges.** A `compatibleWith: { "@suss/contract-prisma": "^2.0.0" }` field on `consumes` would let a framework pack refuse to load against an incompatible contract pack. That needs semver discipline across packs that doesn't yet exist, so defer it until the pack ecosystem has external authors.
+- **Auto-discovery of pack capability via dry-run extraction.** The observation-based fallback above already does this on actual input, and running a synthetic dry-run to populate the capability index ahead of extraction is a more elaborate variant. Defer until the lazy fallback proves insufficient.
+- **Pack-pack composition rules.** "Loading `@suss/framework-prisma` requires `@suss/contract-prisma`", a hard dependency declaration. The `consumes` field surfaces it as a warning today. Promoting that to a load-time error needs a way to express conditional requirements ("required when you have any Prisma-using code, otherwise optional"). Defer.
 - **Field-level capability declarations.** Declaring not only `boundary: storage-relational` but also which COLUMN-level metadata the pack populates. Useful for predicting which findings an extraction will support. Defer until an actual ask surfaces.
-- **Confidence weighting across overlapping packs.** Open question (see below); leaning toward not in v0.
+- **Confidence weighting across overlapping packs.** This is an open question (see below), and we lean toward leaving it out of v0.
 
 ## Mechanics
 
@@ -142,7 +142,7 @@ interface CapabilityIndex {
 }
 ```
 
-Built once at startup. Passed to the adapter (so recognizers can short-circuit) and to the CLI's check command (so unmatched-summary reporting can say "no pack consumes this boundary"). The boundary-to-finding mapping is hardcoded in the checker: each known semantics has a fixed set of finding kinds its checker emits, the same way `pairing/` modules are wired today.
+The loader builds it once at startup and passes it to the adapter (so recognizers can short-circuit) and to the CLI's check command (so unmatched-summary reporting can say "no pack consumes this boundary"). The boundary-to-finding mapping is hardcoded in the checker: each known semantics has a fixed set of finding kinds its checker emits, the same way `pairing/` modules are wired today.
 
 ### Validation diff
 
@@ -157,35 +157,35 @@ for pack in loaded_packs:
                {need.semantics} but no loaded pack produces them"
 ```
 
-Symmetric checks for consumer-role boundaries and for effects. Warnings, not errors: the user might intentionally run in producer-only mode.
+There are symmetric checks for consumer-role boundaries and for effects. These are warnings rather than errors, since the user might intentionally run in producer-only mode.
 
 ### Cache-key implications
 
 The pack version stamp already feeds the cache key. Capability changes split:
 
-- **`produces` changes.** Don't invalidate the cache. Adding a capability to `produces` doesn't change what was actually emitted on the previous run; the cached summaries are still valid. Removing a capability the pack USED to emit IS an actual change, but it's covered by the existing `version` bump that should accompany any behavioural change.
+- **`produces` changes.** Don't invalidate the cache. Adding a capability to `produces` doesn't change what was actually emitted on the previous run, and the cached summaries are still valid. Removing a capability the pack USED to emit IS an actual change, but it's covered by the existing `version` bump that should accompany any behavioural change.
 - **`consumes` changes.** Don't invalidate extraction cache (consumption is a checker-time concern). MAY invalidate the work-skipping decision: adding a consumer for an effect class means the producer can no longer skip. This is recomputed each run from the loaded pack list, not cached.
 
 Net: capability declarations are NOT part of the cache key. The pack version stamp remains the single cache discriminator.
 
 ### Interaction with `discoverUnits`
 
-`discoverUnits` is a callback: the pack can return any `DiscoveredCustomUnit` shape, including ones the declared `produces` doesn't cover. The adapter does NOT enforce capability declarations against callback output in v0. Two reasons:
+`discoverUnits` is a callback: the pack can return any `DiscoveredCustomUnit` it likes, including ones the declared `produces` doesn't cover. The adapter does NOT enforce capability declarations against callback output in v0. Two reasons:
 
-1. Callback packs frequently discover things by inspection; the set of possible outputs isn't always knowable in advance (e.g. a Storybook pack emits one unit per `*.stories.tsx` story; the kind list is derived from the file).
+1. Callback packs frequently discover things by inspection, and the set of possible outputs isn't always knowable in advance (e.g. a Storybook pack emits one unit per `*.stories.tsx` story, and the kind list comes from the file).
 2. Hard-enforcing would push pack authors toward defensive over-declaring, which defeats the point.
 
-Instead, the adapter LOGS (warn, throttled) when a callback emits a unit whose kind is not in `produces`. The pack author either widens `produces` or accepts the warning. Same treatment for emitted effect classes from recognizers.
+Instead, the adapter LOGS (warn, throttled) when a callback emits a unit whose kind is not in `produces`. The pack author either widens `produces` or accepts the warning. Effect classes emitted by recognizers get the same treatment.
 
 This matches the runtime-node and dynamic-registration proposals' style: declare what's typical, observe what's actual, surface the diff.
 
 ## Open questions
 
-- **Field name: `capabilities` vs `registers` vs `declares`.** Leaning `capabilities` because `registers` is semantically overloaded with `registrationCall` / `registrationTemplate` (a different concept: those describe what the pack DISCOVERS as a registration shape, not what the pack itself contributes). `declares` is closer but more passive. `capabilities` reads as "what this pack can do." Open to bikeshed input but not blocking.
+- **Field name: `capabilities` vs `registers` vs `declares`.** We lean toward `capabilities` because `registers` is semantically overloaded with `registrationCall` / `registrationTemplate` (a different concept: those describe what the pack DISCOVERS as a registration, not what the pack itself contributes). `declares` is closer but more passive. `capabilities` says "what this pack can do." Open to bikeshed input but not blocking.
 
-- **Should capabilities carry confidence estimates?** "I produce `config-read` effects with high confidence on `.ts` files." Two competing packs (a generic `process.env` recognizer and a more specific dotenv-loader recognizer) could both emit an effect for the same call site. Confidence-weighted dispatch would pick one. Tractable, but: the existing cross-pack dedup in the adapter (first pack wins by load order) is the lever today. Confidence would mean rebuilding that path. Lean against in v0; revisit when overlapping recognizers become a recurring source of double-emission.
+- **Should capabilities include confidence estimates?** "I produce `config-read` effects with high confidence on `.ts` files." Two competing packs (a generic `process.env` recognizer and a more specific dotenv-loader recognizer) could both emit an effect for the same call site. Confidence-weighted dispatch would pick one. That is tractable, but the existing cross-pack dedup in the adapter (first pack wins by load order) is what we use today, and confidence would mean rebuilding that path. We lean against it in v0, and revisit when overlapping recognizers become a recurring source of double-emission.
 
-- **Granularity of `effect` declarations.** `interactionClass` is the `Effect.interaction.class` discriminator (`storage-access`, `message-send`, etc.). Some packs differentiate within a class (a Postgres-only pack emits `storage-access` but only against `storageSystem: "postgres"`). Should the capability carry the inner discriminator? Probably yes for `boundary` (the semantics name already does this), probably no for `effect` in v0; start at the class level, refine if validation needs more precision.
+- **Granularity of `effect` declarations.** `interactionClass` is the `Effect.interaction.class` discriminator (`storage-access`, `message-send`, etc.). Some packs differentiate within a class (a Postgres-only pack emits `storage-access` but only against `storageSystem: "postgres"`). Should the capability include the inner discriminator? Probably yes for `boundary` (the semantics name already does this), probably no for `effect` in v0. Start at the class level, and refine if validation needs more precision.
 
 - **Should `produces` for `boundary` always pair with at least one `produces` for a corresponding `code-unit` kind?** A pack producing `boundary: rest, role: provider` should also be producing some unit kind (handler / controller). The two are correlated but not strictly so (a contract pack like `@suss/contract-openapi` produces REST provider summaries from spec files alone, not from code units). Keep them independent in v0.
 
@@ -196,21 +196,21 @@ This matches the runtime-node and dynamic-registration proposals' style: declare
 1. Unit tests in `@suss/extractor` covering capability-declaration parsing + the validation diff against synthetic pack lists. Cover: missing producer, missing consumer, multiple producers (ambiguity is fine), packs declaring the same effect class.
 2. Integration test in `@suss/cli` running `suss check` against a project with `framework-prisma` loaded but no `contract-prisma`; assert the missing-capability warning fires before any extraction starts.
 3. Migration pass: add `capabilities` to all 15 currently-shipped packs. Compare each pack's declared set against the observation-based set produced by the back-compat path on the dogfood corpus; reconcile drift before declaring v0 done.
-4. Inspect-preview integration: extend `suss inspect --packs <list>` to show the predicted summary kinds + finding kinds derived from the capability index. Eyeball against actual output on a production codebase; the two should match.
-5. Work-skipping (opt-in): add `skipUnconsumed: true` to the `runtime-node` pack's `schedule` capability. Verify that running suss without any `schedule`-consuming pack produces no `schedule` effects in the IR. (Today there is no consumer; this is the test that the optimisation fires.)
+4. Inspect-preview integration: extend `suss inspect --packs <list>` to show the predicted summary kinds + finding kinds derived from the capability index. Eyeball it against actual output on a production codebase. The two should match.
+5. Work-skipping (opt-in): add `skipUnconsumed: true` to the `runtime-node` pack's `schedule` capability. Verify that running suss without any `schedule`-consuming pack produces no `schedule` effects in the IR. (Today there is no consumer, so this is the test that the optimisation fires.)
 
 ## Cost estimate
 
-- Schema + types in `@suss/extractor`: half a day. The shape is small; the IR enums it references are stable.
+- Schema + types in `@suss/extractor`: half a day. The schema is small, and the IR enums it references are stable.
 - Capability index + startup validation in `@suss/cli`: half a day. Mostly mapping and diffing.
-- Observation-based fallback in the adapter: one day. Need a per-pack emission log, persisted alongside the cache, with the synth-on-first-run path.
-- Migration of 15 existing packs: half a day. Each pack declaration is ~5 lines; the work is reading each pack to confirm what it actually emits.
+- Observation-based fallback in the adapter: one day. We need a per-pack emission log, persisted alongside the cache, plus the path that synthesizes it on the first run.
+- Migration of 15 existing packs: half a day. Each pack declaration is ~5 lines, and the work is reading each pack to confirm what it actually emits.
 - Tests + inspect-preview integration: one day.
 
-Total: 3 to 3.5 days for v0. Smaller if work-skipping is deferred (drop half a day; it's the only piece that adds runtime branching to the recognizer dispatch).
+Total: 3 to 3.5 days for v0. Smaller if work-skipping is deferred (drop half a day, since it's the only piece that adds runtime branching to the recognizer dispatch).
 
 ## Sequencing
 
 This pack-registration work is independent of `runtime-node` and `dynamic-registration`. Either can land first.
 
-If multiple are in flight: registration first is the cheaper unlock. Once it lands, the new `runtime-node` and `dynamic-registration` packs can ship with declared capabilities from day one rather than being retro-fitted. The migration cost on the existing 15 packs is sunk either way; doing it before adding new packs avoids a second migration round.
+If multiple are in flight: registration first is the cheaper unlock. Once it lands, the new `runtime-node` and `dynamic-registration` packs can ship with declared capabilities from day one rather than being retro-fitted. The migration cost on the existing 15 packs is sunk either way, and doing it before adding new packs avoids a second migration round.

@@ -20,11 +20,11 @@ The adapter has four bespoke resolution walkers, each capped at one hop:
 They do not compose. Serverless projects rarely write a handler as a
 plain exported function. They write
 `export const handler = withAuth(inner)`, and they reach the AWS SDK
-through a barrel package rather than importing it directly. Both shapes
-defeat a one-hop walker.
+through a barrel package rather than importing it directly. Both of
+those defeat a one-hop walker.
 Against a production monorepo, suss found 8 of the 34 handlers the
 deployment template declared, and no SQS producers at all. Extraction
-was fine; discovery never reached the function.
+was fine, and discovery never reached the function.
 
 Each new pattern today means a new walker with its own scope rules, and
 stacked patterns (a wrapped handler exported through a barrel) fail even
@@ -35,7 +35,7 @@ when each hop is individually supported.
 Two layers, both in `packages/adapter/typescript/src/facts/`.
 
 **Fact extraction** walks a source file once and emits flat tuples.
-No resolution logic lives here; it records what is syntactically
+No resolution logic lives here. It records what is syntactically
 present. Node identity is `file:start-end`, because start alone collides
 a call with its callee, and a side table maps ids back to ts-morph nodes
 so the final answer is a `Node`.
@@ -76,35 +76,36 @@ function f.
     unwraps(f, k)      <- returnsFunc(f, g), bodyCalls(g, c),
                           binds(c, p), paramOf(f, k, p)
 
-`unwraps(f, k)` is the wrapper-transparency judgment: f returns a
-function whose body calls f's parameter k, so a call to f resolves to
+`unwraps(f, k)` is how we judge that a wrapper is transparent: f returns
+a function whose body calls f's parameter k, so a call to f resolves to
 argument k. That covers project-local factories with no configuration.
-For opaque library wrappers a pack declares the fact directly
+For library wrappers we cannot see into, a pack declares the fact
+directly
 (`transparentWrappers: [{ callee: "Sentry.wrapHandler", argument: 0 }]`),
 which feeds `unwrapsByName`.
 
 **Consumers** ask two questions:
 
 - `resolveCallable(node)`: the function this value resolves to, if any.
-  Wired into `namedExport` discovery for export values that are not
-  directly a function.
+  We wire this into `namedExport` discovery for export values that are
+  not directly a function.
 - `importsTransitively(file, packages)`: whether a file reaches any of
   the named packages through its imports, following project-local
-  re-export chains. Wired into the `requiresImport` gate, which today
-  reads only the file's own import specifiers and is defeated by
+  re-export chains. We wire this into the `requiresImport` gate, which
+  today reads only the file's own import specifiers and is defeated by
   barrels.
 
-A query extracts the file its value lives in, asks, and widens to that
-file's imports only when the answer is still missing, up to six hops.
-A value that resolves without leaving its own file costs one file. The
-gate skips the rules entirely and walks module specifiers, memoized per
-gate set, because deriving every file's reachable-module set to answer
-one boolean costs far more than the answer is worth.
+A query works out which file its value lives in, asks, and widens to
+that file's imports only when the answer is still missing, up to six
+hops. A value that resolves without leaving its own file costs one
+file. The gate skips the rules entirely and walks module specifiers
+instead, memoized per gate set. Deriving every file's set of reachable
+modules to answer one boolean costs far more than the answer is worth.
 
 ## What this absorbs
 
-`factoryTracking` and `resolveImport` become fact extraction plus rules;
-their bespoke traversals are deleted once callers migrate.
+`factoryTracking` and `resolveImport` become fact extraction plus rules,
+and their bespoke traversals are deleted once callers migrate.
 `helperResolution`'s traversal becomes the shared `unwraps` derivation.
 The `.then` binding stays where it is (it feeds shapes, not discovery)
 until a later pass.
@@ -112,17 +113,18 @@ until a later pass.
 ## Out of scope for v0
 
 Class-method delegation (following a method call out of a handler body
-into the class that defines it) is the next phase; it adds `methodOf`
-facts and rules but no engine changes. Scope-sensitive dataflow, reassignment,
-and conditional exports stay out; the fact layer over-approximates and
-discovery's downstream filters keep precision.
+into the class that defines it) comes next, and it adds `methodOf`
+facts and rules but no engine changes. Scope-sensitive dataflow,
+reassignment, and conditional exports stay out. The fact layer
+over-approximates, and the filters downstream in discovery keep it
+precise.
 
 ## Acceptance
 
-Fixtures per pattern: alias chain, re-export barrel, `export * from`,
+One fixture per pattern: alias chain, re-export barrel, `export * from`,
 local wrapper factory, two stacked wrappers, pack-declared wrapper,
 `.bind`, a namespace-imported wrapper, a wrapped default export, and a
 wrapper reached through a barrel (composition). On the production
 monorepo, suss goes from finding 8 of the 34 handlers the template
-declared to finding all 34, and SQS producer recognition stops being
-zero.
+declared to finding all 34, and it stops recognizing zero SQS
+producers.

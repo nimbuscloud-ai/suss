@@ -51,9 +51,9 @@ Steps 2 and 3 are pure AST traversal, no framework knowledge, no symbol resoluti
 
 Step 4 is where symbol resolution kicks in via ts-morph's type checker. It's the most language-specific piece and the most expensive in terms of compiler calls.
 
-Each step lives in its own file (`paths/pathConditions.ts` for the path engine, `conditions.ts` for the expression-level walker it composes, `predicates.ts`, `subjects.ts`, `terminals/`). They compose, but they don't call each other directly, composition happens in `assembly.ts`.
+Each step lives in its own file (`paths/pathConditions.ts` for the path engine, `conditions.ts` for the expression-level walker it composes, `predicates.ts`, `subjects.ts`, `terminals/`). They compose, but they don't call each other directly. `assembly.ts` is what puts them together.
 
-This document covers per-function extraction. The whole-program passes that run after it (reachable closure, re-throw enrichment, boundary effects) are rules over a shared fact database, documented in [`internal/facts-and-rules.md`](internal/facts-and-rules.md).
+Everything here is about extracting one function at a time. The whole-program passes that run after it (reachable closure, re-throw enrichment, boundary effects) are rules over a shared fact database, documented in [`internal/facts-and-rules.md`](internal/facts-and-rules.md).
 
 ## Step 1: `findTerminals`
 
@@ -79,7 +79,7 @@ findTerminals(func, patterns):
 
 - **`returnShape`**: the node is a `ReturnStatement` returning an object literal, optionally with required properties. For ts-rest: `requiredProperties: ["status", "body"]` means the return must be `return { status: ..., body: ... }`.
 - **`parameterMethodCall`**: the node is a call expression on a specific parameter, with a specific method chain. For Express: `parameterPosition: 1, methodChain: ["status", "json"]` matches `res.status(X).json(Y)`.
-- **`throwExpression`**: the node is a `ThrowStatement`, optionally requiring the thrown expression text to match a constructor pattern. A project names its own helper, and `constructorPattern: "widgetError"` then matches `throw widgetError(...)`.
+- **`throwExpression`**: the node is a `ThrowStatement`, optionally requiring the thrown expression text to match a constructor pattern. A project supplies the name of its own helper, so `constructorPattern: "widgetError"` then matches `throw widgetError(...)`.
 
 **Extraction:**
 
@@ -87,50 +87,50 @@ Given a matched terminal node, apply the `extraction` rules to pull out status c
 
 - `{ from: "property", name: "status" }`: read the `status` property from the object literal. If it's a numeric literal, produce `{ type: "literal", value: N }`. Otherwise `{ type: "dynamic", sourceText }`.
 - `{ from: "argument", position: 0 }`: read the first argument of the matched call.
-- `{ from: "constructor", codes }`: look the thrown expression's constructor name up in the pack-supplied `codes` map (full text first, then last dot-segment). Only fires for `throwExpression` matchers.
+- `{ from: "constructor", codes }`: look the thrown expression's constructor name up in the `codes` map the pack supplied (full text first, then last dot-segment). This only fires for `throwExpression` matchers.
 
 ### Step 1b: `extractShape`: three-pass body-shape extraction
 
 Response bodies and return values are extracted into `TypeShape` (see `ir-reference.md#typeshape`). The adapter runs three passes in order, stopping at the first that succeeds:
 
-1. **Syntactic decomposition.** Object literals, array literals, and primitive literals decompose directly from the AST. This preserves *literal narrowness* that the type checker would widen: `return { status: "success" }` records `status` as `{ type: "literal", value: "success" }`, not `text`. Negative numerics (`-3`) and unary plus fold into the literal with signed `raw` text. Numeric literals carry `raw` so hex / scientific / separators / integers past `Number.MAX_SAFE_INTEGER` survive the IEEE 754 coercion.
+1. **Syntactic decomposition.** Object literals, array literals, and primitive literals decompose directly from the AST. This preserves *literal narrowness* that the type checker would widen: `return { status: "success" }` records `status` as `{ type: "literal", value: "success" }`, not `text`. Negative numerics (`-3`) and unary plus fold into the literal with signed `raw` text. Numeric literals include `raw`, so hex / scientific / separators / integers past `Number.MAX_SAFE_INTEGER` survive the IEEE 754 coercion.
 
-2. **AST resolution.** For terminal nodes that aren't literals, bare identifiers, property access chains, destructuring bindings, local single-return function calls, the adapter walks back to the defining value and re-enters `extractShape` on that. This lets `const kind = "success"; return { kind }` still produce a literal shape even though the use-site type checker would have widened `kind` to `string`. The walker only recurses into initializers that are *syntactically informative*, literals, aggregate literals, ternaries, identifier / property chains. Call / await / `new` initializers skip this pass, because their declaration-site type is typically wider than use-site flow narrowing (e.g. `const user = await db.find()` returns `T | null`, but past a null guard the use site is just `T`).
+2. **AST resolution.** For terminal nodes that aren't literals (bare identifiers, property access chains, destructuring bindings, local single-return function calls), the adapter walks back to the defining value and re-enters `extractShape` on that. This lets `const kind = "success"; return { kind }` still produce a literal shape even though the use-site type checker would have widened `kind` to `string`. The walker only recurses into initializers that are *syntactically informative*: literals, aggregate literals, ternaries, and identifier / property chains. Call / await / `new` initializers skip this pass, because their declaration-site type is usually wider than use-site flow narrowing (e.g. `const user = await db.find()` returns `T | null`, but past a null guard the use site is only `T`).
 
-3. **Type-checker fallback.** Anything the first two passes can't resolve is handed to ts-morph's type checker via `shapeFromNodeType`. This catches identifiers whose declarations live across module boundaries, generics, and types without literal initializers. The type checker sees flow narrowing at the reference site, so narrowed unions collapse correctly here. Opaque named types (`Date`, `Promise`, `Map`, `Error`, …) stop at `{ type: "ref", name: "Date" }` rather than expanding their structural properties, since the wire form is codec-dependent and the structural expansion would be misleading. Index-signature types (`Record<string, T>`, `{ [key: string]: T }`) with no named properties become `{ type: "dictionary", values: ... }`.
+3. **Type-checker fallback.** Anything the first two passes can't resolve is handed to ts-morph's type checker via `shapeFromNodeType`. This catches identifiers whose declarations live in other modules, generics, and types without literal initializers. The type checker sees flow narrowing at the reference site, so narrowed unions collapse correctly here. Opaque named types (`Date`, `Promise`, `Map`, `Error`, …) stop at `{ type: "ref", name: "Date" }` instead of expanding their structural properties, because the wire form depends on the codec and the structural expansion would mislead the reader. Index-signature types (`Record<string, T>`, `{ [key: string]: T }`) with no named properties become `{ type: "dictionary", values: ... }`.
 
-**Spreads.** `{ ...user, admin: true }` runs the spread expression through the same three-pass pipeline. A resolvable `record` result is merged in source order (later keys / later spreads override); only unresolvable spreads fall through to the `record.spreads[]` escape hatch. `union` spreads (e.g. a value narrowed to `record | null` where the caller would have flow-narrowed to `record`), we currently treat these as unresolvable, matching the conservative "some extra fields could be anything" semantics.
+**Spreads.** `{ ...user, admin: true }` runs the spread expression through the same three-pass pipeline. A resolvable `record` result is merged in source order (later keys and later spreads override earlier ones), and only unresolvable spreads fall through to the `record.spreads[]` escape hatch. We currently treat `union` spreads as unresolvable too (say, a value narrowed to `record | null` where the caller would have flow-narrowed it to `record`), which matches the conservative "some extra fields could be anything" semantics.
 
 **Recursion and cycles.** Both the type-checker walk and the AST walker bound recursion: the type walker caps at depth 6 and tracks already-expanded type identities; the AST walker caps at 8 hops and tracks node identities. Cyclic `const a = a` (and deeper variants) terminate at a `ref`.
 
 ## Steps 2+3: CFG path conditions
 
-Steps 2 and 3 are computed by the path engine (`paths/pathConditions.ts`), the only condition engine. It enumerates every entry→terminal control-flow path over the function's statement flow and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each carrying its true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps (see decisions #56 through #59 in `internal/status.md`):
+Steps 2 and 3 are computed by the path engine (`paths/pathConditions.ts`), the only condition engine. It enumerates every entry→terminal control-flow path over the function's statement flow and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each with its own true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps (see decisions #56 through #59 in `internal/status.md`):
 
 - `if (a) { if (b) return X; } Y` → Y gets the paths `[¬a]` and `[a, ¬b]`, never a fabricated `¬a ∧ ¬b` or an empty list;
 - sibling guards inside a block gate their tails (`if (a) { if (b) return X; T }` → T gets `[a, ¬b]`);
 - `if (a) {…} else { return; } T` → T gets `[a]` (else-exit closure);
-- terminals inside loops carry an opaque "some iteration" condition and post-loop terminals an opaque "loop exited" negation; quantified-over-iterations facts are not statically decidable, so the engine under-specifies rather than fabricates;
+- terminals inside loops get an opaque "some iteration" condition, and post-loop terminals get an opaque "loop exited" negation. Nothing can decide statically what held on every iteration, so the engine under-specifies rather than fabricates;
 - dead-code terminals (no entry path) produce no transitions.
 
-Expression-level branching *below* a statement (ternaries, `&&`/`||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker in `conditions.ts`: the path engine walks statements, the walker covers the expression tree beneath them.
+Expression-level branching *below* a statement (ternaries, `&&`/`||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker in `conditions.ts`: the path engine walks statements, and the walker covers the expression tree beneath them.
 
 The engine's fidelity is verified mechanically by the differential fuzzer (`tools/differential`; see [`internal/differential-fuzzing.md`](internal/differential-fuzzing.md)).
 
 ### What the engine models
 
-The whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), all loop forms, `try`/`catch` (plus `finally` when it's pure cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. Two constructs deliberately abstain rather than claim:
+It models the whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), all loop forms, `try`/`catch` (plus `finally` when it is only cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. On two constructs it deliberately abstains rather than claim anything:
 
-- **Loops.** Whether a condition held *on some iteration* is not statically decidable, so in-loop terminals carry an opaque "some iteration of:" condition and post-loop terminals an opaque "loop exited" negation. Under-specified, never fabricated.
-- **Catch blocks.** Which statement threw is not statically decidable, so catch-body terminals carry a single opaque `catch` condition (`source: "catchBlock"`).
+- **Loops.** Nothing can decide statically whether a condition held *on some iteration*, so in-loop terminals get an opaque "some iteration of:" condition and post-loop terminals get an opaque "loop exited" negation. The engine under-specifies here; it never fabricates.
+- **Catch blocks.** Nothing can decide statically which statement threw, so catch-body terminals get a single opaque `catch` condition (`source: "catchBlock"`).
 
 ### Declined shapes degrade, never lie
 
-A few shapes the engine does not model: labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, and functions exceeding the 256-path budget. There is no second engine behind these. They **degrade**: each terminal keeps its enclosure conditions (the ancestor branches it sits inside, which gate it regardless of how the flow weaves) plus one opaque `unmodeled control flow (<reason>)` conjunct, so the transition honestly abstains from claiming a complete condition set. Under-specification over occasionally-wrong claims is correctness principle #2.
+A few constructs the engine does not model: labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, and functions exceeding the 256-path budget. There is no second engine behind these. They **degrade**: each terminal keeps its enclosure conditions (the ancestor branches it is inside, which gate it no matter how the flow weaves) plus one opaque `unmodeled control flow (<reason>)` conjunct, so the transition abstains from claiming a complete condition set. Under-specification over occasionally-wrong claims is correctness principle #2.
 
 ### Below statements: the expression-level walker
 
-`collectAncestorConditionInfosBelow` (`conditions.ts`) walks from a terminal up to its containing statement and records the expression-level branching in between: ternary arms, `&&`/`||` short-circuits, and conditions inside nested callbacks that the statement-level enumeration doesn't see. The path engine appends these to each path's condition list. Same purity rule as the engine: AST only, no symbol table, no framework knowledge.
+`collectAncestorConditionInfosBelow` (`conditions.ts`) walks from a terminal up to its containing statement and records the expression-level branching in between: ternary arms, `&&`/`||` short-circuits, and conditions inside nested callbacks that the statement-level enumeration doesn't see. The path engine appends these to each path's condition list. The walker follows the same purity rule as the engine: AST only, no symbol table, no framework knowledge.
 
 ## Step 4a: `parseConditionExpression`
 
@@ -206,7 +206,7 @@ parseConditionExpression(expr):
             return null  // caller wraps as opaque
 ```
 
-**Key invariant:** `parseConditionExpression` returns `null` (not an opaque predicate) when it can't decompose. The caller (`assembleBranch`) is responsible for wrapping null into an `opaque` predicate with the original source text. This keeps this function focused on structure and the assembly logic in one place.
+**Key invariant:** `parseConditionExpression` returns `null` (not an opaque predicate) when it can't decompose the expression. The caller (`assembleBranch`) is the one that wraps null into an `opaque` predicate with the original source text. That keeps `parseConditionExpression` focused on structure, and it keeps the assembly logic in one place.
 
 **What should fall through to opaque:**
 
@@ -282,12 +282,12 @@ resolveSubject(expr):
             return { type: "unresolved", sourceText: expr.getText() }
 ```
 
-**Why the shape is shallow:** `resolveSubject` doesn't try to understand what `db.findById` does or what it returns. It records "this value came from calling `db.findById`, and then we accessed `.repository.lastAnalyzedCommitHash`". That's enough for cross-boundary comparison to work, two predicates on different sides of a boundary can be recognized as testing the same thing, without the extractor needing to understand Prisma query semantics.
+**Why the result stays shallow:** `resolveSubject` doesn't try to understand what `db.findById` does or what it returns. It records "this value came from calling `db.findById`, and then we accessed `.repository.lastAnalyzedCommitHash`". That is enough for cross-boundary comparison to work. Two predicates on different sides of a boundary can be recognized as testing the same thing, and the extractor never has to understand Prisma query semantics.
 
 **Dependency on the compiler:** this is the most expensive step. Every identifier lookup goes through the symbol table. For a 500-line handler with 50 conditions, this can dominate extraction time. Two optimizations worth knowing about:
 
-1. **Cache per-function**, within a single function, the same variable may be tested repeatedly. Cache `Identifier → ValueRef` lookups by node identity.
-2. **Avoid project-wide reference search**, `findReferencesAsNodes()` walks the entire project and is quadratic in project size. Don't use it here; `getSymbol().getDeclarations()` is local and fast.
+1. **Cache per function.** Within a single function, the same variable may be tested repeatedly, so cache `Identifier → ValueRef` lookups by node identity.
+2. **Avoid project-wide reference search.** `findReferencesAsNodes()` walks the entire project and is quadratic in project size. Don't use it here; `getSymbol().getDeclarations()` is local and fast.
 
 ## Step 5: Assembly
 
@@ -312,14 +312,14 @@ extractRawBranches(func, pack):
     return branches
 ```
 
-Each `ConditionInfo` carries the condition's source text, polarity, and provenance (`explicit`, `earlyReturn`, `earlyThrow`, `catchBlock`); `conditionInfoToRawCondition` runs Step 4 on it (parse to `Predicate`, resolve subjects) and wraps what won't decompose as opaque.
+Each `ConditionInfo` records the condition's source text, polarity, and provenance (`explicit`, `earlyReturn`, `earlyThrow`, `catchBlock`). `conditionInfoToRawCondition` runs Step 4 on it (parse to `Predicate`, resolve subjects) and wraps whatever won't decompose as opaque.
 
 Two post-passes follow in `assembly.ts`:
 
-- **Fall-through synthesis.** When the pack opted in with a `functionFallthrough` terminal pattern and no existing terminal covers the default path, a synthetic terminal is added whose condition lists are the paths that fall off the body's end (`pathConditions`' `fallthrough` result). Pack opt-in keeps the semantics where they're declared: HTTP packs treat no-response as a gap, React event handlers treat implicit return as normal.
-- **Effect attachment.** Bare expression-statement calls and recognizer-typed effects attach to the default branch, the path every body-top-level call executes on.
+- **Fall-through synthesis.** When the pack opted in with a `functionFallthrough` terminal pattern and no existing terminal covers the default path, the adapter adds a synthetic terminal whose condition lists are the paths that fall off the end of the body (`pathConditions`' `fallthrough` result). Making the pack opt in keeps the semantics where they are declared: HTTP packs treat no-response as a gap, and React event handlers treat an implicit return as normal.
+- **Effect attachment.** Bare expression-statement calls and recognizer-typed effects attach to the default branch, the path that every call at the top level of the body runs on.
 
-The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which handles the opaque-wrapping, gap detection, confidence scoring, and `expectedInput` pass-through. That logic is already implemented and tested, this document covers only the adapter side.
+The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which handles the opaque-wrapping, gap detection, confidence scoring, and `expectedInput` pass-through. That logic is already implemented and tested. Only the adapter side is described here.
 
 ### Step 5b: Client field tracking
 
@@ -344,7 +344,7 @@ collectClientFieldAccesses(callExpr, func, branchLocations):
         //     properties: { name: { type: "unknown" }, email: { type: "unknown" } } } } }
 ```
 
-`expectedInput` flows through `RawBranch` → `assembleSummary` → `Transition.expectedInput`, where the checker's `checkBodyCompatibility` compares it against the provider's output body shape. Leaf types are `unknown` because we only track *which* fields are accessed, not what types the consumer expects, field presence is the comparison, not type compatibility.
+`expectedInput` flows through `RawBranch` → `assembleSummary` → `Transition.expectedInput`, where the checker's `checkBodyCompatibility` compares it against the provider's output body shape. Leaf types are `unknown` because we only track *which* fields are accessed, not what types the consumer expects. The comparison is about which fields are present, not whether their types line up.
 
 ## Testing strategy
 
@@ -358,16 +358,16 @@ The five steps correspond to five independently testable units:
 | `predicates.test.ts` | Individual expression nodes (not full functions). Assert the parsed `Predicate`. One test per AST expression kind. |
 | `subjects.test.ts` | Fixture functions with parameter access, dependency call results, destructuring, property chains. Assert the resolved `ValueRef`. |
 
-Each test uses its own small fixture, no end-to-end runs for unit tests. Full extraction integration tests live in three places: the adapter's own integration test (`packages/adapter/typescript/src/*.test.ts` against `fixtures/ts-rest`), each framework pack's integration test (adapter-against-fixtures for its own framework), and the CLI test suite (deep-equal assertions on representative summaries per framework, plus `-o` round-trip).
+Each test uses its own small fixture, and unit tests never run end to end. Full extraction integration tests live in three places: the adapter's own integration test (`packages/adapter/typescript/src/*.test.ts` against `fixtures/ts-rest`), each framework pack's integration test (the adapter run against fixtures for that framework), and the CLI test suite (deep-equal assertions on representative summaries per framework, plus `-o` round-trip).
 
-Beyond fixtures, the correctness principles below are verified *mechanically* by a differential fuzzer (`tools/differential`): generated handler programs are extracted through the real pipeline and executed against request batteries, and any disagreement between the summary's claims and observed behavior is shrunk to a minimal counterexample. Constructs with documented soundness gaps run inverted properties that must keep rediscovering the gap until it's fixed. See [`internal/differential-fuzzing.md`](internal/differential-fuzzing.md).
+Beyond fixtures, a differential fuzzer (`tools/differential`) verifies the correctness principles below *mechanically*: it extracts generated handler programs through the actual pipeline, runs them against batteries of requests, and shrinks any disagreement between the summary's claims and the observed behavior down to a minimal counterexample. Constructs with documented soundness gaps run inverted properties that must keep rediscovering the gap until it's fixed. See [`internal/differential-fuzzing.md`](internal/differential-fuzzing.md).
 
 ## Correctness principles
 
 Three properties must hold for the algorithm to be trusted:
 
-1. **Exhaustiveness**, every path through the function body maps to exactly one `RawBranch`. If not, the missing path becomes a gap, not a silent drop.
-2. **No false conditions**, a predicate that appears on a transition must actually gate that transition in the source code. It's fine to under-specify (fall back to opaque); it's not fine to report a condition that isn't really there.
-3. **Stable subjects across renames**, `ValueRef`s should be structurally equal across mechanical renames. If a user renames `user` to `account`, the subject shape should still be `dependency("db.findById")` + property path, unchanged.
+1. **Exhaustiveness.** Every path through the function body maps to exactly one `RawBranch`. If it doesn't, the missing path becomes a gap, and it is never dropped silently.
+2. **No false conditions.** A predicate that appears on a transition must actually gate that transition in the source code. Under-specifying is fine (fall back to opaque); reporting a condition that isn't there is not.
+3. **Stable subjects across renames.** `ValueRef`s should be structurally equal across mechanical renames. If a user renames `user` to `account`, the subject should still resolve to `dependency("db.findById")` plus the same property path, unchanged.
 
 Violations of #1 degrade confidence but don't invalidate the summary. Violations of #2 or #3 are bugs and must be fixed.

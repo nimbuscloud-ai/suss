@@ -24,7 +24,7 @@ Provenance, so a grammar bump is a deliberate, checkable act:
 
 tree-sitter-python is MIT-licensed. [`NOTICE`](./NOTICE) in this
 directory reproduces its copyright and permission notice in full, and
-ships in the published tarball alongside the `.wasm` file (both sit
+ships in the published tarball alongside the `.wasm` file (both live
 under `grammar/`, which the package's `files` field includes), so the
 attribution its license requires travels with the binary it covers.
 

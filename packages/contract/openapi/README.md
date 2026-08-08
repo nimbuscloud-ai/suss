@@ -4,9 +4,9 @@ Generate suss `BehavioralSummary[]` from an [OpenAPI 3.x](https://swagger.io/spe
 
 ## What this package is
 
-`@suss/contract-openapi` reads an OpenAPI document and emits one `BehavioralSummary` per operation. Each summary carries:
+`@suss/contract-openapi` reads an OpenAPI document and emits one `BehavioralSummary` per operation. Each summary has:
 
-- A `kind: "handler"` provider-side shape
+- A `kind: "handler"` provider-side form
 - `boundaryBinding: { protocol: "http", method, path, framework: "openapi" }`: pairs with extracted handlers/clients via the checker's path normalization (`:id` ↔ `{id}`)
 - One transition per declared response status, with body shapes converted from OpenAPI Schema → suss `TypeShape`
 - `confidence: { source: "derived", level: "high" }`: declared rather than inferred
@@ -58,7 +58,7 @@ const summaries = openApiToSummaries(spec);
 - **Polymorphism via `discriminator`** is not modeled (the union shape is correct, but the discriminator field isn't called out).
 - **Spec validation is not strict**; invalid specs may produce odd summaries rather than errors.
 
-## Where it sits in suss
+## Where it fits in suss
 
 Depends only on `@suss/behavioral-ir` (for the IR types it produces) and `yaml` (for spec parsing). It is independent of the language adapter and pattern packs; it doesn't extract from source.
 

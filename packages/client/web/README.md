@@ -1,6 +1,6 @@
 # @suss/client-web
 
-Client pack for the web `fetch` API. Discovers `fetch()` call sites, extracts method/path from arguments, and produces client behavioral summaries.
+Client pack for the web `fetch` API. It discovers `fetch()` call sites, extracts the method and path from the arguments, and produces client behavioral summaries.
 
 ## What this package is
 
@@ -10,11 +10,11 @@ Client pack for the web `fetch` API. Discovers `fetch()` call sites, extracts me
 - **Binding extraction**: URL path from the first argument (literal strings only), HTTP method from `options.method` (defaults to `GET`)
 - **Terminals**: `returnStatement` (any return) and `throwExpression`
 
-This is a "client pack": `fetch` is a built-in web API, not a third-party framework. It uses the same `PatternPack` interface because the adapter interprets both identically.
+This is a "client pack": `fetch` is a built-in web API, not a third-party framework. It uses the same `PatternPack` interface because the adapter interprets both of them identically.
 
-## Where it sits in suss
+## Where it fits in suss
 
-Depends only on `@suss/extractor` (for the `PatternPack` type). Contains no analysis logic.
+This package depends only on `@suss/extractor` (for the `PatternPack` type). It contains no analysis logic.
 
 ## Coverage
 

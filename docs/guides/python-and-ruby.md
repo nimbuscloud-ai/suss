@@ -1,10 +1,10 @@
 # Read a Python or Ruby project
 
 suss reads Python and Ruby through two language adapters, and
-`suss extract` reaches both. Everything downstream is unchanged,
-because a summary carries a boundary binding whatever language it came
-from, so `suss check` and `suss inspect` read a Python project's
-summaries exactly as they read a TypeScript project's.
+`suss extract` reaches both. Everything downstream is unchanged. A
+summary has a boundary binding whatever language it came from, so
+`suss check` and `suss inspect` read a Python project's summaries
+exactly as they read a TypeScript project's.
 
 ## What the two adapters read today
 
@@ -22,7 +22,7 @@ a graphql-ruby field against a query your frontend sends.
 
 ## Let init find the project
 
-`suss init` reads the dependency list a Python or Ruby project states
+`suss init` reads the dependency list a Python or Ruby project declares
 and prints the commands for what it finds:
 
 ```bash
@@ -31,11 +31,12 @@ npx suss init services/shop
 
 It reads `requirements.txt` and its includes, `pyproject.toml` (both
 the standard table and Poetry's), `Pipfile`, `setup.cfg`, and
-`Gemfile.lock`, and names the pack for each library it recognizes.
-Where it looked and could not read something, it says so: a `setup.py`
-that computes its dependency list, a `Gemfile` with no lock file
-beside it, and a submodule nobody checked out each get a line, because
-a library named only in one of those is a pack suss cannot suggest.
+`Gemfile.lock`, and it says which pack goes with each library it
+recognizes. Where it looked and could not read something, it says so.
+A `setup.py` that computes its dependency list, a `Gemfile` with no
+lock file beside it, and a submodule nobody checked out each get a
+line, because a library that only appears in one of those is a pack
+suss cannot suggest.
 
 ## Point extract at a Python project
 
@@ -45,11 +46,11 @@ npx suss extract --dir services/shop -f fastapi \
 ```
 
 There is no tsconfig here, so point suss at the directory. It works out
-that the directory is Python from what it holds: a `pyproject.toml`, a
-requirements file, `setup.py`, `Pipfile`, or failing all of those, the
-`.py` files themselves. The packs you name settle it too, since nobody
-asks for a Python pack over a TypeScript project. `--lang python` says
-it outright when you would rather not leave it to that:
+that the directory is Python from what it contains: a `pyproject.toml`,
+a requirements file, `setup.py`, `Pipfile`, or failing all of those,
+the `.py` files themselves. The packs you ask for settle it too, since
+nobody runs a Python pack over a TypeScript project. `--lang python`
+lets you say so outright when you would rather not leave it to that:
 
 ```bash
 npx suss extract --lang python --dir services/shop -f fastapi -o summaries/shop.json
@@ -89,18 +90,19 @@ myapp/fastapi_app.py
        -> 201 TodoResponse
 ```
 
-The FastAPI routes carry the status and shape their decorators declare.
-The flask-restx ones carry the method and path, and say plainly that
-nothing was read from the body. `/behaviors/{school_id}` is composed
-from the namespace the resource is declared on and the path its own
-decorator writes, neither of which is the whole path on its own.
+The FastAPI routes come out with the status and the body type their
+decorators declare. The flask-restx ones come out with the method and
+the path, and say plainly that nothing was read from the body.
+`/behaviors/{school_id}` is composed from the namespace the resource is
+declared on and the path its own decorator writes, neither of which is
+the whole path on its own.
 
-The route in `exports.py` shows the other answer. Its namespace is
+The route in `exports.py` shows the other outcome. Its namespace is
 mounted twice, so which path it is served under is not written down
-anywhere, and the binding names none: `GET ?` pairs with nothing, and
-each line under it says what nobody could read. A parameter's role
-goes the same way, since which parameters a path names is what tells a
-path parameter from a query parameter.
+anywhere, and the binding gives no path: `GET ?` pairs with nothing,
+and each line under it says what nobody could read. A parameter's role
+goes the same way, since the parameters the path mentions are what tell
+a path parameter from a query parameter.
 
 What the command reads, and from where:
 
@@ -108,15 +110,15 @@ What the command reads, and from where:
   `__pycache__`, `.venv`, `venv`, `node_modules` and `.git`. Name files
   yourself with `--files` when you want a subset. A repository checked
   out inside the tree is left to that repository, unless this project's
-  own `.gitmodules` names it as a submodule, in which case its code is
-  code this project imports and is read as such.
+  own `.gitmodules` lists it as a submodule, in which case suss treats
+  its code as code this project imports and reads it that way.
 - **What an absolute import resolves against.** The directory you
   pointed at, plus each checked-out submodule, which is the closest
   thing a Python project has to a tsconfig's `paths`. A submodule
   nobody checked out is reported: an import into an empty directory
   resolves to nothing, and the routes that depend on it would otherwise
-  go quietly missing. A module found under two roots comes back
-  ambiguous rather than resolved, because which one wins is a
+  go missing with nothing said about it. A module found under two roots
+  comes back ambiguous rather than resolved, because which one wins is a
   `sys.path` fact only a running interpreter has. With `-o`, the
   missing submodule is written to a note beside the summaries as well,
   so a CI job reading the summaries can tell the run was incomplete
@@ -134,21 +136,22 @@ Parsing is tree-sitter compiled to WASM and shipped in the package.
 Every built-in TypeScript pack needs nothing from you, because
 everything it matches on is something its library defines. Two of these
 three want a sentence about your project. Write it to a JSON file and
-name the file on the flag, which is how every pack takes configuration:
+give the file name on the flag, which is how every pack takes
+configuration:
 
 ```bash
 npx suss extract --dir services/shop -f flask-restx=suss.flask-restx.json
 ```
 
-`suss.flask-restx.json` holds what the pack documents, and nothing else
-reads it:
+`suss.flask-restx.json` contains what the pack documents, and nothing
+else reads it:
 
 ```json
 { "wrapperModules": ["myapp.wrappers.restx"] }
 ```
 
 A pack that cannot work without a value says so and stops, rather than
-reading half a project quietly. Where an option names a directory, a
+reading half a project quietly. Where an option gives a directory, a
 relative path is read relative to the config file itself, so the same
 file works whichever directory you run the command from.
 
@@ -182,10 +185,10 @@ class TodoList:
     def post(self): ...
 ```
 
-`wrapperModules: ["myapp.wrappers.restx"]` names that module, and the
-pack accepts a `route` decorator imported from it alongside one
+`wrapperModules: ["myapp.wrappers.restx"]` points at that module, and
+the pack accepts a `route` decorator imported from it alongside one
 imported from `flask_restx` itself, which is always accepted. The pack
-hardcodes only what flask-restx defines; your wrapper's name is your
+hardcodes only what flask-restx defines. Your wrapper's name is your
 project's choice, so it arrives as configuration. An aliased import
 (`from myapp.wrappers.restx import route as api_route`) resolves the
 same way.
@@ -193,10 +196,10 @@ same way.
 Each HTTP-verb-named method on the class becomes its own route, with
 the verb from the method name and the path from the decorator's first
 string argument. Werkzeug converters are canonicalized, so
-`/orders/<int:order_id>` reads as `/orders/{order_id}` with
+`/orders/<int:order_id>` comes out as `/orders/{order_id}` with
 `order_id` as a path parameter. A method with a return annotation gets
-one transition describing that shape under a 200. `@ns.marshal_with`
-and `@ns.expect` are not read yet.
+one transition describing that return type under a 200.
+`@ns.marshal_with` and `@ns.expect` are not read yet.
 
 A route declared on a namespace is served under the namespace's own
 path, and the pack composes the two:
@@ -212,19 +215,20 @@ class OrderDetail:
 ```
 
 with `api.add_namespace(ns)` somewhere in the files the run reads, that
-route reads as `/orders/{order_id}`. `@ns.route("")` is the namespace's
-path by itself, `/orders`, and a path written `"/orders/"` serves the
-same routes as `"/orders"`, because the library holds it that way.
-Parameters the namespace's path names are path parameters like any
-others.
+route comes out as `/orders/{order_id}`. `@ns.route("")` is the
+namespace's path by itself, `/orders`, and a path written `"/orders/"`
+serves the same routes as `"/orders"`, because that is how the library
+treats it. Parameters in the namespace's path are path parameters like
+any others.
 
-The composition wants the namespace constructed with a literal `path`
-and mounted once, through a variable, by an `add_namespace` that states
-no `path` of its own. Written any other way, the route is still
-discovered under its name, with no path and a recorded reason, so it
-pairs with nothing rather than with whatever a guessed path would have
-named. `@suss/adapter-python`'s README has the grid of what every
-spelling of a path means at each site, checked against a running app.
+For the pack to compose the two, the namespace has to be constructed
+with a literal `path` and mounted once, through a variable, by an
+`add_namespace` that gives no `path` of its own. Written any other way,
+the route is still discovered under its name, with no path and a
+recorded reason, so it pairs with nothing rather than with whatever a
+guessed path would have pointed at. `@suss/adapter-python`'s README has
+the grid of what every spelling of a path means at each site, checked
+against a running app.
 
 ### What FastAPI reads
 
@@ -236,10 +240,10 @@ need none of it.
   `@app.post("/orders")` is a POST. The app or router is recognized by
   construction: `app = FastAPI()` or `router = APIRouter()`, one
   assignment back from an import of `fastapi`.
-- `response_model=` and `status_code=` are read as what the route
-  declares. When neither is written, a return annotation supplies the
-  shape. When a shape was read and no status was written, the status is
-  200.
+- `response_model=` and `status_code=` are taken as what the route
+  declares. When neither is written, the return annotation supplies the
+  response body. When a body was read and no status was written, the
+  status is 200.
 - A route on a router composes its path from the router's own `prefix`
   and the `prefix` at the `include_router(...)` call that mounts it,
   one hop deep, when both are string literals. So `/api/items/{item_id}`
@@ -258,22 +262,22 @@ npx suss extract --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/sch
 ```
 
 A `Gemfile`, a `Gemfile.lock`, or a Rails `config/application.rb` is
-enough for suss to read the directory as Ruby, and `--lang ruby` says
-so outright. The walk takes every `.rb` file, skipping `vendor`,
-`node_modules`, `tmp` and `.git`. Ruby constants resolve through class
-and module nesting and `require` is not followed, so there is nothing
-here matching Python's import roots.
+enough for suss to read the directory as Ruby, and `--lang ruby` lets
+you say so outright. The walk reads every `.rb` file, skipping
+`vendor`, `node_modules`, `tmp` and `.git`. Ruby constants resolve
+through class and module nesting, and suss does not follow `require`,
+so there is nothing here matching Python's import roots.
 
 The pack takes three options:
 
 | Option | Default | What it does |
 |---|---|---|
-| `root` | required | The directory a `mutation:` or `resolver:` reference resolves against, through Rails' constant-to-path convention. `Mutations::CampaignUpdate` is read from `<root>/mutations/campaign_update.rb`. Your layout is your project's, so there is no default, and the pack reads nothing without one. Written relative, it is read relative to the config file it was written in. |
-| `baseClassNames` | `["Types::BaseObject"]` | Names a project's own intermediate base class. What you pass is added to graphql-ruby's own generated base, not swapped for it. |
+| `root` | required | The directory a `mutation:` or `resolver:` reference resolves against, through Rails' constant-to-path convention. `Mutations::CampaignUpdate` is read from `<root>/mutations/campaign_update.rb`. Your layout is your project's, so there is no default, and the pack reads nothing without one. Written as a relative path, it is read relative to the config file it was written in. |
+| `baseClassNames` | `["Types::BaseObject"]` | Gives the name of a project's own intermediate base class. What you pass is added to graphql-ruby's own generated base, not swapped for it. |
 | `camelize` | `true` | graphql-ruby's schema-wide default for exposing a snake_case symbol camelCased. Set it to `false` when your schema does. A `field` or `argument` call's own `camelize:` keyword still wins for that one name, the same as it does at runtime. |
 
 A class extending one of those base classes has each `field` call in
-its body read as a resolver. The name is `Campaign.id`, from the
+its body turned into a resolver. The name is `Campaign.id`, from the
 class's short name with a trailing `Type` stripped, which is
 graphql-ruby's own default naming. The binding is
 `graphql-resolver(typeName, fieldName)`, so it pairs against a client
@@ -290,7 +294,7 @@ needs its own reader, and that reader does not exist yet.
 ## Abstention is the design
 
 Neither adapter guesses. A route whose path the source does not state
-is still discovered, keeps its name, carries no path, and records a gap
+is still discovered, keeps its name, has no path, and records a gap
 saying why:
 
 ```python
@@ -299,17 +303,17 @@ def report(): ...
 ```
 
 That route pairs with nothing, which is the outcome you want. A guessed
-path would name some other team's handler, and every finding that came
-back would be about a boundary that does not exist. The same holds one
-level up, for a FastAPI router whose prefix is computed, or one that is
-mounted twice, or mounted onto another router: the routes on it keep
-their names and lose their paths.
+path would point at some other team's handler, and every finding that
+came back would be about a boundary that does not exist. The same
+applies one level up, for a FastAPI router whose prefix is computed, or
+one that is mounted twice, or mounted onto another router: the routes
+on it keep their names and lose their paths.
 
 Ruby abstains the same way per field. `field :status, status_label_for(:organizer)`
 is discovered as `Organizer.status` with no declared contract at all,
-rather than one that claims the type is unknown. A `mutation:`
-reference whose file is not where the convention says produces the
-field and no payload.
+rather than one that claims the type is unknown. When a `mutation:`
+reference points at a file that is not where the convention says it
+should be, you get the field and no payload.
 
 This is what makes the modest name resolver enough. It classifies a
 name as a parameter, a local, an import, or "cannot tell", and because
@@ -318,8 +322,8 @@ has to avoid being wrong. It never has to be complete.
 
 ## What you do not get yet
 
-- **No behavior.** Both adapters read declarations. A route's
-  transitions are empty, or one transition stating a declared shape.
+- **No behavior.** Both adapters read declarations. A route has no
+  transitions, or one transition stating what the route declares.
   Every summary's confidence is pinned low to say so.
 - **No effects.** A Python or Ruby unit records no storage call, no
   queue send, no config read.

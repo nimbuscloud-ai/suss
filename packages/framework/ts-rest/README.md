@@ -12,7 +12,7 @@ Framework pack for [ts-rest](https://ts-rest.com/). Declarative patterns describ
 - **Contract reading**: `initContract().router(...)` with `responses` and `pathParams` extraction
 - **Input mapping**: destructured `{ params, body, query, headers }` with semantic roles
 
-## Where it sits in suss
+## Where it fits in suss
 
 Depends only on `@suss/extractor` (for the `PatternPack` type). Contains no analysis logic; the adapter does all the work.
 

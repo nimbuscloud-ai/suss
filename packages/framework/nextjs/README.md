@@ -2,7 +2,7 @@
 
 Framework pack for [Next.js](https://nextjs.org/) route handlers. Next.js
 puts the route in the tree rather than in a registration call, so this
-pack finds handlers by where their file sits and reads the route out of
+pack finds handlers by where their file lives and reads the route out of
 the path to it.
 
 ## What this package is
@@ -12,7 +12,7 @@ the path to it.
 - **Discovery** by file convention: `app/**/route.ts` exporting `GET`,
   `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, or `OPTIONS`, and
   `pages/api/**` exporting a default handler
-- **Routes** from the path: `app/api/orders/[id]/route.ts` answers
+- **Routes** from the path: `app/api/orders/[id]/route.ts` serves
   `/api/orders/{id}`, a directory in parentheses groups files without
   appearing in the URL, and a catch-all is named after its parameter
 - **Terminals**: `NextResponse.json`, `Response.json`,
@@ -29,7 +29,7 @@ provider in another framework serving it, since `/api/orders/{id}` and
 - **Server actions.** A `"use server"` function is reached through a
   compiler-generated ID rather than a URL, so there is no boundary to
   pair it on.
-- **Pairing a pages handler.** One default export answers every method
+- **Pairing a pages handler.** One default export handles every method
   and switches on `req.method` inside, so the pack reports the path and
   leaves the method blank. A summary with no method does not pair with
   a caller, so those routes show up in an inventory and stop there.
@@ -37,9 +37,9 @@ provider in another framework serving it, since `/api/orders/{id}` and
 - **A route a library serves.** NextAuth's route file is
   `export { GET, POST } from "@/auth"`, where those names come out of
   destructuring the library's own return. No function in the project
-  answers that route, so nothing is reported for it.
+  serves that route, so nothing is reported for it.
 
-## Where it sits in suss
+## Where it fits in suss
 
 Depends only on `@suss/extractor` (for the `PatternPack` type). Contains
 no analysis logic.

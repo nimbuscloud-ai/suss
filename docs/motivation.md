@@ -1,27 +1,27 @@
 # Motivation
 
-suss finds a class of bug that other tooling misses: code that compiles, type-checks, passes its tests, and matches its declared contract, but at runtime sends a consumer a `200` whose shape it doesn't expect, or writes to a database column the schema doesn't declare. The approach is static behavioral analysis. suss extracts what each function does on each execution path, then pairs those extractions across the boundaries where two units of code meet.
+suss finds a class of bug that other tooling misses: code that compiles, type-checks, passes its tests, and matches its declared contract, but at runtime sends a consumer a `200` in a form the consumer doesn't expect, or writes to a database column the schema doesn't declare. The approach is static behavioral analysis. suss extracts what each function does on each execution path, then pairs those extractions across the boundaries where two units of code meet.
 
 ## The problem
 
-Every boundary between two units of code carries behavioral assumptions the caller makes about the callee. Those assumptions are almost never recorded in a form a tool can check. The gap between "the types line up" and "the behavior lines up" is a class of divergence no existing tool catches.
+At every boundary between two units of code, the caller makes behavioral assumptions about the callee. Those assumptions are almost never recorded in a form a tool can check. The distance between "the types line up" and "the behavior lines up" is a class of divergence no existing tool catches.
 
-(*Boundary* throughout means any place two units meet across a contract; the [Glossary](/glossary) and [FAQ](/faq#what-s-a-boundary) give the general definition. The worked example below is one shape of it.)
+(*Boundary* throughout means any place two units meet across a contract; the [Glossary](/glossary) and [FAQ](/faq#what-s-a-boundary) give the general definition. The worked example below shows one kind of boundary.)
 
 ### A worked drift example
 
-A `getUser` handler changes from returning `404` for soft-deleted accounts to returning `200` with `status: "deleted"`. Tests pass: the response is a valid `User`, the status code is a valid HTTP code. TypeScript type-checks. The declared contract (OpenAPI, ts-rest) still says `200 | 404`, which is still true. Nothing in the implementation's shape changed. Any caller that had read `200` as "the user exists and is usable" now receives a `200` that violates that reading, and no tool in the stack can point at the divergence.
+A `getUser` handler changes from returning `404` for soft-deleted accounts to returning `200` with `status: "deleted"`. Tests pass: the response is a valid `User`, the status code is a valid HTTP code. TypeScript type-checks. The declared contract (OpenAPI, ts-rest) still says `200 | 404`, which is still true. Nothing about the implementation's structure changed. Any caller that had taken `200` to mean "the user exists and is usable" now receives a `200` that breaks that assumption, and no tool in the stack can point at the divergence.
 
-The same shape of divergence exists without a network hop. A `useUser()` hook's consumer reads `null` as "loading"; the hook adds a `null` case for deleted users. A resolver reads `context.user.email`; the middleware populating `context.user` stops setting `email` for OAuth sessions. A utility's caller assumes the return is non-empty; the utility adds a case that returns `[]`. The unit of analysis is the boundary, and there's one at every call site.
+The same kind of divergence happens without a network hop. A `useUser()` hook's consumer takes `null` to mean "loading"; the hook adds a `null` case for deleted users. A resolver reads `context.user.email`; the middleware populating `context.user` stops setting `email` for OAuth sessions. A utility's caller assumes the return is non-empty; the utility adds a case that returns `[]`. The unit of analysis is the boundary, and there's one at every call site.
 
 ## Why existing tools miss it
 
 Each layer you already run approximates behavior from a different angle and stops short of comparing derived behavior across a boundary:
 
-- **Type systems** describe shapes. `User` is still `User` whether the user is active, soft-deleted, or shadow-banned.
+- **Type systems** describe structure. `User` is still `User` whether the user is active, soft-deleted, or shadow-banned.
 - **Structural schemas** (OpenAPI, JSON Schema, Protobuf, GraphQL SDL) describe payload structure, that the response has a `status` string field, not under what conditions it takes the value `"deleted"`.
-- **Runtime validators** (Zod, Yup, io-ts) gate the boundary on shape. "Valid" is silent on which branch produced it.
-- **End-to-end typed stacks** (tRPC, GraphQL codegen, OpenAPI codegen) tighten the shape on both sides. Both agree on `User | null`; neither records *when* the server returns `null`.
+- **Runtime validators** (Zod, Yup, io-ts) check the payload's structure at the boundary. "Valid" is silent on which branch produced it.
+- **End-to-end typed stacks** (tRPC, GraphQL codegen, OpenAPI codegen) pin down the structure on both sides. Both agree on `User | null`; neither records *when* the server returns `null`.
 - **Example-based fixtures and contract tests** (Pact, Storybook / CSF, MSW) describe concrete cases. The example set is always incomplete, and the fixture doesn't cross-check whether a call site ever produces that combination.
 - **Integration / e2e / visual-regression tests** (Cypress, Playwright, Chromatic) cover the golden path plus a handful of cases the author thought of. The interesting failures are the ones nobody wrote a test for.
 - **Linters and pattern-based static analysis** (ESLint, CodeQL, Semgrep) match syntactic patterns. They don't model what a function produces under what conditions.
@@ -54,36 +54,36 @@ suss extracts:
 - **Predicates** that gate each transition (`!user`, `user.deletedAt`, default).
 - **Subjects** that trace `user` back to its origin (`db.findById`), stable across rename boundaries.
 - **Outputs** with status codes and body type references.
-- **Effects** with structured arguments, objects preserve their field shape, so `logger.error({ userId, pullRequestId }, "not found")` reads as the named fields it was, not as something opaque.
+- **Effects** with structured arguments, objects keep their fields, so `logger.error({ userId, pullRequestId }, "not found")` comes through as the named fields it had, not as something opaque.
 - **Gaps**: e.g. if the ts-rest contract declares `200 | 404 | 500` but the handler never produces 500.
 
 That's enough for a downstream tool to say: "the consumer at this call site assumes `200` means `isActive`, but the provider's `200` branch fires when `user.deletedAt` is truthy, these don't match."
 
-The handler is one shape of code unit; the same summary shape comes out of React components (what each branch renders under what prop/state conditions), GraphQL resolvers, client call sites (what status codes each site expects), and function-to-function calls within a process. A summary is `(unit, boundary, transitions)`; everything else, framework, transport, semantics, is metadata the pairing layer reads. Terms used here, transition, predicate, subject, effect, gap, have canonical definitions in the [Glossary](/glossary).
+The handler is one kind of code unit; the same kind of summary comes out of React components (what each branch renders under what prop/state conditions), GraphQL resolvers, client call sites (what status codes each site expects), and function-to-function calls within a process. A summary is `(unit, boundary, transitions)`; everything else, framework, transport, semantics, is metadata the pairing layer reads. Terms used here, transition, predicate, subject, effect, gap, have canonical definitions in the [Glossary](/glossary).
 
-**Closure over entry points.** Framework packs find a service's entry points (handlers, components, resolvers, call sites). Every function statically reachable from there, orchestrators, helpers, internal library code, is summarised too, as a `library` unit. Internal behavior that no framework shape recognises still appears as long as *some* pack-recognised entry point calls into it. Unused utilities never reached from any entry point are skipped; the closure filters to the code that matters.
+**Closure over entry points.** Framework packs find a service's entry points (handlers, components, resolvers, call sites). Every function statically reachable from there, orchestrators, helpers, internal library code, is summarised too, as a `library` unit. Internal behavior that no framework pattern recognises still appears, as long as *some* pack-recognised entry point calls into it. Unused utilities never reached from any entry point are skipped; the closure filters down to the code that matters.
 
 ## Why this is the next layer
 
-Every codebase has a question at its heart: *what does this code do under what conditions?* Every nontrivial task, debugging, reviewing, extending, onboarding, integrating, ends up answering some version of it. Over time, parts of that question got cheaper to answer:
+Every codebase has one central question: *what does this code do under what conditions?* Every nontrivial task, debugging, reviewing, extending, onboarding, integrating, ends up answering some version of it. Over time, parts of that question got cheaper to answer:
 
 - Compilation removed "do the shapes line up" from human attention.
 - Unit tests made "does this specific case work" machine-answerable.
 - CI removed "did anyone run the tests."
-- Types pushed shape-checking into the code itself.
+- Types pushed structural checking into the code itself.
 - Static analysis made classes of bugs visible without executing anything.
 
-Each step moved a question from *needs a human to read and think* into *derivable from the code*. Each was strange until it was normal, and then its absence was the new strangeness. The conditional structure of what code produces, which cases, under what predicates, with what effects, is still reconstructed by hand every time. Nobody writes it down at scale because hand-authoring it is intractable; every review reconstructs it, every onboarding rebuilds it, every AI-agent interaction pays for the reconstruction in tokens. suss derives it once, and the summary stays in sync with the source by construction.
+Each step moved a question from *needs a human to read and think* into *derivable from the code*. Each was strange until it was normal, and then its absence was the new strangeness. People still work out by hand, every time, the conditional structure of what code produces: which cases, under what predicates, with what effects. Nobody writes it down at scale because hand-authoring it is intractable; every review works it out again, every onboarding rebuilds it, every AI-agent interaction pays for that rebuilding in tokens. suss derives it once, and the summary stays in sync with the source by construction.
 
 Having the layer in place enables:
 
 - **Behavioral diffs on pull requests**: not *forty lines changed*, but *one 404 case removed, one throw path added, one condition inverted*.
-- **Cross-boundary checking**: does the caller at this site handle every status the provider produces? Machine-answerable before anything runs.
+- **Cross-boundary checking**: does the caller at this site handle every status the provider produces? A machine can answer that before anything runs.
 - **Contract consistency**: the spec says X, the code does Y; the disagreement becomes a finding rather than a runtime surprise.
 - **Publishing**: ship summaries with a package so downstream teams verify against actual behavior, not the README.
 - **Cross-codebase reasoning for AI agents**: a twenty-service monorepo's behavior fits in a few hundred KB of summaries; its source doesn't fit in a context window. Summaries are the compact, verifiable index; source is the fallback. The same substrate verifies an agent's claims: if it asserts "X returns 404 only when the user is missing" and the summary says otherwise, the disagreement is observable.
 
-None of the existing layers go away, each approximates derived behavior from a different angle, and keeping them separate is the point. Different shapes of truth, compared against each other, catch different failures. [Contracts](/contracts) is the taxonomy that grounds this.
+None of the existing layers go away, each approximates derived behavior from a different angle, and keeping them separate is the point. Different kinds of truth, compared against each other, catch different failures. The taxonomy behind this is in [Contracts](/contracts).
 
 ## What suss produces (and what it doesn't)
 
@@ -109,7 +109,7 @@ The scope is narrow on purpose: produce comparable, language-agnostic data, and 
 suss extends Bertrand Meyer's [Design by Contract (1986)](https://en.wikipedia.org/wiki/Design_by_contract) from single-process method calls to distributed, polyglot systems. DbC had three adoption failures that suss addresses:
 
 1. **Contracts are hand-authored.** DbC required developers to write pre/post conditions inline. suss infers them from code. The contract is always in sync with the implementation because it *is* the implementation.
-2. **Contracts live inside a single process.** DbC only worked when caller and callee shared a language runtime. suss operates across service, transport, and language boundaries, because `BehavioralSummary` is a language-agnostic JSON shape.
+2. **Contracts live inside a single process.** DbC only worked when caller and callee shared a language runtime. suss operates across service, transport, and language boundaries, because `BehavioralSummary` is a language-agnostic JSON structure.
 3. **Contracts were absolute.** DbC assertions either hold or they don't. suss is explicit about uncertainty: opaque predicates, confidence levels, gaps as top-level output. A low-confidence summary is still useful.
 
 suss borrows from **compiler design** (AST traversal, symbol resolution, control flow analysis) but operates at a higher level: it extracts *behavioral cases*, not execution paths. It doesn't build a complete control flow graph or perform data flow analysis. It identifies terminals, traces their gating conditions, and composes transitions.
@@ -123,7 +123,7 @@ It aligns with **Daniel Jackson's concept design** at the coarse level: a suss c
 1. **Inference over authoring.** Contracts are extracted from code, not written by hand. The extraction is the product.
 2. **Staged degradation.** Production code is messy. When the extractor can't decompose a condition, it falls back to opaque, preserving the source text and reducing confidence, never failing or fabricating.
 3. **Opacity is data, not failure.** An opaque predicate or unresolved subject is a labeled surface in the summary, not a discarded branch. Later passes decompose what earlier ones couldn't. Reducing opacity over time is a design axis, not cleanup.
-4. **Language-agnostic output.** The output shape is the same whether extracted from TypeScript, Python, or anything else. Downstream tools don't care about the source language.
+4. **Language-agnostic output.** The output has the same structure whether it was extracted from TypeScript, Python, or anything else. Downstream tools don't care about the source language.
 5. **Boundaries are the primary concept, decomposed into three layers.** Every summary is attached to a `BoundaryBinding` with separate *transport*, *semantics*, and *recognition*. New semantics are added as variants, not rewrites of the surrounding layers.
 6. **Declarative over imperative.** Framework support is data, not code. Adding a framework should be ~100 lines of `PatternPack` configuration, not a new module.
 7. **Layered coupling.** The IR has zero dependencies. The extractor depends only on the IR. The adapter depends on the extractor and the compiler API. Each layer can be replaced without touching the others.
@@ -134,9 +134,9 @@ It aligns with **Daniel Jackson's concept design** at the coarse level: a suss c
 - **Not a type checker.** It consumes type information (via the compiler API) but doesn't produce type errors.
 - **Not a verifier.** It doesn't prove the code is correct. It describes what the code does and lets you compare descriptions.
 - **Not a linter.** It doesn't flag style issues. The output is structured data, not warnings.
-- **Not a within-unit correctness tool.** suss finds divergence *between* units, not wrongness *within* one. A handler whose logic is internally consistent but semantically wrong (returns `200` when it should `404`, on every path) produces a summary the consumer agrees with, there's nothing to diff. Team-authored intent is how authored intent becomes a comparable artifact alongside derivation; see the [intent section of Contracts](/contracts#intent).
+- **Not a within-unit correctness tool.** suss finds divergence *between* units, not wrongness *within* one. A handler whose logic is internally consistent but semantically wrong (returns `200` when it should `404`, on every path) produces a summary the consumer agrees with, there's nothing to diff. Team-authored intent is how a team's stated intent becomes an artifact you can compare against derivation; see the [intent section of Contracts](/contracts#intent).
 - **Not complete.** Some code is too dynamic to statically analyze. suss is explicit about that, opaque predicates and low confidence are normal, not failures.
 
 ## Where this goes
 
-Coverage today is schema-shaped: status codes, response bodies, call signatures, conditional rendering, resolver arg shapes, storage access, message-bus producers. Near-term work deepens subject tracing and closes gaps where summaries fall back to opaque. Further out, the same boundary gets checked against more shapes of truth at once, a spec, a test, a snapshot, an observed trace, and the derived behavior of the code, compared pairwise. Team-authored intent is the first of those additional shapes to ship. The pattern at every step is the one unit tests established: turn something that required human reading into something a tool can derive, compare, and act on.
+Coverage today is schema-shaped: status codes, response bodies, call signatures, conditional rendering, resolver argument structures, storage access, message-bus producers. Near-term work deepens subject tracing and closes gaps where summaries fall back to opaque. Further out, the same boundary gets checked against more kinds of truth at once, a spec, a test, a snapshot, an observed trace, and the derived behavior of the code, compared pairwise. Team-authored intent is the first of those additional kinds to ship. The pattern at every step is the one unit tests established: turn something that required human reading into something a tool can derive, compare, and act on.

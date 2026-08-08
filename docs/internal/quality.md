@@ -3,14 +3,14 @@
 suss's correspondence checks (does a consumer's expectation
 match what the provider produces) are one slice of a larger
 question: is the software *good*, in the ways a particular user
-or operator would judge it so. This doc names the layers,
-identifies how they interact, and maps each one to what suss can
-and can't say about it today.
+or operator would judge it so. Below, each layer gets a name,
+along with how the layers interact and what suss can and can't
+say about each one today.
 
-Scope note: internal and aspirational, like
-[`concept-design.md`](concept-design.md). Production framing of
-the "what's a contract" question lives in
-[`contracts.md`](/contracts); this doc is the orthogonal
+Scope note: this is internal and aspirational, like
+[`concept-design.md`](concept-design.md). The production framing
+of the "what's a contract" question lives in
+[`contracts.md`](/contracts), and this doc covers the separate
 "what's quality" axis.
 
 ## Why correspondence isn't enough
@@ -20,26 +20,27 @@ consumer reads `{200, 404}`, the contract declares `{200, 404}`;
 all three agree. Shipped. Finding count: zero.
 
 Necessary, but not sufficient. A system can have perfect
-correspondence and still be bad. Four kinds of failure
-correspondence can't see, each a different *reason* the software
-is worse than its agreement with itself would suggest:
+correspondence and still be bad. There are four kinds of failure
+correspondence can't see, and each one is a different *reason*
+the software is worse than its agreement with itself would
+suggest:
 
 **Speed failure.** The consumer and provider agree on status
 codes and body shapes. The contract declares them too. Every
 correspondence check passes. But p99 is four seconds, and the
 user sits watching a spinner that never resolves. The software
 is doing what it said it would do, only too slowly to be useful.
-Nothing in the IR, the contract, or the pairing report surfaces
-this; latency isn't a static property of a function's branches.
+Nothing in the IR, the contract, or the pairing report shows
+this, because latency isn't a static property of a function's
+branches.
 
 **Missing capability.** The declared contract matches the code
 matches the consumer. All three artifacts agree on what the
 endpoint does. The trouble is the user wanted to *update* their
 profile and all three artifacts describe a *read*. Every
-correspondence check passes because the thing the artifacts
-describe is internally consistent; the failure isn't in the
-match, it's that nothing in the system matches the task the user
-actually has.
+correspondence check passes because what the artifacts describe
+is consistent with itself. The match is fine, and nothing in the
+system matches the task the user actually has.
 
 **Shape agreement with meaning mismatch.** The provider returns
 `200 { status: "deleted" }` for soft-deleted accounts. The
@@ -64,16 +65,16 @@ quality for the analyst audience is absent. Correspondence has
 nothing to say about *whose* question the system answers, only
 that the system is consistent with itself.
 
-The four above will reappear as specific facets once the layers
-are named below: speed is operational (and feeds back into how
-the user experiences the flow); missing capability is the
-coarsest user-impedance failure; meaning mismatch is user
-impedance at the *outcome* level; audience blindness is what
-happens when you forget quality is role-indexed.
+Each of those four comes back as a specific facet once the
+layers below have names. Speed is operational, and it feeds back
+into how the user experiences the flow. Missing capability is
+the coarsest user-impedance failure. Meaning mismatch is user
+impedance at the *outcome* level. Audience blindness is what
+happens when you forget that quality is role-indexed.
 
-Quality is a superset of correspondence. suss names
-correspondence precisely and leaves the rest implicit; this doc
-names the rest.
+Quality is a superset of correspondence. suss describes
+correspondence precisely and leaves the rest implicit, and this
+doc describes the rest.
 
 ## Layer 1: Impedance quality (user-determined) {#layer-1--impedance-quality-user-determined}
 
@@ -185,8 +186,9 @@ Quality is role-indexed, same as the OP test in
   **L1-*whether* quality for compliance roles** (they can answer
   "did this happen"), and **invisible** to end users.
 
-The same code produces different quality readings per audience.
-Quality claims that don't name their audience are suspect.
+The same code gets judged differently by each audience. Treat a
+quality claim that doesn't say who its audience is with
+suspicion.
 
 ### Epistemic
 
@@ -252,31 +254,33 @@ A map of reach, same format as
   has three, that's a mental-model mismatch the inspect output
   makes visible.
 - **Audience-adjacent signals**: routes under `/admin`,
-  internal SDK packages, operator-only CLIs are statically
-  detectable; could be used to tag summaries with audience
-  hints.
-- **Epistemic split at artifact level**: contracts (spec) vs
-  extracted summaries (derived) are compared directly;
+  internal SDK packages, and operator-only CLIs are statically
+  detectable, and we could use them to tag summaries with
+  audience hints.
+- **Epistemic split at artifact level**: contracts (spec) and
+  extracted summaries (derived) are compared directly, and
   `contractDisagreement` across sources is already shipped.
 
 **Doesn't reach:**
 
-- **L1-*whether*.** No concept of "the task isn't here." Would
-  require [intent specs](backlog.md#intent-specs) or PRD-as-data
-  (which extends the same backlog item into a full PRD spec),
-  plus some form of existence check.
-- **L2 operational** as a whole. suss is static; availability,
-  latency, and resiliency are runtime properties. But *missing*
-  resiliency patterns are detectable (no try/catch around an
-  external call, no timeout on a fetch, no retry policy, no
-  fallback branch) if packs surface them as recognised shapes.
-  This is a useful middle ground: "L2-shaped code smells" suss
-  *can* see, even though L2 *outcomes* it can't.
-- **Observed quality.** suss doesn't consume traces/metrics.
-  Integration point is external (OpenTelemetry → a stub
-  adapter), not native.
-- **Trade-off awareness.** No representation of "this concept
-  takes position X on surface Y." Would require trade-off
+- **L1-*whether*.** suss has no concept of "the task isn't
+  here." It would require [intent
+  specs](backlog.md#intent-specs) or PRD-as-data (which extends
+  the same backlog item into a full PRD spec), plus some form of
+  existence check.
+- **L2 operational** as a whole. suss is static, and
+  availability, latency, and resiliency are runtime properties.
+  But *missing* resiliency patterns are detectable (no try/catch
+  around an external call, no timeout on a fetch, no retry
+  policy, no fallback branch) if packs recognise them as
+  patterns. This is a useful middle ground: suss *can* see
+  "L2-shaped code smells", even though it can't see L2
+  *outcomes*.
+- **Observed quality.** suss doesn't consume traces or metrics.
+  The integration point is external (OpenTelemetry → a stub
+  adapter) rather than built in.
+- **Trade-off awareness.** Nothing represents "this concept
+  takes position X on surface Y." It would require a trade-off
   taxonomy as declared metadata on concepts or on PRDs.
 
 ## Aspirational implications
@@ -291,49 +295,51 @@ to the aspirational section of
    as HTTP-status extraction. When they're *absent* from a code
    unit whose role suggests they should be present (an external
    API call with no timeout, a handler with no error boundary),
-   that's a derivable finding. L2-adjacent signal from static
-   source. Lowest-lift, highest-leverage L2 win.
+   that's a finding we can derive. It is an L2-adjacent signal
+   we can get from static source, and the lowest-lift,
+   highest-leverage L2 win.
 2. **Observation adapters.** A stub that reads a set of traces or
    production logs and emits `BehavioralSummary`-shaped
-   observation records at the same boundaries. Lets
+   observation records at the same boundaries. It lets
    `contractDisagreement`-style checks run across spec /
-   derivation / observation triples. Foundation for the full
-   epistemic split at the quality layer, not capabilities alone.
+   derivation / observation triples. It is the foundation for
+   the full epistemic split at the quality layer, not
+   capabilities alone.
 3. **Trade-off annotations.** A declared metadata layer ("this
    concept takes the consistency side of the consistency/latency
    surface") that can be compared against derived behaviour
    ("the code is checking a cache-only read path; the
    declaration and code agree") and against observed behaviour
    ("p99 latency supports the consistency claim" or contradicts
-   it). Hard part: the taxonomy of trade-off surfaces has to be
-   stable and extensible. Probably follows the contract-shape
-   taxonomy pattern.
+   it). The hard part is that the taxonomy of trade-off surfaces
+   has to be stable and extensible. It probably follows the same
+   pattern as the contract-shape taxonomy.
 4. **Audience tagging.** Already listed in
    [`concept-design.md`](concept-design.md#aspirational-implications)
-   §2; doubles as the axis that indexes quality. Unblocks
-   multi-audience quality reports (same system, different
-   readings).
+   §2. It doubles as the axis that indexes quality, and it
+   unblocks multi-audience quality reports (the same system,
+   judged differently by each audience).
 5. **PRD as quality specification, not capability specification
-   alone.** An intent spec that names only what the
-   feature does captures half the contract. A fuller one names
+   alone.** An intent spec that says only what the
+   feature does captures half the contract. A fuller one says
    *how well*: error budget, acceptable latency, edge-case
    handling, observability obligations. This expands the scope
    of [intent specs](backlog.md#intent-specs) from "capability
    spec" to "full PRD spec."
-6. **Feature-level quality.** Sync chains compose into features;
-   features have quality properties (end-to-end latency, all-or-
-   nothing resilience, compensating-action availability) that
-   individual actions don't. Depends on [sync-chain
-   identification](backlog.md#sync-chains); naturally extends
-   to feature-scoped quality findings.
+6. **Feature-level quality.** Sync chains compose into features,
+   and features have quality properties (end-to-end latency,
+   all-or-nothing resilience, compensating-action availability)
+   that individual actions don't. It depends on [sync-chain
+   identification](backlog.md#sync-chains), and it extends
+   naturally to feature-scoped quality findings.
 
 ## Open threads
 
 - **Trade-off taxonomy.** The trade-off table above is illustrative,
   not canonical. A well-formed taxonomy needs stable names, clear
   polarity (what counts as "more" on each axis), and overlap /
-  orthogonality claims between surfaces. Likely a research
-  artifact in itself before it's encoded.
+  orthogonality claims between surfaces. It is likely a research
+  artifact in itself before anyone encodes it.
 - **Quality contract shapes.** [`contracts.md`](/contracts)
   enumerates shapes of capability contracts (schema, examples,
   tests, snapshots, design). Quality contracts have their own
@@ -341,11 +347,12 @@ to the aspirational section of
   performance budgets. They're not the same taxonomy and haven't
   been enumerated yet.
 - **Whose quality?** The audience-indexing story assumes we can
-  name the audience. Some audiences are coded in (route prefix,
-  CLI namespace); others are convention-only; some change over
-  time (a developer audience that becomes operator-shaped as the
-  SDK grows). Pure inference won't cover all of it; pure
-  declaration creates maintenance load.
+  say who the audience is. Some audiences are coded in (route
+  prefix, CLI namespace). Others are convention only. Some
+  change over time, as a developer audience does when it becomes
+  operator-shaped while the SDK grows. Inference on its own
+  won't cover all of it, and declaration on its own creates
+  maintenance load.
 
 ## References
 
@@ -370,8 +377,8 @@ Cross-references within suss:
 
 External groundings:
 
-- Quality-in-use as user-determined is an old HCI thread; ISO
-  25010 names the attributes but flattens the layering. This
+- Quality-in-use as user-determined is an old HCI thread. ISO
+  25010 lists the attributes but flattens the layering. This
   doc's two-layer impedance/operational split is closer to
   Garvin's 1987 dimensions of quality than to ISO's flat list.
 - The specified / observed / derived split comes directly from

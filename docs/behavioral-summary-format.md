@@ -21,15 +21,15 @@ A summary file is a JSON array of `BehavioralSummary` objects:
 ]
 ```
 
-Each element describes one code unit, a handler, client call site, loader, action, component, etc.
+Each element describes one code unit: a handler, client call site, loader, action, component, etc.
 
-Every summary carries `schemaVersion`. A summary without one is
+Every summary includes `schemaVersion`. A summary without one is
 version 1, written by 0.3.x. The parsers in `@suss/behavioral-ir` read
 every version ever published, so an artifact never needs rewriting.
-Version 2 spells an unnamed identity field null, rejects the empty
+Version 2 writes an unnamed identity field as null, rejects the empty
 string there, and adds `"*"` as the REST method wildcard. Version 3 is
 current. It lets a parameter input's `role` be null, for a parameter
-whose role nobody could read.
+whose role suss could not work out.
 
 ## Core concept: transitions
 
@@ -99,7 +99,7 @@ Response bodies and expected inputs use `TypeShape`, a recursive type describing
 
 ## Boundary bindings
 
-A boundary binding connects a code unit to an API endpoint. It has three layers, `transport` (wire: `"http"`, `"in-process"`), `semantics` (discriminated union: `rest`, `function-call`, `graphql-resolver`, `graphql-operation`), and `recognition` (which pack matched the unit, or `"reachable"` for units discovered through transitive closure rather than a pack pattern):
+A boundary binding connects a code unit to an API endpoint. It has three layers: `transport` (the wire: `"http"`, `"in-process"`), `semantics` (a discriminated union of `rest`, `function-call`, `graphql-resolver`, and `graphql-operation`), and `recognition` (which pack matched the unit, or `"reachable"` for units found through transitive closure rather than by a pack pattern):
 
 ```json
 {
@@ -109,24 +109,24 @@ A boundary binding connects a code unit to an API endpoint. It has three layers,
 }
 ```
 
-Two summaries with matching `semantics` (pairing is semantics-specific, REST pairs by `(method, normalizedPath)`; `function-call` pairs by `package::exportPath`) describe opposite sides of the same boundary, a provider and a consumer. This is how cross-boundary checking works: pair summaries by boundary, then compare transitions.
+Two summaries with matching `semantics` (each semantics pairs its own way: REST pairs by `(method, normalizedPath)`, and `function-call` pairs by `package::exportPath`) describe opposite sides of the same boundary, one provider and one consumer. This is how cross-boundary checking works: pair summaries by boundary, then compare transitions.
 
-An identity field is null when the source does not name it. A send
-whose queue URL lives in a variable still appears:
+An identity field is null when the source never states it. A send
+whose queue URL comes from a variable still appears:
 
 ```json
 { "name": "message-bus", "messageBus": "sqs", "channel": null }
 ```
 
-It pairs with nothing. A REST `method` of `"*"` says the handler
-answers every method, and it pairs with whichever method each consumer
-names.
+It pairs with nothing. A REST `method` of `"*"` means the handler
+responds to every method, and it pairs with whatever method each
+consumer uses.
 
-`recognition: "reachable"` identifies library summaries produced by transitive closure, internal functions called from a pack-recognised entry point but not themselves matched by any pack. They have no pairing identity yet, so they're not cross-checked, but their transitions and effects are fully extracted.
+`recognition: "reachable"` marks library summaries produced by transitive closure: internal functions called from an entry point a pack recognised, but not themselves matched by any pack. They have no pairing identity yet, so nothing cross-checks them, but their transitions and effects are fully extracted.
 
 ## Effects and argument shape
 
-Every transition carries zero or more `effects` that fire on that path, mutations, emissions, state changes, and, most commonly, `invocation` effects recording a function call with its structured arguments:
+Every transition has zero or more `effects` that fire on that path: mutations, emissions, state changes, and, most commonly, `invocation` effects that record a function call with its structured arguments:
 
 ```json
 {
@@ -149,23 +149,23 @@ Every transition carries zero or more `effects` that fire on that path, mutation
 The `EffectArg` union covers:
 
 - **`string` / `number` / `boolean`**: resolved literal values
-- **`object` / `array`**: composite shapes, preserved even when individual field / element values are opaque (so the *shape* of a call's payload survives even when specific values don't)
-- **`identifier`**: variable or property-access reference (`userId`, `user.profile.email`, `process.env.QUEUE_URL`, `config["host"]`). The `name` holds the full source text so readers can tell which binding flowed in.
-- **`call`**: nested call expression (`log(formatError(e))` reads as `{ kind: "call", callee: "formatError", args: [...] }`).
-- **`template`**: template literal with substitutions; source text preserved so `` `Error: ${e.message}` `` keeps its composition visible.
-- **`null`**: genuinely opaque (type assertions with computed operands, arithmetic, etc.), the positional slot is preserved but the value isn't structured.
+- **`object` / `array`**: composite shapes, kept even when individual field or element values are opaque (so the *shape* of a call's payload survives even when specific values don't)
+- **`identifier`**: variable or property-access reference (`userId`, `user.profile.email`, `process.env.QUEUE_URL`, `config["host"]`). The `name` contains the full source text, so readers can tell which binding flowed in.
+- **`call`**: nested call expression, so `log(formatError(e))` becomes `{ kind: "call", callee: "formatError", args: [...] }`.
+- **`template`**: template literal with substitutions; the source text is kept, so `` `Error: ${e.message}` `` still shows how it was put together.
+- **`null`**: truly opaque (type assertions with computed operands, arithmetic, etc.). The positional slot is kept, but the value has no structure.
 
-Object and array shapes are preserved even when every field or element is opaque, so the *keys* a call supplied remain visible as evidence of the caller's intent. Throw terminals surface static message strings (`throw new Error("msg")` → `terminal.message: "msg"`) and template source text for interpolated messages.
+Object and array shapes survive even when every field or element is opaque, so the *keys* a call supplied stay visible as evidence of what the caller meant to do. Throw terminals surface static message strings (`throw new Error("msg")` → `terminal.message: "msg"`) and template source text for interpolated messages.
 
 ### Throws: what's modelled, what isn't
 
-Throw terminals describe what a function *explicitly* throws: `throw new Error("...")`, `throw new HttpError(...)`, etc. Bare rethrows inside a catch block (`try { ... } catch (e) { throw e }`) get enriched with `transition.metadata.rethrow.possibleSources`, the union of throws from the try body's call sites, read off those callees' summaries (one-hop, same-project only).
+Throw terminals describe what a function *explicitly* throws: `throw new Error("...")`, `throw new HttpError(...)`, etc. Bare rethrows inside a catch block (`try { ... } catch (e) { throw e }`) get `transition.metadata.rethrow.possibleSources` added to them, the union of throws from the call sites in the try body, taken from those callees' summaries (one hop, same project only).
 
-Not modelled today: *propagated* throws, the implicit throw paths of a function that calls a throwing callee without a try/catch. `function x() { y(); }` can throw whatever `y` throws, but the summary doesn't record this. Consumers who want full propagation can walk the transitive closure themselves (the call graph is already in the summaries). This is an explicit non-goal for v0, modelling it faithfully runs into diminishing returns fast (every function transitively calls something that can throw TypeError / RangeError / etc.), and the framing question "where does the catalog of known throws end?" has no clean answer. Revisit when a concrete use case motivates a specific slice.
+One thing is not modelled today: *propagated* throws, the implicit throw paths of a function that calls a throwing callee without a try/catch. `function x() { y(); }` can throw whatever `y` throws, but the summary doesn't record that. Consumers who want full propagation can walk the transitive closure themselves, since the call graph is already in the summaries. This is a deliberate non-goal for v0. Modelling it faithfully runs into diminishing returns fast, because every function transitively calls something that can throw TypeError / RangeError / etc., and the question "where does the catalog of known throws end?" has no good answer. Revisit it when a concrete use case motivates a specific slice.
 
 ## Confidence
 
-Every summary has a confidence level. A return the pack could not read sets it to **low** outright, since nothing describes what that path produces. Otherwise it comes from how much of the code was decomposed versus marked opaque:
+Every summary has a confidence level. A return the pack could not make sense of sets it to **low** outright, since nothing then describes what that path produces. Otherwise it comes from how much of the code was decomposed versus marked opaque:
 
 - **high**: all conditions decomposed into structured predicates
 - **medium**: some opaque predicates (< 50%)
@@ -175,9 +175,9 @@ Tools consuming summaries can use confidence to decide how much to trust the ana
 
 ## Gaps
 
-A gap is something the summary could not account for. There are two kinds and they point in opposite directions.
+A gap is something the summary could not account for. There are two kinds, and they point in opposite directions.
 
-**`unhandledCase`** says the code has a hole. The contract declares a response no transition produces, or a transition produces a status the contract never declared:
+**`unhandledCase`** says the code has a hole. Either the contract declares a response that no transition produces, or a transition produces a status the contract never declared:
 
 ```json
 {
@@ -189,7 +189,7 @@ A gap is something the summary could not account for. There are two kinds and th
 
 The checker reports these as `providerContractViolation` at error severity.
 
-**`unreadOutcome`** says the reading has a hole. A `return` matched none of the terminal shapes the pack looks for, so nothing here describes what it produces:
+**`unreadOutcome`** says the analysis has a hole. A `return` matched none of the terminal shapes the pack looks for, so nothing here describes what it produces:
 
 ```json
 {
@@ -199,11 +199,11 @@ The checker reports these as `providerContractViolation` at error severity.
 }
 ```
 
-The handler may be answering perfectly well in a shape nobody taught the pack, so the checker reports `lowConfidence` at info severity rather than blaming the code.
+The handler may be responding perfectly well in a form nobody taught the pack, so the checker reports `lowConfidence` at info severity instead of blaming the code.
 
 ## Metadata
 
-The `metadata` field carries framework-specific data that doesn't fit the universal shape. Keys are **namespaced by boundary semantics** so additional semantics (GraphQL, Lambda-invoke, queue messages) can use their own sibling namespaces without clashing with HTTP-scoped keys. HTTP-scoped entries live under `metadata.http.*`:
+The `metadata` field contains framework-specific data that doesn't fit the universal structure. Keys are **namespaced by boundary semantics** so that additional semantics (GraphQL, Lambda-invoke, queue messages) can use their own sibling namespaces without clashing with HTTP-scoped keys. HTTP-scoped entries live under `metadata.http.*`:
 
 ```json
 {
@@ -223,13 +223,13 @@ The `metadata` field carries framework-specific data that doesn't fit the univer
 }
 ```
 
-- `http.declaredContract`: pack-declared response schema (status codes + body shapes). Populated by contract-reading frameworks like ts-rest.
-- `http.bodyAccessors`: names of response properties the consumer uses to read the body (`.data` for axios, `.body`/`.json()` for fetch). Lets the cross-boundary checker unwrap `expectedInput` correctly.
-- `http.statusAccessors`: names of response properties the consumer uses to read the status code. Lets the checker recognise pack-specific names beyond the historical `["status", "statusCode"]`.
+- `http.declaredContract`: the response schema the pack declared (status codes plus body shapes). Frameworks that read a contract, like ts-rest, fill this in.
+- `http.bodyAccessors`: names of the response properties the consumer uses to read the body (`.data` for axios, `.body`/`.json()` for fetch). These let the cross-boundary checker unwrap `expectedInput` correctly.
+- `http.statusAccessors`: names of the response properties the consumer uses to read the status code. These let the checker recognise pack-specific names beyond the historical `["status", "statusCode"]`.
 
-Semantics-neutral keys (valid for every boundary kind) stay at the top level, e.g. `metadata.derivedFromWrapper` on wrapper-expansion-produced summaries.
+Semantics-neutral keys (valid for every boundary kind) stay at the top level, e.g. `metadata.derivedFromWrapper` on summaries that came out of wrapper expansion.
 
-Tools that don't need metadata can ignore it entirely. See [`boundary-semantics.md`](boundary-semantics.md) for the layered model this namespacing anticipates.
+Tools that don't need metadata can ignore it entirely. See [`boundary-semantics.md`](boundary-semantics.md) for the layered model this naming convention anticipates.
 
 ## Consuming summaries
 
@@ -238,15 +238,15 @@ Summaries are designed for machine consumption. Common operations:
 - **Enumerate transitions**: iterate `transitions[]` to see every execution path
 - **Check coverage**: compare provider transition statuses against consumer condition literals
 - **Inspect body shapes**: read `output.body` to see what fields are returned
-- **Pair boundaries**: for HTTP boundaries, group summaries by `identity.boundaryBinding.(method, path)` to find provider/consumer pairs. The pairing key is semantics-specific; future non-REST semantics will pair by their own identity (GraphQL operation name, Kafka topic, Lambda function name, etc.). See [`boundary-semantics.md`](boundary-semantics.md).
+- **Pair boundaries**: for HTTP boundaries, group summaries by `identity.boundaryBinding.(method, path)` to find provider/consumer pairs. Each semantics has its own pairing key; non-REST semantics added later will pair by their own identity (GraphQL operation name, Kafka topic, Lambda function name, etc.). See [`boundary-semantics.md`](boundary-semantics.md).
 - **Detect drift**: compare summaries from two points in time using transition IDs
 
 The format is stable enough to build on. Pin your tools to `v0` and check the schema version before parsing.
 
-For `suss inspect`'s human-readable rendering, the form you'd paste
-into a review or AI prompt, see [the inspect format stability section](/reference/cli#format-stability).
-The JSON is canonical; the text rendering is curated for reading and
-not meant to be parsed.
+For `suss inspect`'s human-readable rendering, the form you would paste
+into a review or an AI prompt, see [the inspect format stability section](/reference/cli#format-stability).
+The JSON is canonical; the text rendering is written for people to read
+and is not meant to be parsed.
 
 ## What you can build on this
 
@@ -260,7 +260,7 @@ The behavioral summary is a foundation, not an endpoint. Some things it enables:
 
 ## Publishing summaries
 
-Summaries are portable, `suss extract` produces relative file paths, and the format contains no machine-specific data. A library author can publish pre-built summaries alongside their package, and consumers get cross-boundary checking without the library's source code.
+Summaries travel well: `suss extract` produces relative file paths, and the format contains no machine-specific data. A library author can publish pre-built summaries alongside their package, and consumers get cross-boundary checking without the library's source code.
 
 ### Convention
 
@@ -275,7 +275,7 @@ Add a `suss` field to your `package.json` pointing to the summary file:
 }
 ```
 
-Then extract and include the file in your published package. For plain public APIs, any function reachable through the package's `exports` / `main` / `module` / `types`, the `packageExports` discovery variant produces one summary per public export without enumerating names by hand:
+Then extract and include the file in your published package. For plain public APIs, meaning any function reachable through the package's `exports` / `main` / `module` / `types`, the `packageExports` discovery variant produces one summary per public export, so you never have to list the exports by hand:
 
 ```js
 // build-summaries.mjs
@@ -306,9 +306,9 @@ const adapter = createTypeScriptAdapter({
 fs.writeFileSync("dist/suss-summaries.json", JSON.stringify(adapter.extractAll(), null, 2));
 ```
 
-Framework-shaped APIs (Express / ts-rest / Apollo resolvers / …) use a framework pack in place of `packageExports` and produce REST- or GraphQL-semantics bindings the same way.
+APIs built on a framework (Express / ts-rest / Apollo resolvers / …) use a framework pack in place of `packageExports`, and they produce REST- or GraphQL-semantics bindings the same way.
 
-suss itself runs this: `scripts/dogfood.mjs` runs the above shape against every `@suss/*` package. A package that means to publish its contract writes it into `dist/` alongside the build, as above. The dogfood run is a local analysis of this repo and nothing reads it back, so it writes to `<pkg>/.suss/suss-summaries.json` instead, beside the extraction cache and outside anything npm ships. See `docs/internal/dogfooding.md` for the run output.
+suss itself does this: `scripts/dogfood.mjs` runs the same setup against every `@suss/*` package. A package that means to publish its contract writes it into `dist/` alongside the build, as above. The dogfood run only analyses this repo locally and nothing reads the output back, so it writes to `<pkg>/.suss/suss-summaries.json` instead, next to the extraction cache and outside anything npm ships. See `docs/internal/dogfooding.md` for the run output.
 
 Consumers can check against published summaries directly:
 
@@ -318,7 +318,7 @@ suss check node_modules/my-api/dist/suss-summaries.json my-consumer-summaries.js
 
 ### Community-maintained summaries
 
-For libraries that don't publish their own summaries, a community repository can maintain them, similar to DefinitelyTyped for type definitions. The same `BehavioralSummary[]` format applies; the summaries come from a different source.
+For libraries that don't publish their own summaries, a community repository can maintain them, the way DefinitelyTyped maintains type definitions. The same `BehavioralSummary[]` format applies; only where the summaries came from is different.
 
 ### Summaries without source code
 
@@ -336,5 +336,5 @@ Tools can use this to adjust how much they trust the summary.
 
 Two consumption paths:
 
-- **TypeScript / JavaScript:** install `@suss/behavioral-ir` (one peer dep on `zod`) and use `parseSummaries(json)` for validate-and-narrow, or `safeParseSummaries(json)` to handle errors without throwing. Types (`BehavioralSummary`, `Transition`, `Predicate`, …) are derived from the same schemas via `z.infer`.
-- **Other languages:** validate against [`packages/behavioral-ir/schema/behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/schema/behavioral-summary.schema.json). It is generated from the zod schema at build time (`npm run build` in `packages/behavioral-ir/`), so it is always in sync with the runtime parsers and never hand-edited.
+- **TypeScript / JavaScript:** install `@suss/behavioral-ir` (one peer dep on `zod`) and call `parseSummaries(json)` to validate and narrow in one step, or `safeParseSummaries(json)` to handle errors without throwing. The types (`BehavioralSummary`, `Transition`, `Predicate`, …) come from the same schemas via `z.infer`.
+- **Other languages:** validate against [`packages/behavioral-ir/schema/behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/schema/behavioral-summary.schema.json). The build generates it from the zod schema (`npm run build` in `packages/behavioral-ir/`), so it always matches the runtime parsers and nobody edits it by hand.

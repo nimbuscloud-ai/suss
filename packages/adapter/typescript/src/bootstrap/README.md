@@ -1,15 +1,15 @@
 # bootstrap/
 
-Sets up the ts-morph `Project` lazily, gates which files get parsed, and provides O(1) lookup for later passes that need to find a source file by path or path suffix.
+Bootstrap sets up the ts-morph `Project` lazily, gates which files get parsed, and provides O(1) lookup for later passes that need to find a source file by path or path suffix.
 
 ## Place in the pipeline
 
-Runs once at the start of an extraction. Before discovery dispatches, the cache layer checks whether the run can be served from a previous extraction's manifest. If not, bootstrap creates the `Project`, computes which files are candidates for each pack via `requiresImport` gates, and pre-parses the candidates. Discovery then runs against those parsed files; later passes (reachable-closure, rethrow enrichment) lazy-add additional files via `lazyAddSourceFile` and find them again via the source-file lookup.
+Bootstrap runs once at the start of an extraction. Before discovery dispatches, the cache layer checks whether the run can be served from a previous extraction's manifest. If not, bootstrap creates the `Project`, computes which files are candidates for each pack via `requiresImport` gates, and pre-parses the candidates. Discovery then runs against those parsed files; later passes (reachable-closure, rethrow enrichment) lazy-add additional files via `lazyAddSourceFile` and find them again via the source-file lookup.
 
 ## Key files
 
 - `lazyProjectInit.ts:createLazyProject` — builds the `Project` and the `projectFileSet` the closure pass needs to know what's "in" the project vs. node_modules.
-- `lazyProjectInit.ts:lazyAddSourceFile` — on-demand file addition. Always calls `addSourceFileAtPath` even when `getSourceFile` succeeds, because type-checker symbol resolution surfaces files that aren't in `project.getSourceFiles()` until you re-add them.
+- `lazyProjectInit.ts:lazyAddSourceFile` — on-demand file addition. It always calls `addSourceFileAtPath` even when `getSourceFile` succeeds, because type-checker symbol resolution surfaces files that aren't in `project.getSourceFiles()` until you re-add them.
 - `bootstrap/preFilter.ts:computePackApplicability` — per-file dispatch gate based on import declarations. `requiresImport: []` means "ungated" (every file). Sub-path imports match by prefix.
 - `bootstrap/sourceFileLookup.ts:createSourceFileLookup` — exact-path and `bySuffix` lookup. The suffix path scans the cached file list (linear in file count, not tree depth).
 

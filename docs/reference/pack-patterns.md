@@ -37,20 +37,20 @@ interface PatternPack {
 
 ### Protocol
 
-`protocol` identifies the *transport class*, what shape the boundary crosses, not the framework itself (that's `BoundaryBinding.recognition`, derived from `pack.name`).
+`protocol` identifies the *transport class*, meaning what kind of thing the boundary crosses, rather than the framework itself (that's `BoundaryBinding.recognition`, derived from `pack.name`).
 
 Conventions in shipped packs:
 
 - **`"http"`**: any HTTP-transported boundary. Covers REST APIs (e.g. ts-rest, Express, or React Router), HTTP clients (fetch and axios), GraphQL-over-HTTP (Apollo and NestJS GraphQL, distinguished by `BoundarySemantics`), and OpenAPI or CloudFormation contracts describing HTTP endpoints.
 - **`"in-process"`**: boundaries that don't cross a network hop. React components, custom hooks, and package-export call sites.
-- **`"queue"`**: message-queue boundaries. AWS SQS today; pairing is by topic, not URL.
+- **`"queue"`**: message-queue boundaries. AWS SQS today, and pairing is by topic rather than URL.
 - **`"storage"`**: database access boundaries. Prisma reads, writes, and selectors.
 
 Frameworks with new transport classes introduce new protocol strings. Plausible future values include `"aws-sdk"` for AWS SDK calls (where the transport-level envelope is distinct from HTTP), or `"grpc"` for gRPC calls (whose status codes live in a separate code space from HTTP).
 
-Rule of thumb: if your pack's pairing shape and payload semantics match an existing protocol's, reuse the string. If they don't, pick a new string that reads as "transport class," not as "framework name." React isn't a protocol (it has no wire format); `"in-process"` names what the boundary *is*.
+Rule of thumb: if your pack pairs the same way an existing protocol does and its payloads mean the same things, reuse the string. If they don't, pick a new string that describes a transport class rather than a framework name. React isn't a protocol, because it has no wire format, and `"in-process"` says what the boundary *is*.
 
-`BoundaryBinding` has transport and semantics as separate fields; [`boundary-semantics.md`](../boundary-semantics.md) explains the split. Pack declarations written before the split remain valid, because the shape was added without changing existing fields.
+`BoundaryBinding` has transport and semantics as separate fields, and [`boundary-semantics.md`](../boundary-semantics.md) explains the split. Pack declarations written before the split are still valid, because the new field was added without changing existing ones.
 
 ## `DiscoveryMatch` variants
 
@@ -111,13 +111,13 @@ Used by ts-rest (`initClient` from `@ts-rest/core`), Apollo client (`useQuery` f
 ```
 Treat a TypeScript package's public export surface as a boundary. The adapter reads the given `package.json`, resolves every reachable entry point (root `.` plus any sub-path `exports` like `./schemas`), follows barrel re-exports through `ts-morph`, and emits one unit per exported function, provider side of an in-process `function-call` boundary.
 
-Produced bindings carry the stronger identity
+The bindings it produces have the stronger identity
 `{ transport: "in-process", semantics: { name: "function-call", package, exportPath }, recognition: <pack.name> }`,
 so sub-path exports identify as e.g. `@suss/behavioral-ir/schemas::BehavioralSummarySchema` (`exportPath = ["schemas", "BehavioralSummarySchema"]`). Root exports omit the sub-path segment.
 
-Used by the dogfood script, see [`internal/dogfooding.md`](../internal/dogfooding.md), to write per-package contracts to `.suss/suss-summaries.json`. Paired against consumer-side summaries produced by `packageImport`.
+Used by the dogfood script, see [`internal/dogfooding.md`](../internal/dogfooding.md), to write per-package contracts to `.suss/suss-summaries.json`. These pair against consumer-side summaries produced by `packageImport`.
 
-v0 scope: resolves the `types` / `default` / `import` conditions on `exports`, falls back to `types` + `main` + `module` when no `exports` field is set. Pattern exports (`./utils/*`) and `development`-conditional resolution are deferred and surface as warnings on the resolver result.
+v0 scope: it resolves the `types` / `default` / `import` conditions on `exports`, and falls back to `types` + `main` + `module` when no `exports` field is set. Pattern exports (`./utils/*`) and `development`-conditional resolution are not done yet, and they come back as warnings on the resolver result.
 
 ### `packageImport`
 ```typescript
@@ -126,11 +126,11 @@ v0 scope: resolves the `types` / `default` / `import` conditions on `exports`, f
   packages: string[];  // exact module specifiers to match
 }
 ```
-Consumer side of the package-export boundary. Scans source files for imports of the named packages and records every call site; each enclosing function becomes one `caller`-kind code unit per imported binding it invokes. Produced bindings identify as `function-call { package, exportPath }` matching the `packageExports` providers, so the checker's `pairSummaries` pairs them by `fn:<package>::<exportPath>`.
+This is the consumer side of the package-export boundary. The adapter scans source files for imports of the named packages and records every call site. Each enclosing function becomes one `caller`-kind code unit per imported binding it invokes. The bindings it produces identify as `function-call { package, exportPath }`, matching the `packageExports` providers, so the checker's `pairSummaries` pairs them by `fn:<package>::<exportPath>`.
 
-Pass exact module specifiers (with any sub-path, e.g. `"@suss/behavioral-ir/schemas"`). Imports of any other package are ignored. Multiple call sites inside the same enclosing function to the same imported binding collapse to one unit; call sites to different bindings produce one unit each.
+Pass exact module specifiers (with any sub-path, e.g. `"@suss/behavioral-ir/schemas"`). Imports of any other package are ignored. Several call sites inside the same enclosing function to the same imported binding collapse to one unit, and call sites to different bindings produce one unit each.
 
-v0 scope: named and default imports with bare-identifier call expressions. Namespace imports (`import * as X`) and member-call chains (`X.method()`) are deferred.
+v0 scope: named and default imports with bare-identifier call expressions. Namespace imports (`import * as X`) and member-call chains (`X.method()`) are not done yet.
 
 ## `BindingExtraction`
 
@@ -175,7 +175,7 @@ Match `ReturnStatement` with an object literal. If `requiredProperties` is set, 
   methodChain: string[];
 }
 ```
-Match method calls on a specific parameter. Used by Express (`res.status(200).json(...)`) and similar. The `methodChain` is the sequence of method names, an empty chain means any call, `["json"]` matches `res.json(...)`, `["status", "json"]` matches `res.status(...).json(...)`.
+Match method calls on a specific parameter. Used by Express (`res.status(200).json(...)`) and similar. The `methodChain` is the sequence of method names. An empty chain means any call, `["json"]` matches `res.json(...)`, and `["status", "json"]` matches `res.status(...).json(...)`.
 
 ### `throwExpression`
 ```typescript
@@ -232,9 +232,9 @@ The **`{ from: "constructor"; codes }`** case maps constructor names to status c
 1. **Full-text first.** Given `throw new HttpError.NotFound()`, the adapter looks up `codes["HttpError.NotFound"]`.
 2. **Last dot-segment fallback.** If the full name misses, it tries the final segment: `codes["NotFound"]`. This lets packs write `{ NotFound: 404 }` once and have it work for both bare `NotFoundError` and namespaced `createError.NotFound` styles.
 
-Only `throwExpression` matchers carry an exception type, so `from: "constructor"` is a no-op for other matcher types (it returns null rather than guessing).
+Only `throwExpression` matchers have an exception type, so `from: "constructor"` is a no-op for other matcher types (it returns null rather than guessing).
 
-The **`{ from: "argumentConstructor"; position; codes }`** case is the wrapper-shaped variant: when the thrown expression wraps a constructed error (`throw wrap(new HttpError.NotFound("..."))`), the status sits on the *arg's* class, not the top-level thrown function. Set `position` to the arg's index in the wrapper call. Resolution uses the same full-text-first / last-segment fallback as `from: "constructor"`. Only `throwExpression` matchers reach this source, for other terminals it returns null.
+The **`{ from: "argumentConstructor"; position; codes }`** case is the variant for a wrapped error: when the thrown expression wraps a constructed error (`throw wrap(new HttpError.NotFound("..."))`), the status is on the *arg's* class rather than on the top-level thrown function. Set `position` to the arg's index in the wrapper call. Resolution uses the same full-text-first / last-segment fallback as `from: "constructor"`. Only `throwExpression` matchers reach this source, and for other terminals it returns null.
 
 For a returnShape terminal where no extraction explicitly selects a property, the body defaults to the full returned object's shape, the natural reading of "the returned object IS the body." Configure `body: { from: "property", name: "..." }` only when the body is one named property of a `{ status, body }` -style return object.
 
@@ -266,7 +266,7 @@ The handler takes positional parameters with fixed roles. Used by Express (`(req
   knownProperties: Record<string, string>;
 }
 ```
-Like `singleObjectParam` but always destructured at position 0. Used by ts-rest. The semantic distinction from `singleObjectParam` is that the framework *always* destructures, there's no case where the handler takes the whole object as a single value.
+Like `singleObjectParam` but always destructured at position 0. Used by ts-rest. What distinguishes it from `singleObjectParam` is that the framework *always* destructures. There's no case where the handler takes the whole object as a single value.
 
 ## Recognizers
 
@@ -289,15 +289,15 @@ type AccessRecognizer<TCtx = unknown> = (
 Contract:
 
 - **Cross-pack visibility.** Recognizers fire regardless of which pack discovered the enclosing function. `@suss/framework-prisma`'s recognizer can fire on Prisma calls inside an `@suss/framework-express` handler. Pack authors don't need to coordinate.
-- **Emission semantics.** Returning effects ADDS them to the enclosing default-branch transition; the generic `invocation` effect is preserved either way. Returning `null` or `[]` is the no-match path.
+- **Emission semantics.** Returning effects ADDS them to the enclosing default-branch transition, and the generic `invocation` effect is kept either way. Returning `null` or `[]` is the no-match path.
 - **Dedup is the recognizer's responsibility.** The dispatcher doesn't dedupe across calls. A recognizer that wants to fire once per identifier (e.g., to dedupe reads bound to a const used N times) tracks its own state across invocations.
-- **Exceptions are caught.** A recognizer that throws is logged to stderr with file path + line number and skipped for that call; the extraction continues. Buggy recognizers don't crash the run.
+- **Exceptions are caught.** A recognizer that throws is logged to stderr with file path + line number and skipped for that call, and the extraction continues. Buggy recognizers don't crash the run.
 
-The `ctx` parameter is the adapter's recognizer context. For TypeScript that's `TsRecognizerContext` (source file handle, `extractArgs()` helper). Recognizers cast both `call` / `access` and `ctx` to the adapter context they're written against, the cast is the explicit "this pack requires the TypeScript adapter" contract.
+The `ctx` parameter is the adapter's recognizer context. For TypeScript that's `TsRecognizerContext` (source file handle, `extractArgs()` helper). Recognizers cast both `call` / `access` and `ctx` to the adapter context they're written against, and that cast is the explicit "this pack requires the TypeScript adapter" contract.
 
 ## Sub-units
 
-The `subUnits` hook synthesizes additional code units from a parent unit's body, "one user-authored construct implicitly spawns multiple runtime-scheduled units." Used when a framework's runtime schedules callbacks that aren't visible as top-level declarations: React event handlers on JSX elements, React `useEffect` bodies, Node scheduling primitives, class-component lifecycle methods.
+The `subUnits` hook synthesizes additional code units from a parent unit's body, for the case where "one user-authored construct implicitly spawns multiple runtime-scheduled units." Use it when a framework's runtime schedules callbacks that aren't visible as top-level declarations: React event handlers on JSX elements, React `useEffect` bodies, Node scheduling primitives, class-component lifecycle methods.
 
 ```typescript
 subUnits?: (
@@ -312,7 +312,7 @@ interface DiscoveredSubUnitParent {
 }
 ```
 
-Returned units are fed through the adapter's extraction pipeline the same way top-level discovered units are. Each becomes its own `BehavioralSummary`. Carry per-unit `terminals` and `inputMapping` on the `DiscoveredSubUnit` if the sub-unit's shape differs from the parent pack's defaults.
+Returned units are fed through the adapter's extraction pipeline the same way top-level discovered units are. Each becomes its own `BehavioralSummary`. Put per-unit `terminals` and `inputMapping` on the `DiscoveredSubUnit` if the sub-unit's form differs from the parent pack's defaults.
 
 ## Custom discovery
 
@@ -322,9 +322,9 @@ The `discoverUnits` hook is the discovery-layer sibling of `subUnits`: when a fr
 discoverUnits?: (sourceFile: unknown, ctx: unknown) => DiscoveredCustomUnit[];
 ```
 
-Use this for framework-specific shapes that don't generalize: React's component-export heuristic (PascalCase + JSX-return), Vue's `.vue` SFC slots, Storybook's `.stories.tsx` file convention. Baking each into the central `DiscoveryMatch` union would force every unrelated pack to know about them.
+Use this for framework-specific patterns that don't generalize: React's component-export heuristic (PascalCase + JSX-return), Vue's `.vue` SFC slots, Storybook's `.stories.tsx` file convention. Baking each into the central `DiscoveryMatch` union would force every unrelated pack to know about them.
 
-When the callback discovers a unit at the same `(func, kind)` as one from another pack's data-driven discovery, the cross-pack claim dedup in the adapter keeps the first claimant. Pack ordering in the framework list is the precedence signal.
+When the callback discovers a unit at the same `(func, kind)` as one from another pack's data-driven discovery, the cross-pack claim dedup in the adapter keeps the first claimant. The order of the packs in the framework list decides which one that is.
 
 ## `requiresImport`
 
@@ -332,8 +332,8 @@ When the callback discovers a unit at the same `(func, kind)` as one from anothe
 requiresImport?: string[];
 ```
 
-Pack-level import gate. When set, the adapter's pre-filter only considers this pack applicable to source files whose imports include at least one of the listed modules (prefix match, `"@aws-sdk/client-sqs"` matches that module and any `"@aws-sdk/client-sqs/sub-path"`).
+This is a pack-level import gate. When set, the adapter's pre-filter only considers this pack applicable to source files whose imports include at least one of the listed modules (prefix match, `"@aws-sdk/client-sqs"` matches that module and any `"@aws-sdk/client-sqs/sub-path"`).
 
 Useful for recognizer-only packs that target a specific library: `@suss/framework-aws-sqs` declares `["@aws-sdk/client-sqs"]`, `@suss/framework-prisma` declares `["@prisma/client"]`. Without a gate, recognizer-only packs walk every file in the project.
 
-Discovery-pattern packs already have per-pattern `requiresImport` on `DiscoveryPattern`; this is the pack-level equivalent for packs whose only mechanism is recognizers. Empty / undefined means "no gate", the pack walks every file (the default for universal recognizers like runtime-node).
+Discovery-pattern packs already have per-pattern `requiresImport` on `DiscoveryPattern`, and this is the pack-level equivalent for packs whose only mechanism is recognizers. Empty / undefined means "no gate", and the pack walks every file (the default for universal recognizers like runtime-node).

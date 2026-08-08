@@ -1,10 +1,10 @@
 # @suss/cli
 
-Command-line interface for suss. Wraps the extraction pipeline, the human-readable inspector, and the cross-boundary checker.
+Command-line interface for suss. It wraps the extraction pipeline, the human-readable inspector, and the cross-boundary checker.
 
 ## What this package is
 
-`@suss/cli` is the user-facing entry point. It dynamically imports the language adapter and pattern packs so CLI startup doesn't pay the ts-morph cost unless extraction actually runs.
+`@suss/cli` is the user-facing entry point. It imports the language adapter and the pattern packs dynamically, so that starting the CLI doesn't pay the ts-morph cost unless extraction actually runs.
 
 ### Commands
 
@@ -59,15 +59,15 @@ suss contract --from intent intents/ [-o intent.json]
 
 ### Built-in framework resolution
 
-Pass `-f <name>` to select a pattern pack. Built-in names: `ts-rest`, `react-router`, `express`, `fastify`, `fetch`, `axios`. Custom packs are resolved via `@suss/framework-<name>` dynamic import.
+Pass `-f <name>` to select a pattern pack. Built-in names: `ts-rest`, `react-router`, `express`, `fastify`, `fetch`, `axios`. A custom pack is resolved by dynamically importing `@suss/framework-<name>`.
 
 ### Exit codes
 
-`suss check` exits non-zero when findings meet the `--fail-on` threshold (default: any error-severity finding). Useful for CI gating.
+`suss check` exits non-zero when the findings meet the `--fail-on` threshold (by default, any finding of error severity). That is what you use to gate CI.
 
-## Where it sits in suss
+## Where it fits in suss
 
-Depends on everything: `@suss/behavioral-ir`, `@suss/extractor`, `@suss/adapter-typescript`, `@suss/checker`, and all framework/runtime packs. This is the only package that ties the full stack together.
+This package depends on everything: `@suss/behavioral-ir`, `@suss/extractor`, `@suss/adapter-typescript`, `@suss/checker`, and all the framework and runtime packs. It is the only package that ties the full stack together.
 
 ## Coverage
 

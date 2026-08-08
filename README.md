@@ -1,10 +1,10 @@
 # suss
 
-suss finds the bugs that compile cleanly, type-check, and pass their tests, and still break at runtime. A consumer reads a `200` whose shape the provider changed. A Prisma write touches a column the schema doesn't declare. The types line up on both sides, so nothing in CI flags it.
+suss finds the bugs that compile without complaint, type-check, and pass their tests, and still break at runtime. A consumer reads a `200` whose fields the provider changed. A Prisma write touches a column the schema doesn't declare. The types line up on both sides, so nothing in CI flags it.
 
-suss reads what each function does on every path it can follow, then compares those readings wherever two units of code meet: a caller against a handler, a query against a schema. Where they disagree, you get a finding. It runs on your source as it stands, without instrumentation or authored specs.
+suss works out what each function does on every path it can follow, then compares what it found wherever two units of code meet: a caller against a handler, a query against a schema. Where they disagree, you get a finding. It runs on the source you already have, without instrumentation or specs you have to write.
 
-This is what a finding looks like, from the [runnable example](examples/petstore-axios-openapi/) in this repo:
+Here is what a finding looks like, taken from the [runnable example](examples/petstore-axios-openapi/) in this repo:
 
 ```
 [ERROR] unhandledProviderCase
@@ -14,7 +14,7 @@ This is what a finding looks like, from the [runnable example](examples/petstore
   boundary: openapi (http) GET /pet/findByStatus
 ```
 
-The spec declares a 400 this client never branches on. Both sides type-check today, and the first bad request at runtime lands in code with no plan for it.
+The spec declares a 400 that this client never branches on. Both sides type-check today, so the first bad request at runtime reaches code that has no plan for it.
 
 ## Getting started
 
@@ -49,10 +49,11 @@ offers to set them up:
 └  Done. Re-run `suss check --dir summaries/` whenever code changes.
 ```
 
-Nothing is written or installed unless you say yes, and every question
-takes Ctrl-C. At a monorepo root it finds the workspace and asks which
-packages to set up. Piped or in CI it prints the commands instead of
-asking, so `suss init --plain` fits in a script.
+Nothing is written or installed unless you say yes. At a monorepo root
+it finds the workspace and asks which packages you want to set up. When
+its output is piped, or
+when it runs in CI, it prints the commands instead of asking, so you can
+put `suss init --plain` in a script.
 
 Or run the three commands yourself:
 
@@ -64,7 +65,7 @@ suss check --dir summaries/
 
 ## What a summary looks like
 
-For every function reachable from a recognized entry point, suss emits a `BehavioralSummary`: the transitions the function produces (one per execution path), the predicates gating each, the outputs, and the side effects along the way. `suss inspect` renders one:
+For every function reachable from a recognized entry point, suss emits a `BehavioralSummary`. It has the transitions the function produces, one per execution path, the predicates that guard each of them, the outputs, and the side effects along the way. `suss inspect` renders one:
 
 ```
 src/api.ts
@@ -83,24 +84,24 @@ src/api.ts
          -> 201 { id, name }
 ```
 
-Every path the code can take, with the status and body shape it produces. Where a declared contract promises something the code never produces, a `!!` line marks the gap. The same data as JSON is what `@suss/checker` and any downstream tool consumes, and `inspect` is a renderer over it.
+That is every path the code can take, with the status and the body fields it produces. Where a declared contract promises something the code never produces, a `!!` line marks the gap. `@suss/checker` and any downstream tool read the same data as JSON, and `inspect` is one renderer over it.
 
-The summary is the product. Checking is the most-developed use; others include reading what code does without reading source, generating documentation, enumerating test cases, and feeding AI agents structured context.
+The summary is the product. Checking is the use we have developed furthest. You can also use a summary to see what code does without reading the source, to generate documentation, to list out test cases, and to give AI agents structured context.
 
 ## Four CLI surfaces
 
-Over the same `BehavioralSummary[]`:
+All four work on the same `BehavioralSummary[]`:
 
-- `suss extract` derives summaries from TypeScript or JavaScript source. Python and Ruby are read by adapters of their own, called from a script; see [docs/guides/python-and-ruby.md](docs/guides/python-and-ruby.md).
+- `suss extract` derives summaries from TypeScript or JavaScript source. Python and Ruby have adapters of their own, which you call from a script; see [docs/guides/python-and-ruby.md](docs/guides/python-and-ruby.md).
 - `suss contract` derives summaries from declared contracts (OpenAPI, CloudFormation and SAM, Serverless Framework service files, AppSync, GraphQL SDL, committed `.graphql` operation documents, Prisma schema, Storybook).
-- `suss check` pairs providers with consumers and emits findings where they disagree. The exit code crosses the `--fail-on error|warning|info|none` threshold.
-- `suss inspect` renders summaries as text, or `--diff BEFORE AFTER` to see what a change added, removed, or altered.
+- `suss check` pairs providers with consumers and emits findings where they disagree. It exits nonzero when a finding crosses the `--fail-on error|warning|info|none` threshold.
+- `suss inspect` renders summaries as text. Give it `--diff BEFORE AFTER` to see what a change added, removed, or altered.
 
-`extract` and `contract` produce the same shape, so a TypeScript handler and an OpenAPI spec for it are directly comparable, as are a CloudFormation template and the Lambda code it deploys, or a Storybook CSF3 file and the React component it documents.
+`extract` and `contract` produce the same format, so you can compare a TypeScript handler directly against an OpenAPI spec for it, a CloudFormation template against the Lambda code it deploys, or a Storybook CSF3 file against the React component it documents.
 
 ## Install
 
-suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and contract sources you use:
+suss ships as `@suss/cli`, plus packs you opt into for the frameworks, runtimes, and contract sources you use:
 
 ```bash
 npm install --save-dev @suss/cli @suss/framework-ts-rest @suss/client-axios
@@ -110,24 +111,17 @@ See [docs/reference/packages.md](docs/reference/packages.md) for the full pack m
 
 ## A complete example
 
-[`examples/petstore-axios-openapi/`](examples/petstore-axios-openapi/) is a runnable end-to-end demo: a TypeScript axios consumer of the Petstore API, paired against the Petstore OpenAPI spec via `suss contract`. `make all` runs the full pipeline (extract, contract, check) and produces actionable findings: unhandled status codes plus consumer reads of fields the provider declares optional.
+[`examples/petstore-axios-openapi/`](examples/petstore-axios-openapi/) pairs a TypeScript axios consumer against the Petstore OpenAPI spec. `make all` runs extract, contract and check over it.
 
 ## Docs
-
-Start here:
 
 - [Get started](docs/tutorial/get-started.md): the smallest end-to-end example.
 - [Motivation](docs/motivation.md): the problem, why existing tools miss it, prior art, design principles.
 - [Glossary](docs/glossary.md): one canonical definition per term.
 - [FAQ](docs/faq.md): how suss relates to linters, types, OpenAPI, tests, observability.
-
-Understanding suss:
-
-- [Contracts](docs/contracts.md): the shapes of contract (schema, examples, tests, snapshots, design), their epistemic characters, and how they ground finding semantics.
+- [Contracts](docs/contracts.md): the kinds of contract, how much each one can tell you, and how that decides what a finding means. Intent docs your team writes are the [intent section](docs/contracts.md#intent).
 - [Cross-boundary checking](docs/cross-boundary-checking.md): how the pairwise checker works.
 - [Suppressions](docs/suppressions.md): the `.sussignore` file format.
-
-Intent docs (team-authored intent, checked against derived code) pair alongside behavioral summaries; see the intent section of [Contracts](docs/contracts.md#intent).
 
 Reference and internals: [Summary format](docs/behavioral-summary-format.md), [IR reference](docs/ir-reference.md), [Architecture](docs/architecture.md), [Packs](docs/packs.md), [Contract sources](docs/contract-sources.md).
 
@@ -137,8 +131,8 @@ The behavioral summary format and the IR types in `@suss/behavioral-ir` are stab
 
 Nineteen packs read code today: ts-rest, Express, Fastify, Hono, Next.js, NestJS REST and GraphQL, Apollo Server, AWS Lambda, React (components, handlers, effects), React Router, fetch, axios, Apollo Client, Prisma, Drizzle, AWS SQS and EventBridge producers, and the Node runtime surface including `process.env`.
 
-Seven contract readers turn a declared artifact into the same shape: OpenAPI 3.x, GraphQL (SDL and committed `.graphql` operation documents), AWS API Gateway, CloudFormation / SAM, AppSync, Storybook CSF3, Prisma schema. Team-authored intent docs are their own stream, read by `suss check --intent`.
+Seven contract readers turn a declared artifact into that same format: OpenAPI 3.x, GraphQL (SDL and committed `.graphql` operation documents), AWS API Gateway, CloudFormation / SAM, AppSync, Storybook CSF3, Prisma schema. Intent docs your team writes are handled separately, by `suss check --intent`.
 
 ## License
 
-This project is licensed under the [Apache 2.0 License](LICENSE).
+[Apache 2.0](LICENSE).

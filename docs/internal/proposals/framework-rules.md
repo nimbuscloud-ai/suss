@@ -26,7 +26,7 @@ say today:
 
 - `functionCall` matching `new` made `throw new Response(...)` produce a
   throw *and* a response, for every pack, because the walker never asks
-  where the value sits. A walker that requires return position fixes it
+  where the value is. A walker that requires return position fixes it
   with no change to any pack.
 - `dropBasenames` is a list of filenames applied to every segment, so
   `app/route/route.ts` serves `/`. The knob means the right thing and
@@ -67,17 +67,17 @@ are where the walkers are.
 pack stays data that can be validated and reviewed.
 
 **The adapter compiles a pack to rules** instead of switching on
-`match.type` in a walker per variant. Nothing user-visible. What it
-buys is one evaluation model rather than a dozen walkers, and derived
-facts that compose the way resolution's already do.
+`match.type` in a walker per variant. None of this is user-visible.
+What it buys is one evaluation model rather than a dozen walkers, and
+derived facts that compose the way the resolution facts already do.
 
 **A pack can state a rule where the declarative form cannot say what it
-means.** The escape hatch, not the front door. React Router's opt-in is
-the first case in this batch that needs it.
+means.** This is the escape hatch rather than the front door. React
+Router's opt-in is the first case in this batch that needs it.
 
 Keeping it rare is the point. A pack that drops to rules is harder to
-write and harder to review, and two packs naming the same relation can
-mean different things. Rules earn their place where the framework's
+write and harder to review, and two packs using the same relation name
+can mean different things. Rules are worth it where the framework's
 judgment is conditional or compositional, which is where the knobs have
 been piling up.
 
@@ -85,23 +85,24 @@ been piling up.
 
 Facts stay mechanical and framework-neutral, which is the discipline
 that keeps this from turning into a second language. The adapter
-parses; the rules decide. Three families beyond what facts carry today:
+parses, and the rules decide. There are three families beyond what the
+facts include today:
 
-- **Where a file sits.** `fileSegment(file, index, text)`, plus the
-  shape of a segment the parser can see without knowing any framework:
+- **Where a file is.** `fileSegment(file, index, text)`, plus the
+  form of a segment the parser can see without knowing any framework:
   `bracketed(file, index, inner)`, `parenthesized(file, index, inner)`,
   `dollarPrefixed(file, index, inner)`, `dotPart(file, index, part,
   text)`, and `projectRootSegment(file, index)` from where the tsconfig
-  sits.
-- **Where a value sits.** `returnedValue(unit, value)` and
+  is.
+- **Where a value is.** `returnedValue(unit, value)` and
   `thrownValue(unit, value)` as separate relations, with
   `constructedBy(value, name)`, `callee(value, name)`,
   `argOf(value, index, arg)`, `propertyOf(object, name, value)`,
   `literalNumber(value, n)`.
 - **What a branch tests.** `branchesOn(unit, subject, literal)`.
 
-String surgery stays in extraction. Rules match and join; they do not
-compute strings. A rule can ask whether a segment is bracketed and what
+String surgery stays in extraction. Rules match and join, and they do
+not compute strings. A rule can ask whether a segment is bracketed and what
 was inside the brackets, because the parser wrote both down. It cannot
 ask for a regular expression.
 
@@ -116,25 +117,26 @@ React Router's opt-in, which has no declarative form today:
     usesFileRoutes() :- fileSegment(F, _, "routes.ts"),
                         imports(F, "@react-router/fs-routes").
 
-Its route rules take that as a premise, so a project configuring routes
-explicitly derives nothing. That is the correct answer and the one the
-current implementation cannot give.
+Its route rules take that as a premise, so a project that configures
+its routes explicitly derives nothing. That is the correct answer and
+the one the current implementation cannot give.
 
-A handler answering several methods, which the REST binding cannot hold
-either way:
+A handler that serves several methods, which the REST binding has no
+room for either way:
 
     serves(U, M) :- branchesOn(U, "req.method", M).
 
 ## Cost and risk
 
 The fact base grows, and extraction is already the expensive stage. The
-existing store answers in waves and widens only when an answer is
-missing, and routing facts are per file and cheap, but this needs
-measuring on a production repo rather than assuming.
+existing store responds in waves and widens only when an answer is
+missing, and routing facts are per file and cheap, but we need to
+measure this on a production repo rather than assume it.
 
 An open relation namespace is the risk that comes with the escape
-hatch. Namespacing a pack's own relations, and reserving the adapter's
-emitted families, is the smallest thing that prevents a collision.
+hatch. Giving each pack a namespace for its own relations, and
+reserving the families the adapter emits, is the smallest thing that
+prevents a collision.
 
 ## Order
 
@@ -144,5 +146,5 @@ emitted families, is the smallest thing that prevents a collision.
    This is the piece that pays for itself and the piece to measure.
 3. Open the escape hatch, driven by React Router's opt-in rather than
    designed in the abstract.
-4. Method sets, which need the binding to hold more than one method
-   whichever way the rest goes.
+4. Method sets, which need the binding to have room for more than one
+   method whichever way the rest goes.

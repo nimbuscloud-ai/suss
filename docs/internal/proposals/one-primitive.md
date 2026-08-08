@@ -5,25 +5,25 @@ each item lands as its own mostly-deletion change.
 
 ## Two incidents, one root
 
-The week produced two bugs with the same anatomy. The message-bus
+We hit two bugs this week with the same anatomy. The message-bus
 checker flagged every recorded-but-unnamed send as an orphan to a
 queue named `""`, because it keeps its own channel index instead of
 using the shared pairing. And the intent checker contradicts the
-behavioral checker on the same run: a pages-api route serving `*`
+behavioral checker on the same run. A pages-api route serving `*`
 pairs with GET clients in `suss check`, while `suss check --intent`
-reports nobody serves GET, because the intent side does an
-exact-string map lookup on `boundaryKey` while pairing moved to
-bucket-then-agree.
+reports that nobody serves GET. That happens because the intent side
+does an exact-string map lookup on `boundaryKey`, and pairing has since
+moved to bucketing first and agreeing second.
 
 Neither bug is in the shared primitive. Both are in a private copy of
 it that did not learn what the original learned. Every second
-implementation of an agreement rule is a reserved slot for the next
-drift.
+implementation of an agreement rule leaves a place for the next drift
+to happen.
 
 ## The mechanism
 
-Name the primitive, export it in a callable shape, delete the copies.
-The intent checker's fix reads like this:
+Name the primitive, export it as something callers can call, and delete
+the copies. The fix in the intent checker looks like this:
 
 ```ts
 // before: its own index, exact strings
@@ -36,9 +36,9 @@ const index = pairableIndex(summaries);
 const impls = index.match(intent.boundary);
 ```
 
-`pairableIndex` is a small ir-core export wrapping what
-`pairSummaries` already does: bucket on `pairingKey`, settle with
-`semanticsAgree`. The private map is deleted, and the contradiction
+`pairableIndex` is a small ir-core export that wraps what
+`pairSummaries` already does: it buckets on `pairingKey` and settles
+with `semanticsAgree`. The private map is deleted, and the contradiction
 cannot recur because there is no second opinion left.
 
 ## The list, with the copy each item deletes
@@ -47,39 +47,41 @@ cannot recur because there is no second opinion left.
    and unmatched lists `pairSummaries` computes, and
    `channelPairing.ts` (`ChannelSet`, `addChannel`, `hasPair`) is
    deleted. This is the consolidation the code already promises
-   (#174), now with two incidents pointing at it. First in line.
-2. **Pairable lookup.** `pairableIndex` in ir-core; the intent
-   checker's `indexCodeByBoundary` is deleted. Fixes the wildcard
+   (#174), now with two incidents pointing at it. It goes first.
+2. **Pairable lookup.** Add `pairableIndex` to ir-core and delete the
+   intent checker's `indexCodeByBoundary`. That fixes the wildcard
    contradiction.
-3. **Pairability in the fuzzer.** `everyBoundaryCanPair` re-lists per
-   protocol which fields must be non-null and covers only two
-   protocols. It calls `boundaryKey`/`pairingKey` instead, and gains
-   the protocols it silently skipped.
+3. **Pairability in the fuzzer.** `everyBoundaryCanPair` lists again,
+   protocol by protocol, which fields must be non-null, and it covers
+   only two protocols. It calls `boundaryKey`/`pairingKey` instead, and
+   gains the protocols it silently skipped.
 4. **Boundary rendering.** `describeBinding` (checker),
-   `formatRoute`/`formatSide` (check), `summaryLabel` (corroborate)
-   are three fallback rules for one job. One `describeBoundary` in
-   ir-core next to `boundaryKey`; three copies deleted.
-5. **Descent rule.** Three implementations of "stop at a nested
+   `formatRoute`/`formatSide` (check), and `summaryLabel` (corroborate)
+   are three fallback rules for one job. Put one `describeBoundary` in
+   ir-core next to `boundaryKey`, and delete the three copies.
+5. **Descent rule.** Three pieces of code implement "stop at a nested
    function": the shared barrier-aware `isDescentStop`, an inline
    copy in `extractDependencyCalls`, a third in the sub-unit context.
-   One rule with the accessor/constructor variant folded in. This is
-   also a precondition for the walk unification (#118), which needs
-   one descent semantics before walks can merge.
-6. **Pack helper kit.** Byte-identical or near copies across packs:
-   `rootIdentifier` (x2), `unwrapJsonStringify` (x2),
-   `process.env` matching (x3), string-literal reading (many),
-   object-literal property reading (x6), `EffectArg` kind guards
-   (x3). One exported kit in the extractor; the guide points at it.
+   Make it one rule, with the accessor and constructor variant folded
+   in. It is also a precondition for the walk unification (#118), which
+   needs one meaning of descent before the walks can merge.
+6. **Pack helper kit.** Packs contain copies of each other's helpers
+   that are byte-identical or close to it: `rootIdentifier` (x2),
+   `unwrapJsonStringify` (x2), `process.env` matching (x3),
+   string-literal reading (many), object-literal property reading (x6),
+   `EffectArg` kind guards (x3). Export one kit from the extractor, and
+   have the guide point at it.
 7. **Cross-package reuse the imports already allow.** appsync
-   reimplements `refTarget` (weaker, misses a shape manifest-aws
-   handles) and GraphQL type decomposition (lower fidelity than
-   contract/graphql's), while already importing from both packages
-   for other reasons. Call the stronger versions; delete the local
-   ones.
+   reimplements `refTarget` (a weaker version that misses a case
+   manifest-aws handles), and it takes GraphQL types apart at lower
+   fidelity than contract/graphql does, while it already imports from
+   both packages for other reasons. Call the stronger versions and
+   delete the local ones.
 
 ## Keeping copies from coming back
 
-The deleted modules are the guard: reintroducing a copy means writing
-a new file, which review sees, rather than extending an existing one,
-which review misses. "Does it reuse what exists" stays on the review
-checklist; no new gate is proposed until a copy actually recurs.
+Deleting the modules is what guards this. To bring a copy back you have
+to write a new file, which review sees, rather than extend an existing
+one, which review misses. "Does it reuse what exists" stays on the
+review checklist, and we are not proposing a new gate until a copy
+actually comes back.

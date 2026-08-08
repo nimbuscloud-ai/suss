@@ -6,11 +6,11 @@ TypeScript language adapter for suss. It extracts behavioral structure from Type
 
 `@suss/adapter-typescript` is the TypeScript language adapter. It walks ASTs via ts-morph, identifies code units (handlers, loaders, actions, client call sites), and emits `RawCodeStructure` objects that the extractor assembles into `BehavioralSummary` IR.
 
-Supports both provider-side extraction (handler registration, terminal discovery, contract reading, body-shape extraction) and client-side extraction (call-site discovery, enclosing-function lifting, response field tracking via `expectedInput`).
+It supports both provider-side extraction (handler registration, terminal discovery, contract reading, body-shape extraction) and client-side extraction (call-site discovery, enclosing-function lifting, response field tracking via `expectedInput`).
 
-## Where it sits in suss
+## Where it fits in suss
 
-Imports `@suss/behavioral-ir` for type references and `@suss/extractor` for the `RawCodeStructure` contract. Framework packs and the CLI consume it. It sits one level above the extractor in the pipeline, feeding it raw structures produced from TypeScript AST analysis.
+It imports `@suss/behavioral-ir` for type references and `@suss/extractor` for the `RawCodeStructure` contract. Framework packs and the CLI consume it. It runs one level above the extractor in the pipeline, feeding it raw structures produced from TypeScript AST analysis.
 
 ## Status
 

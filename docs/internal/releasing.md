@@ -5,8 +5,8 @@ root `package.json`,
 [`scripts/preparePublish.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/preparePublish.mjs)
 copies it out to every package, and
 [`scripts/release.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/release.mjs)
-publishes the set at whatever version is committed. The workflow never
-picks a version of its own.
+publishes the whole set at whatever version is committed. The workflow
+never picks a version of its own.
 
 Most of this page is about npm credentials, because that is the part
 that lives outside the repository and cannot be fixed by a commit.
@@ -31,7 +31,7 @@ can read what the release would say before it says it.
 
 Start with a dry run. It reports which credential it found before it
 lists anything, so a rehearsal that says "would publish 44 packages" is
-one that would really have published them.
+one that would in fact have published them.
 
 You can publish from a laptop with `npm run release -- --otp <code>`,
 which does the same thing without the tag or the GitHub release. It
@@ -70,16 +70,17 @@ rotate.
 
 If the job cannot mint an OIDC token at all, the release stops before it
 writes anything. That is what `ENEEDAUTH` on all 34 packages meant in
-the 0.0.2 run: npm having no credential, rather than one being refused.
+the 0.0.2 run: npm had no credential at all, rather than the registry
+refusing one it had.
 
 ## Setting up trusted publishing
 
 The exchange happens **once per package**, against a trusted publisher
-each package names for itself, at
+that each package configures for itself, at
 `POST /-/npm/v1/oidc/token/exchange/package/{name}`. A package that has
 not been set up gets nothing back, and with no token to fall back on,
 that package alone fails. There is no organization-wide setting and no
-bulk UI, so this is 44 passes.
+bulk UI, so you do this 44 times.
 
 On npmjs.com, for each package: **Packages → the package → Settings →
 Trusted Publisher → GitHub Actions**, then
@@ -117,7 +118,7 @@ by itself when it publishes this way, so nothing passes `--provenance`.
 
 ### Closing the other door
 
-Once a package is across, set **Settings → Publishing access → Require
+Once a package is switched over, set **Settings → Publishing access → Require
 two-factor authentication and disallow tokens** on it. That setting does
 not affect trusted publishing, which is not token authentication, and it
 means a stolen token cannot publish even if one is minted later. Do it
@@ -127,8 +128,8 @@ exercise the exchange.
 ## When a release fails
 
 The publish step prints one failing package's npm output in full and
-says when the rest failed the same way, since 44 identical error codes
-say less than one transcript does.
+then notes that the rest failed the same way, since 44 identical error
+codes tell you less than one full transcript does.
 
 `--verbose` puts npm's own account of the token exchange in the log. It
 is the only level at which npm explains why a credential came back
@@ -137,10 +138,10 @@ empty, and the workflow already passes it.
 A run that publishes some packages and not others can be re-run as-is.
 Anything already on the registry at that version is skipped, so the
 second run picks up only what is left. A package published moments
-earlier can still read as missing, because npm's read path trails its
-write path by minutes; publishing it again returns "cannot publish over
-the previously published versions", which counts as success, because it
-is the registry confirming the version is up.
+earlier can still look missing, because npm's read path trails its
+write path by minutes. Publishing it again returns "cannot publish over
+the previously published versions", and that counts as success, because
+the registry is confirming the version is up.
 
 ## What a release leaves behind
 
@@ -151,12 +152,13 @@ is the registry confirming the version is up.
 
 The version bump commit is already on `main` before any of this runs, so
 the workflow pushes a tag and nothing else. It stops before publishing
-if that tag is already there, which is what a run somebody dispatched
-twice, or dispatched without bumping first, looks like.
+if that tag is already there, which is what happens when somebody
+dispatches a run twice, or dispatches one without bumping the version
+first.
 
 The tag has to be annotated. A lightweight one is skipped by
 `--follow-tags` and by anything else that reads tag objects, and that is
-how 0.0.2 reached npm and `main` with no tag behind it. The release is
+how 0.0.2 reached npm and `main` with no tag on it. The release is
 created with `--verify-tag`, so if the tag did not reach the remote the
 release is not written either.
 
