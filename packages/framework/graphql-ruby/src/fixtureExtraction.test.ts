@@ -108,6 +108,7 @@ describe("extraction over fixtures/ruby-graphql", () => {
         "Organizer.id",
         "Organizer.email",
         "Organizer.displayName",
+        "Organizer.phone",
         "Organizer.status",
         "Query.campaign",
         "Mutation.campaignUpdate",
@@ -134,26 +135,32 @@ describe("extraction over fixtures/ruby-graphql", () => {
     }
 
     it("attaches the method written below the field in the same class", async () => {
-      const gaps = await gapsFor("Organizer.displayName");
-      expect(gaps).not.toContain(NO_BODY);
-      expect(gaps).toContain(BODY_READ_NOTHING_MATCHED);
+      expect(await gapsFor("Organizer.displayName")).toEqual([
+        BODY_READ_NOTHING_MATCHED,
+      ]);
+    });
+
+    it("attaches the method a concern the class includes defines", async () => {
+      expect(await gapsFor("Organizer.phone")).toEqual([
+        BODY_READ_NOTHING_MATCHED,
+      ]);
     });
 
     it("attaches the resolve method of the class a mutation-wired field points at", async () => {
-      const gaps = await gapsFor("Mutation.campaignUpdate");
-      expect(gaps).not.toContain(NO_BODY);
-      expect(gaps).toContain(BODY_READ_NOTHING_MATCHED);
+      expect(await gapsFor("Mutation.campaignUpdate")).toEqual([
+        BODY_READ_NOTHING_MATCHED,
+      ]);
     });
 
     it("attaches the resolve method of the class a resolver-wired field points at", async () => {
-      const gaps = await gapsFor("Query.campaign");
-      expect(gaps).not.toContain(NO_BODY);
-      expect(gaps).toContain(BODY_READ_NOTHING_MATCHED);
+      expect(await gapsFor("Query.campaign")).toEqual([
+        BODY_READ_NOTHING_MATCHED,
+      ]);
     });
 
-    it("still says a field with no method behind it has no body", async () => {
-      expect(await gapsFor("Campaign.id")).toContain(NO_BODY);
-      expect(await gapsFor("Organizer.email")).toContain(NO_BODY);
+    it("still says a field with no method behind it has no body, and says nothing else", async () => {
+      expect(await gapsFor("Campaign.id")).toEqual([NO_BODY]);
+      expect(await gapsFor("Organizer.email")).toEqual([NO_BODY]);
     });
   });
 

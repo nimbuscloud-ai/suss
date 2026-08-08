@@ -85,6 +85,8 @@ export function shadowingClassFor(
 
 export interface ClassInfo {
   node: RbNode;
+  /** Which keyword opened it. A module has no superclass and cannot be subclassed, but its methods answer for every class including it. */
+  kind: "class" | "module";
   /** This class's own fully-qualified constant path. */
   qualifiedName: string;
   /** The qualified path of its `< ...` superclass, or null when it declares none or the expression isn't a literal constant path. */
@@ -104,6 +106,18 @@ export interface ClassInfo {
  * constant-to-path convention (find the class matching a target name).
  */
 export function walkClasses(
+  root: RbNode,
+  visit: (info: ClassInfo) => void,
+): void {
+  walkDefinitions(root, (info) => {
+    if (info.kind === "class") {
+      visit(info);
+    }
+  });
+}
+
+/** The same walk including `module` declarations, for a lookup that has to reach a module's own methods. */
+export function walkDefinitions(
   root: RbNode,
   visit: (info: ClassInfo) => void,
 ): void {
@@ -173,6 +187,7 @@ function visitClass(
 
   visit({
     node,
+    kind: "class",
     qualifiedName: identity.qualifiedName,
     superclassQualifiedName,
     bodyNode,
@@ -195,6 +210,16 @@ function visitModule(
     return;
   }
   const bodyNode = field(node, "body");
+
+  visit({
+    node,
+    kind: "module",
+    qualifiedName: identity.qualifiedName,
+    superclassQualifiedName: null,
+    bodyNode,
+    bodyNesting: identity.bodyNesting,
+  });
+
   if (bodyNode !== null) {
     walkBody(bodyStatements(bodyNode), identity.bodyNesting, visit);
   }

@@ -16,6 +16,13 @@
 // convention arrives through `GraphqlObjectFields` (see pack.ts).
 
 export {
+  ancestryOf,
+  definesMethodsDynamically,
+  inheritedStatements,
+  methodInAncestry,
+  reachDefinition,
+} from "./ancestry.js";
+export {
   resolveConstantFile,
   underscoreConstantPath,
 } from "./constantPath.js";
@@ -32,9 +39,15 @@ export {
   graphqlTypeNameFromQualified,
   qualifyConstantRef,
   walkClasses,
+  walkDefinitions,
 } from "./scope.js";
 export { typeShapeFromNode } from "./typeShape.js";
 
+export type {
+  AncestorLookup,
+  Ancestry,
+  ReachedBody,
+} from "./ancestry.js";
 export type { ConstantPathConvention } from "./constantPath.js";
 export type {
   GraphqlObjectFields,

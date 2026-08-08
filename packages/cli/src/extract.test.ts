@@ -452,6 +452,7 @@ describe("extract over a Ruby project", () => {
         "Organizer.id",
         "Organizer.email",
         "Organizer.displayName",
+        "Organizer.phone",
         "Organizer.status",
         "Query.campaign",
         "Mutation.campaignUpdate",

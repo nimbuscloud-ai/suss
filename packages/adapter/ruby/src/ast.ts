@@ -85,6 +85,28 @@ export function instanceMethodsByName(body: RbNode): Map<string, RbNode> {
 }
 
 /**
+ * Every argument of every receiverless call to `name` written directly
+ * in `body`, in the order Ruby evaluates them. `include A, B` is one
+ * call with two arguments and reads as two.
+ */
+export function bareCallArguments(body: RbNode, name: string): RbNode[] {
+  const found: RbNode[] = [];
+  for (const stmt of bodyStatements(body)) {
+    if (stmt.type !== "call" || field(stmt, "receiver") !== null) {
+      continue;
+    }
+    if (field(stmt, "method")?.text !== name) {
+      continue;
+    }
+    const args = field(stmt, "arguments");
+    if (args !== null) {
+      found.push(...bodyStatements(args));
+    }
+  }
+  return found;
+}
+
+/**
  * Whether a method has work in it. `def name; end` has no `body` field
  * at all; an endless `def name = expr` has the expression itself there
  * rather than a `body_statement`, and that is work.

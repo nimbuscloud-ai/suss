@@ -18,6 +18,11 @@ describe("graphqlRubyFramework", () => {
         argumentCallName: "argument",
         wiringKeywords: ["mutation", "resolver"],
         resolverMethodName: "resolve",
+        ancestryRootClassNames: [
+          "GraphQL::Schema::Object",
+          "GraphQL::Schema::Mutation",
+          "GraphQL::Schema::Resolver",
+        ],
         requiredKeyword: "required",
         requiredDefault: true,
         camelizeKeyword: "camelize",

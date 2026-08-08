@@ -85,14 +85,27 @@ describe("discoverUnits: object type fields", () => {
     expect(units).toEqual([]);
   });
 
-  it("is transitionless and low-confidence-shaped: no branches, an absent body", async () => {
+  it("is transitionless: no branches", async () => {
     const units = await discover(
       "class Types::CampaignType < Types::BaseObject\n" +
         "  field :id, ID, null: false\n" +
         "end\n",
     );
     expect(units[0]?.branches).toEqual([]);
-    expect(units[0]?.bodyContent).toBe("absent");
+  });
+
+  it("will not call a body absent while a base class it could not read might define one", async () => {
+    const units = await discover(
+      "class Types::CampaignType < Types::BaseObject\n" +
+        "  field :id, ID, null: false\n" +
+        "end\n",
+    );
+    expect(units[0]?.bodyContent).toBeUndefined();
+    expect(units[0]?.readings?.[0]).toMatchObject({
+      kind: "unreadable",
+      reason:
+        "This field could be answered by a method inherited from Types::BaseObject, which this run did not read, so whether one exists was not settled here",
+    });
   });
 
   it("abstains on a computed type expression: the field is discovered, but with no declared contract", async () => {
