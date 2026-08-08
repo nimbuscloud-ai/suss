@@ -56,11 +56,17 @@ A resolver that finds two candidates returns `ambiguous` with both.
 The summary builder is the only code allowed to collapse a Reading into
 a summary field, and its collapse rule is fixed:
 
-- `written` becomes a claim, carrying its source range as provenance.
+- `written` becomes a claim. The range travels with it to the collapse
+  and stops there, because the IR has no per-claim provenance field to
+  put it in. Adding one is its own change.
 - `absent` may take a default only when the pack declares that default
-  as data. The default is then itself library-defined, sits in the
-  pack's config next to the names it already declares, and the
-  vocabulary check sees it. No default declared, no claim.
+  as data. The default is then library-defined and sits in the pack's
+  config next to the names it already declares, where review reads it.
+  No default declared, no claim. The vocabulary check does not police
+  it: that check matches identifiers, and a default like a status code
+  is a number. The differential fuzzer is what catches a wrong one,
+  which it does, by running the generated program and comparing the
+  claim against what the app answers.
 - `unreadable` and `ambiguous` always become gaps, with the reason
   threaded onto the summary the way `unreadBinding` sentences already
   are.
@@ -71,6 +77,22 @@ under this regime requires one of two visible acts: declaring a false
 default in pack data, where review reads it, or adding an escape hatch,
 which is a named function whose call count the dispatch-style ratchet
 holds at its current number.
+
+One reader does need a written value before there is a summary field to
+fill, because a route's path names its own parameters and that decides
+what each function parameter is. `valueToReadFurtherFrom` is the
+sanctioned way to do it: it applies no default and states no reason, so
+what it returns is not a claim. The identity fields of a boundary
+binding are the exception it also covers, since a binding either names
+where a unit sits or names nothing and pairs with nothing, and no pack
+declares a default for what a boundary is called.
+
+Two details the first implementation settled. `firstWritten` hands back
+the readings it passed over alongside the one it chose, so a value that
+arrived from a second source does not bury the first source's failure.
+And the `ambiguous` variant carries a range like `unreadable` does, so
+a chained read can run against each candidate and keep the ones that
+survive.
 
 ## What this does not cover
 
