@@ -6,7 +6,12 @@ import { Kind, type NamedTypeNode, type TypeNode } from "graphql";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 
-const SCALAR_SHAPES: Record<string, TypeShape> = {
+/**
+ * The five standard GraphQL scalars, mapped to the shapes they read
+ * as. Exported so packs whose library exposes the same scalars under
+ * its own spelling can build on this table instead of restating it.
+ */
+export const SCALAR_SHAPES: Record<string, TypeShape> = {
   String: { type: "text" },
   ID: { type: "text" },
   Int: { type: "number" },

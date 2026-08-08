@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { graphqlRubyFramework } from "./index.js";
 
 describe("graphqlRubyFramework", () => {
-  it("accepts graphql-ruby's own generated base object class by default", () => {
+  it("states graphql-ruby's whole vocabulary on the pattern", () => {
     const pack = graphqlRubyFramework({ root: "/repo/app/graphql" });
     expect(pack.name).toBe("graphql-ruby");
     expect(pack.protocol).toBe("http-graphql");
@@ -12,7 +12,25 @@ describe("graphqlRubyFramework", () => {
         type: "graphqlObjectFields",
         baseClassNames: ["Types::BaseObject"],
         root: "/repo/app/graphql",
-        camelize: true,
+        pathConvention: "railsUnderscore",
+        fieldCallName: "field",
+        typeCallName: "type",
+        argumentCallName: "argument",
+        wiringKeywords: ["mutation", "resolver"],
+        requiredKeyword: "required",
+        requiredDefault: true,
+        camelizeKeyword: "camelize",
+        camelizeDefault: true,
+        scalars: {
+          String: { type: "text" },
+          ID: { type: "text" },
+          Int: { type: "number" },
+          Float: { type: "number" },
+          Boolean: { type: "boolean" },
+          Integer: { type: "number" },
+        },
+        scalarNamePrefixes: ["GraphQL::Types::"],
+        typeNameConvention: "stripTypeSuffix",
       },
     ]);
   });
@@ -35,9 +53,9 @@ describe("graphqlRubyFramework", () => {
       camelize: false,
     });
     const [pattern] = pack.discovery;
-    expect(pattern?.type === "graphqlObjectFields" && pattern.camelize).toBe(
-      false,
-    );
+    expect(
+      pattern?.type === "graphqlObjectFields" && pattern.camelizeDefault,
+    ).toBe(false);
   });
 
   it("is the module's default export too", async () => {

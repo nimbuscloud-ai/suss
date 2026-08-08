@@ -63,6 +63,8 @@ const fastapiPack: PythonPack = {
         delete: "DELETE",
         patch: "PATCH",
       },
+      pathParamSyntax: "braces",
+      annotatedClassIsRequestBody: true,
       responseModelKeyword: "response_model",
       statusCodeKeyword: "status_code",
     },
@@ -137,6 +139,33 @@ describe("extraction over fixtures/python-webapp", () => {
       semantics: { name: "rest", method: "GET", path: "/orders/{order_id}" },
       recognition: "flask-restx",
     });
+  });
+
+  it("reads Flask's converter template into a canonical path claim with a path-parameter role", async () => {
+    // The fixture writes the route the way Flask spells it,
+    // `/orders/<int:order_id>`. The claim has to canonicalize to the
+    // IR's brace form and classify `order_id` as a path parameter;
+    // a reader that only understands braces leaves the path in Flask's
+    // spelling and the parameter demoted to a query parameter, which
+    // is the bug this pins.
+    const { summaries } = await extractFixture();
+    const orderGet = summaries.find(
+      (s) => s.identity.name === "OrderDetail.get",
+    );
+    expect(orderGet?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/orders/{order_id}",
+    });
+    expect(orderGet?.inputs).toEqual([
+      {
+        type: "parameter",
+        name: "order_id",
+        position: 1,
+        role: "pathParams",
+        shape: null,
+      },
+    ]);
   });
 
   it("every discovered route is low-confidence: v0 reads no body", async () => {

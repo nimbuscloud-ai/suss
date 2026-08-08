@@ -47,7 +47,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-ruby": "0.3.2"
+    "@suss/adapter-ruby": "0.3.2",
+    "@suss/contract-graphql": "0.3.2"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",

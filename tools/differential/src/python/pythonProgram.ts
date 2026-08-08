@@ -41,6 +41,8 @@ export interface FastapiRouteSpec {
   /** Path segment; the renderer suffixes a running index so no two routes collide. */
   segment: string;
   hasPathParam: boolean;
+  /** Writes the path parameter with Starlette's typed-converter spelling (`{x_id:int}`) instead of the bare `{x_id}`. Meaningful only with `hasPathParam`. */
+  pathParamTyped: boolean;
   /** Path written as `BASE + "/x"`, which the pack abstains on while the app serves the composed value. */
   pathComputed: boolean;
   status: PyStatusSpec;
@@ -100,8 +102,10 @@ export interface FlaskMethodSpec {
 
 export interface FlaskResourceSpec {
   segment: string;
-  /** A werkzeug converter segment (`/<int:x>`), claimed and served verbatim. */
+  /** A werkzeug converter segment (`/<int:x>`), claimed and served at the canonical brace spelling. */
   hasPathParam: boolean;
+  /** Writes the converter with Werkzeug's argument spelling (`<int(min=0):x>`) instead of the bare `<int:x>`. Meaningful only with `hasPathParam`. */
+  converterArgs: boolean;
   /** Path written as `BASE + "/x"`: discovery drops the whole class, the app serves the composed value. */
   pathComputed: boolean;
   methods: FlaskMethodSpec[];
@@ -167,6 +171,17 @@ interface RenderedRoute {
   lines: string[];
 }
 
+/** The route's own path suffix as the decorator writes it, typed-converter spelling included. */
+function writtenSuffix(route: FastapiRouteSpec, n: number): string {
+  const base = `/${route.segment}${n}`;
+  if (!route.hasPathParam) {
+    return base;
+  }
+  const param = `${route.segment}${n}_id`;
+  return route.pathParamTyped ? `${base}/{${param}:int}` : `${base}/{${param}}`;
+}
+
+/** The same suffix in the canonical brace spelling claims and observations use. */
 function routeSuffix(route: FastapiRouteSpec, n: number): string {
   const base = `/${route.segment}${n}`;
   return route.hasPathParam ? `${base}/{${route.segment}${n}_id}` : base;
@@ -182,7 +197,7 @@ function fastapiRouteLines(
   object: string,
   modelName: string | null,
 ): RenderedRoute {
-  const suffix = routeSuffix(route, n);
+  const suffix = writtenSuffix(route, n);
   const constants: string[] = [];
   const pathExpr = route.pathComputed
     ? `BASE_${n} + "${suffix}"`
@@ -629,9 +644,13 @@ function flaskResourceName(resource: FlaskResourceSpec, ri: number): string {
 
 function flaskResourcePath(resource: FlaskResourceSpec, ri: number): string {
   const base = `/${resource.segment}${ri}`;
-  return resource.hasPathParam
-    ? `${base}/<int:${resource.segment}${ri}_id>`
-    : base;
+  if (!resource.hasPathParam) {
+    return base;
+  }
+  // min=0 keeps the observer's fill-in value of 1 inside the
+  // converter's accepted range, so the probe still reaches the route.
+  const converter = resource.converterArgs ? "int(min=0)" : "int";
+  return `${base}/<${converter}:${resource.segment}${ri}_id>`;
 }
 
 function flaskMethodLines(
@@ -683,11 +702,24 @@ function flaskResourceLines(
   ];
 }
 
+/**
+ * The rendered source spells a template parameter the way Werkzeug
+ * does (`<int:orders0_id>`, `<int(min=0):orders0_id>`); intents and
+ * observations both speak the IR's canonical brace spelling, the one
+ * an extracted claim carries, so the judge compares one spelling
+ * everywhere.
+ */
+function canonicalFlaskPath(path: string): string {
+  return path.replace(/<(?:\w+(?:\(.*?\))?:)?(\w+)>/g, "{$1}");
+}
+
 function flaskIntents(spec: FlaskProgramSpec): PyRouteIntent[] {
   return spec.resources.flatMap((resource, ri) => {
     const className = flaskResourceName(resource, ri);
     const path = flaskResourcePath(resource, ri);
-    const served = resource.pathComputed ? `/b${ri}${path}` : path;
+    const served = canonicalFlaskPath(
+      resource.pathComputed ? `/b${ri}${path}` : path,
+    );
     return resource.methods.map(
       (method): PyRouteIntent => ({
         name: `${className}.${method.verb.toLowerCase()}`,

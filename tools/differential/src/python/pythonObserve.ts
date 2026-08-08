@@ -110,6 +110,16 @@ def fill_params(path):
     return re.sub(r"<[^<>/]+>", "1", filled)
 
 
+def canonical_path(path):
+    # Werkzeug spells a template parameter as <name>, <converter:name>,
+    # or <converter(arguments):name>; Starlette keeps a typed
+    # converter in its route path ({name:int}). Extracted claims and
+    # generated intents both speak the IR's bare-brace spelling, so
+    # report the same one.
+    stripped = re.sub(r"<(?:\\w+(?:\\(.*?\\))?:)?(\\w+)>", r"{\\1}", path)
+    return re.sub(r"\\{(\\w+):\\w+\\}", r"{\\1}", stripped)
+
+
 def observe_fastapi(package, requests):
     from fastapi.routing import APIRoute
     from fastapi.testclient import TestClient
@@ -130,7 +140,7 @@ def observe_fastapi(package, requests):
             )
             endpoints.append(
                 {
-                    "path": route.path,
+                    "path": canonical_path(route.path),
                     "method": method,
                     "unit": unit,
                     "status": response.status_code,
@@ -156,7 +166,7 @@ def observe_flask(package, requests):
             response = client.open(fill_params(rule.rule), method=method)
             endpoints.append(
                 {
-                    "path": rule.rule,
+                    "path": canonical_path(rule.rule),
                     "method": method,
                     "unit": unit,
                     "status": response.status_code,

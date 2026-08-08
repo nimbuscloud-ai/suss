@@ -20,6 +20,8 @@ describe("fastapiFramework", () => {
           head: "HEAD",
           options: "OPTIONS",
         },
+        pathParamSyntax: "braces",
+        annotatedClassIsRequestBody: true,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
         routerComposition: {

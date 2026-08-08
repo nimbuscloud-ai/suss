@@ -21,6 +21,7 @@ describe("flaskRestxFramework", () => {
           head: "HEAD",
           options: "OPTIONS",
         },
+        pathParamSyntax: "flaskConverters",
       },
     ]);
   });

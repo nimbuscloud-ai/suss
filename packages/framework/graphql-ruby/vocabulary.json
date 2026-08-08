@@ -1,3 +1,13 @@
 {
-  "graphqlObjectFields": "suss: RubyDiscoveryPattern variant tag, defined in @suss/adapter-ruby"
+  "graphqlObjectFields": "suss: RubyDiscoveryPattern variant tag, defined in @suss/adapter-ruby",
+  "railsUnderscore": "suss: constant-to-path convention name, defined in @suss/adapter-ruby; selects Rails' (Zeitwerk's) underscore rule",
+  "stripTypeSuffix": "suss: GraphQL type-name convention name, defined in @suss/adapter-ruby; selects graphql-ruby's default_graphql_name rule",
+  "field": "graphql-ruby: the class-level call declaring one schema field",
+  "type": "graphql-ruby: the Resolver-class call declaring its return type",
+  "argument": "graphql-ruby: the class-level call declaring one named argument (also a shared suss name; this note covers the library's use)",
+  "mutation": "graphql-ruby: field keyword wiring the field to a Mutation class",
+  "resolver": "graphql-ruby: field keyword wiring the field to a Resolver class (also a shared suss name; this note covers the library's use)",
+  "required": "graphql-ruby: argument keyword opting out of the required-by-default registration",
+  "camelize": "graphql-ruby: field/argument keyword overriding the schema-wide camelize default for that one name",
+  "Integer": "graphql-ruby: native Ruby class accepted as a convenience synonym for the Int scalar"
 }

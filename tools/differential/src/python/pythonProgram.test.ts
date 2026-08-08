@@ -71,6 +71,7 @@ describe("renderPythonProgram", () => {
                 verb: "GET",
                 segment: "todos",
                 hasPathParam: false,
+                pathParamTyped: false,
                 pathComputed: false,
                 status: { type: "absent" },
                 response: "none",
@@ -81,6 +82,7 @@ describe("renderPythonProgram", () => {
                 verb: "GET",
                 segment: "reports",
                 hasPathParam: false,
+                pathParamTyped: false,
                 pathComputed: true,
                 status: { type: "absent" },
                 response: "none",
@@ -96,6 +98,7 @@ describe("renderPythonProgram", () => {
                 verb: "GET",
                 segment: "users",
                 hasPathParam: false,
+                pathParamTyped: false,
                 pathComputed: false,
                 status: { type: "absent" },
                 response: "none",
@@ -121,6 +124,84 @@ describe("renderPythonProgram", () => {
     ]);
   });
 
+  it("writes the typed and argument converter spellings while claiming the canonical brace path", () => {
+    // Starlette's {name:int} and Werkzeug's <int(min=0):name> are the
+    // sub-forms a reader without their grammar arms silently
+    // under-reads; these two intents keep the fuzzer generating them.
+    const fastapiSpec: PythonProgramSpec = {
+      framework: "fastapi",
+      program: {
+        groups: [
+          {
+            type: "app",
+            routes: [
+              {
+                verb: "GET",
+                segment: "todos",
+                hasPathParam: true,
+                pathParamTyped: true,
+                pathComputed: false,
+                status: { type: "absent" },
+                response: "none",
+                hasBodyParam: false,
+                hasQueryParam: false,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const fastapiRendered = renderPythonProgram(fastapiSpec, "app_7");
+    expect(fastapiRendered.files["app_7/main.py"]).toContain(
+      '"/todos0/{todos0_id:int}"',
+    );
+    expect(fastapiRendered.intents).toEqual([
+      {
+        name: "get_todos0",
+        method: "GET",
+        servedPaths: ["/todos0/{todos0_id}"],
+        expectation: "claim",
+        requestBody: null,
+      },
+    ]);
+
+    const flaskSpec: PythonProgramSpec = {
+      framework: "flask-restx",
+      program: {
+        importStyle: "direct",
+        resources: [
+          {
+            segment: "orders",
+            hasPathParam: true,
+            converterArgs: true,
+            pathComputed: false,
+            methods: [
+              {
+                verb: "GET",
+                annotated: false,
+                returnStyle: "dict",
+                tupleStatus: 201,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const flaskRendered = renderPythonProgram(flaskSpec, "app_8");
+    expect(flaskRendered.files["app_8/main.py"]).toContain(
+      '"/orders0/<int(min=0):orders0_id>"',
+    );
+    expect(flaskRendered.intents).toEqual([
+      {
+        name: "Orders0.get",
+        method: "GET",
+        servedPaths: ["/orders0/{orders0_id}"],
+        expectation: "claim",
+        requestBody: null,
+      },
+    ]);
+  });
+
   it("composes the mount and router prefixes into a mounted route's served path", () => {
     const spec: PythonProgramSpec = {
       framework: "fastapi",
@@ -136,6 +217,7 @@ describe("renderPythonProgram", () => {
                 verb: "POST",
                 segment: "items",
                 hasPathParam: false,
+                pathParamTyped: false,
                 pathComputed: false,
                 status: { type: "literal", code: 201 },
                 response: "responseModel",

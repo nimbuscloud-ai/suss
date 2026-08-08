@@ -84,10 +84,11 @@ export type DiscoveryMatch =
       importName: string;
       /**
        * Name of the property on the config object that holds the
-       * resolver map. Defaults to `"resolvers"` when unset, matching
-       * Apollo / yoga / graphql-tools convention.
+       * resolver map. The library's own config key, so the pack states
+       * it (Apollo, yoga, and graphql-tools all spell it
+       * `"resolvers"`); the adapter ships no default.
        */
-      mapProperty?: string;
+      mapProperty: string;
       /**
        * GraphQL type names whose fields we DON'T treat as resolvers —
        * opt-out for meta-types like `Subscription` that we may want

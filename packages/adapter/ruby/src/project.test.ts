@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
 import { extractRubyProject, findRubyFiles } from "./project.js";
 
 import type { RubyPack } from "./pack.js";
@@ -26,17 +27,7 @@ function write(relPath: string, content: string): string {
 }
 
 function graphqlRubyPack(root: string): RubyPack {
-  return {
-    name: "graphql-ruby",
-    protocol: "http-graphql",
-    discovery: [
-      {
-        type: "graphqlObjectFields",
-        baseClassNames: ["Types::BaseObject"],
-        root,
-      },
-    ],
-  };
+  return graphqlRubyTestPack({ root });
 }
 
 describe("findRubyFiles", () => {

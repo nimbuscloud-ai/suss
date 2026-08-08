@@ -8,7 +8,13 @@
 // per-language until a second implementation shows what's shared. A
 // pack is still plain data, the same discipline the Python and
 // TypeScript packs follow: naming what a library defines, nothing a
-// project chose.
+// project chose. Every call name, keyword, scalar, and naming
+// convention below is a value the pack supplies, so this package never
+// hardcodes another library's vocabulary.
+
+import type { TypeShape } from "@suss/behavioral-ir";
+import type { ConstantPathConvention } from "./constantPath.js";
+import type { GraphqlTypeNameConvention } from "./scope.js";
 
 export interface RubyPack {
   name: string;
@@ -21,39 +27,94 @@ export type RubyDiscoveryPattern = GraphqlObjectFields;
 
 /**
  * A class whose `< ...` superclass names one of `baseClassNames`
- * declares GraphQL fields through `field`/`argument`/`type` calls in
- * its own body, read the way graphql-ruby's class DSL declares them.
- * The GraphQL type name comes from the class's own short name (see
- * `graphqlTypeNameFromQualified` in scope.ts); there is no separate
- * "this is the root Query/Mutation type" flag to configure, because
- * that convention already falls out of the same rule (`Types::QueryType`
- * reads as `Query`).
+ * declares GraphQL fields through DSL calls in its own body. Which
+ * calls and keywords spell that DSL, which scalar names it defines,
+ * and which naming conventions it follows are all the library's to
+ * state, so every one of them is a field here rather than a constant
+ * in the adapter.
  */
 export interface GraphqlObjectFields {
   type: "graphqlObjectFields";
   /**
-   * Fully-qualified base class names (as graphql-ruby itself defines
-   * them, e.g. `"Types::BaseObject"`) that mark a class as a GraphQL
-   * object type. A project's own intermediate base class does not
-   * belong in a shipped default; supply it here through pack config
-   * instead, the way flask-restx's `wrapperModules` names a project's
-   * wrapper alongside the library's own module.
+   * Fully-qualified base class names that mark a class as a GraphQL
+   * object type. Library-defined: the shipped default names the base
+   * class the library itself generates. A project's own intermediate
+   * base class does not belong in a shipped default; supply it through
+   * pack config instead.
    */
   baseClassNames: string[];
   /**
-   * Directory the Rails constant-to-path convention resolves a
-   * `mutation:` / `resolver:` field's referenced class against (a
-   * project's `app/graphql`, typically). Supplied per project: this is
-   * a directory layout choice, not something graphql-ruby names.
+   * Directory the constant-to-path convention resolves a wiring
+   * keyword's referenced class against. Project-supplied: this is a
+   * directory layout choice, not something the library names.
    */
   root: string;
   /**
-   * graphql-ruby's own default for exposing a `field`/`argument`
-   * symbol's snake_case name as camelCase on the schema. Defaults to
-   * `true`, the library's own default; a schema that configures
-   * `camelize: false` schema-wide sets this to `false`. A `field` or
-   * `argument` call's own `camelize:` keyword overrides this default
-   * for that one name regardless of which way this is set.
+   * Named constant-to-path convention used to locate a wiring
+   * keyword's referenced class on disk. Library-defined: the library
+   * documents which loading convention its host framework runs. The
+   * algorithm itself lives in the adapter (see constantPath.ts); one
+   * convention exists today, `railsUnderscore`.
    */
-  camelize?: boolean;
+  pathConvention: ConstantPathConvention;
+  /**
+   * The DSL call declaring one schema field in an object type's body.
+   * Library-defined: the call is the library's own class-level method.
+   */
+  fieldCallName: string;
+  /**
+   * The DSL call declaring a referenced class's own return type (the
+   * resolver-class shape). Library-defined.
+   */
+  typeCallName: string;
+  /**
+   * The DSL call declaring one named argument. Library-defined.
+   */
+  argumentCallName: string;
+  /**
+   * Keywords on a field call whose value names a class the declared
+   * contract is read from, one hop away. Library-defined: these are
+   * the library's own wiring keywords, tried in the order listed.
+   */
+  wiringKeywords: string[];
+  /**
+   * Keyword on an argument call stating whether the argument is
+   * required. Library-defined.
+   */
+  requiredKeyword: string;
+  /**
+   * What an argument that states no required keyword defaults to.
+   * Library-defined: the library's own registration default.
+   */
+  requiredDefault: boolean;
+  /**
+   * Keyword on a field or argument call overriding the camelize
+   * default for that one name. Library-defined.
+   */
+  camelizeKeyword: string;
+  /**
+   * Whether a field/argument symbol's snake_case name is exposed on
+   * the schema in camelCase when the call itself doesn't say. The
+   * library defines the default; a project that reconfigures it
+   * schema-wide supplies its own value through pack config.
+   */
+  camelizeDefault: boolean;
+  /**
+   * The library's built-in scalar type names, each mapped to the shape
+   * it reads as. Library-defined: only names the library itself
+   * accepts in a type position belong here.
+   */
+  scalars: Record<string, TypeShape>;
+  /**
+   * Module prefixes under which the same built-in scalars are also
+   * reachable when written fully pathed. Library-defined.
+   */
+  scalarNamePrefixes: string[];
+  /**
+   * Named convention deriving a GraphQL type name from a class's
+   * qualified Ruby name. Library-defined: the library documents its
+   * default naming rule. The algorithm itself lives in the adapter
+   * (see scope.ts); one convention exists today, `stripTypeSuffix`.
+   */
+  typeNameConvention: GraphqlTypeNameConvention;
 }

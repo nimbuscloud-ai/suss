@@ -40,7 +40,7 @@ export function discoverResolverMaps(
     return [];
   }
 
-  const mapProperty = match.mapProperty ?? "resolvers";
+  const mapProperty = match.mapProperty;
   const excludeTypes = new Set(match.excludeTypes ?? []);
   const results: DiscoveredUnit[] = [];
 

@@ -46,10 +46,18 @@ describe("resolveConstantFile", () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, "class Mutations::CampaignUpdate\nend\n");
 
-    expect(resolveConstantFile(tmpDir, "Mutations::CampaignUpdate")).toBe(file);
+    expect(
+      resolveConstantFile(
+        tmpDir,
+        "Mutations::CampaignUpdate",
+        "railsUnderscore",
+      ),
+    ).toBe(file);
   });
 
   it("is null when no file sits at the conventional path", () => {
-    expect(resolveConstantFile(tmpDir, "Mutations::DoesNotExist")).toBeNull();
+    expect(
+      resolveConstantFile(tmpDir, "Mutations::DoesNotExist", "railsUnderscore"),
+    ).toBeNull();
   });
 });

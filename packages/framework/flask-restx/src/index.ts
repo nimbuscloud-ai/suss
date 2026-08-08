@@ -56,6 +56,12 @@ export function flaskRestxFramework(
         importModule: ["flask_restx", ...(options.wrapperModules ?? [])],
         decoratorName: "route",
         verbMethodNames: VERB_METHOD_NAMES,
+        // flask-restx paths spell a template parameter in Flask's
+        // converter syntax (`/orders/<int:order_id>`, `/users/<name>`),
+        // the library's own routing, named here for the adapter's
+        // reader; there is no annotated-class body convention to
+        // declare.
+        pathParamSyntax: "flaskConverters",
       },
     ],
   };
