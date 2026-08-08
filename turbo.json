@@ -1,5 +1,14 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  // The cache server's address arrives as TURBO_API, so only the settings
+  // that are the same everywhere live here. teamId is a namespace the
+  // server keys artifacts under, not a credential.
+  "remoteCache": {
+    "signature": true,
+    "teamId": "team_suss",
+    "timeout": 10,
+    "uploadTimeout": 20
+  },
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
