@@ -95,6 +95,64 @@ describe("extractRubyProject", () => {
     expect(summaries).toEqual([]);
   });
 
+  it("says which class it could not reach when a wired field's file is not there", async () => {
+    const queryType = write(
+      "app/graphql/types/query_type.rb",
+      "class Types::QueryType < Types::BaseObject\n  field :campaign, resolver: Queries::CampaignQuery\nend\n",
+    );
+    const { summaries } = await extractRubyProject({
+      files: [queryType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+    });
+    expect(summaries[0]?.gaps.map((gap) => gap.description)).toContain(
+      "This field is wired to Queries::CampaignQuery, and no file for it sits where the constant-to-path convention says to look, so nothing about what it does was read here",
+    );
+  });
+
+  it("says so when a wired class defines no resolver method of its own", async () => {
+    const queryType = write(
+      "app/graphql/types/query_type.rb",
+      "class Types::QueryType < Types::BaseObject\n  field :campaign, resolver: Queries::CampaignQuery\nend\n",
+    );
+    write(
+      "app/graphql/queries/campaign_query.rb",
+      "class Queries::CampaignQuery < Queries::BaseQuery\n  type Types::CampaignType, null: true\nend\n",
+    );
+    const { summaries } = await extractRubyProject({
+      files: [queryType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+    });
+    expect(summaries[0]?.gaps.map((gap) => gap.description)).toContain(
+      "This field is wired to Queries::CampaignQuery, which defines no resolve method of its own, so nothing about what it does was read here",
+    );
+  });
+
+  it("says so when a field is wired to something that is not a constant path", async () => {
+    const queryType = write(
+      "app/graphql/types/query_type.rb",
+      "class Types::QueryType < Types::BaseObject\n  field :campaign, resolver: resolver_for(:campaign)\nend\n",
+    );
+    const { summaries } = await extractRubyProject({
+      files: [queryType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+    });
+    expect(summaries[0]?.gaps.map((gap) => gap.description)).toContain(
+      "This field is wired to resolver_for(:campaign), which is not a constant path this reader follows, so nothing about what it does was read here",
+    );
+  });
+
+  it("does not claim a field has no body when the method behind it has nothing in it", async () => {
+    const organizerType = write(
+      "app/graphql/types/organizer_type.rb",
+      "class Types::OrganizerType < Types::BaseObject\n  field :status, String, null: true\n\n  def status\n  end\nend\n",
+    );
+    const { summaries } = await extractRubyProject({
+      files: [organizerType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+    });
+    expect(summaries[0]?.gaps).toEqual([]);
+  });
+
   it("keeps location.file absolute when no workspaceRoot is given", async () => {
     const file = write(
       "app/graphql/types/campaign_type.rb",

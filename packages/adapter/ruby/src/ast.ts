@@ -61,6 +61,45 @@ export function symbolValue(node: RbNode): string | null {
   return node.type === "simple_symbol" ? node.text.slice(1) : null;
 }
 
+/**
+ * Every instance method a class body defines directly, keyed by the
+ * name it is defined under. A name defined twice keeps the later
+ * definition, the way Ruby's own redefinition does.
+ *
+ * `def self.name` parses as a `singleton_method` and is deliberately
+ * not one of these: it runs on the class, and what resolves a field is
+ * an instance method.
+ */
+export function instanceMethodsByName(body: RbNode): Map<string, RbNode> {
+  const methods = new Map<string, RbNode>();
+  for (const stmt of bodyStatements(body)) {
+    if (stmt.type !== "method") {
+      continue;
+    }
+    const name = field(stmt, "name")?.text;
+    if (name !== undefined) {
+      methods.set(name, stmt);
+    }
+  }
+  return methods;
+}
+
+/**
+ * Whether a method has work in it. `def name; end` has no `body` field
+ * at all; an endless `def name = expr` has the expression itself there
+ * rather than a `body_statement`, and that is work.
+ */
+export function methodHasStatements(method: RbNode): boolean {
+  const body = field(method, "body");
+  if (body === null) {
+    return false;
+  }
+  if (body.type !== "body_statement") {
+    return true;
+  }
+  return bodyStatements(body).length > 0;
+}
+
 /** A `pair` node's key, when it is a bare `key:` shorthand symbol (the shape every class-DSL keyword argument in the measured corpus uses). Null for a string- or expression-keyed pair, which v0 does not read. */
 export function hashKeySymbolName(node: RbNode): string | null {
   return node.type === "hash_key_symbol" ? node.text : null;

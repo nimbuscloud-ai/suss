@@ -5,7 +5,9 @@ import {
   booleanLiteralValue,
   field,
   hashKeySymbolName,
+  instanceMethodsByName,
   isType,
+  methodHasStatements,
   rangeOf,
   readCallArgs,
   symbolValue,
@@ -123,5 +125,56 @@ describe("readCallArgs", () => {
 
   it("returns empty results for a null argument list", () => {
     expect(readCallArgs(null)).toEqual({ positional: [], keyword: {} });
+  });
+});
+
+async function classBody(source: string): Promise<RbNode> {
+  const tree = await parseRuby(source);
+  const klass = must(bodyStatements(tree.rootNode)[0]);
+  return must(field(klass, "body"));
+}
+
+describe("instanceMethodsByName", () => {
+  it("keys every instance method by the name it is defined under", async () => {
+    const body = await classBody(
+      "class C\n  def one\n  end\n\n  def two\n  end\nend\n",
+    );
+    expect([...instanceMethodsByName(body).keys()]).toEqual(["one", "two"]);
+  });
+
+  it("keeps the later of two definitions of the same name", async () => {
+    const body = await classBody(
+      "class C\n  def a\n    1\n  end\n\n  def a\n  end\nend\n",
+    );
+    const method = must(instanceMethodsByName(body).get("a"));
+    expect(methodHasStatements(method)).toBe(false);
+  });
+
+  it("leaves out a method defined on the class rather than its instances", async () => {
+    const body = await classBody("class C\n  def self.build\n  end\nend\n");
+    expect([...instanceMethodsByName(body).keys()]).toEqual([]);
+  });
+});
+
+describe("methodHasStatements", () => {
+  it("is true for a method with work in it", async () => {
+    const body = await classBody("class C\n  def a\n    b\n  end\nend\n");
+    expect(
+      methodHasStatements(must(instanceMethodsByName(body).get("a"))),
+    ).toBe(true);
+  });
+
+  it("is true for an endless method, whose body is the expression itself", async () => {
+    const body = await classBody("class C\n  def a = 1\nend\n");
+    expect(
+      methodHasStatements(must(instanceMethodsByName(body).get("a"))),
+    ).toBe(true);
+  });
+
+  it("is false for a method with nothing in it", async () => {
+    const body = await classBody("class C\n  def a\n  end\nend\n");
+    expect(
+      methodHasStatements(must(instanceMethodsByName(body).get("a"))),
+    ).toBe(false);
   });
 });

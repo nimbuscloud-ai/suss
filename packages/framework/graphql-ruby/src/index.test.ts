@@ -17,6 +17,7 @@ describe("graphqlRubyFramework", () => {
         typeCallName: "type",
         argumentCallName: "argument",
         wiringKeywords: ["mutation", "resolver"],
+        resolverMethodName: "resolve",
         requiredKeyword: "required",
         requiredDefault: true,
         camelizeKeyword: "camelize",

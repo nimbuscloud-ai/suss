@@ -120,6 +120,7 @@ export function graphqlRubyFramework(
     typeCallName: "type",
     argumentCallName: "argument",
     wiringKeywords: ["mutation", "resolver"],
+    resolverMethodName: "resolve",
     requiredKeyword: "required",
     // graphql-ruby registers an argument as required unless the call
     // opts out with `required: false`; the library's own default, not
