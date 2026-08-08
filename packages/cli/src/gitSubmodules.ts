@@ -58,6 +58,58 @@ export function readSubmodules(from: string): Submodule[] {
   });
 }
 
+/**
+ * The files of this project, with anything living in a repository of
+ * its own dropped.
+ *
+ * A vendored snapshot checked out inside the tree is somebody else's
+ * code: extracting its routes reports another project's boundaries as
+ * this one's, and there is nobody here who can act on them. A submodule
+ * is the opposite, and .gitmodules is what tells the two apart, so a
+ * declared one stays.
+ *
+ * The adapters' own walks skip a directory named .git and nothing else,
+ * so the repository a .git marks is invisible to them. Filtering here
+ * keeps each language's own skip list where it belongs.
+ */
+export function filesOutsideNestedRepositories(
+  files: readonly string[],
+  root: string,
+  submodules: readonly Submodule[],
+): string[] {
+  const declared = new Set(submodules.map((submodule) => submodule.directory));
+  const resolvedRoot = path.resolve(root);
+  const decided = new Map<string, boolean>();
+
+  const insideItsOwnRepository = (directory: string): boolean => {
+    const cached = decided.get(directory);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const answer = ((): boolean => {
+      if (directory === resolvedRoot || !directory.startsWith(resolvedRoot)) {
+        return false;
+      }
+
+      if (
+        !declared.has(directory) &&
+        fs.existsSync(path.join(directory, ".git"))
+      ) {
+        return true;
+      }
+      return insideItsOwnRepository(path.dirname(directory));
+    })();
+
+    decided.set(directory, answer);
+    return answer;
+  };
+
+  return files.filter(
+    (file) => !insideItsOwnRepository(path.dirname(path.resolve(file))),
+  );
+}
+
 /** The submodules of this project that suss can actually read. */
 export function checkedOutSubmodules(from: string): string[] {
   return readSubmodules(from)

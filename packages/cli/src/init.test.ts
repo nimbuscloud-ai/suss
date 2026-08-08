@@ -154,6 +154,16 @@ describe("inspectProject", () => {
     expect(report.unread?.[0]?.where).toBe("setup.py");
   });
 
+  it("reports a setup.cfg that points its dependency list somewhere else", () => {
+    fs.writeFileSync(
+      path.join(dir, "setup.cfg"),
+      "[options]\ninstall_requires = file: requirements.txt\n",
+    );
+    const report = inspectProject(dir);
+    expect(report.suggestions).toEqual([]);
+    expect(report.unread?.[0]?.where).toBe("setup.cfg");
+  });
+
   it("reports a submodule nobody checked out, whose code it cannot read", () => {
     fs.writeFileSync(
       path.join(dir, ".gitmodules"),

@@ -147,6 +147,29 @@ describe("readPythonDependencies", () => {
     expect(names()).toEqual(["fastapi", "httpx"]);
   });
 
+  it("says so when setup.cfg points install_requires at another file", () => {
+    // setuptools reads `file:` and `attr:` at build time, so the list
+    // is no more written here than a computed one in setup.py is.
+    write(
+      "setup.cfg",
+      "[options]\ninstall_requires = file: requirements.txt\n",
+    );
+    const { named, unread } = readPythonDependencies(dir);
+    expect(named).toEqual([]);
+    expect(unread[0]?.where).toBe("setup.cfg");
+    expect(unread[0]?.reason).toContain("another file");
+  });
+
+  it("says so when setup.cfg points install_requires at a package attribute", () => {
+    write(
+      "setup.cfg",
+      "[options]\ninstall_requires =\n    attr: mypkg.__requires__\n",
+    );
+    expect(readPythonDependencies(dir).unread[0]?.reason).toContain(
+      "attribute of the package",
+    );
+  });
+
   it("reads a setup.py whose list is written out", () => {
     write(
       "setup.py",

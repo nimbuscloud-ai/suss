@@ -202,6 +202,10 @@ looked up under, and it reads nothing without one:
 { "root": "app/graphql" }
 ```
 
+A relative path here is read relative to the config file itself, so
+that config sitting beside `app/` means the same directory whichever
+directory you run the command from.
+
 flask-restx and fastapi take an optional `wrapperModules`, the modules
 your own code re-exports the route decorator or the router constructor
 from. The library's own module is always read, so leave this out if

@@ -117,17 +117,45 @@ export function detectLanguages(root: string): Language[] {
   );
 }
 
+export interface ProjectLanguageContext {
+  /**
+   * Whether a tsconfig above this directory covers it. Source
+   * resolution walks up for one and reads the directory as TypeScript
+   * when it finds it, so language resolution has to see the same
+   * tsconfig or the two answer differently about the same directory.
+   */
+  coveredByTsconfig?: boolean;
+}
+
 /**
  * The one language `suss extract` should read this directory as, or a
  * sentence saying why suss cannot tell. TypeScript wins a tie, which is
  * what every run before this one did: a TypeScript project with a
  * couple of Python scripts beside it keeps reading as TypeScript, and a
  * person who meant the other one says so with --lang.
+ *
+ * A tsconfig anywhere above wins the same way, and for the same reason:
+ * a subdirectory of a TypeScript monorepo with one stray script in it
+ * is a TypeScript project. What beats it is the directory stating a
+ * project of its own, a pyproject or a Gemfile, since somebody wrote
+ * that down on purpose.
  */
 export function languageOfProject(
   root: string,
+  context: ProjectLanguageContext = {},
 ): { language: Language } | { cannotTell: string } {
   const found = detectLanguages(root);
+  const declared = found.find(
+    (language) => projectFilesOf(root, language).length > 0,
+  );
+  if (declared !== undefined) {
+    return { language: declared };
+  }
+
+  if (context.coveredByTsconfig === true) {
+    return { language: "typescript" };
+  }
+
   const first = found[0];
   if (first === undefined) {
     return {

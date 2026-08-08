@@ -419,8 +419,12 @@ function readPipfile(root: string, file: string): DeclaredDependencies {
 }
 
 /**
- * setup.cfg is setup.py's declarative sibling: an INI file whose
- * `install_requires` is a list of requirement lines and nothing else.
+ * setup.cfg is setup.py's declarative sibling, and mostly its
+ * `install_requires` is a list of requirement lines. setuptools also
+ * lets it point somewhere else, at a file (`file: requirements.txt`) or
+ * at an attribute of the package itself (`attr: mypkg.__requires__`),
+ * and then the list is no more written here than a computed one in
+ * setup.py is.
  */
 function readSetupCfg(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
@@ -434,17 +438,33 @@ function readSetupCfg(root: string, file: string): DeclaredDependencies {
 
   const lines = [match[1] ?? "", ...(match[2] ?? "").split(/\r?\n/)];
   const named: DeclaredDependency[] = [];
+  const unread: UnreadDependencies[] = [];
   for (const line of lines) {
     const text = line.trim();
-    if (text === "") {
+    if (text === "" || text.startsWith("#")) {
       continue;
     }
-    const name = nameOfRequirement(text);
-    if (name !== null) {
-      named.push({ name, where });
+
+    const directive = text.match(/^(file|attr):\s*(.*)$/);
+    if (directive !== null) {
+      unread.push({
+        where,
+        reason: `its install_requires reads \`${text}\`, so the libraries it names are ${directive[1] === "file" ? "in another file setuptools reads at build time" : "an attribute of the package, known only once Python has imported it"}. Name the packs you want with -f.`,
+      });
+      continue;
     }
+
+    const name = nameOfRequirement(text);
+    if (name === null) {
+      unread.push({
+        where,
+        reason: `\`${text}\` under install_requires states no library name suss can read.`,
+      });
+      continue;
+    }
+    named.push({ name, where });
   }
-  return { named, unread: [] };
+  return { named, unread };
 }
 
 /**

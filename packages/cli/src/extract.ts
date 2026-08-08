@@ -18,7 +18,11 @@ import {
 import { SUMMARY_SCHEMA_VERSION } from "@suss/behavioral-ir";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 
-import { formatMissingSubmodules, readSubmodules } from "./gitSubmodules.js";
+import {
+  filesOutsideNestedRepositories,
+  formatMissingSubmodules,
+  readSubmodules,
+} from "./gitSubmodules.js";
 import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 
@@ -32,6 +36,7 @@ import type {
 } from "@suss/adapter-typescript";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
+import type { Submodule } from "./gitSubmodules.js";
 import type { Language } from "./language.js";
 
 // ---------------------------------------------------------------------------
@@ -87,12 +92,15 @@ function callPackFactory<T>(
 }
 
 function instantiatePack(
-  factory: PackFactory,
-  options: unknown,
+  loaded: Pick<LoadedFactory, "factory" | "options" | "handedOver">,
   specifier: string,
   name: string,
 ): PatternPack {
-  const pack = callPackFactory<PatternPack>(factory, options, name);
+  const pack = callPackFactory<PatternPack>(
+    loaded.factory,
+    loaded.handedOver,
+    name,
+  );
 
   // The extraction cache keys on the pack's version stamp, so anything
   // that changes what a pack reads has to reach the stamp. Two of those
@@ -100,10 +108,14 @@ function instantiatePack(
   // and its own code. Almost no pack declares a version, and nothing
   // checks that an author bumped one, so a pack edit would otherwise
   // keep serving summaries the previous code produced.
+  //
+  // The config the stamp sees is the file's own content, without the
+  // directory it was read from: moving a checkout changes that
+  // directory and changes nothing about what the pack reads.
   const stamp = [
     pack.version ?? "unset",
     packCodeHash(specifier),
-    options === undefined ? "" : digest(options),
+    loaded.options === undefined ? "" : digest(loaded.options),
   ].filter((part) => part.length > 0);
   return { ...pack, version: stamp.join("+") };
 }
@@ -256,6 +268,8 @@ export function languageOfPack(name: string): Language {
 export function parseFrameworkSpec(spec: string): {
   name: string;
   options?: unknown;
+  /** Absolute path of the file the options came from, when they came from one. */
+  configFile?: string;
 } {
   const separator = spec.indexOf("=");
   if (separator === -1) {
@@ -272,28 +286,73 @@ export function parseFrameworkSpec(spec: string): {
   }
 
   try {
-    return { name, options: JSON.parse(fs.readFileSync(resolved, "utf8")) };
+    return {
+      name,
+      options: JSON.parse(fs.readFileSync(resolved, "utf8")),
+      configFile: resolved,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`The pack config at ${resolved} is not JSON: ${message}`);
   }
 }
 
+/**
+ * The options as the pack receives them: what the file said, plus where
+ * the file was.
+ *
+ * A pack option naming a directory is written relative to something,
+ * and the only thing whoever wrote the file can be sure of is the file
+ * itself. Resolving against the working directory instead means the
+ * same config works from the project root and silently resolves to
+ * nothing from anywhere else, which is the shape of bug nobody
+ * notices: every field reads as unwired rather than failing.
+ *
+ * So the directory travels with the options and each pack resolves its
+ * own paths against it, since only the pack knows which of its options
+ * are paths. It stays out of the cache key, because where a checkout
+ * sits says nothing about what a pack reads.
+ */
+function optionsForFactory(options: unknown, configFile?: string): unknown {
+  if (
+    configFile === undefined ||
+    options === null ||
+    typeof options !== "object" ||
+    Array.isArray(options)
+  ) {
+    return options;
+  }
+  return {
+    ...(options as Record<string, unknown>),
+    configDirectory: path.dirname(configFile),
+  };
+}
+
 /** A pack's factory, with what the spec said to hand it. */
 interface LoadedFactory {
   name: string;
+  /** What the config file said, exactly, which is what the cache key sees. */
   options: unknown;
+  /** The same options with the config file's own directory alongside them. */
+  handedOver: unknown;
   factory: PackFactory;
   specifier: string;
 }
 
 async function loadPackFactory(spec: string): Promise<LoadedFactory> {
-  const { name, options } = parseFrameworkSpec(spec);
+  const { name, options, configFile } = parseFrameworkSpec(spec);
+  const handedOver = optionsForFactory(options, configFile);
 
   const builtin = BUILTIN_FRAMEWORKS[name];
   if (builtin !== undefined) {
     const mod = (await import(builtin)) as { default: PackFactory };
-    return { name, options, factory: mod.default, specifier: builtin };
+    return {
+      name,
+      options,
+      handedOver,
+      factory: mod.default,
+      specifier: builtin,
+    };
   }
 
   // A name the record does not carry is taken for a package to import.
@@ -306,7 +365,7 @@ async function loadPackFactory(spec: string): Promise<LoadedFactory> {
   for (const specifier of candidates) {
     const mod = await importPack(specifier);
     if (mod !== null) {
-      return { name, options, factory: mod.default, specifier };
+      return { name, options, handedOver, factory: mod.default, specifier };
     }
   }
 
@@ -340,12 +399,7 @@ function assertPackLanguage(name: string, language: Language): void {
 export async function resolveFramework(spec: string): Promise<PatternPack> {
   const loaded = await loadPackFactory(spec);
   assertPackLanguage(loaded.name, "typescript");
-  return instantiatePack(
-    loaded.factory,
-    loaded.options,
-    loaded.specifier,
-    loaded.name,
-  );
+  return instantiatePack(loaded, loaded.specifier, loaded.name);
 }
 
 /**
@@ -358,7 +412,7 @@ export async function resolvePythonPack(spec: string): Promise<PythonPack> {
   assertPackLanguage(loaded.name, "python");
   return callPackFactory<PythonPack>(
     loaded.factory,
-    loaded.options,
+    loaded.handedOver,
     loaded.name,
   );
 }
@@ -367,7 +421,11 @@ export async function resolvePythonPack(spec: string): Promise<PythonPack> {
 export async function resolveRubyPack(spec: string): Promise<RubyPack> {
   const loaded = await loadPackFactory(spec);
   assertPackLanguage(loaded.name, "ruby");
-  return callPackFactory<RubyPack>(loaded.factory, loaded.options, loaded.name);
+  return callPackFactory<RubyPack>(
+    loaded.factory,
+    loaded.handedOver,
+    loaded.name,
+  );
 }
 
 /** A scoped name or a path names the package itself, not a short name. */
@@ -498,16 +556,22 @@ interface LanguageRunOptions {
 
 /**
  * The files a non-TypeScript run reads: the ones named on the command
- * line, or every source file under the directory.
+ * line, or every source file under the directory that belongs to this
+ * project.
+ *
+ * A file somebody asked for by name is read whatever repository it
+ * sits in; that is the person saying which files they mean. A walk of
+ * the directory is suss choosing, and it chooses this project's own.
  */
 function filesToRead(
   { options, root }: LanguageRunOptions,
   findFiles: (root: string) => string[],
+  submodules: readonly Submodule[],
 ): string[] {
   if (options.files !== undefined && options.files.length > 0) {
     return options.files.map((file) => path.resolve(file));
   }
-  return findFiles(root);
+  return filesOutsideNestedRepositories(findFiles(root), root, submodules);
 }
 
 async function runTypeScript(
@@ -567,8 +631,6 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const packs = await Promise.all(
     runOptions.options.frameworks.map(resolvePythonPack),
   );
-  const files = filesToRead(runOptions, findPythonFiles);
-
   // A service that imports its shared framework from a submodule
   // resolves those imports only if the submodule is a root too, and the
   // decorator a pack matches on is usually defined in exactly that
@@ -576,6 +638,8 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // is worth saying out loud rather than leaving as a short run.
   const submodules = readSubmodules(runOptions.root);
   process.stderr.write(formatMissingSubmodules(submodules));
+
+  const files = filesToRead(runOptions, findPythonFiles, submodules);
   const roots = [
     runOptions.root,
     ...submodules
@@ -591,7 +655,13 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const packs = await Promise.all(
     runOptions.options.frameworks.map(resolveRubyPack),
   );
-  const files = filesToRead(runOptions, findRubyFiles);
+  // findRubyFiles walks the same way findPythonFiles does, skipping a
+  // directory named .git without noticing the repository it marks, so
+  // the same filter applies.
+  const submodules = readSubmodules(runOptions.root);
+  process.stderr.write(formatMissingSubmodules(submodules));
+
+  const files = filesToRead(runOptions, findRubyFiles, submodules);
   const { summaries } = await extractRubyProject({ files, packs });
   return languageRun(summaries, runOptions.root, files.length);
 }
@@ -648,8 +718,15 @@ export function languageOfRun(options: ExtractOptions): Language {
     return only;
   }
 
+  // Source resolution walks up for the nearest tsconfig and reads the
+  // directory as TypeScript when it finds one. Language resolution has
+  // to be told about the same tsconfig, or the two disagree about the
+  // same directory and a subdirectory of a TypeScript monorepo with one
+  // stray script in it stops being readable at all.
   const root = path.resolve(options.dir ?? process.cwd());
-  const detected = languageOfProject(root);
+  const detected = languageOfProject(root, {
+    coveredByTsconfig: findNearestTsconfig(root) !== null,
+  });
   if ("cannotTell" in detected) {
     throw new UsageError(detected.cannotTell);
   }

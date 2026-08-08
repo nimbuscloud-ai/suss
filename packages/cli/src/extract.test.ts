@@ -363,6 +363,64 @@ describe("extract over a Python project", () => {
   });
 });
 
+describe("extract over a project with a repository checked out inside it", () => {
+  /** A project holding a copy of the Python fixture, plus one vendored. */
+  function projectWithVendoredRepository(): { root: string; vendored: string } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-vendored-"));
+    fs.cpSync(path.join(pythonFixture, "myapp"), path.join(root, "myapp"), {
+      recursive: true,
+    });
+
+    const vendored = path.join(root, "vendor", "someone-elses-service");
+    fs.mkdirSync(vendored, { recursive: true });
+    fs.writeFileSync(
+      path.join(vendored, ".git"),
+      "gitdir: ../../.git/modules\n",
+    );
+    fs.cpSync(path.join(pythonFixture, "myapp"), path.join(vendored, "myapp"), {
+      recursive: true,
+    });
+    return { root, vendored };
+  }
+
+  it("leaves a vendored repository's routes to that repository", async () => {
+    // Its boundaries are not this project's to report, and nobody
+    // reading this project's summaries can act on them.
+    const { root } = projectWithVendoredRepository();
+
+    const summaries = await extract({
+      dir: root,
+      frameworks: ["fastapi"],
+      output: path.join(root, "summaries.json"),
+    });
+
+    expect(summaries.length).toBeGreaterThan(0);
+    expect(summaries.some((s) => s.location.file.includes("vendor"))).toBe(
+      false,
+    );
+  });
+
+  it("reads a submodule the project's own .gitmodules names", async () => {
+    // A submodule is code this project imports, so it is this
+    // project's, which is exactly what .gitmodules is there to say.
+    const { root } = projectWithVendoredRepository();
+    fs.writeFileSync(
+      path.join(root, ".gitmodules"),
+      '[submodule "vendor/someone-elses-service"]\n\tpath = vendor/someone-elses-service\n',
+    );
+
+    const summaries = await extract({
+      dir: root,
+      frameworks: ["fastapi"],
+      output: path.join(root, "summaries.json"),
+    });
+
+    expect(summaries.some((s) => s.location.file.includes("vendor"))).toBe(
+      true,
+    );
+  });
+});
+
 describe("extract over a Ruby project", () => {
   it("reads every field the fixture declares, through the CLI", async () => {
     const out = path.join(
@@ -391,6 +449,37 @@ describe("extract over a Ruby project", () => {
         "Mutation.campaignUpdate",
       ].sort(),
     );
+  });
+});
+
+describe("a pack config naming a directory", () => {
+  it("reads a relative directory from the config file, not from wherever the command runs", async () => {
+    // init writes exactly this config: a relative root beside the
+    // project. Read against the working directory it resolves to
+    // nothing from anywhere else, and every wired field comes back
+    // unwired with nothing said about it.
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "suss-relative-"));
+    fs.cpSync(path.join(rubyFixture, "app"), path.join(project, "app"), {
+      recursive: true,
+    });
+    const config = path.join(project, "suss.graphql-ruby.json");
+    fs.writeFileSync(config, JSON.stringify({ root: "app/graphql" }));
+
+    // Run from the repository root, which is not the project: the
+    // relative path only resolves if it is read from the config file.
+    expect(process.cwd()).not.toBe(project);
+    const summaries = await extract({
+      dir: project,
+      frameworks: [`graphql-ruby=${config}`],
+      output: path.join(project, "summaries.json"),
+    });
+
+    const campaign = summaries.find(
+      (s) => s.identity.name === "Query.campaign",
+    );
+    expect(campaign?.metadata?.graphql).toMatchObject({
+      declaredContract: { returnType: { type: "ref", name: "Campaign" } },
+    });
   });
 });
 
@@ -430,11 +519,14 @@ describe("parseFrameworkSpec", () => {
     expect(parseFrameworkSpec("aws-sqs")).toEqual({ name: "aws-sqs" });
   });
 
-  it("reads the config file the spec names", () => {
+  it("reads the config file the spec names, and says which file it was", () => {
+    // Which file it was is how a pack resolves a path written in it
+    // against the file rather than against the working directory.
     const file = writeConfig(JSON.stringify({ producers: [] }));
     expect(parseFrameworkSpec(`aws-sqs=${file}`)).toEqual({
       name: "aws-sqs",
       options: { producers: [] },
+      configFile: file,
     });
   });
 
