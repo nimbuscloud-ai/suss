@@ -2,7 +2,7 @@
 // class. See this package's README for why it walks and where it stops.
 
 import {
-  bareCallArguments,
+  bareCallArgumentGroups,
   bodyStatements,
   instanceMethodsByName,
 } from "./ast.js";
@@ -17,7 +17,7 @@ import type { ClassInfo } from "./scope.js";
 const INCLUDE_CALL = "include";
 const PREPEND_CALL = "prepend";
 
-/** Ruby's own dynamic definition. A method defined this way is called the same as any other and is invisible to a reader of `def` nodes. */
+/** Ruby's own dynamic definition. A method defined this way is called like any other and is invisible to a reader of `def` nodes. */
 const DEFINE_METHOD_CALL = "define_method";
 
 /** One class or module body a walk reached, with the definitions its own file makes, since a bare constant is shadowed per file. */
@@ -26,13 +26,13 @@ export interface ReachedBody {
   knownClasses: ReadonlySet<string>;
 }
 
-/** Everything a lookup may search, and the ancestor it could not follow. */
-export interface Ancestry {
-  /** Every body reached, in Ruby's own lookup order: what a class prepends, the class, what it includes, then its superclass and that chain. */
-  bodies: ReachedBody[];
-  /** The first ancestor the walk could not follow, or null when it followed every one. */
-  unfollowed: string | null;
-}
+/** One ancestor: every block reopening its name, or the name alone when nothing reached it. Blocks stay together because Ruby treats a reopened class as one place in the chain. */
+export type AncestorEntry =
+  | { type: "bodies"; name: string; blocks: ReachedBody[] }
+  | { type: "unfollowed"; name: string };
+
+/** A class and everything it inherits from, in Ruby's own method-lookup order. */
+export type Ancestry = readonly AncestorEntry[];
 
 /** What a walk needs to reach a class it holds only the name of. */
 export interface AncestorLookup {
@@ -41,8 +41,7 @@ export interface AncestorLookup {
   pathConvention: ConstantPathConvention;
   /**
    * The library's own classes a project's chain ends at. Reaching one
-   * ends a walk with nothing left unfollowed: above it is the library,
-   * which defines no method answering a project's field.
+   * ends a walk with nothing left unfollowed.
    */
   ancestryRootClassNames: readonly string[];
   parsedFile(absPath: string): Promise<RbNode | null>;
@@ -68,8 +67,6 @@ export async function reachDefinition(
   }
   const all: ClassInfo[] = [];
   walkDefinitions(fileRoot, (info) => all.push(info));
-  // A class can be reopened more than once in the same file, ordinary
-  // Ruby, and every block contributes.
   const matches = all.filter((info) => info.qualifiedName === qualifiedName);
   if (matches.length === 0) {
     return null;
@@ -78,97 +75,125 @@ export async function reachDefinition(
   return matches.map((info) => ({ info, knownClasses }));
 }
 
-export async function ancestryOf(
-  start: readonly ReachedBody[],
+export function ancestryOf(
+  name: string,
+  blocks: readonly ReachedBody[],
   lookup: AncestorLookup,
 ): Promise<Ancestry> {
-  const bodies: ReachedBody[] = [];
-  const seen = new Set(start.map((body) => body.info.qualifiedName));
-  const unfollowed = await collect(start, lookup, seen, bodies);
-  return { bodies, unfollowed };
-}
-
-/** A constant a `include`/`prepend` call names, as the qualified path it resolves to and as it was written. */
-interface ModuleRef {
-  qualifiedName: string | null;
-  text: string;
+  return chainOf(
+    { type: "bodies", name, blocks: [...blocks] },
+    lookup,
+    new Set([name]),
+  );
 }
 
 /**
- * Append everything `blocks` inherits from, in lookup order, and
- * answer with the first ancestor that could not be followed.
+ * Ruby computes a class's ancestors once at include time and inserts
+ * each module's own already-computed chain as a unit, skipping anything
+ * already in there. That is why the superclass chain is built first and
+ * every later step filters against it: a module the superclass already
+ * mixes in keeps the place the superclass gave it.
  */
-async function collect(
-  blocks: readonly ReachedBody[],
+async function chainOf(
+  self: Extract<AncestorEntry, { type: "bodies" }>,
   lookup: AncestorLookup,
-  seen: Set<string>,
-  out: ReachedBody[],
-): Promise<string | null> {
-  const prepended = await appendModules(
-    moduleRefs(blocks, PREPEND_CALL),
+  active: ReadonlySet<string>,
+): Promise<AncestorEntry[]> {
+  const superChain = await superclassChain(self, lookup, active);
+
+  const present = new Set(superChain.map((ancestor) => ancestor.name));
+  present.add(self.name);
+
+  const mixins = await mixinChain(self, INCLUDE_CALL, lookup, active, present);
+  const prepends = await mixinChain(
+    self,
+    PREPEND_CALL,
     lookup,
-    seen,
-    out,
+    active,
+    present,
   );
-  if (prepended !== null) {
-    return prepended;
-  }
 
-  out.push(...blocks);
+  return [...prepends, self, ...mixins, ...superChain];
+}
 
-  const included = await appendModules(
-    moduleRefs(blocks, INCLUDE_CALL),
-    lookup,
-    seen,
-    out,
-  );
-  if (included !== null) {
-    return included;
-  }
-
-  const superclass = superclassOf(blocks);
+async function superclassChain(
+  self: Extract<AncestorEntry, { type: "bodies" }>,
+  lookup: AncestorLookup,
+  active: ReadonlySet<string>,
+): Promise<AncestorEntry[]> {
+  const superclass = superclassOf(self.blocks);
   if (
     superclass === null ||
     lookup.ancestryRootClassNames.includes(superclass) ||
-    seen.has(superclass)
+    active.has(superclass)
   ) {
-    return null;
+    return [];
   }
-  seen.add(superclass);
-  const reached = await reachDefinition(superclass, lookup);
-  if (reached === null) {
-    return superclass;
-  }
-  return collect(reached, lookup, seen, out);
+  return chainFor(superclass, lookup, active);
 }
 
-async function appendModules(
-  refs: readonly ModuleRef[],
+/**
+ * What one kind of mixin call contributes, each module's whole chain
+ * computed on its own and then filtered, so two concerns sharing a base
+ * put that base where Ruby puts it rather than where the first of them
+ * was read.
+ */
+async function mixinChain(
+  self: Extract<AncestorEntry, { type: "bodies" }>,
+  callName: string,
   lookup: AncestorLookup,
-  seen: Set<string>,
-  out: ReachedBody[],
-): Promise<string | null> {
-  for (const ref of refs) {
-    if (ref.qualifiedName === null) {
-      return ref.text;
-    }
-    if (seen.has(ref.qualifiedName)) {
+  active: ReadonlySet<string>,
+  present: Set<string>,
+): Promise<AncestorEntry[]> {
+  let chain: AncestorEntry[] = [];
+  for (const ref of moduleRefs(self.blocks, callName)) {
+    if (present.has(ref.name)) {
       continue;
     }
-    seen.add(ref.qualifiedName);
-    const reached = await reachDefinition(ref.qualifiedName, lookup);
-    if (reached === null) {
-      return ref.qualifiedName;
+    if (!ref.readable) {
+      present.add(ref.name);
+      chain = [{ type: "unfollowed", name: ref.name }, ...chain];
+      continue;
     }
-    const unfollowed = await collect(reached, lookup, seen, out);
-    if (unfollowed !== null) {
-      return unfollowed;
+    const inserted = (await chainFor(ref.name, lookup, active)).filter(
+      (ancestor) => !present.has(ancestor.name),
+    );
+    for (const ancestor of inserted) {
+      present.add(ancestor.name);
     }
+    chain = [...inserted, ...chain];
   }
-  return null;
+  return chain;
 }
 
-/** Ruby searches the most recently mixed-in module first, so these come back in reverse source order. */
+async function chainFor(
+  qualifiedName: string,
+  lookup: AncestorLookup,
+  active: ReadonlySet<string>,
+): Promise<AncestorEntry[]> {
+  const blocks = await reachDefinition(qualifiedName, lookup);
+  if (blocks === null) {
+    return [{ type: "unfollowed", name: qualifiedName }];
+  }
+  return chainOf(
+    { type: "bodies", name: qualifiedName, blocks },
+    lookup,
+    new Set([...active, qualifiedName]),
+  );
+}
+
+/** A constant an `include`/`prepend` call names. `readable` is false for anything but a constant path, which is named by the text it was written with. */
+interface ModuleRef {
+  name: string;
+  readable: boolean;
+}
+
+/**
+ * The modules one kind of mixin call names, in the order Ruby mixes
+ * them in. Each call is inserted in front of the ones before it, and
+ * `include A, B` mixes in B before A, so calls read in source order and
+ * one call's own arguments read backwards.
+ */
 function moduleRefs(
   blocks: readonly ReachedBody[],
   callName: string,
@@ -178,14 +203,18 @@ function moduleRefs(
     if (block.info.bodyNode === null) {
       continue;
     }
-    for (const arg of bareCallArguments(block.info.bodyNode, callName)) {
-      refs.push({
-        qualifiedName: qualifyConstantRef(arg, block.info.bodyNesting),
-        text: arg.text,
-      });
+    for (const group of bareCallArgumentGroups(block.info.bodyNode, callName)) {
+      for (const arg of [...group].reverse()) {
+        const qualified = qualifyConstantRef(arg, block.info.bodyNesting);
+        refs.push(
+          qualified !== null
+            ? { name: qualified, readable: true }
+            : { name: arg.text, readable: false },
+        );
+      }
     }
   }
-  return refs.reverse();
+  return refs;
 }
 
 function superclassOf(blocks: readonly ReachedBody[]): string | null {
@@ -197,41 +226,60 @@ function superclassOf(blocks: readonly ReachedBody[]): string | null {
   return null;
 }
 
+/** What searching an ancestry for one method name came to. */
+export type MethodLookup =
+  | { type: "found"; method: RbNode }
+  /** `reason` completes "could be answered by a method ...". */
+  | { type: "unsettled"; reason: string }
+  | { type: "none" };
+
 /**
- * The method `name` resolves to: the nearest ancestor defining it wins,
- * and within that ancestor the last definition does, the way Ruby's own
- * redefinition works across reopened blocks.
+ * The method `name` resolves to. An ancestor nearer than any definition
+ * that nothing could read stops the search: whatever sits further along
+ * is not what Ruby would have called.
  */
 export function methodInAncestry(
   ancestry: Ancestry,
   name: string,
-): RbNode | null {
-  let found: RbNode | null = null;
-  let foundIn: string | null = null;
-  for (const body of ancestry.bodies) {
-    if (body.info.bodyNode === null) {
-      continue;
+): MethodLookup {
+  for (const entry of ancestry) {
+    if (entry.type === "unfollowed") {
+      return {
+        type: "unsettled",
+        reason: `inherited from ${entry.name}, which this run did not read`,
+      };
     }
-    const method = instanceMethodsByName(body.info.bodyNode).get(name);
-    if (method === undefined) {
-      continue;
+
+    const found = definitionIn(entry.blocks, name);
+    if (found.method !== null) {
+      return { type: "found", method: found.method };
     }
-    if (found !== null && body.info.qualifiedName !== foundIn) {
-      break;
+    if (found.dynamic) {
+      return {
+        type: "unsettled",
+        reason: "defined with define_method, which this reader does not follow",
+      };
     }
-    found = method;
-    foundIn = body.info.qualifiedName;
   }
-  return found;
+  return { type: "none" };
 }
 
-/** Whether any body reached defines methods dynamically, which a reader of `def` nodes cannot see and `public_send` would still call. */
-export function definesMethodsDynamically(ancestry: Ancestry): boolean {
-  return ancestry.bodies.some(
-    (body) =>
-      body.info.bodyNode !== null &&
-      bareCallArguments(body.info.bodyNode, DEFINE_METHOD_CALL).length > 0,
-  );
+/** What one ancestor's blocks say about `name`: its last definition, the way Ruby's own redefinition works, and whether anything here defines methods a reader of `def` nodes cannot see. */
+function definitionIn(
+  blocks: readonly ReachedBody[],
+  name: string,
+): { method: RbNode | null; dynamic: boolean } {
+  let method: RbNode | null = null;
+  let dynamic = false;
+  for (const block of blocks) {
+    const body = block.info.bodyNode;
+    if (body === null) {
+      continue;
+    }
+    method = instanceMethodsByName(body).get(name) ?? method;
+    dynamic ||= bareCallArgumentGroups(body, DEFINE_METHOD_CALL).length > 0;
+  }
+  return { method, dynamic };
 }
 
 /** Every statement of every body reached, most distant ancestor first, so a nearer declaration overwrites what it inherits. */
@@ -239,12 +287,18 @@ export function inheritedStatements(
   ancestry: Ancestry,
 ): Array<{ block: ReachedBody; statement: RbNode }> {
   const statements: Array<{ block: ReachedBody; statement: RbNode }> = [];
-  for (const block of [...ancestry.bodies].reverse()) {
-    if (block.info.bodyNode === null) {
+  for (const entry of [...ancestry].reverse()) {
+    if (entry.type !== "bodies") {
       continue;
     }
-    for (const statement of bodyStatements(block.info.bodyNode)) {
-      statements.push({ block, statement });
+    for (const block of entry.blocks) {
+      const body = block.info.bodyNode;
+      if (body === null) {
+        continue;
+      }
+      for (const statement of bodyStatements(body)) {
+        statements.push({ block, statement });
+      }
     }
   }
   return statements;

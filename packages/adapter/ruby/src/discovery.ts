@@ -9,7 +9,6 @@ import { unreadableReading } from "@suss/extractor";
 
 import {
   ancestryOf,
-  definesMethodsDynamically,
   inheritedStatements,
   methodInAncestry,
   reachDefinition,
@@ -41,7 +40,12 @@ import type {
   RawParameter,
   Reading,
 } from "@suss/extractor";
-import type { AncestorLookup, Ancestry, ReachedBody } from "./ancestry.js";
+import type {
+  AncestorLookup,
+  Ancestry,
+  MethodLookup,
+  ReachedBody,
+} from "./ancestry.js";
 import type { CallArgs, Range } from "./ast.js";
 import type {
   GraphqlObjectFields,
@@ -198,7 +202,7 @@ async function graphqlObjectFieldUnits(
   const ctx = fieldReadContext(pattern, options.cache);
   const knownClasses = ownBlocks[0]?.knownClasses ?? new Set<string>();
   const scope: FileScope = { nesting: info.bodyNesting, knownClasses };
-  const ancestry = await ancestryOf(ownBlocks, ctx.lookup);
+  const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
 
   // The class DSL stores fields by name, so a field redefined later in
   // the same body replaces the earlier declaration rather than the two
@@ -266,25 +270,26 @@ function methodNotSettled(reason: string, range: Range): BodyReport {
   return { readings: [unreadableReading(reason, range)] };
 }
 
-/** Why a search that found no method cannot claim there is none, or null when it searched every ancestor and there is none. */
-function unsettledMethod(
-  ancestry: Ancestry,
+/**
+ * What a search of an ancestry says about the body, given what it
+ * should say when the search read everything and found nothing.
+ */
+function bodyFromLookup(
+  found: MethodLookup,
   range: Range,
   subject: string,
-): BodyReport | null {
-  if (ancestry.unfollowed !== null) {
-    return methodNotSettled(
-      `${subject} could be answered by a method inherited from ${ancestry.unfollowed}, which this run did not read, so whether one exists was not settled here`,
-      range,
-    );
-  }
-  if (definesMethodsDynamically(ancestry)) {
-    return methodNotSettled(
-      `${subject} could be answered by a method defined with define_method, which this reader does not follow, so whether one exists was not settled here`,
-      range,
-    );
-  }
-  return null;
+  nothingThere: BodyReport,
+): BodyReport {
+  const table: DispatchTable<MethodLookup, BodyReport> = {
+    found: (lookup) => bodyOfMethod(lookup.method),
+    unsettled: (lookup) =>
+      methodNotSettled(
+        `${subject} could be answered by a method ${lookup.reason}, so whether one exists was not settled here`,
+        range,
+      ),
+    none: () => nothingThere,
+  };
+  return dispatchByType(table, found);
 }
 
 /**
@@ -358,14 +363,14 @@ async function readFieldShape(
     return readWiredClass(oneHopRef, scope, ctx);
   }
 
-  const method = methodInAncestry(ancestry, symbol);
   return {
     contract: literalContract(callArgs, scope, ctx),
-    body:
-      method !== null
-        ? bodyOfMethod(method)
-        : (unsettledMethod(ancestry, range, "This field") ??
-          NO_METHOD_BEHIND_IT),
+    body: bodyFromLookup(
+      methodInAncestry(ancestry, symbol),
+      range,
+      "This field",
+      NO_METHOD_BEHIND_IT,
+    ),
   };
 }
 
@@ -416,25 +421,19 @@ async function readWiredClass(
     };
   }
 
-  const ancestry = await ancestryOf(reached, ctx.lookup);
-  const contract = readClassContract(ancestry, ctx.pattern);
-  const method = methodInAncestry(ancestry, ctx.pattern.resolverMethodName);
-  if (method === null) {
-    return {
-      contract,
-      body:
-        unsettledMethod(
-          ancestry,
-          range,
-          `This field's ${targetQualifiedName}`,
-        ) ??
-        methodNotSettled(
-          `This field is wired to ${targetQualifiedName}, which defines no ${ctx.pattern.resolverMethodName} method anywhere in its ancestry, so nothing about what it does was read here`,
-          range,
-        ),
-    };
-  }
-  return { contract, body: bodyOfMethod(method) };
+  const ancestry = await ancestryOf(targetQualifiedName, reached, ctx.lookup);
+  return {
+    contract: readClassContract(ancestry, ctx.pattern),
+    body: bodyFromLookup(
+      methodInAncestry(ancestry, ctx.pattern.resolverMethodName),
+      range,
+      `This field's ${targetQualifiedName}`,
+      methodNotSettled(
+        `This field is wired to ${targetQualifiedName}, which defines no ${ctx.pattern.resolverMethodName} method anywhere in its ancestry, so nothing about what it does was read here`,
+        range,
+      ),
+    ),
+  };
 }
 
 interface ClassContractAccumulator {

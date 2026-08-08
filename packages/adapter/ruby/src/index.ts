@@ -17,7 +17,6 @@
 
 export {
   ancestryOf,
-  definesMethodsDynamically,
   inheritedStatements,
   methodInAncestry,
   reachDefinition,
@@ -44,8 +43,10 @@ export {
 export { typeShapeFromNode } from "./typeShape.js";
 
 export type {
+  AncestorEntry,
   AncestorLookup,
   Ancestry,
+  MethodLookup,
   ReachedBody,
 } from "./ancestry.js";
 export type { ConstantPathConvention } from "./constantPath.js";

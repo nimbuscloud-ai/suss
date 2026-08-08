@@ -216,6 +216,68 @@ describe("the method behind a field", () => {
     });
   });
 
+  it("takes the concern Ruby takes when two concerns share a base that also defines the method", async () => {
+    write(
+      "app/graphql/concerns/base_greeter.rb",
+      "module Concerns::BaseGreeter\n  def display_name\n  end\nend\n",
+    );
+    write(
+      "app/graphql/concerns/greeter_a.rb",
+      "module Concerns::GreeterA\n  include Concerns::BaseGreeter\n\n  def display_name\n    object.name\n  end\nend\n",
+    );
+    write(
+      "app/graphql/concerns/greeter_b.rb",
+      "module Concerns::GreeterB\n  include Concerns::BaseGreeter\nend\n",
+    );
+    const organizerType = write(
+      "app/graphql/types/organizer_type.rb",
+      "class Types::OrganizerType < Types::BaseObject\n  include Concerns::GreeterA\n  include Concerns::GreeterB\n\n  field :display_name, String, null: false\nend\n",
+    );
+    // Ruby calls GreeterA's, which has work in it. Reading BaseGreeter's
+    // instead would report a body with nothing in it and no gap at all.
+    expect(await gapsOfOnlyField(organizerType)).toEqual([
+      "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here",
+    ]);
+  });
+
+  it("mixes a module in once when two includes name it", async () => {
+    write(
+      "app/graphql/concerns/greeter.rb",
+      "module Concerns::Greeter\n  def display_name\n    object.name\n  end\nend\n",
+    );
+    const organizerType = write(
+      "app/graphql/types/organizer_type.rb",
+      "class Types::OrganizerType < Types::BaseObject\n  include Concerns::Greeter\n  include Concerns::Greeter\n\n  field :display_name, String, null: false\nend\n",
+    );
+    expect(await gapsOfOnlyField(organizerType)).toEqual([
+      "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here",
+    ]);
+  });
+
+  it("names a mixin written as something other than a constant path", async () => {
+    const organizerType = write(
+      "app/graphql/types/organizer_type.rb",
+      "class Types::OrganizerType < Types::BaseObject\n  include concern_for(:display)\n\n  field :display_name, String, null: false\nend\n",
+    );
+    expect(await gapsOfOnlyField(organizerType)).toEqual([
+      "This field could be answered by a method inherited from concern_for(:display), which this run did not read, so whether one exists was not settled here",
+    ]);
+  });
+
+  it("will not answer with a method further along than an ancestor it could not read", async () => {
+    write(
+      "app/graphql/concerns/known.rb",
+      "module Concerns::Known\n  def display_name\n    object.name\n  end\nend\n",
+    );
+    const organizerType = write(
+      "app/graphql/types/organizer_type.rb",
+      "class Types::OrganizerType < Types::BaseObject\n  include Concerns::Known\n  include Concerns::Missing\n\n  field :display_name, String, null: false\nend\n",
+    );
+    expect(await gapsOfOnlyField(organizerType)).toEqual([
+      "This field could be answered by a method inherited from Concerns::Missing, which this run did not read, so whether one exists was not settled here",
+    ]);
+  });
+
   it("will not say a field has no method while a concern it could not read might define one", async () => {
     const organizerType = write(
       "app/graphql/types/organizer_type.rb",

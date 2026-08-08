@@ -85,12 +85,13 @@ export function instanceMethodsByName(body: RbNode): Map<string, RbNode> {
 }
 
 /**
- * Every argument of every receiverless call to `name` written directly
- * in `body`, in the order Ruby evaluates them. `include A, B` is one
- * call with two arguments and reads as two.
+ * The arguments of each receiverless call to `name` written directly in
+ * `body`, one group per call, in source order. Grouped rather than
+ * flattened because `include A, B` and `include A` then `include B`
+ * order their modules differently.
  */
-export function bareCallArguments(body: RbNode, name: string): RbNode[] {
-  const found: RbNode[] = [];
+export function bareCallArgumentGroups(body: RbNode, name: string): RbNode[][] {
+  const groups: RbNode[][] = [];
   for (const stmt of bodyStatements(body)) {
     if (stmt.type !== "call" || field(stmt, "receiver") !== null) {
       continue;
@@ -99,11 +100,9 @@ export function bareCallArguments(body: RbNode, name: string): RbNode[] {
       continue;
     }
     const args = field(stmt, "arguments");
-    if (args !== null) {
-      found.push(...bodyStatements(args));
-    }
+    groups.push(args === null ? [] : bodyStatements(args));
   }
-  return found;
+  return groups;
 }
 
 /**
