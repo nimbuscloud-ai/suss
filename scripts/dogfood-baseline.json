@@ -3,15 +3,15 @@
     "packages": 44,
     "packagesWithExports": 43,
     "exports": 388,
-    "internal": 1436,
-    "consumers": 609,
-    "pairs": 601
+    "internal": 1445,
+    "consumers": 613,
+    "pairs": 605
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 44,
-      "internal": 57,
+      "internal": 66,
       "consumers": 34
     },
     "packages/adapter/ruby": {
@@ -186,7 +186,7 @@
       "name": "@suss/framework-flask-restx",
       "exports": 2,
       "internal": 0,
-      "consumers": 4
+      "consumers": 8
     },
     "packages/framework/graphql-ruby": {
       "name": "@suss/framework-graphql-ruby",
