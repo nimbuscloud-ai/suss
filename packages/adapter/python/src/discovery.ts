@@ -15,6 +15,7 @@
 import { dispatchByType, restBinding } from "@suss/behavioral-ir";
 import {
   absentReading,
+  ambiguousReading,
   andThenReading,
   firstWrittenReading,
   mapReading,
@@ -29,7 +30,13 @@ import {
   createAnnotationContext,
   shapeFromName,
 } from "./annotations.js";
-import { bodyStatements, field, rangeOf, stripDecorators } from "./ast.js";
+import {
+  bodyStatements,
+  field,
+  rangeOf,
+  stringLiteralValue,
+  stripDecorators,
+} from "./ast.js";
 import { classifyDecorator } from "./decorators.js";
 
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
@@ -289,7 +296,10 @@ function classRouteUnits(
           filePath: options.filePath,
           skipReceiverParam: true,
           responseShape: absentReading,
-          statusCode: defaultedStatus(absentReading, pattern),
+          statusCode: defaultedStatus(
+            readReturnedStatus(pattern, maybeMethod),
+            pattern,
+          ),
         },
         options,
       ),
@@ -413,6 +423,122 @@ function readStatusCode(
   );
 }
 
+/**
+ * Every `return` written in this function's own body. A nested function's
+ * returns belong to that function, so the walk stops at one.
+ */
+function returnStatements(node: PyNode | null, found: PyNode[] = []): PyNode[] {
+  for (const child of node?.namedChildren ?? []) {
+    if (child === null) {
+      continue;
+    }
+    if (child.type === "function_definition" || child.type === "lambda") {
+      continue;
+    }
+    if (child.type === "return_statement") {
+      found.push(child);
+    }
+    returnStatements(child, found);
+  }
+  return found;
+}
+
+/** Flask takes the status off the tuple as an int, or off the front of a string like "201 CREATED". */
+function statusFromReturnedValue(node: PyNode | undefined): number | null {
+  if (node === undefined) {
+    return null;
+  }
+  if (node.type === "integer") {
+    const parsed = Number.parseInt(node.text, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  const text = stringLiteralValue(node);
+  if (text === null) {
+    return null;
+  }
+  const digits = /^(\d{3})\b/.exec(text.trim());
+  return digits === null ? null : Number.parseInt(digits[1] as string, 10);
+}
+
+/** What one `return` says about the status: a number, nothing, or unreadable. */
+function statusOfReturn(
+  statement: PyNode,
+):
+  | { kind: "status"; value: number }
+  | { kind: "none" }
+  | { kind: "unreadable" } {
+  const returned = statement.namedChildren[0];
+  if (returned?.type !== "expression_list") {
+    return { kind: "none" };
+  }
+
+  const status = statusFromReturnedValue(returned.namedChildren[1]);
+  return status === null
+    ? { kind: "unreadable" }
+    : { kind: "status", value: status };
+}
+
+/**
+ * The status a handler's own returns write, for a library that reads one
+ * off the returned tuple. Anything less definite than a single status
+ * every return agrees on claims nothing, so the library default cannot
+ * stand in for a status the body actually sets.
+ */
+function readReturnedStatus(
+  pattern: PythonDiscoveryPattern,
+  definitionNode: PyNode,
+): Reading<number> {
+  if (pattern.statusFromReturnedTuple !== true) {
+    return absentReading;
+  }
+
+  const range = rangeOf(definitionNode);
+  const statuses = new Set<number>();
+  let plainReturns = 0;
+  let unreadable = 0;
+  for (const statement of returnStatements(field(definitionNode, "body"))) {
+    const read = statusOfReturn(statement);
+    if (read.kind === "status") {
+      statuses.add(read.value);
+    } else if (read.kind === "none") {
+      plainReturns += 1;
+    } else {
+      unreadable += 1;
+    }
+  }
+
+  if (unreadable > 0) {
+    return unreadableReading(
+      "This route returns a status this reading cannot resolve to a number, so no status is claimed for it",
+      range,
+    );
+  }
+
+  if (statuses.size === 0) {
+    return absentReading;
+  }
+
+  const candidates = [...statuses];
+  if (statuses.size > 1 || plainReturns > 0) {
+    return ambiguousReading(
+      candidates,
+      "This route returns more than one status depending on which branch runs, and nothing here reads which, so no status is claimed for it",
+      range,
+    );
+  }
+
+  return writtenReading(candidates[0] as number, range);
+}
+
+/** A status the decorator writes wins; otherwise whatever the body's returns say. */
+function declaredOrReturnedStatus(
+  declared: Reading<number>,
+  returned: Reading<number>,
+): Reading<number> {
+  return declared.kind === "absent" ? returned : declared;
+}
+
 function defaultedStatus(
   reading: Reading<number>,
   pattern: PythonDiscoveryPattern,
@@ -507,7 +633,10 @@ function functionRouteUnits(
       skipReceiverParam: false,
       responseShape: readResponseModel(pattern, classification, module, ctx),
       statusCode: defaultedStatus(
-        readStatusCode(pattern, classification),
+        declaredOrReturnedStatus(
+          readStatusCode(pattern, classification),
+          readReturnedStatus(pattern, functionNode),
+        ),
         pattern,
       ),
       definitionsCtx: ctx,

@@ -159,21 +159,12 @@ export const arbFastapiProgramSpec: fc.Arbitrary<FastapiProgramSpec> = fc
   .array(arbFastapiGroup, { minLength: 1, maxLength: 3 })
   .map((groups) => ({ groups }));
 
-const arbFlaskMethod: fc.Arbitrary<FlaskMethodSpec> = fc
-  .record({
-    verb: fc.constantFrom(...VERBS),
-    annotated: fc.boolean(),
-    returnStyle: fc.constantFrom<FlaskMethodSpec["returnStyle"]>(
-      "dict",
-      "tuple",
-    ),
-    tupleStatus: fc.constantFrom(...STATUSES),
-  })
-  .map((method) => ({
-    ...method,
-    // An annotated method returns the plain 200 dict its annotation declares.
-    returnStyle: method.annotated ? ("dict" as const) : method.returnStyle,
-  }));
+const arbFlaskMethod: fc.Arbitrary<FlaskMethodSpec> = fc.record({
+  verb: fc.constantFrom(...VERBS),
+  annotated: fc.boolean(),
+  returnStyle: fc.constantFrom<FlaskMethodSpec["returnStyle"]>("dict", "tuple"),
+  tupleStatus: fc.constantFrom(...STATUSES),
+});
 
 const arbFlaskResource: fc.Arbitrary<FlaskResourceSpec> = fc
   .record({

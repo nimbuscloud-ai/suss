@@ -100,13 +100,17 @@ export interface FastapiProgramSpec {
 export interface FlaskMethodSpec {
   verb: PyVerb;
   /**
-   * `-> Shape` return annotation, the one declaration the pack reads
-   * off a resource method. An annotated method returns a plain dict
-   * (status 200) so the declared 200 stays true; a body contradicting
-   * its own annotation is the disagreement class, out of scope here.
+   * `-> Shape` return annotation, the one declaration the pack reads off
+   * a resource method. It gives the route a declared response, which is
+   * what makes its status worth checking.
    */
   annotated: boolean;
-  /** "tuple" means `return body, status`, which the pack claims nothing about. Never combined with `annotated`. */
+  /**
+   * "tuple" means `return body, status`, which Flask serves at that
+   * status. Combined with `annotated` it is the case where the declared
+   * response and the returned status have to agree, which is the shape
+   * that went unchecked while this was forced to "dict".
+   */
   returnStyle: "dict" | "tuple";
   tupleStatus: number;
 }
