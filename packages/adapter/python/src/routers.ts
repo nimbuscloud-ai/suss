@@ -5,16 +5,16 @@
 // never states: the mount call (`app.include_router(router,
 // prefix="/api")`) supplies one prefix and the constructor supplies
 // another. This module reads exactly that much, ahead of discovery:
-// every module-level router construction, every module-level mount
-// call whose router argument is a bare name (bound in the same file,
-// or imported from the file that constructed it), and the literal
-// prefixes on both. Everything else abstains with a reason: a
-// non-literal prefix, a router nobody mounts by name, a router
-// mounted twice, a router mounted onto another router (a second hop),
-// or a mount that overrides the prefix the constructor stated.
-// Discovery turns an abstention into a unit that keeps its name and
-// carries no path, so it pairs with nothing rather than with whatever
-// a guessed path would have named.
+// every module-level router construction, every mount call whose
+// router argument is a bare name (bound in the same file, or imported
+// from the file that constructed it), and the literal prefixes on
+// both. Everything else abstains with a reason: a non-literal prefix,
+// a router nobody mounts by name, a router mounted twice, a router
+// mounted onto another router (a second hop), or a mount that
+// overrides the prefix the constructor stated. Discovery turns an
+// abstention into a unit that keeps its name and carries no path, so
+// it pairs with nothing rather than with whatever a guessed path
+// would have named.
 //
 // A route reaches its router through a function decorator in one
 // library and through a class decorator in another. Neither shape
@@ -27,7 +27,7 @@
 // README has the grid, every cell of it checked against a running
 // app. Read it before teaching a new library's mount to compose.
 
-import { bodyStatements, field } from "./ast.js";
+import { bodyStatements, field, rangeOf, stripDecorators } from "./ast.js";
 import { readCallArguments } from "./decorators.js";
 import { resolveModule } from "./moduleResolver.js";
 import { resolveName } from "./scope.js";
@@ -42,12 +42,14 @@ import type {
   RouterComposition,
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
-import type { Binding, ModuleBinding } from "./scope.js";
+import type { Binding, ModuleBinding, Scope } from "./scope.js";
 
 /** One parsed-and-bound file, the shape `buildRouterIndex` reads a project as. */
 export interface BoundPythonFile {
   /** Absolute path, the identity module resolution joins on. */
   file: string;
+  /** The path a gap names this file by, which a reader has to be able to open. */
+  displayPath: string;
   root: PyNode;
   module: ModuleBinding;
 }
@@ -108,13 +110,26 @@ type OwnPrefixResolution =
   | { kind: "abstain"; reason: string };
 
 type MountState =
-  | { kind: "mounted"; includePrefix: string }
+  | { kind: "mounted"; includePrefix: string; site: MountSite }
   | { kind: "abstain"; reason: string };
+
+/** Where a mount call is written: a module's top level, which runs on import, or one function's body, which runs only if something calls it. */
+type MountSite = { kind: "module" } | { kind: "function"; node: number };
+
+const MODULE_SITE: MountSite = { kind: "module" };
+
+/** One loop whose routers this reading cannot name, and where a reader will find it. */
+interface UnenumerableLoop {
+  site: MountSite;
+  location: string;
+}
 
 interface PatternIndex {
   composition: RouterComposition;
   constructions: Map<ModuleBinding, Map<string, RouterConstruction>>;
   mounts: Map<RouterConstruction, MountState>;
+  /** Keyed by location, so one loop counts once however many routers ask about it. */
+  unenumerableLoops: Map<string, UnenumerableLoop>;
 }
 
 const NOT_ROUTER: RoutePrefixResolution = { kind: "notRouter" };
@@ -176,15 +191,16 @@ export function buildRouterIndex(
 
       const mount = index.mounts.get(construction);
       if (mount === undefined) {
-        return {
-          kind: "abstain",
-          reason:
-            "is never mounted through a single variable binding in the files read",
-        };
+        return { kind: "abstain", reason: unmountedReason(index) };
       }
 
       if (mount.kind === "abstain") {
         return { kind: "abstain", reason: mount.reason };
+      }
+
+      const rivalled = rivalRegistration(index, mount.site);
+      if (rivalled !== null) {
+        return { kind: "abstain", reason: rivalled };
       }
 
       return {
@@ -193,6 +209,53 @@ export function buildRouterIndex(
       };
     },
   };
+}
+
+function sameSite(one: MountSite, other: MountSite): boolean {
+  if (one.kind === "function" && other.kind === "function") {
+    return one.node === other.node;
+  }
+
+  return one.kind === other.kind;
+}
+
+/** "a loop at main.py:14 mounts" / "loops at main.py:14, api.py:9 mount", so a reader can go read the loop. */
+function loopsClause(loops: UnenumerableLoop[], verb: string): string {
+  const locations = loops.map((loop) => loop.location).sort();
+  if (locations.length === 1) {
+    return `a loop at ${locations[0]} ${verb}s`;
+  }
+
+  return `loops at ${locations.join(", ")} ${verb}`;
+}
+
+/** Why a router nobody mounted by name still names no path, naming the loop when there is one to read. */
+function unmountedReason(index: PatternIndex): string {
+  const loops = [...index.unenumerableLoops.values()];
+  if (loops.length === 0) {
+    return "is never mounted through a single variable binding in the files read";
+  }
+
+  return `is not mounted by name in the files read, and ${loopsClause(loops, "mount")} routers read out of a call this reading does not follow`;
+}
+
+/** Why a mount the reading followed still cannot be taken: it only runs if the app calls that function, and a loop elsewhere may register the router instead. */
+function rivalRegistration(
+  index: PatternIndex,
+  site: MountSite,
+): string | null {
+  if (site.kind === "module") {
+    return null;
+  }
+
+  const rivals = [...index.unenumerableLoops.values()].filter(
+    (loop) => !sameSite(loop.site, site),
+  );
+  if (rivals.length === 0) {
+    return null;
+  }
+
+  return `is mounted inside a function, while ${loopsClause(rivals, "mount")} routers this reading cannot name, and which of them the app runs is not written down`;
 }
 
 /**
@@ -242,6 +305,7 @@ function buildPatternIndex(
     composition,
     constructions: new Map(),
     mounts: new Map(),
+    unenumerableLoops: new Map(),
   };
   const byFile = new Map(files.map((bound) => [bound.file, bound]));
 
@@ -273,10 +337,10 @@ function buildPatternIndex(
  */
 function constructionOf(
   name: string,
-  module: ModuleBinding,
+  scope: Scope,
   importModule: string[],
 ): { constructorName: string; call: PyNode } | null {
-  const binding = resolveName(module.moduleScope, name);
+  const binding = resolveName(scope, name);
   if (binding?.kind !== "assignment" || binding.value?.type !== "call") {
     return null;
   }
@@ -286,7 +350,7 @@ function constructionOf(
     return null;
   }
 
-  const calleeBinding = resolveName(module.moduleScope, callee.text);
+  const calleeBinding = resolveName(scope, callee.text);
   if (
     calleeBinding?.kind !== "importFrom" ||
     !importModule.includes(calleeBinding.module)
@@ -459,25 +523,19 @@ function collectConstructions(
 }
 
 /**
- * The construction a mount call's router argument names, followed
- * through exactly one variable binding: a name assigned in this file,
- * or a name imported from the file that assigned it. Anything else
- * (an attribute like `items.router`, a call, an unresolvable import)
- * returns null, and the router it meant stays unmounted, which is
- * what makes its routes abstain.
+ * The construction a name refers to, followed through exactly one
+ * variable binding: a name assigned in this file, or a name imported
+ * from the file that assigned it. Anything else (an attribute like
+ * `items.router`, a call, an unresolvable import) returns null, and
+ * the router it meant stays unmounted, which is what makes its routes
+ * abstain.
  */
-function mountTarget(
-  arg: DecoratorArg | undefined,
-  bound: BoundPythonFile,
-  byFile: Map<string, BoundPythonFile>,
-  resolverOptions: ModuleResolverOptions,
-  index: PatternIndex,
+function constructionNamed(
+  name: string,
+  scope: Scope,
+  scan: MountScan,
 ): RouterConstruction | null {
-  if (arg?.kind !== "identifier") {
-    return null;
-  }
-
-  const binding = resolveName(bound.module.moduleScope, arg.name);
+  const binding = resolveName(scope, name);
   if (binding === null) {
     return null;
   }
@@ -486,29 +544,30 @@ function mountTarget(
     Record<Binding["kind"], () => RouterConstruction | null>
   > = {
     assignment: () =>
-      index.constructions.get(bound.module)?.get(arg.name) ?? null,
+      scan.index.constructions.get(scan.bound.module)?.get(name) ?? null,
     importFrom: () => {
       if (binding.kind !== "importFrom") {
         return null;
       }
 
       const resolution = resolveModule(
-        bound.file,
+        scan.bound.file,
         { module: binding.module, relativeLevel: binding.relativeLevel },
-        resolverOptions,
+        scan.resolverOptions,
       );
       if (resolution.status !== "resolved") {
         return null;
       }
 
-      const target = byFile.get(resolution.file);
+      const target = scan.byFile.get(resolution.file);
       if (target === undefined) {
         return null;
       }
 
       return (
-        index.constructions.get(target.module)?.get(binding.importedName) ??
-        null
+        scan.index.constructions
+          .get(target.module)
+          ?.get(binding.importedName) ?? null
       );
     },
   };
@@ -524,11 +583,12 @@ function mountTarget(
  */
 const MOUNT_STATE_BY_EFFECT: Record<
   MountPrefixEffect,
-  (statedPrefix: string) => MountState
+  (statedPrefix: string, site: MountSite) => MountState
 > = {
-  prefixes: (statedPrefix) => ({
+  prefixes: (statedPrefix, site) => ({
     kind: "mounted",
     includePrefix: statedPrefix,
+    site,
   }),
   replaces: () => ({
     kind: "abstain",
@@ -553,6 +613,28 @@ function recordMount(
   index.mounts.set(target, state);
 }
 
+/** Everything the mount walk carries down from the file it started on. */
+interface MountScan {
+  bound: BoundPythonFile;
+  byFile: Map<string, BoundPythonFile>;
+  importModule: string[];
+  composition: RouterComposition;
+  resolverOptions: ModuleResolverOptions;
+  index: PatternIndex;
+}
+
+/** What a `for` around a mount call binds one name to: a literal sequence, or an iterable this reading does not evaluate. */
+type LoopTarget =
+  | { kind: "sequence"; elements: string[] }
+  | { kind: "unenumerable"; location: string };
+
+/** Where the walk currently is: what resolves a name, what the loops around it bind, and whose body it is in. */
+interface WalkPosition {
+  scope: Scope;
+  loopBindings: Map<string, LoopTarget>;
+  site: MountSite;
+}
+
 function collectMounts(
   bound: BoundPythonFile,
   byFile: Map<string, BoundPythonFile>,
@@ -561,80 +643,247 @@ function collectMounts(
   resolverOptions: ModuleResolverOptions,
   index: PatternIndex,
 ): void {
-  for (const stmt of bodyStatements(bound.root)) {
-    if (stmt.type !== "expression_statement") {
-      continue;
+  scanForMounts(
+    bodyStatements(bound.root),
+    {
+      scope: bound.module.moduleScope,
+      loopBindings: new Map(),
+      site: MODULE_SITE,
+    },
+    { bound, byFile, importModule, composition, resolverOptions, index },
+  );
+}
+
+/** Statement shapes whose body can hold a mount the reading follows. Every other block statement is left alone, since the binder records no name written inside one. */
+const MOUNT_SCAN_DESCENTS: Record<
+  string,
+  (stmt: PyNode, position: WalkPosition, scan: MountScan) => void
+> = {
+  decorated_definition: (stmt, position, scan) => {
+    scanForMounts([stripDecorators(stmt).definition], position, scan);
+  },
+  function_definition: (stmt, position, scan) => {
+    // The binder skips a `def` written inside a block it does not
+    // descend, and reading one against the enclosing scope would take
+    // its locals for module names.
+    const scope = scan.bound.module.scopeFor.get(stmt.id);
+    if (scope === undefined) {
+      return;
     }
 
-    const call = stmt.namedChild(0);
-    if (call === null || call.type !== "call") {
-      continue;
-    }
-
-    const callee = field(call, "function");
-    if (callee === null || callee.type !== "attribute") {
-      continue;
-    }
-
-    const objectNode = field(callee, "object");
-    const attributeNode = field(callee, "attribute");
-    if (
-      objectNode?.type !== "identifier" ||
-      attributeNode?.text !== composition.includeMethodName
-    ) {
-      continue;
-    }
-
-    // The mount only counts when whatever it is called on was itself
-    // constructed from an accepted module: `app.include_router(...)`
-    // where `app = FastAPI()`. A same-named method on some other
-    // object is not this library's mount.
-    const includer = constructionOf(
-      objectNode.text,
-      bound.module,
-      importModule,
+    scanForMounts(
+      nestedStatements(stmt),
+      {
+        scope,
+        loopBindings: new Map(),
+        site: { kind: "function", node: stmt.id },
+      },
+      scan,
     );
-    if (includer === null) {
-      continue;
-    }
-
-    const { args, keywordArgs } = readCallArguments(field(call, "arguments"));
-    const target = mountTarget(args[0], bound, byFile, resolverOptions, index);
-    if (target === null) {
-      continue;
-    }
-
-    if (includer.constructorName === composition.routerConstructorName) {
-      recordMount(index, target, {
-        kind: "abstain",
-        reason:
-          "is mounted onto another router, one hop past what this reading follows",
-      });
-      continue;
-    }
-
-    const mountPrefix = readPrefixKeyword(keywordArgs, composition);
-    if (mountPrefix.kind === "unreadable") {
-      recordMount(index, target, {
-        kind: "abstain",
-        reason: "is mounted with a prefix that is not a string literal",
-      });
-      continue;
-    }
-
-    // A mount that states nothing leaves the router where its
-    // constructor put it, whichever way the library reads a prefix
-    // that is stated.
-    if (mountPrefix.kind === "unstated") {
-      recordMount(index, target, { kind: "mounted", includePrefix: "" });
-      continue;
-    }
-
-    const effect = composition.mountPrefixEffect ?? "prefixes";
-    recordMount(
-      index,
-      target,
-      MOUNT_STATE_BY_EFFECT[effect](mountPrefix.value),
+  },
+  for_statement: (stmt, position, scan) => {
+    scanForMounts(
+      nestedStatements(stmt),
+      { ...position, loopBindings: loopBindingsOf(stmt, position, scan) },
+      scan,
     );
+  },
+};
+
+function nestedStatements(stmt: PyNode): PyNode[] {
+  const body = field(stmt, "body");
+  return body === null ? [] : bodyStatements(body);
+}
+
+function scanForMounts(
+  statements: PyNode[],
+  position: WalkPosition,
+  scan: MountScan,
+): void {
+  for (const stmt of statements) {
+    const descend = MOUNT_SCAN_DESCENTS[stmt.type];
+    if (descend !== undefined) {
+      descend(stmt, position, scan);
+      continue;
+    }
+
+    recordMountStatement(stmt, position, scan);
   }
+}
+
+/** Every identifier a `for` target binds, whether it is one name or a tuple of them. */
+function targetNames(node: PyNode): string[] {
+  if (node.type === "identifier") {
+    return [node.text];
+  }
+
+  return bodyStatements(node).flatMap(targetNames);
+}
+
+/** The element names of a literal list or tuple of bare names; null for any other iterable. */
+function sequenceElementNames(node: PyNode | null): string[] | null {
+  if (node === null || (node.type !== "list" && node.type !== "tuple")) {
+    return null;
+  }
+
+  const names: string[] = [];
+  for (const child of node.namedChildren) {
+    if (child?.type !== "identifier") {
+      return null;
+    }
+    names.push(child.text);
+  }
+  return names;
+}
+
+function loopBindingsOf(
+  stmt: PyNode,
+  position: WalkPosition,
+  scan: MountScan,
+): Map<string, LoopTarget> {
+  const bindings = new Map(position.loopBindings);
+  const left = field(stmt, "left");
+  if (left === null) {
+    return bindings;
+  }
+
+  const elements = sequenceElementNames(field(stmt, "right"));
+  if (left.type === "identifier" && elements !== null) {
+    bindings.set(left.text, { kind: "sequence", elements });
+    return bindings;
+  }
+
+  const location = `${scan.bound.displayPath}:${rangeOf(stmt).start}`;
+  for (const name of targetNames(left)) {
+    bindings.set(name, { kind: "unenumerable", location });
+  }
+  return bindings;
+}
+
+/** The mount call a statement is, when it is one this library defines; null otherwise. */
+function mountCallOf(
+  stmt: PyNode,
+  scope: Scope,
+  scan: MountScan,
+): { call: PyNode; includerConstructorName: string } | null {
+  if (stmt.type !== "expression_statement") {
+    return null;
+  }
+
+  const call = stmt.namedChild(0);
+  if (call === null || call.type !== "call") {
+    return null;
+  }
+
+  const callee = field(call, "function");
+  if (callee === null || callee.type !== "attribute") {
+    return null;
+  }
+
+  const objectNode = field(callee, "object");
+  const attributeNode = field(callee, "attribute");
+  if (
+    objectNode?.type !== "identifier" ||
+    attributeNode?.text !== scan.composition.includeMethodName
+  ) {
+    return null;
+  }
+
+  // The mount only counts when whatever it is called on was itself
+  // constructed from an accepted module: `app.include_router(...)`
+  // where `app = FastAPI()`. A same-named method on some other
+  // object is not this library's mount.
+  const includer = constructionOf(objectNode.text, scope, scan.importModule);
+  if (includer === null) {
+    return null;
+  }
+
+  return { call, includerConstructorName: includer.constructorName };
+}
+
+/** The names one mount call registers: the argument's own, or the literal sequence a loop binds it from. Empty when the loop names nobody, and then the loop itself is recorded. */
+function mountedNames(
+  arg: DecoratorArg | undefined,
+  position: WalkPosition,
+  index: PatternIndex,
+): string[] {
+  if (arg?.kind !== "identifier") {
+    return [];
+  }
+
+  const target = position.loopBindings.get(arg.name);
+  if (target === undefined) {
+    return [arg.name];
+  }
+
+  if (target.kind === "sequence") {
+    return target.elements;
+  }
+
+  index.unenumerableLoops.set(target.location, {
+    site: position.site,
+    location: target.location,
+  });
+  return [];
+}
+
+function recordMountStatement(
+  stmt: PyNode,
+  position: WalkPosition,
+  scan: MountScan,
+): void {
+  const mountCall = mountCallOf(stmt, position.scope, scan);
+  if (mountCall === null) {
+    return;
+  }
+
+  const { args, keywordArgs } = readCallArguments(
+    field(mountCall.call, "arguments"),
+  );
+  const state = mountStateOf(
+    mountCall.includerConstructorName,
+    keywordArgs,
+    scan.composition,
+    position.site,
+  );
+  for (const name of mountedNames(args[0], position, scan.index)) {
+    const target = constructionNamed(name, position.scope, scan);
+    if (target !== null) {
+      recordMount(scan.index, target, state);
+    }
+  }
+}
+
+/** Where one mount call leaves whatever it mounts, or why nothing can be said about it. */
+function mountStateOf(
+  includerConstructorName: string,
+  keywordArgs: Record<string, DecoratorArg>,
+  composition: RouterComposition,
+  site: MountSite,
+): MountState {
+  if (includerConstructorName === composition.routerConstructorName) {
+    return {
+      kind: "abstain",
+      reason:
+        "is mounted onto another router, one hop past what this reading follows",
+    };
+  }
+
+  const mountPrefix = readPrefixKeyword(keywordArgs, composition);
+  if (mountPrefix.kind === "unreadable") {
+    return {
+      kind: "abstain",
+      reason: "is mounted with a prefix that is not a string literal",
+    };
+  }
+
+  // A mount that states nothing leaves the router where its
+  // constructor put it, whichever way the library reads a prefix
+  // that is stated.
+  if (mountPrefix.kind === "unstated") {
+    return { kind: "mounted", includePrefix: "", site };
+  }
+
+  const effect = composition.mountPrefixEffect ?? "prefixes";
+  return MOUNT_STATE_BY_EFFECT[effect](mountPrefix.value, site);
 }

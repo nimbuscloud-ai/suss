@@ -79,7 +79,14 @@ async function unitsOf(source: string, packs: PythonPack[] = [fastapiLike]) {
   const tree = await parsePython(source);
   const module = bindModule(tree.rootNode);
   const routerIndex = buildRouterIndex(
-    [{ file: "/proj/main.py", root: tree.rootNode, module }],
+    [
+      {
+        file: "/proj/main.py",
+        displayPath: "main.py",
+        root: tree.rootNode,
+        module,
+      },
+    ],
     packs,
     { roots: [] },
   );
@@ -468,7 +475,14 @@ describe("router prefix composition: abstentions", () => {
     );
     const module = bindModule(tree.rootNode);
     const routerIndex = buildRouterIndex(
-      [{ file: "/proj/m.py", root: tree.rootNode, module }],
+      [
+        {
+          file: "/proj/m.py",
+          displayPath: "m.py",
+          root: tree.rootNode,
+          module,
+        },
+      ],
       [fastapiLike],
       { roots: [] },
     );
@@ -818,5 +832,494 @@ describe("prefix composition for a class-decorator route", () => {
     expect(unreadTextOf(units[0])).toContain(
       "is never mounted through a single variable binding in the files read",
     );
+  });
+});
+
+describe("mounts written inside a function", () => {
+  it("composes a router the app factory mounts", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "def create_app():",
+        "    app = FastAPI()",
+        '    app.include_router(router, prefix="/api")',
+        "    return app",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("composes a router a decorated factory mounts", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "import functools",
+        "",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "@functools.cache",
+        "def create_app():",
+        "    app = FastAPI()",
+        '    app.include_router(router, prefix="/api")',
+        "    return app",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("composes a namespace the app factory adds", async () => {
+    const units = await unitsOf(
+      [
+        "from flask_restx import Api, Namespace",
+        "",
+        'ns = Namespace("orders", path="/orders")',
+        "",
+        "",
+        '@ns.route("/<int:order_id>")',
+        "class Order:",
+        "    def get(self, order_id):",
+        "        return {}",
+        "",
+        "",
+        "def create_app():",
+        "    api = Api()",
+        "    api.add_namespace(ns)",
+        "    return api",
+        "",
+      ].join("\n"),
+      [namespaceLike],
+    );
+    expect(pathOf(units, "Order.get")).toBe("/orders/{order_id}");
+  });
+
+  it("composes every router a loop over a literal list mounts", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        'items = APIRouter(prefix="/items")',
+        'users = APIRouter(prefix="/users")',
+        "",
+        "",
+        '@items.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        '@users.get("/{user_id}")',
+        "def read_user(user_id: int):",
+        "    pass",
+        "",
+        "",
+        "def create_app():",
+        "    app = FastAPI()",
+        "    for router in [items, users]:",
+        '        app.include_router(router, prefix="/api")',
+        "    return app",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+    expect(pathOf(units, "read_user")).toBe("/api/users/{user_id}");
+  });
+
+  it("composes every namespace a loop over a literal tuple adds", async () => {
+    const units = await unitsOf(
+      [
+        "from flask_restx import Api, Namespace",
+        "",
+        'orders = Namespace("orders", path="/orders")',
+        "",
+        "",
+        '@orders.route("/<int:order_id>")',
+        "class Order:",
+        "    def get(self, order_id):",
+        "        return {}",
+        "",
+        "",
+        "def create_app():",
+        "    api = Api()",
+        "    for namespace in (orders,):",
+        "        api.add_namespace(namespace)",
+        "    return api",
+        "",
+      ].join("\n"),
+      [namespaceLike],
+    );
+    expect(pathOf(units, "Order.get")).toBe("/orders/{order_id}");
+  });
+});
+
+describe("a loop that mounts what a call handed it", () => {
+  const loopingFactory = [
+    "from fastapi import FastAPI, APIRouter",
+    "import loader",
+    "",
+    'router = APIRouter(prefix="/items")',
+    "",
+    "",
+    '@router.get("/{item_id}")',
+    "def read_item(item_id: int):",
+    "    pass",
+    "",
+    "",
+    "def create_app():",
+    "    app = FastAPI()",
+    "    for mounted in loader.load_routers():",
+    "        app.include_router(mounted)",
+    "    return app",
+    "",
+  ].join("\n");
+
+  it("claims no path for a router the loop may or may not have mounted", async () => {
+    const units = await unitsOf(loopingFactory);
+    expect(pathOf(units, "read_item")).toBeNull();
+  });
+
+  it("names the file and line the loop is written at", async () => {
+    const units = await unitsOf(loopingFactory);
+    expect(unreadTextOf(units[0])).toContain(
+      "is not mounted by name in the files read, and a loop at main.py:14 mounts routers read out of a call this reading does not follow",
+    );
+  });
+
+  it("still composes a router the same function mounts by name", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "import loader",
+        "",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "def create_app():",
+        "    app = FastAPI()",
+        '    app.include_router(router, prefix="/api")',
+        "    for mounted in loader.load_routers():",
+        "        app.include_router(mounted)",
+        "    return app",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("reads a list holding anything but a bare name as a list it cannot enumerate", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "def create_app():",
+        "    app = FastAPI()",
+        "    for mounted in [router, build_extra()]:",
+        "        app.include_router(mounted)",
+        "    return app",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBeNull();
+    expect(unreadTextOf(units[0])).toContain(
+      "mounts routers read out of a call this reading does not follow",
+    );
+  });
+
+  it("reads a loop whose target is a tuple as naming no router either", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "import loader",
+        "",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "def create_app():",
+        "    app = FastAPI()",
+        "    for name, mounted in loader.load_routers():",
+        "        app.include_router(mounted)",
+        "    return app",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBeNull();
+    expect(unreadTextOf(units[0])).toContain(
+      "mounts routers read out of a call this reading does not follow",
+    );
+  });
+});
+
+describe("a mount whose function may not be the one the app calls", () => {
+  const twoFactories = [
+    "from fastapi import FastAPI, APIRouter",
+    "import loader",
+    "",
+    'router = APIRouter(prefix="/items")',
+    "",
+    "",
+    '@router.get("/{item_id}")',
+    "def read_item(item_id: int):",
+    "    pass",
+    "",
+    "",
+    "def create_test_app():",
+    "    app = FastAPI()",
+    '    app.include_router(router, prefix="/test")',
+    "    return app",
+    "",
+    "",
+    "def create_app():",
+    "    app = FastAPI()",
+    "    for mounted in loader.load_routers():",
+    "        app.include_router(mounted)",
+    "    return app",
+    "",
+  ].join("\n");
+
+  it("claims no path when a test factory names the router and the app factory loops", async () => {
+    const units = await unitsOf(twoFactories);
+    expect(pathOf(units, "read_item")).toBeNull();
+  });
+
+  it("names the rival loop rather than the mount it happened to see", async () => {
+    const units = await unitsOf(twoFactories);
+    expect(unreadTextOf(units[0])).toContain(
+      "is mounted inside a function, while a loop at main.py:20 mounts routers this reading cannot name, and which of them the app runs is not written down",
+    );
+  });
+
+  it("keeps a module-level mount, which runs whichever function the app calls", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "import loader",
+        "",
+        "app = FastAPI()",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        'app.include_router(router, prefix="/api")',
+        "",
+        "",
+        "def create_app():",
+        "    other = FastAPI()",
+        "    for mounted in loader.load_routers():",
+        "        other.include_router(mounted)",
+        "    return other",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("counts a loop at a module's top level as a rival to a mount inside a function", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "import loader",
+        "",
+        "app = FastAPI()",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "for mounted in loader.load_routers():",
+        "    app.include_router(mounted)",
+        "",
+        "",
+        "def create_app():",
+        "    other = FastAPI()",
+        '    other.include_router(router, prefix="/api")',
+        "    return other",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBeNull();
+    expect(unreadTextOf(units[0])).toContain(
+      "is mounted inside a function, while a loop at main.py:13 mounts routers this reading cannot name",
+    );
+  });
+
+  it("names every rival loop when more than one could have registered the router", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "import loader",
+        "",
+        "app = FastAPI()",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "for mounted in loader.load_routers():",
+        "    app.include_router(mounted)",
+        "",
+        "for extra in loader.load_extras():",
+        "    app.include_router(extra)",
+        "",
+        "",
+        "def create_app():",
+        "    other = FastAPI()",
+        '    other.include_router(router, prefix="/api")',
+        "    return other",
+        "",
+      ].join("\n"),
+    );
+    expect(unreadTextOf(units[0])).toContain(
+      "while loops at main.py:13, main.py:16 mount routers this reading cannot name",
+    );
+  });
+
+  it("keeps a mount two factories away from any loop it could rival", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "def create_test_app():",
+        "    app = FastAPI()",
+        "    return app",
+        "",
+        "",
+        "def create_app():",
+        "    app = FastAPI()",
+        '    app.include_router(router, prefix="/api")',
+        "    return app",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+});
+
+describe("blocks the mount walk does not enter", () => {
+  const mountInside = (header: string, indent: string) =>
+    [
+      "from fastapi import FastAPI, APIRouter",
+      "",
+      "app = FastAPI()",
+      'router = APIRouter(prefix="/items")',
+      "",
+      "",
+      '@router.get("/{item_id}")',
+      "def read_item(item_id: int):",
+      "    pass",
+      "",
+      "",
+      header,
+      `${indent}app.include_router(router, prefix="/api")`,
+      "",
+    ].join("\n");
+
+  it("does not read a mount written under an if", async () => {
+    const units = await unitsOf(mountInside("if True:", "    "));
+    expect(pathOf(units, "read_item")).toBeNull();
+  });
+
+  it("does not read a mount written under a try", async () => {
+    const units = await unitsOf(
+      mountInside("try:", "    ").replace(
+        /\n$/,
+        "\nexcept ImportError:\n    pass\n",
+      ),
+    );
+    expect(pathOf(units, "read_item")).toBeNull();
+  });
+
+  it("does not read a mount written under a with", async () => {
+    const units = await unitsOf(mountInside("with app.app_context():", "    "));
+    expect(pathOf(units, "read_item")).toBeNull();
+  });
+
+  it("does not read a mount written in a class method", async () => {
+    const units = await unitsOf(
+      mountInside("class Factory:\n    def build(self):", "        "),
+    );
+    expect(pathOf(units, "read_item")).toBeNull();
+  });
+
+  it("does not read a mount written in a while", async () => {
+    const units = await unitsOf(mountInside("while pending():", "    "));
+    expect(pathOf(units, "read_item")).toBeNull();
+  });
+
+  it("does not read a mount inside a function the binder never scoped", async () => {
+    const units = await unitsOf(
+      mountInside("for _ in range(1):\n    def build():", "        "),
+    );
+    expect(pathOf(units, "read_item")).toBeNull();
+  });
+
+  it("reads a function whose body the parse never closed as holding no mount", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        "app = FastAPI()",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "def create_app():",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBeNull();
   });
 });

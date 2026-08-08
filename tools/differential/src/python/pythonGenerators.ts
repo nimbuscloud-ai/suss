@@ -15,6 +15,7 @@ import type {
   FastapiRouteSpec,
   FlaskImportStyle,
   FlaskMethodSpec,
+  FlaskMountSite,
   FlaskNamespaceMountPath,
   FlaskNamespacePath,
   FlaskNamespaceSpec,
@@ -125,6 +126,12 @@ const arbFastapiGroup: fc.Arbitrary<FastapiGroupSpec> = fc.oneof(
     weight: 1,
     arbitrary: arbRoutes.map(
       (routes): FastapiGroupSpec => ({ type: "unmounted", routes }),
+    ),
+  },
+  {
+    weight: 1,
+    arbitrary: arbRoutes.map(
+      (routes): FastapiGroupSpec => ({ type: "rivalFactory", routes }),
     ),
   },
   {
@@ -256,6 +263,14 @@ const arbFlaskMountPath: fc.Arbitrary<FlaskNamespaceMountPath> = fc.oneof(
   },
 );
 
+const arbFlaskMountSite: fc.Arbitrary<FlaskMountSite> =
+  fc.constantFrom<FlaskMountSite>(
+    "module",
+    "factory",
+    "loopLiteral",
+    "loopCall",
+  );
+
 const arbFlaskNamespace: fc.Arbitrary<FlaskNamespaceSpec> = fc.oneof(
   {
     weight: 5,
@@ -263,6 +278,7 @@ const arbFlaskNamespace: fc.Arbitrary<FlaskNamespaceSpec> = fc.oneof(
       .record({
         path: arbFlaskNamespacePath,
         mountPath: arbFlaskMountPath,
+        mountSite: arbFlaskMountSite,
         emptyPathResource: fc.boolean(),
         resources: arbFlaskResources,
       })

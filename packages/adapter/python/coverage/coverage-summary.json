@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 757,
-      "covered": 721,
+      "total": 829,
+      "covered": 792,
       "skipped": 0,
-      "pct": 95.24
+      "pct": 95.53
     },
     "statements": {
-      "total": 764,
-      "covered": 728,
+      "total": 837,
+      "covered": 800,
       "skipped": 0,
-      "pct": 95.28
+      "pct": 95.57
     },
     "functions": {
-      "total": 135,
-      "covered": 135,
+      "total": 154,
+      "covered": 154,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 560,
-      "covered": 476,
+      "total": 601,
+      "covered": 515,
       "skipped": 0,
-      "pct": 85
+      "pct": 85.69
     },
     "branchesTrue": {
       "total": 0,
@@ -267,20 +267,20 @@
   },
   "src/project.ts": {
     "lines": {
-      "total": 31,
-      "covered": 31,
+      "total": 33,
+      "covered": 33,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 3,
-      "covered": 3,
+      "total": 4,
+      "covered": 4,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 31,
-      "covered": 31,
+      "total": 33,
+      "covered": 33,
       "skipped": 0,
       "pct": 100
     },
@@ -293,28 +293,28 @@
   },
   "src/routers.ts": {
     "lines": {
-      "total": 156,
-      "covered": 152,
+      "total": 226,
+      "covered": 221,
       "skipped": 0,
-      "pct": 97.43
+      "pct": 97.78
     },
     "functions": {
-      "total": 27,
-      "covered": 27,
+      "total": 45,
+      "covered": 45,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 157,
-      "covered": 153,
+      "total": 228,
+      "covered": 223,
       "skipped": 0,
-      "pct": 97.45
+      "pct": 97.8
     },
     "branches": {
-      "total": 115,
-      "covered": 108,
+      "total": 156,
+      "covered": 147,
       "skipped": 0,
-      "pct": 93.91
+      "pct": 94.23
     }
   },
   "src/scope.ts": {

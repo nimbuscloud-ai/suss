@@ -279,6 +279,7 @@ describe("renderPythonProgram", () => {
         resources: [],
         namespaces: [
           {
+            mountSite: "module",
             type: "mounted",
             path: { type: "literal", trailingSlash: true },
             mountPath: { type: "absent" },
@@ -353,6 +354,7 @@ describe("renderPythonProgram", () => {
         resources: [],
         namespaces: [
           {
+            mountSite: "module",
             type: "mounted",
             path: { type: "absent" },
             mountPath: { type: "absent" },
@@ -389,6 +391,63 @@ describe("renderPythonProgram", () => {
     ]);
   });
 
+  it("writes each registration site where the app factory shape puts it, and claims every one it can follow to a namespace", () => {
+    const spec: PythonProgramSpec = {
+      framework: "flask-restx",
+      program: {
+        importStyle: "direct",
+        resources: [],
+        namespaces: [
+          {
+            type: "mounted",
+            path: { type: "literal", trailingSlash: false },
+            mountPath: { type: "absent" },
+            mountSite: "factory",
+            emptyPathResource: false,
+            resources: [flaskResource("alpha")],
+          },
+          {
+            type: "mounted",
+            path: { type: "literal", trailingSlash: false },
+            mountPath: { type: "absent" },
+            mountSite: "loopLiteral",
+            emptyPathResource: false,
+            resources: [flaskResource("beta")],
+          },
+          {
+            type: "mounted",
+            path: { type: "literal", trailingSlash: false },
+            mountPath: { type: "absent" },
+            mountSite: "loopCall",
+            emptyPathResource: false,
+            resources: [flaskResource("gamma")],
+          },
+        ],
+      },
+    };
+    const rendered = renderPythonProgram(spec, "app_13");
+    const main = rendered.files["app_13/main.py"];
+    expect(main).toContain("def register_namespaces():\n    api.add_namespace");
+    expect(main).toContain(
+      "    for namespace in [ns_1]:\n        api.add_namespace(namespace)",
+    );
+    expect(main).toContain(
+      "    for namespace in load_ns_2():\n        api.add_namespace(namespace)",
+    );
+    expect(main).toContain("register_namespaces()");
+    expect(
+      rendered.intents.map((intent) => [
+        intent.name,
+        intent.expectation,
+        intent.servedPaths,
+      ]),
+    ).toEqual([
+      ["Alpha0.get", "claim", ["/ns0/alpha0"]],
+      ["Beta1.get", "claim", ["/ns1/beta1"]],
+      ["Gamma2.get", "abstain", ["/ns2/gamma2"]],
+    ]);
+  });
+
   it("renders every no-value spelling at both sites, and expects a claim wherever the library reads one", () => {
     // The library asks whether the path is truthy and nothing else,
     // so all four spellings mean no path at the constructor and no
@@ -402,6 +461,7 @@ describe("renderPythonProgram", () => {
         resources: [],
         namespaces: [
           {
+            mountSite: "module",
             type: "mounted",
             path: { type: "literal", trailingSlash: false },
             mountPath: { type: "noValue", written: "none" },
@@ -409,6 +469,7 @@ describe("renderPythonProgram", () => {
             resources: [flaskResource("alpha")],
           },
           {
+            mountSite: "module",
             type: "mounted",
             path: { type: "noValue", written: "false" },
             mountPath: { type: "absent" },
@@ -416,6 +477,7 @@ describe("renderPythonProgram", () => {
             resources: [flaskResource("beta")],
           },
           {
+            mountSite: "module",
             type: "mounted",
             path: { type: "literal", trailingSlash: false },
             mountPath: { type: "computed" },

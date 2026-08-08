@@ -8,7 +8,9 @@
 // not a string literal, a computed prefix, a namespace with no path
 // of its own or a mount that overrides it, a router or namespace
 // variable assigned twice, one mounted twice or never or onto another
-// router. Rendering produces the program's files and, alongside them,
+// router, and a registration written inside the function that builds
+// the app, on its own or inside a loop.
+// Rendering produces the program's files and, alongside them,
 // one `PyRouteIntent` per declared route saying where the running app
 // will serve it and whether extraction is expected to claim that path
 // or abstain.
@@ -78,6 +80,7 @@ export type FastapiGroupSpec =
   | { type: "computedOwnPrefix"; routes: FastapiRouteSpec[] }
   | { type: "computedMountPrefix"; routes: FastapiRouteSpec[] }
   | { type: "unmounted"; routes: FastapiRouteSpec[] }
+  | { type: "rivalFactory"; routes: FastapiRouteSpec[] }
   | {
       type: "reassigned";
       firstRoutes: FastapiRouteSpec[];
@@ -155,6 +158,17 @@ export type FlaskNamespaceMountPath =
   /** `add_namespace(ns, path=OVERRIDE_K)`, a module constant rather than a literal. */
   | { type: "computed" };
 
+/** Where main.py writes the `add_namespace` call. */
+export type FlaskMountSite =
+  /** `api.add_namespace(ns)` at the top level of main.py. */
+  | "module"
+  /** The same call inside the function main.py calls to register namespaces. */
+  | "factory"
+  /** Inside that function, looping over a list literal holding the namespace. */
+  | "loopLiteral"
+  /** Inside that function, looping over what a call returns, which names no namespace the source states. */
+  | "loopCall";
+
 /**
  * One namespace, its resources, and how the app mounts it. "mounted"
  * is the shape the pack claims paths for; the rest are the mount
@@ -167,6 +181,8 @@ export type FlaskNamespaceSpec =
       path: FlaskNamespacePath;
       /** What the mount call says about the path, which for this library can override the namespace's own. */
       mountPath: FlaskNamespaceMountPath;
+      /** Where main.py writes the mount call. */
+      mountSite: FlaskMountSite;
       /** Declares the first resource with an empty route path, the idiom for the mount point itself. */
       emptyPathResource: boolean;
       resources: FlaskResourceSpec[];
@@ -539,6 +555,33 @@ function fastapiGroupRenderers(
         prefixes: "",
         servedPathsOf: () => [],
       }),
+    // The app runs the loop, which mounts the router under no prefix
+    // of its own. The only registration naming the router is in a
+    // factory nothing calls, and taking that one claims /t{gi}.
+    rivalFactory: (group) =>
+      routerGroup({
+        routes: group.routes,
+        constructorArg: `prefix="/rf${gi}"`,
+        prelude: [],
+        mountLines: [
+          `def load_routers_${gi}():`,
+          `    return [router_${gi}]`,
+          "",
+          "",
+          `def build_test_app_${gi}():`,
+          "    test_app = FastAPI()",
+          `    test_app.include_router(router_${gi}, prefix="/t${gi}")`,
+          "",
+          "",
+          `def register_routers_${gi}():`,
+          `    for mounted in load_routers_${gi}():`,
+          "        app.include_router(mounted)",
+          "",
+          "",
+          `register_routers_${gi}()`,
+        ],
+        prefixes: `/rf${gi}`,
+      }),
     reassigned: (group) => {
       const modelName = groupModelName(gi, [
         ...group.firstRoutes,
@@ -845,7 +888,12 @@ function renderFlaskResources(options: RenderFlaskResourcesOptions): string[] {
 interface NamespaceRendering {
   file: { path: string; lines: string[] };
   mainImport: string;
-  mountLines: string[];
+  /** Constants and helper functions main.py needs at its top level before it mounts. */
+  prelude: string[];
+  /** Mount calls written at main.py's top level. */
+  moduleMounts: string[];
+  /** Mount calls written inside the function main.py calls to register namespaces. */
+  factoryMounts: string[];
 }
 
 /** What the library holds a namespace's path as, and what the source writes to get it. */
@@ -961,6 +1009,56 @@ function mountPathRenderings(
   };
 }
 
+/** Where one namespace's mount call is written, and whether the pack follows it to the namespace it names. */
+interface MountSiteRendering {
+  prelude: string[];
+  moduleMounts: string[];
+  factoryMounts: string[];
+  readable: boolean;
+}
+
+function mountSiteRenderings(
+  k: number,
+  apiVariable: string,
+  mountArg: string,
+): Record<FlaskMountSite, MountSiteRendering> {
+  const direct = `${apiVariable}.add_namespace(ns_${k}${mountArg})`;
+  const looped = (iterable: string): string[] => [
+    `    for namespace in ${iterable}:`,
+    `        ${apiVariable}.add_namespace(namespace${mountArg})`,
+  ];
+
+  return {
+    module: {
+      prelude: [],
+      moduleMounts: [direct],
+      factoryMounts: [],
+      readable: true,
+    },
+    factory: {
+      prelude: [],
+      moduleMounts: [],
+      factoryMounts: [`    ${direct}`],
+      readable: true,
+    },
+    loopLiteral: {
+      prelude: [],
+      moduleMounts: [],
+      factoryMounts: looped(`[ns_${k}]`),
+      readable: true,
+    },
+    // The list comes back from a call, so which namespaces this
+    // registers is nowhere in the source and the pack claims no path
+    // for any of them.
+    loopCall: {
+      prelude: [`def load_ns_${k}():`, `    return [ns_${k}]`, "", ""],
+      moduleMounts: [],
+      factoryMounts: looped(`load_ns_${k}()`),
+      readable: false,
+    },
+  };
+}
+
 function namespaceRenderers(
   k: number,
   state: FlaskRenderState,
@@ -978,14 +1076,18 @@ function namespaceRenderers(
     mounted: (namespace) => {
       const path = dispatchByType(namespacePathRenderings(k), namespace.path);
       const mount = dispatchByType(mountPathRenderings(k), namespace.mountPath);
+      const site = mountSiteRenderings(k, apiVariable, mount.mountArg)[
+        namespace.mountSite
+      ];
       // A mount that overrides the path serves under that one; a
       // mount that states nothing leaves the namespace where its
       // constructor put it.
       const prefix = mount.overridePrefix ?? path.prefix;
-      // The composed path is readable only when both ends are: an
-      // override the pack declines to follow costs the namespace's
-      // own readable path too.
-      const claimable = path.readable && mount.readable;
+      // The composed path is readable only when every end is: an
+      // override the pack declines to follow, or a registration it
+      // cannot follow to a namespace, costs the namespace's own
+      // readable path too.
+      const claimable = path.readable && mount.readable && site.readable;
       return {
         file: file([
           ...path.prelude,
@@ -1002,10 +1104,9 @@ function namespaceRenderers(
           }),
         ]),
         mainImport,
-        mountLines: [
-          ...mount.prelude,
-          `${apiVariable}.add_namespace(ns_${k}${mount.mountArg})`,
-        ],
+        prelude: [...mount.prelude, ...site.prelude],
+        moduleMounts: site.moduleMounts,
+        factoryMounts: site.factoryMounts,
       };
     },
     unmounted: (namespace) => ({
@@ -1023,7 +1124,9 @@ function namespaceRenderers(
         }),
       ]),
       mainImport,
-      mountLines: [],
+      prelude: [],
+      moduleMounts: [],
+      factoryMounts: [],
     }),
     // Both mounts register the same resources at the same path, so the
     // app serves one path and which mount put it there is not written
@@ -1042,10 +1145,12 @@ function namespaceRenderers(
         }),
       ]),
       mainImport,
-      mountLines: [
+      prelude: [],
+      moduleMounts: [
         `${apiVariable}.add_namespace(ns_${k})`,
         `${apiVariable}.add_namespace(ns_${k})`,
       ],
+      factoryMounts: [],
     }),
     // Decoration binds to whichever namespace the name holds at that
     // point, so the first construction's resources are never mounted
@@ -1075,9 +1180,28 @@ function namespaceRenderers(
         }),
       ]),
       mainImport,
-      mountLines: [`${apiVariable}.add_namespace(ns_${k})`],
+      prelude: [],
+      moduleMounts: [`${apiVariable}.add_namespace(ns_${k})`],
+      factoryMounts: [],
     }),
   };
+}
+
+/** The function main.py registers namespaces from, and the call that runs it. Empty when nothing registers there. */
+function registerFunctionLines(mounts: string[]): string[] {
+  if (mounts.length === 0) {
+    return [];
+  }
+
+  return [
+    "",
+    "",
+    "def register_namespaces():",
+    ...mounts,
+    "",
+    "",
+    "register_namespaces()",
+  ];
 }
 
 const FLASK_ROUTE_DECORATORS: Record<FlaskImportStyle, string> = {
@@ -1118,9 +1242,13 @@ function renderFlaskProgram(
   const namespaceImports = namespaces.map((rendering) =>
     rendering.mainImport.replace("PACKAGE", packageName),
   );
-  const namespaceMounts = namespaces.flatMap(
-    (rendering) => rendering.mountLines,
-  );
+  const namespaceMounts = [
+    ...namespaces.flatMap((rendering) => rendering.prelude),
+    ...namespaces.flatMap((rendering) => rendering.moduleMounts),
+    ...registerFunctionLines(
+      namespaces.flatMap((rendering) => rendering.factoryMounts),
+    ),
+  ];
   const namespaceFiles: Record<string, string> =
     namespaces.length > 0
       ? { [`${packageName}/namespaces/__init__.py`]: "" }
