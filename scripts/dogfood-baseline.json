@@ -2,10 +2,10 @@
   "totals": {
     "packages": 44,
     "packagesWithExports": 43,
-    "exports": 383,
-    "internal": 1423,
-    "consumers": 607,
-    "pairs": 599
+    "exports": 388,
+    "internal": 1436,
+    "consumers": 609,
+    "pairs": 601
   },
   "packages": {
     "packages/adapter/python": {
@@ -16,9 +16,9 @@
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
-      "exports": 41,
-      "internal": 25,
-      "consumers": 5
+      "exports": 46,
+      "internal": 38,
+      "consumers": 7
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
