@@ -10,7 +10,7 @@ import path from "node:path";
 
 import yaml from "yaml";
 
-import { FINDING_KINDS } from "@suss/behavioral-ir";
+import { FINDING_KINDS, namesDocumentByFileName } from "@suss/behavioral-ir";
 import {
   type SuppressionFile,
   SuppressionFileSchema,
@@ -147,9 +147,6 @@ export function loadSuppressions(filePath: string): SuppressionRule[] {
   return file.rules;
 }
 
-/** A reader's document label with no path in it: `cloudformation:template.yaml`. */
-const DOCUMENT_BY_FILE_NAME = /^[a-z][a-z0-9-]*:(?!:)[^/]+$/;
-
 /**
  * Say when a rule names a document the way readers used to label them,
  * by file name alone. Such a rule still matches, by file name, across
@@ -170,7 +167,7 @@ function reportDocumentsNamedByFileName(
       }
 
       const [document] = summary.split("::");
-      if (DOCUMENT_BY_FILE_NAME.test(document)) {
+      if (document !== undefined && namesDocumentByFileName(document)) {
         named.add(document);
       }
     }

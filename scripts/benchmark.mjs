@@ -20,8 +20,10 @@
 //
 // `--against` builds the other commit in a worktree under the temp
 // directory and keeps it, so the next comparison against the same commit
-// starts measuring straight away. `git worktree list` shows them and
-// `git worktree remove` takes one back out.
+// starts measuring straight away. That build caches its tasks inside its
+// own worktree, so nothing it produces can be restored into the tree the
+// author works in. `git worktree list` shows them and `git worktree
+// remove` takes one back out.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -210,13 +212,29 @@ function buildAt(ref) {
       git(["worktree", "add", "--detach", dir, sha]);
     }
     runOrFail(dir, "npm", ["install", "--no-audit", "--no-fund"]);
-    runOrFail(dir, "npm", ["run", "build"]);
+    // The build cache is keyed by what a task reads, not by which tree
+    // ran it, so a shared cache lets this build's artifacts be restored
+    // into the tree the author works in, and the other way around. Once
+    // that happens every later run replays it. This build caches inside
+    // its own worktree, where only it can reach.
+    runOrFail(dir, "npm", ["run", "build"], {
+      TURBO_CACHE_DIR: turboCacheDirFor(dir),
+    });
   }
   return describeBuild(dir, sha);
 }
 
-function runOrFail(cwd, command, args) {
-  const res = spawnSync(command, args, { cwd, stdio: "inherit" });
+/** Where a comparison build keeps its own task cache. */
+function turboCacheDirFor(dir) {
+  return path.join(dir, ".turbo", "benchmark-cache");
+}
+
+function runOrFail(cwd, command, args, env = {}) {
+  const res = spawnSync(command, args, {
+    cwd,
+    stdio: "inherit",
+    env: { ...process.env, ...env },
+  });
   if (res.status !== 0) {
     fail(`${command} ${args.join(" ")} failed in ${cwd}.`);
   }

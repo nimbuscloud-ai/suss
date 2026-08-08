@@ -126,6 +126,55 @@ for (const [dir, slug] of coveragePackages) {
   );
 }
 
+// A doc that says how many packages this repo ships goes stale the
+// moment somebody adds one, and nothing about the addition points at the
+// sentence. These are the docs that describe the workspace as it stands.
+// pack-health.md stays out entirely: every number in it is a row of what
+// one run measured, and correcting one would falsify it.
+const COUNT_CLAIMS = [
+  "CONTRIBUTING.md",
+  "docs/internal/releasing.md",
+  "docs/internal/dogfooding.md",
+];
+
+/**
+ * Sentences in those docs that count something a past run saw, rather
+ * than what the workspace holds now. Each is exempt for the same reason
+ * pack-health.md is: raising the number would change what was measured
+ * into something nobody measured.
+ *
+ * Each pattern matches the shape of the record it protects, not words
+ * that appear in it. A phrase a later sentence could reuse would carry
+ * the exemption to that sentence and hide a stale count inside it.
+ */
+const MEASURED_IN_THE_PAST = [
+  // One release's failure, named by the error code it reported.
+  /`ENEEDAUTH` on all 34 packages/,
+  // One dogfood run's totals: three counts, then the fraction of
+  // packages it read.
+  /\d+ export \+ \d+ internal \+ \d+ consumer summaries across \d+\/\d+/,
+];
+
+const publishedCount = workspace.filter((pkg) => !pkg.isPrivate).length;
+
+for (const doc of COUNT_CLAIMS) {
+  const text = fs.readFileSync(path.join(ROOT, doc), "utf8");
+  for (const [index, line] of text.split("\n").entries()) {
+    if (MEASURED_IN_THE_PAST.some((record) => record.test(line))) {
+      continue;
+    }
+
+    for (const match of line.matchAll(/\b(\d+) (?:`@suss\/\*` )?packages\b/g)) {
+      if (Number(match[1]) === publishedCount) {
+        continue;
+      }
+      problems.push(
+        `${doc}:${index + 1} says ${match[1]} packages, but this repo ships ${publishedCount}.`,
+      );
+    }
+  }
+}
+
 if (problems.length > 0) {
   process.stderr.write(
     `\n✗ ${problems.length} coverage-list ${problems.length === 1 ? "problem" : "problems"}:\n`,

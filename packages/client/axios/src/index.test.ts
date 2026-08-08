@@ -1,11 +1,13 @@
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { axiosPack } from "./index.js";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 describe("axiosPack — pack shape", () => {
   it("exposes a discovery pattern per HTTP verb", async () => {
@@ -541,17 +543,21 @@ describe("axiosPack — instance built in another file", () => {
 describe("axiosPack fixtures", () => {
   const fixturesDir = path.resolve(__dirname, "../../../../fixtures/axios");
 
-  async function extractFixtures() {
+  // One extraction for the whole file. Every test below asks a
+  // different question of the same run, and building the project per
+  // test put each one within reach of vitest's timeout.
+  let summaries: BehavioralSummary[];
+
+  beforeAll(async () => {
     const project = createFixtureProject(fixturesDir, "*.ts");
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [axiosPack()],
     });
-    return adapter.extractAll();
-  }
+    summaries = await adapter.extractAll();
+  }, 90_000);
 
-  it("summarizes a call on the instance a named import brings in", async () => {
-    const summaries = await extractFixtures();
+  it("summarizes a call on the instance a named import brings in", () => {
     const summary = summaries.find((s) => s.identity.name === "getUser");
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
@@ -560,8 +566,7 @@ describe("axiosPack fixtures", () => {
     });
   });
 
-  it("summarizes a call on the instance a default import brings in", async () => {
-    const summaries = await extractFixtures();
+  it("summarizes a call on the instance a default import brings in", () => {
     const summary = summaries.find((s) => s.identity.name === "listOrders");
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
@@ -570,8 +575,7 @@ describe("axiosPack fixtures", () => {
     });
   });
 
-  it("summarizes a call on the instance an aliased import brings in", async () => {
-    const summaries = await extractFixtures();
+  it("summarizes a call on the instance an aliased import brings in", () => {
     const summary = summaries.find((s) => s.identity.name === "createUser");
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
@@ -580,8 +584,7 @@ describe("axiosPack fixtures", () => {
     });
   });
 
-  it("summarizes a call on the instance a barrel re-export brings in", async () => {
-    const summaries = await extractFixtures();
+  it("summarizes a call on the instance a barrel re-export brings in", () => {
     const summary = summaries.find((s) => s.identity.name === "getReport");
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
@@ -590,8 +593,7 @@ describe("axiosPack fixtures", () => {
     });
   });
 
-  it("keeps the call-site path, and only that, for a dynamic-base instance", async () => {
-    const summaries = await extractFixtures();
+  it("keeps the call-site path, and only that, for a dynamic-base instance", () => {
     const summary = summaries.find((s) => s.identity.name === "getSettings");
     // The base URL is a runtime value. The call site is still a
     // boundary, and its path is the one written at the call site; the

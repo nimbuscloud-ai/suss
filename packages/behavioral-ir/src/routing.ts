@@ -96,3 +96,40 @@ export function rootDocumentLabel(label: string): string {
 
   return label.slice(0, marker);
 }
+
+/** A document label pulled apart into who wrote it and what it names. */
+export interface DocumentLabelParts {
+  /** The reader that wrote the label, such as `cloudformation`. */
+  reader: string;
+  /** Where the document sits, as that reader recorded it. */
+  location: string;
+}
+
+/**
+ * A reader's document label read back: the reader's name, a colon, and
+ * where the document sits. Null for anything that is not one.
+ *
+ * The `(?!:)` keeps the `::` of a summary ref out, so a name pointing at
+ * source code never reads as a document label.
+ */
+const READER_LABEL = /^([a-z][a-z0-9-]*):(?!:)(.+)$/;
+
+/** The reader and location a document label was composed from, or null. */
+export function parseDocumentLabel(label: string): DocumentLabelParts | null {
+  const match = READER_LABEL.exec(label);
+  if (match?.[1] === undefined || match[2] === undefined) {
+    return null;
+  }
+
+  return { reader: match[1], location: match[2] };
+}
+
+/**
+ * Does this label name a document by file name alone, with no path?
+ * Readers used to label documents that way, so `cloudformation:template.yaml`
+ * named every template.yaml a run read at once.
+ */
+export function namesDocumentByFileName(label: string): boolean {
+  const parts = parseDocumentLabel(label);
+  return parts !== null && !parts.location.includes("/");
+}

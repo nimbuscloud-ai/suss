@@ -789,12 +789,6 @@ function extractBindingMethod(
 // ("https://", "custom-scheme://", and so on).
 const URL_SCHEME = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//;
 
-// A head that is nothing but a scheme's authority opener, with nothing
-// between the "//" and the end of the literal text: the host itself
-// has to be coming from the first substitution, as in
-// `` `https://${host}/api/x` ``.
-const SCHEME_ONLY_HEAD = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\/$/;
-
 // Same as URL_SCHEME, but also consumes the host, so replacing a match
 // with "" leaves the path's own leading "/" in place: the same shape
 // `new URL(...).pathname` returns.
@@ -825,13 +819,45 @@ function stripQueryAndFragment(text: string): string {
   return idx === -1 ? text : text.slice(0, idx);
 }
 
-// The text between two substitutions can carry the tail end of a host
-// that got split by an interpolation ("${env}.example.com/api/x"):
-// only what's at or after the first "/" is path, the rest is leftover
-// host.
-function stripHostRemainder(text: string): string {
-  const slash = text.indexOf("/");
-  return slash === -1 ? "" : text.slice(slash);
+// A substitution stands in the flattened template as U+FFFF, which
+// Unicode reserves permanently as a noncharacter: no URL carries it and
+// no text interchange may. It is not a "/", so it never ends an origin,
+// and it is neither a colon nor a scheme character. Source could still
+// spell it as an escape, and ts-morph would decode it, but a request
+// carrying one reaches no server, so nothing that pairs with anything
+// arrives here holding one.
+const SUBSTITUTION = "\uFFFF";
+
+// The scheme and the "//" that opens an authority section. A scheme is
+// made of scheme characters, substitutions, or any mix of the two, so
+// `https://`, a scheme substituted whole, and one built as
+// `` `http${secure}://` `` all open an authority, as does the bare `//`
+// that leaves the scheme to whatever loads the page. The authority
+// starts after the "//".
+const AUTHORITY_OPENER = /^(?:[-+.\uFFFFa-zA-Z0-9]+:\/\/|\/\/)/;
+
+/**
+ * Where a template's origin ends, as an offset into the flattened text:
+ * the first "/" after the authority opens.
+ *
+ * A URL's authority runs from the "//" to the next "/", and nothing
+ * inside it can be read as path, whatever it is made of. That covers a
+ * host split across a substitution (`` `https://api${shard}.example.com/x` ``),
+ * a substituted port (`` `https://example.com:${port}/x` ``), a bracketed
+ * literal address, and a scheme the template builds rather than writes
+ * out, without any of them being recognized as what they are.
+ *
+ * Zero when the template opens no absolute URL, so all of it is path.
+ * The whole length when the authority never ends, so none of it is.
+ */
+function originEndOf(flattened: string): number {
+  const opener = AUTHORITY_OPENER.exec(flattened);
+  if (opener === null) {
+    return 0;
+  }
+
+  const slash = flattened.indexOf("/", opener[0].length);
+  return slash === -1 ? flattened.length : slash;
 }
 
 // Appends `text` to `path`, stopping at the first "?" or "#": a query
@@ -929,40 +955,43 @@ function extractBindingPath(
       // `{id}` and `:id` as equivalent so this pairs with both Express
       // and ts-rest-style provider paths too.
       //
-      // A scheme-prefixed head loses its origin the same way a plain
-      // literal does. When the head is nothing but the scheme's "//",
-      // the host itself is coming from the first substitution, as in
-      // `` `https://${host}/api/x` `` or
-      // `` `https://${env}.example.com/api/x` ``: that placeholder is
-      // dropped, and the text right after it is trimmed back to its
-      // own "/", so both compose `/api/x` rather than leaking the host
-      // into the path.
+      // An absolute URL's origin drops the same way a plain literal's
+      // does. Where it ends is worked out over the whole template rather
+      // than from the head alone: the authority runs to the first "/"
+      // after the "//", and a substitution before that slash is part of
+      // the authority whatever it holds. Everything from the slash on is
+      // path, and that is the only text the placeholders compose into.
       const headText = arg.getHead().getLiteralText();
-      const hostInSubstitution = SCHEME_ONLY_HEAD.test(headText);
-      const strippedHead = hostInSubstitution
-        ? ""
-        : stripOriginManually(headText);
+      const spans = arg.getTemplateSpans();
+      const tails = spans.map((span) => span.getLiteral().getLiteralText());
+      const originEnd = originEndOf([headText, ...tails].join(SUBSTITUTION));
 
-      const head = appendPathText("", strippedHead);
+      const head = appendPathText("", headText.slice(originEnd));
       let path = head.path;
       let stop = head.stop;
+      // Where the piece being read starts in the flattened text, so what
+      // of it is origin can be cut off.
+      let at = headText.length;
 
-      const spans = arg.getTemplateSpans();
       for (let i = 0; i < spans.length && !stop; i++) {
         const span = spans[i];
-        const tailText = span.getLiteral().getLiteralText();
-
-        if (hostInSubstitution && i === 0) {
-          const appended = appendPathText(path, stripHostRemainder(tailText));
-          path = appended.path;
-          stop = appended.stop;
+        const tailText = tails[i];
+        if (span === undefined || tailText === undefined) {
           continue;
         }
 
-        path += `{${placeholderName(span.getExpression())}}`;
-        const appended = appendPathText(path, tailText);
+        if (at >= originEnd) {
+          path += `{${placeholderName(span.getExpression())}}`;
+        }
+        at += SUBSTITUTION.length;
+
+        const appended = appendPathText(
+          path,
+          tailText.slice(Math.max(0, originEnd - at)),
+        );
         path = appended.path;
         stop = appended.stop;
+        at += tailText.length;
       }
 
       return path === "" ? undefined : path;
@@ -2119,7 +2148,10 @@ export function createTypeScriptAdapter(
         );
       }
 
-      return summaries;
+      // Named on the way out, the same as extractAll does. A summary
+      // with no id is one nothing else in the run can point at, and a
+      // reader following an effect falls back to matching on names.
+      return named(summaries, config.workspace);
     },
 
     async extractAll(): Promise<BehavioralSummary[]> {

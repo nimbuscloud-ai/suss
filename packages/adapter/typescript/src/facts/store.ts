@@ -122,6 +122,8 @@ export class ResolutionStore {
   private readonly fullyExtracted = new Set<string>();
   private readonly seededValues = new Set<string>();
   private readonly importedNames = new Map<string, string[]>();
+  /** What each value was found to refer to, so the key costs once. */
+  private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
 
   private stale = true;
@@ -199,7 +201,16 @@ export class ResolutionStore {
    * every use site seeds a fresh value and pays another fixpoint.
    */
   importedNamesOf(value: Node, modules: string[]): string[] {
-    const declaration = `${nodeId(declarationOf(value))}|${modules.join(",")}`;
+    // Asking the checker what a value refers to is the expensive part of
+    // building this key, and it is the same answer every time, so it is
+    // remembered rather than paid again on each hit.
+    let refersTo = this.declarations.get(value);
+    if (refersTo === undefined) {
+      refersTo = declarationOf(value);
+      this.declarations.set(value, refersTo);
+    }
+
+    const declaration = `${nodeId(refersTo)}|${modules.join(",")}`;
     const cached = this.importedNames.get(declaration);
     if (cached !== undefined) {
       return cached;

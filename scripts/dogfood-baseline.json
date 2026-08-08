@@ -2,10 +2,10 @@
   "totals": {
     "packages": 44,
     "packagesWithExports": 43,
-    "exports": 381,
-    "internal": 1414,
-    "consumers": 600,
-    "pairs": 592
+    "exports": 383,
+    "internal": 1413,
+    "consumers": 607,
+    "pairs": 599
   },
   "packages": {
     "packages/adapter/python": {
@@ -28,15 +28,15 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 39,
+      "exports": 41,
       "internal": 10,
       "consumers": 3
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 131,
-      "consumers": 71
+      "internal": 130,
+      "consumers": 73
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -48,7 +48,7 @@
       "name": "@suss/cli",
       "exports": 10,
       "internal": 222,
-      "consumers": 150
+      "consumers": 153
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -234,7 +234,7 @@
       "name": "@suss/framework-react-router",
       "exports": 2,
       "internal": 0,
-      "consumers": 6
+      "consumers": 8
     },
     "packages/framework/ts-rest": {
       "name": "@suss/framework-ts-rest",

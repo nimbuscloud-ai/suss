@@ -70,11 +70,16 @@ Options (extract):
   --gaps           What to do with gaps: permissive (default) records them
                    in the summary, strict does the same and then fails the
                    run if it recorded any, silent skips gap detection
-  --types          Spell out the types a summary names, rather than naming them
+  --timing         Print how long each phase of the run took, to stderr
   --explain        Show where the summaries came from, file by file and pack by
                    pack. Shown automatically when a run finds nothing.
   --fail-on-empty  Exit non-zero when a run finds nothing
   --fail-on-pack-error  Exit non-zero when a pack throws while it reads
+
+Options (inspect):
+  --dir            Folder of summary files to read, instead of one file
+  --diff           Compare two summary files and report what moved
+  --types          Spell out the types a summary names, rather than naming them
 
 Options (inspect --flow):
   --flow           The request to ask about, as a method and a URL:
@@ -114,6 +119,7 @@ Options (corroborate):
   --dir            Directory to read when there is no tsconfig
   -f, --framework  Which pack to use. Repeatable, same names as extract.
   --runs           Verdict runs to aim for per claim (default 25)
+  --attempts       Sampling attempts per claim before giving up (default 300)
   -o, --output     Write the annotated summaries to a file
 
 Exit codes:
