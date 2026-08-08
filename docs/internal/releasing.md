@@ -1,6 +1,6 @@
 # Releasing
 
-All 38 packages share one version. You raise that number once in the
+All 44 packages share one version. You raise that number once in the
 root `package.json`,
 [`scripts/preparePublish.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/preparePublish.mjs)
 copies it out to every package, and
@@ -30,7 +30,7 @@ nothing and still writes the release notes to the job summary, so you
 can read what the release would say before it says it.
 
 Start with a dry run. It reports which credential it found before it
-lists anything, so a rehearsal that says "would publish 38 packages" is
+lists anything, so a rehearsal that says "would publish 44 packages" is
 one that would really have published them.
 
 You can publish from a laptop with `npm run release -- --otp <code>`,
@@ -79,7 +79,7 @@ each package names for itself, at
 `POST /-/npm/v1/oidc/token/exchange/package/{name}`. A package that has
 not been set up gets nothing back, and with no token to fall back on,
 that package alone fails. There is no organization-wide setting and no
-bulk UI, so this is 38 passes.
+bulk UI, so this is 44 passes.
 
 On npmjs.com, for each package: **Packages → the package → Settings →
 Trusted Publisher → GitHub Actions**, then
@@ -127,7 +127,7 @@ exercise the exchange.
 ## When a release fails
 
 The publish step prints one failing package's npm output in full and
-says when the rest failed the same way, since 38 identical error codes
+says when the rest failed the same way, since 44 identical error codes
 say less than one transcript does.
 
 `--verbose` puts npm's own account of the token exchange in the log. It
@@ -144,7 +144,7 @@ is the registry confirming the version is up.
 
 ## What a release leaves behind
 
-- 38 packages on the registry at the new version.
+- 44 packages on the registry at the new version.
 - An annotated `v<version>` tag on the commit that was published.
 - A GitHub release at that tag, titled `v<version>`, carrying the notes
   the workflow generated from the commits since the last release.
@@ -160,7 +160,7 @@ how 0.0.2 reached npm and `main` with no tag behind it. The release is
 created with `--verify-tag`, so if the tag did not reach the remote the
 release is not written either.
 
-Publishing 38 packages, tagging, and writing the release are three
+Publishing 44 packages, tagging, and writing the release are three
 steps, and a run can stop between them. Re-dispatching is safe: the
 packages already on the registry are skipped, and the tag check stops
 the run before it publishes a version that is already out. If the tag

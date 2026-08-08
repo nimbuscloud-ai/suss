@@ -13,6 +13,10 @@
 // from disk and hands the parsed rules here.
 
 import {
+  namesDocumentByFileName,
+  parseDocumentLabel,
+} from "@suss/behavioral-ir";
+import {
   applySuppressionsToFindings,
   ruleBoundaryMatchesKey,
 } from "@suss/ir-core";
@@ -32,13 +36,6 @@ export {
 } from "@suss/ir-core";
 
 /**
- * A document label written by a reader: the reader's name, a colon, and
- * where the document sits. The `(?!:)` keeps the `::` of a summary ref
- * out of it, so a rule naming source code never looks like one of these.
- */
-const READER_LABEL = /^([a-z][a-z0-9-]*):(?!:)(.+)$/;
-
-/**
  * Does a rule's `summary` name this summary? Exact match first. Then
  * the one legacy spelling: a manifest reader used to label a document
  * by its file name alone, so `cloudformation:template.yaml` named every
@@ -55,13 +52,16 @@ function summaryMatches(ruleSummary: string, findingSummary: string): boolean {
     return true;
   }
 
-  const named = READER_LABEL.exec(ruleSummary);
-  const found = READER_LABEL.exec(findingSummary);
-  if (named === null || found === null || named[1] !== found[1]) {
+  const named = parseDocumentLabel(ruleSummary);
+  const found = parseDocumentLabel(findingSummary);
+  if (named === null || found === null || named.reader !== found.reader) {
     return false;
   }
 
-  return !named[2].includes("/") && found[2].endsWith(`/${named[2]}`);
+  return (
+    namesDocumentByFileName(ruleSummary) &&
+    found.location.endsWith(`/${named.location}`)
+  );
 }
 
 /**

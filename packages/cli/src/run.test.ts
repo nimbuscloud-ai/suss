@@ -194,6 +194,83 @@ describe("runCli — top-level dispatch", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Help text against the parsers
+// ---------------------------------------------------------------------------
+
+/**
+ * The long flags an "Options (<command>):" block of the help text lists.
+ * Only the first column counts, so a flag mentioned in a description does
+ * not read as a flag of its own.
+ */
+function documentedFlags(section: string): string[] {
+  const lines = USAGE.split("\n");
+  const start = lines.indexOf(`Options (${section}):`);
+  expect(start).toBeGreaterThan(-1);
+  const flags: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() === "") {
+      break;
+    }
+
+    const match = /^ {2}(?:-\w, )?(--[a-z0-9-]+)/.exec(line);
+    if (match?.[1] !== undefined) {
+      flags.push(match[1]);
+    }
+  }
+  return flags;
+}
+
+/**
+ * Whether running the command with this flag got past argument parsing.
+ * A flag the parser does not know throws before the command runs; one it
+ * knows either runs or complains about something else.
+ */
+async function parserAccepts(argv: string[]): Promise<boolean> {
+  try {
+    await capture(() => runCli(argv));
+    return true;
+  } catch (err) {
+    return !/Unknown option/.test(String(err));
+  }
+}
+
+describe("runCli — help text", () => {
+  it("lists only extract flags the extract parser takes", async () => {
+    for (const flag of documentedFlags("extract")) {
+      const accepted = await parserAccepts([
+        "extract",
+        flag,
+        "-f",
+        "axios",
+        "-p",
+        "/nope/tsconfig.json",
+      ]);
+      expect(accepted, `extract ${flag}`).toBe(true);
+    }
+  });
+
+  it("lists only corroborate flags the corroborate parser takes", async () => {
+    for (const flag of documentedFlags("corroborate")) {
+      const accepted = await parserAccepts([
+        "corroborate",
+        "--experimental",
+        flag,
+        "-f",
+        "express",
+        "-p",
+        "/nope/tsconfig.json",
+      ]);
+      expect(accepted, `corroborate ${flag}`).toBe(true);
+    }
+  });
+
+  it("tells people about --timing and --attempts", () => {
+    expect(documentedFlags("extract")).toContain("--timing");
+    expect(documentedFlags("corroborate")).toContain("--attempts");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // extract
 // ---------------------------------------------------------------------------
 
@@ -269,6 +346,58 @@ describe("runCli — extract", () => {
     expect(io.stderr).toContain("Timing:");
     const written = JSON.parse(fs.readFileSync(outFile, "utf8"));
     expect(Array.isArray(written)).toBe(true);
+  });
+
+  it("gives a summary an id when the files are named one by one", async () => {
+    // Naming the files is a different route into the same run, and an
+    // artifact from it has to be as usable as one from reading the
+    // directory: an effect points at the unit it reaches by id, so a
+    // summary with none sends a reader back to matching on names.
+    const srcDir = path.join(tmpDir, "src");
+    fs.mkdirSync(srcDir, { recursive: true });
+    const source = path.join(srcDir, "consumer.ts");
+    fs.writeFileSync(
+      source,
+      [
+        `import axios from "axios";`,
+        "export async function loadPet(id: string) {",
+        "  const res = await axios.get(`/pets/${id}`);",
+        "  return res.data;",
+        "}",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: { strict: true, module: "esnext" },
+        include: ["src"],
+      }),
+    );
+
+    const outFile = path.join(tmpDir, "byFiles.json");
+    const { exit } = await capture(() =>
+      runCli([
+        "extract",
+        "-p",
+        path.join(tmpDir, "tsconfig.json"),
+        "-f",
+        "axios",
+        "--files",
+        source,
+        "-o",
+        outFile,
+        "--no-cache",
+      ]),
+    );
+    expect(exit).toBe(0);
+
+    const written = JSON.parse(fs.readFileSync(outFile, "utf8")) as Array<{
+      identity: { id?: string };
+    }>;
+    expect(written.length).toBeGreaterThan(0);
+    for (const summary of written) {
+      expect(summary.identity.id).toBeTypeOf("string");
+    }
   });
 
   it("rejects a --lang nobody has an adapter for, and says which it takes", async () => {

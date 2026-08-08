@@ -86,8 +86,11 @@ export {
   withRuntimeContractMetadata,
 } from "./metadata.js";
 export {
+  type DocumentLabelParts,
   type FlowRequest,
+  namesDocumentByFileName,
   nestedDocumentLabel,
+  parseDocumentLabel,
   type RouterMatchSelector,
   type RouterSelection,
   type RoutingMatchCondition,

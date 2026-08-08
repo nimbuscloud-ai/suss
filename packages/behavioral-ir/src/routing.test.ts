@@ -5,7 +5,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { nestedDocumentLabel, rootDocumentLabel } from "./routing.js";
+import {
+  namesDocumentByFileName,
+  nestedDocumentLabel,
+  parseDocumentLabel,
+  rootDocumentLabel,
+} from "./routing.js";
 
 describe("document labels", () => {
   it("keeps a root document's label as it is", () => {
@@ -33,5 +38,29 @@ describe("document labels", () => {
 
     expect(rootDocumentLabel(childA)).toBe(rootDocumentLabel(childB));
     expect(rootDocumentLabel(childA)).not.toBe(rootDocumentLabel("b.yaml"));
+  });
+
+  it("reads a label back as the reader that wrote it and where the document sits", () => {
+    expect(
+      parseDocumentLabel("cloudformation:services/a/template.yaml"),
+    ).toEqual({
+      reader: "cloudformation",
+      location: "services/a/template.yaml",
+    });
+  });
+
+  it("reads nothing back from a name that points at source code", () => {
+    // The `::` of a summary ref is what tells the two apart, so a rule
+    // naming a function never reads as a document.
+    expect(parseDocumentLabel("src/handlers/pet.ts::getPet")).toBeNull();
+    expect(parseDocumentLabel("src/handlers/pet.ts")).toBeNull();
+  });
+
+  it("says which labels name a document by file name alone", () => {
+    expect(namesDocumentByFileName("cloudformation:template.yaml")).toBe(true);
+    expect(namesDocumentByFileName("cloudformation:a/template.yaml")).toBe(
+      false,
+    );
+    expect(namesDocumentByFileName("src/handlers/pet.ts")).toBe(false);
   });
 });

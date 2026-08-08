@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { restBinding } from "@suss/behavioral-ir";
 import { pairSummaries } from "@suss/checker";
-import { createFixtureProject } from "@suss/test-project";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { reactRouterFramework } from "./index.js";
 
@@ -325,4 +325,47 @@ describe("reactRouterFramework: declared route trees", () => {
       "loadUser<->UserDetail",
     ]);
   });
+});
+
+describe("a route array that holds itself", () => {
+  it("reads the routes around it, and claims nothing for the one that loops", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/routes.tsx",
+      [
+        `import { createBrowserRouter } from "react-router-dom";`,
+        "export function Home() {",
+        "  return <div />;",
+        "}",
+        "const routes: any = [",
+        `  { path: "/home", element: <Home /> },`,
+        `  { path: "/self", children: routes },`,
+        "];",
+        "export const router = createBrowserRouter(routes);",
+      ].join("\n"),
+    );
+
+    const warnings: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      warnings.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+
+    let summaries: BehavioralSummary[];
+    try {
+      summaries = await createTypeScriptAdapter({
+        project,
+        frameworks: [reactRouterFramework()],
+      }).extractAll();
+    } finally {
+      process.stderr.write = original;
+    }
+
+    // Following the name back into the array it names would walk
+    // forever. The route that loops resolves to nothing, and the run
+    // still reads every route beside it.
+    expect(warnings.join("")).not.toContain("overflowed the call stack");
+    expect(summaries.map((s) => s.identity.name)).toEqual(["Home"]);
+  }, 60_000);
 });

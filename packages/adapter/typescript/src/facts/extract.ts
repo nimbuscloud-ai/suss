@@ -44,10 +44,17 @@ export interface NodeTable {
   seenFunctions: Set<Node>;
   /** Binding elements whose facts are already emitted, per store. */
   seenBindings: Set<Node>;
+  /** Expressions whose facts are already emitted, per store. */
+  seenValues: Set<Node>;
 }
 
 export function createNodeTable(): NodeTable {
-  return { byId: new Map(), seenFunctions: new Set(), seenBindings: new Set() };
+  return {
+    byId: new Map(),
+    seenFunctions: new Set(),
+    seenBindings: new Set(),
+    seenValues: new Set(),
+  };
 }
 
 export function nodeId(node: Node): string {
@@ -285,6 +292,16 @@ export function emitValue(
   const expression = unwrapExpression(value);
   const id = nodeId(expression);
   table.byId.set(id, expression);
+
+  // A value can hold itself: `const routes = [{ handler: routes }]` walks
+  // array to object to the name back to the array. The facts for this
+  // expression are already going down, so the name refers back to it and
+  // no further, which is what the code says. Nothing is resolvable
+  // through such a name, so whatever asked gets no answer and says so.
+  if (table.seenValues.has(expression)) {
+    return id;
+  }
+  table.seenValues.add(expression);
 
   if (isFunctionRoot(expression)) {
     fact(db, "func", id);

@@ -2275,6 +2275,117 @@ describe("consumer extraction", () => {
     expect(restPathOf(summaries[0])).toBe("/api/x");
   });
 
+  // Where a template's origin ends decides all of these, and it is the
+  // first "/" after the "//" in every one. What sits before that slash
+  // is authority whether it is written out, substituted, split across
+  // both, a port, a bracketed address, or the scheme itself.
+  const originShapes = [
+    {
+      what: "leaves the scheme to whatever loads the page",
+      url: "//${host}/api/x",
+      path: "/api/x",
+    },
+    {
+      what: "writes host text before the substitution",
+      url: "https://api-${env}.example.com/api/x",
+      path: "/api/x",
+    },
+    {
+      what: "splits the host across a substitution",
+      url: "https://api${shard}.example.com/x",
+      path: "/x",
+    },
+    {
+      what: "substitutes the port",
+      url: "https://example.com:${port}/x",
+      path: "/x",
+    },
+    {
+      what: "brackets a literal address and names a port",
+      url: "https://[${host}]:8080/x",
+      path: "/x",
+    },
+    {
+      what: "substitutes the scheme",
+      url: "${scheme}://example.com/x",
+      path: "/x",
+    },
+    {
+      what: "builds the scheme out of literal text and a substitution",
+      url: "http${secure}://example.com/x",
+      path: "/x",
+    },
+    {
+      what: "carries userinfo",
+      url: "https://${user}@example.com/x",
+      path: "/x",
+    },
+    {
+      what: "substitutes the path, after a host written out in full",
+      url: "https://shop.example.com/orders/${id}",
+      path: "/orders/{id}",
+    },
+    {
+      // No slash ever ends the authority, so every character of it is
+      // host and there is no path to claim. Saying nothing beats
+      // claiming a path with no leading slash, which pairs with nothing.
+      what: "claims no path when the authority never ends",
+      url: "https://example.com${suffix}",
+      path: null,
+    },
+  ];
+
+  function fetchSource(url: string): string {
+    return [
+      "export async function getX(",
+      "  host: any, shard: any, port: any, scheme: any,",
+      "  user: any, env: any, id: any, suffix: any, secure: any,",
+      ") {",
+      `  const res = await fetch(\`${url}\`);`,
+      "  return res.json();",
+      "}",
+    ].join("\n");
+  }
+
+  // A literal the platform URL parser rejects outright still opens with
+  // a scheme, or with the "//" that leaves the scheme to the page. It is
+  // narrowed to a path by hand rather than throwing, and one that names
+  // no path at all claims none.
+  it.each([
+    { what: "a scheme with nothing after it", url: "https://" },
+    { what: "an authority opener with nothing after it", url: "//" },
+  ])("claims no path for $what", async ({ url }) => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      [
+        "export async function getX() {",
+        `  const res = await fetch("${url}");`,
+        "  return res.json();",
+        "}",
+      ].join("\n"),
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBeNull();
+  });
+
+  it.each(originShapes)("$what", async ({ url, path }) => {
+    const project = createTestProject();
+    project.createSourceFile("consumer.ts", fetchSource(url));
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe(path);
+  });
+
   it("stops composing a template literal's path at a query string, dropping the substitution after it", async () => {
     const project = createTestProject();
     project.createSourceFile(
