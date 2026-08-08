@@ -2,7 +2,9 @@
 
 Assumes a TypeScript project with at least one boundary suss
 recognises: an HTTP handler, a GraphQL resolver, a React component
-tree, a queue producer, a Prisma call, or a `process.env` access.
+tree, a queue producer, a Prisma call, or a `process.env` access. For a
+Python or Ruby project, start at
+[Read a Python or Ruby project](/guides/python-and-ruby) instead.
 
 ## What you're setting up
 
@@ -129,6 +131,7 @@ your code uses, plus the CLI. Pick from:
 | `@suss/contract-graphql` | GraphQL SDL → resolver summaries, and committed `.graphql` operation documents → client summaries | `npm i -D @suss/contract-graphql` |
 | `@suss/contract-aws-apigateway` | API Gateway REST/HTTP API resource semantics → summaries | `npm i -D @suss/contract-aws-apigateway` |
 | `@suss/contract-cloudformation` | CFN / SAM templates → summaries (delegates to OpenAPI + API Gateway; also reads SQS event-source mappings + Lambda Environment) | `npm i -D @suss/contract-cloudformation` |
+| `@suss/contract-serverless` | Serverless Framework service files → summaries, through the same shapes the CFN reader handles | `npm i -D @suss/contract-serverless` |
 | `@suss/contract-appsync` | AppSync schema + resolver mapping templates → summaries | `npm i -D @suss/contract-appsync` |
 | `@suss/contract-storybook` | Storybook CSF3 stories → component contract summaries | `npm i -D @suss/contract-storybook` |
 | `@suss/contract-prisma` | Prisma schema → storage provider summaries | `npm i -D @suss/contract-prisma` |

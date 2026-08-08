@@ -22,12 +22,12 @@ Run locally:
 npm run lint       # biome
 npm run typecheck  # tsc --noEmit across packages
 npm test           # vitest across packages
-npm run dogfood    # run suss over its own 38 packages
+npm run dogfood    # run suss over its own 44 packages
 ```
 
 CI runs the same checks on every PR — they must pass before merge.
 
-`npm run dogfood` is the widest check here: it runs discovery, extraction, resolution and the checker over the whole monorepo rather than a fixture. It fails when an export a package declares produces no summary, and it writes the per-package counts to `scripts/dogfood-baseline.json`, which is committed. CI then runs `npm run check:dogfood`, which fails when a count came out below the committed one. Each package gets three counts: `exports` for the summaries describing its declared public surface, `internal` for the ones behind that surface, and `consumers` for its calls into other packages.
+`npm run dogfood` is the widest check here: it runs discovery, extraction, resolution and the checker over all 44 packages rather than a fixture. It fails when an export a package declares produces no summary, and it writes the per-package counts to `scripts/dogfood-baseline.json`, which is committed. CI then runs `npm run check:dogfood`, which fails when a count came out below the committed one. Each package gets three counts: `exports` for the summaries describing its declared public surface, `internal` for the ones behind that surface, and `consumers` for its calls into other packages.
 
 So if your change deletes exports, moves them between packages, inlines a private helper, or narrows a recognizer that was over-firing, run `npm run dogfood` and commit the refreshed baseline. The drop shows up in your pull request diff, which is where a reviewer agrees it was meant. Counts going up need no refresh. `docs/internal/dogfooding.md` has the full table of what fails and what to do.
 
@@ -38,6 +38,30 @@ Timing a change is `npm run bench`, which runs `suss extract` over the five publ
 Neither check reads `main`. Both compare a fresh run against the tree it ran on, so a merge landing on `main` while your branch is open cannot fail your build on a package you never opened. Your branch also never needs to touch `scripts/dogfood-baseline.json`, a `coverage-summary.json`, or a badge unless it is lowering a number. `.github/workflows/regenerate.yml` reruns the dogfood pass and the test suite on `main` after every merge and commits whatever moved, so those three files catch up with the source on their own instead of every open branch racing to regenerate the same ones.
 
 A pre-commit hook (husky + lint-staged) runs `biome check --write` on staged files. A pre-push hook typechecks, runs the full test suite with coverage, rebuilds the badges, and runs the same `check:coverage` gate CI does, so a coverage drop is caught before the push instead of in CI. Don't bypass either with `--no-verify` unless you've coordinated with a maintainer.
+
+## Landing a branch that has gone stale
+
+Every merge into `main` runs the regenerate workflow, which refreshes
+the dogfood baseline, the coverage summaries and the badges. So a branch
+that was verified yesterday can conflict on those files today with
+nothing wrong in it. `npm run land` does that round for you:
+
+```bash
+node scripts/land.mjs 123           # the pull request number
+node scripts/land.mjs 123 --dry-run
+```
+
+Through npm it is `npm run land`, with npm's argument separator before
+the number.
+
+It rebases the branch onto `origin/main` in a temporary worktree, never
+in the checkout you ran it from. A conflict inside the generated files
+is resolved by taking main's side, and the generators rerun so the
+branch's own numbers land back in them, gated by `typecheck`,
+`check:dogfood` and `check:coverage`. A conflict anywhere else aborts
+the rebase and exits non-zero, because that is a change someone has to
+read. The push is `--force-with-lease` against the head the run started
+from, and nothing here merges the pull request.
 
 ## Scope of a PR
 

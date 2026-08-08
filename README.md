@@ -91,8 +91,8 @@ The summary is the product. Checking is the most-developed use; others include r
 
 Over the same `BehavioralSummary[]`:
 
-- `suss extract` derives summaries from TypeScript source.
-- `suss contract` derives summaries from declared contracts (OpenAPI, CloudFormation, AppSync, GraphQL SDL, committed `.graphql` operation documents, Prisma schema, Storybook).
+- `suss extract` derives summaries from TypeScript or JavaScript source. Python and Ruby are read by adapters of their own, called from a script; see [docs/guides/python-and-ruby.md](docs/guides/python-and-ruby.md).
+- `suss contract` derives summaries from declared contracts (OpenAPI, CloudFormation and SAM, Serverless Framework service files, AppSync, GraphQL SDL, committed `.graphql` operation documents, Prisma schema, Storybook).
 - `suss check` pairs providers with consumers and emits findings where they disagree. The exit code crosses the `--fail-on error|warning|info|none` threshold.
 - `suss inspect` renders summaries as text, or `--diff BEFORE AFTER` to see what a change added, removed, or altered.
 

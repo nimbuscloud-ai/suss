@@ -77,7 +77,9 @@ The `registrationChain` is a list of method/property accesses to follow from the
 ```typescript
 { type: "decorator"; decoratorModule: string; decoratorName: string }
 ```
-Find functions or methods with specific decorators. Used by NestJS (`@Controller`, `@Get`, `@Resolver`, `@Query`) and Apollo (`@FieldResolver`). Also applies to Python frameworks like FastAPI (`@app.get`) and Flask-RESTful when a Python adapter exists.
+Find functions or methods with specific decorators. Used by NestJS (`@Controller`, `@Get`, `@Resolver`, `@Query`) and Apollo (`@FieldResolver`).
+
+Python decorators are matched by their own patterns, `decoratedFunctionRoute` and `decoratedClassRoute`, which the Python adapter defines rather than sharing these. See [Read a Python or Ruby project](/guides/python-and-ruby).
 
 ### `fileConvention`
 ```typescript

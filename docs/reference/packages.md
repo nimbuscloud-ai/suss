@@ -2,7 +2,9 @@
 
 suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and contract sources a project uses. Install the CLI and only the packs you need; nothing pulls in the whole set.
 
-Twenty-one packs read code today, across seventeen frameworks, three HTTP and GraphQL clients, and the Node runtime. Eight contract readers turn a declared artifact into the same summary shape. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
+Twenty-two packs read code today, across eighteen frameworks, three HTTP and GraphQL clients, and the Node runtime. Eight contract readers turn a declared artifact into the same summary shape. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
+
+Most of that is TypeScript and JavaScript, which is what `suss extract` reads. Three of the framework packs are not: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby reads Ruby through `@suss/adapter-ruby`. Those two adapters are called from a script rather than from the CLI; the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
 ## Install by stack
 

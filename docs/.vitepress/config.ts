@@ -22,7 +22,7 @@ const docsRoot = path.resolve(
 export default defineConfig({
   title: "suss",
   description:
-    "Static behavioral analysis for TypeScript. Extract, compare, and publish summaries of what your code does.",
+    "Static behavioral analysis for TypeScript, Python and Ruby. Extract, compare, and publish summaries of what your code does.",
   // GitHub Pages serves from /<repo>/, so assets + links resolve
   // relative to that prefix. Easiest toggle for local dev is
   // SUSS_DOCS_BASE — unset for root serving, set to "/suss/" for
@@ -87,6 +87,10 @@ export default defineConfig({
           {
             text: "Pair against OpenAPI",
             link: "/guides/pair-against-openapi",
+          },
+          {
+            text: "Read a Python or Ruby project",
+            link: "/guides/python-and-ruby",
           },
           { text: "Suppress a finding", link: "/guides/suppress-findings" },
           { text: "Write a pack", link: "/guides/writing-a-pack" },

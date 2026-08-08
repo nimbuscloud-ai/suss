@@ -12,7 +12,7 @@ suss has four commands. They form one pipeline:
 
 | Command | Inputs | Output | When you reach for it |
 |---|---|---|---|
-| `extract` | TypeScript source + a framework pack | `BehavioralSummary[]` JSON | You have code and want a structured description of every execution path. |
+| `extract` | TypeScript or JavaScript source + a framework pack | `BehavioralSummary[]` JSON | You have code and want a structured description of every execution path. |
 | `contract` | A specification (OpenAPI, CFN, Storybook, ...) | `BehavioralSummary[]` JSON | You have a spec instead of code, or want to compare code against a spec. Contract summaries have the same shape as `extract`'s output, so they pair against extracted summaries. |
 | `check` | One or more summary files | Findings (text or JSON) | You have summaries from two sides of a boundary, provider + consumer, contract + handler, and want to know where they disagree. |
 | `inspect` | A summary file | Human-readable text | You want to read what the summaries say without parsing JSON. The output is the form you paste into a code review or an AI prompt. |
@@ -58,7 +58,11 @@ and leaves the command behind for you to retry.
 
 ## `suss extract`
 
-Extract behavioral summaries from TypeScript source.
+Extract behavioral summaries from TypeScript or JavaScript source.
+
+Python and Ruby have adapters of their own, which you call from a
+script rather than through this command. See
+[Read a Python or Ruby project](/guides/python-and-ruby).
 
 **What it does.** Walks every function the framework pack discovers
 (`loader` in React Router, `app.get(...)` in Express, etc.), folds
@@ -75,14 +79,15 @@ suss extract [-p TSCONFIG | --dir DIR] -f FRAMEWORK [-f FRAMEWORK ...]
 
 | Flag | Required | Description |
 |---|---|---|
-| `-f`, `--framework NAME` | yes | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. Anything else resolves as `@suss/framework-NAME`. |
+| `-f`, `--framework NAME` | yes | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. A name that is not built in resolves in three tries: a name starting with `@` or containing a `/` is imported as you wrote it, otherwise `@suss/framework-NAME` and then `@suss/NAME`. |
 | `-p`, `--project PATH` | no | Path to `tsconfig.json`, for the same type resolution your compiler sees. Leave it off and suss uses the nearest tsconfig or jsconfig above the working directory. |
 | `--dir PATH` | no | Read this directory directly, for a project with no tsconfig. |
 | `-o`, `--output PATH` | no | Write JSON to file. Default: stdout. Parent dirs created automatically. |
-| `--files F1 F2 ...` | no | Scope extraction to specific files. Default: every file in the tsconfig. Paths are resolved relative to cwd. |
+| `--files F1 F2 ...` | no | Scope extraction to specific files. Default: every file in the tsconfig. Paths are resolved relative to cwd. File paths written as bare arguments, with no flag in front of them, mean the same thing when `--files` is absent. |
 | `--gaps MODE` | no | `permissive` (default) records gaps in the summary: returns and declared statuses the pack couldn't account for. `strict` records the same gaps, then exits non-zero if the run recorded any. `silent` skips gap detection entirely, recording none. |
 | `--explain` | no | Print the extraction funnel, file by file and pack by pack, so you can see where summaries came from. A run that produced nothing prints it either way. |
 | `--timing` | no | Print the per-phase wall-clock breakdown to stderr. |
+| `--datalog-profile` | no | Print what the Datalog evaluator spent its time on, rule by rule. Reach for it when `--timing` says the rules phase is the slow one. |
 | `--no-cache` | no | Skip the on-disk extraction cache for this run. Normal runs benefit from it; reach for this when debugging cache invalidation. |
 | `--fail-on-empty` | no | Exit non-zero when the run produces no summaries. Worth turning on in CI, where a silent zero looks the same as a passing check. |
 | `--fail-on-pack-error` | no | Exit non-zero when a pack throws while it reads. By default the run reports the throw and continues with the other packs. |
@@ -109,9 +114,8 @@ suss extract [-p TSCONFIG | --dir DIR] -f FRAMEWORK [-f FRAMEWORK ...]
 | `apollo-client` | `@suss/client-apollo` | `@apollo/client` hooks + imperative `client.query` / `mutate` |
 | `node` | `@suss/runtime-node` | `setTimeout` and friends, the `process` surface including `process.env.X`, module-loading globals |
 
-Four more packs ship and resolve by the same `@suss/framework-NAME`
-convention rather than being listed above. They discover no units of
-their own; they attach typed effects to calls inside whatever units
+Four more names are built in the same way, and discover no units of
+their own. They attach typed effects to calls inside whatever units
 another pack found:
 
 | Name | Package | What it recognizes |
@@ -244,6 +248,7 @@ else including no extension → YAML).
 |---|---|---|
 | `openapi` | `@suss/contract-openapi` | OpenAPI 3.x JSON or YAML |
 | `cloudformation` | `@suss/contract-cloudformation` | CFN / SAM template (JSON or YAML) with API Gateway REST / HTTP API resources |
+| `serverless` | `@suss/contract-serverless` | A Serverless Framework service file. The path names the file or the directory holding it. The reader states the service in SAM's shapes and hands them to the CloudFormation reader, so a route, a queue consumer or an environment contract comes out the same whichever manifest declared it. `${self:...}` resolves against the document; a reference a deploy supplies keeps its token. |
 | `storybook` | `@suss/contract-storybook` | CSF3 `.stories.ts` / `.stories.tsx` file or directory of stories |
 | `appsync` | `@suss/contract-appsync` | CFN template with `AWS::AppSync::*` resources |
 | `prisma` | `@suss/contract-prisma` | `schema.prisma` file (Postgres / MySQL / SQLite datasources) |
@@ -260,7 +265,7 @@ suss check --dir summaries/ --intent intent/
 ### Exit codes
 
 - `0`: contract source loaded.
-- Non-zero, unknown source, file not found, parse error.
+- `1`: unknown source, file not found, parse error.
 
 ## `suss check`
 
@@ -345,7 +350,7 @@ suss inspect --diff BEFORE.json AFTER.json
 |---|---|
 | `--dir PATH` | Render every summary in a directory, grouped by boundary with pair-discovery annotations. |
 | `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions. |
-| `--types` | Spell out the named types a summary references instead of printing their names. |
+| `--types` | Spell out the named types a summary references instead of printing their names. It applies to a single file and to `--dir`; a `--diff` run ignores it. |
 
 No JSON output mode, `inspect` is always human-formatted. For
 programmatic consumption, read the summary files directly (they
@@ -553,7 +558,8 @@ literal status code. Everything else is skipped untouched. The scope
 and the report format will change as coverage grows.
 
 ```
-suss corroborate --experimental -p TSCONFIG -f express [-o ANNOTATED.json]
+suss corroborate --experimental [-p TSCONFIG | --dir DIR] -f express
+                 [-o ANNOTATED.json] [--runs N] [--attempts N]
 ```
 
 | Flag | Description |
@@ -575,11 +581,22 @@ suss corroborate --experimental -p TSCONFIG -f express [-o ANNOTATED.json]
 
 | Flag | Description |
 |---|---|
-| `-h`, `--help` | Print usage and exit 0. |
+| `-h`, `--help` | Print usage and exit 0. Running `suss` with no command does the same. |
+
+Every exit code is `0` or `1`. There is no third code to branch on: a
+command either did what you asked or it did not.
 
 ## Environment variables
 
-None. All behavior is configured via flags.
+Two affect how output looks. Nothing else is configured this way.
+
+| Variable | Effect |
+|---|---|
+| `NO_COLOR` | Set it to anything and suss writes plain text with no ANSI colour. |
+| `TERM=dumb` | Same effect. Colour is also off whenever stdout is not a TTY, so a piped or redirected run is plain without you asking. |
+
+`suss init` also notices when it is running in CI and prints the
+commands rather than prompting, the same as `--plain`.
 
 ## Where each command writes
 
