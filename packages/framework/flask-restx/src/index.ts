@@ -62,6 +62,11 @@ export function flaskRestxFramework(
         // reader; there is no annotated-class body convention to
         // declare.
         pathParamSyntax: "flaskConverters",
+        // A resource method that returns a value and marks no status
+        // answers 200, which is Flask's own behavior behind
+        // flask-restx, so a method whose return annotation states a
+        // shape states a status too.
+        defaultStatusCode: 200,
       },
     ],
   };

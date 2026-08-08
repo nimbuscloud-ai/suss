@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  absentReading,
+  ambiguousReading,
   assembleSummary,
   assessConfidence,
+  type DefaultedReading,
   detectGaps,
   effectToIR,
   makeTransitionId,
@@ -13,7 +16,11 @@ import {
   type RawParameter,
   type RawTerminal,
   terminalToOutput,
+  unreadableReading,
+  writtenReading,
 } from "./index.js";
+
+import type { TypeShape } from "@suss/behavioral-ir";
 
 // Minimal RawTerminal builder — every call site overrides only the fields it cares about.
 const makeTerminal = (overrides: Partial<RawTerminal>): RawTerminal => ({
@@ -307,6 +314,148 @@ describe("assembleSummary — optional metadata plumbing", () => {
       body: null,
     });
     expect(summary.gaps.some((g) => g.description.includes("404"))).toBe(true);
+  });
+});
+
+describe("assembleSummary: collapsing a status reading", () => {
+  const range = { start: 0, end: 4 };
+  const responseBranch = (
+    statusCodeReading: DefaultedReading<number>,
+  ): RawCodeStructure => ({
+    ...twoPathRaw,
+    declaredContract: null,
+    branches: [
+      {
+        conditions: [],
+        terminal: makeTerminal({ kind: "response" }),
+        statusCodeReading,
+        effects: [],
+        location: { start: 0, end: 4 },
+        isDefault: true,
+      },
+    ],
+  });
+
+  it("claims the status the source states", () => {
+    const summary = assembleSummary(
+      responseBranch({ reading: writtenReading(201, range) }),
+    );
+    expect(summary.transitions[0]?.output).toMatchObject({
+      statusCode: { type: "literal", value: 201 },
+    });
+    expect(summary.gaps).toEqual([]);
+  });
+
+  it("takes the pack's declared default when the source states nothing", () => {
+    const summary = assembleSummary(
+      responseBranch({ reading: absentReading, libraryDefault: 200 }),
+    );
+    expect(summary.transitions[0]?.output).toMatchObject({
+      statusCode: { type: "literal", value: 200 },
+    });
+  });
+
+  it("claims nothing when the source states nothing and no pack declared a default", () => {
+    const summary = assembleSummary(responseBranch({ reading: absentReading }));
+    expect(summary.transitions[0]?.output).toMatchObject({ statusCode: null });
+    expect(summary.gaps).toEqual([]);
+  });
+
+  it("claims nothing and says why when the source states a status nobody could read", () => {
+    const summary = assembleSummary(
+      responseBranch({
+        reading: unreadableReading(
+          "status_code is a name, not a number",
+          range,
+        ),
+        libraryDefault: 200,
+      }),
+    );
+    expect(summary.transitions[0]?.output).toMatchObject({ statusCode: null });
+    expect(summary.gaps.map((gap) => gap.description)).toEqual([
+      "status_code is a name, not a number",
+    ]);
+  });
+
+  it("claims nothing and says why when several statuses could be the answer", () => {
+    const summary = assembleSummary(
+      responseBranch({
+        reading: ambiguousReading(
+          [200, 204],
+          "two decorators state a status",
+          range,
+        ),
+        libraryDefault: 200,
+      }),
+    );
+    expect(summary.transitions[0]?.output).toMatchObject({ statusCode: null });
+    expect(summary.gaps.map((gap) => gap.description)).toEqual([
+      "two decorators state a status",
+    ]);
+  });
+
+  it("gives a transition the same identity a stated status would have", () => {
+    const read = assembleSummary(
+      responseBranch({ reading: absentReading, libraryDefault: 200 }),
+    );
+    const stated = assembleSummary(
+      responseBranch({ reading: writtenReading(200, range) }),
+    );
+    expect(read.transitions[0]?.id).toBe(stated.transitions[0]?.id);
+  });
+});
+
+describe("assembleSummary: collapsing a body shape reading", () => {
+  const range = { start: 0, end: 4 };
+  const shape: TypeShape = { type: "ref", name: "Todo" };
+  const responseBranch = (
+    bodyShapeReading: DefaultedReading<TypeShape>,
+  ): RawCodeStructure => ({
+    ...twoPathRaw,
+    declaredContract: null,
+    branches: [
+      {
+        conditions: [],
+        terminal: makeTerminal({
+          kind: "response",
+          body: { typeText: null, shape: null },
+        }),
+        bodyShapeReading,
+        effects: [],
+        location: { start: 0, end: 4 },
+        isDefault: true,
+      },
+    ],
+  });
+
+  it("claims the shape the source states", () => {
+    const summary = assembleSummary(
+      responseBranch({ reading: writtenReading(shape, range) }),
+    );
+    expect(summary.transitions[0]?.output).toMatchObject({ body: shape });
+    expect(summary.gaps).toEqual([]);
+  });
+
+  it("claims nothing and says why when the source states a shape nobody could read", () => {
+    const summary = assembleSummary(
+      responseBranch({
+        reading: unreadableReading(
+          "response_model is a call, not a name",
+          range,
+        ),
+      }),
+    );
+    expect(summary.transitions[0]?.output).toMatchObject({ body: null });
+    expect(summary.gaps.map((gap) => gap.description)).toEqual([
+      "response_model is a call, not a name",
+    ]);
+  });
+
+  it("leaves the terminal's type text alone", () => {
+    const raw = responseBranch({ reading: writtenReading(shape, range) });
+    raw.branches[0].terminal.body = { typeText: "Todo", shape: null };
+    const summary = assembleSummary(raw);
+    expect(summary.transitions[0]?.output).toMatchObject({ body: shape });
   });
 });
 
@@ -1149,6 +1298,32 @@ describe("detectGaps", () => {
     expect(gaps).toHaveLength(1);
     expect(gaps[0]?.type).toBe("unreadOutcome");
     expect(gaps[0]?.description).toContain("widget");
+  });
+
+  it("states the reason on a reading the adapter handed over unread", () => {
+    const raw: RawCodeStructure = {
+      ...twoPathRaw,
+      declaredContract: null,
+      readings: [
+        unreadableReading("The path here is not a string literal", {
+          start: 0,
+          end: 4,
+        }),
+        ambiguousReading(["/a", "/b"], "Two routers mount this path", {
+          start: 0,
+          end: 4,
+        }),
+        writtenReading("/users", { start: 0, end: 4 }),
+        absentReading,
+      ],
+    };
+    const gaps = detectGaps(raw, [], { gapHandling: "permissive" });
+
+    expect(gaps.map((gap) => gap.description)).toEqual([
+      "The path here is not a string literal",
+      "Two routers mount this path",
+    ]);
+    expect(gaps.every((gap) => gap.type === "unreadOutcome")).toBe(true);
   });
 
   it("says so when there was no body behind the declaration", () => {

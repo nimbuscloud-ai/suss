@@ -13,6 +13,15 @@
 // read.
 
 import { dispatchByType, restBinding } from "@suss/behavioral-ir";
+import {
+  absentReading,
+  andThenReading,
+  firstWrittenReading,
+  mapReading,
+  unreadableReading,
+  valueToReadFurtherFrom,
+  writtenReading,
+} from "@suss/extractor";
 
 import {
   annotationToShape,
@@ -26,10 +35,15 @@ import { classifyDecorator } from "./decorators.js";
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
 import type {
   BodyContent,
+  ChosenReading,
+  DefaultedReading,
   RawBranch,
   RawCodeStructure,
   RawParameter,
+  Reading,
+  SourceRange,
 } from "@suss/extractor";
+import type { DecoratorClassification } from "./decorators.js";
 import type {
   DecoratedClassRoute,
   DecoratedFunctionRoute,
@@ -151,11 +165,25 @@ function unitsFor(
   return dispatchByType(table, pattern);
 }
 
-function firstStringArg(
-  args: ReturnType<typeof classifyDecorator>["args"],
-): string | null {
-  const first = args[0];
-  return first?.kind === "string" ? first.value : null;
+/**
+ * The path a route's decorator states, as its first positional string
+ * argument. A decorator whose first argument is missing or is written
+ * as anything but a string literal reads as unreadable rather than
+ * absent: the library requires a path there, so what is missing is the
+ * reading, not the path.
+ */
+function readPathArgument(
+  classification: DecoratorClassification,
+): Reading<string> {
+  const first = classification.args[0];
+  if (first?.kind === "string") {
+    return writtenReading(first.value, classification.range);
+  }
+
+  return unreadableReading(
+    "The path in this route's decorator is not a string literal, so the binding names no path and nothing pairs with it",
+    classification.range,
+  );
 }
 
 /** A path template read under one syntax: the path in the IR's canonical brace spelling, and the parameter names the template binds. */
@@ -201,49 +229,49 @@ const PATH_TEMPLATE_READERS: Record<string, PathTemplateReader> = {
   ),
 };
 
-type PathTemplateResolution =
-  | { kind: "read"; path: string; paramNames: ReadonlySet<string> }
-  | { kind: "abstain"; unreadBinding: string };
-
 /**
  * Run the pattern's declared template syntax over a literal path. No
  * declared syntax reads the path as written with no parameters; a
- * declared syntax this adapter has no reader for abstains with a
- * stated gap rather than guessing at a spelling it cannot parse.
+ * declared syntax this adapter has no reader for reads as unreadable
+ * rather than guessing at a spelling it cannot parse.
  */
 function readPathTemplate(
   pattern: PythonDiscoveryPattern,
   path: string,
-): PathTemplateResolution {
+  range: SourceRange,
+): Reading<PathTemplateReading> {
   const syntax = pattern.pathParamSyntax;
   if (syntax === undefined) {
-    return { kind: "read", path, paramNames: NO_PATH_PARAMS };
+    return writtenReading({ path, paramNames: NO_PATH_PARAMS }, range);
   }
 
   const reader = PATH_TEMPLATE_READERS[syntax];
   if (reader === undefined) {
-    return {
-      kind: "abstain",
-      unreadBinding: `The route's pack declares path-parameter syntax "${syntax}", which this adapter has no reader for, so the binding names no path and nothing pairs with it`,
-    };
+    return unreadableReading(
+      `The route's pack declares path-parameter syntax "${syntax}", which this adapter has no reader for, so the binding names no path and nothing pairs with it`,
+      range,
+    );
   }
 
-  const reading = reader(path);
-  return { kind: "read", path: reading.path, paramNames: reading.paramNames };
+  return writtenReading(reader(path), range);
 }
 
 function classRouteUnits(
   pattern: DecoratedClassRoute,
   pack: PythonPack,
-  classification: ReturnType<typeof classifyDecorator>,
+  classification: DecoratorClassification,
   classNode: PyNode,
   module: ModuleBinding,
   filePath: string,
 ): RawCodeStructure[] {
-  const writtenPath = firstStringArg(classification.args);
-  if (writtenPath === null) {
+  // The path is the whole of what a class decorator says about this
+  // route, so a class whose decorator states none readable is not
+  // discovered at all rather than discovered with nothing on it.
+  const pathArgument = readPathArgument(classification);
+  if (pathArgument.kind !== "written") {
     return [];
   }
+
   const className = field(classNode, "name")?.text;
   const bodyNode = field(classNode, "body");
   const classScope = module.scopeFor.get(classNode.id);
@@ -254,7 +282,9 @@ function classRouteUnits(
   ) {
     return [];
   }
-  const template = readPathTemplate(pattern, writtenPath);
+  const routePath = andThenReading(pathArgument, (path, range) =>
+    readPathTemplate(pattern, path, range),
+  );
 
   const units: RawCodeStructure[] = [];
   for (const stmt of bodyStatements(bodyNode)) {
@@ -276,12 +306,7 @@ function classRouteUnits(
         name: `${className}.${methodName}`,
         exportPath: [className, methodName],
         method: verb,
-        path: template.kind === "read" ? template.path : null,
-        ...(template.kind === "abstain"
-          ? { unreadBinding: template.unreadBinding }
-          : {}),
-        pathParamNames:
-          template.kind === "read" ? template.paramNames : NO_PATH_PARAMS,
+        routePath,
         requestBodyFromAnnotatedClass:
           pattern.annotatedClassIsRequestBody === true,
         definitionNode: maybeMethod,
@@ -289,72 +314,86 @@ function classRouteUnits(
         module,
         filePath,
         skipReceiverParam: true,
-        responseShape: null,
-        statusCode: null,
+        responseShape: absentReading,
+        statusCode: defaultedStatus(absentReading, pattern),
       }),
     );
   }
   return units;
 }
 
-/** What a function route ends up claiming for its path: a read path with its template parameters, or the abstention that keeps the route pathless. */
-interface RoutePathReading {
-  path: string | null;
-  paramNames: ReadonlySet<string>;
-  unreadBinding?: string;
-}
-
 /**
- * The path a function route claims once composition and the pattern's
- * template syntax have their say, or the abstention that keeps the
- * route pathless.
+ * The path a function route is served at: what its decorator states,
+ * with the router's prefix in front of it, spelled the way the IR
+ * spells a path template. Each step reads further from what the one
+ * before it found, so a step that cannot read hands its reason on and
+ * the ones after it never run.
  */
 function readRoutePath(
   pattern: DecoratedFunctionRoute,
-  classification: ReturnType<typeof classifyDecorator>,
+  classification: DecoratorClassification,
   module: ModuleBinding,
   options: DiscoveryOptions,
-): RoutePathReading {
-  const literal = firstStringArg(classification.args);
-  if (literal === null) {
-    return {
-      path: null,
-      paramNames: NO_PATH_PARAMS,
-      unreadBinding:
-        "The path in this route's decorator is not a string literal, so the binding names no path and nothing pairs with it",
-    };
-  }
-  const composed = composeRoutePath(pattern, classification, module, options);
-  if (composed.path === null) {
-    return composed;
-  }
-
-  const template = readPathTemplate(pattern, composed.path);
-  if (template.kind === "abstain") {
-    return {
-      path: null,
-      paramNames: NO_PATH_PARAMS,
-      unreadBinding: template.unreadBinding,
-    };
-  }
-  return { path: template.path, paramNames: template.paramNames };
+): Reading<PathTemplateReading> {
+  const composed = andThenReading(
+    readPathArgument(classification),
+    (literal, range) =>
+      composeRoutePath(
+        pattern,
+        classification,
+        module,
+        options,
+        literal,
+        range,
+      ),
+  );
+  return andThenReading(composed, (path, range) =>
+    readPathTemplate(pattern, path, range),
+  );
 }
 
-/** The literal path with the router's composed prefix in front, when the pattern composes one; abstention reasons pass through as a pathless reading. */
+/** The decorator's own path with the router's prefix in front of it, when the route hangs on a router that composes one. */
 function composeRoutePath(
   pattern: DecoratedFunctionRoute,
-  classification: ReturnType<typeof classifyDecorator>,
+  classification: DecoratorClassification,
   module: ModuleBinding,
   options: DiscoveryOptions,
-): RoutePathReading {
-  const literal = firstStringArg(classification.args) ?? "";
+  literal: string,
+  range: SourceRange,
+): Reading<string> {
+  const prefix = readRouterPrefix(
+    pattern,
+    classification,
+    module,
+    options,
+    range,
+  );
+  if (prefix.kind === "absent") {
+    return writtenReading(literal, range);
+  }
 
+  return mapReading(prefix, (value) => value + literal);
+}
+
+/**
+ * The prefix the router a route is declared on puts in front of every
+ * path on it. Absent when the decorator hangs on something that
+ * composes no prefix: the app itself, an object this reading never saw
+ * constructed, or a pack that declares no router mounting at all.
+ */
+function readRouterPrefix(
+  pattern: DecoratedFunctionRoute,
+  classification: DecoratorClassification,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+  range: SourceRange,
+): Reading<string> {
   if (
     pattern.routerComposition === undefined ||
     options.routerIndex === undefined ||
     classification.objectName === null
   ) {
-    return { path: literal, paramNames: NO_PATH_PARAMS };
+    return absentReading;
   }
 
   const resolution = options.routerIndex.resolve(
@@ -363,25 +402,120 @@ function composeRoutePath(
     classification.objectName,
   );
   if (resolution.kind === "abstain") {
-    return {
-      path: null,
-      paramNames: NO_PATH_PARAMS,
-      unreadBinding: `The router this route is declared on ${resolution.reason}, so the binding names no path and nothing pairs with it`,
-    };
+    return unreadableReading(
+      `The router this route is declared on ${resolution.reason}, so the binding names no path and nothing pairs with it`,
+      range,
+    );
   }
 
   if (resolution.kind === "composed") {
-    return { path: resolution.value + literal, paramNames: NO_PATH_PARAMS };
+    return writtenReading(resolution.value, range);
   }
 
-  return { path: literal, paramNames: NO_PATH_PARAMS };
+  return absentReading;
+}
+
+/**
+ * The status a route's decorator states under its pack's status
+ * keyword. A keyword written as anything but a literal number reads as
+ * unreadable: taking the library's default there would claim a status
+ * the running app contradicts whenever that value is anything else.
+ */
+function readStatusCode(
+  pattern: DecoratedFunctionRoute,
+  classification: DecoratorClassification,
+): Reading<number> {
+  if (pattern.statusCodeKeyword === undefined) {
+    return absentReading;
+  }
+
+  const arg = classification.keywordArgs[pattern.statusCodeKeyword];
+  if (arg === undefined) {
+    return absentReading;
+  }
+
+  if (arg.kind === "number") {
+    return writtenReading(arg.value, classification.range);
+  }
+
+  return unreadableReading(
+    "The status this route's decorator states is not a literal number, so the response claims no status",
+    classification.range,
+  );
+}
+
+/** A status reading alongside the default the pattern's library declares for a route that states none. */
+function defaultedStatus(
+  reading: Reading<number>,
+  pattern: PythonDiscoveryPattern,
+): DefaultedReading<number> {
+  return {
+    reading,
+    ...(pattern.defaultStatusCode !== undefined
+      ? { libraryDefault: pattern.defaultStatusCode }
+      : {}),
+  };
+}
+
+/**
+ * The response body shape a route's decorator states under its pack's
+ * response-model keyword. A keyword written as anything but a name
+ * reads as unreadable, so a shape nobody could read does not pass for
+ * a route that declares none.
+ */
+function readResponseModel(
+  pattern: DecoratedFunctionRoute,
+  classification: DecoratorClassification,
+  module: ModuleBinding,
+  ctx: ReturnType<typeof createAnnotationContext>,
+): Reading<TypeShape> {
+  if (pattern.responseModelKeyword === undefined) {
+    return absentReading;
+  }
+
+  const arg = classification.keywordArgs[pattern.responseModelKeyword];
+  if (arg === undefined) {
+    return absentReading;
+  }
+
+  if (arg.kind === "identifier") {
+    // A response_model naming a class the binder can see resolves to
+    // its record shape; one it can't (imported from elsewhere, or not
+    // a class at all) stays an opaque ref by name.
+    return writtenReading(
+      shapeFromName(arg.name, module.moduleScope, ctx),
+      classification.range,
+    );
+  }
+
+  return unreadableReading(
+    "The response model this route's decorator states is not a name, so the response claims no body shape",
+    classification.range,
+  );
+}
+
+/** The shape a function's return annotation states. */
+function readReturnAnnotation(
+  definitionNode: PyNode,
+  scope: Scope,
+  ctx: ReturnType<typeof createAnnotationContext>,
+): Reading<TypeShape> {
+  const returnTypeNode = field(definitionNode, "return_type");
+  if (returnTypeNode === null) {
+    return absentReading;
+  }
+
+  return writtenReading(
+    annotationToShape(returnTypeNode, scope, ctx),
+    rangeOf(returnTypeNode),
+  );
 }
 
 function functionRouteUnits(
   pattern: DecoratedFunctionRoute,
   pack: PythonPack,
   verb: string,
-  classification: ReturnType<typeof classifyDecorator>,
+  classification: DecoratorClassification,
   functionNode: PyNode,
   module: ModuleBinding,
   options: DiscoveryOptions,
@@ -391,54 +525,24 @@ function functionRouteUnits(
     return [];
   }
 
-  const { path, paramNames, unreadBinding } = readRoutePath(
-    pattern,
-    classification,
-    module,
-    options,
-  );
-
   const ctx = createAnnotationContext(module.scopeFor);
-  let responseShape: TypeShape | null = null;
-  if (pattern.responseModelKeyword !== undefined) {
-    const modelArg = classification.keywordArgs[pattern.responseModelKeyword];
-    if (modelArg?.kind === "identifier") {
-      // A response_model naming a class the binder can see resolves to
-      // its record shape; one it can't (imported from elsewhere, or
-      // not a class at all) stays an opaque ref by name.
-      responseShape = shapeFromName(modelArg.name, module.moduleScope, ctx);
-    }
-  }
-
-  const statusArg =
-    pattern.statusCodeKeyword !== undefined
-      ? classification.keywordArgs[pattern.statusCodeKeyword]
-      : undefined;
-  const statusCode = statusArg?.kind === "number" ? statusArg.value : null;
-
   const unit = buildRouteUnit({
     pack,
     name: functionName,
     exportPath: [functionName],
     method: verb,
-    path,
-    unreadBinding,
-    pathParamNames: paramNames,
+    routePath: readRoutePath(pattern, classification, module, options),
     requestBodyFromAnnotatedClass: pattern.annotatedClassIsRequestBody === true,
     definitionNode: functionNode,
     enclosingScope: module.moduleScope,
     module,
     filePath: options.filePath,
     skipReceiverParam: false,
-    responseShape,
-    statusCode,
-    // The decorator wrote a status the reader could not turn into a
-    // number (a variable, a call). Falling back to the framework's
-    // default 200 would fabricate a claim the running app contradicts
-    // whenever that value is anything else, so the status stays
-    // unclaimed instead.
-    statusDeclaredUnread:
-      statusArg !== undefined && statusArg.kind !== "number",
+    responseShape: readResponseModel(pattern, classification, module, ctx),
+    statusCode: defaultedStatus(
+      readStatusCode(pattern, classification),
+      pattern,
+    ),
     definitionsCtx: ctx,
   });
   return [unit];
@@ -449,11 +553,8 @@ interface BuildRouteUnitOptions {
   name: string;
   exportPath: string[];
   method: string;
-  /** Null when the route abstained from naming one; `unreadBinding` then says why. */
-  path: string | null;
-  unreadBinding?: string | undefined;
-  /** Parameter names the path template binds, read by the pattern's declared syntax. Empty for a pathless route, which names no path parameters either. */
-  pathParamNames: ReadonlySet<string>;
+  /** Where the route is served, as the readers left it. The binding names a path only when this came back written. */
+  routePath: Reading<PathTemplateReading>;
   /** Whether the pattern declares an annotated-local-class parameter as the request body (see `RouteConventions` in pack.ts). */
   requestBodyFromAnnotatedClass: boolean;
   definitionNode: PyNode;
@@ -461,11 +562,28 @@ interface BuildRouteUnitOptions {
   module: ModuleBinding;
   filePath: string;
   skipReceiverParam: boolean;
-  responseShape: TypeShape | null;
-  statusCode: number | null;
-  /** True when the decorator states a status the reader could not read as a literal, which suppresses the 200 default below. */
-  statusDeclaredUnread?: boolean;
+  /** The shape the route's decorator declares for its response body, before the return annotation gets its say. */
+  responseShape: Reading<TypeShape>;
+  /** The status the route declares, with the default its library applies when it declares none. Handed to the extractor uncollapsed. */
+  statusCode: DefaultedReading<number>;
   definitionsCtx?: ReturnType<typeof createAnnotationContext>;
+}
+
+/**
+ * The shape a route declares for its response body: what its decorator
+ * states, and otherwise its return annotation. The annotation is read
+ * only when the decorator did not answer, so a class the route never
+ * declares does not land in `definitions` on the way past.
+ */
+function readResponseShape(
+  declared: Reading<TypeShape>,
+  readAnnotation: () => Reading<TypeShape>,
+): ChosenReading<TypeShape> {
+  if (declared.kind === "written") {
+    return { reading: declared, passedOver: [] };
+  }
+
+  return firstWrittenReading([declared, readAnnotation()]);
 }
 
 function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
@@ -474,50 +592,53 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     name,
     exportPath,
     method,
-    path,
-    unreadBinding,
-    pathParamNames,
+    routePath,
     requestBodyFromAnnotatedClass,
     definitionNode,
     enclosingScope,
     module,
     filePath,
     skipReceiverParam,
+    statusCode,
     definitionsCtx,
   } = options;
 
+  // The path template names which of the handler's parameters are path
+  // parameters, and that has to be settled before there is a summary
+  // field to fill, so this is read further from rather than claimed.
+  const template = valueToReadFurtherFrom(routePath);
   const ctx = definitionsCtx ?? createAnnotationContext(module.scopeFor);
   const parameters = readParameters(
     definitionNode,
     enclosingScope,
     ctx,
-    pathParamNames,
+    template?.paramNames ?? NO_PATH_PARAMS,
     requestBodyFromAnnotatedClass,
     skipReceiverParam,
   );
 
-  let { responseShape, statusCode } = options;
-  const returnTypeNode = field(definitionNode, "return_type");
-  if (responseShape === null && returnTypeNode !== null) {
-    responseShape = annotationToShape(returnTypeNode, enclosingScope, ctx);
-  }
-  if (
-    statusCode === null &&
-    responseShape !== null &&
-    options.statusDeclaredUnread !== true
-  ) {
-    statusCode = 200;
-  }
+  const responseShape = readResponseShape(options.responseShape, () =>
+    readReturnAnnotation(definitionNode, enclosingScope, ctx),
+  );
 
+  // The route declares a response when it says anything at all about
+  // the body shape or the status, including something nobody could
+  // read. A route that says neither declares nothing, and the library's
+  // default status has nothing to apply to.
   const branches: RawBranch[] = [];
-  if (responseShape !== null || statusCode !== null) {
+  if (
+    responseShape.reading.kind !== "absent" ||
+    statusCode.reading.kind !== "absent"
+  ) {
     branches.push({
       conditions: [],
       terminal: {
         kind: "response",
-        statusCode:
-          statusCode !== null ? { type: "literal", value: statusCode } : null,
-        body: { typeText: null, shape: responseShape },
+        // What this branch answers with rides along as readings in
+        // `statusCodeReading` and `bodyShapeReading`, and the extractor
+        // is what turns either into a claim.
+        statusCode: null,
+        body: { typeText: null, shape: null },
         exceptionType: null,
         message: null,
         component: null,
@@ -526,6 +647,8 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
         emitEvent: null,
         location: rangeOf(definitionNode),
       },
+      statusCodeReading: statusCode,
+      bodyShapeReading: { reading: responseShape.reading },
       effects: [],
       location: rangeOf(definitionNode),
       isDefault: true,
@@ -547,7 +670,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     boundaryBinding: restBinding({
       transport: pack.protocol,
       method,
-      path,
+      path: template?.path ?? null,
       recognition: pack.name,
     }),
     parameters,
@@ -555,7 +678,10 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     bodyContent: bodyNode !== null ? bodyContentOf(bodyNode) : "statements",
     dependencyCalls: [],
     declaredContract: null,
-    ...(unreadBinding !== undefined ? { unreadBinding } : {}),
+    // The chosen shape reading rides on the branch; what the choice
+    // passed over and could not read has no branch to ride on and is
+    // stated here.
+    readings: [routePath, ...responseShape.passedOver],
     ...(collectedDefinitions(ctx) !== null
       ? { definitions: collectedDefinitions(ctx) }
       : {}),

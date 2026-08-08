@@ -1,11 +1,28 @@
 import { describe, expect, it } from "vitest";
 
+import { assembleSummary } from "@suss/extractor";
+
 import { discoverUnits } from "./discovery.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 
+import type { RawCodeStructure } from "@suss/extractor";
 import type { DecoratedFunctionRoute, PythonPack } from "./pack.js";
+
+/**
+ * Everything a unit's summary says about what nobody could read, as one
+ * string to match against. The adapter hands its readings over
+ * uncollapsed, so the sentences only exist once the extractor has
+ * assembled the summary.
+ */
+function unreadTextOf(unit: RawCodeStructure | undefined): string {
+  return unit === undefined
+    ? ""
+    : assembleSummary(unit)
+        .gaps.map((gap) => gap.description)
+        .join("\n");
+}
 
 const fastapiLike: PythonPack = {
   name: "fastapi-test",
@@ -129,7 +146,7 @@ describe("router prefix composition, one mount hop", () => {
       ].join("\n"),
     );
     expect(pathOf(units, "health")).toBe("/health");
-    expect(units[0]?.unreadBinding).toBeUndefined();
+    expect(unreadTextOf(units[0])).toBe("");
   });
 });
 
@@ -140,7 +157,7 @@ describe("router prefix composition: abstentions", () => {
     expect(unit).toBeDefined();
     const semantics = unit?.boundaryBinding?.semantics;
     expect(semantics?.name === "rest" ? semantics.path : "kept").toBeNull();
-    return unit?.unreadBinding;
+    return unreadTextOf(unit);
   }
 
   it("abstains when the router's own prefix is not a string literal", async () => {
