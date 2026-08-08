@@ -85,6 +85,12 @@ export {
 } from "@suss/manifest-aws";
 
 export { ALB_MATCH_LANGUAGE, albRouterSelector } from "./albMatch.js";
+// The runtime-config walk is the one summary builder another manifest
+// reader reuses whole: @suss/contract-serverless synthesizes SAM-shaped
+// function resources and runs the same walk, so the two manifest
+// languages cannot drift on env-var provenance or platform-injected
+// variables.
+export { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 
 export interface CloudFormationToSummariesOptions {
   /** Override the logical source file recorded on each summary. */
@@ -96,6 +102,14 @@ export interface CloudFormationToSummariesOptions {
    * path is what tells two nested documents' resources apart.
    */
   stackPath?: string[];
+  /**
+   * What recognized these resources, recorded on each binding. Another
+   * manifest language that compiles to these same resource shapes reads
+   * through this walk and names itself here, so a reader of the summary
+   * sees the document a person wrote rather than the shape it compiled
+   * to. Defaults to "cloudformation".
+   */
+  recognition?: string;
 }
 
 /**
@@ -120,6 +134,7 @@ export function cloudFormationToSummaries(
   // Every walk below reads properties, and a SAM section can supply any
   // of them, so the section is applied once here rather than per walk.
   const resources = resourcesWithGlobals(template);
+  const recognition = options.recognition ?? "cloudformation";
 
   // 1. Inline OpenAPI walk.
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -165,6 +180,7 @@ export function cloudFormationToSummaries(
       resources,
       sourceFile,
       inheritedEnvVars(template),
+      recognition,
     ),
   );
 
@@ -172,7 +188,9 @@ export function cloudFormationToSummaries(
   //    summaries; Lambdas with SAM Events:SQS or AWS::Lambda::EventSourceMapping
   //    emit consumer summaries with a queue boundaryBinding. Producer-side
   //    interaction effects from @suss/framework-aws-sqs pair against these.
-  summaries.push(...buildMessageBusSummaries(resources, sourceFile));
+  summaries.push(
+    ...buildMessageBusSummaries(resources, sourceFile, recognition),
+  );
 
   // 6. ALB flow walk: listener rules and a listener's own default
   //    action emit routesTo / answers edges with their match recorded

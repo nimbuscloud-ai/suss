@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 43,
-    "packagesWithExports": 42,
-    "exports": 345,
-    "internal": 1284,
-    "consumers": 513,
-    "pairs": 505
+    "packages": 44,
+    "packagesWithExports": 43,
+    "exports": 361,
+    "internal": 1296,
+    "consumers": 534,
+    "pairs": 526
   },
   "packages": {
     "packages/adapter/python": {
@@ -82,9 +82,9 @@
     },
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
-      "exports": 6,
-      "internal": 68,
-      "consumers": 84
+      "exports": 7,
+      "internal": 60,
+      "consumers": 95
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -109,6 +109,12 @@
       "exports": 2,
       "internal": 6,
       "consumers": 1
+    },
+    "packages/contract/serverless": {
+      "name": "@suss/contract-serverless",
+      "exports": 9,
+      "internal": 19,
+      "consumers": 10
     },
     "packages/contract/storybook": {
       "name": "@suss/contract-storybook",
@@ -250,8 +256,8 @@
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
-      "exports": 10,
-      "internal": 23,
+      "exports": 16,
+      "internal": 24,
       "consumers": 1
     },
     "packages/resolution": {

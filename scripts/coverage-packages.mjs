@@ -55,6 +55,7 @@ export const coveragePackages = [
   ["packages/contract/graphql", "contract-graphql"],
   ["packages/contract/aws-apigateway", "contract-aws-apigateway"],
   ["packages/contract/cloudformation", "contract-cloudformation"],
+  ["packages/contract/serverless", "contract-serverless"],
   ["packages/contract/appsync", "contract-appsync"],
   ["packages/contract/storybook", "contract-storybook"],
   ["packages/contract/prisma", "contract-prisma"],

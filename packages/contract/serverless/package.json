@@ -1,0 +1,64 @@
+{
+  "name": "@suss/contract-serverless",
+  "version": "0.3.2",
+  "type": "module",
+  "description": "Generate suss behavioral summaries from Serverless Framework serverless.yml service files.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "aws",
+    "serverless",
+    "serverless-framework",
+    "lambda"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/contract/serverless#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/contract/serverless"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/behavioral-ir": "0.3.2",
+    "@suss/contract-aws-apigateway": "0.3.2",
+    "@suss/contract-cloudformation": "0.3.2",
+    "@suss/ir-core": "0.3.2",
+    "@suss/manifest-aws": "0.3.2",
+    "yaml": "^2.4.0"
+  },
+  "devDependencies": {
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

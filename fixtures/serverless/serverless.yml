@@ -1,0 +1,60 @@
+# Fixture for the Serverless Framework reader. One service, two
+# functions, and one of each thing the reader has to handle:
+#   - createOrder answers POST on the service's HTTP API, at a path
+#     composed through a ${self:custom...} reference.
+#   - processOrders drains two queues: OrdersQueue, declared in the
+#     raw resources block and wired by Fn::GetAtt, and an audit queue
+#     whose ARN arrives from the deploy machine's environment, which
+#     the reader records as the symbolic token env:AUDIT_QUEUE_ARN.
+#   - provider.environment supplies two variables to every function;
+#     processOrders adds one of its own.
+#   - provider.region comes from a CLI option, so it stays symbolic.
+service: order-desk
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${opt:region, 'us-east-1'}
+  environment:
+    SERVICE_NAME: ${self:service}
+    ORDERS_TABLE: ${self:custom.ordersTable}
+
+custom:
+  ordersTable: order-desk-orders
+  basePath: api
+  auditQueue: order-desk-audit
+
+functions:
+  createOrder:
+    handler: src/handlers/createOrder.handler
+    events:
+      - httpApi:
+          method: POST
+          path: /${self:custom.basePath}/orders
+  processOrders:
+    handler: src/handlers/processOrders.handler
+    environment:
+      BATCH_SIZE: "10"
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [OrdersQueue, Arn]
+      - sqs: ${env:AUDIT_QUEUE_ARN}
+
+resources:
+  Resources:
+    # A queue whose name mixes a reference the document answers with one
+    # the CLI supplies, and a table named entirely from the document.
+    OrdersQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.auditQueue}-${opt:stage}
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.ordersTable}
+        # CloudFormation's own ${...} belongs to Fn::Sub, not to the
+        # framework, so it reaches the stack as written.
+        SSESpecification:
+          KMSMasterKeyId:
+            Fn::Sub: "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/orders"

@@ -69,6 +69,7 @@
     "@suss/contract-intent": "0.3.2",
     "@suss/contract-openapi": "0.3.2",
     "@suss/contract-prisma": "0.3.2",
+    "@suss/contract-serverless": "0.3.2",
     "@suss/contract-storybook": "0.3.2",
     "@suss/datalog": "0.3.2",
     "@suss/extractor": "0.3.2",

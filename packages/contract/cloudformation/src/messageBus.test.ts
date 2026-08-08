@@ -611,6 +611,74 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     expect(resolutionOf(consumer)).toBe("schedule");
   });
 
+  it("says a rule deployed DISABLED, which invokes nothing until someone turns it on", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        ReportGenerator: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/report/" },
+        },
+        ReportSchedule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            ScheduleExpression: "rate(1 day)",
+            State: "DISABLED",
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["ReportGenerator", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+
+    expect(readMessageBusMetadata(consumer)?.enabled).toBe(false);
+  });
+
+  it("says nothing about enablement when the template says nothing", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        DigestFunction: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/digest/",
+            Events: {
+              DailyDigest: {
+                Type: "Schedule",
+                Properties: { Schedule: "rate(1 day)" },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+
+    expect(readMessageBusMetadata(consumer)?.enabled).toBeUndefined();
+  });
+
+  it("says a SAM Schedule event deployed with Enabled false", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        DigestFunction: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/digest/",
+            Events: {
+              DailyDigest: {
+                Type: "Schedule",
+                Properties: { Schedule: "rate(1 day)", Enabled: false },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+
+    expect(readMessageBusMetadata(consumer)?.enabled).toBe(false);
+  });
+
   it("declares the channel but emits no consumer when a rule's only targets are non-Lambda", () => {
     const out = cloudFormationToSummaries({
       Resources: {

@@ -15,6 +15,17 @@ export {
   type AppSyncResolverBinding,
   readAppSyncResolvers,
 } from "./appsyncResolvers.js";
+export {
+  resolveBucketChannel,
+  resolveQueueChannel,
+  resolveResourceChannel,
+  resolveTopicChannel,
+} from "./arn.js";
+export {
+  type PatternReduction,
+  reduceEventPattern,
+  resolveEventBusToken,
+} from "./eventPattern.js";
 export { inheritedEnvVars, resourcesWithGlobals } from "./globals.js";
 export {
   loadTemplateTree,

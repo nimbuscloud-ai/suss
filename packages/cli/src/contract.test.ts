@@ -202,6 +202,28 @@ describe("contract CLI command", () => {
     }
   });
 
+  it("reads a Serverless Framework service via --from serverless", async () => {
+    const origWrite = process.stdout.write;
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    try {
+      const summaries = await contract({
+        from: "serverless",
+        spec: path.resolve(
+          __dirname,
+          "../../../fixtures/serverless/serverless.yml",
+        ),
+      });
+      const units = summaries
+        .map((s) => s.identity.deployableUnit?.instanceName)
+        .filter((name) => name !== undefined);
+      expect(units).toEqual(
+        expect.arrayContaining(["createOrder", "processOrders"]),
+      );
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  });
+
   describe("URL inputs", () => {
     let server: http.Server;
     let baseUrl: string;

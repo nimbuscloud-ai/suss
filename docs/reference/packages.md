@@ -2,7 +2,7 @@
 
 suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and contract sources a project uses. Install the CLI and only the packs you need; nothing pulls in the whole set.
 
-Twenty-one packs read code today, across seventeen frameworks, three HTTP and GraphQL clients, and the Node runtime. Seven contract readers turn a declared artifact into the same summary shape. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
+Twenty-one packs read code today, across seventeen frameworks, three HTTP and GraphQL clients, and the Node runtime. Eight contract readers turn a declared artifact into the same summary shape. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
 
 ## Install by stack
 
@@ -89,6 +89,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/contract-graphql`](../../packages/contract/graphql) | Two readers. A plain GraphQL SDL file becomes one resolver-kind summary per Query / Mutation / Subscription field. Committed `.graphql` / `.gql` operation documents become one client-kind summary per operation, with fragment spreads inlined, so a repo that keeps its queries in files pairs against its resolvers without any call site being traced. | ![](../../.github/badges/coverage-contract-graphql.svg) |
 | [`@suss/contract-aws-apigateway`](../../packages/contract/aws-apigateway) | API Gateway resource semantics, REST / HTTP API configs → summaries with platform-injected transitions. | ![](../../.github/badges/coverage-contract-aws-apigateway.svg) |
 | [`@suss/contract-cloudformation`](../../packages/contract/cloudformation) | CloudFormation / SAM templates → summaries (delegates to contract-openapi + contract-aws-apigateway; also handles SQS event-source mappings + Lambda Environment). | ![](../../.github/badges/coverage-contract-cloudformation.svg) |
+| [`@suss/contract-serverless`](../../packages/contract/serverless) | Serverless Framework service files → summaries. The functions block is stated in SAM's shapes and read by contract-cloudformation, so a route, a queue consumer or an environment contract comes out the same whichever manifest language declared it. `${self:}` resolves against the document; a deploy-time reference keeps its token. | ![](../../.github/badges/coverage-contract-serverless.svg) |
 | [`@suss/contract-appsync`](../../packages/contract/appsync) | AppSync GraphQL schema + resolver mapping templates. | ![](../../.github/badges/coverage-contract-appsync.svg) |
 | [`@suss/contract-storybook`](../../packages/contract/storybook) | Storybook CSF3 stories → component contract summaries. | ![](../../.github/badges/coverage-contract-storybook.svg) |
 | [`@suss/contract-prisma`](../../packages/contract/prisma) | Prisma schema → storage provider summaries. | ![](../../.github/badges/coverage-contract-prisma.svg) |
