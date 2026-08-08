@@ -15,6 +15,7 @@ import { check, checkDir } from "./check.js";
 import { contract } from "./contract.js";
 import { corroborate } from "./corroborateCommand.js";
 import { extract } from "./extract.js";
+import { inspectFlow } from "./flow.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 
@@ -27,6 +28,7 @@ Usage:
   suss inspect <summaries.json>
   suss inspect --dir <directory>
   suss inspect --diff <before.json> <after.json>
+  suss inspect --flow "<METHOD> <url>" [<summaries.json> | --dir <directory>] [--entry <name>] [--scope <document>] [--json]
   suss check <provider.json> <consumer.json> [--json] [-o <output>]
   suss check --dir <directory> [--intent <intent-dir>] [--json] [-o <output>]
   suss contract --from <source> <spec> [-o <output.json>]
@@ -66,6 +68,19 @@ Options (extract):
                    pack. Shown automatically when a run finds nothing.
   --fail-on-empty  Exit non-zero when a run finds nothing
   --fail-on-pack-error  Exit non-zero when a pack throws while it reads
+
+Options (inspect --flow):
+  --flow           The request to ask about, as a method and a URL:
+                   "GET https://shop.example.com/api/orders/123". The answer
+                   names the entry it came in by, every hop it took and what
+                   admitted that hop, and the handler that serves it. A hop
+                   waiting on something the declarations leave open is said to
+                   be possible, never settled.
+  --dir            Folder of summary files to read, instead of one file
+  --entry          Which node the request comes in by, when there is more
+                   than one way in
+  --scope          Which document's node, when two documents declare the name
+  --json           Write the chains as JSON instead of prose
 
 Options (check):
   --dir            Folder of summary files, paired up by method and path
@@ -122,7 +137,7 @@ export async function runCli(args: string[]): Promise<number> {
     return await runExtract(args.slice(1));
   }
   if (command === "inspect") {
-    return runInspect(args.slice(1));
+    return await runInspect(args.slice(1));
   }
   if (command === "check") {
     return runCheck(args.slice(1));
@@ -232,7 +247,11 @@ async function runExtract(args: string[]): Promise<number> {
   return process.exitCode === 1 ? 1 : 0;
 }
 
-function runInspect(argv: string[]): number {
+async function runInspect(argv: string[]): Promise<number> {
+  if (argv.includes("--flow")) {
+    return await runFlow(argv);
+  }
+
   const types = argv.includes("--types");
   const args = argv.filter((a) => a !== "--types");
   if (args[0] === "--diff") {
@@ -267,6 +286,36 @@ function runInspect(argv: string[]): number {
   }
   inspect({ file, ...(types ? { types } : {}) });
   return 0;
+}
+
+async function runFlow(argv: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    options: {
+      flow: { type: "string" },
+      dir: { type: "string" },
+      entry: { type: "string" },
+      scope: { type: "string" },
+      json: { type: "boolean" },
+    },
+    allowPositionals: true,
+  });
+
+  if (values.flow === undefined || values.flow === "") {
+    process.stderr.write(
+      'inspect --flow needs the request to ask about. Try: suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir summaries/\n',
+    );
+    return 1;
+  }
+
+  return await inspectFlow({
+    request: values.flow,
+    ...(values.dir !== undefined ? { dir: values.dir } : {}),
+    ...(positionals.length > 0 ? { file: positionals[0] } : {}),
+    ...(values.entry !== undefined ? { entry: values.entry } : {}),
+    ...(values.scope !== undefined ? { scope: values.scope } : {}),
+    ...(values.json === true ? { json: true } : {}),
+  });
 }
 
 function runCheck(args: string[]): number {

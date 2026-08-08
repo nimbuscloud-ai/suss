@@ -479,3 +479,170 @@ describe("document scoping", () => {
     expect(view.nodes.certain).toEqual(["OrdersStack/Task/app", "Tg"]);
   });
 });
+
+describe("the chain behind an answer", () => {
+  const wiring = [
+    routingSummary("listener-of", {
+      edge: "belongsTo",
+      router: "L",
+      resource: "Lb",
+    }),
+    routingSummary("forward", {
+      edge: "routesTo",
+      router: "L",
+      target: "Tg",
+      matchId: "yes-1",
+      priority: 10,
+      conditions: [{ field: "path-pattern", values: ["/a"], evaluated: true }],
+      matchLanguage: "toy",
+    }),
+    routingSummary("backing", {
+      edge: "fronts",
+      target: "Tg",
+      resource: "Task/app",
+    }),
+    unitSummary("Task/app", "src/app"),
+  ];
+
+  it("names the way in: what hands traffic on and takes none", () => {
+    expect(analyzeFlow(wiring, REQUEST, TOY).entries()).toEqual([
+      { name: "Lb", scope: DOCUMENT },
+    ]);
+  });
+
+  it("walks balancer to listener to target group to unit, and names the handler", () => {
+    const summaries = [
+      ...wiring,
+      restRoute({
+        file: "src/app/routes.ts",
+        name: "getA",
+        method: "GET",
+        path: "/a",
+      }),
+    ];
+    const [chain] = analyzeFlow(summaries, REQUEST, TOY).from("Lb").chains;
+
+    expect(chain.certainty).toBe("certain");
+    expect(chain.hops.map((hop) => [hop.from, hop.to, hop.edge])).toEqual([
+      ["Lb", "L", "belongsTo"],
+      ["L", "Tg", "routesTo"],
+      ["Tg", "Task/app", "fronts"],
+    ]);
+    expect(chain.hops[1].match).toEqual({
+      matchId: "yes-1",
+      priority: 10,
+      conditions: [{ field: "path-pattern", values: ["/a"], evaluated: true }],
+    });
+    expect(chain.end).toEqual({
+      type: "serves",
+      unit: "Task/app",
+      claims: [{ ref: "src/app/routes.ts::getA", certainty: "certain" }],
+    });
+  });
+
+  it("says a unit was reached and nothing inside it answers", () => {
+    const [chain] = analyzeFlow(wiring, REQUEST, TOY).from("Lb").chains;
+
+    expect(chain.end).toEqual({ type: "unserved", unit: "Task/app" });
+  });
+
+  it("carries the doubt: an unsettled hop leaves the whole chain possible", () => {
+    const unsettled = [
+      routingSummary("forward", {
+        edge: "routesTo",
+        router: "L",
+        target: "Tg",
+        matchId: "maybe-1",
+        conditions: [
+          { field: "http-header", values: ["X-Canary=1"], evaluated: false },
+        ],
+        matchLanguage: "toy",
+      }),
+    ];
+    const [chain] = analyzeFlow(unsettled, REQUEST, TOY).from("L").chains;
+
+    expect(chain.hops[0].certainty).toBe("possible");
+    expect(chain.certainty).toBe("possible");
+  });
+
+  it("says which declarations refused, when nothing below the last hop took it", () => {
+    const refusing = [
+      routingSummary("forward", {
+        edge: "routesTo",
+        router: "L",
+        target: "Tg",
+        matchId: "no-1",
+        priority: 3,
+        conditions: [
+          { field: "path-pattern", values: ["/b"], evaluated: true },
+        ],
+        matchLanguage: "toy",
+      }),
+    ];
+    const [chain] = analyzeFlow(refusing, REQUEST, TOY).from("L").chains;
+
+    expect(chain.end).toEqual({
+      type: "stops",
+      node: "L",
+      refused: [
+        {
+          matchId: "no-1",
+          priority: 3,
+          conditions: [
+            { field: "path-pattern", values: ["/b"], evaluated: true },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("ends on the declared response when the request lands on one", () => {
+    const defaulted = [
+      routingSummary("default", {
+        edge: "answers",
+        router: "L",
+        matchId: "yes-default",
+        conditions: [],
+        matchLanguage: "toy",
+        response: { type: "fixed-response", statusCode: 404 },
+      }),
+    ];
+    const [chain] = analyzeFlow(defaulted, REQUEST, TOY).from("L").chains;
+
+    expect(chain.end).toEqual({
+      type: "answers",
+      router: "L",
+      answer: {
+        matchId: "yes-default",
+        router: "L",
+        response: { type: "fixed-response", statusCode: 404 },
+      },
+      certainty: "certain",
+    });
+  });
+
+  it("reports a cycle as a loop rather than walking it twice", () => {
+    const cyclic = [
+      routingSummary("out", {
+        edge: "routesTo",
+        router: "L",
+        target: "Tg",
+        matchId: "yes-1",
+        conditions: [],
+        matchLanguage: "toy",
+      }),
+      routingSummary("back", { edge: "fronts", target: "Tg", resource: "Lb" }),
+      routingSummary("listener-of", {
+        edge: "belongsTo",
+        router: "L",
+        resource: "Lb",
+      }),
+    ];
+    const chains = analyzeFlow(cyclic, REQUEST, TOY).from("Lb").chains;
+
+    expect(chains.map((chain) => chain.end)).toContainEqual({
+      type: "loops",
+      node: "Lb",
+    });
+  });
+});

@@ -8,6 +8,8 @@
 // unrelated stacks that spell a listener the same way stay two
 // listeners.
 
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -95,6 +97,41 @@ describe("the ALB fixture, walked", () => {
       certain: ["src/orders-app/app.ts::allOrders"],
       possible: [],
     });
+  });
+
+  it("gives the chain hop by hop, with the rule that carried each hop", () => {
+    const [chain] = analyzeFlow(
+      summaries,
+      get("/api/orders/123"),
+      SELECTORS,
+    ).from("ShopAlb").chains;
+
+    expect(chain.certainty).toBe("certain");
+    expect(chain.hops.map((hop) => hop.to)).toEqual([
+      "ShopHttpsListener",
+      "OrdersTargetGroup",
+      "OrdersTaskDefinition/orders-app",
+    ]);
+    expect(chain.hops[1].match?.matchId).toBe("OrdersListenerRule");
+    expect(chain.hops[1].match?.priority).toBe(10);
+    expect(chain.end).toEqual({
+      type: "serves",
+      unit: "OrdersTaskDefinition/orders-app",
+      claims: [
+        { ref: "src/orders-app/app.ts::allOrders", certainty: "certain" },
+      ],
+    });
+  });
+
+  it("starts a question at the balancer, which is the one way in", () => {
+    expect(
+      analyzeFlow(summaries, get("/api/orders/123"), SELECTORS).entries(),
+    ).toEqual([
+      {
+        name: "ShopAlb",
+        scope: "cloudformation:fixtures/aws-alb/template.yaml",
+      },
+    ]);
   });
 
   it("resolves the exact health-check path through the lower priority, same target kind aside", () => {
@@ -453,5 +490,36 @@ describe("two top-level stacks sharing a logical id", () => {
     expect(() => analysis.from("HttpListener")).toThrow(
       /2 documents declare a node named "HttpListener"/,
     );
+  });
+
+  it("keeps two template.yaml files in different directories apart, read off disk", () => {
+    // Read by basename, both of these were one document and one scope,
+    // so either stack's rules could answer the other's question.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-two-stacks-"));
+    try {
+      const write = (service: string, template: object): string => {
+        const dir = path.join(root, "services", service);
+        fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, "template.yaml");
+        fs.writeFileSync(file, JSON.stringify(template));
+        return file;
+      };
+      const summaries = [
+        ...cloudFormationFileToSummaries(
+          write("alpha", serviceTemplate("/alpha/*", "TgAlpha")),
+        ),
+        ...cloudFormationFileToSummaries(
+          write("beta", serviceTemplate("/beta/*", "TgBeta")),
+        ),
+      ];
+      const analysis = analyzeFlow(summaries, get("/alpha/1"), SELECTORS);
+
+      expect(analysis.scopesOf("HttpListener")).toHaveLength(2);
+      expect(() => analysis.from("HttpListener")).toThrow(
+        /2 documents declare a node named "HttpListener"/,
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

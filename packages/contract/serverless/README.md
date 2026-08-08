@@ -28,7 +28,7 @@ The framework resolves its variables across the whole document before it compile
 
 ## Two documents, one service
 
-The functions block and the `resources:` block deploy into a single stack, so a logical id means the same thing in both and a queue declared under `resources:` is the queue an `sqs` event names. They carry different provenance labels, built the way a nested stack's label is: `serverless:serverless.yml` and `serverless:serverless.yml#resources`. A reader can tell which block declared what, and the flow walk still scopes both to one service, since it scopes on the part before the `#`.
+The functions block and the `resources:` block deploy into a single stack, so a logical id means the same thing in both and a queue declared under `resources:` is the queue an `sqs` event names. They carry different provenance labels, built the way a nested stack's label is: `serverless:services/orders/serverless.yml` and `serverless:services/orders/serverless.yml#resources`. A reader can tell which block declared what, and the flow walk still scopes both to one service, since it scopes on the part before the `#`. The label says where the service file sits in the repository, so a monorepo full of services keeps them apart.
 
 ## Minimal usage
 

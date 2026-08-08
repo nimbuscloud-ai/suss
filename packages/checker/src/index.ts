@@ -65,10 +65,22 @@ export { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreeme
 export { checkProviderCoverage } from "./coverage/providerCoverage.js";
 export { dedupeFindings } from "./dedupe.js";
 export {
+  buildFlowChains,
+  type FlowCertainty,
+  type FlowChain,
+  type FlowChainContext,
+  type FlowEdgeKind,
+  type FlowEnd,
+  type FlowHop,
+  type FlowHopMatch,
+  type FlowServingClaim,
+} from "./flow/flowChains.js";
+export {
   analyzeFlow,
   FLOW_RULES,
   type FlowAnalysis,
   type FlowEndpointSets,
+  type FlowEntry,
   type FlowView,
 } from "./flow/reachability.js";
 export {

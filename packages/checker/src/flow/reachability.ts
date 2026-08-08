@@ -21,6 +21,7 @@
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import { servesRequest } from "@suss/ir-core";
 
+import { buildFlowChains } from "./flowChains.js";
 import { collectFlowInputs, scopedFlowNode } from "./routingFacts.js";
 
 import type {
@@ -29,6 +30,7 @@ import type {
   RouterMatchSelector,
 } from "@suss/behavioral-ir";
 import type { Rule } from "@suss/datalog";
+import type { FlowChain, FlowServingClaim } from "./flowChains.js";
 import type {
   AnsweredMatch,
   FlowInputs,
@@ -160,6 +162,15 @@ export interface FlowView {
   answers: { certain: AnsweredMatch[]; possible: AnsweredMatch[] };
   /** Serving claims (`file::name`) inside reached units that answer the request. */
   claims: FlowEndpointSets;
+  /** The same answer as a route: each path the request takes, hop by hop. */
+  chains: FlowChain[];
+}
+
+/** A node a question can start from: one that hands traffic on and takes none. */
+export interface FlowEntry {
+  name: string;
+  /** The document that declared it, which is also the scope its walk stays inside. */
+  scope: string;
 }
 
 export interface FlowAnalysis {
@@ -172,6 +183,18 @@ export interface FlowAnalysis {
    * them would answer one stack's question from another stack's rules.
    */
   from(entry: string, documentScope?: string): FlowView;
+  /**
+   * Where a request can come in: every node that hands traffic on and
+   * is handed none, which is the balancer or router a client reaches
+   * first. Sorted by name, then by document.
+   */
+  entries(): FlowEntry[];
+  /**
+   * The documents that declare a node of this name. More than one and
+   * `from` needs to be told which, since neither document's rules may
+   * answer the other's question.
+   */
+  scopesOf(entry: string): string[];
 }
 
 interface Admissions {
@@ -237,11 +260,46 @@ function selectAdmissions(
   return { admits, may };
 }
 
+/**
+ * Which serving claims answer the request, and how surely, placed in
+ * the units that hold them. Whether a claim answers is its own
+ * protocol's question, asked once here and used by both the walk and
+ * the chains behind it.
+ */
+interface ServingIndex {
+  byUnit: Map<string, FlowServingClaim[]>;
+  byRef: Map<string, FlowServingClaim>;
+}
+
+function indexServingClaims(
+  inputs: FlowInputs,
+  request: FlowRequest,
+): ServingIndex {
+  const index: ServingIndex = { byUnit: new Map(), byRef: new Map() };
+  for (const claim of inputs.claims) {
+    const outcome = servesRequest(claim.binding, request.method, request.path);
+    if (outcome === null || outcome === "nomatch") {
+      continue;
+    }
+
+    const serving: FlowServingClaim = {
+      ref: claim.ref,
+      certainty: outcome === "match" ? "certain" : "possible",
+    };
+    index.byRef.set(claim.ref, serving);
+    for (const unit of claim.units) {
+      const node = scopedFlowNode(unit.scope, unit.instanceName);
+      index.byUnit.set(node, [...(index.byUnit.get(node) ?? []), serving]);
+    }
+  }
+  return index;
+}
+
 function assertFacts(
   db: Database,
   inputs: FlowInputs,
   admissions: Admissions,
-  request: FlowRequest,
+  serving: ServingIndex,
 ): void {
   for (const tuple of inputs.edges.routesTo) {
     db.add("routesTo", tuple);
@@ -267,20 +325,16 @@ function assertFacts(
     db.add("mayAdmit", [matchId]);
   }
 
-  for (const claim of inputs.claims) {
-    const outcome = servesRequest(claim.binding, request.method, request.path);
-    if (outcome === null || outcome === "nomatch") {
-      continue;
+  for (const [unitNode, claims] of serving.byUnit) {
+    for (const claim of claims) {
+      db.add("serves", [unitNode, claim.ref]);
     }
+  }
 
-    for (const unit of claim.units) {
-      db.add("serves", [
-        scopedFlowNode(unit.scope, unit.instanceName),
-        claim.ref,
-      ]);
-    }
-
-    db.add(outcome === "match" ? "admitsServe" : "mayServe", [claim.ref]);
+  for (const claim of serving.byRef.values()) {
+    db.add(claim.certainty === "certain" ? "admitsServe" : "mayServe", [
+      claim.ref,
+    ]);
   }
 }
 
@@ -345,7 +399,51 @@ const EMPTY_VIEW: FlowView = {
   units: { certain: [], possible: [] },
   answers: { certain: [], possible: [] },
   claims: { certain: [], possible: [] },
+  chains: [],
 };
+
+/**
+ * The nodes traffic can enter by: those with an edge out and none in.
+ * A listener belongs to its balancer, so the balancer is the entry and
+ * its listeners sit one hop in.
+ */
+function entryNodes(inputs: FlowInputs): FlowEntry[] {
+  const entered = new Set<string>();
+  const leaves = new Set<string>();
+  for (const [router, target] of inputs.edges.routesTo) {
+    entered.add(target);
+    leaves.add(router);
+  }
+
+  for (const [target, resource] of inputs.edges.fronts) {
+    entered.add(resource);
+    leaves.add(target);
+  }
+
+  for (const [listener, balancer] of inputs.edges.belongsTo) {
+    entered.add(listener);
+    leaves.add(balancer);
+  }
+
+  const entries: FlowEntry[] = [];
+  for (const node of leaves) {
+    if (entered.has(node)) {
+      continue;
+    }
+
+    const [scope, name] = splitFlowNode(node, inputs);
+    entries.push({ name, scope });
+  }
+  return entries.sort(
+    (a, b) => a.name.localeCompare(b.name) || a.scope.localeCompare(b.scope),
+  );
+}
+
+/** A scoped node key read back as the document that declared it and the name it wrote. */
+function splitFlowNode(node: string, inputs: FlowInputs): [string, string] {
+  const name = inputs.nodeNames.get(node) ?? node;
+  return [node.slice(0, Math.max(node.length - name.length - 2, 0)), name];
+}
 
 /**
  * Walk the summary set's routing edges for one request. `selectors`
@@ -361,11 +459,15 @@ export function analyzeFlow(
 ): FlowAnalysis {
   const inputs = collectFlowInputs(summaries);
   const admissions = selectAdmissions(inputs.edges.routers, selectors, request);
+  const serving = indexServingClaims(inputs, request);
   const db = new Database();
-  assertFacts(db, inputs, admissions, request);
+  assertFacts(db, inputs, admissions, serving);
   evaluate(db, FLOW_RULES);
 
   return {
+    entries: (): FlowEntry[] => entryNodes(inputs),
+    scopesOf: (entry: string): string[] =>
+      [...(inputs.nodeScopes.get(entry) ?? [])].sort(),
     from(entry: string, documentScope?: string): FlowView {
       const entryNode = resolveEntry(inputs, entry, documentScope);
       if (entryNode === null) {
@@ -405,6 +507,16 @@ export function analyzeFlow(
           targetsOf(db, "servedBy", entryNode),
           targetsOf(db, "mayServedBy", entryNode),
           (key) => key,
+        ),
+        chains: buildFlowChains(
+          {
+            inputs,
+            admits: admissions.admits,
+            mayAdmit: admissions.may,
+            serving: serving.byUnit,
+            reachable: new Set([entryNode, ...mayNodes]),
+          },
+          entryNode,
         ),
       };
     },

@@ -21,6 +21,9 @@ suss inspect --diff before.json after.json
 # Overview of every provider/consumer pair in a directory of summaries
 suss inspect --dir summaries/
 
+# Who serves this request, hop by hop, from the balancer to the handler
+suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir summaries/
+
 # Pairwise check: compare one provider against one consumer
 suss check provider.json consumer.json [--json] [-o findings.json]
 

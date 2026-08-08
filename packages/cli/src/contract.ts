@@ -30,25 +30,39 @@ export interface ContractOptions {
   output?: string;
 }
 
-type ContractLoader = (specPath: string) => Promise<BehavioralSummary[]>;
+/**
+ * `source` is the label to record on every summary, and it is set only
+ * for a spec that came from a URL: a reader reading a file off disk
+ * labels it by where it sits in the repository, which is the better
+ * answer and one only the reader can give, since a directory spec
+ * resolves to its file inside the reader.
+ */
+type ContractLoader = (
+  specPath: string,
+  source: string | undefined,
+) => Promise<BehavioralSummary[]>;
 
 const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
   openapi: async (specPath) => {
     const mod = await import("@suss/contract-openapi");
     return mod.openApiFileToSummaries(specPath);
   },
-  cloudformation: async (specPath) => {
+  cloudformation: async (specPath, source) => {
     const mod = await import("@suss/contract-cloudformation");
-    return mod.cloudFormationFileToSummaries(specPath);
+    return mod.cloudFormationFileToSummaries(specPath, {
+      ...(source !== undefined ? { source } : {}),
+    });
   },
-  serverless: async (specPath) => {
+  serverless: async (specPath, source) => {
     // `--from serverless` reads a Serverless Framework service file
     // (the path may name the file or the directory holding it) and
     // emits the same summaries the wiring would produce from a SAM
     // template: one runtime-config provider per function, routes for
     // httpApi / http events, and message-bus summaries for the rest.
     const mod = await import("@suss/contract-serverless");
-    return mod.serverlessFileToSummaries(specPath);
+    return mod.serverlessFileToSummaries(specPath, {
+      ...(source !== undefined ? { source } : {}),
+    });
   },
   storybook: async (specPath) => {
     // `--from storybook` accepts a single `.stories.ts[x]` file path or
@@ -146,7 +160,7 @@ function walkForStoryFiles(dir: string): string[] {
  */
 async function resolveSpec(
   spec: string,
-): Promise<{ path: string; cleanup?: () => void }> {
+): Promise<{ path: string; fetchedFrom?: string; cleanup?: () => void }> {
   if (!/^https?:\/\//i.test(spec)) {
     return { path: spec };
   }
@@ -163,6 +177,7 @@ async function resolveSpec(
   fs.writeFileSync(tmpPath, content);
   return {
     path: tmpPath,
+    fetchedFrom: spec,
     cleanup: () => {
       try {
         fs.unlinkSync(tmpPath);
@@ -184,9 +199,15 @@ export async function contract(
   }
 
   const resolved = await resolveSpec(options.spec);
+  // A fetched spec sits in a temp file whose name says nothing about
+  // which document it is, so the URL it came from stays its identity.
+  const source =
+    resolved.fetchedFrom === undefined
+      ? undefined
+      : `${options.from}:${resolved.fetchedFrom}`;
   let summaries: BehavioralSummary[];
   try {
-    summaries = await loader(resolved.path);
+    summaries = await loader(resolved.path, source);
   } finally {
     resolved.cleanup?.();
   }

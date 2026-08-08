@@ -48,9 +48,9 @@ channel still keeps the name the code says, whichever document declared the
 queue. Only the walk's keying is scoped. A query whose entry name two
 documents both declare is refused until the caller passes the document scope,
 because merging them would answer one stack's question from another stack's
-rules; the two residual holes are documents whose provenance labels collide
-(two trees read with one default label) and names that cross documents by
-design, like channels.
+rules. A manifest reader labels each document by where it sits in its
+repository, so two services' `template.yaml` are two labels and two scopes.
+The residual hole is names that cross documents by design, like channels.
 
 ## Key files
 
@@ -58,5 +58,9 @@ design, like channels.
   tuples, groups each router's match records for its selector, and places
   serving claims into units via `scope/`.
 - `reachability.ts` holds `FLOW_RULES` and `analyzeFlow`, the per-request
-  entry point. Rendering a flow at the terminal is inspect's job and a later
-  slice; here the results come back as data.
+  entry point. Results come back as data; rendering them at the terminal is
+  `suss inspect --flow`, in the CLI.
+- `flowChains.ts` reconstructs the route behind an answer: the hops a request
+  took and the match record that carried each one, so a person can be told
+  which rule sent them where. It only steps into nodes the fixpoint already
+  put in reach, so the chains and the reachable sets cannot disagree.

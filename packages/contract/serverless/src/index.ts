@@ -35,7 +35,10 @@
 import path from "node:path";
 
 import { nestedDocumentLabel } from "@suss/behavioral-ir";
-import { cloudFormationToSummaries } from "@suss/contract-cloudformation";
+import {
+  cloudFormationToSummaries,
+  documentSourceLabel,
+} from "@suss/contract-cloudformation";
 
 import { loadServerlessDocument, locateServiceFile } from "./document.js";
 import { translateService, type UnreadWiring } from "./translate.js";
@@ -147,7 +150,7 @@ export function serverlessFileToSummaries(
 
   return serverlessToSummaries(document, {
     ...options,
-    source: options.source ?? `serverless:${path.basename(located.file)}`,
+    source: options.source ?? documentSourceLabel("serverless", located.file),
   });
 }
 

@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1687,
-      "covered": 1530,
+      "total": 1801,
+      "covered": 1640,
       "skipped": 0,
-      "pct": 90.69
+      "pct": 91.06
     },
     "statements": {
-      "total": 1712,
-      "covered": 1555,
+      "total": 1829,
+      "covered": 1668,
       "skipped": 0,
-      "pct": 90.82
+      "pct": 91.19
     },
     "functions": {
-      "total": 300,
-      "covered": 271,
+      "total": 325,
+      "covered": 295,
       "skipped": 0,
-      "pct": 90.33
+      "pct": 90.76
     },
     "branches": {
-      "total": 1094,
-      "covered": 898,
+      "total": 1172,
+      "covered": 960,
       "skipped": 0,
-      "pct": 82.08
+      "pct": 81.91
     },
     "branchesTrue": {
       "total": 0,
@@ -473,56 +473,82 @@
       "pct": 93.75
     }
   },
-  "src/flow/reachability.ts": {
+  "src/flow/flowChains.ts": {
     "lines": {
-      "total": 80,
-      "covered": 78,
+      "total": 81,
+      "covered": 76,
       "skipped": 0,
-      "pct": 97.5
+      "pct": 93.82
     },
     "functions": {
-      "total": 15,
-      "covered": 14,
+      "total": 19,
+      "covered": 19,
       "skipped": 0,
-      "pct": 93.33
+      "pct": 100
     },
     "statements": {
-      "total": 83,
-      "covered": 81,
+      "total": 84,
+      "covered": 79,
       "skipped": 0,
-      "pct": 97.59
+      "pct": 94.04
     },
     "branches": {
-      "total": 28,
-      "covered": 26,
+      "total": 66,
+      "covered": 52,
       "skipped": 0,
-      "pct": 92.85
+      "pct": 78.78
+    }
+  },
+  "src/flow/reachability.ts": {
+    "lines": {
+      "total": 113,
+      "covered": 110,
+      "skipped": 0,
+      "pct": 97.34
+    },
+    "functions": {
+      "total": 21,
+      "covered": 18,
+      "skipped": 0,
+      "pct": 85.71
+    },
+    "statements": {
+      "total": 116,
+      "covered": 113,
+      "skipped": 0,
+      "pct": 97.41
+    },
+    "branches": {
+      "total": 40,
+      "covered": 33,
+      "skipped": 0,
+      "pct": 82.5
     }
   },
   "src/flow/routingFacts.ts": {
     "lines": {
       "total": 71,
-      "covered": 64,
+      "covered": 66,
       "skipped": 0,
-      "pct": 90.14
+      "pct": 92.95
     },
     "functions": {
       "total": 15,
-      "covered": 14,
+      "covered": 15,
       "skipped": 0,
-      "pct": 93.33
+      "pct": 100
     },
     "statements": {
       "total": 71,
-      "covered": 64,
+      "covered": 66,
       "skipped": 0,
-      "pct": 90.14
+      "pct": 92.95
     },
     "branches": {
       "total": 54,
-      "covered": 44,
+      "covered": 47,
       "skipped": 0,
-      "pct": 81.48
+      "pct": 87.03
     }
   },
   "src/interactions/dispatcher.ts": {
