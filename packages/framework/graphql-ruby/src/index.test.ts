@@ -58,6 +58,42 @@ describe("graphqlRubyFramework", () => {
     ).toBe(false);
   });
 
+  it("refuses to build without a root, and says what a root is", () => {
+    // A caller with no types in front of it (the CLI, holding a config
+    // somebody wrote by hand) can arrive with nothing. Reading half a
+    // schema and saying nothing would be worse than refusing.
+    const withoutOptions = graphqlRubyFramework as unknown as () => unknown;
+    expect(() => withoutOptions()).toThrow(/needs `root`/);
+    expect(() => graphqlRubyFramework({ root: "" })).toThrow(/app\/graphql/);
+  });
+
+  it("reads a relative root from the file it was written in", () => {
+    // A root written in a config file is written relative to that
+    // file. Reading it relative to whatever directory the command runs
+    // from means the same config finds the classes from one place and
+    // nothing from anywhere else, and finding nothing looks exactly
+    // like a schema whose fields are all unwired.
+    const pack = graphqlRubyFramework({
+      root: "app/graphql",
+      configDirectory: "/repo",
+    });
+    const [pattern] = pack.discovery;
+    expect(pattern?.type === "graphqlObjectFields" && pattern.root).toBe(
+      "/repo/app/graphql",
+    );
+  });
+
+  it("leaves an absolute root alone, wherever the file sits", () => {
+    const pack = graphqlRubyFramework({
+      root: "/srv/app/graphql",
+      configDirectory: "/repo",
+    });
+    const [pattern] = pack.discovery;
+    expect(pattern?.type === "graphqlObjectFields" && pattern.root).toBe(
+      "/srv/app/graphql",
+    );
+  });
+
   it("is the module's default export too", async () => {
     const mod = await import("./index.js");
     expect(mod.default).toBe(graphqlRubyFramework);

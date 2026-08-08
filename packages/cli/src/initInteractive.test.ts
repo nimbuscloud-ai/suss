@@ -106,6 +106,31 @@ describe("suss init, guided", () => {
     expect(output()).toContain("No packs to suggest");
   });
 
+  it("says what it could not read, rather than reporting a project with nothing in it", async () => {
+    // A legacy Python project whose setup.py computes its dependency
+    // list has no pack to suggest and one thing worth saying. The
+    // generic nothing-matched message on its own reads as though suss
+    // had looked and found nothing there.
+    write("setup.py", "setup(install_requires=read_requirements())\n");
+
+    const code = await initInteractive({ dir });
+
+    expect(code).toBe(0);
+    expect(output()).toContain("setup.py");
+    expect(output()).toContain("computed");
+  });
+
+  it("still offers the packs it did find when another manifest is unreadable", async () => {
+    project(".", "api", ["hono"]);
+    write("setup.py", "setup(install_requires=read_requirements())\n");
+    declineEverything(4);
+
+    await initInteractive({ dir });
+
+    expect(output()).toContain("hono");
+    expect(output()).toContain("setup.py");
+  });
+
   it("names each pack and what suggested it", async () => {
     project(".", "api", ["hono"]);
     declineEverything(4);

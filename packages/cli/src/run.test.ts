@@ -3,12 +3,22 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runCli, USAGE } from "./run.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+);
+const pythonFixture = path.join(repoRoot, "fixtures", "python-webapp");
+const rubyFixture = path.join(repoRoot, "fixtures", "ruby-graphql");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -237,6 +247,106 @@ describe("runCli — extract", () => {
     expect(io.stderr).toContain("Timing:");
     const written = JSON.parse(fs.readFileSync(outFile, "utf8"));
     expect(Array.isArray(written)).toBe(true);
+  });
+
+  it("rejects a --lang nobody has an adapter for, and says which it takes", async () => {
+    const { exit, io } = await capture(() =>
+      runCli(["extract", "--lang", "perl", "-f", "express"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("python");
+  });
+
+  it("reads a Python project through --lang, and writes the summaries", async () => {
+    const outFile = path.join(tmpDir, "python.json");
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "--lang",
+        "python",
+        "--dir",
+        pythonFixture,
+        "-f",
+        "fastapi",
+        "-o",
+        outFile,
+      ]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain("Wrote");
+    const written = JSON.parse(fs.readFileSync(outFile, "utf8")) as Array<{
+      identity: { name: string };
+    }>;
+    expect(written.map((s) => s.identity.name)).toContain("read_item");
+  });
+
+  it("keeps reading a subdirectory of a TypeScript monorepo as TypeScript", async () => {
+    // A stray script beside the source is not a change of language.
+    // Source resolution walks up for the root tsconfig and reads this
+    // as TypeScript, so language resolution has to agree, or the run
+    // fails with a pack that reads the wrong language.
+    fs.writeFileSync(
+      path.join(tmpDir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { strict: true } }),
+    );
+    const service = path.join(tmpDir, "scripts");
+    fs.mkdirSync(service, { recursive: true });
+    fs.writeFileSync(path.join(service, "backfill.py"), "x = 1\n");
+
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "--dir",
+        service,
+        "-f",
+        "express",
+        "-o",
+        path.join(tmpDir, "web.json"),
+        "--no-cache",
+      ]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).not.toContain("reads TypeScript");
+    expect(io.stderr).not.toContain("could not tell what language");
+  });
+
+  it("reads a directory that names a Python project of its own as Python", async () => {
+    // The other half of the same rule: a tsconfig above does not
+    // overrule a pyproject written right here.
+    fs.writeFileSync(path.join(tmpDir, "tsconfig.json"), "{}");
+    const service = path.join(tmpDir, "services", "orders");
+    fs.mkdirSync(service, { recursive: true });
+    fs.writeFileSync(path.join(service, "pyproject.toml"), "[project]\n");
+    fs.cpSync(path.join(pythonFixture, "myapp"), path.join(service, "myapp"), {
+      recursive: true,
+    });
+
+    const outFile = path.join(tmpDir, "orders.json");
+    const { exit } = await capture(() =>
+      runCli(["extract", "--dir", service, "-f", "fastapi", "-o", outFile]),
+    );
+    expect(exit).toBe(0);
+    const written = JSON.parse(fs.readFileSync(outFile, "utf8")) as Array<{
+      identity: { name: string };
+    }>;
+    expect(written.map((s) => s.identity.name)).toContain("read_item");
+  });
+
+  it("says what a pack needs rather than throwing a stack at somebody", async () => {
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "--dir",
+        rubyFixture,
+        "-f",
+        "graphql-ruby",
+        "-o",
+        path.join(tmpDir, "ruby.json"),
+      ]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("needs `root`");
+    expect(io.stderr).not.toContain("    at ");
   });
 });
 

@@ -3,9 +3,9 @@
     "packages": 44,
     "packagesWithExports": 43,
     "exports": 374,
-    "internal": 1363,
-    "consumers": 579,
-    "pairs": 571
+    "internal": 1409,
+    "consumers": 584,
+    "pairs": 576
   },
   "packages": {
     "packages/adapter/python": {
@@ -47,8 +47,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 172,
-      "consumers": 145
+      "internal": 217,
+      "consumers": 150
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -191,7 +191,7 @@
     "packages/framework/graphql-ruby": {
       "name": "@suss/framework-graphql-ruby",
       "exports": 2,
-      "internal": 0,
+      "internal": 1,
       "consumers": 5
     },
     "packages/framework/hono": {

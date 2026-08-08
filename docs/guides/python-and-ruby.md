@@ -1,11 +1,10 @@
 # Read a Python or Ruby project
 
-suss reads Python and Ruby through two language adapters, which you
-call from a small Node script. `suss extract` cannot reach them yet;
-the CLI is TypeScript and JavaScript only. Everything downstream is
-unchanged, because a summary carries a boundary binding whatever
-language it came from. `suss check` and `suss inspect` read the file
-the script writes exactly as they read one the CLI wrote.
+suss reads Python and Ruby through two language adapters, and
+`suss extract` reaches both. Everything downstream is unchanged,
+because a summary carries a boundary binding whatever language it came
+from, so `suss check` and `suss inspect` read a Python project's
+summaries exactly as they read a TypeScript project's.
 
 ## What the two adapters read today
 
@@ -21,40 +20,42 @@ is which boundaries exist and what each one declares, which is enough
 to pair a Python route against the TypeScript client that calls it, or
 a graphql-ruby field against a query your frontend sends.
 
-## Point a script at a Python project
+## Let init find the project
 
-```ts
-import fs from "node:fs";
+`suss init` reads the dependency list a Python or Ruby project states
+and prints the commands for what it finds:
 
-import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
-import { SUMMARY_SCHEMA_VERSION } from "@suss/behavioral-ir";
-import { fastapiFramework } from "@suss/framework-fastapi";
-import { flaskRestxFramework } from "@suss/framework-flask-restx";
-
-const root = "/repo/services/shop";
-
-const { summaries } = await extractPythonProject({
-  files: findPythonFiles(root),
-  packs: [
-    flaskRestxFramework({ wrapperModules: ["myapp.wrappers.restx"] }),
-    fastapiFramework(),
-  ],
-  roots: [root],
-  workspaceRoot: "/repo",
-});
-
-for (const summary of summaries) {
-  summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
-}
-
-fs.writeFileSync("summaries/shop.json", JSON.stringify(summaries, null, 2));
+```bash
+npx suss init services/shop
 ```
 
-`SUMMARY_SCHEMA_VERSION` comes from `@suss/behavioral-ir`. Stamping it
-is what `suss extract` does on its way out, and it saves a later reader
-treating the file as one written before the field existed.
+It reads `requirements.txt` and its includes, `pyproject.toml` (both
+the standard table and Poetry's), `Pipfile`, `setup.cfg`, and
+`Gemfile.lock`, and names the pack for each library it recognizes.
+Where it looked and could not read something, it says so: a `setup.py`
+that computes its dependency list, a `Gemfile` with no lock file
+beside it, and a submodule nobody checked out each get a line, because
+a library named only in one of those is a pack suss cannot suggest.
 
-Then read the file back with the CLI:
+## Point extract at a Python project
+
+```bash
+npx suss extract --dir services/shop -f fastapi \
+  -f flask-restx=suss.flask-restx.json -o summaries/shop.json
+```
+
+There is no tsconfig here, so point suss at the directory. It works out
+that the directory is Python from what it holds: a `pyproject.toml`, a
+requirements file, `setup.py`, `Pipfile`, or failing all of those, the
+`.py` files themselves. The packs you name settle it too, since nobody
+asks for a Python pack over a TypeScript project. `--lang python` says
+it outright when you would rather not leave it to that:
+
+```bash
+npx suss extract --lang python --dir services/shop -f fastapi -o summaries/shop.json
+```
+
+Then read the file back:
 
 ```bash
 npx suss inspect summaries/shop.json
@@ -89,23 +90,60 @@ one. Tracked as
 [#215](https://github.com/nimbuscloud-ai/suss/issues/215). Until it is
 fixed, find the route by its method and path rather than by the number.
 
-The four options:
+What the command reads, and from where:
 
-- **`files`** is every file to parse, as absolute paths. `findPythonFiles(root)`
-  walks a directory for `.py` files and skips `__pycache__`, `.venv`,
-  `venv`, `node_modules` and `.git`.
-- **`roots`** is what an absolute import resolves against, the closest
-  thing a Python project has to a tsconfig's `paths`. A module found
-  under two roots comes back ambiguous rather than resolved, because
-  which one wins is a `sys.path` fact only a running interpreter has.
-- **`workspaceRoot`** shortens each summary's `location.file` to a
-  repo-relative path, the way `suss extract` writes them. Leave it off
-  and the paths stay absolute.
-- **`packs`** is which libraries to look for. Nothing else in the
-  adapter knows a decorator name.
+- **The files.** Every `.py` file under the directory, skipping
+  `__pycache__`, `.venv`, `venv`, `node_modules` and `.git`. Name files
+  yourself with `--files` when you want a subset. A repository checked
+  out inside the tree is left to that repository, unless this project's
+  own `.gitmodules` names it as a submodule, in which case its code is
+  code this project imports and is read as such.
+- **What an absolute import resolves against.** The directory you
+  pointed at, plus each checked-out submodule, which is the closest
+  thing a Python project has to a tsconfig's `paths`. A submodule
+  nobody checked out is reported: an import into an empty directory
+  resolves to nothing, and the routes that depend on it would otherwise
+  go quietly missing. A module found under two roots comes back
+  ambiguous rather than resolved, because which one wins is a
+  `sys.path` fact only a running interpreter has. With `-o`, the
+  missing submodule is written to a note beside the summaries as well,
+  so a CI job reading the summaries can tell the run was incomplete
+  without watching stderr.
+- **The packs.** Nothing else in the adapter knows a decorator name.
+
+Summary paths come out relative to the directory you pointed at, so the
+file is portable, and each summary is stamped with the format version.
 
 Neither pack needs an installed Python, an interpreter, or a virtualenv.
 Parsing is tree-sitter compiled to WASM and shipped in the package.
+
+### Configuring a pack
+
+Every built-in TypeScript pack needs nothing from you, because
+everything it matches on is something its library defines. Two of these
+three want a sentence about your project. Write it to a JSON file and
+name the file on the flag, which is how every pack takes configuration:
+
+```bash
+npx suss extract --dir services/shop -f flask-restx=suss.flask-restx.json
+```
+
+`suss.flask-restx.json` holds what the pack documents, and nothing else
+reads it:
+
+```json
+{ "wrapperModules": ["myapp.wrappers.restx"] }
+```
+
+A pack that cannot work without a value says so and stops, rather than
+reading half a project quietly. Where an option names a directory, a
+relative path is read relative to the config file itself, so the same
+file works whichever directory you run the command from.
+
+You can still drive the adapters from a Node script, which is what to
+do when you want something the CLI does not expose. `extractPythonProject`
+and `findPythonFiles` come from `@suss/adapter-python`, and
+`extractRubyProject` and `findRubyFiles` from `@suss/adapter-ruby`.
 
 ### Telling flask-restx about your own wrapper
 
@@ -169,31 +207,28 @@ need none of it.
 
 Dependencies, middleware, and mounted sub-apps are not read yet.
 
-## Point a script at a Ruby project
+## Point extract at a Ruby project
 
-```ts
-import { extractRubyProject, findRubyFiles } from "@suss/adapter-ruby";
-import { graphqlRubyFramework } from "@suss/framework-graphql-ruby";
-
-const graphqlRoot = "/repo/app/graphql";
-
-const { summaries } = await extractRubyProject({
-  files: findRubyFiles(graphqlRoot),
-  packs: [graphqlRubyFramework({ root: graphqlRoot })],
-  workspaceRoot: "/repo",
-});
+```bash
+npx suss extract --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/schema.json
 ```
 
-`findRubyFiles` walks for `.rb` files and skips `vendor`,
-`node_modules`, `tmp` and `.git`. There is no `roots` option here: Ruby
-constants resolve through class and module nesting, and `require` is
-not followed.
+```json
+{ "root": "app/graphql" }
+```
+
+A `Gemfile`, a `Gemfile.lock`, or a Rails `config/application.rb` is
+enough for suss to read the directory as Ruby, and `--lang ruby` says
+so outright. The walk takes every `.rb` file, skipping `vendor`,
+`node_modules`, `tmp` and `.git`. Ruby constants resolve through class
+and module nesting and `require` is not followed, so there is nothing
+here matching Python's import roots.
 
 The pack takes three options:
 
 | Option | Default | What it does |
 |---|---|---|
-| `root` | required | The directory a `mutation:` or `resolver:` reference resolves against, through Rails' constant-to-path convention. `Mutations::CampaignUpdate` is read from `<root>/mutations/campaign_update.rb`. Your layout is your project's, so there is no default. |
+| `root` | required | The directory a `mutation:` or `resolver:` reference resolves against, through Rails' constant-to-path convention. `Mutations::CampaignUpdate` is read from `<root>/mutations/campaign_update.rb`. Your layout is your project's, so there is no default, and the pack reads nothing without one. Written relative, it is read relative to the config file it was written in. |
 | `baseClassNames` | `["Types::BaseObject"]` | Names a project's own intermediate base class. What you pass is added to graphql-ruby's own generated base, not swapped for it. |
 | `camelize` | `true` | graphql-ruby's schema-wide default for exposing a snake_case symbol camelCased. Set it to `false` when your schema does. A `field` or `argument` call's own `camelize:` keyword still wins for that one name, the same as it does at runtime. |
 

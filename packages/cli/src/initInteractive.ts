@@ -51,23 +51,33 @@ export async function initInteractive(
   // the printed commands, which are the same instructions the questions
   // below would carry out.
   if (options.plain === true || !p.isTTY(process.stdout) || p.isCI()) {
-    process.stdout.write(printable(targets));
+    process.stdout.write(printable(root, targets));
     return 0;
   }
 
   p.intro("suss init");
 
-  if (targets.length === 0) {
+  // A project whose manifest suss could not read has nothing to
+  // install and something to say, and the something is the more
+  // useful half: a setup.py that computes its dependency list is why
+  // nothing was suggested.
+  const withPacks = targets.filter(
+    (target) => target.report.suggestions.length > 0,
+  );
+  if (withPacks.length === 0) {
     p.log.warn(`Nothing in ${root} matched a pack.`);
     p.note(
       "suss reads code through a pack per framework, client, or schema it\nrecognizes, and nothing here names one. `suss --help` lists them.",
       "No packs to suggest",
     );
+    reportUnread(targets);
     p.outro("Nothing to set up.");
     return 0;
   }
 
-  const chosen = await chooseTargets(targets);
+  reportUnread(targets);
+
+  const chosen = await chooseTargets(withPacks);
   if (chosen === null) {
     p.cancel("Left everything as it was.");
     return 0;
@@ -90,13 +100,22 @@ export async function initInteractive(
   return 0;
 }
 
-/** Every package worth setting up, whether this is one project or many. */
+/**
+ * Every package worth saying something about, whether this is one
+ * project or many.
+ *
+ * A package with a pack to suggest is the usual reason. A package whose
+ * dependency list suss looked at and could not read is the other one:
+ * dropping it here is how a legacy setup.py project ends up being told
+ * that nothing matched, when what happened is that suss could not read
+ * the file that would have said.
+ */
 function findTargets(root: string): Target[] {
   const workspace = readWorkspace(root);
 
   if (workspace.packages.length === 0) {
     const report = inspectProject(root);
-    return report.suggestions.length > 0
+    return worthReporting(report)
       ? [{ directory: ".", label: path.basename(root), report }]
       : [];
   }
@@ -107,13 +126,29 @@ function findTargets(root: string): Target[] {
       label: pkg.name ?? pkg.directory,
       report: inspectProject(path.join(root, pkg.directory)),
     }))
-    .filter((target) => target.report.suggestions.length > 0);
+    .filter((target) => worthReporting(target.report));
 }
 
-function printable(targets: Target[]): string {
+const worthReporting = (report: InitReport): boolean =>
+  report.suggestions.length > 0 || (report.unread ?? []).length > 0;
+
+/** Say what suss could not read, before anything is installed or run. */
+function reportUnread(targets: Target[]): void {
+  for (const target of targets) {
+    for (const entry of target.report.unread ?? []) {
+      const where =
+        target.directory === "."
+          ? entry.where
+          : path.join(target.directory, entry.where);
+      p.log.warn(`${where}: ${entry.reason}`);
+    }
+  }
+}
+
+function printable(root: string, targets: Target[]): string {
   if (targets.length === 0) {
     return formatInitReport({
-      root: process.cwd(),
+      root,
       tsconfig: null,
       suggestions: [],
     });
@@ -305,6 +340,16 @@ async function offerFirstRun(
   }
 
   for (const command of commands) {
+    const missing = (command.needsConfig ?? []).filter(
+      (file) => !fs.existsSync(path.join(root, file)),
+    );
+    if (missing.length > 0) {
+      p.log.warn(
+        `Skipping \`${command.display}\`: write ${missing.join(", ")} first, then run it. A pack that needs one reads nothing without it.`,
+      );
+      continue;
+    }
+
     const progress = startProgress(command.display);
     const result = await run(command.bin, command.args, root, progress.saw);
     // `check` exits non-zero when it finds something, which is the tool
@@ -328,6 +373,12 @@ interface RunnableCommand {
   display: string;
   showOutput?: boolean;
   findingsAreExpected?: boolean;
+  /**
+   * Config files a pack in this command cannot run without, relative to
+   * where init was pointed. Running it before somebody writes them only
+   * produces the pack's own complaint.
+   */
+  needsConfig?: string[];
 }
 
 function runCommandsFor(target: Target): RunnableCommand[] {
@@ -336,19 +387,38 @@ function runCommandsFor(target: Target): RunnableCommand[] {
   const out = (name: string) => `summaries/${prefix}${name}.json`;
 
   const code = target.report.suggestions.filter((s) => s.kind !== "contract");
-  if (code.length > 0) {
+  const languages = [...new Set(code.map((s) => s.language ?? "typescript"))];
+  for (const language of languages) {
+    // One command per language: a pack is written against one
+    // language's adapter, so a Python pack and a TypeScript one cannot
+    // ride in the same run.
     const args = ["extract"];
     if (target.directory !== ".") {
       args.push("--dir", target.directory);
     }
-    for (const item of code) {
-      args.push("-f", item.name);
+    if (language !== "typescript") {
+      args.push("--lang", language);
     }
-    args.push("-o", out("code"));
+    for (const item of code.filter(
+      (s) => (s.language ?? "typescript") === language,
+    )) {
+      args.push(
+        "-f",
+        item.configuration === undefined
+          ? item.name
+          : `${item.name}=${item.configuration.file}`,
+      );
+    }
+    args.push("-o", out(languages.length === 1 ? "code" : language));
+    const needsConfig = code
+      .filter((s) => (s.language ?? "typescript") === language)
+      .filter((s) => s.configuration?.required === true)
+      .map((s) => path.join(target.directory, s.configuration?.file ?? ""));
     commands.push({
       bin: "npx",
       args: ["suss", ...args],
       display: `suss ${args.join(" ")}`,
+      ...(needsConfig.length > 0 ? { needsConfig } : {}),
     });
   }
 

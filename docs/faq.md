@@ -68,7 +68,7 @@ Findings are graded `error | warning | info` and you control the CI gate with `-
 
 `extract` runs over TypeScript or JavaScript source and derives summaries from the implementation. `contract` runs over a declared artifact, an OpenAPI spec, a CloudFormation template, a Serverless Framework service file, a Prisma schema, a GraphQL SDL or operation document, a Storybook CSF3 file, and emits summaries in the same shape. Both feed `suss check`, which pairs them.
 
-Python and Ruby are derived too, by [their own adapters](/guides/python-and-ruby), which you call from a script because `suss extract` has no path to them yet.
+Python and Ruby are derived too, by [their own adapters](/guides/python-and-ruby), which `suss extract --lang python` and `--lang ruby` reach.
 
 ## Can library authors publish suss summaries with their package?
 

@@ -127,6 +127,5 @@ suss check --dir auth/
 | | |
 |---|---|
 | Other languages | Go, Java, C# and the rest are invisible. The adapter interface is language-agnostic, so one could be written; Python and Ruby were. |
-| Python or Ruby from the CLI | `suss extract` cannot reach either adapter. You call them from a script, as the [guide](/guides/python-and-ruby) shows. |
 | Routes registered at runtime | `registerRoutes(configBuiltAtRuntime)`. suss reads what the code says without running it. |
 | Your own wrapper around a library | A project that wraps `useQuery` in a hook of its own is invisible to the Apollo pack, which looks for the library call itself. |

@@ -14,17 +14,19 @@ import { parseArgs } from "node:util";
 import { check, checkDir } from "./check.js";
 import { contract } from "./contract.js";
 import { corroborate } from "./corroborateCommand.js";
-import { extract } from "./extract.js";
+import { extract, UsageError } from "./extract.js";
 import { inspectFlow } from "./flow.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
+import { LANGUAGES, parseLanguage } from "./language.js";
 
 import type { ContractSource } from "./contract.js";
+import type { ExtractOptions } from "./extract.js";
 
 export const USAGE = `
 Usage:
   suss init [directory] [--plain]
-  suss extract [-p <tsconfig> | --dir <directory>] -f <framework>[=<config.json>] [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
+  suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] -f <framework>[=<config.json>] [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss inspect <summaries.json>
   suss inspect --dir <directory>
   suss inspect --diff <before.json> <after.json>
@@ -50,10 +52,14 @@ Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
                    suss uses the nearest tsconfig, or reads the current
                    directory when there is none.
+  --lang           Which language suss reads this project as: typescript,
+                   python, or ruby. Without it, suss works that out from
+                   what the directory holds, and says so when it cannot.
   -f, --framework  Which pack to use. Repeatable. Built in: hono, express,
                    fastify, ts-rest, nestjs-rest, nestjs-graphql, apollo,
                    aws-lambda, react, react-router, fetch, axios,
-                   apollo-client, node.
+                   apollo-client, node, and for the other two languages
+                   fastapi, flask-restx, and graphql-ruby.
                    Other packs resolve as @suss/framework-<name>.
                    Write -f <pack>=<config.json> to configure a pack, for
                    example to name the dispatcher your project sends
@@ -171,6 +177,7 @@ async function runExtract(args: string[]): Promise<number> {
     options: {
       project: { type: "string", short: "p" },
       dir: { type: "string" },
+      lang: { type: "string" },
       framework: { type: "string", short: "f", multiple: true },
       output: { type: "string", short: "o" },
       gaps: { type: "string" },
@@ -191,6 +198,15 @@ async function runExtract(args: string[]): Promise<number> {
   if (frameworks.length === 0) {
     process.stderr.write(
       "extract needs at least one pack, so it knows what to look for. Try: suss extract -p tsconfig.json -f express\nRun `suss --help` for the built-in packs.\n",
+    );
+    return 1;
+  }
+
+  const lang =
+    values.lang === undefined ? undefined : parseLanguage(values.lang);
+  if (values.lang !== undefined && lang === null) {
+    process.stderr.write(
+      `--lang takes ${LANGUAGES.join(", ")}. It got "${values.lang}".\n`,
     );
     return 1;
   }
@@ -230,9 +246,10 @@ async function runExtract(args: string[]): Promise<number> {
         ? positionals
         : undefined;
 
-  await extract({
+  const options: ExtractOptions = {
     ...(tsconfig !== undefined ? { tsconfig } : {}),
     ...(values.dir !== undefined ? { dir: values.dir } : {}),
+    ...(lang !== undefined && lang !== null ? { lang } : {}),
     frameworks,
     ...(files !== undefined ? { files } : {}),
     ...(values.output !== undefined ? { output: values.output } : {}),
@@ -243,7 +260,20 @@ async function runExtract(args: string[]): Promise<number> {
     ...(values.explain === true ? { explain: true } : {}),
     ...(values["fail-on-empty"] === true ? { failOnEmpty: true } : {}),
     ...(values["fail-on-pack-error"] === true ? { failOnPackError: true } : {}),
-  });
+  };
+
+  try {
+    await extract(options);
+  } catch (err) {
+    // Anything a person can fix by typing something else is a sentence,
+    // not a stack trace.
+    if (!(err instanceof UsageError)) {
+      throw err;
+    }
+    process.stderr.write(`${err.message}\n`);
+    return 1;
+  }
+
   return process.exitCode === 1 ? 1 : 0;
 }
 

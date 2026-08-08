@@ -11,11 +11,27 @@ import {
   BUILTIN_FRAMEWORKS,
   extract,
   formatCacheDiagnostic,
+  formatEmptyLanguageRun,
+  incompletenessPathFor,
+  languageOfPack,
+  languageOfRun,
   parseFrameworkSpec,
   resolveFramework,
+  resolvePythonPack,
+  resolveRubyPack,
 } from "./extract.js";
 
 import type { CacheDiagnostic } from "@suss/adapter-typescript";
+import type { Language } from "./language.js";
+
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+);
+const pythonFixture = path.join(repoRoot, "fixtures", "python-webapp");
+const rubyFixture = path.join(repoRoot, "fixtures", "ruby-graphql");
 
 /** Write a pack config to a temp file and answer its path. */
 function writeConfig(contents: string): string {
@@ -23,6 +39,37 @@ function writeConfig(contents: string): string {
   const file = path.join(dir, "pack.json");
   fs.writeFileSync(file, contents);
   return file;
+}
+
+/**
+ * The per-project config a shipped pack refuses to run without, so a
+ * test that walks every pack can still load that one. graphql-ruby is
+ * the only pack with one today; a directory layout is something only a
+ * project can state.
+ */
+const CONFIG_FOR: Record<string, unknown> = {
+  "graphql-ruby": { root: "app/graphql" },
+};
+
+/**
+ * Load a pack by name whichever language it reads, so a test can walk
+ * the whole built-in list without knowing which adapter each belongs
+ * to.
+ */
+async function loadAnyPack(name: string): Promise<{ name: string }> {
+  const config = CONFIG_FOR[name];
+  const spec =
+    config === undefined
+      ? name
+      : `${name}=${writeConfig(JSON.stringify(config))}`;
+
+  const resolve: Record<Language, (spec: string) => Promise<{ name: string }>> =
+    {
+      typescript: resolveFramework,
+      python: resolvePythonPack,
+      ruby: resolveRubyPack,
+    };
+  return await resolve[languageOfPack(name)](spec);
 }
 
 describe("resolveFramework", () => {
@@ -170,7 +217,7 @@ describe("resolveFramework", () => {
       shipped,
     );
 
-    const packs = await Promise.all(shipped.map(resolveFramework));
+    const packs = await Promise.all(shipped.map(loadAnyPack));
     for (const pack of packs) {
       expect(pack.name).toBeTruthy();
     }
@@ -193,11 +240,306 @@ describe("resolveFramework", () => {
     }
 
     const packs = await Promise.all(
-      Object.keys(BUILTIN_FRAMEWORKS).map(resolveFramework),
+      Object.keys(BUILTIN_FRAMEWORKS).map(loadAnyPack),
     );
     expect(packs.map((pack) => pack.name).filter(Boolean)).toHaveLength(
       Object.keys(BUILTIN_FRAMEWORKS).length,
     );
+  });
+});
+
+describe("packs for the other two languages", () => {
+  it("loads a Python pack through the Python adapter's own resolver", async () => {
+    const pack = await resolvePythonPack("fastapi");
+    expect(pack.name).toBe("fastapi");
+    expect(pack.discovery.length).toBeGreaterThan(0);
+  });
+
+  it("hands a Python pack the wrapper modules the config names", async () => {
+    const file = writeConfig(
+      JSON.stringify({ wrapperModules: ["myapp.wrappers.restx"] }),
+    );
+    const pack = await resolvePythonPack(`flask-restx=${file}`);
+    const pattern = pack.discovery[0];
+    expect(pattern?.importModule).toContain("myapp.wrappers.restx");
+  });
+
+  it("refuses a Python pack in a TypeScript run, and says where it belongs", async () => {
+    await expect(resolveFramework("fastapi")).rejects.toThrow(
+      /reads Python.*--lang python/s,
+    );
+  });
+
+  it("refuses a TypeScript pack in a Ruby run", async () => {
+    await expect(resolveRubyPack("express")).rejects.toThrow(
+      /reads TypeScript/,
+    );
+  });
+
+  it("says what a pack needs when its required config is missing", async () => {
+    // The pack states what it cannot work without; the CLI adds how to
+    // supply one. Neither half is useful alone.
+    await expect(resolveRubyPack("graphql-ruby")).rejects.toThrow(
+      /needs `root`[\s\S]*-f graphql-ruby=<config.json>/,
+    );
+  });
+
+  it("loads a Ruby pack once its config supplies the directory", async () => {
+    const file = writeConfig(JSON.stringify({ root: "app/graphql" }));
+    const pack = await resolveRubyPack(`graphql-ruby=${file}`);
+    expect(pack.name).toBe("graphql-ruby");
+  });
+});
+
+describe("languageOfRun", () => {
+  it("takes the language the caller stated", () => {
+    expect(languageOfRun({ lang: "ruby", frameworks: ["graphql-ruby"] })).toBe(
+      "ruby",
+    );
+  });
+
+  it("takes the language of the packs when they agree", () => {
+    // A directory of Python inside a TypeScript repository would
+    // otherwise read as TypeScript and come back empty.
+    expect(languageOfRun({ frameworks: ["fastapi", "flask-restx"] })).toBe(
+      "python",
+    );
+  });
+
+  it("reads a directory of Python source as Python", () => {
+    expect(languageOfRun({ dir: pythonFixture, frameworks: ["fastapi"] })).toBe(
+      "python",
+    );
+  });
+
+  it("a tsconfig settles it whatever else is around", () => {
+    expect(
+      languageOfRun({
+        tsconfig: "tsconfig.json",
+        frameworks: ["express"],
+      }),
+    ).toBe("typescript");
+  });
+
+  it("says so when it cannot tell", () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "suss-nolang-"));
+    expect(() =>
+      languageOfRun({ dir: empty, frameworks: ["express"] }),
+    ).toThrow(/could not tell what language/);
+  });
+});
+
+describe("extract over a Python project", () => {
+  it("reads every route the fixture declares, through the CLI", async () => {
+    const out = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-python-")),
+      "summaries.json",
+    );
+    const config = writeConfig(
+      JSON.stringify({ wrapperModules: ["myapp.wrappers.restx"] }),
+    );
+
+    const summaries = await extract({
+      dir: pythonFixture,
+      frameworks: ["fastapi", `flask-restx=${config}`],
+      output: out,
+    });
+
+    expect(summaries.map((s) => s.identity.name).sort()).toEqual(
+      [
+        "TodoList.get",
+        "TodoList.post",
+        "OrderDetail.get",
+        "OrderDetail.delete",
+        "UserList.get",
+        "read_item",
+        "create_item",
+      ].sort(),
+    );
+    // Paths come back relative to the project, the same as a
+    // TypeScript run's do, so the file is portable.
+    expect(summaries.every((s) => !path.isAbsolute(s.location.file))).toBe(
+      true,
+    );
+  });
+});
+
+describe("extract over a project with a repository checked out inside it", () => {
+  /** A project holding a copy of the Python fixture, plus one vendored. */
+  function projectWithVendoredRepository(): { root: string; vendored: string } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-vendored-"));
+    fs.cpSync(path.join(pythonFixture, "myapp"), path.join(root, "myapp"), {
+      recursive: true,
+    });
+
+    const vendored = path.join(root, "vendor", "someone-elses-service");
+    fs.mkdirSync(vendored, { recursive: true });
+    fs.writeFileSync(
+      path.join(vendored, ".git"),
+      "gitdir: ../../.git/modules\n",
+    );
+    fs.cpSync(path.join(pythonFixture, "myapp"), path.join(vendored, "myapp"), {
+      recursive: true,
+    });
+    return { root, vendored };
+  }
+
+  it("leaves a vendored repository's routes to that repository", async () => {
+    // Its boundaries are not this project's to report, and nobody
+    // reading this project's summaries can act on them.
+    const { root } = projectWithVendoredRepository();
+
+    const summaries = await extract({
+      dir: root,
+      frameworks: ["fastapi"],
+      output: path.join(root, "summaries.json"),
+    });
+
+    expect(summaries.length).toBeGreaterThan(0);
+    expect(summaries.some((s) => s.location.file.includes("vendor"))).toBe(
+      false,
+    );
+  });
+
+  it("reads a submodule the project's own .gitmodules names", async () => {
+    // A submodule is code this project imports, so it is this
+    // project's, which is exactly what .gitmodules is there to say.
+    const { root } = projectWithVendoredRepository();
+    fs.writeFileSync(
+      path.join(root, ".gitmodules"),
+      '[submodule "vendor/someone-elses-service"]\n\tpath = vendor/someone-elses-service\n',
+    );
+
+    const summaries = await extract({
+      dir: root,
+      frameworks: ["fastapi"],
+      output: path.join(root, "summaries.json"),
+    });
+
+    expect(summaries.some((s) => s.location.file.includes("vendor"))).toBe(
+      true,
+    );
+  });
+});
+
+describe("extract over a Ruby project", () => {
+  it("reads every field the fixture declares, through the CLI", async () => {
+    const out = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-ruby-")),
+      "summaries.json",
+    );
+    const config = writeConfig(
+      JSON.stringify({ root: path.join(rubyFixture, "app", "graphql") }),
+    );
+
+    const summaries = await extract({
+      dir: rubyFixture,
+      frameworks: [`graphql-ruby=${config}`],
+      output: out,
+    });
+
+    expect(summaries.map((s) => s.identity.name).sort()).toEqual(
+      [
+        "Campaign.id",
+        "Campaign.name",
+        "Campaign.budget",
+        "Organizer.id",
+        "Organizer.email",
+        "Organizer.status",
+        "Query.campaign",
+        "Mutation.campaignUpdate",
+      ].sort(),
+    );
+  });
+});
+
+describe("the note a run writes beside its summaries", () => {
+  /** A Python project whose shared framework submodule is empty. */
+  function projectMissingItsSubmodule(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-missing-sub-"));
+    fs.cpSync(path.join(pythonFixture, "myapp"), path.join(root, "myapp"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(root, ".gitmodules"),
+      '[submodule "libs/framework"]\n\tpath = libs/framework\n',
+    );
+    fs.mkdirSync(path.join(root, "libs", "framework"), { recursive: true });
+    return root;
+  }
+
+  it("says a Python run was incomplete when a submodule is not checked out", async () => {
+    // The summaries look complete on their own. Whatever the missing
+    // submodule defines is not in them and nothing in the file says so,
+    // which is what a job reading the file needs to know.
+    const root = projectMissingItsSubmodule();
+    const out = path.join(root, "summaries.json");
+
+    await extract({ dir: root, frameworks: ["fastapi"], output: out });
+
+    const note = JSON.parse(
+      fs.readFileSync(incompletenessPathFor(out), "utf8"),
+    ) as { submodulesNotCheckedOut: string[] };
+    expect(note.submodulesNotCheckedOut).toEqual(["libs/framework"]);
+  });
+
+  it("takes the note away once the submodule is there", async () => {
+    // A note left behind from a previous run fails a job that has since
+    // been fixed.
+    const root = projectMissingItsSubmodule();
+    const out = path.join(root, "summaries.json");
+    await extract({ dir: root, frameworks: ["fastapi"], output: out });
+    expect(fs.existsSync(incompletenessPathFor(out))).toBe(true);
+
+    fs.writeFileSync(
+      path.join(root, "libs", "framework", "api.py"),
+      "def route(path): ...\n",
+    );
+    await extract({ dir: root, frameworks: ["fastapi"], output: out });
+
+    expect(fs.existsSync(incompletenessPathFor(out))).toBe(false);
+  });
+});
+
+describe("a pack config naming a directory", () => {
+  it("reads a relative directory from the config file, not from wherever the command runs", async () => {
+    // init writes exactly this config: a relative root beside the
+    // project. Read against the working directory it resolves to
+    // nothing from anywhere else, and every wired field comes back
+    // unwired with nothing said about it.
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "suss-relative-"));
+    fs.cpSync(path.join(rubyFixture, "app"), path.join(project, "app"), {
+      recursive: true,
+    });
+    const config = path.join(project, "suss.graphql-ruby.json");
+    fs.writeFileSync(config, JSON.stringify({ root: "app/graphql" }));
+
+    // Run from the repository root, which is not the project: the
+    // relative path only resolves if it is read from the config file.
+    expect(process.cwd()).not.toBe(project);
+    const summaries = await extract({
+      dir: project,
+      frameworks: [`graphql-ruby=${config}`],
+      output: path.join(project, "summaries.json"),
+    });
+
+    const campaign = summaries.find(
+      (s) => s.identity.name === "Query.campaign",
+    );
+    expect(campaign?.metadata?.graphql).toMatchObject({
+      declaredContract: { returnType: { type: "ref", name: "Campaign" } },
+    });
+  });
+});
+
+describe("formatEmptyLanguageRun", () => {
+  it("separates finding no files from finding no boundaries", () => {
+    expect(formatEmptyLanguageRun("python", 0, ["fastapi"])).toContain(
+      "found no Python files",
+    );
+    const read = formatEmptyLanguageRun("ruby", 12, ["graphql-ruby"]);
+    expect(read).toContain("read 12 Ruby files");
+    expect(read).toContain("graphql-ruby");
   });
 });
 
@@ -226,11 +568,14 @@ describe("parseFrameworkSpec", () => {
     expect(parseFrameworkSpec("aws-sqs")).toEqual({ name: "aws-sqs" });
   });
 
-  it("reads the config file the spec names", () => {
+  it("reads the config file the spec names, and says which file it was", () => {
+    // Which file it was is how a pack resolves a path written in it
+    // against the file rather than against the working directory.
     const file = writeConfig(JSON.stringify({ producers: [] }));
     expect(parseFrameworkSpec(`aws-sqs=${file}`)).toEqual({
       name: "aws-sqs",
       options: { producers: [] },
+      configFile: file,
     });
   });
 

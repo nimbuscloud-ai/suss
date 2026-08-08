@@ -108,6 +108,77 @@ describe("inspectProject", () => {
     fs.writeFileSync(path.join(dir, "package.json"), "{ not json");
     expect(() => inspectProject(dir)).not.toThrow();
   });
+
+  it("suggests the Python packs for the libraries a requirements file names", () => {
+    fs.writeFileSync(
+      path.join(dir, "requirements.txt"),
+      "fastapi>=0.110\nFlask-RESTX~=1.3\n",
+    );
+    expect(names(dir)).toEqual(["fastapi", "flask-restx"]);
+  });
+
+  it("reads a Python project's libraries out of pyproject too", () => {
+    fs.writeFileSync(
+      path.join(dir, "pyproject.toml"),
+      '[project]\nname = "svc"\ndependencies = ["fastapi"]\n',
+    );
+    expect(names(dir)).toEqual(["fastapi"]);
+  });
+
+  it("suggests the Ruby pack for the gem a lock file names", () => {
+    fs.writeFileSync(
+      path.join(dir, "Gemfile.lock"),
+      "DEPENDENCIES\n  graphql (~> 2.0)\n",
+    );
+    expect(names(dir)).toEqual(["graphql-ruby"]);
+  });
+
+  it("says which per-project config a suggested pack needs", () => {
+    fs.writeFileSync(
+      path.join(dir, "Gemfile.lock"),
+      "DEPENDENCIES\n  graphql (~> 2.0)\n",
+    );
+    const suggestion = inspectProject(dir).suggestions[0];
+    expect(suggestion?.language).toBe("ruby");
+    expect(suggestion?.configuration?.required).toBe(true);
+    expect(suggestion?.configuration?.example).toEqual({ root: "app/graphql" });
+  });
+
+  it("reports a manifest it could not read rather than saying nothing", () => {
+    fs.writeFileSync(
+      path.join(dir, "setup.py"),
+      "setup(install_requires=read_requirements())\n",
+    );
+    const report = inspectProject(dir);
+    expect(report.suggestions).toEqual([]);
+    expect(report.unread?.[0]?.where).toBe("setup.py");
+  });
+
+  it("reports a setup.cfg that points its dependency list somewhere else", () => {
+    fs.writeFileSync(
+      path.join(dir, "setup.cfg"),
+      "[options]\ninstall_requires = file: requirements.txt\n",
+    );
+    const report = inspectProject(dir);
+    expect(report.suggestions).toEqual([]);
+    expect(report.unread?.[0]?.where).toBe("setup.cfg");
+  });
+
+  it("reports a submodule nobody checked out, whose code it cannot read", () => {
+    fs.writeFileSync(
+      path.join(dir, ".gitmodules"),
+      '[submodule "libs/framework"]\n\tpath = libs/framework\n',
+    );
+    fs.mkdirSync(path.join(dir, "libs", "framework"), { recursive: true });
+    expect(inspectProject(dir).unread?.[0]?.reason).toContain(
+      "not checked out",
+    );
+  });
+
+  it("names the languages it found source for", () => {
+    fs.writeFileSync(path.join(dir, "requirements.txt"), "fastapi\n");
+    expect(inspectProject(dir).languages).toEqual(["python"]);
+  });
 });
 
 describe("formatInitReport", () => {
@@ -154,6 +225,62 @@ describe("formatInitReport", () => {
     expect(output).toContain(
       "suss contract --from cloudformation template.yaml",
     );
+  });
+
+  it("gives each language its own extract command, and names the config file", () => {
+    const output = formatInitReport({
+      root: "/project",
+      tsconfig: null,
+      languages: ["typescript", "python"],
+      suggestions: [
+        {
+          name: "hono",
+          packageName: "@suss/framework-hono",
+          because: "hono in dependencies",
+          kind: "framework",
+          language: "typescript",
+        },
+        {
+          name: "flask-restx",
+          packageName: "@suss/framework-flask-restx",
+          because: "flask-restx in requirements.txt",
+          kind: "framework",
+          language: "python",
+          configuration: {
+            file: "suss.flask-restx.json",
+            example: { wrapperModules: ["myapp.wrappers.restx"] },
+            required: false,
+            why: "the modules your own code re-exports the route decorator from.",
+          },
+        },
+      ],
+    });
+
+    expect(output).toContain(
+      "suss extract -f hono -o summaries/typescript.json",
+    );
+    expect(output).toContain(
+      "suss extract --lang python -f flask-restx=suss.flask-restx.json",
+    );
+    expect(output).toContain('{"wrapperModules":["myapp.wrappers.restx"]}');
+  });
+
+  it("says what it could not read, so an empty answer is not mistaken for none", () => {
+    const output = formatInitReport({
+      root: "/project",
+      tsconfig: null,
+      languages: ["python"],
+      suggestions: [],
+      unread: [
+        {
+          where: "setup.py",
+          reason: "its install_requires is computed rather than written out.",
+        },
+      ],
+    });
+
+    expect(output).toContain("What suss could not read");
+    expect(output).toContain("setup.py");
   });
 
   it("says so plainly when nothing matched", () => {
