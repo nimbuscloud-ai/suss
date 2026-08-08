@@ -2,17 +2,17 @@
   "totals": {
     "packages": 44,
     "packagesWithExports": 43,
-    "exports": 361,
-    "internal": 1296,
-    "consumers": 534,
-    "pairs": 526
+    "exports": 368,
+    "internal": 1298,
+    "consumers": 555,
+    "pairs": 547
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 44,
-      "internal": 46,
-      "consumers": 10
+      "internal": 42,
+      "consumers": 31
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
@@ -130,8 +130,8 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 9,
-      "internal": 19,
+      "exports": 16,
+      "internal": 25,
       "consumers": 2
     },
     "packages/framework/apollo": {
