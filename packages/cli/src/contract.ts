@@ -17,6 +17,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 export type ContractSource =
   | "openapi"
   | "cloudformation"
+  | "serverless"
   | "storybook"
   | "appsync"
   | "prisma"
@@ -39,6 +40,15 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
   cloudformation: async (specPath) => {
     const mod = await import("@suss/contract-cloudformation");
     return mod.cloudFormationFileToSummaries(specPath);
+  },
+  serverless: async (specPath) => {
+    // `--from serverless` reads a Serverless Framework service file
+    // (the path may name the file or the directory holding it) and
+    // emits the same summaries the wiring would produce from a SAM
+    // template: one runtime-config provider per function, routes for
+    // httpApi / http events, and message-bus summaries for the rest.
+    const mod = await import("@suss/contract-serverless");
+    return mod.serverlessFileToSummaries(specPath);
   },
   storybook: async (specPath) => {
     // `--from storybook` accepts a single `.stories.ts[x]` file path or

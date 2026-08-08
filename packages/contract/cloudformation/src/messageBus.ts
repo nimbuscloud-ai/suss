@@ -61,7 +61,15 @@
 
 import { messageBusBinding, withMessageBusMetadata } from "@suss/behavioral-ir";
 import { codeScopePath } from "@suss/ir-core";
-import { refTarget } from "@suss/manifest-aws";
+import {
+  type PatternReduction,
+  reduceEventPattern,
+  refTarget,
+  resolveBucketChannel,
+  resolveEventBusToken,
+  resolveQueueChannel,
+  resolveTopicChannel,
+} from "@suss/manifest-aws";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -104,6 +112,7 @@ interface CloudFormationResource {
 export function buildMessageBusSummaries(
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
+  recognition = "cloudformation",
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   const snsSubscriptions = collectSnsSubscriptions(resources);
@@ -126,7 +135,9 @@ export function buildMessageBusSummaries(
     if (resource.Type !== "AWS::SQS::Queue") {
       continue;
     }
-    summaries.push(buildQueueProviderSummary(logicalId, resource, sourceFile));
+    summaries.push(
+      buildQueueProviderSummary(logicalId, resource, sourceFile, recognition),
+    );
   }
 
   // 2. Consumer summaries: walk Lambdas (AWS::Serverless::Function or
@@ -166,6 +177,7 @@ export function buildMessageBusSummaries(
             channel,
             routed: singleRoutedSubjectOf(queueSubjects, channel),
             sourceFile,
+            recognition,
           }),
         );
         continue;
@@ -183,6 +195,7 @@ export function buildMessageBusSummaries(
             topicId,
             filterPolicy: eventDef.Properties?.FilterPolicy,
             sourceFile,
+            recognition,
           }),
         );
         continue;
@@ -202,6 +215,7 @@ export function buildMessageBusSummaries(
             event: eventDef.Properties?.Events,
             filter: eventDef.Properties?.Filter,
             sourceFile,
+            recognition,
           }),
         );
       }
@@ -238,13 +252,16 @@ export function buildMessageBusSummaries(
         channel,
         routed: singleRoutedSubjectOf(queueSubjects, channel),
         sourceFile,
+        recognition,
       }),
     );
   }
 
   // 4. EventBridge: AWS::Events::Rule + SAM Events:{Type: EventBridgeRule
   //    | Schedule}.
-  summaries.push(...buildEventBridgeSummaries(resources, sourceFile));
+  summaries.push(
+    ...buildEventBridgeSummaries(resources, sourceFile, recognition),
+  );
 
   // 5. SNS: one provider per AWS::SNS::Topic, plus a consumer per
   //    Protocol "lambda" subscription (standalone or inline). A
@@ -258,7 +275,9 @@ export function buildMessageBusSummaries(
     if (resource.Type !== "AWS::SNS::Topic") {
       continue;
     }
-    summaries.push(buildTopicProviderSummary(logicalId, resource, sourceFile));
+    summaries.push(
+      buildTopicProviderSummary(logicalId, resource, sourceFile, recognition),
+    );
   }
   for (const sub of snsSubscriptions) {
     if (sub.protocol !== "lambda") {
@@ -284,6 +303,7 @@ export function buildMessageBusSummaries(
         topicId: sub.topicId,
         filterPolicy: sub.filterPolicy,
         sourceFile,
+        recognition,
       }),
     );
   }
@@ -311,7 +331,12 @@ export function buildMessageBusSummaries(
     // the AWS::S3::Bucket type filter above, so the lookup always
     // resolves.
     summaries.push(
-      buildBucketProviderSummary(bucketId, resources[bucketId], sourceFile),
+      buildBucketProviderSummary(
+        bucketId,
+        resources[bucketId],
+        sourceFile,
+        recognition,
+      ),
     );
   }
   for (const notification of s3Notifications.lambda) {
@@ -336,6 +361,7 @@ export function buildMessageBusSummaries(
         event: notification.event,
         filter: notification.filter,
         sourceFile,
+        recognition,
       }),
     );
   }
@@ -344,6 +370,7 @@ export function buildMessageBusSummaries(
       notification,
       resources,
       sourceFile,
+      recognition,
     );
     if (consumer !== null) {
       summaries.push(consumer);
@@ -357,6 +384,7 @@ function buildQueueProviderSummary(
   logicalId: string,
   resource: CloudFormationResource,
   sourceFile: string,
+  recognition: string,
 ): BehavioralSummary {
   const fifoQueue = resource.Properties?.FifoQueue === true;
   return {
@@ -370,7 +398,7 @@ function buildQueueProviderSummary(
       name: logicalId,
       exportPath: null,
       boundaryBinding: messageBusBinding({
-        recognition: "cloudformation",
+        recognition,
         messageBus: "sqs",
         channel: logicalId,
       }),
@@ -393,6 +421,7 @@ function buildTopicProviderSummary(
   logicalId: string,
   resource: CloudFormationResource,
   sourceFile: string,
+  recognition: string,
 ): BehavioralSummary {
   const fifoTopic = resource.Properties?.FifoTopic === true;
   return {
@@ -406,7 +435,7 @@ function buildTopicProviderSummary(
       name: logicalId,
       exportPath: null,
       boundaryBinding: messageBusBinding({
-        recognition: "cloudformation",
+        recognition,
         messageBus: "sns",
         channel: logicalId,
       }),
@@ -451,6 +480,7 @@ interface LambdaConsumerOpts {
    */
   routed: RoutedSubject | null;
   sourceFile: string;
+  recognition: string;
 }
 
 function buildLambdaConsumerSummary(
@@ -470,7 +500,7 @@ function buildLambdaConsumerSummary(
       name: `${opts.lambdaId}.${opts.eventName}`,
       exportPath: null,
       boundaryBinding: messageBusBinding({
-        recognition: "cloudformation",
+        recognition: opts.recognition,
         messageBus: "sqs",
         channel: opts.routed?.channel ?? opts.channel,
       }),
@@ -567,10 +597,7 @@ function buildQueueSubjectMap(
     if (!Array.isArray(targets)) {
       continue;
     }
-    const eventBus = resolveEventBusToken(
-      resource.Properties?.EventBusName,
-      resources,
-    );
+    const eventBus = resolveEventBusToken(resource.Properties?.EventBusName);
     for (const target of targets) {
       if (target === null || typeof target !== "object") {
         continue;
@@ -677,10 +704,6 @@ function singleRoutedSubjectOf(
 // segment, and a bare bus-level channel (no detailType) that no
 // producer or consumer uses would otherwise mis-report as unused.
 
-type PatternReduction =
-  | { kind: "exact"; detailTypes: string[] }
-  | { kind: "unresolvable"; reason: string };
-
 interface RuleTarget {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
@@ -695,6 +718,9 @@ interface EventBridgeConsumerOpts {
   patternResolution: "exact" | "schedule" | "unresolvable";
   eventBus: string;
   sourceFile: string;
+  recognition: string;
+  /** Whether the rule deploys switched on, when the manifest says. */
+  enabled?: boolean;
   detailType?: string;
   unresolvableReason?: string;
 }
@@ -702,6 +728,7 @@ interface EventBridgeConsumerOpts {
 function buildEventBridgeSummaries(
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
+  recognition: string,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   // Dedup provider summaries by channel — two rules can route the same
@@ -726,6 +753,7 @@ function buildEventBridgeSummaries(
         detailType,
         ruleLabel,
         sourceFile,
+        recognition,
       }),
     );
   }
@@ -744,10 +772,7 @@ function buildEventBridgeSummaries(
     // bus, so its provider summary is emitted either way — otherwise
     // the producer that sends the subject reads as an orphan.
     const targets = readRuleTargets(rawTargets, resources);
-    const eventBus = resolveEventBusToken(
-      resource.Properties?.EventBusName,
-      resources,
-    );
+    const eventBus = resolveEventBusToken(resource.Properties?.EventBusName);
     const scheduleExpr = resource.Properties?.ScheduleExpression;
     if (typeof scheduleExpr === "string" && scheduleExpr.length > 0) {
       for (const target of targets) {
@@ -760,6 +785,8 @@ function buildEventBridgeSummaries(
             patternResolution: "schedule",
             eventBus,
             sourceFile,
+            recognition,
+            ...ruleEnablement(resource.Properties?.State),
           }),
         );
       }
@@ -772,6 +799,7 @@ function buildEventBridgeSummaries(
       ruleLabel: ruleId,
       targets,
       sourceFile,
+      recognition,
       emitProvider,
       out: summaries,
     });
@@ -808,6 +836,10 @@ function buildEventBridgeSummaries(
             patternResolution: "schedule",
             eventBus: "default",
             sourceFile,
+            recognition,
+            ...(typeof eventDef.Properties?.Enabled === "boolean"
+              ? { enabled: eventDef.Properties.Enabled }
+              : {}),
           }),
         );
         continue;
@@ -815,10 +847,7 @@ function buildEventBridgeSummaries(
       if (eventDef.Type !== "EventBridgeRule") {
         continue;
       }
-      const eventBus = resolveEventBusToken(
-        eventDef.Properties?.EventBusName,
-        resources,
-      );
+      const eventBus = resolveEventBusToken(eventDef.Properties?.EventBusName);
       const reduction = reduceEventPattern(eventDef.Properties?.Pattern);
       emitRuleSummaries({
         reduction,
@@ -826,6 +855,7 @@ function buildEventBridgeSummaries(
         ruleLabel: eventName,
         targets: [target],
         sourceFile,
+        recognition,
         emitProvider,
         out: summaries,
       });
@@ -841,6 +871,7 @@ interface EmitRuleOpts {
   ruleLabel: string;
   targets: RuleTarget[];
   sourceFile: string;
+  recognition: string;
   emitProvider: (
     channel: string,
     eventBus: string,
@@ -862,6 +893,7 @@ function emitRuleSummaries(opts: EmitRuleOpts): void {
           patternResolution: "unresolvable",
           eventBus: opts.eventBus,
           sourceFile: opts.sourceFile,
+          recognition: opts.recognition,
           unresolvableReason: opts.reduction.reason,
         }),
       );
@@ -882,6 +914,7 @@ function emitRuleSummaries(opts: EmitRuleOpts): void {
           eventBus: opts.eventBus,
           detailType,
           sourceFile: opts.sourceFile,
+          recognition: opts.recognition,
         }),
       );
     }
@@ -894,6 +927,7 @@ function buildRuleProviderSummary(opts: {
   detailType: string;
   ruleLabel: string;
   sourceFile: string;
+  recognition: string;
 }): BehavioralSummary {
   return {
     kind: "library",
@@ -906,7 +940,7 @@ function buildRuleProviderSummary(opts: {
       name: opts.channel,
       exportPath: null,
       boundaryBinding: messageBusBinding({
-        recognition: "cloudformation",
+        recognition: opts.recognition,
         messageBus: "eventbridge",
         channel: opts.channel,
       }),
@@ -942,7 +976,7 @@ function buildEventBridgeConsumerSummary(
       name: `${opts.lambdaId}${nameSuffix}`,
       exportPath: null,
       boundaryBinding: messageBusBinding({
-        recognition: "cloudformation",
+        recognition: opts.recognition,
         messageBus: "eventbridge",
         channel: opts.channel,
       }),
@@ -961,6 +995,7 @@ function buildEventBridgeConsumerSummary(
         rule: opts.ruleLabel,
         eventBus: opts.eventBus,
         patternResolution: opts.patternResolution,
+        ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
         ...(opts.detailType !== undefined
           ? { detailType: opts.detailType }
           : {}),
@@ -973,77 +1008,20 @@ function buildEventBridgeConsumerSummary(
 }
 
 /**
- * Reduce a rule's EventPattern to the exact set of DetailTypes it
- * matches. v0 handles only a literal `detail-type` array; anything else
- * (absent detail-type, content-filter objects, empty array) is
- * unresolvable — surfaced by the checker, never silently dropped.
+ * What an AWS::Events::Rule's `State` says about whether it deploys
+ * switched on. A rule deployed DISABLED invokes nothing until someone
+ * turns it on, so its consumer is wired but idle. A state the template
+ * does not write, or writes as something neither value, says nothing.
  */
-function reduceEventPattern(pattern: unknown): PatternReduction {
-  if (pattern === null || typeof pattern !== "object") {
-    return {
-      kind: "unresolvable",
-      reason: "rule declares no EventPattern",
-    };
+function ruleEnablement(state: unknown): { enabled?: boolean } {
+  if (state === "ENABLED") {
+    return { enabled: true };
   }
-  const detailType = (pattern as Record<string, unknown>)["detail-type"];
-  if (detailType === undefined) {
-    return {
-      kind: "unresolvable",
-      reason:
-        "EventPattern has no detail-type; v0 reduces routing to exact detail-type match only",
-    };
+  if (state === "DISABLED") {
+    return { enabled: false };
   }
-  if (!Array.isArray(detailType)) {
-    return {
-      kind: "unresolvable",
-      reason: "detail-type is not a plain array of string literals",
-    };
-  }
-  const detailTypes: string[] = [];
-  for (const entry of detailType) {
-    if (typeof entry !== "string") {
-      return {
-        kind: "unresolvable",
-        reason:
-          "detail-type contains a content filter (prefix / anything-but / etc.); pattern subsumption is out of v0 scope",
-      };
-    }
-    detailTypes.push(entry);
-  }
-  if (detailTypes.length === 0) {
-    return { kind: "unresolvable", reason: "detail-type array is empty" };
-  }
-  return { kind: "exact", detailTypes };
-}
 
-/**
- * Resolve a rule's EventBusName to the channel's bus token: the CFN
- * logical id when it's a Ref/GetAtt, the segmented name from an event-
- * bus ARN, the literal string otherwise, or "default" when omitted (the
- * EventBridge default event bus).
- */
-function resolveEventBusToken(
-  value: unknown,
-  resources: Record<string, CloudFormationResource>,
-): string {
-  if (value === null || value === undefined) {
-    return "default";
-  }
-  if (typeof value === "object") {
-    const logicalId = refTarget(value);
-    // Prefer the logical id even when the referenced resource isn't in
-    // this template — the producer side chain-collapses to the same id.
-    return logicalId ?? "default";
-  }
-  if (typeof value === "string") {
-    const arnMatch = value.match(/:event-bus\/(.+)$/);
-    if (arnMatch !== null) {
-      return arnMatch[1];
-    }
-    return value;
-  }
-  void resources;
-  return "default";
+  return {};
 }
 
 /**
@@ -1081,97 +1059,6 @@ function readRuleTargets(
     out.push({ lambdaId, lambdaResource });
   }
   return out;
-}
-
-/**
- * Resolve a reference (`!Ref X`, `!GetAtt X.Arn`, plain string ARN) to
- * the referenced resource's CFN logical id. `service` is the ARN
- * segment a plain string is checked against (`"sqs"`, `"sns"`, `"s3"`),
- * so a queue ARN, a topic ARN, and a bucket ARN each resolve through
- * the same shape.
- *
- * Returns null when the reference is dynamic (a parameter, an import,
- * or an Fn::Join naming nothing this template declares); those need
- * cross-stack resolution that's out of scope for v0.
- */
-function resolveResourceChannel(
-  value: unknown,
-  service: string,
-): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    // Plain string: either the ARN of an external resource (we can't
-    // resolve that to a logical id without the deployed stack) or, in
-    // tests, a logical id passed directly.
-    const resource = resolveArnResource(value, service);
-    return resource ?? value;
-  }
-  return refTarget(value);
-}
-
-/**
- * Parse an ARN structurally rather than matching it against a pattern,
- * and validate its shape against `service`. `arn:partition:service:
- * region:account-id:resource` splits on `:`; `resource` is rejoined
- * from whatever follows the account segment, since some ARN shapes
- * (an SNS subscription, say) append a further `:`-separated id.
- *
- * `"s3"` requires region and account BOTH empty
- * (`arn:aws:s3:::bucket-name` carries neither) and a non-empty
- * resource; an object ARN appends `/key` after the bucket name, which
- * is stripped since the bucket alone is the channel. Every other
- * service requires region, account, and resource all non-empty. A
- * value that doesn't validate returns null, so a malformed ARN (a
- * dropped region or account) falls through unresolved rather than
- * resolving to a bare name that can coincidentally collide with an
- * unrelated logical id.
- */
-function resolveArnResource(value: string, service: string): string | null {
-  const parts = value.split(":");
-  if (parts[0] !== "arn" || parts[2] !== service) {
-    return null;
-  }
-  const region = parts[3];
-  const account = parts[4];
-  const resource = parts.slice(5).join(":");
-  if (service === "s3") {
-    if (region !== "" || account !== "" || resource === "") {
-      return null;
-    }
-    const slash = resource.indexOf("/");
-    const bucket = slash === -1 ? resource : resource.slice(0, slash);
-    return bucket === "" ? null : bucket;
-  }
-  if (!region || !account || resource === "") {
-    return null;
-  }
-  return resource;
-}
-
-/**
- * Resolve a Queue reference (`!Ref X`, `!GetAtt X.Arn`, plain string
- * ARN) to the queue's CFN logical resource id.
- */
-function resolveQueueChannel(value: unknown): string | null {
-  return resolveResourceChannel(value, "sqs");
-}
-
-/**
- * Resolve a Topic reference (`!Ref X`, `!GetAtt X.Arn`, plain string
- * ARN) to the topic's CFN logical resource id.
- */
-function resolveTopicChannel(value: unknown): string | null {
-  return resolveResourceChannel(value, "sns");
-}
-
-/**
- * Resolve a Bucket reference (`!Ref X`, `!GetAtt X.Arn`, plain string
- * ARN) to the bucket's CFN logical resource id.
- */
-function resolveBucketChannel(value: unknown): string | null {
-  return resolveResourceChannel(value, "s3");
 }
 
 // ---------------------------------------------------------------------------
@@ -1272,6 +1159,7 @@ interface SnsLambdaConsumerOpts {
   topicId: string;
   filterPolicy: unknown;
   sourceFile: string;
+  recognition: string;
 }
 
 /**
@@ -1300,7 +1188,7 @@ function buildSnsLambdaConsumerSummary(
       name: `${opts.lambdaId}.${opts.label}`,
       exportPath: null,
       boundaryBinding: messageBusBinding({
-        recognition: "cloudformation",
+        recognition: opts.recognition,
         messageBus: "sns",
         channel: opts.topicId,
       }),
@@ -1471,6 +1359,7 @@ function buildBucketProviderSummary(
   logicalId: string,
   resource: CloudFormationResource,
   sourceFile: string,
+  recognition: string,
 ): BehavioralSummary {
   return {
     kind: "library",
@@ -1483,7 +1372,7 @@ function buildBucketProviderSummary(
       name: logicalId,
       exportPath: null,
       boundaryBinding: messageBusBinding({
-        recognition: "cloudformation",
+        recognition,
         messageBus: "s3",
         channel: logicalId,
       }),
@@ -1510,6 +1399,7 @@ interface S3LambdaConsumerOpts {
   event: unknown;
   filter: unknown;
   sourceFile: string;
+  recognition: string;
 }
 
 /**
@@ -1536,7 +1426,7 @@ function buildS3LambdaConsumerSummary(
       name: `${opts.lambdaId}.${opts.label}`,
       exportPath: null,
       boundaryBinding: messageBusBinding({
-        recognition: "cloudformation",
+        recognition: opts.recognition,
         messageBus: "s3",
         channel: opts.bucketId,
       }),
@@ -1579,6 +1469,7 @@ function buildS3TopicBridgeConsumerSummary(
   notification: S3TopicNotification,
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
+  recognition: string,
 ): BehavioralSummary | null {
   const topicId = resolveTopicChannel(notification.topicRef);
   if (topicId === null || resources[topicId]?.Type !== "AWS::SNS::Topic") {
@@ -1597,7 +1488,7 @@ function buildS3TopicBridgeConsumerSummary(
       name: notification.label,
       exportPath: null,
       boundaryBinding: messageBusBinding({
-        recognition: "cloudformation",
+        recognition,
         messageBus: "s3",
         channel: notification.bucketId,
       }),

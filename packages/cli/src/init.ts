@@ -181,6 +181,12 @@ const BY_FILE: Array<{
     describe: (p) => `a SAM template at ${p}`,
   },
   {
+    matches: (f) => f === "serverless.yml" || f === "serverless.yaml",
+    name: "serverless",
+    packageName: "@suss/contract-serverless",
+    describe: (p) => `a Serverless Framework service at ${p}`,
+  },
+  {
     matches: (f) => f === "schema.prisma",
     name: "prisma",
     packageName: "@suss/contract-prisma",

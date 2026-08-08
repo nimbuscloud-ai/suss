@@ -80,7 +80,8 @@ Options (check):
 
 Options (contract):
   --from           What kind of file to read: openapi, cloudformation,
-                   storybook, appsync, prisma, graphql, graphql-documents
+                   serverless, storybook, appsync, prisma, graphql,
+                   graphql-documents
   -o, --output     Write JSON to a file instead of stdout
 
 Options (corroborate):
@@ -428,6 +429,7 @@ async function runContract(args: string[]): Promise<number> {
   const SUPPORTED_FROM: ContractSource[] = [
     "openapi",
     "cloudformation",
+    "serverless",
     "storybook",
     "appsync",
     "prisma",

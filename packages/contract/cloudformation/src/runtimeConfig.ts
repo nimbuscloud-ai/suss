@@ -93,6 +93,7 @@ export function buildRuntimeConfigSummaries(
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
   inheritedEnvVars: Record<string, string[]> = {},
+  recognition = "cloudformation",
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
 
@@ -110,12 +111,15 @@ export function buildRuntimeConfigSummaries(
         resource,
         sourceFile,
         inherited: inheritedEnvVars[logicalId] ?? [],
+        recognition,
       });
       if (summary !== null) {
         summaries.push(summary);
       }
     } else if (type === "AWS::ECS::TaskDefinition") {
-      summaries.push(...buildEcsTaskSummaries(logicalId, resource, sourceFile));
+      summaries.push(
+        ...buildEcsTaskSummaries(logicalId, resource, sourceFile, recognition),
+      );
     }
   }
 
@@ -128,6 +132,7 @@ function buildLambdaSummary(opts: {
   sourceFile: string;
   /** Variables the SAM Globals section supplies to this function. */
   inherited: string[];
+  recognition: string;
 }): BehavioralSummary | null {
   const { logicalId, resource, sourceFile } = opts;
   const props = resource.Properties ?? {};
@@ -137,6 +142,7 @@ function buildLambdaSummary(opts: {
   const templateVars = readEnvVariables(envVariables);
   const envVarTargets = readEnvVarTargets(envVariables);
   const codeScope = readCodeScope(resource);
+  const runtime = props.Runtime;
   return buildSummary({
     logicalId,
     sourceFile,
@@ -145,6 +151,8 @@ function buildLambdaSummary(opts: {
     inheritedVars: opts.inherited,
     envVarTargets,
     codeScope,
+    recognition: opts.recognition,
+    ...(typeof runtime === "string" ? { runtime } : {}),
   });
 }
 
@@ -152,6 +160,7 @@ function buildEcsTaskSummaries(
   logicalId: string,
   resource: CloudFormationResource,
   sourceFile: string,
+  recognition: string,
 ): BehavioralSummary[] {
   const props = resource.Properties ?? {};
   const containers = props.ContainerDefinitions;
@@ -182,6 +191,7 @@ function buildEcsTaskSummaries(
       deploymentTarget: "ecs-task",
       templateVars,
       codeScope,
+      recognition,
     });
     if (summary !== null) {
       summaries.push(summary);
@@ -211,6 +221,10 @@ function buildSummary(opts: {
    */
   envVarTargets?: Record<string, { kind: "ref"; logicalId: string }>;
   codeScope: { kind: "codeUri" | "unknown"; path?: string };
+  /** Language runtime the manifest declares for the unit (SAM `Runtime`). */
+  runtime?: string;
+  /** The manifest language that stated this contract. */
+  recognition: string;
 }): BehavioralSummary | null {
   const deployableUnit: DeployableUnit = {
     deploymentTarget: opts.deploymentTarget,
@@ -246,7 +260,7 @@ function buildSummary(opts: {
       name: opts.logicalId,
       exportPath: null,
       boundaryBinding: runtimeConfigBinding({
-        recognition: "cloudformation",
+        recognition: opts.recognition,
         ...deployableUnit,
       }),
       // The binding keeps its own copy because the unit is what keys a
@@ -266,6 +280,7 @@ function buildSummary(opts: {
         Object.keys(opts.envVarTargets).length > 0
           ? { envVarTargets: opts.envVarTargets }
           : {}),
+        ...(opts.runtime !== undefined ? { runtime: opts.runtime } : {}),
       },
     ),
   };

@@ -242,6 +242,49 @@ describe("buildRuntimeConfigSummaries — ECS task", () => {
   });
 });
 
+describe("what recognized the resources", () => {
+  const template = {
+    Resources: {
+      Worker: {
+        Type: "AWS::Serverless::Function",
+        Properties: {
+          Runtime: "nodejs20.x",
+          Environment: { Variables: { QUEUE_URL: { Ref: "Jobs" } } },
+        },
+      },
+      Jobs: { Type: "AWS::SQS::Queue", Properties: {} },
+    },
+  };
+
+  it("says cloudformation when the caller does not say otherwise", () => {
+    const recognitions = new Set(
+      cloudFormationToSummaries(template).map(
+        (s) => s.identity.boundaryBinding?.recognition,
+      ),
+    );
+
+    expect(recognitions).toEqual(new Set(["cloudformation"]));
+  });
+
+  it("carries another manifest language's name onto every binding it keys", () => {
+    // A reader whose document compiles to these resource shapes reads
+    // through this walk and names the document a person wrote.
+    const recognitions = new Set(
+      cloudFormationToSummaries(template, { recognition: "serverless" }).map(
+        (s) => s.identity.boundaryBinding?.recognition,
+      ),
+    );
+
+    expect(recognitions).toEqual(new Set(["serverless"]));
+  });
+
+  it("records the language runtime the manifest declares", () => {
+    const summaries = pickRuntimeConfig(cloudFormationToSummaries(template));
+
+    expect(readEnvVars(summaries[0]).runtime).toBe("nodejs20.x");
+  });
+});
+
 describe("buildRuntimeConfigSummaries — provenance precedence", () => {
   it("template wins when a name overlaps a platform-injected one", () => {
     const summaries = pickRuntimeConfig(

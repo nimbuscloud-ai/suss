@@ -49,6 +49,13 @@ export const MessageBusMetadataSchema = z.object({
   patternResolution: z.enum(["exact", "schedule", "unresolvable"]).optional(),
   /** Present when unresolvable: what stopped the reduction. */
   unresolvableReason: z.string().optional(),
+  /**
+   * Whether a scheduled rule deploys switched on, when the manifest
+   * says. A rule deployed disabled invokes nothing until someone turns
+   * it on, so a consumer carrying `false` is wired but idle. Absent
+   * means the manifest did not say, and the platform default is on.
+   */
+  enabled: z.boolean().optional(),
   /** Whether a declared queue is FIFO. */
   fifoQueue: z.boolean().optional(),
   /** Whether a declared SNS topic is FIFO. */
@@ -147,6 +154,12 @@ export const RuntimeContractMetadataSchema = z.object({
       z.object({ kind: z.literal("ref"), logicalId: z.string() }),
     )
     .optional(),
+  /**
+   * Language runtime the manifest declares for the unit, verbatim:
+   * a SAM `Runtime` or a serverless.yml `runtime`, e.g. "nodejs20.x"
+   * or "python3.12". Absent when the manifest does not say.
+   */
+  runtime: z.string().optional(),
 });
 
 export type RuntimeContractMetadata = z.infer<
