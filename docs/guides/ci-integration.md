@@ -1,14 +1,14 @@
 # Set up CI checking
 
-Run suss on every pull request. The goal is a single check that
-flags boundary drift before it merges, provider producing a
-status the client doesn't handle, client contract not matching a
-declared spec, GraphQL selection against a field the schema
-doesn't have.
+Run suss on every pull request. What you want is a single check
+that flags boundary drift before it merges: a provider producing a
+status the client doesn't handle, a client contract that doesn't
+match a declared spec, a GraphQL selection against a field the
+schema doesn't have.
 
 ## The one-job pattern
 
-The common shape: one CI job runs `extract` on both sides,
+The common setup is one CI job that runs `extract` on both sides,
 then `check`, and fails the build on any finding above a
 threshold.
 
@@ -63,14 +63,15 @@ directory and let `check --dir` auto-pair everything:
 
 `check --dir` pairs every provider summary with every consumer
 summary that shares a boundary key (`GET /users/:id`,
-`gql:Query.pet`, etc.). Sources don't have to match origin, a
-contract-from-OpenAPI provider pairs naturally against a
-runtime-axios consumer.
+`gql:Query.pet`, etc.). The two sides don't have to come from the
+same kind of source. A provider read out of an OpenAPI contract
+pairs with a consumer read out of axios call sites.
 
 ## JSON output for downstream tooling
 
-`--json` emits findings as JSON rather than human text. Useful
-for PR-comment bots, dashboards, dedicated reporting steps:
+`--json` emits findings as JSON rather than human text. It's
+useful for PR-comment bots, dashboards, and dedicated reporting
+steps:
 
 ```yaml
 - id: check
@@ -84,18 +85,18 @@ for PR-comment bots, dashboards, dedicated reporting steps:
     findings: findings.json
 ```
 
-The JSON shape is the IR's `Finding[]`, same types the checker
+The JSON is the IR's `Finding[]`, the same types the checker
 exports. Downstream tools that consume it can validate via
 `@suss/behavioral-ir`'s exported schema or the generated
 JSON Schema (`packages/behavioral-ir/schema/behavioral-summary.schema.json`).
 
 ## Suppressing known-accepted findings
 
-Not every finding needs to fail the build. A legacy endpoint
-returning 500 on timeout that the team has accepted; a
-`deadConsumerBranch` for a status the server has never actually
-produced. The `.sussignore` file holds these exceptions, each
-carrying a written reason:
+Not every finding needs to fail the build. Maybe a legacy endpoint
+returns 500 on timeout and the team has accepted that, or a
+`deadConsumerBranch` covers a status the server has never actually
+produced. The `.sussignore` file keeps these exceptions, and each
+one comes with a written reason:
 
 ```yaml
 # .sussignore.yml at the project root: one rule per accepted finding
@@ -120,9 +121,9 @@ syntax and the three effects (`mark` / `downgrade` / `hide`).
   are advisory; failing on them produces churn without signal.
   Start at `error`, tighten to `warning` when the team is ready.
 - **Don't commit the `summaries/` directory.** Extracted
-  summaries are derived artifacts; regenerating them in CI keeps
-  them current with the source. Do commit `.sussignore`, it's a
-  curated list of decisions.
+  summaries are derived artifacts, and regenerating them in CI
+  keeps them current with the source. Do commit `.sussignore`,
+  because it's a curated list of decisions.
 - **Don't run extract against a partial tsconfig.** If
   `include` in your tsconfig excludes source files, suss can't see
   them. Use the same tsconfig your build uses (or a superset).

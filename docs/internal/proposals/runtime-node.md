@@ -1,10 +1,10 @@
 # `@suss/runtime-node`: design proposal
 
-A single pack that models the Node.js runtime: scheduling primitives, the `process` surface, and module-loading conventions. Sits below framework packs in the layering. Express handlers stay in `framework-express`, but a `setImmediate(handler)` call inside an Express handler is the runtime pack's responsibility.
+A single pack that models the Node.js runtime: scheduling primitives, the `process` surface, and module-loading conventions. It is one layer below the framework packs. Express handlers stay in `framework-express`, but a `setImmediate(handler)` call inside an Express handler is the runtime pack's responsibility.
 
 ## Status
 
-Shipped as `@suss/runtime-node`. The `process.env.X` env-var recognizer, originally shipped as the standalone `@suss/framework-process-env` pack, was folded into this pack (`src/envVars.ts`) alongside the process-surface recognizer; the standalone pack was removed (it was unpublished, so no compat re-export was needed). The pack declares a `version` stamp so re-extraction with the merged pack invalidates warm caches from the pre-merge node pack.
+Shipped as `@suss/runtime-node`. The `process.env.X` env-var recognizer, originally shipped as the standalone `@suss/framework-process-env` pack, was folded into this pack (`src/envVars.ts`) alongside the process-surface recognizer. The standalone pack was removed (it was unpublished, so no compat re-export was needed). The pack declares a `version` stamp so re-extraction with the merged pack invalidates warm caches from the pre-merge node pack.
 
 ## Why this exists
 
@@ -36,20 +36,20 @@ For each, the pack:
 1. Emits a `subUnits` declaration so the callback `fn` becomes its own code unit, parented to the calling unit.
 2. Emits a `schedule` effect on the calling transition (a new `Effect` discriminator).
 
-The sub-unit has no `boundaryBinding`: being scheduled isn't a contract. It exists as code; cross-unit pairing happens only if it touches a contracted boundary internally (calls a tracked import, hits a queue, registers a handler).
+The sub-unit has no `boundaryBinding`: being scheduled isn't a contract. It exists as code, and cross-unit pairing happens only if it touches a contracted boundary internally (calls a tracked import, hits a queue, registers a handler).
 
 `clearTimeout` / `clearInterval` are no-ops for v0: they cancel scheduled work, which we don't track temporally.
 
 ### 2. Process surface
 
 - `process.env.X` reads: the `envVarRecognizer` now lives in this pack (`src/envVars.ts`). The standalone `framework-process-env` pack was removed outright rather than kept as a compat re-export stub, since it was never published.
-- `process.argv` reads: runtime config channel of the deployable unit (cf. `project_env_var_boundary.md`). Same boundary semantics as env vars.
-- `process.exit(code)`: terminal. Status code from the argument; fallback `0`. Adds a `processExit` terminal kind.
+- `process.argv` reads: these are the runtime config channel of the deployable unit (cf. `project_env_var_boundary.md`). They have the same boundary semantics as env vars.
+- `process.exit(code)`: this is a terminal. The status code comes from the argument, and it falls back to `0`. This adds a `processExit` terminal kind.
 - `process.cwd()`, `process.platform`, `process.version`: opaque reads against runtime metadata. Mark as `opaque` predicates with a clear reason so downstream tooling sees the dependency without inventing structure.
 
 ### 3. Module-loading surface
 
-- `require.resolve(specifier)`: invocation effect with the specifier captured. Useful for dependency analysis.
+- `require.resolve(specifier)`: this is an invocation effect with the specifier captured, and it is useful for dependency analysis.
 - `__dirname` / `__filename`: opaque-source reads tied to the file's location. Mark with `opaque` and a reason so the user knows we know.
 - `import.meta.url` (ESM): same treatment.
 - `process.versions.node`: opaque runtime metadata.
@@ -60,10 +60,10 @@ Bare `require(specifier)` calls are out of scope for v0: they overlap with the e
 
 Each of these is a follow-up because each is its own design problem.
 
-- **EventEmitter / streams.** `emitter.on("event", handler)` is a registration call shaped like `app.get(path, handler)`, but cross-file `emitter.emit("event", ...)` pairing needs an event-name registry the pack can share with consumers. Separate pack: `@suss/framework-events`.
-- **`fs.*` and `node:fs`.** Storage protocol family. Belongs in a storage-protocol pack; the platform pack would only hand off, not handle. Separate pack: `@suss/storage-fs`.
-- **`crypto`.** Source of opacity (random IDs, hashes). Each call collapses an unbounded value space to one identifier. Worth its own pack so the opacity reasons are domain-specific.
-- **Worker threads / `child_process`.** New unit boundaries (cross-process). Needs IR work for cross-process pairing, not a pack alone.
+- **EventEmitter / streams.** `emitter.on("event", handler)` is a registration call that looks like `app.get(path, handler)`, but pairing a cross-file `emitter.emit("event", ...)` needs an event-name registry the pack can share with consumers. Separate pack: `@suss/framework-events`.
+- **`fs.*` and `node:fs`.** These are part of the storage protocol family. They belong in a storage-protocol pack, and the platform pack would only hand off rather than handle them. Separate pack: `@suss/storage-fs`.
+- **`crypto`.** This is a source of opacity (random IDs, hashes). Each call collapses an unbounded value space to one identifier. It is worth its own pack so the opacity reasons are domain-specific.
+- **Worker threads / `child_process`.** These are new unit boundaries (cross-process). They need IR work for cross-process pairing, not a pack alone.
 - **Timers as proper temporal primitives.** v0 treats `setTimeout(fn, 5000)` and `setImmediate(fn)` identically: both schedule `fn`. The 5000ms isn't modeled. Temporal modeling is its own arc.
 
 ## Mechanics
@@ -83,9 +83,9 @@ For each parent code unit, walk descendants for `CallExpression` nodes whose cal
 }
 ```
 
-When the first argument is an identifier resolving to a function declared elsewhere, surface a sub-unit pointing at the resolved declaration. When the resolution fails, emit no sub-unit; the parent's effect record is the only trace.
+When the first argument is an identifier resolving to a function declared elsewhere, surface a sub-unit pointing at the resolved declaration. When the resolution fails, emit no sub-unit. The parent's effect record is the only trace.
 
-`scheduled-callback` is a new `CodeUnitKind`. It pairs to nothing by default; the checker treats it as a unit-of-record.
+`scheduled-callback` is a new `CodeUnitKind`. It pairs to nothing by default, and the checker treats it as a unit-of-record.
 
 ### `invocationRecognizer`: per-call effect emission
 
@@ -103,15 +103,15 @@ The IR's `Effect` enum gets the new variant. Existing transitions accept this ef
 
 ### `accessRecognizer`: `process.env`, `__dirname`, `import.meta.url` reads
 
-Walks `PropertyAccessExpression` nodes; when the receiver is a tracked global (`process`, `import.meta`), emits the corresponding effect.
+The recognizer walks `PropertyAccessExpression` nodes, and when the receiver is a tracked global (`process`, `import.meta`), it emits the corresponding effect.
 
 ## Confidence
 
 Three levels:
 
-- **High**: literal callback expression directly passed (`setImmediate(() => doX())`). The sub-unit body is right there; no inference.
+- **High**: literal callback expression directly passed (`setImmediate(() => doX())`). The sub-unit body is right there, so nothing is inferred.
 - **Medium**: identifier resolved to a function declaration in the same file. Resolution is syntactic, not type-driven.
-- **Low / opaque**: identifier whose value comes from a parameter, a property access, or a non-resolvable expression. No sub-unit emitted; the `schedule` effect carries `target: { type: "opaque", reason: "non-literal-callback" }`.
+- **Low / opaque**: identifier whose value comes from a parameter, a property access, or a non-resolvable expression. No sub-unit is emitted, and the `schedule` effect has `target: { type: "opaque", reason: "non-literal-callback" }` on it.
 
 Confidence lives on the sub-unit, not on the effect.
 
@@ -119,7 +119,7 @@ Confidence lives on the sub-unit, not on the effect.
 
 Two cases need a precedence rule:
 
-1. **Framework wraps a runtime primitive.** A framework that exports its own `runOnNextTick(fn)` calling through to `process.nextTick(fn)` would, today, double-emit if both packs match the underlying call. Resolution: framework-pack discovery wins for the wrapper; the platform pack only fires on the literal runtime API. Recognizers should narrow on import provenance (`process.nextTick` from `node:process` vs `framework.runOnNextTick` from another module).
+1. **Framework wraps a runtime primitive.** A framework that exports its own `runOnNextTick(fn)` calling through to `process.nextTick(fn)` would, today, double-emit if both packs match the underlying call. Resolution: framework-pack discovery wins for the wrapper, and the platform pack only fires on the literal runtime API. Recognizers should narrow on import provenance (`process.nextTick` from `node:process` vs `framework.runOnNextTick` from another module).
 
 2. **Framework declares its own scheduled-callback semantics.** React's `useEffect` body is conceptually a scheduled callback, but it's already handled as a `subUnits` declaration in `@suss/framework-react`. The platform pack should not double-cover. Resolution: platform pack only covers the platform-level scheduling primitives, even if a framework's behavior is similar.
 
@@ -127,16 +127,16 @@ For both cases, the pack-author docs need a layering chapter: "framework packs t
 
 ## Open questions
 
-- **`Promise.then(fn)` as a scheduling site.** Always emits a microtask, but most `.then` chains aren't side-effect handlers; they're transformations. Treating every `.then` as a sub-unit would inflate the count by ~10×. Options: (a) only treat `.then` as scheduling when the chain ends without a `return`, (b) treat it always but mark low confidence, (c) skip entirely and rely on framework / async-aware passes elsewhere. Lean toward (c) for v0; revisit if production codebases need it.
-- **Opacity reasons.** Each opaque read should carry a reason string the user can see. Current opacity reasons are ad-hoc; this pack's adoption is a forcing function for a small reason taxonomy (`runtime-metadata`, `non-literal-callback`, `dynamic-require`).
-- **Where does `process.env.X = "value"` (writes) go?** Read is a config-channel access; write is mutation of the channel. Probably a separate effect kind (`processEnvWrite`), but rarely seen in practice. Defer.
+- **`Promise.then(fn)` as a scheduling site.** It always emits a microtask, but most `.then` chains aren't side-effect handlers, they're transformations. Treating every `.then` as a sub-unit would inflate the count by ~10×. Options: (a) only treat `.then` as scheduling when the chain ends without a `return`, (b) treat it always but mark low confidence, (c) skip entirely and rely on framework / async-aware passes elsewhere. We lean toward (c) for v0, and we revisit it if production codebases need it.
+- **Opacity reasons.** Each opaque read should include a reason string the user can see. Current opacity reasons are ad-hoc, and adopting this pack is what forces a small reason taxonomy (`runtime-metadata`, `non-literal-callback`, `dynamic-require`).
+- **Where does `process.env.X = "value"` (writes) go?** A read is an access to the config channel, and a write mutates that channel. It's probably a separate effect kind (`processEnvWrite`), but we rarely see it in practice. Defer.
 
 ## Validation
 
 Three checkpoints before declaring v0 done:
 
 1. Unit tests in `@suss/runtime-node` covering each scheduling primitive's recognizer + subUnit synthesis.
-2. Integration test in `@suss/cli` against a synthetic Express service with `setImmediate(() => persistAudit(req))`; verify the audit-write call appears in pairings and the parent's transition lists the `schedule` effect.
+2. Integration test in `@suss/cli` against a synthetic Express service with `setImmediate(() => persistAudit(req))`. Verify the audit-write call appears in pairings and the parent's transition lists the `schedule` effect.
 3. Re-run dogfood with the platform pack added to the pipeline. Expected effect on suss itself: minimal (the codebase rarely uses these primitives). Better: point at one external Node service and observe coverage delta.
 
 ## Naming

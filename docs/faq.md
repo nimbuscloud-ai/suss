@@ -8,11 +8,11 @@ Static analysis that derives every execution path through every function in a Ty
 
 ## How is this different from a linter?
 
-Linters match syntactic patterns, a forbidden call, a missing `await`, an unused variable. They don't model what a function does, so they can't compare what one function produces with what another expects. suss derives behavior and compares; the findings name a specific path on one side that disagrees with a specific path on the other side, not a syntactic shape that's globally suspect.
+Linters match syntactic patterns, a forbidden call, a missing `await`, an unused variable. They don't model what a function does, so they can't compare what one function produces with what another expects. suss derives behavior and compares it; each finding points at a specific path on one side that disagrees with a specific path on the other side, not at a syntactic pattern that's suspect everywhere.
 
 ## How is this different from TypeScript?
 
-TypeScript checks shapes. `User` is still `User` whether the user is active, soft-deleted, or shadow-banned; `Response<200, User>` type-checks the same regardless of which branch of the handler produced it. suss models *which branch produced what* and *under what conditions*, information that's invisible to the type system because it's about values, not types.
+TypeScript checks the structure of data. `User` is still `User` whether the user is active, soft-deleted, or shadow-banned; `Response<200, User>` type-checks the same regardless of which branch of the handler produced it. suss models *which branch produced what* and *under what conditions*, information that's invisible to the type system because it's about values, not types.
 
 ## How is this different from OpenAPI / ts-rest / tRPC?
 
@@ -20,7 +20,7 @@ Those are specifications: a hand-authored description of what the API should acc
 
 ## How is this different from tests?
 
-Tests record what happened on the inputs the test author thought of. suss records what happens on every reachable path, regardless of whether anyone wrote a test for it. The two complement: tests verify behavior with concrete data; suss enumerates the structure of behavior and finds gaps the test set never reaches.
+Tests record what happened on the inputs the test author thought of. suss records what happens on every reachable path, regardless of whether anyone wrote a test for it. The two complement each other: tests verify behavior with concrete data, and suss enumerates the structure of behavior and finds gaps the test set never reaches.
 
 ## How is this different from observability?
 
@@ -30,8 +30,8 @@ Observability records what happened at runtime, once. The union of traces is alw
 
 Two pieces of code (or one piece of code and one declared contract) that previously agreed on what flows across a boundary now disagree. The agreement was in behavior, not in types, the types may not have changed at all. Examples:
 
-- A handler used to return `404` for soft-deleted users and now returns `200 { status: "deleted" }`. Caller still reads `200` as "user exists and is usable."
-- A Prisma write used to set `email`; the schema removed `email`. Type-checker doesn't catch it because the field is still in the input type, only the runtime database rejects it.
+- A handler used to return `404` for soft-deleted users and now returns `200 { status: "deleted" }`. The caller still takes `200` to mean "user exists and is usable."
+- A Prisma write used to set `email`; the schema removed `email`. The type-checker doesn't catch it because the field is still in the input type; only the database rejects it, at runtime.
 - A queue producer used to send `{ userId: string }`; the consumer parses `userId` as a number. Both compile, both run, until the wrong value gets stored.
 
 ## Does it require annotations or changes to my code?
@@ -60,13 +60,13 @@ It produces three kinds of "I'm not sure" output explicitly:
 
 - **Opaque predicates**: when a branch condition can't be statically resolved, the predicate is labeled `opaque` with the source text preserved. Downstream tools can decide whether to count opaque branches as covered.
 - **Unresolved subjects**: when a value's origin can't be traced, the subject is labeled `unresolved` rather than dropped.
-- **Confidence levels**: every summary carries a `confidence` block recording the analyzer's certainty.
+- **Confidence levels**: every summary includes a `confidence` block recording the analyzer's certainty.
 
 Findings are graded `error | warning | info` and you control the CI gate with `--fail-on`. False positives in the strict sense (a finding the code does not actually have) do happen; the typical cause is a pack that doesn't know about a wrapper or a recognition pattern. Adding the pattern to the pack is the fix.
 
 ## What's the difference between `suss extract` and `suss contract`?
 
-`extract` runs over TypeScript or JavaScript source and derives summaries from the implementation. `contract` runs over a declared artifact, an OpenAPI spec, a CloudFormation template, a Serverless Framework service file, a Prisma schema, a GraphQL SDL or operation document, a Storybook CSF3 file, and emits summaries in the same shape. Both feed `suss check`, which pairs them.
+`extract` runs over TypeScript or JavaScript source and derives summaries from the implementation. `contract` runs over a declared artifact, an OpenAPI spec, a CloudFormation template, a Serverless Framework service file, a Prisma schema, a GraphQL SDL or operation document, a Storybook CSF3 file, and emits summaries in the same form. Both feed `suss check`, which pairs them.
 
 Python and Ruby are derived too, by [their own adapters](/guides/python-and-ruby), which `suss extract --lang python` and `--lang ruby` reach.
 
@@ -86,7 +86,7 @@ No, it consumes them. Each of those is a *specification* (or *observation*); sus
 
 - Cross-service aggregation, dashboards, and historical drift tracking, operational concerns that consume summaries rather than produce them.
 - Continuous monitoring, suss runs on demand (locally, in CI), not as a daemon.
-- Authorial intent, suss derives what the code does, not what it should do. Declared contracts (OpenAPI, ts-rest `responses`, Prisma schema) carry intent, and the checker compares them against derivation.
+- Authorial intent, suss derives what the code does, not what it should do. Declared contracts (OpenAPI, ts-rest `responses`, Prisma schema) express intent, and the checker compares them against derivation.
 - Runtime instrumentation, everything is static. No agents, no sampling, no production data.
 
 ## How do I add a new framework?

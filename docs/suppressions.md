@@ -4,7 +4,7 @@ Some findings are true but accepted, a consumer that deliberately doesn't handle
 
 ## Where the file goes
 
-The project root is the usual home for it, next to `package.json`. `suss check --dir summaries/` starts looking inside `summaries/` and walks up to the project root, taking the nearest file it finds. `suss check provider.json consumer.json` starts in the working directory and walks up the same way. The walk stops at the first directory holding a `package.json` or a `.git`, so a file outside the project never reaches a run. `--sussignore <path>` overrides the search.
+The project root is the usual home for it, next to `package.json`. `suss check --dir summaries/` starts looking inside `summaries/` and walks up to the project root, taking the nearest file it finds. `suss check provider.json consumer.json` starts in the working directory and walks up the same way. The walk stops at the first directory that contains a `package.json` or a `.git`, so a file outside the project is never picked up by a run. `--sussignore <path>` overrides the search.
 
 In each directory it takes the first of these it finds:
 
@@ -16,7 +16,7 @@ A `.sussignore.json` sitting in the summaries directory is read as suppression c
 
 ## File format
 
-Both YAML and JSON encode the same shape:
+YAML and JSON encode the same thing:
 
 ```yaml
 version: 1
@@ -31,7 +31,7 @@ rules:
     effect: hide
 ```
 
-`version: 1` is required. A file without it does not load, and `suss check` says so and names the line to add.
+`version: 1` is required. A file without it does not load, and `suss check` says so and tells you the line to add.
 
 ### Writing a rule from a finding
 
@@ -45,7 +45,7 @@ rules:
       reason: TODO say why you accept this
 ```
 
-The rule names the transition on whichever side carries it, so it matches that finding and no other. Replace the reason with your own and it is done. A finding with no transition on either side gets no printed rule, because `kind` plus `boundary` is the only rule left to write and it would silence every other finding of that kind on the boundary.
+The rule identifies the transition on whichever side has one, so it matches that finding and no other. Replace the reason with your own and it is done. A finding with no transition on either side gets no printed rule, because `kind` plus `boundary` is the only rule left to write and it would silence every other finding of that kind on the boundary.
 
 ### Fields
 
@@ -56,9 +56,9 @@ The rule names the transition on whichever side carries it, so it matches that f
 | `consumer.summary` | optional | `${file}::${name}` key matching the consumer side of the finding. |
 | `consumer.transitionId` | optional | Matches `Finding.consumer.transitionId`. |
 | `provider.summary` | optional | `${file}::${name}` key matching the provider side of the finding. |
-| `provider.transitionId` | optional | Matches `Finding.provider.transitionId`. A finding about a status the provider produces carries its id here, not on the consumer. |
+| `provider.transitionId` | optional | Matches `Finding.provider.transitionId`. A finding about a status the provider produces puts its id here, not on the consumer. |
 | `scope` | optional, default `"narrow"` | `"broad"` opts in to kind-only or boundary-only matches. |
-| `reason` | **required** | Free text explaining why this is accepted. Surfaces in human output next to the suppressed finding. |
+| `reason` | **required** | Free text explaining why this is accepted. It appears in the human output next to the suppressed finding. |
 | `effect` | optional, default `"mark"` | See below. |
 
 ### Matching
@@ -71,15 +71,15 @@ A finding matches a rule when every specified field on the rule equals the corre
 
 ### Effects
 
-- **`mark`** (default), finding is still shown and returned to downstream tools, annotated `suppressed (mark): <reason>`. Excluded from the `--fail-on` exit-code threshold. Reviewers still see it.
+- **`mark`** (default), the finding is still shown and still returned to downstream tools, annotated `suppressed (mark): <reason>`. It is excluded from the `--fail-on` exit-code threshold. Reviewers still see it.
 - **`downgrade`**: severity drops one level (`error` → `warning` → `info`). The original severity is preserved in `suppressed.originalSeverity`. Still counts toward the threshold at the *downgraded* severity, so `--fail-on info` still catches it.
-- **`hide`**: finding is removed from output and excluded from the threshold. Use when the noise genuinely serves no one; lose some transparency for it.
+- **`hide`**: the finding is removed from the output and excluded from the threshold. Use it when the noise serves no one, and accept that you give up some transparency for it.
 
 ## Intent findings
 
 The same rules apply to intent findings from `suss check --dir --intent`. `kind` and `boundary` match the same way (the intent finding's boundary is already a key string); `consumer` and `provider` never match an intent finding, which has neither side. Effects and threshold semantics are identical.
 
-PRD scenario-coverage findings don't always resolve to a real boundary. A `danglingScenarioLink` whose intent name *did* resolve is keyed on that intent's boundary (`GET /users/{id}`), so a narrow `kind` + `boundary` rule targets it. An `unlinkedScenario`, an `ambiguousScenarioLink`, or a link whose intent name doesn't resolve has no boundary to key on, so it carries a `prd:<title>` key instead, match those with `boundary: "prd:<title>"` verbatim, or with `scope: broad` on `kind` alone.
+PRD scenario-coverage findings don't always resolve to an actual boundary. A `danglingScenarioLink` whose intent name *did* resolve is keyed on that intent's boundary (`GET /users/{id}`), so a narrow `kind` + `boundary` rule targets it. An `unlinkedScenario`, an `ambiguousScenarioLink`, or a link whose intent name doesn't resolve has no boundary to key on, so it gets a `prd:<title>` key instead. Match those with `boundary: "prd:<title>"` verbatim, or with `scope: broad` on `kind` alone.
 
 ## CLI flags
 
@@ -115,4 +115,4 @@ The checker already emits `lowConfidence` findings when opaque predicates preven
 ## See also
 
 - [`docs/cross-boundary-checking.md`](cross-boundary-checking.md), the findings taxonomy you'll suppress
-- `docs/status.md` decision #30, design rationale for this v0 shape
+- `docs/status.md` decision #30, the design rationale for this first version

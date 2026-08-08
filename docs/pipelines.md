@@ -1,8 +1,8 @@
 # Pipelines
 
-What each CLI action does under the hood, end to end. This is the
-reference to read when a behavior surprises you and you want to trace it
-without grepping the source. For the static package picture, see
+What each CLI action does under the hood, end to end. Read this when a
+behavior surprises you and you want to trace it without grepping the
+source. For the static package picture, see
 [`architecture.md`](architecture.md); for finding semantics, see
 [`cross-boundary-checking.md`](cross-boundary-checking.md).
 
@@ -14,7 +14,7 @@ The CLI does almost nothing itself. When the command runs, it dynamically import
 
 The adapter then builds a ts-morph `Project` from the given `tsconfig`, walks every source file, and for each framework or runtime pack it's configured with, looks for discovery matches. A discovery match identifies one code unit (a handler, a client call site, a loader, …). For each matched unit the adapter runs the four extraction passes documented in [`extraction-algorithm.md`](extraction-algorithm.md) (terminal discovery, ancestor branch collection, early-return detection, and condition expression parsing), plus contract reading if the pack declares one. The output of that work per unit is a `RawCodeStructure`: a plain-data description with no AST references, ready to be serialized or tested against fixtures.
 
-The extractor (`@suss/extractor.assembleSummary`) then normalizes each `RawCodeStructure` into a `BehavioralSummary`. It wraps un-decomposed conditions as `opaque`, records gaps where the contract and the code disagree or where a return matched no terminal shape, assesses confidence, and assembles the summary. The CLI collects the array, parses it back through the IR validator as a sanity check, and writes it to disk.
+The extractor (`@suss/extractor.assembleSummary`) then normalizes each `RawCodeStructure` into a `BehavioralSummary`. It wraps un-decomposed conditions as `opaque`, records gaps where the contract and the code disagree or where a return matched no terminal pattern, assesses confidence, and assembles the summary. The CLI collects the array, parses it back through the IR validator as a sanity check, and writes it to disk.
 
 ```
 User
@@ -44,7 +44,7 @@ User
 BehavioralSummary[] → write out.json
 ```
 
-The adapter/extractor split is the key invariant of this pipeline: the adapter owns everything AST-shaped, the extractor never sees a node. Adding a second language (Python, Go) means writing a new adapter that emits `RawCodeStructure`; the extractor doesn't change.
+The adapter/extractor split is the key invariant of this pipeline: the adapter owns everything that touches the AST, and the extractor never sees a node. Adding a second language (Python, Go) means writing a new adapter that emits `RawCodeStructure`; the extractor doesn't change.
 
 ## `suss inspect`
 
@@ -64,9 +64,9 @@ The CLI loads both files through `safeParseSummaries` (same validation error pat
 
 - `checkProviderCoverage`: does the consumer handle every status code the provider produces? Also checks sub-cases within a status (distinguishing predicates that the consumer doesn't distinguish).
 - `checkConsumerSatisfaction`: does the consumer handle any status codes the provider never produces? (Dead branches.)
-- `checkContractConsistency`: is the handler's behavior consistent with the declared contract it carries (e.g. ts-rest `responses`, OpenAPI schema)?
+- `checkContractConsistency`: is the handler's behavior consistent with the declared contract attached to it (e.g. ts-rest `responses`, OpenAPI schema)?
 - `checkConsumerContract`: does the consumer read fields the declared contract doesn't promise? (Depends on undeclared implementation details.)
-- `checkBodyCompatibility`: do the consumer's body-field reads line up with the provider's body shapes, per status?
+- `checkBodyCompatibility`: do the consumer's body-field reads line up with the bodies the provider produces, per status?
 - `checkSemanticBridging`: does the provider produce distinguishing literals or field-presence discriminators that the consumer collapses into a single branch?
 
 Each check is pure over `(provider, consumer)`, emits `Finding[]`, and knows nothing about the other checks. The findings are then rendered (human or JSON) and the exit code is derived from `--fail-on` (`error`, `warning`, `info`, or `none`).
@@ -123,11 +123,11 @@ Each check is pure over `(provider, consumer)`, emits `Finding[]`, and knows not
   <text class="label" x="220" y="352" text-anchor="middle">Findings</text>
 </svg>
 
-Pairing dispatches through the semantics registry, so every shipped variant pairs the same way: the binding's semantics names its own key and agreement rules. See [`boundary-semantics.md`](boundary-semantics.md).
+Pairing dispatches through the semantics registry, so every shipped variant pairs the same way: the binding's semantics declares its own key and its own agreement rules. See [`boundary-semantics.md`](boundary-semantics.md).
 
 ## `suss contract --from openapi`
 
-Turns an OpenAPI 3.x spec into `BehavioralSummary[]` carrying `confidence.source: "derived"`. Output is the same shape as `suss extract`, pairable with extracted consumers.
+Turns an OpenAPI 3.x spec into `BehavioralSummary[]` marked `confidence.source: "derived"`. The output is in the same form `suss extract` produces, and it pairs with extracted consumers.
 
 `@suss/contract-openapi` walks every `(path, operation)` in the spec. For each operation it emits one handler summary with:
 
@@ -135,15 +135,15 @@ Turns an OpenAPI 3.x spec into `BehavioralSummary[]` carrying `confidence.source
 - `metadata.http.declaredContract` populated so `checkContractConsistency` can cross-check a hypothetical provider (if you later extract one) against the spec,
 - `confidence.source: "derived"` so downstream consumers know where this came from.
 
-The CLI writes the result to disk after round-tripping through `safeParseSummaries` to catch any shape drift.
+The CLI writes the result to disk after round-tripping through `safeParseSummaries` to catch any drift in the structure.
 
 ## `suss contract --from cloudformation`
 
 The most layered contract reader: the same physical API can be expressed several ways in CFN, and we want them all to produce the same summaries.
 
-Three layers, deliberately separated. The raw template parse (a file on disk to plain data, resolving the CFN intrinsic YAML tags) lives in `@suss/manifest-aws`, shared with the manifest-driven framework packs. On top of it, the **manifest-reader** layer in `@suss/contract-cloudformation` walks the parsed tree and builds normalized `RestApiConfig` / `HttpApiConfig` values (what is this API, what endpoints, what authorizer, CORS, throttle, and integration config), through `buildRestApiConfigs`, `buildHttpApiConfigs`, `readSamApiEvents`, `readSamHttpApiEvents`, and `readCors`. That is pure grouping: it handles `AWS::ApiGateway::RestApi` + `AWS::ApiGateway::Method`, `AWS::ApiGatewayV2::Api` + `AWS::ApiGatewayV2::Route` + `AWS::ApiGatewayV2::Integration`, the SAM `AWS::Serverless::Api` / `AWS::Serverless::HttpApi` shorthand, and SAM `Events.Api` / `Events.HttpApi` blocks. It also handles inline OpenAPI bodies on RestApis.
+Three layers, deliberately separated. Parsing the raw template (turning a file on disk into plain data, resolving the CFN intrinsic YAML tags) lives in `@suss/manifest-aws`, shared with the manifest-driven framework packs. On top of it, the **manifest-reader** layer in `@suss/contract-cloudformation` walks the parsed tree and builds normalized `RestApiConfig` / `HttpApiConfig` values (what is this API, what endpoints, what authorizer, CORS, throttle, and integration config), through `buildRestApiConfigs`, `buildHttpApiConfigs`, `readSamApiEvents`, `readSamHttpApiEvents`, and `readCors`. That is pure grouping: it handles `AWS::ApiGateway::RestApi` + `AWS::ApiGateway::Method`, `AWS::ApiGatewayV2::Api` + `AWS::ApiGatewayV2::Route` + `AWS::ApiGatewayV2::Integration`, the SAM `AWS::Serverless::Api` / `AWS::Serverless::HttpApi` shorthand, and SAM `Events.Api` / `Events.HttpApi` blocks. It also handles inline OpenAPI bodies on RestApis.
 
-The **resource-semantics** layer turns each normalized config into `BehavioralSummary[]` with platform-injected transitions: authorizer 401/403, API key 403, request-validator 400, throttle 429, integration 502/504, CORS preflight OPTIONS. That logic lives in `restApiToSummaries` and `httpApiToSummaries` in `@suss/contract-aws-apigateway`, which is independently consumable, so a future hand-authored API Gateway path (no CFN involved) would go straight into the semantics layer. When the manifest has an inline OpenAPI body, CFN delegates that part to `@suss/contract-openapi` instead.
+The **resource-semantics** layer turns each normalized config into `BehavioralSummary[]` with platform-injected transitions: authorizer 401/403, API key 403, request-validator 400, throttle 429, integration 502/504, CORS preflight OPTIONS. That logic lives in `restApiToSummaries` and `httpApiToSummaries` in `@suss/contract-aws-apigateway`, which you can use on its own, so a future hand-authored API Gateway path (no CFN involved) would go straight into the semantics layer. When the manifest has an inline OpenAPI body, CFN delegates that part to `@suss/contract-openapi` instead.
 
 The three layers, and why each one is separate:
 
@@ -192,7 +192,7 @@ See [`contract-sources.md`](contract-sources.md) for the doctrine behind this sp
 
 One level deeper than `suss extract`: what `assembleSummary` actually does.
 
-It reads the raw branches and produces one `Transition` per branch. Structured predicates pass through, un-decomposed conditions get wrapped as `opaque`, and the transition ID is minted from `(function, terminal kind, status, conditionHash)` so it survives branch reordering. It reads the raw declared contract and cross-references it against the produced statuses, emitting an `unhandledCase` gap in each direction (declared-but-not-produced, produced-but-not-declared). A return that matched no terminal shape in the pack becomes an `unreadOutcome` gap instead, and that one also forces confidence to `low`. Otherwise it counts the ratio of opaque to structured predicates and assigns a confidence level from that. Finally it assembles the summary object, nesting any HTTP-scoped metadata under `metadata.http.*` per the [boundary-semantics](boundary-semantics.md) namespacing convention.
+It reads the raw branches and produces one `Transition` per branch. Structured predicates pass through, un-decomposed conditions get wrapped as `opaque`, and the transition ID is minted from `(function, terminal kind, status, conditionHash)` so it survives branch reordering. It reads the raw declared contract and cross-references it against the produced statuses, emitting an `unhandledCase` gap in each direction (declared-but-not-produced, produced-but-not-declared). A return that matched no terminal pattern in the pack becomes an `unreadOutcome` gap instead, and that one also forces confidence to `low`. Otherwise it counts the ratio of opaque to structured predicates and assigns a confidence level from that. Finally it assembles the summary object, nesting any HTTP-scoped metadata under `metadata.http.*` per the [boundary-semantics](boundary-semantics.md) namespacing convention.
 
 Each step is small, pure over `RawCodeStructure`, and independently testable, which is why the extractor test suite runs in milliseconds and takes no compiler dependency.
 
@@ -200,10 +200,10 @@ Each step is small, pure over `RawCodeStructure`, and independently testable, wh
 
 Before `suss check --dir` runs `checkPair`, it has to decide which summaries face each other across a boundary. `pairSummaries` does that in three passes:
 
-1. Classify each summary by its role via `BOUNDARY_ROLE[summary.kind]`: provider (handler, loader, action, middleware, resolver, worker, component, hook) or consumer (client, consumer). Summaries with an unrecognized kind land in `unmatched.unpairable` with reason `unknownKind` rather than crashing, the runtime guard deferred until the zod IR migration makes it unreachable.
+1. Classify each summary by its role via `BOUNDARY_ROLE[summary.kind]`: provider (handler, loader, action, middleware, resolver, worker, component, hook) or consumer (client, consumer). Summaries with an unrecognized kind land in `unmatched.unpairable` with reason `unknownKind` rather than crashing; the runtime guard stays in place until the zod IR migration makes it unreachable.
 2. Derive a boundary key for each summary via `boundaryKey(binding)`. Today that's `"<METHOD> <normalizedPath>"` with path normalization that treats `:id` and `{id}` equivalently and lowercases static segments. Summaries without a path land in `unmatched.unpairable` with reason `unnamedBoundary`.
 3. Group by (key × role). Every key that has at least one provider AND one consumer yields pairs (`N × M` cross-product within the group). Keys with only one side populate `unmatched.providers` or `unmatched.consumers`.
 
 The result is `{ pairs, unmatched }`. `checkPair` runs on each pair; the unmatched lists surface in the CLI output so you can see what didn't line up.
 
-The key function and the agreement check both come from the binding's semantics variant, imported from `@suss/ir-core`: REST buckets by path and settles the method inside the bucket, GraphQL pairs by the parent type name + field, message-bus by the channel's subject. A summary whose semantics declares no key lands in the unpaired list with a reason instead of being forced through a REST-shaped key. See [`boundary-semantics.md`](boundary-semantics.md).
+The key function and the agreement check both come from the binding's semantics variant, imported from `@suss/ir-core`: REST buckets by path and settles the method inside the bucket, GraphQL pairs by the parent type name + field, message-bus by the channel's subject. A summary whose semantics declares no key lands in the unpaired list with a reason instead of being forced through a REST-style key. See [`boundary-semantics.md`](boundary-semantics.md).

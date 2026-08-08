@@ -1,29 +1,29 @@
 # interactions/
 
-Single-pass index over interaction effects (`storage-access`, `service-call`, `message-send`, `config-read`, `schedule`, etc.), so per-class checkers don't each re-walk every summary.
+This module builds a single-pass index over interaction effects (`storage-access`, `service-call`, `message-send`, `config-read`, `schedule`, etc.), so that the per-class checkers don't each re-walk every summary.
 
 ## Place in the pipeline
 
-Built once at the start of `checkAll()`. Each per-class checker (`storage/`, `message-bus/`, `runtime-config/`) accepts an optional `InteractionIndex` parameter — when supplied, the checker uses it for all lookups; when omitted, the checker builds its own (handy for tests and one-off runs).
+`checkAll()` builds the index once at the start. Each per-class checker (`storage/`, `message-bus/`, `runtime-config/`) takes an optional `InteractionIndex` parameter. When it is supplied, the checker uses it for every lookup; when it is left out, the checker builds its own, which is handy for tests and one-off runs.
 
-No findings are emitted from this module. Pure plumbing.
+This module emits no findings. It is pure plumbing.
 
 ## Key files
 
-- `dispatcher.ts:buildInteractionIndex` — single pass over all summaries; buckets by `(class, semantics name)` for effects and by `semantics name` for providers.
-- `dispatcher.ts:providersOf` — lookup providers by semantics name.
-- `dispatcher.ts:interactionsOf` — lookup interaction effects by class + semantics name.
-- `dispatcher.ts:collectInteractions` — legacy one-shot walk for callers that pre-date the unified index. New callers should use the index.
+- `dispatcher.ts:buildInteractionIndex` makes one pass over all the summaries, bucketing effects by `(class, semantics name)` and providers by `semantics name`.
+- `dispatcher.ts:providersOf` looks providers up by semantics name.
+- `dispatcher.ts:interactionsOf` looks interaction effects up by class and semantics name.
+- `dispatcher.ts:collectInteractions` is the legacy one-shot walk, for callers written before the unified index. New callers should use the index.
 
 ## Non-obvious things
 
-- **Two keys, intentional.** Lookups dispatch on `(class, semanticsName)` even though v0 has 1:1 mapping (e.g. `message-send` → `message-bus`). The IR allows future classes to pair with multiple semantics types; the index already supports it.
-- **Null-binding summaries DO appear in `providersBySemantics`.** Anything with a binding gets bucketed; summaries with `boundaryBinding === null` simply have no bucket entry. The bucket is keyed on the semantics name, not the summary's identity.
-- **InteractionRecord carries everything pairing needs.** `(effect, summary, transitionId)` — no need for the per-class checker to re-walk the summary to find which transition the effect lives on.
-- **Index is read-only after build.** No mutation API. Re-building is cheap (single linear pass over summaries); rebuild instead of patching when the summary set changes.
+- **Two keys, intentional.** Lookups dispatch on `(class, semanticsName)` even though v0 maps them one to one (e.g. `message-send` → `message-bus`). The IR allows a future class to pair with several semantics types, and the index already supports that.
+- **Null-binding summaries DO appear in `providersBySemantics`.** Anything with a binding goes into a bucket, and a summary with `boundaryBinding === null` simply has no bucket entry. The bucket is keyed on the semantics name, not on the summary's identity.
+- **InteractionRecord has everything pairing needs.** An `InteractionRecord` is `(effect, summary, transitionId)`, so a per-class checker never has to re-walk the summary to find which transition the effect is on.
+- **Index is read-only after build.** There is no mutation API. Rebuilding is cheap (one linear pass over the summaries), so rebuild the index rather than patching it when the summary set changes.
 
 ## Sibling modules
 
-- `message-bus/messageBusPairing.ts` — uses the index to find producers + receive-side effects.
-- `storage/relationalPairing.ts` — uses the index for storage-access effect lookups.
-- `runtime-config/runtimeConfigPairing.ts` — optional index parameter; builds its own if missing.
+- `message-bus/messageBusPairing.ts` uses the index to find producers and receive-side effects.
+- `storage/relationalPairing.ts` uses the index to look up storage-access effects.
+- `runtime-config/runtimeConfigPairing.ts` takes the index as an optional parameter and builds its own when it is missing.

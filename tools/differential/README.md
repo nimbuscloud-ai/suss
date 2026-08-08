@@ -12,15 +12,15 @@ design, second-language path):
 
 The extraction algorithm promises exhaustiveness and "no false
 conditions" ([`docs/extraction-algorithm.md`](../../docs/extraction-algorithm.md)).
-This package checks both mechanically: fast-check generates
-handler-shaped programs from a small framework-neutral DSL; each
-program is extracted through the real pipeline (in-memory ts-morph
-project + the target pack) *and* executed in `node:vm` against a
-deterministic request battery; a three-valued interpreter (opaque →
+This package checks both mechanically. fast-check generates
+handler-shaped programs from a small framework-neutral DSL. Each
+program is extracted through the real pipeline (an in-memory ts-morph
+project plus the target pack) *and* executed in `node:vm` against a
+deterministic battery of requests. A three-valued interpreter (opaque →
 abstain, never guess) evaluates the summary's transition conditions
 against each concrete request and flags `falseClaim` / `uncovered`
 verdicts. Framework syntax lives entirely in `target.ts`
-(`FuzzTarget`); Express and Fastify are wired, and the sound-tier
+(`FuzzTarget`). Express and Fastify are wired up, and the sound-tier
 property runs against both.
 
 ## Layout
@@ -43,10 +43,10 @@ property runs against both.
 
 ## The families under `src/shape`
 
-Each one generates a whole program around a boundary of one kind and
-runs the invariants, the equivalence comparison against the plainest
-spelling of the same behaviour, and, where a generated program can be
-run, execution.
+Each family generates a whole program around a boundary of one kind. It
+then runs the invariants, compares the program for equivalence against
+the plainest spelling of the same behaviour, and, where a generated
+program can be run, runs it.
 
 | Family | What it varies |
 |---|---|
@@ -54,14 +54,14 @@ run, execution.
 | `componentShape.ts` | a React component: how it is written, bound, and exported |
 | `announceShape.ts` | a NestJS controller: how the class announces the boundary |
 | `resolverShape.ts` | a GraphQL field: the Apollo resolver map, and the decorated resolver class |
-| `envShape.ts` | a runtime-configuration read: where it sits and how it is spelled |
-| `queueShape.ts` | a queue consumer: how it is built, and how the project configures the subject it answers |
+| `envShape.ts` | a runtime-configuration read: where it is and how it is spelled |
+| `queueShape.ts` | a queue consumer: how it is built, and how the project configures the subject it responds to |
 | `packageShape.ts` | a package boundary: how a function is published and how another package calls it |
 
 The last two write files and read a template or a manifest back off
-disk, so they cost several times what the in-memory families do. Their
-per-pull-request samples are smaller (`SUSS_FUZZ_QUEUE_RUNS`,
-`SUSS_FUZZ_PACKAGE_RUNS`) and the scheduled run takes the volume.
+disk, so they cost several times what the in-memory families do. They
+take smaller samples on each pull request (`SUSS_FUZZ_QUEUE_RUNS`,
+`SUSS_FUZZ_PACKAGE_RUNS`), and the scheduled run does the volume.
 
 ## Running
 

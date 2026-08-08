@@ -1,12 +1,12 @@
 # Contracts
 
-"Contract" is the most overloaded word in suss. This is its one home. Three questions get answered here: what kinds of *truth* an artifact about code can carry, what three contracts sit at every boundary, and what artifact *shapes* those contracts take. The checker's finding semantics fall out of the first.
+"Contract" is the most overloaded word in suss. This is its one home. There are three questions to work through: what kinds of *truth* an artifact about code can express, which three contracts exist at every boundary, and what artifact *shapes* those contracts take. The checker's finding semantics follow from the first.
 
 Related: [`cross-boundary-checking.md`](cross-boundary-checking.md) (the checker mechanics that consume this framing), [`contract-sources.md`](contract-sources.md) (the readers that produce contract-derived summaries), [`boundary-semantics.md`](boundary-semantics.md) (how boundaries themselves vary).
 
 ## Three kinds of truth
 
-A distinction that shapes everything downstream: artifacts about code have different *epistemic characters*, meaning each kind of artifact can only answer a certain sort of question about the code. The table grounds the term.
+One distinction drives everything downstream: artifacts about code have different *epistemic characters*, meaning each kind of artifact can only answer a certain sort of question about the code. The table below makes the term concrete.
 
 | Character | Answers | Examples | Completeness |
 |---|---|---|---|
@@ -31,14 +31,14 @@ Every API boundary has three behavioral contracts, whether anyone writes them do
 
 ### 1. The declared contract (authored, optional)
 
-ts-rest `responses`, OpenAPI schema, GraphQL SDL. Says what statuses and shapes are *supposed* to exist. This is a **specification**. It's what most tools check against. Authored by a human, so it can be wrong, incomplete, or out of date, but when it exists, it's the shared source of truth between provider and consumer teams.
+ts-rest `responses`, OpenAPI schema, GraphQL SDL. It says what statuses and body structures are *supposed* to exist. This is a **specification**. It's what most tools check against. Authored by a human, so it can be wrong, incomplete, or out of date, but when it exists, it's the shared source of truth between provider and consumer teams.
 
 ### 2. The provider's inferred contract (a derivation)
 
 The actual set of transitions the provider produces: under condition A, output X; under condition B, output Y. Richer than the declared contract because it captures:
 
 - **Sub-cases within a status code.** A declared contract says "200 returns User." The derivation says "200 returns `{ ...user }` when `!user.deletedAt`, and `{ ...user, status: "deleted" }` when `user.deletedAt`", two behavioral cases the declaration collapses into one.
-- **Body shape variation per condition.** Each transition has its own `Output.body` shape.
+- **The body varies per condition.** Each transition has its own `Output.body`.
 - **Gaps.** The declared contract says 500 is possible; the implementation never produces it. Or the implementation returns 418, which the contract doesn't declare.
 
 ### 3. The consumer's inferred contract (a derivation)
@@ -61,31 +61,31 @@ Structural declarations of the interface: types, cardinality, required-ness, enu
 - Prisma schemas, TypeScript interfaces for props
 - Message schemas (Avro, Protobuf, JSON Schema), database DDL
 
-**Character:** specification. Declares what's *allowed* to cross. Says nothing about *when* each case fires.
+**Character:** specification. It declares what's *allowed* to cross, and it says nothing about *when* each case fires.
 
 ### 2. Examples: "what's one concrete instance of a valid interaction?"
 
 Recorded concrete pairs of input/output or request/response: Pact contracts, HAR captures, fixture files, API docs with curl examples.
 
-**Character:** observation. Captures what happened *once*. Point-samples of a larger space; coverage is as good as the example set, never better.
+**Character:** observation. It captures what happened *once*. These are point-samples of a larger space, and coverage is as good as the example set, never better.
 
 ### 3. Tests: "what should be true when X happens?"
 
 Behavioral assertions, usually interaction sequences: Playwright / Cypress specs, RTL component tests, supertest integration tests.
 
-**Character:** observation of asserted behavior under specific inputs. Same coverage limit as Examples, tested cases only.
+**Character:** observation of asserted behavior under specific inputs. The coverage limit is the same as for Examples: tested cases only.
 
 ### 4. Snapshots: "what did the output look like?"
 
 Serialized captures of output for specific inputs: Jest / Vitest `.snap` files, visual-regression baselines, golden query results.
 
-**Character:** observation plus regression anchor. "This output is what we agreed to yesterday; alert on change." Structural-only, tested inputs only.
+**Character:** observation plus regression anchor. "This output is what we agreed to yesterday; alert on change." It covers structure only, and only the inputs that were tested.
 
 ### 5. Design: "what should this look like / do, by intent?"
 
 Design-source-of-truth artifacts upstream of code: Figma / Sketch files, design tokens, prototypes, accessibility specifications.
 
-**Character:** intent. Declares what the output *should* be independent of whether any code exists. Visual / interactive axis only, typically, business logic is invisible in design files.
+**Character:** intent. It declares what the output *should* be, whether or not any code exists. Typically it covers only the visual and interactive side; business logic is invisible in design files.
 
 ## How suss absorbs contracts today
 
@@ -104,7 +104,7 @@ Comparison checkers in `@suss/checker` operate per-protocol, HTTP schema vs. der
 
 What's still missing from the taxonomy:
 
-- **Observation shapes.** No reader ingests Jest snapshots, Playwright traces, or production observability data yet. The IR shape that would carry them (`confidence.source: "observation"`) exists; the reader pipeline doesn't.
+- **Observation shapes.** No reader ingests Jest snapshots, Playwright traces, or production observability data yet. The IR field that would record them (`confidence.source: "observation"`) exists; the reader pipeline doesn't.
 - **Test shapes.** Same gap, RSpec / supertest / RTL assertions aren't yet a source.
 - **Design shapes.** Figma / design-token integration is deliberately deferred, design files rarely live in the repo, and the API integration is expensive relative to the signal. The taxonomy keeps design listed because its epistemic character (intent) is distinct; the artifact pipeline isn't planned.
 
@@ -117,7 +117,7 @@ Team-authored intent specs (`*.intent` / `*.prd`, read by `@suss/contract-intent
 - **System intent** (`*.intent`), the contract a boundary should satisfy, structural and machine-comparable ("`POST /auth/login` returns 429 with `{ error, retryAfter }`").
 - **Outcome intent** (`*.prd`), what should happen for the user, scenario-shaped ("a rate-limited request gets a friendly rejection"), with scenarios that optionally link to system-intent outcomes.
 
-Third-party schemas (OpenAPI, GraphQL SDL, Prisma) carry *some* intent, but they were authored as wire contracts and data-model definitions, not as team intent. That difference is why intent docs are **open** specifications: they declare what *must* exist (the floor), not a closed enumeration. Code that exceeds intent is possibly-missing intent, reported as info, not a violation. Boundary-level intent checks ship today; PRD scenario coverage ships alongside.
+Third-party schemas (OpenAPI, GraphQL SDL, Prisma) express *some* intent, but they were authored as wire contracts and data-model definitions, not as team intent. That difference is why intent docs are **open** specifications: they declare what *must* exist (the floor), not a closed enumeration. Code that exceeds intent is possibly-missing intent, reported as info, not a violation. Boundary-level intent checks ship today; PRD scenario coverage ships alongside.
 
 ## Severity follows character
 
@@ -128,7 +128,7 @@ Severity is assigned from epistemic character, not from which source format prod
 - Observation absent for a Specification case → `info` (coverage gap, not a bug).
 - Two Specifications disagree → `warning` (reconcile needed; the existing `contractDisagreement` finding).
 
-The same rule assigns intent-finding severities: a derivation violating declared system intent is an error; a derivation *exceeding* open intent is info. These heuristics refine as more shapes ship; not all combinations are meaningful, and not all need the same severity.
+The same rule assigns intent-finding severities: a derivation violating declared system intent is an error; a derivation *exceeding* open intent is info. We refine these heuristics as more shapes ship. Not all combinations are meaningful, and not all need the same severity.
 
 ## Metadata namespacing
 
@@ -148,7 +148,7 @@ Adding a domain (React, Postgres, Kafka) is four questions:
 1. **What's the boundary?** Component ↔ DOM; code ↔ database; producer ↔ queue.
 2. **What's the observable channel?** DOM tree + events; SQL query + result set; message envelope.
 3. **What contract shapes exist in this domain?** List them from the five above; assess which are common and which are gaps.
-4. **Which shapes feed a meaningful check against which other shapes?** Not all combinations are useful; designed per-domain.
+4. **Which shapes feed a meaningful check against which other shapes?** Not all combinations are useful, so we design that per domain.
 
 For each domain, suss ships an extractor (pattern pack + adapter support), one or more contract-source readers covering the dominant shapes, and the checker extensions for the meaningful cross-shape checks. Shipping all three in one go isn't required.
 
@@ -157,5 +157,5 @@ For each domain, suss ships an extractor (pattern pack + adapter support), one o
 - No checker logic assumes contracts are schema-shaped. Every check cites which shape(s) it operates on.
 - The `@suss/contract-*` naming stays as the surface for new readers; one package per source.
 - Metadata namespacing follows the protocol-first convention (`metadata.<protocol>.*`).
-- The five-shape taxonomy is the working vocabulary. When a concrete artifact doesn't fit, the taxonomy is updated rather than the artifact forced into a slot.
+- The five-shape taxonomy is the working vocabulary. When a concrete artifact doesn't fit, we update the taxonomy rather than force the artifact into a slot.
 - The interesting cross-shape comparisons are protocol-specific; generalisation is bottom-up, not a universal framework designed upfront.

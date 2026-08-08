@@ -1,27 +1,27 @@
 # storage/
 
-Pairs relational database schemas (Prisma, Drizzle, raw SQL) against code's storage-access effects. Verifies that code never reads or writes undeclared columns and surfaces declared columns that no code touches.
+This check pairs relational database schemas (Prisma, Drizzle, raw SQL) against the storage-access effects in the code. It verifies that no code reads or writes an undeclared column, and it points out declared columns that no code touches.
 
 ## Place in the pipeline
 
-Runs in `checkAll()` after the `InteractionIndex` is built. Consumes summaries with `storage-relational` provider bindings (the schema) and `storage-access` interaction effects (the code reads and writes). Pairs by `(storageSystem, scope, table)`. Emits four field-existence findings (`boundaryFieldUnknown` for read and write aspects, `boundaryFieldUnused`, plus write-only variants).
+`checkAll()` runs it after the `InteractionIndex` is built. It takes summaries with `storage-relational` provider bindings (the schema) and summaries with `storage-access` interaction effects (the reads and writes in the code), and it pairs them by `(storageSystem, scope, table)`. It emits four field-existence findings (`boundaryFieldUnknown` for the read and write aspects, `boundaryFieldUnused`, plus the write-only variants).
 
 ## Key files
 
-- `relationalPairing.ts:checkRelationalStorage` — main entry. Accepts an optional pre-built `InteractionIndex` to avoid re-walking summaries.
-- `relationalPairing.ts:makeFieldUnknownFinding` — generates per-field errors for code touching undeclared columns.
-- `relationalPairing.ts:makeFieldUnusedFinding` — warning for schema columns no code accesses.
-- Storage contract is read from each provider's `metadata.storageContract` (column list and metadata).
+- `relationalPairing.ts:checkRelationalStorage` is the main entry point. It accepts a pre-built `InteractionIndex` as an option, so it does not have to re-walk the summaries.
+- `relationalPairing.ts:makeFieldUnknownFinding` generates the per-field errors for code that touches undeclared columns.
+- `relationalPairing.ts:makeFieldUnusedFinding` generates the warning for schema columns no code accesses.
+- The storage contract comes from each provider's `metadata.storageContract` (the column list and its metadata).
 
 ## Non-obvious things
 
-- **Multi-attribution by `(storageSystem, scope, table)`.** A shared utility file hitting `db.user.findMany()` pairs against every Postgres schema declaring a `user` table in scope. Intentional — the same code legitimately serves multiple deployments.
-- **Wildcard reads suppress unused checks.** A code call like `db.user.findMany()` (no `select`) reads everything. When the index sees a wildcard read, the unused-column check skips the table entirely — we can't tell whether an unused-looking column is consumed by the wildcard caller.
-- **Default scope collapses in display.** `scope === "default"` shows as bare table name (`User`) in finding messages; non-default scopes show as `scope/User` for disambiguation.
-- **Writes get their own check.** A column that's declared and only written (never read) is `boundaryFieldUnusedWriteOnly`. Distinct from never-touched.
-- **Field findings reuse the generic `boundaryField*` vocabulary.** Same finding kinds as message-bus and runtime-config; the `aspect` field (read/write/construct) discriminates. Cross-domain tooling can group by kind.
+- **Multi-attribution by `(storageSystem, scope, table)`.** A shared utility file that calls `db.user.findMany()` pairs against every Postgres schema declaring a `user` table in scope. That is intentional: the same code legitimately serves several deployments.
+- **Wildcard reads suppress unused checks.** A call like `db.user.findMany()` (with no `select`) reads everything. When the index sees a wildcard read, the unused-column check skips the table entirely, because we can't tell whether a column that looks unused is consumed by the wildcard caller.
+- **Default scope collapses in display.** A `scope === "default"` shows up as the bare table name (`User`) in finding messages, and other scopes show up as `scope/User` so that you can tell them apart.
+- **Writes get their own check.** A column that is declared and only written, never read, is `boundaryFieldUnusedWriteOnly`. That is different from a column nothing touches at all.
+- **Field findings reuse the generic `boundaryField*` vocabulary.** These are the same finding kinds message-bus and runtime-config use, and the `aspect` field (read/write/construct) tells them apart. Tooling that spans domains can group by kind.
 
 ## Sibling modules
 
-- `interactions/dispatcher.ts` — `providersOf("storage-relational")` and `interactionsOf("storage-access", "storage-relational")` are the lookups.
-- `coverage/responseMatch.ts` — `makeSide` helper for location strings on findings.
+- `interactions/dispatcher.ts` provides the lookups: `providersOf("storage-relational")` and `interactionsOf("storage-access", "storage-relational")`.
+- `coverage/responseMatch.ts` provides the `makeSide` helper for the location strings on findings.

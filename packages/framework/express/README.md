@@ -10,7 +10,7 @@ Framework pack for [Express](https://expressjs.com/) handlers. Declarative patte
 - **Terminals**: `res.status(N).json(body)`, `res.json(body)`, `res.sendStatus(N)`, `res.redirect()`, and `throw`
 - **Input mapping**: positional parameters `(req, res, next)` with semantic roles
 
-## Where it sits in suss
+## Where it fits in suss
 
 Depends only on `@suss/extractor` (for the `PatternPack` type). Contains no analysis logic.
 

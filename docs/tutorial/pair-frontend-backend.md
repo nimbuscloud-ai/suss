@@ -73,7 +73,7 @@ app.get("/users/:id", (req: Request, res: Response) => {
 ```
 
 Two outcomes. A 404 with an error message when the id is unknown, and a
-200 carrying the user.
+200 with the user in it.
 
 ## Step 3. Declare the contract
 
@@ -146,7 +146,7 @@ npx suss contract --from openapi backend/openapi.yaml -o summaries/contract.json
 ```
 
 Three summary files: what the handler does, what the loader expects, and
-what the document promises. All three are the same shape.
+what the document promises. All three are in the same format.
 
 Look at the backend:
 
@@ -261,17 +261,18 @@ No findings. Every compared boundary agreed.
 ## What this run exercises
 
 **Cross-stack pairing.** Express on one side, `fetch` on the other, no
-shared types. suss read each side into the same shape and paired them on
-`(method, path)`.
+shared types. suss read each side into the same format and paired them
+on `(method, path)`.
 
 **Field-level body matching.** The loader's `.name` read went through
 two `.then` callbacks before it reached a comparison against
 `{ id, fullName }`. TypeScript never sees this, because the frontend
 never imports the backend's types.
 
-**Status handling.** The missing 404 branch is a reachability check
-against the handler's transitions. It fires whether or not any test
-exercises the 404.
+**Status handling.** suss finds the missing 404 branch by checking the
+loader against the handler's transitions, asking which of them the
+loader can reach. It reports this whether or not any test exercises the
+404.
 
 **Status checks have to be visible.** suss reads the branch on
 `res.status` at the top of the loader. A status check buried in a
@@ -283,4 +284,4 @@ read, so keep the branch where the loader returns from.
 - [Get started](/tutorial/get-started), the same idea with Hono and no separate document.
 - [Pair against OpenAPI](/guides/pair-against-openapi), the recipe form once you know the workflow.
 - [Findings catalog](/reference/findings), every finding kind with an example.
-- [Three kinds of truth](/contracts), the specification / observation / derivation taxonomy behind the finding semantics.
+- [Three kinds of truth](/contracts), the split between specification, observation, and derivation that gives the findings their meaning.

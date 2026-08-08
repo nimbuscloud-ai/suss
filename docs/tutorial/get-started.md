@@ -110,9 +110,9 @@ src/api.ts
 ```
 
 That is the endpoint's behaviour rather than its types: which condition
-leads to which status, and what the body holds in each case. Note that
-`c.json(body, status)` was read correctly without suss being told which
-argument is which.
+leads to which status, and what the body contains in each case. And
+`c.json(body, status)` was read correctly without anyone telling suss
+which argument is which.
 
 ## Step 5. Compare them
 
@@ -181,7 +181,7 @@ No findings. Every compared boundary agreed.
 
 ## Step 6. Change the endpoint and watch it break
 
-Deleted users should read differently from missing ones, so add a case
+A deleted user should look different from a missing one, so add a case
 for them:
 
 ```ts
@@ -220,11 +220,11 @@ than in a bug report a week later.
 
 ## What happened
 
-- `extract` read each side and wrote down its behaviour: conditions,
-  statuses, body shapes.
+- `extract` read each side and wrote down its behaviour: the
+  conditions, the statuses, and what each body looks like.
 - `check` paired the two by method and path, then compared what one
   produces against what the other handles.
-- The finding named a status, a file, and a line on both sides.
+- The finding gave a status, a file, and a line on both sides.
 
 ## Next
 

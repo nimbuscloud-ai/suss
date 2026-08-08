@@ -1,8 +1,8 @@
 # Docs critique, July 2026
 
-Critique only. No doc changes made. Covers messaging, structure, and
-wording, for the user-facing surfaces (README, site index, motivation,
-the conceptual docs).
+Critique only. No doc changes made. It goes over messaging, structure,
+and wording for the user-facing surfaces (README, site index,
+motivation, the conceptual docs).
 
 ## Verdict
 
@@ -15,7 +15,7 @@ the prose docs. Two problems remain:
    contrastive reframes). This is the largest and most mechanical gap.
 2. **The landing page front matter was never reconciled with the
    restructure.** README prose got cut to the four-concept core, but
-   `index.md`'s hero and six feature cards still carry the old framing,
+   `index.md`'s hero and six feature cards still use the old framing,
    link into now-internal docs, and reintroduce the concepts the core
    tried to defer.
 
@@ -36,18 +36,19 @@ Current:
 Four specific problems:
 
 - **"what your code says it does and what it does"** conflates two
-  different things. Code does not "say" and "do" as separate acts. What
-  *says* is the declared contract, the types, the caller's assumption;
-  what *does* is the implementation across paths. The catchy phrasing
-  blurs the actual gap suss finds, which is between a declaration or a
-  caller's assumption and the derived behavior.
+  different things. Code does not "say" and "do" as separate acts. The
+  thing that *says* is the declared contract, the types, or the
+  caller's assumption. The thing that *does* is the implementation
+  across paths. The catchy phrasing blurs the gap suss actually finds,
+  which is between a declaration or a caller's assumption and the
+  derived behavior.
 - **"derives every execution path"** overclaims. The rest of the docs
   are careful about opacity ("explicit about what it can't analyse",
   opaque predicates, confidence levels). "every" is the absolute those
   pages avoid, and a skeptical reader will catch the contradiction.
 - **"derivations"** is internal vocabulary. A first-time visitor does
-  not yet know what a derivation is; the word belongs in the glossary,
-  not the hero.
+  not yet know what a derivation is, so the word belongs in the
+  glossary rather than the hero.
 - **"derives X, pairs Y, and reports Z"** is a three-verb escalating
   list, the rule-of-three pattern the house style flags. It also buries
   the strongest phrase ("bugs that compile, type-check, and pass the
@@ -62,11 +63,12 @@ function actually does and compares it across the boundary."
 ### Hero text
 
 "Behavioral correctness for TypeScript" uses "correctness", which
-overclaims against suss's own stated scope. Motivation says plainly it
-is "not a verifier" and "not a within-unit correctness tool"; it finds
-divergence *between* units, not correctness *within* one. "Behavioral
-agreement", "behavioral drift", or "behavioral analysis" all match the
-product; "correctness" sets an expectation the tool declines elsewhere.
+overclaims against suss's own stated scope. Motivation says plainly
+that suss is "not a verifier" and "not a within-unit correctness
+tool". It finds divergence *between* units rather than correctness
+*within* one. "Behavioral agreement", "behavioral drift", and
+"behavioral analysis" all match the product, while "correctness" sets
+an expectation the tool declines elsewhere.
 
 ### Positioning: checker vs substrate
 
@@ -90,16 +92,17 @@ not move with it:
 - **Feature cards link into the Internals tier.** "One model across
   every boundary" links to `/boundary-semantics`, which the restructure
   moved into the contributor-facing Internals sidebar group. The landing
-  page sends new users straight at maintainer docs.
+  page sends new users straight to maintainer docs.
 - **Stale link text.** The first feature card's link text is still "Why
   behavioral summaries", the title of a doc the restructure deleted and
   merged into motivation. The target resolves, the label lies.
 - **The six cards reintroduce deferred concepts.** boundary-semantics,
   derivations, contract shapes, and packs all appear as first-screen
   vocabulary, which works against the four-concept core the restructure
-  established. The card set predates the core and was not pruned to it.
+  established. The card set predates the core, and nobody pruned it to
+  match.
 - **README and sidebar disagree on tiers.** README groups
-  "Contract sources" under "Understanding suss"; the sidebar puts
+  "Contract sources" under "Understanding suss", while the sidebar puts
   contract-sources under Internals. Pick one home per doc and make both
   navigations agree.
 
@@ -111,12 +114,13 @@ glossary). The weak point is the one surface a new visitor sees first.
 - **Em dashes, pervasive.** Roughly 600 across the user-facing docs
   (README 17, motivation 31, ir-reference 62, and so on). The adopted
   style bans em and en dashes everywhere. This is the highest-volume
-  cleanup and is mechanical: replace with commas, periods, parentheses,
-  or a rephrase.
+  cleanup and it is mechanical: replace them with commas, periods,
+  parentheses, or a rephrase.
 - **Spelling drift.** "behavioural" appears 6 times against "behavioral"
-  60 times; "analyse"/"analyze", "labelled"/"labeled" similarly mixed.
-  index.md and faq.md carry most of the British forms. Pick American
-  (the majority and the package naming) and sweep.
+  60 times, and "analyse"/"analyze" and "labelled"/"labeled" are mixed
+  the same way. index.md and faq.md have most of the British forms.
+  Pick American (the majority, and what the packages are named) and
+  sweep.
 - **Contrastive reframes.** "suss compares behavioural derivations
   directly, not just the shapes around them" (index feature 1) and "a
   behavioral summary isn't a proof; it's a structured description"
@@ -125,23 +129,24 @@ glossary). The weak point is the one surface a new visitor sees first.
 - **Stale "stub" vocabulary.** contract-sources.md, ir-reference.md,
   behavioral-summary-format.md, and pipelines.md still say
   `confidence.source: "stub"` and "layered stub". The rename to
-  "contract" shipped; these are wrong, not merely off-style. pipelines.md
-  also still narrates a two-phase manifest reader that is now split into
-  @suss/manifest-aws.
+  "contract" shipped, so these are wrong rather than merely off-style.
+  pipelines.md also still describes a two-phase manifest reader that is
+  now split into @suss/manifest-aws.
 
 ## Recommended sequence
 
 Four passes, cheapest and least contentious first:
 
-1. **House-style sweep.** Dashes and spelling across all docs. Mechanical,
-   high volume, no judgment calls. Biggest visible improvement per unit
-   effort. A lint rule (a biome or remark check on `docs/**`) would keep
-   it from regressing.
+1. **House-style sweep.** Dashes and spelling across all docs. It is
+   mechanical and high volume, with no judgment calls, and it gives the
+   biggest visible improvement for the effort. A lint rule (a biome or
+   remark check on `docs/**`) would keep it from regressing.
 2. **Reconcile index.md with the core.** Fix the stale link text, retarget
    or drop the cards that point at Internals, prune the card set toward
    the four concepts, and align README and sidebar tiers.
 3. **Fix stale facts.** The "stub" references and the pipelines.md
-   manifest-reader narrative. These are correctness, not style.
+   description of the manifest reader. These are correctness problems
+   rather than style problems.
 4. **Tagline and positioning.** Tighten the tagline and settle the
    checker-vs-substrate lead. This one needs a product call before the
    wording can follow.

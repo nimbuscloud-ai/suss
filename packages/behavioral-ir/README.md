@@ -8,7 +8,7 @@ Core type definitions and utilities for the suss behavioral intermediate represe
 
 Every other suss package either consumes these types or produces values that conform to them. Nothing in this package depends on any other suss package.
 
-## Where it sits in suss
+## Where it fits in suss
 
 Zero dependencies: `@suss/behavioral-ir` is the foundation everyone else imports. `@suss/extractor`, `@suss/adapter-typescript`, all framework packs, and the CLI all depend on it. It never imports from suss siblings.
 

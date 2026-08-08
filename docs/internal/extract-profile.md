@@ -30,7 +30,7 @@ Self time, grouped by which package the sampled frame belongs to.
 Sampled totals were 18.1s, 37.5s and 22.4s.
 
 Two thirds to three quarters of every run is inside ts-morph. The
-two ts-morph rows behave differently, so read them apart.
+two ts-morph rows behave differently, so read them separately.
 The bundled compiler row is parsing, binding and type checking:
 work suss cannot avoid while it needs a type checker. The wrapper
 row is ts-morph's own layer over the compiler AST, and that cost
@@ -57,7 +57,7 @@ the same answer comes back from a binary search.
 walked the whole enclosing function to locate a terminal by line
 range, once per branch of that function, computing two line
 numbers per node visited. On twenty-front it was 5.9% of the
-run. One walk per function answers every branch.
+run. One walk per function covers every branch.
 
 **A directory tree walk per summary.** `locateFunction` called
 `project.getSourceFiles()` for each summary it was asked to
@@ -84,14 +84,14 @@ left is the compiler resolving the module graph once.
 
 **Parse and bind.** `readFileUtf8` alone is 3.5% on twenty-server,
 and `createProgram` is 10.2% of twenty-front. That is the cost of
-the files the tsconfig names.
+the files the tsconfig lists.
 
 ## What is left, and what it would take
 
 Ranked by what a fix would return.
 
 **The wrapper tax, roughly a fifth of the run.** ts-morph
-allocates a wrapper object per node visited and holds it in a
+allocates a wrapper object per node visited and keeps it in a
 per-file cache. `forEachChild` builds a snapshot array of
 wrappers before it calls back, and `forEachDescendant` allocates
 a fresh traversal object per node. Between `getKind` (3.0% to
@@ -103,17 +103,17 @@ compiler AST directly and wrapping only the nodes a pass keeps.
 Every pass in the adapter would be written differently, so
 someone should design that before anyone writes it.
 
-**Files held after their facts are read.** Extraction reads a
+**Files kept in memory after their facts are read.** Extraction reads a
 file, emits its facts, and does not need the AST again. The
 compiler's source files cannot be released while the type
 checker is alive, and suss needs the checker for the resolution
 passes that run after extraction. ts-morph's wrapper cache is
 releasable (`forgetNodesCreatedInBlock`), which would cut
 retained memory and GC pressure without touching the program.
-Whether the passes can be arranged so a file's wrappers are
-forgotten before the next file is read is the open question.
+The open question is whether we can arrange the passes so a
+file's wrappers are forgotten before the next file is read.
 
 **Symbol lookups.** `getSymbolAtLocation` is 12% to 15%
 inclusive across the three corpora. Every one of those calls is a
-question suss needs the type checker to answer. Whether it asks
-the same question twice has not been checked.
+question suss needs the type checker to answer. Nobody has
+checked whether it asks the same question twice.

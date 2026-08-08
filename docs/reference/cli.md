@@ -13,18 +13,19 @@ suss has four commands. They form one pipeline:
 | Command | Inputs | Output | When you reach for it |
 |---|---|---|---|
 | `extract` | TypeScript or JavaScript source + a framework pack | `BehavioralSummary[]` JSON | You have code and want a structured description of every execution path. |
-| `contract` | A specification (OpenAPI, CFN, Storybook, ...) | `BehavioralSummary[]` JSON | You have a spec instead of code, or want to compare code against a spec. Contract summaries have the same shape as `extract`'s output, so they pair against extracted summaries. |
+| `contract` | A specification (OpenAPI, CFN, Storybook, ...) | `BehavioralSummary[]` JSON | You have a spec instead of code, or want to compare code against a spec. Contract summaries have the same structure as `extract`'s output, so they pair against extracted summaries. |
 | `check` | One or more summary files | Findings (text or JSON) | You have summaries from two sides of a boundary, provider + consumer, contract + handler, and want to know where they disagree. |
 | `inspect` | A summary file | Human-readable text | You want to read what the summaries say without parsing JSON. The output is the form you paste into a code review or an AI prompt. |
 
 The summary JSON is the canonical artifact. `inspect` is a renderer
 over it; `check` is a comparator. Anything you can do in `inspect` or
 `check` you can also do by reading the JSON yourself, they're
-conveniences, not parsing layers. The one reading that computes rather
-than renders is [`inspect --flow`](#suss-inspect-flow), which walks the
-routing a set of summaries declares to answer who serves a request.
+conveniences, not parsing layers. The one command that computes an
+answer rather than rendering one is
+[`inspect --flow`](#suss-inspect-flow), which walks the routing a set of
+summaries declares to work out who serves a request.
 
-Two more commands sit outside the pipeline. `suss init` works out which
+Two more commands are outside the pipeline. `suss init` works out which
 packs your project needs and offers to set them up. `suss corroborate`
 (experimental, [below](#suss-corroborate-experimental)) executes handlers
 against their own summaries.
@@ -33,7 +34,7 @@ against their own summaries.
 
 Work out which packs this project needs, then offer to install them.
 
-**What it does.** Reads `package.json`, looks for schemas and deploy
+**What it does.** It reads `package.json`, looks for schemas and deploy
 templates on disk, and maps what it finds to packs. Then it asks whether
 to install them, whether to run the first extract and check, and whether
 to write a `.sussignore` and a CI workflow. Installing defaults to yes;
@@ -56,22 +57,22 @@ suss init [DIRECTORY] [--plain]
 
 `0`, always. Declining every question, cancelling, and a failed install
 all end the same way. A failed install stops there, prints what npm said,
-and leaves the command behind for you to retry.
+and leaves you the command so you can retry it yourself.
 
 ## `suss extract`
 
 Extract behavioral summaries from source.
 
-Python and Ruby have adapters of their own, which this command
-reaches: it works out which language a directory holds, and `--lang`
-says so outright. See
+Python and Ruby have adapters of their own, and this command reaches
+them: it works out which language a directory contains, and `--lang`
+lets you state it directly. See
 [Read a Python or Ruby project](/guides/python-and-ruby).
 
-**What it does.** Walks every function the framework pack discovers
+**What it does.** It walks every function the framework pack discovers
 (`loader` in React Router, `app.get(...)` in Express, etc.), folds
 its branches and terminals into a decision tree, and emits one
-`BehavioralSummary` per discovered unit. No runtime. No
-annotations.
+`BehavioralSummary` per discovered unit. It never runs your code, and
+you never annotate it.
 
 ```
 suss extract [-p TSCONFIG | --dir DIR] [--lang typescript|python|ruby]
@@ -83,10 +84,10 @@ suss extract [-p TSCONFIG | --dir DIR] [--lang typescript|python|ruby]
 
 | Flag | Required | Description |
 |---|---|---|
-| `-f`, `--framework NAME` | yes | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. A name that is not built in resolves in three tries: a name starting with `@` or containing a `/` is imported as you wrote it, otherwise `@suss/framework-NAME` and then `@suss/NAME`. |
+| `-f`, `--framework NAME` | yes | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. A name that is not built in resolves in three tries. A name starting with `@` or containing a `/` is imported exactly as you wrote it; otherwise suss tries `@suss/framework-NAME` and then `@suss/NAME`. |
 | `-p`, `--project PATH` | no | Path to `tsconfig.json`, for the same type resolution your compiler sees. Leave it off and suss uses the nearest tsconfig or jsconfig above the working directory. |
 | `--dir PATH` | no | Read this directory directly, for a project with no tsconfig. |
-| `--lang NAME` | no | Which language to read this project as: `typescript`, `python`, or `ruby`. Leave it off and suss works that out from what the directory holds, from the packs you named, and from the nearest tsconfig, and says so when it cannot tell. |
+| `--lang NAME` | no | Which language to read this project as: `typescript`, `python`, or `ruby`. Leave it off and suss works that out from what the directory contains, from the packs you asked for, and from the nearest tsconfig, and it tells you when it cannot tell. |
 | `-o`, `--output PATH` | no | Write JSON to file. Default: stdout. Parent dirs created automatically. |
 | `--files F1 F2 ...` | no | Scope extraction to specific files. Default: every file in the tsconfig. Paths are resolved relative to cwd. File paths written as bare arguments, with no flag in front of them, mean the same thing when `--files` is absent. |
 | `--gaps MODE` | no | `permissive` (default) records gaps in the summary: returns and declared statuses the pack couldn't account for. `strict` records the same gaps, then exits non-zero if the run recorded any. `silent` skips gap detection entirely, recording none. |
@@ -102,7 +103,7 @@ suss extract [-p TSCONFIG | --dir DIR] [--lang typescript|python|ruby]
 With `-o`, a run that could not read part of the project writes a note
 beside the summaries, at `summaries.incomplete.json` next to
 `summaries.json`, so a job that knows where the summaries went can tell
-whether extraction was complete. It holds a key per reason:
+whether extraction was complete. The note has one key per reason:
 `filesWithUnreadableExports` for re-export chains suss could not follow
 in a TypeScript run, and `submodulesNotCheckedOut` for a submodule with
 nothing in it, which any language can hit. A run with nothing to report
@@ -119,7 +120,7 @@ that has since been fixed.
 | `express` | `@suss/framework-express` | `app.get(...)` / `router.get(...)` style registration |
 | `fastify` | `@suss/framework-fastify` | `fastify.get(...)` / equivalent Fastify handlers |
 | `hono` | `@suss/framework-hono` | `app.get(...)` Hono handlers, including `c.json(body, status)` |
-| `nextjs` | `@suss/framework-nextjs` | Next.js route handlers and pages; the route comes from where the file sits |
+| `nextjs` | `@suss/framework-nextjs` | Next.js route handlers and pages; the route comes from where the file is on disk |
 | `nestjs-rest` | `@suss/framework-nestjs-rest` | NestJS REST controllers (`@Controller` / `@Get`) |
 | `nestjs-graphql` | `@suss/framework-nestjs-graphql` | NestJS GraphQL resolvers (`@Resolver` / `@Query` / `@Mutation`) |
 | `apollo` | `@suss/framework-apollo` | Apollo Server code-first resolvers (`new ApolloServer({ typeDefs, resolvers })`) |
@@ -131,16 +132,17 @@ that has since been fixed.
 | `apollo-client` | `@suss/client-apollo` | `@apollo/client` hooks + imperative `client.query` / `mutate` |
 | `node` | `@suss/runtime-node` | `setTimeout` and friends, the `process` surface including `process.env.X`, module-loading globals |
 
-Three of them read another language, so they come with `--lang` or with
-a directory suss reads as that language, and cannot ride in the same
-run as a TypeScript pack. Two want a sentence about your project, which
-they take through `-f NAME=config.json`:
+Three of them read another language, so you run them with `--lang` or
+point them at a directory suss treats as that language, and they cannot
+run alongside a TypeScript pack. Two of them need you to tell them
+something about your project, which you pass through
+`-f NAME=config.json`:
 
 | Name | Package | What it discovers |
 |---|---|---|
-| `fastapi` | `@suss/framework-fastapi` | FastAPI routes (Python): the verb from the decorator's attribute name, router prefixes composed one mount hop deep. Optional `wrapperModules`. |
-| `flask-restx` | `@suss/framework-flask-restx` | flask-restx `Resource` routes (Python), one per HTTP-verb-named method. Optional `wrapperModules`. |
-| `graphql-ruby` | `@suss/framework-graphql-ruby` | graphql-ruby's class-based `field` DSL (Ruby), one resolver per field. Needs `root`, and reads nothing without it. |
+| `fastapi` | `@suss/framework-fastapi` | FastAPI routes (Python): the verb comes from the decorator's attribute name, and router prefixes are composed one mount hop deep. `wrapperModules` is optional. |
+| `flask-restx` | `@suss/framework-flask-restx` | flask-restx `Resource` routes (Python), one per HTTP-verb-named method. `wrapperModules` is optional. |
+| `graphql-ruby` | `@suss/framework-graphql-ruby` | graphql-ruby's class-based `field` DSL (Ruby), one resolver per field. It needs `root`, and reads nothing without it. |
 
 Four more names are built in the same way, and discover no units of
 their own. They attach typed effects to calls inside whatever units
@@ -183,31 +185,31 @@ call to read:
 
 `module` is where the dispatcher's type is declared, `receiver` is that
 type's name, `method` is the call that sends, and the two indexes say
-which argument carries the subject and which carries the body. Leave
+which argument is the subject and which is the body. Leave
 `bodyArg` out for a batch method that takes a list of entries. Run it
 with `-f aws-sqs=packs/sqs.json`.
 
 The subject becomes the channel the producer sends on, so it pairs with
-the handler that names the same subject. A subject the source does not
-state as a string yields no effect at all: pairing on a guessed channel
-would name the wrong consumer.
+the handler that uses the same subject. If the source does not write the
+subject as a string, suss records no effect at all: pairing on a guessed
+channel would point at the wrong consumer.
 
 Several other packs take a project's own wrappers the same way. A pack
 ships only what its own library defines, and these options are what a
 project uses when the adapter cannot follow the wrapper itself.
 
 Reach for them second. A NestJS decorator written in the project is
-already recognized without being named, because the adapter resolves it
-to the function behind it and sees that calling it calls `@Resolver()`
-or `@Controller()`. What is left for these options is a wrapper whose
-body is not in the project, so there is nothing to read.
+already recognized without you having to list it, because the adapter
+resolves it to the function behind it and sees that calling it calls
+`@Resolver()` or `@Controller()`. What is left for these options is a
+wrapper whose body is not in the project, so there is nothing to read.
 
-| Pack | Option | What it names |
+| Pack | Option | What it specifies |
 | --- | --- | --- |
 | `nestjs-rest` | `classDecorators` | Decorators composing `@Controller()` the adapter cannot follow |
 | `nestjs-graphql` | `classDecorators` | Decorators composing `@Resolver()` the adapter cannot follow |
 | `react-router` | `errorHelpers` | Helpers a loader throws HTTP errors through |
-| `aws-lambda` | `subjectFactories` | The config property a project's handler factory states its subject under |
+| `aws-lambda` | `subjectFactories` | The config property where a project's handler factory puts its subject |
 
 ```json
 { "classDecorators": ["WidgetController", "InternalController"] }
@@ -219,10 +221,10 @@ body is not in the project, so there is nothing to read.
 }
 ```
 
-`property` is the key the factory's config object states the subject
-under. Which function was called and which argument carried the config
-are questions the adapter answers by following the export back to the
-call that built it, so neither has to be named. Add `callees` or
+`property` is the key under which the factory's config object puts the
+subject. The adapter works out which function was called and which
+argument was the config by following the export back to the call that
+built it, so you do not have to list either one. Add `callees` or
 `argIndex` when two factories in one service put different things under
 the same property.
 
@@ -235,13 +237,13 @@ the same property.
 
 Generate summaries from a declared contract instead of from code.
 
-**What it does.** Reads a specification (OpenAPI, CloudFormation,
+**What it does.** It reads a specification (OpenAPI, CloudFormation,
 Storybook stories, AppSync schema) and emits the same
-`BehavioralSummary` shape that `extract` produces. The point isn't
-"render the spec as JSON", it's "produce a summary with declared
-behavior so the cross-boundary checker can pair it with an
+`BehavioralSummary` structure that `extract` produces. The point is not
+to render the spec as JSON. The point is to produce a summary with
+declared behavior, so the cross-boundary checker can pair it with an
 extracted summary the same way it would pair two extracted
-summaries."
+summaries.
 
 Use cases:
 - A third-party API ships an OpenAPI spec. You want to verify your
@@ -257,13 +259,13 @@ Use cases:
 suss contract --from SOURCE SPEC [-o OUTPUT]
 ```
 
-`SPEC` is either a local file path or an `http(s)` URL. When a URL is
-given, the document is fetched, written to a temp file, and parsed
-the same way as a local spec, useful for vendor specs hosted on
+`SPEC` is either a local file path or an `http(s)` URL. Given a URL,
+suss fetches the document, writes it to a temp file, and parses it
+the same way as a local spec. That helps with vendor specs hosted on
 GitHub or a docs site, e.g.
 `https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml`.
-The fetched extension drives parser selection (`.json` → JSON, anything
-else including no extension → YAML).
+The extension on the fetched file decides which parser suss uses
+(`.json` → JSON, anything else including no extension → YAML).
 
 | Flag | Description |
 |---|---|
@@ -276,15 +278,15 @@ else including no extension → YAML).
 |---|---|---|
 | `openapi` | `@suss/contract-openapi` | OpenAPI 3.x JSON or YAML |
 | `cloudformation` | `@suss/contract-cloudformation` | CFN / SAM template (JSON or YAML) with API Gateway REST / HTTP API resources |
-| `serverless` | `@suss/contract-serverless` | A Serverless Framework service file. The path names the file or the directory holding it. The reader states the service in SAM's shapes and hands them to the CloudFormation reader, so a route, a queue consumer or an environment contract comes out the same whichever manifest declared it. `${self:...}` resolves against the document; a reference a deploy supplies keeps its token. |
+| `serverless` | `@suss/contract-serverless` | A Serverless Framework service file. The path points at the file or at the directory containing it. The reader restates the service in SAM's forms and hands them to the CloudFormation reader, so a route, a queue consumer or an environment contract comes out the same whichever manifest declared it. `${self:...}` resolves against the document; a reference that a deploy supplies keeps its token. |
 | `storybook` | `@suss/contract-storybook` | CSF3 `.stories.ts` / `.stories.tsx` file or directory of stories |
 | `appsync` | `@suss/contract-appsync` | CFN template with `AWS::AppSync::*` resources |
 | `prisma` | `@suss/contract-prisma` | `schema.prisma` file (Postgres / MySQL / SQLite datasources) |
 | `graphql` | `@suss/contract-graphql` | Plain GraphQL SDL file. Each Query / Mutation / Subscription field becomes a resolver-kind summary. |
-| `graphql-documents` | `@suss/contract-graphql` | Committed `.graphql` / `.gql` operation documents, a single file or a directory walked recursively. Each query / mutation / subscription becomes a client-kind summary, so a repo that keeps its operations in files pairs against its resolvers without any call site being traced. Fragment spreads are inlined across the whole read set. |
+| `graphql-documents` | `@suss/contract-graphql` | Committed `.graphql` / `.gql` operation documents, a single file or a directory walked recursively. Each query / mutation / subscription becomes a client-kind summary, so a repo that keeps its operations in files pairs against its resolvers without suss having to trace any call site. Fragment spreads are inlined across the whole read set. |
 
 Team-authored intent specs are not a `--from` source. They are their own
-artifact stream, read straight by `suss check`:
+artifact stream, read directly by `suss check`:
 
 ```bash
 suss check --dir summaries/ --intent intent/
@@ -299,7 +301,7 @@ suss check --dir summaries/ --intent intent/
 
 Pair providers with consumers and report cross-boundary findings.
 
-**What it does.** Reads summary files, groups them into
+**What it does.** It reads summary files, groups them into
 provider/consumer pairs by their boundary key (e.g. `(GET,
 /users/:id)`), and runs each pair through a set of agreement
 checks: does every status the provider produces have a consumer
@@ -313,7 +315,7 @@ The "two sides of a boundary" framing is general:
 - **Two contracts**, OpenAPI vs. CloudFormation, when both describe
   the same API.
 
-A finding always names the boundary, the two sides, and what
+Every finding tells you the boundary, the two sides, and what
 disagrees. There's no global "compliance score", every finding is
 a concrete pair.
 
@@ -337,8 +339,8 @@ suss check --dir DIR [--intent INTENT_DIR] [--json] [-o OUTPUT]
 | `--no-suppressions` | Report every finding, ignoring any `.sussignore`. Useful for auditing what the suppressions are hiding. |
 
 A finding that points at one transition prints a `.sussignore` rule for
-it, ready to paste under `rules:`. The rule names the transition on
-whichever side carries it, so it matches that finding and no other. See
+it, ready to paste under `rules:`. The rule identifies the transition on
+whichever side has it, so it matches that finding and no other. See
 [Suppressions](/suppressions).
 
 ### Exit codes
@@ -355,7 +357,7 @@ the downgraded severity. See [Suppressions](/suppressions).
 Render a summary file (or directory, or diff) as human-readable
 text.
 
-**What it does.** Reads a summary JSON file and prints a tree-style
+**What it does.** It reads a summary JSON file and prints a tree-style
 view: summaries grouped by source file, decision-tree branches
 under each summary, side effects under each branch, follow-references
 to other summaries inline. The output is meant to be the form you
@@ -382,7 +384,7 @@ suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
 | `--dir PATH` | Render every summary in a directory, grouped by boundary with pair-discovery annotations. |
 | `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions. |
 | `--types` | Spell out the named types a summary references instead of printing their names. It applies to a single file and to `--dir`; a `--diff` run ignores it. |
-| `--flow "METHOD URL"` | Answer who serves one request, hop by hop. See [below](#suss-inspect-flow). |
+| `--flow "METHOD URL"` | Work out who serves one request, hop by hop. See [below](#suss-inspect-flow). |
 
 Rendering has no JSON output mode, it is always human-formatted. For
 programmatic consumption, read the summary files directly (they ARE
@@ -393,14 +395,14 @@ rendering a file, and `--json` gives you that answer as data.
 
 Ask who serves a request, and get the chain back.
 
-**What it does.** Walks the routing a set of summaries declares, hop by
-hop, and answers with the entry the request came in by, every hop it
+**What it does.** It walks the routing a set of summaries declares, hop
+by hop. It then tells you the entry the request came in by, every hop it
 took and the rule that admitted that hop, the unit it lands in, and the
 handler inside that unit.
 
-It reads both sides of the question, so point it at a directory holding
-both: a deploy template read with `suss contract` for the wiring, and
-`suss extract` over the code for the handlers that answer.
+It reads both sides of the question, so point it at a directory
+containing both: a deploy template read with `suss contract` for the
+wiring, and `suss extract` over the code for the handlers that respond.
 
 ```
 suss inspect --flow "<METHOD URL>" [SUMMARIES.json | --dir DIR]
@@ -428,33 +430,36 @@ What serves it, as the declarations settle it:
 
 | Flag | Description |
 |---|---|
-| `--flow "METHOD URL"` | The request to ask about. A path works too (`"GET /api/orders/123"`), and then a host-header rule cannot be settled and says so. |
-| `--dir PATH` | Read every summary file in a directory, instead of the one file named as an argument. |
-| `--entry NAME` | Which node the request comes in by, when the summaries hold more than one way in. |
+| `--flow "METHOD URL"` | The request to ask about. A path works too (`"GET /api/orders/123"`), and then suss cannot settle a host-header rule, and it says so. |
+| `--dir PATH` | Read every summary file in a directory, instead of the one file given as an argument. |
+| `--entry NAME` | Which node the request comes in by, when the summaries contain more than one way in. |
 | `--scope DOCUMENT` | Which document's node, when two documents declare that name. |
 | `--json` | Write the chains as JSON instead of prose. |
 
-Certainty is visible, and a possible answer never reads as a settled
-one. A hop whose rule takes the request outright is certain; a hop
-gated on something the declarations leave open, an unevaluated
-condition field or a tie between two rules, is possible, and the chain
-carrying it is grouped under its own heading and says which hop is
-unsettled.
+You can see how certain each answer is, and a possible answer is never
+presented as a settled one. A hop whose rule takes the request outright
+is certain. A hop gated on something the declarations leave open, an
+unevaluated condition field or a tie between two rules, is only
+possible, and suss groups the chain containing it under its own heading
+and says which hop is unsettled.
 
 When nothing serves the request, the answer says where the walk
-stopped: the response a listener's own default action gives it, the last
-node it got to and the rules declared there that refused it, or a rule
-that took the request and sent it somewhere nothing here resolved, which
-reads with the reference the document wrote and the reader's reason for
-stopping (a target another template declares, for instance).
+stopped. That is the response a listener's own default action gives it,
+or the last node the walk reached along with the rules declared there
+that refused the request, or a rule that took the request and sent it
+somewhere nothing here resolved. In that last case the output shows the
+reference the document wrote and the reason the reader stopped (a target
+another template declares, for instance).
 
-A question whose wiring branches wider than the answer prints ends with
-how many chains were left out, so a partial answer never reads as the
-whole of it. The JSON form carries the same count under `omitted`.
+If the wiring branches wider than the answer prints, the output ends
+with how many chains were left out, so you never mistake a partial
+answer for the whole of it. The JSON form has the same count under
+`omitted`.
 
 Two documents that both declare a listener called `HttpListener` are
-two listeners, and neither one's rules may answer the other's question.
-Asking about a name they share is refused with the documents listed, so
+two listeners, and neither one's rules may be used for the other's
+question. If you ask about a name they share, suss refuses and lists the
+documents, so
 `--entry HttpListener --scope cloudformation:services/beta/template.yaml`
 says which stack you meant.
 
@@ -546,7 +551,7 @@ Each branch reads like an `if` in source:
 
 An `elif` line with no `->` underneath it is a tree-building
 artifact: the decision tree walked past that predicate but the
-leaf lives deeper inside a nested `if`. Not an empty source
+leaf lives deeper inside a nested `if`. It is not an empty source
 branch.
 
 #### Effect lines
@@ -584,7 +589,7 @@ past. Short summaries are unaffected.
 
 #### Annotations that start with `!!`
 
-| Shape | Means |
+| What you see | What it means |
 |---|---|
 | Top-level `!! <description>` | A gap, the declared contract says a status exists but no branch produces it, or a branch produces a status the contract doesn't declare. |
 | Trailing `!! undeclared` on an output | That output's status code isn't in the declared contract for this endpoint. |
@@ -597,7 +602,7 @@ summary JSON directly, `inspect` is a renderer over it, and the JSON
 is the canonical artifact. See [behavioral summary format](/behavioral-summary-format)
 for the JSON's own stability guarantees.
 
-Within v0, `inspect` commits to keeping these shapes intact across
+Within v0, `inspect` promises to keep these parts unchanged across
 minor versions:
 
 - **Grouping by source file**: with each summary rendered under its
@@ -638,9 +643,9 @@ summary JSON instead.
 
 Extract, then run each handler against its own claims.
 
-**What it does.** Runs a normal extraction, then for every summary in
-scope: generates request inputs that satisfy a transition's own
-extracted conditions, executes the real handler function in a sandbox
+**What it does.** It runs a normal extraction, then for every summary in
+scope it generates request inputs that satisfy a transition's own
+extracted conditions, executes the actual handler function in a sandbox
 with a stub response object, and compares the observed status with
 the claimed one. Verdicts land on
 `transition.confidence.corroboration`:

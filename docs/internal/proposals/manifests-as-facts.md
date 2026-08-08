@@ -9,13 +9,13 @@ that runs those templates.
 
 ## The problem
 
-A deploy template is a graph of resources joined by names. `Ref` names a
-resource, `GetAtt` names one and reads an attribute off it, a nested
-stack passes parameters down and hands outputs back up. Following a name
-to what it eventually means is the problem `comesTo` already solves for
-TypeScript values, and `@suss/resolution` already holds rules for that
-shape: a name binds to a value, an import chains to an export, a
-re-export chains again.
+A deploy template is a graph of resources joined by names. `Ref` points
+at a resource, `GetAtt` points at one and reads an attribute off it, and
+a nested stack passes parameters down and hands outputs back up.
+Following a name to what it eventually means is the problem `comesTo`
+already solves for TypeScript values, and `@suss/resolution` already has
+rules for that pattern: a name binds to a value, an import chains to an
+export, a re-export chains again.
 
 We wrote a bespoke walker for templates instead. Four measured gaps are
 places that walker stops.
@@ -37,10 +37,10 @@ reads and the functions rather than the sum, so the worse the service's
 sharing, the worse the noise.
 
 **The SAM `Globals` section is invisible.** A template declares
-environment variables once for every function it holds, under
+environment variables once for every function it contains, under
 `Globals.Function.Environment.Variables`, and the reader looks only at
 `Properties.Environment.Variables`. Every variable declared that way
-reads as undeclared.
+looks undeclared.
 
 **Queue findings did not move** when handler discovery on a service went
 from nothing to every handler in the root document. Consumer orphans and
@@ -49,7 +49,7 @@ about wiring the walker reads separately from handlers.
 
 ## What the templates actually contain
 
-The proportions that carry the argument describe CloudFormation as a
+The proportions that make the argument describe CloudFormation as a
 format rather than anyone's stack.
 
 References dominate. Counting `Ref`, `Fn::GetAtt` and the substitution
@@ -60,8 +60,8 @@ reading a template is.
 The intrinsics no static reader can evaluate are rare. `Fn::FindInMap`
 and `Fn::ImportValue` together account for fewer than a fifth of a
 percent of leaf property values. Conditional values, meaning `Fn::If`
-and resources carrying a `Condition`, are also well under one percent.
-A resource carries something like nine leaf property values on average,
+and resources with a `Condition`, are also well under one percent.
+A resource has something like nine leaf property values on average,
 so the fact base is a small multiple of the document.
 
 ## The design
@@ -74,14 +74,14 @@ today, so `@suss/manifest-aws` and `@suss/contract-cloudformation` mix
 both jobs in one file. Apply the same test and the split is clear.
 
 CloudFormation's own semantics are that a document declares named
-resources, a value can name one of them, a value can read an attribute
-off the thing it names, a document declares parameters and publishes
-outputs, and a resource can embed another document. None of that
-mentions AWS.
+resources, a value can point at one of them, a value can read an
+attribute off the thing it points at, a document declares parameters and
+publishes outputs, and a resource can embed another document. None of
+that mentions AWS.
 
-What AWS means is that `AWS::Serverless::Function` runs code named by a
-`Handler` string, that an event source mapping wires a queue to a
-function, and that an `AWS::Events::Rule` routes a subject into its
+What AWS means is that `AWS::Serverless::Function` runs the code a
+`Handler` string points at, that an event source mapping wires a queue
+to a function, and that an `AWS::Events::Rule` routes a subject into its
 targets. That is a technology's meaning and belongs in a pack.
 
 So the format-neutral relations are:
@@ -118,8 +118,8 @@ are siblings rather than one set.
 
 A reference into a child document's parameter continues at whatever the
 parent bound to that parameter, and a reference to a child stack's
-output continues at what the child published. Both are the shape the
-import rules already use.
+output continues at what the child published. Both work the same way the
+import rules already do.
 
     comesTo(n, node) :- namesTarget(d, n, id), declares(d, id, node).
 
@@ -145,7 +145,7 @@ grandchild costs no new rule. Nothing here is a new mechanism.
 
 The code side reads `process.env.X` somewhere in a file. The template
 side declares X on a function. Joining them needs a key both sides can
-name, and today the key is a path prefix, which is why it fails.
+produce, and today the key is a path prefix, which is why it fails.
 
     declaresEnvVar(fn, name) :- hasType(fn, "AWS::Serverless::Function"),
                                 envVarProperty(fn, name).
@@ -183,12 +183,12 @@ convention loud and the other silent, and neither symptom points at the
 normalizer that causes it.
 
 That fix stamps the function's identity on the summary and compares
-identities, keeping the path as a fallback for code that names no unit.
-This design supplies the identity from the template side as a fact
-rather than as a stamped field, and deletes the fallback. So the
-tactical fix survives, and this replaces the fallback it leaves behind,
-which is the part that would otherwise keep the prefix match alive
-forever.
+identities, keeping the path as a fallback for code that does not say
+which unit it belongs to. This design supplies the identity from the
+template side as a fact rather than as a stamped field, and deletes the
+fallback. So the tactical fix survives, and this replaces the fallback
+it leaves behind, which is the part that would otherwise keep the prefix
+match alive forever.
 
 Opening the findings that survived that fix is also what turned up the
 `Globals` gap above.
@@ -221,19 +221,19 @@ a join rather than as new machinery.
 
 The code side, with no template, knows that a module exports a function,
 that a value is read from `process.env.X`, and that a call sends to a
-channel the code names, which is usually an env var name. It cannot know
-its own function's logical id, which env vars are provided, which queue
-is attached, or what subject arrives.
+channel the code spells out, which is usually an env var name. It cannot
+know its own function's logical id, which env vars are provided, which
+queue is attached, or what subject arrives.
 
-The template side knows all the wiring, and knows the module path and
+The template side knows all the wiring, and it knows the module path and
 export name each function points at. It cannot know what the code does
 with any of it.
 
-So the deployed function is a key both sides can name, and only because
-the template hands it over through `runsCode`. The channel is not. The
-code names an env var and only the template says what that env var
-holds, which is why `envVarTargets` exists as a metadata bridge today.
-Under this design that bridge becomes a join:
+So the deployed function is a key both sides can produce, and only
+because the template hands it over through `runsCode`. The channel is
+not. The code gives an env var name, and only the template says what
+that env var contains, which is why `envVarTargets` exists as a metadata
+bridge today. Under this design that bridge becomes a join:
 
     configures(fn, name, target) :- declaresEnvVar(fn, name),
                                     envVarProperty(fn, name),
@@ -287,13 +287,13 @@ which is the fraction of a percent of values noted above.
 
 ## Risks
 
-**Error reporting.** A relation carries no file or line unless the facts
-do, so `locatedAt` has to be emitted and every finding has to join
+**Error reporting.** A relation has no file or line unless the facts
+have one, so `locatedAt` has to be emitted and every finding has to join
 against it. Two measured cases need this. A child document is referenced
 by a `TemplateURL` and is not on disk, so a stack resource resolves to
-no file at all. And a handful of names in the corpus name nothing
+no file at all. And a handful of names in the corpus point at nothing
 declared in their document. Neither is reportable today, because every
-summary the CloudFormation reader emits carries
+summary the CloudFormation reader emits has
 `range: { start: 1, end: 1 }`. The YAML parser gives node ranges, so the
 fact form makes this better rather than worse, but only if `locatedAt`
 lands with the first relation rather than later.
@@ -303,7 +303,7 @@ every document in that corpus took 232ms, and evaluating the rules over
 them took 162ms. Against that, extracting one small service with
 `--no-cache` takes 4.21s. So the
 manifest side is a few percent of a run, and the fact base for a whole
-multi-service corpus is small enough to hold in memory without thinking
+multi-service corpus is small enough to keep in memory without thinking
 about it.
 
 Scaling: `property` is linear in leaf values, so linear in resources at
@@ -312,8 +312,8 @@ every two references, so it is linear in references in practice because
 the chains are shallow. The join that could misbehave is the
 output-chaining rule, which pairs every stack against every output of
 its child. The nesting in this corpus is shallow and the outputs are few
-enough that it never bit, and deep nesting with wide outputs is the
-shape that would. That is worth a guard rail rather than an assumption.
+enough that it never bit, and deep nesting with wide outputs is the case
+that would. That is worth a guard rail rather than an assumption.
 
 **What is not a graph problem.** `Fn::Sub` with inline substitution is
 string work, and it stays in extraction: tokenize the string and emit
@@ -326,11 +326,11 @@ problems at all and stay opaque.
 weaker than code. Emitting both branches as `alternative` edges
 over-approximates. That is the safe direction for discovery, since both
 handlers get found, and the wrong direction for a contract check, since
-an env var declared only in one branch would read as always declared.
-Conditional values are under a percent of the corpus, so the exposure is
-small, and the answer is to carry `guardedValue` through to the finding
-rather than to build separate machinery. It is a known soft spot, not a
-solved one.
+an env var declared in only one branch would look as though it is always
+declared. Conditional values are under a percent of the corpus, so the
+exposure is small, and the answer is to carry `guardedValue` through to
+the finding rather than to build separate machinery. It is a known soft
+spot, not a solved one.
 
 **Would a smaller change get most of the value?** Following nested
 stacks inside the existing reader is contained: open each
@@ -356,10 +356,10 @@ owns resolution.
 
 The measured answer is that the static path loses almost nothing suss
 reads. About half the references in the corpus do not resolve
-statically, and nearly every one of those names a template parameter,
-most of them in a root document that nothing above binds. Those are
-stage names, memory sizes and account ARNs. Not one of them blocked a
-fact suss uses: every handler, every declared env var, every
+statically, and nearly every one of those points at a template
+parameter, most of them in a root document that nothing above binds.
+Those are stage names, memory sizes and account ARNs. Not one of them
+blocked a fact suss uses: every handler, every declared env var, every
 queue-to-function edge and every rule-to-queue edge derived from the
 source templates alone. What no static reader can evaluate stays the
 fraction of a percent noted above.
@@ -367,7 +367,7 @@ fraction of a percent noted above.
 The artifacts also are not there. That monorepo commits no `.aws-sam`
 directory, no `cdk.out` and no Terraform state. `sam build` needs the
 SAM CLI and sometimes Docker; `terraform show -json` needs state access
-and therefore credentials. suss reads a repo as it sits, with no build
+and therefore credentials. suss reads a repo as it is, with no build
 and no credentials, and that promise is what makes it runnable in a
 pull request.
 
@@ -375,13 +375,13 @@ So: both, with static as the default and a resolved artifact preferred
 when the user points at one. This needs no new mechanism. A packaged SAM
 template is a CloudFormation template, and
 `suss contract --from cloudformation .aws-sam/build/template.yaml`
-already works; the pack needs an option naming a template path, which it
-should have anyway. The facts come out the same, because resolution
-shortens the chain rather than changing the vocabulary: where the static
-path emits `namesTarget` and derives `comesTo` through two hops, the
-resolved path emits `isLiteral` and the same downstream rules join
-against the same `comesTo`. Nothing downstream can tell which produced
-it.
+already works; the pack needs an option that gives a template path,
+which it should have anyway. The facts come out the same, because
+resolution shortens the chain rather than changing the vocabulary: where
+the static path emits `namesTarget` and derives `comesTo` through two
+hops, the resolved path emits `isLiteral` and the same downstream rules
+join against the same `comesTo`. Nothing downstream can tell which
+produced it.
 
 One artifact is out of scope. A description of a deployed stack replaces
 logical ids with physical names, which is not the identity boundaries
@@ -393,9 +393,9 @@ it does not displace the static work. It is an input option.
 
 ## A second format
 
-Terraform sits in the same monorepo, and suss reads none of it. Walking
+Terraform lives in the same monorepo, and suss reads none of it. Walking
 it through the vocabulary is the test of whether these relations are
-general or CloudFormation's shape wearing a general name.
+general or CloudFormation's own structure wearing a general name.
 
 - `resource "aws_sqs_queue" "orders" {}` gives `declares` and `hasType`.
 - `${aws_sqs_queue.orders.arn}` gives `namesTarget` plus
@@ -409,7 +409,7 @@ general or CloudFormation's shape wearing a general name.
 - `data` sources and `terraform_remote_state` behave like
   `Fn::ImportValue` and stay opaque.
 
-Four of five hold exactly. The one that does not is multiplicity:
+Four of the five match exactly. The one that does not is multiplicity:
 `count` and `for_each` turn one declaration into N instances, and
 `aws_sqs_queue.orders[0]` is a name this vocabulary cannot express.
 CloudFormation has no equivalent, so a second format needs something on
@@ -434,13 +434,13 @@ one.
    alternatives are each one more edge into the same relation, and the
    relay is one join of two derived facts.
 2. **Does it reuse what exists?** It runs on `@suss/datalog` unchanged
-   and mirrors `@suss/resolution`'s rule shapes. No engine work.
+   and mirrors `@suss/resolution`'s rule forms. No engine work.
 3. **Does it widen shared vocabulary?** It adds a second fact family
    with its own node identity scheme, and reuses one relation name,
    `comesTo`, for the same sentence. The risk is the AWS relations
    drifting back into the neutral set, which is the failure mode
-   `framework-rules.md` names. Keeping `hasType` string constants and
-   property paths out of the neutral rules is the discipline that
+   `framework-rules.md` describes. Keeping `hasType` string constants
+   and property paths out of the neutral rules is the discipline that
    prevents it.
 4. **Is it over-designed, and what is the smallest version that ships a
    measured win?** The whole thing is over-designed as a first step. The
@@ -448,31 +448,31 @@ one.
    have. The smallest version of this design is the neutral relations
    plus `comesTo`, replacing the six `Ref` and `GetAtt` unwrappers,
    verified by summary equality on the existing fixtures.
-5. **Naming.** Relations read as sentences stating what is true:
+5. **Naming.** Relations are written as sentences stating what is true:
    `declares(d, id, node)`, `namesTarget(d, value, id)`,
    `deliversTo(queue, function)`, `routesInto(rule, queue)`. None of
-   them reads as an instruction to the engine.
-6. **Verified against code somebody wrote.** The rules in this document
-   were run on `@suss/datalog` over facts emitted from the SAM templates
+   them sounds like an instruction to the engine.
+6. **Verified against code somebody wrote.** We ran the rules in this
+   document on `@suss/datalog` over facts emitted from the SAM templates
    of a production serverless monorepo. `runsCode` derived every handler
    in a service where the current reader finds only the ones in the root
    template, and `reaches` derived the full set of relay edges on the
    queue-heavy service, where the reader derives none.
 7. **What it does not do.** It does not evaluate `Fn::FindInMap` or
    `Fn::ImportValue`. It does not decide conditions, so a conditional
-   value reads as both branches. It does not reduce a filter pattern to
-   a predicate, which is JSON work in extraction and a comparison the
-   rules cannot express. It does not read Terraform, Kubernetes or
-   compose, and it does not add a plugin interface for them. It does not
-   change any summary shape, so it settles no question about what a
-   boundary is keyed on.
+   value is treated as both branches. It does not reduce a filter
+   pattern to a predicate, which is JSON work in extraction and a
+   comparison the rules cannot express. It does not read Terraform,
+   Kubernetes or compose, and it does not add a plugin interface for
+   them. It does not change how any summary is structured, so it settles
+   no question about what a boundary is keyed on.
 
 ## Which open items this touches
 
 **Modelling the rule relay:** this supplies the mechanism, `reaches`
 from `routesInto` and `deliversTo`, and leaves the decision alone.
-Whether a queue is the boundary key is a summary-shape question this
-does not answer.
+Whether a queue is the boundary key is a question about how a summary is
+structured, and this does not answer it.
 
 **Stopping the code side claiming boundary participation:** this leaves
 it alone. That is a pack change, and this design supports the reasoning
@@ -495,7 +495,7 @@ measurable on its own.
    `AWS::CloudFormation::Stack` `TemplateURL` relative to its parent and
    index the children. Measured on that monorepo, handler discovery on
    the largest service goes from the root document's share to all of
-   them. Report a named file when a child is missing, which that repo
+   them. Report the file name when a child is missing, which that repo
    already needs. This is the first step and it is worth doing whatever
    happens to the rest.
 2. **Land the deployable-unit fix** in #54, which keys the pairing on

@@ -1,6 +1,6 @@
 # Add suss to an existing project
 
-Assumes a TypeScript project with at least one boundary suss
+You will need a TypeScript project with at least one boundary suss
 recognises: an HTTP handler, a GraphQL resolver, a React component
 tree, a queue producer, a Prisma call, or a `process.env` access. For a
 Python or Ruby project, start at
@@ -11,12 +11,12 @@ covers the same ground for those two languages.
 
 Three pieces, in order:
 
-1. **Framework / runtime / contract packs.** Declarative descriptions
-   of how a given framework expresses its boundaries (where handlers
-   register, how status codes attach to responses, what counts as a
-   storage call, how an env var resolves to a CFN resource). One pack
-   per framework + runtime + contract source you want covered. Without
-   a pack, suss has nothing to discover.
+1. **Framework / runtime / contract packs.** A pack is a declarative
+   description of how a given framework expresses its boundaries: where
+   handlers register, how status codes attach to responses, what counts
+   as a storage call, how an env var resolves to a CFN resource. You
+   need one pack per framework, runtime, and contract source you want
+   covered. Without a pack, suss has nothing to discover.
 2. **Extraction.** `suss extract` walks your source and emits the
    structured summaries. Static analysis only, nothing runs.
 3. **Pairing.** `suss check` compares summaries across boundaries:
@@ -70,14 +70,14 @@ and offers to do the rest:
 
 Installing defaults to yes. Writing `.sussignore` and the CI workflow
 both default to no, and nothing reaches disk unless you accept it. If
-the install fails, it stops there, prints what npm said, and leaves the
-command behind rather than carrying on.
+the install fails, it stops there, prints what npm said, and leaves you
+the command to run rather than carrying on.
 
 ### In a monorepo
 
 At a repo root it reads the workspace declaration, from `package.json`
-workspaces, `pnpm-workspace.yaml`, `lerna.json`, or `turbo.json`, then
-asks which packages to set up:
+workspaces, `pnpm-workspace.yaml`, `lerna.json`, or `turbo.json`, and
+then asks which packages to set up:
 
 ```
 ◆  Which should suss set up?
@@ -86,15 +86,15 @@ asks which packages to set up:
 │  ◻ @acme/tooling     node
 ```
 
-Worth knowing before you check several services at once: suss tells
-HTTP boundaries apart by method and path alone, so two services both
-serving `GET /users` read as one. See
+One thing to know before you check several services at once: suss tells
+HTTP boundaries apart by method and path alone, so two services that
+both serve `GET /users` look like a single boundary. See
 [Compatibility](/reference/compatibility#several-services-in-one-folder).
 
 ### Without a terminal
 
-Piped, or in CI, or with `--plain`, it prints the commands instead of
-asking:
+When it runs piped, or in CI, or with `--plain`, it prints the commands
+instead of asking:
 
 ```bash
 npx @suss/cli init --plain
@@ -113,7 +113,7 @@ your code uses, plus the CLI. Pick from:
 | `@suss/framework-express` | Express `app.get(...)` / `router.get(...)` handlers | `npm i -D @suss/framework-express` |
 | `@suss/framework-fastify` | Fastify `fastify.get(...)` handlers | `npm i -D @suss/framework-fastify` |
 | `@suss/framework-hono` | Hono `app.get(...)` handlers, including `c.json(body, status)` | `npm i -D @suss/framework-hono` |
-| `@suss/framework-nextjs` | Next.js route handlers and pages; the route comes from where the file sits | `npm i -D @suss/framework-nextjs` |
+| `@suss/framework-nextjs` | Next.js route handlers and pages; the route comes from where the file is | `npm i -D @suss/framework-nextjs` |
 | `@suss/framework-nestjs-rest` | NestJS REST controllers (`@Controller` / `@Get`) | `npm i -D @suss/framework-nestjs-rest` |
 | `@suss/framework-nestjs-graphql` | NestJS GraphQL resolvers (`@Resolver` / `@Query` / `@Mutation`) | `npm i -D @suss/framework-nestjs-graphql` |
 | `@suss/framework-react-router` | React Router v6+ loaders / actions | `npm i -D @suss/framework-react-router` |
@@ -132,7 +132,7 @@ your code uses, plus the CLI. Pick from:
 | `@suss/contract-graphql` | GraphQL SDL → resolver summaries, and committed `.graphql` operation documents → client summaries | `npm i -D @suss/contract-graphql` |
 | `@suss/contract-aws-apigateway` | API Gateway REST/HTTP API resource semantics → summaries | `npm i -D @suss/contract-aws-apigateway` |
 | `@suss/contract-cloudformation` | CFN / SAM templates → summaries (delegates to OpenAPI + API Gateway; also reads SQS event-source mappings + Lambda Environment) | `npm i -D @suss/contract-cloudformation` |
-| `@suss/contract-serverless` | Serverless Framework service files → summaries, through the same shapes the CFN reader handles | `npm i -D @suss/contract-serverless` |
+| `@suss/contract-serverless` | Serverless Framework service files → summaries, read through the same structures the CFN reader handles | `npm i -D @suss/contract-serverless` |
 | `@suss/contract-appsync` | AppSync schema + resolver mapping templates → summaries | `npm i -D @suss/contract-appsync` |
 | `@suss/contract-storybook` | Storybook CSF3 stories → component contract summaries | `npm i -D @suss/contract-storybook` |
 | `@suss/contract-prisma` | Prisma schema → storage provider summaries | `npm i -D @suss/contract-prisma` |
@@ -150,7 +150,7 @@ You don't have to install everything. Common combinations:
 - **Express API + fetch client:** `@suss/framework-express @suss/client-web`.
 - **React + GraphQL:** `@suss/framework-react @suss/client-apollo`.
 - **GraphQL server:** `@suss/framework-apollo`. Add `@suss/contract-appsync` if you also deploy via CloudFormation.
-- **Lambda + SQS + Postgres:** `@suss/framework-aws-sqs @suss/framework-prisma @suss/runtime-node @suss/contract-cloudformation @suss/contract-prisma`. CFN reads the producer-side env var and resolves it to the queue resource; Prisma's schema becomes the storage provider summaries that pair with the source-extracted query call sites.
+- **Lambda + SQS + Postgres:** `@suss/framework-aws-sqs @suss/framework-prisma @suss/runtime-node @suss/contract-cloudformation @suss/contract-prisma`. The CloudFormation reader picks up the env var on the producer side and resolves it to the queue resource. Prisma's schema becomes the storage provider summaries, and those pair with the query call sites read out of your source.
 
 ## Point suss at your tsconfig
 
@@ -181,10 +181,10 @@ npx suss extract -p tsconfig.json -f ts-rest -f axios -o summaries/all.json
 ## A Python or Ruby project
 
 There is no tsconfig to point at, so point suss at the directory. It
-works out which language it is reading from what the directory holds
+works out which language it is reading from what the directory contains
 (`pyproject.toml`, `requirements.txt`, a `Gemfile`, or the source
-files themselves), and `--lang` says so outright when you would rather
-not leave it to that.
+files themselves), and `--lang` lets you say which language it is when
+you would rather not leave it to that.
 
 ```bash
 # FastAPI and flask-restx routes
@@ -195,16 +195,16 @@ npx suss extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json -o s
 ```
 
 Two of these packs need a sentence about your project before they can
-read it, which the built-in TypeScript packs never do. graphql-ruby
-needs the directory a `mutation:` or `resolver:` field's class is
-looked up under, and it reads nothing without one:
+read it. The built-in TypeScript packs never do. graphql-ruby needs the
+directory a `mutation:` or `resolver:` field's class is looked up
+under, and it reads nothing without one:
 
 ```json
 { "root": "app/graphql" }
 ```
 
-A relative path here is read relative to the config file itself, so
-that config sitting beside `app/` means the same directory whichever
+A relative path here is read relative to the config file itself, so a
+config file that lives beside `app/` means the same directory whichever
 directory you run the command from.
 
 flask-restx and fastapi take an optional `wrapperModules`, the modules
@@ -216,14 +216,14 @@ your routes import from it directly:
 { "wrapperModules": ["myapp.wrappers.restx"] }
 ```
 
-Write either to a JSON file and name it on the flag:
+Write either to a JSON file and give the file name on the flag:
 `-f flask-restx=suss.flask-restx.json`.
 
 If your service imports a shared framework from a git submodule, check
 the submodule out before extracting. suss reads `.gitmodules`, treats
-each submodule as part of this project, and resolves imports into it;
-an empty one gets a line saying so, because the routes that depend on
-it would otherwise go missing without explanation.
+each submodule as part of this project, and resolves imports into it.
+An empty one gets a line saying so, because the routes that depend on
+it would otherwise go missing with no explanation.
 
 ## Pair them
 
@@ -237,13 +237,13 @@ npx suss check --dir summaries/
 
 `check` reads the JSON files, groups summaries into provider /
 consumer pairs by their boundary key (e.g. `(GET, /users/:id)`),
-and runs each pair through the agreement checks. Output is a list
-of findings naming the boundary, both sides, and what disagrees.
-There's no aggregate score, every finding is a concrete pair-level
-fact you can act on.
+and runs each pair through the agreement checks. It prints a list
+of findings, and each one gives the boundary, both sides, and what
+disagrees. There's no aggregate score. Every finding is a concrete
+fact about one pair, and you can act on it.
 
-Findings print to stdout; non-zero exit code when there are
-errors. Flags:
+Findings print to stdout, and the command exits non-zero when there
+are errors. Flags:
 
 - `--fail-on warning`: treat warnings as errors for exit code purposes
 - `--json`: emit findings as JSON (useful in CI; see the
@@ -254,7 +254,7 @@ errors. Flags:
 When you consume an API you don't own (Stripe, an internal team,
 a third-party), you don't have the source, so `extract` can't run
 on it. Instead, run `contract` over the API's specification. It
-produces summaries with the same shape as `extract`'s output,
+produces summaries in the same format as `extract`'s output,
 describing what the spec says happens. Once the contract summary
 exists, `check` pairs it with your client the same way it would
 pair two extracted summaries.
@@ -278,8 +278,8 @@ npx suss contract --from appsync template.yaml -o summaries/appsync.json
 
 ## Commit or not?
 
-The summaries themselves are derived artifacts, you don't need
-them checked in. Most projects commit a `.suss/` directory only
+The summaries themselves are derived artifacts, so you don't need
+to check them in. Most projects commit a `.suss/` directory only
 if they're publishing summaries for downstream consumers
 (library authors shipping summaries alongside their package).
 

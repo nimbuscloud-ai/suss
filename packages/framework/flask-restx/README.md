@@ -11,17 +11,17 @@ Framework pack for [flask-restx](https://flask-restx.readthedocs.io/) `Resource`
 
 ## Namespace paths
 
-A resource declared on a namespace is served under the namespace's own path, and its decorator states only the part after it. The pack composes the two, so `Namespace(path="/orders")` with `@ns.route("/<int:order_id>")` is read as `/orders/{order_id}`, and `@ns.route("")` is read as `/orders`. Parameters named in the namespace's path are read as path parameters like any other.
+A resource declared on a namespace is served under the namespace's own path, and its decorator states only the part after it. The pack composes the two, so `Namespace(path="/orders")` with `@ns.route("/<int:order_id>")` comes out as `/orders/{order_id}`, and `@ns.route("")` comes out as `/orders`. Parameters written into the namespace's path become path parameters like any other.
 
-The composition needs the namespace constructed with a literal `path` and mounted once, through a variable, by an `add_namespace` call that states no `path` of its own. A route on a namespace written any other way is still discovered, under its name, with no path and a recorded reason: it pairs with nothing rather than with whatever a guessed path would have named.
+The composition needs the namespace constructed with a literal `path` and mounted once, through a variable, by an `add_namespace` call that states no `path` of its own. A route on a namespace written any other way is still discovered, under its name, with no path and a recorded reason: it pairs with nothing rather than with whatever route a guessed path would have picked out.
 
-## Where it sits in suss
+## Where it fits in suss
 
 Depends only on `@suss/adapter-python` (for the `PythonPack` type and the Python-language extraction pipeline). Contains no analysis logic of its own.
 
 ## The wrapper-module option
 
-Most services wrap flask-restx's route decorator in their own module rather than importing it directly. `wrapperModules` names the wrapper a project uses, alongside flask-restx's own module, which is always accepted:
+Most services wrap flask-restx's route decorator in their own module rather than importing it directly. `wrapperModules` says which wrapper a project uses, alongside flask-restx's own module, which is always accepted:
 
 ```ts
 import { flaskRestxFramework } from "@suss/framework-flask-restx";

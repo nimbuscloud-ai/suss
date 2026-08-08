@@ -8,16 +8,16 @@ implementation contradicted it.
 
 Numbers from the public dogfood targets are given in full. Runs against a
 production monorepo are described as ratios, since those figures would
-characterise somebody else's codebase.
+describe somebody else's codebase.
 
 ## What the numbers say
 
-Extraction was profiled on current main across the public dogfood
+We profiled extraction on current main across the public dogfood
 targets, three packages from this repo, and five services from a
 production monorepo. Every run passed `--no-cache`.
 
-Datalog is anywhere from nothing at all to about a third of a run, and
-which one depends on the corpus rather than on its size.
+Datalog takes anywhere from no time at all to about a third of a run,
+and which one you get depends on the corpus rather than on its size.
 
 | corpus | files | total | datalog | share |
 | --- | ---: | ---: | ---: | ---: |
@@ -27,16 +27,16 @@ which one depends on the corpus rather than on its size.
 | production services, three of five | small | 1.2s to 5.0s | 1ms to 194ms | under 4% |
 | production service, densest | | | | about a third |
 
-On twenty-server the resolution rules never execute. Not "stay quiet":
-`comesTo` and `resolves` are never created, and the only rule sets that
-run are the reachable closure and the rethrow pass. The same holds for
-the three smallest production services and all three packages from this
-repo. Resolution costs nothing until a corpus has the aliasing and
-re-export density that makes those rules fire.
+On twenty-server the resolution rules never execute. They do not run and
+derive nothing: `comesTo` and `resolves` are never created, and the only
+rule sets that run are the reachable closure and the rethrow pass. The
+same is true for the three smallest production services and all three
+packages from this repo. Resolution costs nothing until a corpus has the
+aliasing and re-export density that makes those rules fire.
 
-The old profile putting datalog at 40% was measured on a corpus of the
+The old profile that put datalog at 40% was measured on a corpus of the
 dense kind, and it still reproduces there: `unify`, `step`, and `lookup`
-land within a few percent of the figures it recorded, and together they
+come within a few percent of the figures it recorded, and together they
 are 93% of engine time. On saleor-storefront the same three functions
 come to a few milliseconds.
 
@@ -54,15 +54,15 @@ datalog. That was wrong, and twenty-server shows it:
 | `synthesizeSubUnits` | 0.0% | 9.3% |
 | datalog | 0.6% | 2.8% |
 
-Half of the largest public corpus sits under the import gate, which
+Half of the largest public corpus goes into the import gate, which
 resolves the same import edges about fifteen times over. That is suss's
 own code rather than a parser, and a separate change is addressing it.
-Where the gate is cheap, `extract per-file` dominates, and that bucket
-is mostly time inside ts-morph API calls.
+Where the gate is cheap, `extract per-file` dominates, and that bucket is
+mostly time spent inside ts-morph API calls.
 
 Garbage collection is 14.1% of a run where datalog never executes and
 7.0% of the run where it dominates, so most of it belongs to ts-morph
-and will not move by changing the engine. Peak resident set tracks file
+and will not move if we change the engine. Peak resident set tracks file
 count rather than datalog.
 
 ### Inside datalog
@@ -86,7 +86,7 @@ composition rather than being fixed by it.
 
 ### How it scales
 
-Synthetic fact bases shaped like a codebase, doubling each step:
+Synthetic fact bases built to look like a codebase, doubling each step:
 
 | facts | comesTo | evaluation |
 | ---: | ---: | ---: |
@@ -109,13 +109,14 @@ them.
 
 **The forward walk, which should not be trusted.** Following `comesTo`
 edges from the values callers query reaches a small fraction of the
-relation. It is unreliable in both directions. It misses demand arriving
-through a rule body rather than along a `comesTo` edge, so on the dense
-production corpus it lands 2.1 times below what a rewrite needs. On a large
-frontend corpus it returns zero, because not one queried value appears
-as the subject of any derived pair, which read literally claims a 100%
-saving. A number that can be half the truth on one corpus and infinitely
-wrong on another should not carry an argument.
+relation. It is unreliable in both directions. It misses demand that
+arrives through a rule body rather than along a `comesTo` edge, so on the
+dense production corpus it comes out 2.1 times below what a rewrite
+needs. On a large frontend corpus it returns zero, because not one
+queried value appears as the subject of any derived pair, which if you
+read it literally claims a 100% saving. A number that can be half the
+truth on one corpus and infinitely wrong on another should not be the
+basis for an argument.
 
 **The support closure, which is the argument.** We enumerated every rule
 instantiation over the completed database, then closed backwards from
@@ -129,7 +130,7 @@ derived relations together.
 `RESOLUTION_RULES` derives about 13% more than that minimum. Somebody
 reading this should want to know whether a demand-driven evaluator would
 turn round and derive a different pile of slop, bookkeeping predicates
-in place of unread tuples. On this workload it does not. It lands close
+in place of unread tuples. On this workload it does not. It comes close
 enough to the floor that the remaining headroom is small.
 
 ### The gate, and the term to watch
@@ -141,7 +142,7 @@ and saleor-dashboard is the worst. Nothing came close to the 30% that
 would have promoted interning above this.
 
 8.9% is the figure to plan against rather than 1.7%. The gap between
-them is bookkeeping: magic predicates are stored too, at roughly 2.8 per
+them is bookkeeping: we store magic predicates too, at roughly 2.8 per
 seed, and that count grows with how many distinct values a corpus asks
 about rather than with the corpus itself. saleor-dashboard asks about
 1807 distinct values where the dense production service asks about fewer
@@ -150,18 +151,18 @@ broadly enough would erode the win, and the gate is how we would notice.
 
 ## What we tried and rejected
 
-Each was measured. Two contradicted a confident prediction.
+We measured each one. Two contradicted a confident prediction.
 
 **Reordering the expensive rules by hand.** Both property rules, in the
 form they had before the `objectOf` composition, ended at
 `holdsProperty(obj, n, held)`, so testing that literal early should kill
 the branch before five other literals do their work. Moving it second
-made the dense corpus twice as slow, with every test still passing.
-Property names like `handler` are held by many objects, so the early
-lookup returns a large bucket rather than an empty one.
+made the dense corpus twice as slow, with every test still passing. Many
+objects have a property named `handler`, so the early lookup returns a
+large bucket rather than an empty one.
 
 **Driving each join from the delta literal.** The standard semi-naive
-shape, rather than leaving the delta in body position, made the dense
+form, rather than leaving the delta in body position, made the dense
 corpus **twelve times slower**, with byte-identical summaries and all
 tests passing. Together with the reordering result, that is two
 independent reasons to rank indexing and join order last.
@@ -202,14 +203,14 @@ proposal on what is left after that.
 
 **1. Demand-driven derivation.** Seed a `wanted(x)` relation from the
 values callers ask about and rewrite each recursive rule to derive a
-pair only when its subject is wanted, propagating wantedness down the
-body the way magic sets does. Saving: on the gate's worst corpus a
+pair only when its subject is wanted, passing wantedness down the body
+the way magic sets does. Saving: on the gate's worst corpus a
 demand-driven run does 8.9% of today's derivation, and the fraction
 improves as density rises, which is the direction that hurts today.
 Cost: the highest of the five, a rewrite pass over `Rule[]` plus a way
 for the store to assert demand. Risk: a rewrite that drops a needed
-derivation is a wrong answer rather than a slow one, which is the risk
-to take seriously. Measurable first: yes, and it has been, on seven
+derivation gives a wrong answer rather than a slow one, which is the
+risk to take seriously. Measurable first: yes, and it has been, on seven
 corpora.
 
 **2. Interning atoms to integers.** `unify` and `lookup` are 62% of
@@ -218,15 +219,16 @@ index probe, `keyOf` maps and joins an array per tuple, and `unify`
 copies a `Map` per candidate tuple. Interning atoms once would make
 `atomKey` the identity, let indexes key on numbers, and let bindings be
 a slot array. Contained inside `@suss/datalog`, no rule changes, low
-risk. The gate was set up to promote this if demand turned out weak. It
+risk. We set the gate up to promote this if demand turned out weak. It
 did not, so this stays second, and the two compose.
 
-**3. The import gate.** Half of twenty-server. Outside this proposal's
-scope but larger than it on that corpus, and worth saying plainly so the
-ranking here is not mistaken for a ranking of the whole pipeline.
+**3. The import gate.** Half of twenty-server. It is outside this
+proposal's scope but larger than it on that corpus, and worth saying
+plainly so nobody mistakes the ranking here for a ranking of the whole
+pipeline.
 
-**4. Per-file content-hash caching.** Makes the second run fast and does
-nothing for the first, which is the case people complain about.
+**4. Per-file content-hash caching.** This makes the second run fast and
+does nothing for the first, which is the case people complain about.
 
 **5. Indexing and join order.** Ranked last on two measurements rather
 than on taste. `lookup` already indexes any bound column on first use,
@@ -266,8 +268,8 @@ subsumption, provenance, and any cost model.
 states what is true of a value rather than instructing the engine.
 
 **Was it verified against code somebody actually wrote?** Seven corpora,
-three of them public. Two candidates were rejected because measurement
-contradicted a confident prediction, and the headline number was revised
+three of them public. We rejected two candidates because measurement
+contradicted a confident prediction, and we revised the headline number
 upward by a factor of two when a better method replaced a naive one.
 
 **What does it not do?** It does not touch the import gate, which is
@@ -294,18 +296,18 @@ expensive, which a CPU profile cannot: rule cost is spread across
 `unify`, `step`, and `lookup`, and those names say how the engine works
 rather than which rule asked for the work.
 
-`@suss/datalog` gains `profileEvaluation(fn)`, reporting time and tuples
-per rule with each rule's share of engine time, tuple counts per
+`@suss/datalog` gains `profileEvaluation(fn)`, which reports time and
+tuples per rule with each rule's share of engine time, tuple counts per
 relation marked by whether a rule derived them, a per-rule-set
-breakdown, evaluations, and rounds to fixpoint. Collection hooks sit at
-rule attempts and rounds, never per tuple. The CLI exposes it as
+breakdown, evaluations, and rounds to fixpoint. The collection hooks run
+at rule attempts and rounds, never per tuple. The CLI exposes it as
 `suss extract --datalog-profile`.
 
-Overhead was checked rather than assumed: alternating A/B builds put the
-whole-run difference inside noise, an engine-only microbenchmark put it
-at most 1.5% of engine time, and profiled and unprofiled runs produce
-byte-identical summaries and byte-identical relation dumps down to tuple
-order.
+We checked the overhead rather than assuming it: alternating A/B builds
+put the whole-run difference inside noise, an engine-only microbenchmark
+put it at most 1.5% of engine time, and profiled and unprofiled runs
+produce byte-identical summaries and byte-identical relation dumps down
+to tuple order.
 
 ## Reproducing the numbers
 
@@ -334,8 +336,8 @@ that build instead.
 rewrite covers, saleor-dashboard derives 8.9% of what it used to, which
 is what the gate predicted, and 7012 of the 8723 tuples it still derives
 are magic bookkeeping. twenty-front comes to 2.8% and directus/api to
-3.8%. Two candidates in this document were rejected because measurement
-contradicted a prediction; this one was promoted because measurement
+3.8%. We rejected two candidates in this document because measurement
+contradicted a prediction; we promoted this one because measurement
 matched one.
 
 **One `wanted(x)` was not enough.** The recommendation above describes a
@@ -349,9 +351,9 @@ onto its own fact, `wantedOrigin(x)`, turned a four times slowdown into
 a ten times speedup on the same corpus, and cost nothing on the two
 where the win was already large.
 
-The general shape of that: a demand relation that answers more questions
-than the caller asked is not demand. Which questions a caller asks is
-part of the rewrite's input, not a detail below it.
+The general point behind that: a demand relation that answers more
+questions than the caller asked is not demand. Which questions a caller
+asks is part of the rewrite's input, not a detail below it.
 
 **Rounds go up while time goes down.** A demand-driven run takes about
 half again as many semi-naive rounds to reach fixpoint, because demand

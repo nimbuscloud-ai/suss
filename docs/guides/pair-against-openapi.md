@@ -1,9 +1,10 @@
 # Pair your code against an OpenAPI spec
 
-Common scenario: you consume a third-party API (Stripe, an
+A common situation: you consume a third-party API (Stripe, an
 internal team, anything with an OpenAPI 3.x spec). You want to
-know if your client code correctly handles every status the spec
-declares, and flags drift when the spec changes.
+know whether your client code correctly handles every status the
+spec declares, and you want to be told when the spec changes and
+your code drifts from it.
 
 ## The two artifacts
 
@@ -72,7 +73,7 @@ npx suss contract --from openapi \
   -o summaries/stripe.json
 ```
 
-One summary per operation. Each carries:
+One summary per operation. Each one has:
 - Method + path
 - Inputs for every declared parameter (path, query, header, cookie)
   + request body
@@ -114,7 +115,8 @@ Typical findings:
   delete the branch.
 - **lowConfidence**: your client branches on something the
   analyzer can't decompose (dynamic predicate, complex chain).
-  Informational; means the finding below it may be incomplete.
+  It's informational, and it means the finding below it may be
+  incomplete.
 
 ## Handling path mismatches
 
@@ -135,22 +137,23 @@ didn't match. Common root causes:
 
 - **Base URL prefix**: your client hits `/v1/users/123` but the
   spec declares `/users/{id}` (no `/v1`). The axios pack doesn't
-  strip base URLs automatically; fix by either matching the spec's
-  path with a leading prefix, or by normalizing before extraction.
+  strip base URLs automatically. Fix it by either matching the
+  spec's path with a leading prefix, or by normalizing before
+  extraction.
 - **Encoded segments**, `/search/{q}` vs
-  `` axios.get(`/search/${encodeURIComponent(q)}`) ``, parsed the
-  same, so this isn't usually a problem.
+  `` axios.get(`/search/${encodeURIComponent(q)}`) ``. suss parses
+  both the same way, so this isn't usually a problem.
 - **Path as a parameter, not a literal**: if you do
   `axios.get(url)` where `url` is a parameter, the pack can't see
-  the path. Wrapper-expansion handles one hop; deeper indirection
+  the path. Wrapper expansion handles one hop, and anything deeper
   doesn't pair automatically.
 
 ## Pair against a subset
 
 Sometimes you only use a slice of a large vendor spec (you hit 5
-of Stripe's 200 endpoints). Run the full pair, unmatched
-provider summaries land in `unmatched.providers` and don't fail
-the build. The [CI guide](/guides/ci-integration) shows the
+of Stripe's 200 endpoints). Run the full pair. The provider
+summaries that don't match land in `unmatched.providers` and don't
+fail the build. The [CI guide](/guides/ci-integration) shows the
 `--fail-on error` default that makes this work without tuning.
 
 If you want to be strict about what's *in use*, filter the
@@ -163,8 +166,9 @@ jq '[.[] | select(.identity.boundaryBinding.semantics.path | test("^/v1/(charges
 npx suss check summaries/stripe-subset.json summaries/client.json
 ```
 
-Alternatively, commit a filter config as part of your CI setup;
-the filtering is pre-check so all the check flags still apply.
+Alternatively, commit a filter config as part of your CI setup.
+The filtering happens before the check, so all the check flags
+still apply.
 
 ## When to use this vs writing a contract test
 

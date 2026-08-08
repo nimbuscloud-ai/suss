@@ -3,14 +3,14 @@
 A small semi-naïve Datalog evaluator with stratified negation. This is
 the rules engine behind suss's derived program facts.
 
-## Why suss carries a Datalog engine
+## Why suss ships a Datalog engine
 
-Extraction keeps meeting problems that are naturally *fixpoints*: which
-functions are reachable from an entry point, what a bare `throw err`
-re-throw can actually raise (the union of what everything in the `try`
-block throws, transitively), how a wrapper-of-a-wrapper resolves to its
-underlying route. Expressed as rules over base facts, each analysis is
-a few auditable lines:
+Extraction keeps running into problems that are naturally *fixpoints*:
+which functions are reachable from an entry point, what a bare `throw
+err` re-throw can actually raise (the union of everything the `try`
+block throws, transitively), how a wrapper of a wrapper resolves to its
+underlying route. Write each of those as rules over base facts and it
+comes to a few lines you can check by reading them:
 
 ```ts
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
@@ -32,16 +32,16 @@ evaluate(db, [
 db.facts("reachable"); // [["main"], ["helper"], ["util"]]
 ```
 
-Termination and soundness are the engine's job, proven once. Negation
-(`notLit`) is *stratified*: a rule set with a negation cycle is a hard
-error at evaluation time, the property that makes rules safe to audit
-independently of any engine.
+Termination and soundness are the engine's job, and we prove them once.
+Negation (`notLit`) is *stratified*: a rule set with a negation cycle is
+a hard error at evaluation time, and that is what lets you check a rule
+on its own without thinking about the engine.
 
-Because rules are plain data (no DSL strings, no embedded code), the
-same rule set can later run on a faster external engine, and (the
-longer game) analyses written against fact shapes (`calls`, `throws`,
-`handles`, …) are language-independent: a second language adapter only
-has to emit the same facts.
+Because rules are plain data, with no DSL strings and no embedded code,
+the same rule set can later run on a faster external engine. Over the
+longer term, an analysis written against a set of facts (`calls`,
+`throws`, `handles`, and so on) does not depend on the language: a
+second language adapter only has to emit the same facts.
 
 ## Design constraints
 
@@ -54,35 +54,36 @@ has to emit the same facts.
 
 ## What it does to stay quick
 
-Semi-naïve iteration keeps per-round work proportional to newly derived
-facts rather than to everything known.
+Semi-naïve iteration keeps the work in each round proportional to the
+facts newly derived rather than to everything already known.
 
 Joins narrow before they scan. Once a literal has any term fixed, either
 written as a constant or bound by an earlier literal, the join looks the
-value up in a per-column index instead of walking the relation. A column
-gets indexed the first time something asks for it and stays current
-after that, so a relation nobody joins on that way carries no index.
+value up in a per-column index instead of walking the whole relation. A
+column gets indexed the first time something asks for it and stays up to
+date after that, so a relation nobody joins on that way never gets an
+index at all.
 
 `evaluate` picks up where it left off. Call it again with the same rules
-after adding facts and it seeds from the facts you added rather than
-starting the fixpoint over. Callers that interleave "add some facts, ask
-a question" get this without doing anything. Positive rules are monotone,
-so everything derived before still holds.
+after adding facts and it starts from the facts you added rather than
+redoing the whole fixpoint. Callers that go back and forth between
+adding facts and asking questions get this for free. Positive rules are
+monotone, so everything derived earlier still holds.
 
 Negated rules work differently. A new fact can make a negated literal
-stop matching, and the conclusion that rested on it has to go. So a
-re-run with negated rules takes back what the previous pass derived and
-works the answer out again from the base facts. Both paths leave the
-database holding the answer for the facts it has now.
+stop matching, and the conclusion that rested on it has to go. So when
+you re-run with negated rules, the engine throws away what the previous
+pass derived and works the answer out again from the base facts. Either
+way, the database ends up with the answer for the facts it has now.
 
 ## Deriving only what somebody asked for
 
 A rule set written for a whole program derives every conclusion its
-facts support, and a caller asking about one value reads a handful of
-them. `deriveOnDemand` rewrites the rules so the ones nobody is waiting
-on are never derived.
+facts support, and a caller who asks about one value reads only a
+handful of them. `deriveOnDemand` rewrites the rules so that conclusions
+nobody is waiting on never get derived.
 
-Name the relations that have to come out whole, and give each of them a
+List the relations that have to come out whole, and give each of them a
 rule that starts at a base relation you assert:
 
 ```ts
@@ -112,28 +113,28 @@ db.facts("answer"); // [["a", "b"], ["a", "c"]]
 db.facts("reaches"); // the chain from a, and nothing from m
 ```
 
-The rewrite is magic sets. Each derived relation gains a companion
-relation saying which of its rows something is waiting on, that
+The rewrite is magic sets. Each derived relation gets a companion
+relation that records which of its rows something is waiting on, that
 companion becomes a literal in the rule body, and demand travels down
-each body the way the join binds variables. A relation nothing asks for
-is not derived at all, so read back only the relations you named.
+each body the same way the join binds variables. A relation nothing asks
+for is not derived at all, so only read back the relations you listed.
 
-Two things this costs. The companion relations are stored like any
-other, at a few tuples per value asked about, so a caller asking about
-most of a program derives more rather than less. And negation is
-refused: a relation derived only where somebody asked is smaller than
-the one a negated literal was written against, which would make `not
-p(x)` match where it did not.
+This costs you two things. The companion relations are stored like any
+other, at a few tuples per value asked about, so a caller who asks about
+most of a program ends up deriving more rather than less. And the
+rewrite refuses negation: a relation derived only where somebody asked
+is smaller than the one a negated literal was written against, which
+would make `not p(x)` match where it should not.
 
 ### Taking a question back
 
 Demand is a fact, and a fact stays until somebody removes it. A caller
-that asks a thousand questions of one database derives over all thousand
-every time new facts arrive, so the last question costs a thousand
-questions.
+that asks a thousand questions of one database re-derives all thousand
+every time new facts arrive, so the last question costs as much as a
+thousand questions.
 
-`program.demandDriven` names the relations the rewrite restricts, and
-`clearRelations` empties them once an answer has been read:
+`program.demandDriven` lists the relations the rewrite restricts, and
+`clearRelations` empties them once you have read an answer:
 
 ```ts
 clearRelations(db, program.rules, [...program.demandDriven, "asked"]);
@@ -144,19 +145,19 @@ db.facts("reaches"); // the chain from m, and nothing from a
 db.facts("answer"); // a's answers, which nothing took away, plus m's
 ```
 
-`retract` would send the next run back to the base facts, since a fact
+`retract` would send the next run back to the base facts, because a fact
 leaving the database can take away a conclusion drawn anywhere.
-`clearRelations` keeps the resume, because a caller passing these
-relations is saying nothing outside them was derived from them. That
-holds for the relations `deriveOnDemand` restricts: every one of them is
-derived under a demand fact, and only the relations you named as
-complete read from them. Those keep what they hold, which is the answers
-you already read.
+`clearRelations` lets the next run resume instead, because a caller who
+passes these relations is saying that nothing outside them was derived
+from them. That is true for the relations `deriveOnDemand` restricts:
+every one of them is derived under a demand fact, and only the relations
+you listed as complete read from them. Those keep what they already
+contain, which is the answers you have read.
 
-Keep the facts you add and the facts rules derive in separate relations.
-Taking a conclusion back cannot tell one from the other, and the
-separation is how Datalog is normally written anyway.
+Keep the facts you add and the facts the rules derive in separate
+relations. Taking a conclusion back cannot tell one from the other, and
+splitting them is how people normally write Datalog anyway.
 
-Extraction-scale fact sets are thousands of tuples. If that changes, the
-rule data model is the stable seam and this evaluator is the replaceable
-part.
+Extraction-scale fact sets run to thousands of tuples. If that changes,
+the rule data model is the part that stays and this evaluator is the
+part you replace.

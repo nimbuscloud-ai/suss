@@ -25,25 +25,25 @@ one the symptoms suggest.
    Apollo hook, and the pack looks for the library call itself.
 
 Number 1 was a stale duplicate of a predicate and is fixed. The
-remaining three are covered here, along with the part of 4 that shares
-a mechanism with 2.
+remaining three are below, along with the part of 4 that shares a
+mechanism with 2.
 
 ## What they have in common
 
 Each is a point where a stage meets something it cannot resolve and
 produces nothing, without recording that it produced nothing.
 
-The project already has a rule for this. Degradation is explicit,
-nothing is silently skipped, checkers report what was checked and what
-was not rather than only what was found. The rule is enforced inside
-the extractor: opaque predicates keep their source text, `detectGaps`
-runs both directions, the Lambda pack emits `recognized-not-http` units
-so a declared handler is never dropped without a record.
+We already have a rule for this. Degradation is explicit, nothing is
+silently skipped, and checkers report what was checked and what was not
+rather than only what was found. The extractor enforces that rule
+inside itself: opaque predicates keep their source text, `detectGaps`
+runs both directions, and the Lambda pack emits `recognized-not-http`
+units so a declared handler is never dropped without a record.
 
-It is not enforced at the seams between stages. Bootstrap to discovery,
-terminal to helper, pairing to checker. At each of those, one stage
-returns an empty result and the next cannot tell "there was nothing
-there" from "I could not look."
+Nothing enforces it at the seams between stages: bootstrap to
+discovery, terminal to helper, and pairing to checker. At each of
+those, one stage returns an empty result and the next cannot tell
+"there was nothing there" from "I could not look."
 
 For a tool whose output is a report about someone's code, that is the
 failure mode with the highest cost. A crash gets reported. An
@@ -56,13 +56,13 @@ error-free report gets believed.
 The CLI could work out why extraction returned nothing: re-read the
 tsconfig, re-check the gates, report. That means a second copy of the
 pre-filter's logic. A second copy of that logic drifting from the first
-is what caused failure 1, where `lazyProjectInit.ts` carried an
-outdated `packIsUngated`. So the accounting is produced by the pipeline
-and carried out to the CLI.
+is what caused failure 1, where `lazyProjectInit.ts` had an outdated
+`packIsUngated` in it. So the pipeline produces the accounting and
+hands it out to the CLI.
 
 The seam already exists. `TypeScriptAdapterConfig` has `onTiming` and
 `onCacheDiagnostic`, each a per-run report the adapter fills and the
-CLI renders. A third of the same shape adds no new concept.
+CLI renders. A third one of the same kind adds no new concept.
 
 ### What it records
 
@@ -84,15 +84,15 @@ the module does not resolve" are different problems with different
 fixes, and today both present as zero. One `ts.resolveModuleName` call
 per gate separates them, and turns the Apollo case from silence into a
 sentence: the `@apollo/client` gate matched files, the specifier does
-not resolve from this tsconfig, install dependencies. That covers the
-undocumented prerequisite that packs relying on symbol resolution need
-the target's dependencies installed while packs relying on textual
+not resolve from this tsconfig, install dependencies. That also covers
+an undocumented prerequisite: packs that rely on symbol resolution need
+the target's dependencies installed, and packs that rely on textual
 gates do not.
 
 ### Rendering
 
-Quiet on the happy path. When the summary count is zero, print the
-funnel and name the stage where it reached zero. `--explain` prints it
+It stays quiet on the happy path. When the summary count is zero, print
+the funnel and say which stage the count reached zero at. `--explain` prints it
 always. `--fail-on-empty` gives CI a gate, since a project may
 legitimately have no boundaries and the default exit code should not
 assume otherwise.
@@ -104,9 +104,9 @@ printed string. Other consumers want it.
 
 ### Why the pack was able to guess
 
-Discovery patterns can bind to an import. `DiscoveryPattern` carries
-`requiresImport`, and a match like `graphqlHookCall` carries
-`importModule`, so discovery can say "only if this came from the
+Discovery patterns can bind to an import. `DiscoveryPattern` has a
+`requiresImport` field, and a match like `graphqlHookCall` has an
+`importModule` field, so discovery can say "only if this came from the
 library."
 
 Terminal patterns cannot. The vocabulary is
@@ -125,19 +125,19 @@ same-module helper it "declares the envelope its name implies rather
 than resolving the helper body." It knew it was matching project-local
 code and encoded an argument order anyway.
 
-The vocabulary gap made the failure possible. The pack decision made it
-certain. Fixing only the pack leaves the next pack free to repeat it.
+The vocabulary gap made the failure possible. The pack's decision made
+it certain. Fixing only the pack leaves the next pack free to repeat it.
 
 ### Two changes, doing different jobs
 
-**Origin binding on terminal matches.** Add the same import binding
-terminals already lack and discovery already has. A pack can then say
+**Origin binding on terminal matches.** Give terminals the same import
+binding that discovery already has and they lack. A pack can then say
 "the library's own `json`", and a same-named local helper stops
 matching.
 
 On its own this yields zero terminals where it previously yielded
-inverted ones. Better, because silence beats a wrong answer, and not
-sufficient.
+inverted ones. That is better, because silence beats a wrong answer,
+and it is not enough on its own.
 
 **Resolution through in-project callees.** When a return expression
 calls a function defined in the project, resolve the declaration, bind
@@ -172,13 +172,13 @@ so every function reachable from a discovered unit becomes a
 wrote were these, and the response helper was among them. Nothing
 consumes them.
 
-So "resolve the helper" has two possible shapes:
+So "resolve the helper" has two possible forms:
 
 **Inline.** Walk to the declaration at each call site and extract from
 there, the way `astResolve.ts` already resolves shapes through
 identifiers, destructurings, and single-return calls.
 
-**By reference.** The caller's terminal names the helper's unit, and
+**By reference.** The caller's terminal points at the helper's unit, and
 assembly inlines that unit's transitions with arguments bound to
 parameters.
 
@@ -192,19 +192,19 @@ By reference is better in the long run:
 - A helper in another workspace package is already a unit if that
   package was extracted. Inline resolution needs the file in the same
   ts-morph project.
-- It is where transitive recognition has to live. If a unit carries a
+- It is where transitive recognition has to live. If a unit has a
   boundary binding, a caller that inlines it can inherit that binding,
   which is the answer to the local-wrapper case. Inline resolution has
   nowhere to put that.
 
-It also carries the risk: a four-branch helper inlined at twenty call
+It also brings the risk: a four-branch helper inlined at twenty call
 sites is eighty transitions. That needs a rule, something like inline
 when the helper's returns are envelopes the pack recognizes, keep a
 reference otherwise.
 
 **Build inline first**, because it is smaller and unblocks the terminal
-case. Shape it so the resolution step returns a memoized reference to a
-declaration rather than a raw `TypeShape`. A memo keyed on declaration
+case. Set it up so the resolution step returns a memoized reference to
+a declaration rather than a raw `TypeShape`. A memo keyed on declaration
 node is one step from a unit registry, which makes the by-reference
 version an extension rather than a rewrite.
 
@@ -216,16 +216,16 @@ version an extension rather than a rewrite.
 template summary and the handler summary are both `kind: "handler"`, so
 both are providers, so neither has a counterpart.
 
-`contracts.md` names a second axis and treats it as the organizing idea
-of the document: specification against derivation against observation.
-Pairing does not read it. So two summaries that agree on boundary key
-and role but differ in character have no relationship pairing can
-express, even though the document says what their relationship is and
-what severity a disagreement carries.
+`contracts.md` describes a second axis and treats it as the organizing
+idea of the document: specification against derivation against
+observation. Pairing does not read it. So two summaries that agree on
+boundary key and role but differ in character have no relationship
+pairing can express, even though the document says what their
+relationship is and how severe a disagreement is.
 
 ### Step zero: the character field does not exist yet
 
-The axis is in the design. The field that should carry it is
+The axis is in the design. The field that should record it is
 overloaded:
 
 ```ts
@@ -233,14 +233,15 @@ ConfidenceSource = "inferred_static" | "inferred_ai" | "declared" | "derived"
 ```
 
 The CloudFormation reader tags template-read routes `derived`. Code
-summaries carry `inferred_static`. `contracts.md` uses "derivation" for
+summaries use `inferred_static`. `contracts.md` uses "derivation" for
 the code side. `checkContractConsistency` uses `provenance === "derived"`
 to mean "produced by the same source as the transitions, so comparing
 them is tautological."
 
-Three meanings, one word, and one of them is close to the opposite of
-another. Dispatching on this as it stands produces a checker that is
-confident about which side is the specification and wrong. Settle it
+That is three meanings for one word, and one of them is close to the
+opposite of another. Dispatching on this field as it is today produces
+a checker that is confident about which side is the specification and
+wrong. Settle it
 first: either add a separate `character` field, or correct the
 taxonomy and update the readers.
 
@@ -284,7 +285,7 @@ It works only where one pack owns both sides. An OpenAPI spec beside an
 Express app cannot be attached by the Express pack, which has no idea
 the spec exists. And it leaves `suss contract --from <source>` emitting
 summaries with nowhere to go, which is the state that produced
-`Paired 0` in the first place. Seven contract readers sit in that
+`Paired 0` in the first place. Seven contract readers are in that
 position for the same reason.
 
 ### Staging
@@ -297,17 +298,19 @@ which is the thread through all three parts.
 
 ## Sequence
 
-1. **Extraction diagnostics.** Hours of work. First, because no result
-   from the other two is trustworthy while silence stays ambiguous.
-2. **Gap on unresolved in-project helpers.** Small. Stops the
-   wrong-at-high-confidence output before the resolution work lands.
-3. **Origin binding on terminal matches.** Stops packs asserting
+1. **Extraction diagnostics.** Hours of work. It goes first, because no
+   result from the other two is trustworthy while silence stays
+   ambiguous.
+2. **Gap on unresolved in-project helpers.** This one is small. It
+   stops the wrong-at-high-confidence output before the resolution work
+   lands.
+3. **Origin binding on terminal matches.** This stops packs asserting
    conventions over user code.
 4. **Inline helper resolution.** The primitive item 6 needs.
 5. **Character field, then the conformance axis.**
-6. **Transitive recognition on the discovery side.** The wrapper case.
-   Largest of these, and it should reuse item 4's resolution primitive
-   rather than growing a second one.
+6. **Transitive recognition on the discovery side.** This is the
+   wrapper case. It is the largest of these, and it should reuse item
+   4's resolution primitive rather than growing a second one.
 
 ## Open questions
 
