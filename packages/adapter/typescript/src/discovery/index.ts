@@ -8,6 +8,7 @@ import { discoverDecoratedRoutes } from "./decoratedRoute.js";
 import { discoverFileConventions } from "./fileConvention.js";
 import { discoverGraphqlHookCalls } from "./graphqlHookCall.js";
 import { discoverGraphqlImperativeCalls } from "./graphqlImperativeCall.js";
+import { discoverJsxElementRoutes } from "./jsxElementRoute.js";
 import { discoverNamedExports } from "./namedExport.js";
 import { discoverPackageExports } from "./packageExports.js";
 import { discoverPackageImports } from "./packageImport.js";
@@ -119,6 +120,14 @@ function runPattern(
   }
   if (pattern.match.type === "decoratedRoute") {
     return discoverDecoratedRoutes(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
+  }
+  if (pattern.match.type === "jsxElementRoute") {
+    return discoverJsxElementRoutes(
       sourceFile,
       pattern.match,
       pattern.kind,

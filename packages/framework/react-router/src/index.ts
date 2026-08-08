@@ -1,6 +1,6 @@
 // @suss/framework-react-router — PatternPack for React Router
 
-import type { PatternPack } from "@suss/extractor";
+import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
 /**
  * Modules that export `json`, `data`, and `redirect`. The response
@@ -47,6 +47,41 @@ const HTTP_ERRORS_CODES: Record<string, number> = {
   BadGateway: 502,
   ServiceUnavailable: 503,
   GatewayTimeout: 504,
+};
+
+/**
+ * Modules the route element and the router factories come from. A
+ * project on v6 imports them from `react-router-dom` and one on v7
+ * from `react-router`, and both write the same declarations.
+ */
+const ROUTER_MODULES = ["react-router", "react-router-dom"];
+
+/**
+ * How React Router declares routes in the app itself, rather than in
+ * the file layout: a `Route` element carrying a path and the element
+ * it renders, nested inside other routes whose paths it joins, with an
+ * index route answering its parent's path. `createBrowserRouter` takes
+ * the same keys as an array of objects, nesting through `children`
+ * where the JSX form nests elements, and `createRoutesFromElements`
+ * turns the JSX form into that array.
+ *
+ * A navigation is a GET, which is what a client calling the same path
+ * pairs against.
+ */
+const JSX_ROUTES: Extract<
+  DiscoveryPattern["match"],
+  { type: "jsxElementRoute" }
+> = {
+  type: "jsxElementRoute",
+  importModule: ROUTER_MODULES,
+  routeElement: "Route",
+  pathAttribute: "path",
+  elementAttribute: "element",
+  indexAttribute: "index",
+  childrenAttribute: "children",
+  routeObjectFactories: ["createBrowserRouter"],
+  elementsFactories: ["createRoutesFromElements"],
+  method: "GET",
 };
 
 export interface ReactRouterPackOptions {
@@ -105,6 +140,15 @@ export function reactRouterFramework(
         match: { type: "namedExport", names: ["default"] },
         requiresImport: [],
       },
+      {
+        // The route tree the app declares in its own JSX, which is how
+        // most React Router apps say what serves which URL. Gated on
+        // the router import, since the whole pattern is written with
+        // names that come from it.
+        kind: "component",
+        match: JSX_ROUTES,
+        requiresImport: ROUTER_MODULES,
+      },
     ],
 
     terminals: [
@@ -155,6 +199,15 @@ export function reactRouterFramework(
           statusCode: { from: "argument", position: 1 },
           defaultStatusCode: 302,
         },
+      },
+      {
+        // What a routed component answers with. The route says which
+        // URL reaches this component, and the JSX it returns is what
+        // that URL renders, so the pack reads both rather than
+        // reporting the route and nothing behind it.
+        kind: "render",
+        match: { type: "jsxReturn" },
+        extraction: {},
       },
       {
         // Loaders return data directly

@@ -369,6 +369,78 @@ export type DiscoveryMatch =
     }
   | {
       /**
+       * Routes declared as JSX elements, the way client-side routers
+       * write them: an element imported from the router library whose
+       * attributes carry a URL path pattern and the element it
+       * renders. Covers the tree form (route elements nested inside
+       * one another, child paths joining the parent's, index routes
+       * taking the parent's path) and the object-array form (a
+       * factory call whose first argument is an array of route
+       * objects using the same property names).
+       *
+       * The pack names what its library exports: the route element,
+       * the path / element / index attributes, and any factories that
+       * take a route-object array. The adapter walks JSX and arrays;
+       * it knows none of those names itself.
+       *
+       * Each route with a readable path becomes one unit whose target
+       * is the component the element attribute references, resolved
+       * only when the reference is a single identifier. A route whose
+       * component cannot be read is still reported, as a boundary with
+       * nothing behind it. A route whose path cannot be read claims no
+       * path and says so in a gap instead of guessing.
+       */
+      type: "jsxElementRoute";
+      /**
+       * Module(s) the route element and factories must be imported
+       * from. Exact module specifiers, matched against the file's
+       * import declarations; aliased imports are followed.
+       */
+      importModule: string | string[];
+      /** The route element's exported name. */
+      routeElement: string;
+      /** Attribute holding the route's path pattern. */
+      pathAttribute: string;
+      /** Attribute holding the JSX the route renders. */
+      elementAttribute: string;
+      /**
+       * Attribute marking an index route, which renders at its
+       * parent's path. Unset means the library has no index routes.
+       */
+      indexAttribute?: string;
+      /**
+       * Property holding the routes nested under a route object, which
+       * is how the object form writes what the JSX form writes as
+       * nesting. The paths compose the same way in both. Unset means
+       * the library's route objects do not nest.
+       */
+      childrenAttribute?: string;
+      /**
+       * Factory functions whose first argument is an array of route
+       * objects keyed by the same three attribute names. The array is
+       * read where it is written or through the same value resolution
+       * other discovery uses, so a one-hop `const` binding reads the
+       * same as an inline literal.
+       */
+      routeObjectFactories?: string[];
+      /**
+       * Factory functions that turn JSX route elements into the route
+       * objects the library consumes. The elements themselves are read
+       * by the JSX walk wherever they appear, so a route-object
+       * factory handed one of these calls has nothing further to say;
+       * naming them keeps that case from being reported as an
+       * unreadable route array.
+       */
+      elementsFactories?: string[];
+      /**
+       * HTTP method recorded on each produced route binding. A page
+       * route answers navigations, and the pack states which method
+       * those use rather than the adapter assuming one.
+       */
+      method: string;
+    }
+  | {
+      /**
        * Consumer side of the package-export boundary. Scans source
        * files for imports of the named packages and records every
        * call site, emitting one `caller`-kind unit per enclosing

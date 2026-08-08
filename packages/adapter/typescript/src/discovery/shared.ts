@@ -160,6 +160,14 @@ export interface DiscoveredUnit {
    * per-sub-unit `metadata` the `subUnits` hook carries).
    */
   metadata?: Record<string, unknown>;
+  /**
+   * What a discovery handler could not read about the boundary this
+   * unit sits on. A route whose path is computed is still a route
+   * somebody declared, so the unit goes out with no path claimed and
+   * this sentence saying which part went unread. Carried onto the
+   * summary as an `unreadOutcome` gap.
+   */
+  unreadBinding?: string;
 }
 
 /**
