@@ -177,6 +177,49 @@ npx suss extract -p apps/web/tsconfig.json -f axios -o summaries/consumer.json
 npx suss extract -p tsconfig.json -f ts-rest -f axios -o summaries/all.json
 ```
 
+## A Python or Ruby project
+
+There is no tsconfig to point at, so point suss at the directory. It
+works out which language it is reading from what the directory holds
+(`pyproject.toml`, `requirements.txt`, a `Gemfile`, or the source
+files themselves), and `--lang` says so outright when you would rather
+not leave it to that.
+
+```bash
+# FastAPI and flask-restx routes
+npx suss extract --lang python --dir services/orders -f fastapi -o summaries/orders.json
+
+# graphql-ruby fields
+npx suss extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/schema.json
+```
+
+Two of these packs need a sentence about your project before they can
+read it, which the built-in TypeScript packs never do. graphql-ruby
+needs the directory a `mutation:` or `resolver:` field's class is
+looked up under, and it reads nothing without one:
+
+```json
+{ "root": "app/graphql" }
+```
+
+flask-restx and fastapi take an optional `wrapperModules`, the modules
+your own code re-exports the route decorator or the router constructor
+from. The library's own module is always read, so leave this out if
+your routes import from it directly:
+
+```json
+{ "wrapperModules": ["myapp.wrappers.restx"] }
+```
+
+Write either to a JSON file and name it on the flag:
+`-f flask-restx=suss.flask-restx.json`.
+
+If your service imports a shared framework from a git submodule, check
+the submodule out before extracting. suss reads `.gitmodules`, treats
+each submodule as part of this project, and resolves imports into it;
+an empty one gets a line saying so, because the routes that depend on
+it would otherwise go missing without explanation.
+
 ## Pair them
 
 ```bash

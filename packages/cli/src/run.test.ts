@@ -3,12 +3,22 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runCli, USAGE } from "./run.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+);
+const pythonFixture = path.join(repoRoot, "fixtures", "python-webapp");
+const rubyFixture = path.join(repoRoot, "fixtures", "ruby-graphql");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -237,6 +247,54 @@ describe("runCli — extract", () => {
     expect(io.stderr).toContain("Timing:");
     const written = JSON.parse(fs.readFileSync(outFile, "utf8"));
     expect(Array.isArray(written)).toBe(true);
+  });
+
+  it("rejects a --lang nobody has an adapter for, and says which it takes", async () => {
+    const { exit, io } = await capture(() =>
+      runCli(["extract", "--lang", "perl", "-f", "express"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("python");
+  });
+
+  it("reads a Python project through --lang, and writes the summaries", async () => {
+    const outFile = path.join(tmpDir, "python.json");
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "--lang",
+        "python",
+        "--dir",
+        pythonFixture,
+        "-f",
+        "fastapi",
+        "-o",
+        outFile,
+      ]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain("Wrote");
+    const written = JSON.parse(fs.readFileSync(outFile, "utf8")) as Array<{
+      identity: { name: string };
+    }>;
+    expect(written.map((s) => s.identity.name)).toContain("read_item");
+  });
+
+  it("says what a pack needs rather than throwing a stack at somebody", async () => {
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "--dir",
+        rubyFixture,
+        "-f",
+        "graphql-ruby",
+        "-o",
+        path.join(tmpDir, "ruby.json"),
+      ]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("needs `root`");
+    expect(io.stderr).not.toContain("    at ");
   });
 });
 

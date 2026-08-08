@@ -305,6 +305,16 @@ async function offerFirstRun(
   }
 
   for (const command of commands) {
+    const missing = (command.needsConfig ?? []).filter(
+      (file) => !fs.existsSync(path.join(root, file)),
+    );
+    if (missing.length > 0) {
+      p.log.warn(
+        `Skipping \`${command.display}\`: write ${missing.join(", ")} first, then run it. A pack that needs one reads nothing without it.`,
+      );
+      continue;
+    }
+
     const progress = startProgress(command.display);
     const result = await run(command.bin, command.args, root, progress.saw);
     // `check` exits non-zero when it finds something, which is the tool
@@ -328,6 +338,12 @@ interface RunnableCommand {
   display: string;
   showOutput?: boolean;
   findingsAreExpected?: boolean;
+  /**
+   * Config files a pack in this command cannot run without, relative to
+   * where init was pointed. Running it before somebody writes them only
+   * produces the pack's own complaint.
+   */
+  needsConfig?: string[];
 }
 
 function runCommandsFor(target: Target): RunnableCommand[] {
@@ -336,19 +352,38 @@ function runCommandsFor(target: Target): RunnableCommand[] {
   const out = (name: string) => `summaries/${prefix}${name}.json`;
 
   const code = target.report.suggestions.filter((s) => s.kind !== "contract");
-  if (code.length > 0) {
+  const languages = [...new Set(code.map((s) => s.language ?? "typescript"))];
+  for (const language of languages) {
+    // One command per language: a pack is written against one
+    // language's adapter, so a Python pack and a TypeScript one cannot
+    // ride in the same run.
     const args = ["extract"];
     if (target.directory !== ".") {
       args.push("--dir", target.directory);
     }
-    for (const item of code) {
-      args.push("-f", item.name);
+    if (language !== "typescript") {
+      args.push("--lang", language);
     }
-    args.push("-o", out("code"));
+    for (const item of code.filter(
+      (s) => (s.language ?? "typescript") === language,
+    )) {
+      args.push(
+        "-f",
+        item.configuration === undefined
+          ? item.name
+          : `${item.name}=${item.configuration.file}`,
+      );
+    }
+    args.push("-o", out(languages.length === 1 ? "code" : language));
+    const needsConfig = code
+      .filter((s) => (s.language ?? "typescript") === language)
+      .filter((s) => s.configuration?.required === true)
+      .map((s) => path.join(target.directory, s.configuration?.file ?? ""));
     commands.push({
       bin: "npx",
       args: ["suss", ...args],
       display: `suss ${args.join(" ")}`,
+      ...(needsConfig.length > 0 ? { needsConfig } : {}),
     });
   }
 

@@ -1,0 +1,6 @@
+# What this fixture's routes are written against. The wrapper module
+# under myapp/wrappers re-exports the flask-restx route decorator, which
+# is why the pack needs to be told about it.
+fastapi>=0.110
+flask-restx>=1.3
+pydantic>=2.0

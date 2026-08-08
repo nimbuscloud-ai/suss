@@ -58,6 +58,15 @@ describe("graphqlRubyFramework", () => {
     ).toBe(false);
   });
 
+  it("refuses to build without a root, and says what a root is", () => {
+    // A caller with no types in front of it (the CLI, holding a config
+    // somebody wrote by hand) can arrive with nothing. Reading half a
+    // schema and saying nothing would be worse than refusing.
+    const withoutOptions = graphqlRubyFramework as unknown as () => unknown;
+    expect(() => withoutOptions()).toThrow(/needs `root`/);
+    expect(() => graphqlRubyFramework({ root: "" })).toThrow(/app\/graphql/);
+  });
+
   it("is the module's default export too", async () => {
     const mod = await import("./index.js");
     expect(mod.default).toBe(graphqlRubyFramework);
