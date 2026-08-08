@@ -81,6 +81,9 @@ export function flaskRestxFramework(
         // Flask returns 200 from a resource method that returns a value
         // and sets no status of its own.
         defaultStatusCode: 200,
+        // Flask reads a status out of `return body, 201`, so the 200
+        // above only stands when the body writes no status of its own.
+        statusFromReturnedTuple: true,
       },
     ],
   };

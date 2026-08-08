@@ -85,6 +85,32 @@ const fastapiWithInjection: PythonPack = {
   ],
 };
 
+const flaskRestxWithReturnStatus: PythonPack = {
+  ...flaskRestxLike,
+  discovery: [
+    {
+      ...flaskRestxLike.discovery[0],
+      statusFromReturnedTuple: true,
+    } as PythonPack["discovery"][number],
+  ],
+};
+
+/** The route source for one resource method body, wrapped in the decorator the test pack matches. */
+function resourceReturning(body: string[]): string {
+  return [
+    "from myapp.wrappers.restx import Namespace",
+    "",
+    'ns = Namespace("t", path="/t")',
+    "",
+    "",
+    '@ns.route("/thing")',
+    "class Thing(Resource):",
+    "    def get(self) -> dict:",
+    ...body.map((line) => `        ${line}`),
+    "",
+  ].join("\n");
+}
+
 async function unitsOf(source: string, packs: PythonPack[]) {
   const tree = await parsePython(source);
   const binding = bindModule(tree.rootNode);
@@ -483,6 +509,102 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     const units = await unitsOf(injected, [fastapiLike]);
     const createOrder = units.find((u) => u.identity.name === "create_order");
     expect(createOrder?.parameters?.[0]?.role).toBe("requestBody");
+  });
+
+  it("takes the status a handler returns alongside its body", async () => {
+    const units = await unitsOf(resourceReturning(['return {"a": 1}, 201']), [
+      flaskRestxWithReturnStatus,
+    ]);
+    expect(
+      claimedStatusOf(units.find((u) => u.identity.name === "Thing.get")),
+    ).toEqual({ type: "literal", value: 201 });
+  });
+
+  it("takes the status off the front of a returned status string", async () => {
+    const units = await unitsOf(
+      resourceReturning(['return {"a": 1}, "203 NONAUTH"']),
+      [flaskRestxWithReturnStatus],
+    );
+    expect(
+      claimedStatusOf(units.find((u) => u.identity.name === "Thing.get")),
+    ).toEqual({ type: "literal", value: 203 });
+  });
+
+  it("takes the status from a return that also carries headers", async () => {
+    const units = await unitsOf(
+      resourceReturning(['return {"a": 1}, 202, {"X-Thing": "y"}']),
+      [flaskRestxWithReturnStatus],
+    );
+    expect(
+      claimedStatusOf(units.find((u) => u.identity.name === "Thing.get")),
+    ).toEqual({ type: "literal", value: 202 });
+  });
+
+  it("falls back to the library default when no return writes a status", async () => {
+    const units = await unitsOf(resourceReturning(['return {"a": 1}']), [
+      flaskRestxWithReturnStatus,
+    ]);
+    expect(
+      claimedStatusOf(units.find((u) => u.identity.name === "Thing.get")),
+    ).toEqual({ type: "literal", value: 200 });
+  });
+
+  it("claims no status when the branches return different ones", async () => {
+    const units = await unitsOf(
+      resourceReturning([
+        "if x:",
+        '    return {"a": 1}, 201',
+        'return {"a": 2}',
+      ]),
+      [flaskRestxWithReturnStatus],
+    );
+    const unit = units.find((u) => u.identity.name === "Thing.get");
+    expect(claimedStatusOf(unit)).toBeNull();
+    expect(unreadTextOf(unit)).toContain("more than one status");
+  });
+
+  it("claims no status when a returned status is not a literal", async () => {
+    const units = await unitsOf(
+      resourceReturning(['return {"a": 1}, some_status()']),
+      [flaskRestxWithReturnStatus],
+    );
+    const unit = units.find((u) => u.identity.name === "Thing.get");
+    expect(claimedStatusOf(unit)).toBeNull();
+    expect(unreadTextOf(unit)).toContain("cannot resolve to a number");
+  });
+
+  it("leaves a nested function's return out of the route's own status", async () => {
+    const units = await unitsOf(
+      resourceReturning([
+        "def helper():",
+        '    return {"b": 2}, 500',
+        "",
+        'return {"a": 1}, 201',
+      ]),
+      [flaskRestxWithReturnStatus],
+    );
+    expect(
+      claimedStatusOf(units.find((u) => u.identity.name === "Thing.get")),
+    ).toEqual({ type: "literal", value: 201 });
+  });
+
+  it("treats a bare return as writing no status of its own", async () => {
+    const units = await unitsOf(
+      resourceReturning(["if x:", "    return", 'return {"a": 1}']),
+      [flaskRestxWithReturnStatus],
+    );
+    expect(
+      claimedStatusOf(units.find((u) => u.identity.name === "Thing.get")),
+    ).toEqual({ type: "literal", value: 200 });
+  });
+
+  it("keeps the library default for a pack that does not read a returned status", async () => {
+    const units = await unitsOf(resourceReturning(['return {"a": 1}, 201']), [
+      flaskRestxLike,
+    ]);
+    expect(
+      claimedStatusOf(units.find((u) => u.identity.name === "Thing.get")),
+    ).toEqual({ type: "literal", value: 200 });
   });
 
   it("reads Starlette's typed converters and drops the converter from the canonical path", async () => {

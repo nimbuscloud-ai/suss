@@ -51,6 +51,7 @@ describe("flaskRestxFramework", () => {
           },
         },
         defaultStatusCode: 200,
+        statusFromReturnedTuple: true,
       },
     ]);
   });

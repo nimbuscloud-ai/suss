@@ -45,6 +45,13 @@ export interface RouteConventions {
   pathRepeatedSlashes?: PathRepeatedSlashes;
   /** The status the library returns for a declared response when the route does not give one. Library-defined. */
   defaultStatusCode?: number;
+  /**
+   * Set it only when the library reads a status out of the tuple a handler
+   * returns, which is what Flask does with `return body, 201`. Without it
+   * the library default applies whatever the body returns, and a route
+   * that sets its own status would be reported at the default.
+   */
+  statusFromReturnedTuple?: boolean;
   /** Unset means the library has no router mounting, and a route's decorator path stands as written. */
   routerComposition?: RouterComposition;
 }
