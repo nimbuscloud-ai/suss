@@ -65,15 +65,15 @@ npx suss check --dir summaries/
 Over this repo's own `fixtures/python-webapp`, that prints:
 
 ```
-fixtures/python-webapp/myapp/fastapi_app.py
-├─ GET /items/{item_id}  (fastapi handler | line 708 | confidence: low)
+myapp/fastapi_app.py
+├─ GET /items/{item_id}  (fastapi handler | line 26 | confidence: low)
 │      -> 200 TodoResponse
 │
-└─ POST /items  (fastapi handler | line 839 | confidence: low)
+└─ POST /items  (fastapi handler | line 31 | confidence: low)
        -> 201 TodoResponse
 
-fixtures/python-webapp/myapp/routes/todos.py
-├─ GET /todos  (flask-restx handler | line 78 | confidence: low)
+myapp/routes/todos.py
+├─ GET /todos  (flask-restx handler | line 6 | confidence: low)
 │
 │      !! Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here
 ```
@@ -81,14 +81,6 @@ fixtures/python-webapp/myapp/routes/todos.py
 The FastAPI routes carry the status and shape their decorators declare.
 The flask-restx ones carry the method and path, and say plainly that
 nothing was read from the body.
-
-Both line numbers in that block are wrong, and they are printed here as
-the command printed them. A Python summary records a byte offset where
-`inspect` reads a line number, so `line 708` points past the end of a
-32-line file and `line 78` lands in the middle of a token in a 10-line
-one. Tracked as
-[#215](https://github.com/nimbuscloud-ai/suss/issues/215). Until it is
-fixed, find the route by its method and path rather than by the number.
 
 What the command reads, and from where:
 

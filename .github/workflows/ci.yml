@@ -173,6 +173,17 @@ jobs:
         if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:fuzz
 
+      # The built binary, run the way a person runs it, over the
+      # fixture projects. Everything else in the suite calls a function
+      # one layer below the command, which is how a pack recovering
+      # every route and spelling every path wrong got through with the
+      # whole build green. Three seconds, so it runs on every pull
+      # request rather than nightly, and it runs before the wider suite
+      # because it fails on the thing a person would notice first.
+      - name: Acceptance journeys
+        if: steps.diff.outputs.docs_only != 'true'
+        run: npm run test:acceptance
+
       - name: Test
         if: steps.diff.outputs.docs_only != 'true'
         run: npm run test:coverage

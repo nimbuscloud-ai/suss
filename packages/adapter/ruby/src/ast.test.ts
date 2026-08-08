@@ -33,9 +33,19 @@ async function firstCall(source: string): Promise<RbNode> {
 }
 
 describe("rangeOf", () => {
-  it("carries the node's start and end byte offsets", async () => {
+  it("counts lines from one, the way the rest of the IR does", async () => {
     const call = await firstCall("field :id, ID, null: false\n");
-    expect(rangeOf(call)).toEqual({ start: 0, end: 26 });
+    expect(rangeOf(call)).toEqual({ start: 1, end: 1 });
+  });
+
+  it("stays inside the file for a declaration far down it", async () => {
+    // tree-sitter counts bytes. Handing the byte offset back put
+    // `line 348` on a 12-line file, because `suss inspect` reads this
+    // as a line number and every other adapter fills it with one.
+    const call = await firstCall(
+      `${"\n".repeat(20)}field :id, ID, null: false\n`,
+    );
+    expect(rangeOf(call).start).toBe(21);
   });
 });
 

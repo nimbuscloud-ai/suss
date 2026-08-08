@@ -100,11 +100,20 @@ describe("field / fields / isType / rangeOf / bodyStatements", () => {
     expect(isType(root, "block")).toBe(false);
   });
 
-  it("reports a node's byte range", async () => {
+  it("counts lines from one, the way the rest of the IR does", async () => {
     const root = await moduleOf("x = 1\n");
-    const range = rangeOf(root);
-    expect(range.start).toBe(0);
-    expect(range.end).toBeGreaterThan(0);
+    expect(rangeOf(root).start).toBe(1);
+  });
+
+  it("stays inside the file for a definition far down it", async () => {
+    // tree-sitter counts bytes. Handing the byte offset back put
+    // `line 708` on a 32-line file, because `suss inspect` reads this
+    // as a line number and every other adapter fills it with one.
+    const root = await moduleOf(
+      `${"# padding\n".repeat(20)}def f():\n    pass\n`,
+    );
+    const definition = root.namedChild(root.namedChildCount - 1) as never;
+    expect(rangeOf(definition).start).toBe(21);
   });
 
   it("lists a body's top-level statements", async () => {

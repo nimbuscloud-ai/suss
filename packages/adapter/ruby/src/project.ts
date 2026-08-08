@@ -75,7 +75,7 @@ export async function extractRubyProject(
       // adapter's v0 slice follows.
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
-      emitEntryFact(db, file, raw.identity.range);
+      emitEntryFact(db, file, raw.identity.range, raw.identity.name);
     }
   }
 

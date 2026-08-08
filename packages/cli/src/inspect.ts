@@ -18,6 +18,8 @@ import {
 } from "@suss/behavioral-ir";
 import { pairSummaries, summaryWithDefinitionsInlined } from "@suss/checker";
 
+import { UsageError } from "./usageError.js";
+
 import type {
   BehavioralSummary,
   Derivation,
@@ -1501,7 +1503,7 @@ export function parseSummaryFile(
       .slice(0, 10)
       .map((i) => `  - ${i.path.join(".") || "<root>"}: ${i.message}`)
       .join("\n");
-    throw new Error(`Invalid summary file ${filePath}:\n${issues}`);
+    throw new UsageError(`Invalid summary file ${filePath}:\n${issues}`);
   }
   return result.data;
 }

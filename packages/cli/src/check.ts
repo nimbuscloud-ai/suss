@@ -24,6 +24,7 @@ import {
   DEFAULT_SUPPRESSIONS_FILENAMES,
   loadSuppressionsOrEmpty,
 } from "./suppressionsLoader.js";
+import { UsageError } from "./usageError.js";
 
 import type {
   BehavioralSummary,
@@ -132,7 +133,7 @@ export function checkDir(
 ): CheckResult & { result: CheckAllResult } {
   const resolved = path.resolve(options.dir);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-    throw new Error(
+    throw new UsageError(
       `No directory at ${resolved}. Pass the folder holding the summary files you wrote with \`suss extract -o\`.`,
     );
   }
@@ -145,7 +146,7 @@ export function checkDir(
       (f) => f.endsWith(".json") && !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
     );
   if (files.length === 0) {
-    throw new Error(
+    throw new UsageError(
       `${resolved} has no JSON files in it. Write summaries there first, for example: suss extract -p tsconfig.json -f express -o ${path.join(options.dir, "api.json")}`,
     );
   }
@@ -395,12 +396,12 @@ function meetsThreshold(findings: Finding[], failOn: FailOn): boolean {
 function readSummaries(file: string): BehavioralSummary[] {
   const resolved = path.resolve(file);
   if (!fs.existsSync(resolved)) {
-    throw new Error(`No file at ${resolved}.`);
+    throw new UsageError(`No file at ${resolved}.`);
   }
   const parsed = JSON.parse(fs.readFileSync(resolved, "utf-8")) as unknown;
   const result = safeParseSummaries(parsed);
   if (!result.success) {
-    throw new Error(
+    throw new UsageError(
       `suss could not read ${resolved} as summaries. It should be the output of \`suss extract\` or \`suss contract\`. What did not fit:\n${formatParseIssues(result.error.issues)}`,
     );
   }

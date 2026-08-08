@@ -3,22 +3,22 @@
     "packages": 44,
     "packagesWithExports": 43,
     "exports": 374,
-    "internal": 1409,
-    "consumers": 584,
-    "pairs": 576
+    "internal": 1414,
+    "consumers": 586,
+    "pairs": 578
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 44,
       "internal": 42,
-      "consumers": 31
+      "consumers": 32
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 41,
       "internal": 25,
-      "consumers": 4
+      "consumers": 5
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
@@ -47,7 +47,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 217,
+      "internal": 222,
       "consumers": 150
     },
     "packages/client/apollo": {
