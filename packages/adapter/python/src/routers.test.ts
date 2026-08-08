@@ -12,6 +12,7 @@ import type {
   DecoratedClassRoute,
   DecoratedFunctionRoute,
   PythonPack,
+  RouterComposition,
 } from "./pack.js";
 
 /**
@@ -1321,5 +1322,532 @@ describe("blocks the mount walk does not enter", () => {
       ].join("\n"),
     );
     expect(pathOf(units, "read_item")).toBeNull();
+  });
+});
+describe("prefix composition through the object a mount is called on", () => {
+  const blueprintComposition: RouterComposition = {
+    routerConstructorName: "Namespace",
+    includeMethodName: "add_namespace",
+    prefixKeyword: "path",
+    mountPrefixEffect: "replaces",
+    constructorPrefixRequired: true,
+    constructorPrefixTrailingSlash: "trimmed",
+    noValuePrefix: "unstated",
+    mountObjectPrefix: {
+      prefixKeyword: "prefix",
+      carrier: {
+        importModule: ["flask"],
+        constructorName: "Blueprint",
+        argumentIndex: 0,
+        prefixKeyword: "url_prefix",
+        handoffMethodName: "init_app",
+        registerMethodName: "register_blueprint",
+      },
+    },
+  };
+
+  const blueprintClassRoute: DecoratedClassRoute = {
+    ...namespaceClassRoute,
+    pathRepeatedSlashes: "merged",
+    routerComposition: blueprintComposition,
+  };
+
+  const blueprintLike: PythonPack = {
+    name: "flask-restx-blueprint-test",
+    protocol: "http",
+    discovery: [blueprintClassRoute],
+  };
+
+  /** The same composition on a pack that says nothing about repeated slashes. */
+  const keptSlashesLike: PythonPack = {
+    name: "flask-restx-kept-slashes-test",
+    protocol: "http",
+    discovery: [
+      { ...namespaceClassRoute, routerComposition: blueprintComposition },
+    ],
+  };
+
+  /** An app declaring one resource, with the lines building the `Api` and registering the blueprint left to the caller. */
+  const app = (lines: string[]) =>
+    [
+      "from flask import Blueprint, Flask",
+      "from flask_restx import Api, Namespace",
+      "",
+      ...lines,
+      'ns = Namespace("orders", path="/orders")',
+      "",
+      "",
+      '@ns.route("/<int:order_id>")',
+      "class OrderDetail:",
+      "    def get(self, order_id):",
+      "        return {}",
+      "",
+      "",
+      "api.add_namespace(ns)",
+      "",
+    ].join("\n");
+
+  async function pathFor(lines: string[]) {
+    const units = await unitsOf(app(lines), [blueprintLike]);
+    return pathOf(units, "OrderDetail.get");
+  }
+
+  async function reasonFor(lines: string[]) {
+    const units = await unitsOf(app(lines), [blueprintLike]);
+    expect(pathOf(units, "OrderDetail.get")).toBeNull();
+    return unreadTextOf(units[0]);
+  }
+
+  it("puts the blueprint's prefix in front of the namespace's path", async () => {
+    expect(
+      await pathFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "app.register_blueprint(bp)",
+      ]),
+    ).toBe("/api/v1/orders/{order_id}");
+  });
+
+  it("puts the Api's own prefix behind the blueprint's", async () => {
+    expect(
+      await pathFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "app = Flask(__name__)",
+        'api = Api(bp, prefix="/extra")',
+        "app.register_blueprint(bp)",
+      ]),
+    ).toBe("/api/v1/extra/orders/{order_id}");
+  });
+
+  it("serves a trailing slash on the blueprint's prefix at the merged path", async () => {
+    // The library concatenates the prefix as written, leaving the rule
+    // carrying two slashes, and Werkzeug answers that at the merged
+    // path and redirects the written one.
+    expect(
+      await pathFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1/")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "app.register_blueprint(bp)",
+      ]),
+    ).toBe("/api/v1/orders/{order_id}");
+  });
+
+  it("merges both doubled slashes when the blueprint's prefix and the Api's both trail", async () => {
+    expect(
+      await pathFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1/")',
+        "app = Flask(__name__)",
+        'api = Api(bp, prefix="/extra/")',
+        "app.register_blueprint(bp)",
+      ]),
+    ).toBe("/api/v1/extra/orders/{order_id}");
+  });
+
+  it("merges a doubled slash in front of a route declared on the Api itself", async () => {
+    const units = await unitsOf(
+      [
+        "from flask import Blueprint, Flask",
+        "from flask_restx import Api, Resource",
+        "",
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1/")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "app.register_blueprint(bp)",
+        "",
+        "",
+        '@api.route("/health")',
+        "class Health:",
+        "    def get(self):",
+        "        return {}",
+        "",
+      ].join("\n"),
+      [blueprintLike],
+    );
+    expect(pathOf(units, "Health.get")).toBe("/api/v1/health");
+  });
+
+  it("leaves a path alone for a library that does not merge repeated slashes", async () => {
+    // The pack that says nothing gets what its source composed, which
+    // is what FastAPI needs: Starlette serves the path as written.
+    const units = await unitsOf(
+      app([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1/")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "app.register_blueprint(bp)",
+      ]),
+      [keptSlashesLike],
+    );
+    expect(pathOf(units, "OrderDetail.get")).toBe("/api/v1//orders/{order_id}");
+  });
+
+  it("adds nothing for a blueprint that states no prefix", async () => {
+    expect(
+      await pathFor([
+        'bp = Blueprint("api", __name__)',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "app.register_blueprint(bp)",
+      ]),
+    ).toBe("/orders/{order_id}");
+  });
+
+  it.each([
+    ['url_prefix=""', 'url_prefix=""'],
+    ["url_prefix=None", "url_prefix=None"],
+    ["url_prefix=False", "url_prefix=False"],
+    ["url_prefix=0", "url_prefix=0"],
+  ])("adds nothing for a blueprint written %s", async (_name, written) => {
+    expect(
+      await pathFor([
+        `bp = Blueprint("api", __name__, ${written})`,
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "app.register_blueprint(bp)",
+      ]),
+    ).toBe("/orders/{order_id}");
+  });
+
+  it("adds nothing for an Api built on the app itself", async () => {
+    expect(await pathFor(["app = Flask(__name__)", "api = Api(app)"])).toBe(
+      "/orders/{order_id}",
+    );
+  });
+
+  it("adds nothing for an Api built with nothing to carry a prefix", async () => {
+    expect(await pathFor(['api = Api(title="Example")'])).toBe(
+      "/orders/{order_id}",
+    );
+  });
+
+  it("reads a blueprint handed over after the Api was built", async () => {
+    expect(
+      await pathFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "app = Flask(__name__)",
+        "api = Api()",
+        "api.init_app(bp)",
+        "app.register_blueprint(bp)",
+      ]),
+    ).toBe("/api/v1/orders/{order_id}");
+  });
+
+  /** A resource declared straight on the `Api` rather than on a namespace, which flask-restx serves off the Api's own default namespace. */
+  const declaredOnApi = (lines: string[]) =>
+    [
+      "from flask import Blueprint, Flask",
+      "from flask_restx import Api, Resource",
+      "",
+      ...lines,
+      "",
+      "",
+      '@api.route("/health")',
+      "class Health:",
+      "    def get(self):",
+      "        return {}",
+      "",
+    ].join("\n");
+
+  it("puts the blueprint's prefix in front of a route declared on the Api itself", async () => {
+    const units = await unitsOf(
+      declaredOnApi([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "app.register_blueprint(bp)",
+      ]),
+      [blueprintLike],
+    );
+    expect(pathOf(units, "Health.get")).toBe("/api/v1/health");
+  });
+
+  it("leaves a route declared on an Api that carries no prefix as written", async () => {
+    const units = await unitsOf(
+      declaredOnApi(["app = Flask(__name__)", "api = Api(app)"]),
+      [blueprintLike],
+    );
+    expect(pathOf(units, "Health.get")).toBe("/health");
+    expect(unreadTextOf(units[0])).not.toContain("The router this route");
+  });
+
+  it("abstains on a route declared on an Api whose prefix nobody can read", async () => {
+    const units = await unitsOf(
+      declaredOnApi([
+        "def computed():",
+        '    return "/api/v1"',
+        "",
+        "",
+        'bp = Blueprint("api", __name__, url_prefix=computed())',
+        "api = Api(bp)",
+      ]),
+      [blueprintLike],
+    );
+    expect(pathOf(units, "Health.get")).toBeNull();
+    expect(unreadTextOf(units[0])).toContain(
+      "is built from one whose prefix is not a string literal",
+    );
+  });
+
+  it("abstains when the Api is built from a call rather than a name", async () => {
+    expect(
+      await reasonFor([
+        "def make_blueprint():",
+        '    return Blueprint("api", __name__, url_prefix="/api/v1")',
+        "",
+        "",
+        "api = Api(make_blueprint())",
+      ]),
+    ).toContain(
+      "is mounted on an object that is built from something this reading cannot follow",
+    );
+  });
+
+  it("abstains when the Api is both built with a blueprint and handed one", async () => {
+    expect(
+      await reasonFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        'other = Blueprint("other", __name__, url_prefix="/api/v2")',
+        "api = Api(bp)",
+        "api.init_app(other)",
+      ]),
+    ).toContain(
+      "is mounted on an object that is built from more than one candidate",
+    );
+  });
+
+  it("abstains when the Api's own prefix is not a string literal", async () => {
+    expect(
+      await reasonFor([
+        "def computed():",
+        '    return "/extra"',
+        "",
+        "",
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "api = Api(bp, prefix=computed())",
+      ]),
+    ).toContain(
+      "is mounted on an object that states a prefix of its own that is not a string literal",
+    );
+  });
+
+  it("abstains when the blueprint's prefix is not a string literal", async () => {
+    expect(
+      await reasonFor([
+        "def computed():",
+        '    return "/api/v1"',
+        "",
+        "",
+        'bp = Blueprint("api", __name__, url_prefix=computed())',
+        "api = Api(bp)",
+      ]),
+    ).toContain(
+      "is mounted on an object that is built from one whose prefix is not a string literal",
+    );
+  });
+
+  it("abstains when the blueprint's name holds a second construction", async () => {
+    expect(
+      await reasonFor([
+        'bp = Blueprint("a", __name__, url_prefix="/api/v1")',
+        'bp = Blueprint("b", __name__, url_prefix="/api/v2")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "app.register_blueprint(bp)",
+      ]),
+    ).toContain(
+      "is mounted on an object that is built from one whose variable name holds a second construction",
+    );
+  });
+
+  it("abstains when the registration states a prefix of its own", async () => {
+    // The library reads `url_prefix=None` here as no override and
+    // `url_prefix=""` as one, so a written keyword says nothing on its
+    // own about where the routes land.
+    expect(
+      await reasonFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        'app.register_blueprint(bp, url_prefix="/elsewhere")',
+      ]),
+    ).toContain(
+      "is mounted on an object that is built from one registered under a prefix stated where it is registered",
+    );
+  });
+
+  it("abstains when the blueprint is registered inside another blueprint", async () => {
+    expect(
+      await reasonFor([
+        'outer = Blueprint("outer", __name__, url_prefix="/outer")',
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "outer.register_blueprint(bp)",
+        "app.register_blueprint(outer)",
+      ]),
+    ).toContain(
+      "is mounted on an object that is built from one registered inside another",
+    );
+  });
+
+  it("abstains when the blueprint is registered more than once", async () => {
+    expect(
+      await reasonFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
+        "app.register_blueprint(bp)",
+        "app.register_blueprint(bp)",
+      ]),
+    ).toContain(
+      "is mounted on an object that is built from one registered more than once",
+    );
+  });
+});
+
+describe("a blueprint prefix and the site the mount is written at", () => {
+  const blueprintLike: PythonPack = {
+    name: "flask-restx-blueprint-site-test",
+    protocol: "http",
+    discovery: [
+      {
+        ...namespaceClassRoute,
+        pathRepeatedSlashes: "merged",
+        routerComposition: {
+          ...namespaceClassRoute.routerComposition,
+          routerConstructorName: "Namespace",
+          includeMethodName: "add_namespace",
+          prefixKeyword: "path",
+          mountObjectPrefix: {
+            prefixKeyword: "prefix",
+            carrier: {
+              importModule: ["flask"],
+              constructorName: "Blueprint",
+              argumentIndex: 0,
+              prefixKeyword: "url_prefix",
+              handoffMethodName: "init_app",
+              registerMethodName: "register_blueprint",
+            },
+          },
+        },
+      },
+    ],
+  };
+
+  /** An app whose namespace and resource are fixed, with the lines that build and mount left to the caller. */
+  const app = (lines: string[]) =>
+    [
+      "from flask import Blueprint, Flask",
+      "from flask_restx import Api, Namespace",
+      "",
+      'ns = Namespace("orders", path="/orders")',
+      "",
+      "",
+      '@ns.route("/<int:order_id>")',
+      "class OrderDetail:",
+      "    def get(self, order_id):",
+      "        return {}",
+      "",
+      "",
+      ...lines,
+      "",
+    ].join("\n");
+
+  async function pathFor(lines: string[]) {
+    const units = await unitsOf(app(lines), [blueprintLike]);
+    return pathOf(units, "OrderDetail.get");
+  }
+
+  it("puts the blueprint's prefix in front of a mount written inside a factory", async () => {
+    expect(
+      await pathFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "api = Api(bp)",
+        "",
+        "",
+        "def create_app():",
+        "    app = Flask(__name__)",
+        "    api.add_namespace(ns)",
+        "    app.register_blueprint(bp)",
+        "    return app",
+      ]),
+    ).toBe("/api/v1/orders/{order_id}");
+  });
+
+  it("puts the blueprint's prefix in front of a mount written in a loop over a list", async () => {
+    expect(
+      await pathFor([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "api = Api(bp)",
+        "",
+        "",
+        "def create_app():",
+        "    app = Flask(__name__)",
+        "    for namespace in [ns]:",
+        "        api.add_namespace(namespace)",
+        "    app.register_blueprint(bp)",
+        "    return app",
+      ]),
+    ).toBe("/api/v1/orders/{order_id}");
+  });
+
+  it("reads the blueprint a factory builds beside the Api it builds", async () => {
+    expect(
+      await pathFor([
+        "def create_app():",
+        "    app = Flask(__name__)",
+        '    bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "    api = Api(bp)",
+        "    api.add_namespace(ns)",
+        "    app.register_blueprint(bp)",
+        "    return app",
+      ]),
+    ).toBe("/api/v1/orders/{order_id}");
+  });
+
+  it("reads the Api the mount is written beside, not a same-named one at the top of the file", async () => {
+    // The factory's own `Api` is built on the app and carries no
+    // prefix; the module-level one on a blueprint serves nothing here.
+    expect(
+      await pathFor([
+        'module_bp = Blueprint("module", __name__, url_prefix="/module")',
+        "api = Api(module_bp)",
+        "",
+        "",
+        "def create_app():",
+        "    app = Flask(__name__)",
+        "    api = Api(app)",
+        "    api.add_namespace(ns)",
+        "    return app",
+      ]),
+    ).toBe("/orders/{order_id}");
+  });
+
+  it("abstains on a loop over a call even when the blueprint states a prefix", async () => {
+    const units = await unitsOf(
+      app([
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "api = Api(bp)",
+        "",
+        "",
+        "def load():",
+        "    return [ns]",
+        "",
+        "",
+        "def create_app():",
+        "    app = Flask(__name__)",
+        "    for namespace in load():",
+        "        api.add_namespace(namespace)",
+        "    app.register_blueprint(bp)",
+        "    return app",
+      ]),
+      [blueprintLike],
+    );
+    expect(pathOf(units, "OrderDetail.get")).toBeNull();
+    expect(unreadTextOf(units[0])).toContain(
+      "routers read out of a call this reading does not follow",
+    );
   });
 });

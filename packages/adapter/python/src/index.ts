@@ -38,8 +38,11 @@ export type {
 export type {
   DecoratedClassRoute,
   DecoratedFunctionRoute,
+  MountObjectCarrier,
+  MountObjectPrefix,
   MountPrefixEffect,
   NoValuePrefix,
+  PathRepeatedSlashes,
   PrefixTrailingSlash,
   PythonDiscoveryPattern,
   PythonPack,

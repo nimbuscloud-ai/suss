@@ -13,6 +13,7 @@ import type {
   FastapiGroupSpec,
   FastapiProgramSpec,
   FastapiRouteSpec,
+  FlaskApiMount,
   FlaskImportStyle,
   FlaskMethodSpec,
   FlaskMountSite,
@@ -22,6 +23,7 @@ import type {
   FlaskNoValue,
   FlaskProgramSpec,
   FlaskResourceSpec,
+  FlaskWrittenPrefix,
   PyStatusSpec,
   PythonProgramSpec,
   PyVerb,
@@ -317,15 +319,112 @@ const arbFlaskNamespace: fc.Arbitrary<FlaskNamespaceSpec> = fc.oneof(
   },
 );
 
-export const arbFlaskProgramSpec: fc.Arbitrary<FlaskProgramSpec> = fc.record({
-  importStyle: fc.constantFrom<FlaskImportStyle>(
-    "direct",
-    "wrapper",
-    "wrapperAliased",
-  ),
-  resources: fc.array(arbFlaskResource, { minLength: 1, maxLength: 3 }),
-  namespaces: fc.array(arbFlaskNamespace, { minLength: 0, maxLength: 2 }),
-});
+/**
+ * How a prefix is written where the library concatenates it as given.
+ * The trailing-slash literal is drawn as often as the plain one: the
+ * app really does serve a doubled slash there, which is the cell a
+ * reader that strips one gets wrong.
+ */
+function arbFlaskWrittenPrefix(
+  noValue: fc.Arbitrary<FlaskNoValue>,
+): fc.Arbitrary<FlaskWrittenPrefix> {
+  return fc.oneof(
+    {
+      weight: 4,
+      arbitrary: fc.boolean().map(
+        (trailingSlash): FlaskWrittenPrefix => ({
+          type: "literal",
+          trailingSlash,
+        }),
+      ),
+    },
+    {
+      weight: 2,
+      arbitrary: fc.constant<FlaskWrittenPrefix>({ type: "absent" }),
+    },
+    {
+      weight: 2,
+      arbitrary: noValue.map(
+        (written): FlaskWrittenPrefix => ({ type: "noValue", written }),
+      ),
+    },
+    {
+      weight: 1,
+      arbitrary: fc.constant<FlaskWrittenPrefix>({ type: "computed" }),
+    },
+  );
+}
+
+/**
+ * Flask hands a blueprint's `url_prefix` straight to `rstrip`, so
+ * `False` and `0` stop the app from starting where `""` and `None`
+ * serve the same paths as writing none. Only what runs is generated.
+ */
+const arbBlueprintPrefix = arbFlaskWrittenPrefix(
+  fc.constantFrom<FlaskNoValue>("empty", "none"),
+);
+
+const arbApiPrefix = arbFlaskWrittenPrefix(arbNoValue);
+
+/**
+ * What the `Api` is built on: the app itself, or a blueprint carrying
+ * a prefix of its own, reaching the `Api` at its construction or
+ * through a later handoff. The last two are the registrations the pack
+ * documents as abstentions.
+ */
+const arbFlaskApiMount: fc.Arbitrary<FlaskApiMount> = fc.oneof(
+  { weight: 3, arbitrary: fc.constant<FlaskApiMount>({ type: "app" }) },
+  {
+    weight: 4,
+    arbitrary: arbBlueprintPrefix.map(
+      (prefix): FlaskApiMount => ({ type: "blueprint", prefix }),
+    ),
+  },
+  {
+    weight: 2,
+    arbitrary: arbBlueprintPrefix.map(
+      (prefix): FlaskApiMount => ({ type: "blueprintHandedOver", prefix }),
+    ),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.constant<FlaskApiMount>({
+      type: "blueprintRegisteredElsewhere",
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.constant<FlaskApiMount>({ type: "blueprintNested" }),
+  },
+);
+
+export const arbFlaskProgramSpec: fc.Arbitrary<FlaskProgramSpec> = fc
+  .record({
+    importStyle: fc.constantFrom<FlaskImportStyle>(
+      "direct",
+      "wrapper",
+      "wrapperAliased",
+    ),
+    apiMount: arbFlaskApiMount,
+    apiPrefix: arbApiPrefix,
+    resources: fc.array(arbFlaskResource, { minLength: 1, maxLength: 3 }),
+    namespaces: fc.array(arbFlaskNamespace, { minLength: 0, maxLength: 2 }),
+  })
+  // A resource reached through the project wrapper carries a bare
+  // function as its decorator, so extraction has no object to ask what
+  // prefix sits in front of it and claims the decorator's path as
+  // written. The wrapper's own namespace is pinned at "/" for that
+  // reason, and the app the wrapper style builds is pinned to no
+  // prefix for the same one.
+  .map((spec) =>
+    spec.importStyle === "direct"
+      ? spec
+      : {
+          ...spec,
+          apiMount: { type: "app" as const },
+          apiPrefix: { type: "absent" as const },
+        },
+  );
 
 /** Both frameworks, drawn evenly, so one sampled stream covers the two packs. */
 export const arbPythonProgramSpec: fc.Arbitrary<PythonProgramSpec> = fc.oneof(

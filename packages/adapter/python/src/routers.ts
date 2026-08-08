@@ -26,6 +26,9 @@
 // where differs by library and the pack says so: this package's
 // README has the grid, every cell of it checked against a running
 // app. Read it before teaching a new library's mount to compose.
+//
+// The object a mount is called on states a prefix of its own where
+// the pack says so, in front of the other two.
 
 import { bodyStatements, field, rangeOf, stripDecorators } from "./ast.js";
 import { readCallArguments } from "./decorators.js";
@@ -35,6 +38,8 @@ import { resolveName } from "./scope.js";
 import type { DecoratorArg } from "./decorators.js";
 import type { ModuleResolverOptions } from "./moduleResolver.js";
 import type {
+  MountObjectCarrier,
+  MountObjectPrefix,
   MountPrefixEffect,
   PrefixTrailingSlash,
   PythonDiscoveryPattern,
@@ -75,17 +80,19 @@ export interface RouterIndex {
   ): RoutePrefixResolution;
 }
 
-/** A module-level `x = <RouterConstructor>(...)`, and what its call said about the prefix. */
-interface RouterConstruction {
-  /** What the constructor stated, with the library's trailing-slash handling already applied. */
+/** An `x = <Constructor>(...)` from an accepted module, and what its call said about a prefix. */
+interface Construction {
+  /** The constructor's name as its module exports it, so a caller can tell a router from an app from a blueprint. */
+  constructorName: string;
+  /** What the call stated, with the library's trailing-slash handling already applied. */
   prefix: PrefixReading;
   /**
-   * True when the same module-level name is assigned a router
-   * construction more than once. The binder keeps one binding per
-   * name, but the library binds a route to whichever router the name
-   * held at decoration time, so which construction a decorator or a
-   * mount saw is an ordering this reading does not follow. Composing
-   * from the last one would report a confident wrong path.
+   * True when the same name is assigned a construction more than
+   * once. The binder keeps one binding per name, but the library
+   * binds a route to whichever object the name held at decoration
+   * time, so which construction a decorator or a mount saw is an
+   * ordering this reading does not follow. Composing from the last
+   * one would report a confident wrong path.
    */
   reassigned: boolean;
 }
@@ -124,12 +131,30 @@ interface UnenumerableLoop {
   location: string;
 }
 
+/** Whether anything about where a carrier is registered contradicts the prefix its own construction stated. */
+type RegistrationState =
+  | { kind: "asBuilt" }
+  | { kind: "abstain"; reason: string };
+
+type ConstructionsByName = Map<ModuleBinding, Map<string, Construction>>;
+
 interface PatternIndex {
   composition: RouterComposition;
-  constructions: Map<ModuleBinding, Map<string, RouterConstruction>>;
-  mounts: Map<RouterConstruction, MountState>;
+  constructions: ConstructionsByName;
+  mounts: Map<Construction, MountState>;
   /** Keyed by location, so one loop counts once however many routers ask about it. */
   unenumerableLoops: Map<string, UnenumerableLoop>;
+  /** Every construction from the carrier's modules, the app alongside the blueprint, so the two can be told apart. */
+  carriers: ConstructionsByName;
+  carrierRegistrations: Map<Construction, RegistrationState>;
+  /** Per module, the arguments each handoff call passed to a named variable (`api.init_app(bp)`). */
+  handoffs: Map<ModuleBinding, Map<string, DecoratorArg[]>>;
+  /**
+   * What each module-level mount object puts in front of the paths
+   * behind it, for a route declared straight on that object rather
+   * than on a router it mounts.
+   */
+  objectPrefixes: Map<ModuleBinding, Map<string, OwnPrefixResolution>>;
 }
 
 const NOT_ROUTER: RoutePrefixResolution = { kind: "notRouter" };
@@ -171,7 +196,7 @@ export function buildRouterIndex(
 
       const construction = index.constructions.get(module)?.get(objectName);
       if (construction === undefined) {
-        return NOT_ROUTER;
+        return declaredOnMountObject(index, module, objectName);
       }
 
       if (construction.reassigned) {
@@ -209,6 +234,29 @@ export function buildRouterIndex(
       };
     },
   };
+}
+
+/**
+ * What a route declared straight on the mount object rather than on a
+ * router is served under. flask-restx's `Api` takes route decorators
+ * of its own, and a blueprint prefix reaches those the same way it
+ * reaches a namespace's.
+ */
+function declaredOnMountObject(
+  index: PatternIndex,
+  module: ModuleBinding,
+  objectName: string,
+): RoutePrefixResolution {
+  const objectPrefix = index.objectPrefixes.get(module)?.get(objectName);
+  if (objectPrefix === undefined) {
+    return NOT_ROUTER;
+  }
+
+  if (objectPrefix.kind === "composed" && objectPrefix.value === "") {
+    return NOT_ROUTER;
+  }
+
+  return objectPrefix;
 }
 
 function sameSite(one: MountSite, other: MountSite): boolean {
@@ -306,11 +354,41 @@ function buildPatternIndex(
     constructions: new Map(),
     mounts: new Map(),
     unenumerableLoops: new Map(),
+    carriers: new Map(),
+    carrierRegistrations: new Map(),
+    handoffs: new Map(),
+    objectPrefixes: new Map(),
   };
   const byFile = new Map(files.map((bound) => [bound.file, bound]));
+  const scanOf = (bound: BoundPythonFile): Scan => ({
+    bound,
+    byFile,
+    importModule,
+    composition,
+    resolverOptions,
+    index,
+  });
+  const objectPrefix = composition.mountObjectPrefix;
 
   for (const bound of files) {
     collectConstructions(bound, importModule, composition, index);
+  }
+
+  if (objectPrefix?.carrier !== undefined) {
+    const carrier = objectPrefix.carrier;
+    for (const bound of files) {
+      collectCarrierConstructions(carrier, composition, scanOf(bound));
+    }
+
+    for (const bound of files) {
+      collectCarrierCalls(carrier, scanOf(bound));
+    }
+  }
+
+  if (objectPrefix !== undefined) {
+    for (const bound of files) {
+      collectObjectPrefixes(objectPrefix, scanOf(bound));
+    }
   }
 
   for (const bound of files) {
@@ -399,9 +477,10 @@ const NO_VALUE_LITERALS: Partial<
  */
 function readPrefixKeyword(
   keywordArgs: Record<string, DecoratorArg>,
+  keyword: string,
   composition: RouterComposition,
 ): PrefixReading {
-  const arg = keywordArgs[composition.prefixKeyword];
+  const arg = keywordArgs[keyword];
   if (arg === undefined) {
     return UNSTATED_PREFIX;
   }
@@ -425,7 +504,11 @@ function constructorPrefix(
   keywordArgs: Record<string, DecoratorArg>,
   composition: RouterComposition,
 ): PrefixReading {
-  const reading = readPrefixKeyword(keywordArgs, composition);
+  const reading = readPrefixKeyword(
+    keywordArgs,
+    composition.prefixKeyword,
+    composition,
+  );
   if (reading.kind !== "stated") {
     return reading;
   }
@@ -437,13 +520,12 @@ function constructorPrefix(
   };
 }
 
-/** The name and call of a module-level `name = <RouterConstructor>(...)` statement; null for any other statement. */
-function routerConstructionStatement(
+/** The name, constructor, and call of a `name = <Imported>(...)` statement; null for any other statement. */
+function constructionStatement(
   stmt: PyNode,
-  module: ModuleBinding,
+  scope: Scope,
   importModule: string[],
-  composition: RouterComposition,
-): { name: string; call: PyNode } | null {
+): { name: string; constructorName: string; call: PyNode } | null {
   if (stmt.type !== "expression_statement") {
     return null;
   }
@@ -466,16 +548,19 @@ function routerConstructionStatement(
     return null;
   }
 
-  const calleeBinding = resolveName(module.moduleScope, callee.text);
+  const calleeBinding = resolveName(scope, callee.text);
   if (
     calleeBinding?.kind !== "importFrom" ||
-    !importModule.includes(calleeBinding.module) ||
-    calleeBinding.importedName !== composition.routerConstructorName
+    !importModule.includes(calleeBinding.module)
   ) {
     return null;
   }
 
-  return { name: left.text, call: right };
+  return {
+    name: left.text,
+    constructorName: calleeBinding.importedName,
+    call: right,
+  };
 }
 
 /**
@@ -484,6 +569,31 @@ function routerConstructionStatement(
  * construction twice has to surface as `reassigned` instead of
  * quietly reading as whichever assignment came last.
  */
+function recordConstruction(
+  construction: { name: string; constructorName: string; call: PyNode },
+  module: ModuleBinding,
+  prefixOf: (keywordArgs: Record<string, DecoratorArg>) => PrefixReading,
+  into: ConstructionsByName,
+): void {
+  const perModule = into.get(module) ?? new Map<string, Construction>();
+  into.set(module, perModule);
+
+  const existing = perModule.get(construction.name);
+  if (existing !== undefined) {
+    existing.reassigned = true;
+    return;
+  }
+
+  const { keywordArgs } = readCallArguments(
+    field(construction.call, "arguments"),
+  );
+  perModule.set(construction.name, {
+    constructorName: construction.constructorName,
+    prefix: prefixOf(keywordArgs),
+    reassigned: false,
+  });
+}
+
 function collectConstructions(
   bound: BoundPythonFile,
   importModule: string[],
@@ -491,35 +601,64 @@ function collectConstructions(
   index: PatternIndex,
 ): void {
   for (const stmt of bodyStatements(bound.root)) {
-    const construction = routerConstructionStatement(
+    const construction = constructionStatement(
       stmt,
-      bound.module,
+      bound.module.moduleScope,
       importModule,
-      composition,
     );
-    if (construction === null) {
+    if (
+      construction === null ||
+      construction.constructorName !== composition.routerConstructorName
+    ) {
       continue;
     }
 
-    const perModule =
-      index.constructions.get(bound.module) ??
-      new Map<string, RouterConstruction>();
-    index.constructions.set(bound.module, perModule);
-
-    const existing = perModule.get(construction.name);
-    if (existing !== undefined) {
-      existing.reassigned = true;
-      continue;
-    }
-
-    const { keywordArgs } = readCallArguments(
-      field(construction.call, "arguments"),
+    recordConstruction(
+      construction,
+      bound.module,
+      (keywordArgs) => constructorPrefix(keywordArgs, composition),
+      index.constructions,
     );
-    perModule.set(construction.name, {
-      prefix: constructorPrefix(keywordArgs, composition),
-      reassigned: false,
-    });
   }
+}
+
+/**
+ * Keeps every construction from the carrier's modules, not only the
+ * carrier's own: the plain app sits in the same argument position and
+ * has no prefix, and telling it from a name this reading could not
+ * follow at all is what keeps `Api(app)` composing while
+ * `Api(blueprint_from_elsewhere)` abstains. Walks function bodies too,
+ * since a factory builds its blueprint where it builds its app, and a
+ * name built in two places lands as `reassigned`.
+ */
+function collectCarrierConstructions(
+  carrier: MountObjectCarrier,
+  composition: RouterComposition,
+  scan: Scan,
+): void {
+  walkStatements(
+    bodyStatements(scan.bound.root),
+    modulePosition(scan),
+    scan,
+    (stmt, position) => {
+      const construction = constructionStatement(
+        stmt,
+        position.scope,
+        carrier.importModule,
+      );
+      if (construction === null) {
+        return;
+      }
+
+      recordConstruction(
+        construction,
+        scan.bound.module,
+        (keywordArgs) =>
+          readPrefixKeyword(keywordArgs, carrier.prefixKeyword, composition),
+        scan.index.carriers,
+      );
+    },
+  );
 }
 
 /**
@@ -533,44 +672,41 @@ function collectConstructions(
 function constructionNamed(
   name: string,
   scope: Scope,
-  scan: MountScan,
-): RouterConstruction | null {
+  scan: Scan,
+  constructions: ConstructionsByName = scan.index.constructions,
+): Construction | null {
   const binding = resolveName(scope, name);
   if (binding === null) {
     return null;
   }
 
-  const resolvers: Partial<
-    Record<Binding["kind"], () => RouterConstruction | null>
-  > = {
-    assignment: () =>
-      scan.index.constructions.get(scan.bound.module)?.get(name) ?? null,
-    importFrom: () => {
-      if (binding.kind !== "importFrom") {
-        return null;
-      }
+  const resolvers: Partial<Record<Binding["kind"], () => Construction | null>> =
+    {
+      assignment: () => constructions.get(scan.bound.module)?.get(name) ?? null,
+      importFrom: () => {
+        if (binding.kind !== "importFrom") {
+          return null;
+        }
 
-      const resolution = resolveModule(
-        scan.bound.file,
-        { module: binding.module, relativeLevel: binding.relativeLevel },
-        scan.resolverOptions,
-      );
-      if (resolution.status !== "resolved") {
-        return null;
-      }
+        const resolution = resolveModule(
+          scan.bound.file,
+          { module: binding.module, relativeLevel: binding.relativeLevel },
+          scan.resolverOptions,
+        );
+        if (resolution.status !== "resolved") {
+          return null;
+        }
 
-      const target = scan.byFile.get(resolution.file);
-      if (target === undefined) {
-        return null;
-      }
+        const target = scan.byFile.get(resolution.file);
+        if (target === undefined) {
+          return null;
+        }
 
-      return (
-        scan.index.constructions
-          .get(target.module)
-          ?.get(binding.importedName) ?? null
-      );
-    },
-  };
+        return (
+          constructions.get(target.module)?.get(binding.importedName) ?? null
+        );
+      },
+    };
 
   return resolvers[binding.kind]?.() ?? null;
 }
@@ -599,7 +735,7 @@ const MOUNT_STATE_BY_EFFECT: Record<
 
 function recordMount(
   index: PatternIndex,
-  target: RouterConstruction,
+  target: Construction,
   state: MountState,
 ): void {
   if (index.mounts.has(target)) {
@@ -613,8 +749,8 @@ function recordMount(
   index.mounts.set(target, state);
 }
 
-/** Everything the mount walk carries down from the file it started on. */
-interface MountScan {
+/** Everything a walk over one file needs, from the file itself down to the index it fills in. */
+interface Scan {
   bound: BoundPythonFile;
   byFile: Map<string, BoundPythonFile>;
   importModule: string[];
@@ -643,26 +779,52 @@ function collectMounts(
   resolverOptions: ModuleResolverOptions,
   index: PatternIndex,
 ): void {
-  scanForMounts(
+  const scan: Scan = {
+    bound,
+    byFile,
+    importModule,
+    composition,
+    resolverOptions,
+    index,
+  };
+  walkStatements(
     bodyStatements(bound.root),
-    {
-      scope: bound.module.moduleScope,
-      loopBindings: new Map(),
-      site: MODULE_SITE,
-    },
-    { bound, byFile, importModule, composition, resolverOptions, index },
+    modulePosition(scan),
+    scan,
+    recordMountStatement,
   );
 }
 
-/** Statement shapes whose body can hold a mount the reading follows. Every other block statement is left alone, since the binder records no name written inside one. */
-const MOUNT_SCAN_DESCENTS: Record<
+/** Where a walk starts on a file: the module's own scope, nothing bound by a loop, and a site that runs on import. */
+function modulePosition(scan: Scan): WalkPosition {
+  return {
+    scope: scan.bound.module.moduleScope,
+    loopBindings: new Map(),
+    site: MODULE_SITE,
+  };
+}
+
+/** What a walk does with each statement it reaches that is not one it descends into. */
+type StatementVisitor = (
+  stmt: PyNode,
+  position: WalkPosition,
+  scan: Scan,
+) => void;
+
+/** Statement shapes whose body can hold a call the reading follows. Every other block statement is left alone, since the binder records no name written inside one. */
+const WALK_DESCENTS: Record<
   string,
-  (stmt: PyNode, position: WalkPosition, scan: MountScan) => void
+  (
+    stmt: PyNode,
+    position: WalkPosition,
+    scan: Scan,
+    visit: StatementVisitor,
+  ) => void
 > = {
-  decorated_definition: (stmt, position, scan) => {
-    scanForMounts([stripDecorators(stmt).definition], position, scan);
+  decorated_definition: (stmt, position, scan, visit) => {
+    walkStatements([stripDecorators(stmt).definition], position, scan, visit);
   },
-  function_definition: (stmt, position, scan) => {
+  function_definition: (stmt, position, scan, visit) => {
     // The binder skips a `def` written inside a block it does not
     // descend, and reading one against the enclosing scope would take
     // its locals for module names.
@@ -671,7 +833,7 @@ const MOUNT_SCAN_DESCENTS: Record<
       return;
     }
 
-    scanForMounts(
+    walkStatements(
       nestedStatements(stmt),
       {
         scope,
@@ -679,13 +841,15 @@ const MOUNT_SCAN_DESCENTS: Record<
         site: { kind: "function", node: stmt.id },
       },
       scan,
+      visit,
     );
   },
-  for_statement: (stmt, position, scan) => {
-    scanForMounts(
+  for_statement: (stmt, position, scan, visit) => {
+    walkStatements(
       nestedStatements(stmt),
       { ...position, loopBindings: loopBindingsOf(stmt, position, scan) },
       scan,
+      visit,
     );
   },
 };
@@ -695,19 +859,20 @@ function nestedStatements(stmt: PyNode): PyNode[] {
   return body === null ? [] : bodyStatements(body);
 }
 
-function scanForMounts(
+function walkStatements(
   statements: PyNode[],
   position: WalkPosition,
-  scan: MountScan,
+  scan: Scan,
+  visit: StatementVisitor,
 ): void {
   for (const stmt of statements) {
-    const descend = MOUNT_SCAN_DESCENTS[stmt.type];
+    const descend = WALK_DESCENTS[stmt.type];
     if (descend !== undefined) {
-      descend(stmt, position, scan);
+      descend(stmt, position, scan, visit);
       continue;
     }
 
-    recordMountStatement(stmt, position, scan);
+    visit(stmt, position, scan);
   }
 }
 
@@ -739,7 +904,7 @@ function sequenceElementNames(node: PyNode | null): string[] | null {
 function loopBindingsOf(
   stmt: PyNode,
   position: WalkPosition,
-  scan: MountScan,
+  scan: Scan,
 ): Map<string, LoopTarget> {
   const bindings = new Map(position.loopBindings);
   const left = field(stmt, "left");
@@ -764,8 +929,13 @@ function loopBindingsOf(
 function mountCallOf(
   stmt: PyNode,
   scope: Scope,
-  scan: MountScan,
-): { call: PyNode; includerConstructorName: string } | null {
+  scan: Scan,
+): {
+  call: PyNode;
+  objectName: string;
+  includerConstructorName: string;
+  includerCall: PyNode;
+} | null {
   if (stmt.type !== "expression_statement") {
     return null;
   }
@@ -798,7 +968,12 @@ function mountCallOf(
     return null;
   }
 
-  return { call, includerConstructorName: includer.constructorName };
+  return {
+    call,
+    objectName: objectNode.text,
+    includerConstructorName: includer.constructorName,
+    includerCall: includer.call,
+  };
 }
 
 /** The names one mount call registers: the argument's own, or the literal sequence a loop binds it from. Empty when the loop names nobody, and then the loop itself is recorded. */
@@ -830,7 +1005,7 @@ function mountedNames(
 function recordMountStatement(
   stmt: PyNode,
   position: WalkPosition,
-  scan: MountScan,
+  scan: Scan,
 ): void {
   const mountCall = mountCallOf(stmt, position.scope, scan);
   if (mountCall === null) {
@@ -840,9 +1015,19 @@ function recordMountStatement(
   const { args, keywordArgs } = readCallArguments(
     field(mountCall.call, "arguments"),
   );
+  // Read in the scope the mount is written in, so an `Api` a factory
+  // builds is the one whose prefix goes in front, not a same-named one
+  // at the top of the file.
+  const objectPrefix = mountObjectPrefix(
+    mountCall.objectName,
+    mountCall.includerCall,
+    position.scope,
+    scan,
+  );
   const state = mountStateOf(
     mountCall.includerConstructorName,
     keywordArgs,
+    objectPrefix,
     scan.composition,
     position.site,
   );
@@ -858,6 +1043,7 @@ function recordMountStatement(
 function mountStateOf(
   includerConstructorName: string,
   keywordArgs: Record<string, DecoratorArg>,
+  objectPrefix: OwnPrefixResolution,
   composition: RouterComposition,
   site: MountSite,
 ): MountState {
@@ -869,7 +1055,18 @@ function mountStateOf(
     };
   }
 
-  const mountPrefix = readPrefixKeyword(keywordArgs, composition);
+  if (objectPrefix.kind === "abstain") {
+    return {
+      kind: "abstain",
+      reason: `is mounted on an object that ${objectPrefix.reason}`,
+    };
+  }
+
+  const mountPrefix = readPrefixKeyword(
+    keywordArgs,
+    composition.prefixKeyword,
+    composition,
+  );
   if (mountPrefix.kind === "unreadable") {
     return {
       kind: "abstain",
@@ -881,9 +1078,345 @@ function mountStateOf(
   // constructor put it, whichever way the library reads a prefix
   // that is stated.
   if (mountPrefix.kind === "unstated") {
-    return { kind: "mounted", includePrefix: "", site };
+    return { kind: "mounted", includePrefix: objectPrefix.value, site };
   }
 
   const effect = composition.mountPrefixEffect ?? "prefixes";
-  return MOUNT_STATE_BY_EFFECT[effect](mountPrefix.value, site);
+  const state = MOUNT_STATE_BY_EFFECT[effect](mountPrefix.value, site);
+  if (state.kind === "abstain") {
+    return state;
+  }
+
+  return { ...state, includePrefix: objectPrefix.value + state.includePrefix };
+}
+
+/**
+ * Records where each carrier is registered and where each mount object
+ * was handed one. Registration is read only to abstain: a call that
+ * restates the prefix, puts the carrier inside another carrier, or
+ * registers it a second time serves the carrier's routes somewhere its
+ * own construction no longer says.
+ */
+function collectCarrierCalls(carrier: MountObjectCarrier, scan: Scan): void {
+  walkStatements(
+    bodyStatements(scan.bound.root),
+    modulePosition(scan),
+    scan,
+    (stmt, position) => {
+      const call = attributeCallOf(stmt);
+      if (call === null) {
+        return;
+      }
+
+      if (call.attribute === carrier.handoffMethodName) {
+        recordHandoff(call, scan);
+        return;
+      }
+
+      if (call.attribute === carrier.registerMethodName) {
+        recordRegistrationCall(call, carrier, position, scan);
+      }
+    },
+  );
+}
+
+/** An `object.attribute(...)` call, which is the shape of a handoff and a registration alike. */
+interface AttributeCall {
+  objectName: string;
+  attribute: string;
+  args: DecoratorArg[];
+  keywordArgs: Record<string, DecoratorArg>;
+}
+
+function attributeCallOf(stmt: PyNode): AttributeCall | null {
+  if (stmt.type !== "expression_statement") {
+    return null;
+  }
+
+  const call = stmt.namedChild(0);
+  if (call === null || call.type !== "call") {
+    return null;
+  }
+
+  const callee = field(call, "function");
+  if (callee === null || callee.type !== "attribute") {
+    return null;
+  }
+
+  const objectNode = field(callee, "object");
+  const attributeNode = field(callee, "attribute");
+  if (objectNode?.type !== "identifier" || attributeNode === null) {
+    return null;
+  }
+
+  return {
+    objectName: objectNode.text,
+    attribute: attributeNode.text,
+    ...readCallArguments(field(call, "arguments")),
+  };
+}
+
+function recordHandoff(call: AttributeCall, scan: Scan): void {
+  const perModule =
+    scan.index.handoffs.get(scan.bound.module) ??
+    new Map<string, DecoratorArg[]>();
+  scan.index.handoffs.set(scan.bound.module, perModule);
+
+  const handed = perModule.get(call.objectName) ?? [];
+  if (call.args[0] !== undefined) {
+    handed.push(call.args[0]);
+  }
+
+  perModule.set(call.objectName, handed);
+}
+
+function recordRegistrationCall(
+  call: AttributeCall,
+  carrier: MountObjectCarrier,
+  position: WalkPosition,
+  scan: Scan,
+): void {
+  const arg = call.args[0];
+  if (arg?.kind !== "identifier" || position.loopBindings.has(arg.name)) {
+    return;
+  }
+
+  const target = constructionNamed(
+    arg.name,
+    position.scope,
+    scan,
+    scan.index.carriers,
+  );
+  if (target === null || target.constructorName !== carrier.constructorName) {
+    return;
+  }
+
+  recordRegistration(
+    scan.index,
+    target,
+    registrationState(call, carrier, position, scan),
+  );
+}
+
+function registrationState(
+  call: AttributeCall,
+  carrier: MountObjectCarrier,
+  position: WalkPosition,
+  scan: Scan,
+): RegistrationState {
+  // The three written spellings say three different things, so a
+  // written keyword says nothing on its own about where the routes
+  // land.
+  if (call.keywordArgs[carrier.prefixKeyword] !== undefined) {
+    return {
+      kind: "abstain",
+      reason:
+        "is built from one registered under a prefix stated where it is registered",
+    };
+  }
+
+  const host = constructionNamed(
+    call.objectName,
+    position.scope,
+    scan,
+    scan.index.carriers,
+  );
+  if (host !== null && host.constructorName === carrier.constructorName) {
+    return {
+      kind: "abstain",
+      reason:
+        "is built from one registered inside another, one hop past what this reading follows",
+    };
+  }
+
+  return { kind: "asBuilt" };
+}
+
+function recordRegistration(
+  index: PatternIndex,
+  target: Construction,
+  state: RegistrationState,
+): void {
+  if (index.carrierRegistrations.has(target)) {
+    index.carrierRegistrations.set(target, {
+      kind: "abstain",
+      reason: "is built from one registered more than once",
+    });
+    return;
+  }
+
+  index.carrierRegistrations.set(target, state);
+}
+
+/**
+ * Reads what every module-level mount object puts in front of the
+ * paths behind it, for the routes declared straight on that object.
+ * A mount call reads the same thing in whatever scope it is written.
+ */
+function collectObjectPrefixes(spec: MountObjectPrefix, scan: Scan): void {
+  for (const stmt of bodyStatements(scan.bound.root)) {
+    const construction = constructionStatement(
+      stmt,
+      scan.bound.module.moduleScope,
+      scan.importModule,
+    );
+    if (
+      construction === null ||
+      construction.constructorName === scan.composition.routerConstructorName
+    ) {
+      continue;
+    }
+
+    const perModule =
+      scan.index.objectPrefixes.get(scan.bound.module) ??
+      new Map<string, OwnPrefixResolution>();
+    scan.index.objectPrefixes.set(scan.bound.module, perModule);
+    perModule.set(
+      construction.name,
+      readMountObjectPrefix(
+        spec,
+        construction.name,
+        construction.call,
+        scan.bound.module.moduleScope,
+        scan,
+      ),
+    );
+  }
+}
+
+/** What the object a mount is called on puts in front of everything the constructor and the mount state. */
+function mountObjectPrefix(
+  objectName: string,
+  constructionCall: PyNode,
+  scope: Scope,
+  scan: Scan,
+): OwnPrefixResolution {
+  const spec = scan.composition.mountObjectPrefix;
+  if (spec === undefined) {
+    return { kind: "composed", value: "" };
+  }
+
+  return readMountObjectPrefix(spec, objectName, constructionCall, scope, scan);
+}
+
+/**
+ * The prefix written on the mount object's own construction, behind
+ * the one written on whatever that construction was handed.
+ */
+function readMountObjectPrefix(
+  spec: MountObjectPrefix,
+  objectName: string,
+  constructionCall: PyNode,
+  scope: Scope,
+  scan: Scan,
+): OwnPrefixResolution {
+  const { args, keywordArgs } = readCallArguments(
+    field(constructionCall, "arguments"),
+  );
+
+  const own =
+    spec.prefixKeyword === undefined
+      ? UNSTATED_PREFIX
+      : readPrefixKeyword(keywordArgs, spec.prefixKeyword, scan.composition);
+  if (own.kind === "unreadable") {
+    return {
+      kind: "abstain",
+      reason: "states a prefix of its own that is not a string literal",
+    };
+  }
+
+  const carried =
+    spec.carrier === undefined
+      ? { kind: "composed" as const, value: "" }
+      : carrierPrefix(
+          spec.carrier,
+          args[spec.carrier.argumentIndex],
+          objectName,
+          scope,
+          scan,
+        );
+  if (carried.kind === "abstain") {
+    return carried;
+  }
+
+  return {
+    kind: "composed",
+    value: carried.value + (own.kind === "stated" ? own.value : ""),
+  };
+}
+
+function carrierPrefix(
+  carrier: MountObjectCarrier,
+  constructorArg: DecoratorArg | undefined,
+  objectName: string,
+  scope: Scope,
+  scan: Scan,
+): OwnPrefixResolution {
+  const handed =
+    scan.index.handoffs.get(scan.bound.module)?.get(objectName) ?? [];
+  const candidates = [
+    ...(constructorArg === undefined ? [] : [constructorArg]),
+    ...handed,
+  ];
+  if (candidates.length > 1) {
+    return { kind: "abstain", reason: "is built from more than one candidate" };
+  }
+
+  // Nothing was handed in anywhere this reading can see, so there is
+  // no carrier to read a prefix off.
+  const candidate = candidates[0];
+  if (candidate === undefined) {
+    return { kind: "composed", value: "" };
+  }
+
+  if (candidate.kind !== "identifier") {
+    return {
+      kind: "abstain",
+      reason: "is built from something this reading cannot follow",
+    };
+  }
+
+  const construction = constructionNamed(
+    candidate.name,
+    scope,
+    scan,
+    scan.index.carriers,
+  );
+  if (construction === null) {
+    return {
+      kind: "abstain",
+      reason: "is built from something this reading cannot follow",
+    };
+  }
+
+  if (construction.constructorName !== carrier.constructorName) {
+    return { kind: "composed", value: "" };
+  }
+
+  if (construction.reassigned) {
+    return {
+      kind: "abstain",
+      reason:
+        "is built from one whose variable name holds a second construction",
+    };
+  }
+
+  const registration = scan.index.carrierRegistrations.get(construction);
+  if (registration?.kind === "abstain") {
+    return { kind: "abstain", reason: registration.reason };
+  }
+
+  const readings: Record<PrefixReading["kind"], () => OwnPrefixResolution> = {
+    stated: () => ({
+      kind: "composed",
+      value:
+        construction.prefix.kind === "stated" ? construction.prefix.value : "",
+    }),
+    unstated: () => ({ kind: "composed", value: "" }),
+    unreadable: () => ({
+      kind: "abstain",
+      reason: "is built from one whose prefix is not a string literal",
+    }),
+  };
+  return readings[construction.prefix.kind]();
 }

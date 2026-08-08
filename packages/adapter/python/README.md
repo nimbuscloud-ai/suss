@@ -14,7 +14,7 @@ Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@sus
 
 ## How a prefix is read
 
-A mounted route's path is composed from prefixes written at two sites: the router's constructor and the call that mounts it. Both go through one reader, and what a spelling means at one site it means at the other. Three rounds of this went wrong by fixing one site or one spelling at a time, so the whole grid is written down here.
+A mounted route's path is composed from prefixes written at up to four sites: the object the mount is called on, whatever that object was built from, the router's constructor, and the call that mounts it. All four go through one reader, and what a spelling means at one site it means at the others. Three rounds of this went wrong by fixing one site or one spelling at a time, so the whole grid is written down here.
 
 Every cell is what the library itself does, read off its source and confirmed against a running app (`url_map` for flask-restx, the route table for FastAPI).
 
@@ -46,6 +46,54 @@ The two libraries differ on one property, and the pack states it: flask-restx as
 What the reader does with each answer: a stated prefix composes; an unstated one adds nothing, unless the pack says the library derives a path when the prefix is unstated, and then the route abstains, because the path it is served at is somewhere this reading never looked; an unreadable one abstains. An abstaining route keeps its name and names no path, with the reason on the summary.
 
 Note the asymmetry in the trailing-slash rows: flask-restx trims at the constructor and not at the mount, because only the constructor's path goes through the property that strips it. The pack declares trimming per library, and the mount side does not need it, since a mount that states a prefix on that library abstains anyway.
+
+### The object the mount is called on
+
+flask-restx serves a route under the prefix of the object `add_namespace` was called on, ahead of everything the namespace and the route say. That object has two prefixes of its own: one written on it, `Api(prefix=...)`, and one written on the Flask blueprint it was built from, `Blueprint(name, __name__, url_prefix=...)`. The library joins the blueprint's prefix, the `Api`'s, the namespace's path and the route's path by concatenating them and dropping the falsy ones, so nothing is stripped at either of these two sites.
+
+FastAPI has no column here: its app has no prefix of its own, and the pack declares none, so the object contributes nothing.
+
+**At the blueprint** (`Blueprint("api", __name__, url_prefix=...)`):
+
+| Written | flask-restx serves | The reader says |
+| --- | --- | --- |
+| nothing | the rest of the path, no prefix | unstated |
+| `"/api/v1"` | `/api/v1` + the rest | stated |
+| `"/api/v1/"` | `/api/v1/` + the rest, and Werkzeug answers the merged `/api/v1/...` | stated, and the composed path is merged |
+| `"/"` | the rest of the path, once the merge collapses the doubled slash | stated, and merging leaves nothing |
+| `""`, `None` | the rest of the path, no prefix | unstated |
+| `False`, `0` | the app does not start: Flask hands the value straight to `rstrip` | unstated |
+| a name or a call | whatever it evaluates to | unreadable |
+
+**At the `Api`** (`Api(bp, prefix=...)`):
+
+| Written | flask-restx serves | The reader says |
+| --- | --- | --- |
+| nothing | the blueprint's prefix + the rest | unstated |
+| `"/extra"` | the blueprint's prefix + `/extra` + the rest | stated |
+| `"/extra/"` | the same, concatenated as written, and Werkzeug answers the merged path | stated, and the composed path is merged |
+| `""`, `None`, `False`, `0` | the blueprint's prefix + the rest | unstated |
+| a name or a call | whatever it evaluates to | unreadable |
+
+**At the registration** (`app.register_blueprint(bp, ...)`), which the reader consults only to abstain:
+
+| Written | flask-restx serves | The reader says |
+| --- | --- | --- |
+| nothing | where the blueprint's own `url_prefix` put it | the reading stands |
+| `url_prefix="/over"` | `/over` + the rest, replacing the blueprint's | abstain |
+| `url_prefix=""` | the rest, replacing the blueprint's with nothing | abstain |
+| `url_prefix=None` | where the blueprint's own `url_prefix` put it | abstain |
+| registered on another blueprint | the outer blueprint's prefix in front of everything | abstain |
+| registered twice | flask-restx refuses to start | abstain |
+| never registered | nothing at all | the reading stands |
+
+Any spelling of `url_prefix` at the registration abstains, `None` included. The three that are written say different things (`"/over"` replaces, `""` replaces with nothing, `None` falls back to the blueprint's own), so a written keyword there says nothing on its own about where the routes land.
+
+A registration nobody wrote leaves the reading standing rather than abstaining. A blueprint the run never sees registered is one whose registration might sit in a file outside the run, and reading the prefix it was built with is the same claim the constructor already makes.
+
+### Repeated slashes
+
+A prefix written with a trailing slash leaves the composed path with two. Werkzeug answers such a rule at the merged path and redirects the written one, so `/api/v1//orders` is reached at `/api/v1/orders`; the pack says so, and the reader merges repeated slashes in every path it composes. Starlette does not do this, so FastAPI's pack says nothing and its paths stand as composed.
 
 ## Where a mount is written
 

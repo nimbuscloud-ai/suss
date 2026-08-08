@@ -62,6 +62,10 @@ export function flaskRestxFramework(
         // reader; there is no annotated-class body convention to
         // declare.
         pathParamSyntax: "flaskConverters",
+        // Werkzeug answers a rule with repeated slashes in it at the
+        // merged path and redirects the written one, so a prefix
+        // written with a trailing slash costs no segment.
+        pathRepeatedSlashes: "merged",
         // A resource declared on a namespace is served under the
         // namespace's own path, and the route's decorator states only
         // the part after it: `Namespace(path="/orders")` plus
@@ -77,7 +81,9 @@ export function flaskRestxFramework(
         // `path="/orders"` serves, and `path="/"` adds nothing.
         // Both sites ask whether the path is truthy, so `path=""`,
         // `path=None`, `path=False` and `path=0` all say exactly what
-        // writing no `path` says.
+        // writing no `path` says. The `Api` the namespace mounts onto
+        // has a prefix in front of all this, written on the `Api`
+        // itself and on the Flask blueprint it was built from.
         routerComposition: {
           routerConstructorName: "Namespace",
           includeMethodName: "add_namespace",
@@ -86,6 +92,17 @@ export function flaskRestxFramework(
           constructorPrefixRequired: true,
           constructorPrefixTrailingSlash: "trimmed",
           noValuePrefix: "unstated",
+          mountObjectPrefix: {
+            prefixKeyword: "prefix",
+            carrier: {
+              importModule: ["flask"],
+              constructorName: "Blueprint",
+              argumentIndex: 0,
+              prefixKeyword: "url_prefix",
+              handoffMethodName: "init_app",
+              registerMethodName: "register_blueprint",
+            },
+          },
         },
         // A resource method that returns a value and marks no status
         // answers 200, which is Flask's own behavior behind

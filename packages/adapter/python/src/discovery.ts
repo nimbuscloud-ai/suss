@@ -48,6 +48,7 @@ import type { DecoratorClassification } from "./decorators.js";
 import type {
   DecoratedClassRoute,
   DecoratedFunctionRoute,
+  PathRepeatedSlashes,
   PythonDiscoveryPattern,
   PythonPack,
 } from "./pack.js";
@@ -377,10 +378,28 @@ function composeRoutePath(
     range,
   );
   if (prefix.kind === "absent") {
-    return writtenReading(literal, range);
+    return writtenReading(servedSpelling(pattern, literal), range);
   }
 
-  return mapReading(prefix, (value) => value + literal);
+  return mapReading(prefix, (value) =>
+    servedSpelling(pattern, value + literal),
+  );
+}
+
+/**
+ * What a library serves for a path carrying repeated slashes, which
+ * composing a prefix written with a trailing slash is how you get.
+ */
+const REPEATED_SLASH_READERS: Record<
+  PathRepeatedSlashes,
+  (path: string) => string
+> = {
+  kept: (path) => path,
+  merged: (path) => path.replace(/\/{2,}/g, "/"),
+};
+
+function servedSpelling(pattern: PythonDiscoveryPattern, path: string): string {
+  return REPEATED_SLASH_READERS[pattern.pathRepeatedSlashes ?? "kept"](path);
 }
 
 /**

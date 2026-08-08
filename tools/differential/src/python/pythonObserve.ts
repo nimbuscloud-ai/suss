@@ -149,6 +149,16 @@ def observe_fastapi(package, requests):
     return endpoints
 
 
+def served_rule(app, rule):
+    # A rule can carry repeated slashes: flask-restx concatenates a
+    # blueprint prefix, an Api prefix and a namespace path as written.
+    # Werkzeug answers those at the merged path and redirects the
+    # written one, so the merged path is the one a client reaches.
+    if app.url_map.merge_slashes:
+        return re.sub(r"/{2,}", "/", rule.rule)
+    return rule.rule
+
+
 def observe_flask(package, requests):
     module = importlib.import_module(package + ".main")
     app = module.app
@@ -161,12 +171,13 @@ def observe_flask(package, requests):
             continue
         if not view_class.__module__.startswith(package):
             continue
+        served = served_rule(app, rule)
         for method in sorted(rule.methods & VERBS):
             unit = view_class.__name__ + "." + method.lower()
-            response = client.open(fill_params(rule.rule), method=method)
+            response = client.open(fill_params(served), method=method)
             endpoints.append(
                 {
-                    "path": canonical_path(rule.rule),
+                    "path": canonical_path(served),
                     "method": method,
                     "unit": unit,
                     "status": response.status_code,
