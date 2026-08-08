@@ -53,6 +53,15 @@ export interface RouteConventions {
    * weakest claim.
    */
   annotatedClassIsRequestBody?: boolean;
+  /**
+   * The status the library answers a declared response with when the
+   * route states none (FastAPI's 200). Library-defined, so it is
+   * declared here as data rather than baked into the adapter: without
+   * it, a route that declares a response shape and no status claims no
+   * status at all, which is what a reader should see when nobody can
+   * say what the status is.
+   */
+  defaultStatusCode?: number;
 }
 
 /**

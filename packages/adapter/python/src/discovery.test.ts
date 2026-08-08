@@ -1,10 +1,37 @@
 import { describe, expect, it } from "vitest";
 
+import { assembleSummary } from "@suss/extractor";
+
 import { discoverUnits } from "./discovery.js";
 import { parsePython } from "./parser.js";
 import { bindModule } from "./scope.js";
 
+import type { RawCodeStructure } from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
+
+/**
+ * Everything a unit's summary says about what nobody could read, as one
+ * string to match against. The adapter hands its readings over
+ * uncollapsed, so the sentences only exist once the extractor has
+ * assembled the summary.
+ */
+function unreadTextOf(unit: RawCodeStructure | undefined): string {
+  return unit === undefined
+    ? ""
+    : assembleSummary(unit)
+        .gaps.map((gap) => gap.description)
+        .join("\n");
+}
+
+/** The status a unit's summary claims for its first declared response. */
+function claimedStatusOf(unit: RawCodeStructure | undefined) {
+  if (unit === undefined) {
+    return undefined;
+  }
+
+  const output = assembleSummary(unit).transitions[0]?.output;
+  return output?.type === "response" ? output.statusCode : undefined;
+}
 
 const flaskRestxLike: PythonPack = {
   name: "flask-restx",
@@ -35,6 +62,7 @@ const fastapiLike: PythonPack = {
       verbAttributeNames: { get: "GET", post: "POST" },
       pathParamSyntax: "braces",
       annotatedClassIsRequestBody: true,
+      defaultStatusCode: 200,
       responseModelKeyword: "response_model",
       statusCodeKeyword: "status_code",
     },
@@ -231,7 +259,7 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
       method: "GET",
       path: null,
     });
-    expect(get?.unreadBinding).toContain("notASyntaxThisAdapterReads");
+    expect(unreadTextOf(get)).toContain("notASyntaxThisAdapterReads");
   });
 
   it("reads a path as written, with no path parameters, when the pack declares no template syntax", async () => {
@@ -400,7 +428,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     const createItem = units.find((u) => u.identity.name === "create_item");
     expect(createItem?.branches).toHaveLength(1);
     const branch = createItem?.branches[0];
-    expect(branch?.terminal.statusCode).toEqual({
+    expect(claimedStatusOf(createItem)).toEqual({
       type: "literal",
       value: 201,
     });
@@ -433,17 +461,39 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     const units = await unitsOf(computedStatus, [fastapiLike]);
     const createItem = units.find((u) => u.identity.name === "create_item");
     expect(createItem?.branches).toHaveLength(1);
-    expect(createItem?.branches[0]?.terminal.statusCode).toBeNull();
+    expect(claimedStatusOf(createItem)).toBeNull();
     expect(createItem?.branches[0]?.terminal.body?.shape?.type).toBe("ref");
+    expect(unreadTextOf(createItem)).toContain("not a literal number");
   });
 
-  it("defaults an unstated status to 200 once a response shape is known", async () => {
+  it("takes the status its pack declares as the library's default when the route states none", async () => {
     const units = await unitsOf(source, [fastapiLike]);
     const readItem = units.find((u) => u.identity.name === "read_item");
-    expect(readItem?.branches[0]?.terminal.statusCode).toEqual({
+    expect(claimedStatusOf(readItem)).toEqual({
       type: "literal",
       value: 200,
     });
+  });
+
+  it("claims no status when the route states none and its pack declares no default", async () => {
+    const noDefault: PythonPack = {
+      name: "fastapi-test",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedFunctionRoute",
+          importModule: ["fastapi"],
+          verbAttributeNames: { get: "GET", post: "POST" },
+          pathParamSyntax: "braces",
+          annotatedClassIsRequestBody: true,
+          responseModelKeyword: "response_model",
+          statusCodeKeyword: "status_code",
+        },
+      ],
+    };
+    const units = await unitsOf(source, [noDefault]);
+    const readItem = units.find((u) => u.identity.name === "read_item");
+    expect(claimedStatusOf(readItem)).toBeNull();
   });
 
   it("falls back to the return annotation when there is no response_model keyword", async () => {
@@ -490,7 +540,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
       method: "GET",
       path: null,
     });
-    expect(report?.unreadBinding).toContain("not a string literal");
+    expect(unreadTextOf(report)).toContain("not a string literal");
   });
 
   it("carries the response model's record shape in definitions", async () => {

@@ -65,6 +65,11 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         // readers.
         pathParamSyntax: "braces",
         annotatedClassIsRequestBody: true,
+        // FastAPI answers a route that declares no status with 200, so
+        // a route with a declared response body and no `status_code`
+        // still states a status, and this is where that number comes
+        // from rather than the adapter.
+        defaultStatusCode: 200,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
         routerComposition: {

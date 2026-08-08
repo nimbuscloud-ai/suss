@@ -26,6 +26,7 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 import type { ConditionSource } from "./paths/structuredStatement.js";
+import type { DefaultedReading, Reading } from "./reading.js";
 
 export { httpRouteDiscovery } from "./packHelpers.js";
 export {
@@ -33,6 +34,15 @@ export {
   PathBudgetExceeded,
   UnmodeledFlow,
 } from "./paths/enumeratePaths.js";
+export {
+  absentReading,
+  ambiguousReading,
+  andThenReading,
+  firstWrittenReading,
+  mapReading,
+  unreadableReading,
+  writtenReading,
+} from "./reading.js";
 
 export type {
   AccessRecognizer,
@@ -67,6 +77,7 @@ export type {
   StatementBlock,
   StructuredStatement,
 } from "./paths/structuredStatement.js";
+export type { DefaultedReading, Reading, SourceRange } from "./reading.js";
 
 // =============================================================================
 // RawCodeStructure — the interface between language adapters and the engine
@@ -218,6 +229,17 @@ export interface RawBranch {
    * The extractor copies this through to Transition.expectedInput.
    */
   expectedInput?: TypeShape | null;
+  /**
+   * The status this branch's response answers with, as the adapter read
+   * it, alongside the default the pack declares for a source that
+   * states none. Set instead of `terminal.statusCode` by an adapter
+   * that reads through `Reading`: this module is then the only code
+   * that turns the reading into a claim, so a status nobody wrote can
+   * only become one by a pack declaring it. An adapter that still
+   * collapses its own readings leaves this unset and fills
+   * `terminal.statusCode` as before.
+   */
+  statusCodeReading?: DefaultedReading<number>;
 }
 
 /** The values an outcome names, so a read through one is not missed. */
@@ -407,6 +429,16 @@ export interface RawCodeStructure {
    * unit.
    */
   unreadBinding?: string;
+  /**
+   * Readings the adapter took and handed over without collapsing. This
+   * module states the reason on any that came back unreadable or
+   * ambiguous, as an `unreadOutcome` gap, the same channel
+   * `unreadBinding` sentences land on, so a reader sees one kind of
+   * sentence however the adapter reported it. A written or absent
+   * reading says nothing here: what a written reading found is already
+   * on the summary.
+   */
+  readings?: readonly Reading<unknown>[];
 }
 
 // =============================================================================
@@ -469,11 +501,111 @@ export function makeTransitionId(
 // Core assembly function
 // =============================================================================
 
+// =============================================================================
+// Collapsing a reading
+//
+// The one place a `Reading` becomes a summary field, and the rule is
+// fixed. Written becomes a claim. Absent takes a default only when the
+// pack declared that default as data, so the value is library-defined
+// and sits where review reads it. Unreadable and ambiguous claim
+// nothing and state their reason as a gap.
+//
+// None of this is exported. A reader composes readings with the
+// combinators in reading.ts, and gets at a value it can claim only by
+// handing the reading over.
+// =============================================================================
+
+type ReadingCollapse<T, R> = {
+  [K in Reading<T>["kind"]]: (reading: Extract<Reading<T>, { kind: K }>) => R;
+};
+
+function collapseReading<T, R>(
+  table: ReadingCollapse<T, R>,
+  reading: Reading<T>,
+): R {
+  return (table[reading.kind] as (r: Reading<T>) => R)(reading);
+}
+
+/**
+ * The value a reading lets a summary claim: what the source wrote, or
+ * the default the pack declared when the source wrote nothing. A
+ * reading nobody could resolve claims nothing, and `unreadReasonOf`
+ * says why.
+ */
+function claimedValue<T>(defaulted: DefaultedReading<T>): T | null {
+  const table: ReadingCollapse<T, T | null> = {
+    written: (r) => r.value,
+    absent: () => defaulted.libraryDefault ?? null,
+    unreadable: () => null,
+    ambiguous: () => null,
+  };
+  return collapseReading(table, defaulted.reading);
+}
+
+/**
+ * Why a reading became no claim, in the sentence a gap carries, or null
+ * when it became one.
+ */
+function unreadReasonOf(reading: Reading<unknown>): string | null {
+  const table: ReadingCollapse<unknown, string | null> = {
+    written: () => null,
+    absent: () => null,
+    unreadable: (r) => r.reason,
+    ambiguous: (r) => r.reason,
+  };
+  return collapseReading(table, reading);
+}
+
+/**
+ * The branch as this module reads it. A status the adapter handed over
+ * as a reading is collapsed onto the terminal here, before anything
+ * else looks at the branch, so the transition's identity and its output
+ * agree about what status it answers with.
+ */
+function branchWithCollapsedReadings(branch: RawBranch): RawBranch {
+  if (branch.statusCodeReading === undefined) {
+    return branch;
+  }
+
+  const value = claimedValue(branch.statusCodeReading);
+  return {
+    ...branch,
+    terminal: {
+      ...branch.terminal,
+      statusCode: value !== null ? { type: "literal", value } : null,
+    },
+  };
+}
+
+/**
+ * Every sentence this unit's readings leave behind: what the adapter
+ * stated outright as `unreadBinding`, and the reason on each reading it
+ * handed over that nobody could resolve.
+ */
+function unreadSentences(raw: RawCodeStructure): string[] {
+  const handedOver: Reading<unknown>[] = [
+    ...(raw.readings ?? []),
+    ...raw.branches.flatMap((branch) =>
+      branch.statusCodeReading !== undefined
+        ? [branch.statusCodeReading.reading]
+        : [],
+    ),
+  ];
+
+  return [
+    ...(raw.unreadBinding !== undefined ? [raw.unreadBinding] : []),
+    ...handedOver
+      .map(unreadReasonOf)
+      .filter((reason): reason is string => reason !== null),
+  ];
+}
+
 export function assembleSummary(
   raw: RawCodeStructure,
   options: ExtractorOptions = DEFAULT_OPTIONS,
 ): BehavioralSummary {
-  const transitions: Transition[] = raw.branches.map((branch) => {
+  const transitions: Transition[] = raw.branches.map((rawBranch) => {
+    const branch = branchWithCollapsedReadings(rawBranch);
     // Conditions with structured: null become opaque predicates — never silently dropped.
     const conditions: Predicate[] = branch.conditions.map(
       rawConditionToPredicate,
@@ -633,12 +765,12 @@ export function detectGaps(
     });
   }
 
-  if (raw.unreadBinding !== undefined) {
+  for (const sentence of unreadSentences(raw)) {
     gaps.push({
       type: "unreadOutcome",
       conditions: [],
       consequence: "unknown",
-      description: raw.unreadBinding,
+      description: sentence,
     });
   }
 
