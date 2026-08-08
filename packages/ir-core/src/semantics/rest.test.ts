@@ -1,7 +1,9 @@
-// The rest protocol's request matching: whether a declared route
-// answers a concrete method and path. The flow walk asks this through
-// the registry, so what a route admits is pinned here, in the
-// protocol's own module, and nowhere else.
+/**
+ * The REST protocol's request matching: whether a declared route
+ * handles a concrete method and path. The flow walk asks this through
+ * the registry, so what a route admits is pinned down here, in the
+ * protocol's own module, and nowhere else.
+ */
 
 import { describe, expect, it } from "vitest";
 

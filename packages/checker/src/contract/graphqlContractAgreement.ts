@@ -1,4 +1,4 @@
-// graphqlContractAgreement.ts — sibling of contractAgreement.ts for
+// graphqlContractAgreement.ts: sibling of contractAgreement.ts for
 // the GraphQL response model.
 //
 // When two or more sources describe the same `gql:Type.field` boundary
@@ -10,12 +10,12 @@
 // fire on contract-vs-implementation mismatches in real codebases.
 //
 // Reuses the existing `contractDisagreement` finding kind; the
-// description carries the GraphQL-specific shape disagreement detail.
+// description has the GraphQL-specific shape disagreement detail.
 //
 // Provenance gate: skip pairs where any contributor's contract is
 // `derived` AND the other side is the same source (tautological self-
 // comparison). Cross-source comparison still runs even when one side
-// is `derived` — that's the point.
+// is `derived`: that's the point.
 
 import { summaryRef } from "@suss/behavioral-ir";
 
@@ -49,13 +49,13 @@ interface GraphqlBoundaryGroup {
  * boundary where 2+ sources declare contracts that disagree.
  *
  * Disagreement axes (v0):
- *   - return type incompatible (via bodyShapesMatch — same machinery
+ *   - return type incompatible (via bodyShapesMatch, same machinery
  *     REST agreement uses)
  *   - argument set differs (a present on one source, absent on the
  *     other; or types incompatible at a shared name)
  *
  * Argument REQUIRED-ness is recorded but not flagged as disagreement
- * yet — the precise rule (does adding required args break
+ * yet: the precise rule (does adding required args break
  * compatibility?) depends on whether the contract is provider-side
  * or consumer-side, which we don't separate cleanly today. Tracked
  * as a follow-up.
@@ -121,7 +121,7 @@ function compareGraphqlSources(
       continue;
     }
 
-    // Return-type compatibility — same matcher REST agreement uses.
+    // Return-type compatibility: same matcher REST agreement uses.
     const returnMatch = bodyShapesMatch(
       baseline.contract.returnType,
       other.contract.returnType,
@@ -169,7 +169,7 @@ function compareGraphqlSources(
         continue;
       }
       // Argument present on one side and missing from the other.
-      // Only flag when both contracts are "independent" — derived
+      // Only flag when both contracts are "independent", derived
       // contracts often summarise differently and missing args may
       // just mean the source didn't enumerate them.
       if (

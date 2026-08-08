@@ -33,10 +33,10 @@ export function isSuccessStatus(status: number): boolean {
 }
 
 /**
- * Whether a summary says nothing about behaviour because nothing was
- * read, rather than because there was nothing to read. A boundary
- * announced with a handler nobody could follow comes through as a
- * summary with no transitions and a gap saying why, and every check
+ * Whether a summary says nothing about behaviour because nothing could
+ * be read, rather than because there was nothing to read. A boundary
+ * declared with a handler nobody could follow comes through as a
+ * summary with no transitions plus a gap saying why, and every check
  * that reasons from what a side does has to stop short of concluding
  * that it does nothing.
  */
@@ -58,7 +58,7 @@ export function hasOpaqueStatus(t: Transition): boolean {
 /**
  * Status property names recognised by `consumerExpectedStatuses` and
  * related helpers. Built once per check via `statusAccessorsFor(summary)`
- * (see declared-contract.ts) so the names track the consumer's pack —
+ * (see declared-contract.ts) so the names track the consumer's pack ,
  * `["status"]` for fetch/axios today, but extensible without code changes
  * if a pack declares custom names.
  */
@@ -120,7 +120,7 @@ function asStatusLiteral(
 }
 
 /**
- * Whether `v` is a `ValueRef` that names a status property — i.e. its
+ * Whether `v` is a `ValueRef` that reads a status property, meaning its
  * outermost accessor is one of the configured names.
  *
  * Exported because provider-coverage filters out status-eq predicates

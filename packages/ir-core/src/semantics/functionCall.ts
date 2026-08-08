@@ -1,7 +1,11 @@
-// functionCall.ts: an in-process function call as a boundary.
-//
-// Covers React components, custom-hook boundaries, bare TS function
-// exports, and a package's public surface.
+/**
+ * An in-process function call as a boundary.
+ *
+ * This covers React components, custom-hook boundaries, bare TypeScript
+ * function exports, and a package's public surface. Only a package
+ * export gets an identity key, because it is the only one of those with
+ * a name that two repositories can both refer to.
+ */
 
 import { z } from "zod";
 
@@ -19,22 +23,22 @@ export const FunctionCallSemanticsSchema = z.object({
   /** Named export within the module, when applicable. */
   exportName: z.string().optional(),
   /**
-   * Package name (as written in `package.json`) when this identity
-   * refers to a public package export — e.g. `"@suss/behavioral-ir"`.
-   * Set alongside `exportPath` by packs that resolve a package's
-   * public surface (the `packageExports` discovery variant). Distinct
-   * from `module`, which is a repo-relative module path for
-   * intra-repo pairing.
+   * Package name, as written in `package.json`, when this identity
+   * refers to a public package export, for example
+   * `"@suss/behavioral-ir"`. Packs that resolve a package's public
+   * surface (the `packageExports` discovery variant) set it alongside
+   * `exportPath`. It is different from `module`, which is a
+   * repo-relative module path used for pairing inside one repo.
    */
   package: z.string().optional(),
   /**
-   * Path to the exported binding within the package, starting with
-   * the sub-path key when one is used. Examples:
-   *   `["parseSummary"]`              — root export
-   *   `["schemas", "BoundaryBindingSchema"]` — sub-path `./schemas`
+   * Path to the exported binding within the package, starting with the
+   * sub-path key when one is used. Examples:
+   *   `["parseSummary"]`: a root export
+   *   `["schemas", "BoundaryBindingSchema"]`: the sub-path `./schemas`
    *
-   * The first segment is the sub-path without the leading `./`
-   * (`"."` → omitted). The last segment is the exported name.
+   * The first segment is the sub-path without the leading `./`, and
+   * `"."` is left out. The last segment is the exported name.
    */
   exportPath: z.array(z.string()).optional(),
 });
@@ -49,9 +53,9 @@ export const functionCallSemantics = defineBoundarySemantics({
     exchangesHttpResponses: false,
     reportsUnpairedItself: false,
     /**
-     * `"fn:<package>::<exportPath>"` when both are set; other
-     * in-process function-call units (intra-repo components, bare
-     * handlers) have no key.
+     * `"fn:<package>::<exportPath>"` when both are set. Other in-process
+     * function-call units, such as components and bare handlers inside
+     * one repo, have no key at all.
      */
     identityKey(semantics) {
       if (

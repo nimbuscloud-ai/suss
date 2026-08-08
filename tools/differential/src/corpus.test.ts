@@ -1,11 +1,11 @@
-// corpus.test.ts — the permanent counterexample corpus.
+// corpus.test.ts: the permanent counterexample corpus.
 //
 // Every entry is a shrunk counterexample from a real fuzz run, pinned
 // as a concrete (program, request, verdict) triple:
 //
 // - `gap:*` entries document a KNOWN soundness gap: the test asserts
 //   the mismatch still reproduces. When extraction rework closes the gap,
-//   the entry fails — that's the signal to flip its verdict to
+//   the entry fails: that's the signal to flip its verdict to
 //   "clean", turning the same triple into a regression fixture.
 // - `fixed:*` entries pin a bug that has been fixed: the test asserts
 //   the run is clean. They are the regression suite the fuzzer earns
@@ -15,7 +15,7 @@
 // - 2026-07-30: nested-guard shapes (2 entries) and loop-return shape
 //   (1 entry) captured from the first fuzz session (seeds 8317838,
 //   1436983, and the loop tier's first round).
-// - 2026-07-30: dynamic element-access index — the fuzzer's first NEW
+// - 2026-07-30: dynamic element-access index, the fuzzer's first NEW
 //   find (not previously documented): `obj[key]` with a variable index
 //   was encoded as `indexAccess("key")`, indistinguishable from
 //   `obj["key"]`, so a dynamic read masqueraded as a static property
@@ -23,7 +23,7 @@
 //   packages/adapter/typescript/src/subjects.ts (dynamic index →
 //   unresolved). Entry pins the fixed behavior.
 // - 2026-07-30: nested-guard and loop-return entries flipped gap:* →
-//   fixed:* — the CFG path engine (adapter paths/pathConditions.ts)
+//   fixed:*: the CFG path engine (adapter paths/pathConditions.ts)
 //   closed both documented soundness gaps; the entries now pin the
 //   sound per-path conditions as regressions.
 
@@ -147,7 +147,7 @@ const CORPUS: CorpusEntry[] = [
     },
     expectations: [
       // Loop guard fires (q missing) → 400 observed; the 201 transition
-      // carries the opaque loop-exit negation and abstains (legacy
+      // has the opaque loop-exit negation and abstains (legacy
       // claimed unconditional truth → falseClaim).
       { request: {}, verdict: "clean" },
     ],
@@ -157,8 +157,8 @@ const CORPUS: CorpusEntry[] = [
     tag: "fixed:dynamic-index",
     // Same loop program, but the request *passes* the guard. Before
     // the subjects.ts fix, `!req.query[key]` was encoded as
-    // indexAccess("key") — a static read of the literal property
-    // "key" — so the 400 transition evaluated TRUE on this request
+    // indexAccess("key"): a static read of the literal property
+    // "key": so the 400 transition evaluated TRUE on this request
     // and produced a false claim. Post-fix the dynamic access is
     // unresolved and the transition abstains.
     program: {

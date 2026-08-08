@@ -16,7 +16,7 @@ const fixturesDir = path.resolve(
 
 function handlersFor(rel: string): ReturnType<typeof handlersForFile> {
   clearTemplateCache();
-  // The fixture names two children nothing here can open, on purpose.
+  // The fixture refers to two children nothing here can open, on purpose.
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
   try {
     return handlersForFile(path.join(fixturesDir, rel));

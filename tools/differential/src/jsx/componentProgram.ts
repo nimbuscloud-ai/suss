@@ -1,8 +1,8 @@
-// componentProgram.ts — the generated-component DSL and its renderer.
+// componentProgram.ts: the generated-component DSL and its renderer.
 //
 // The render-boundary sibling of the handler DSL (../program.ts): a
 // `ComponentProgram` covers the constructs the React pack claims to
-// model — destructured string props, early-return guards (`return
+// model: destructured string props, early-return guards (`return
 // null` / `return <jsx/>`), and a JSX tree with inline conditionals
 // (`{cond && <X/>}`, `{cond ? <A/> : <B/>}`). One program renders to
 // two views that cannot drift: a TSX module for extraction and the
@@ -20,11 +20,11 @@ export type PropCond =
 export type JsxNode =
   | { type: "element"; tag: string; children: JsxNode[] }
   | { type: "text"; value: string }
-  /** `{prop}` interpolation — renders the prop's string value. */
+  /** `{prop}` interpolation: renders the prop's string value. */
   | { type: "propText"; prop: string }
   /** `{cond && <child/>}` */
   | { type: "logical"; cond: PropCond; child: JsxNode }
-  /** `{cond ? <A/> : <B/>}` — `whenFalse: null` renders the `: null` form. */
+  /** `{cond ? <A/> : <B/>}`, `whenFalse: null` renders the `: null` form. */
   | {
       type: "ternary";
       cond: PropCond;
@@ -42,7 +42,7 @@ export type ComponentGuard =
   | { type: "guardNull"; cond: PropCond }
   | { type: "guardJsx"; cond: PropCond; node: JsxElement }
   /**
-   * A guard one block deep — `if (outer) { if (inner) { return null; } }`.
+   * A guard one block deep, `if (outer) { if (inner) { return null; } }`.
    * Formerly the render-boundary manifestation of the nested-guard
    * soundness gap (shared adapter machinery with the HTTP DSL's
    * `nestedGuard`); sound since the CFG path engine landed.
@@ -154,7 +154,7 @@ export function componentBodyLines(program: ComponentProgram): string[] {
   ];
 }
 
-/** The TSX module — what the extraction pipeline sees (and, transpiled, what runs). */
+/** The TSX module: what the extraction pipeline sees (and, transpiled, what runs). */
 export function renderComponentModule(program: ComponentProgram): string {
   const body = componentBodyLines(program)
     .map((line) => `  ${line}`)
@@ -171,7 +171,7 @@ export function renderComponentModule(program: ComponentProgram): string {
 }
 
 // ---------------------------------------------------------------------------
-// Prop collection — which props do conditions observe?
+// Prop collection: which props do conditions observe?
 // ---------------------------------------------------------------------------
 
 function condProps(cond: PropCond): string[] {

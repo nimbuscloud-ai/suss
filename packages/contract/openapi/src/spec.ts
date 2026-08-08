@@ -1,6 +1,6 @@
-// spec.ts — Minimal OpenAPI 3.x type subset that suss consumes.
+// spec.ts: Minimal OpenAPI 3.x type subset that suss consumes.
 //
-// We deliberately do not model the full spec — only the operation,
+// We deliberately do not model the full spec, only the operation,
 // parameter, requestBody, response, and schema fields that map onto
 // BehavioralSummary. Anything else is ignored at parse time.
 
@@ -121,9 +121,9 @@ export interface OpenApiSchema {
    *   of names. When the array includes `"null"`, the schema is nullable.
    */
   type?: SchemaTypeName | SchemaTypeName[];
-  /** 3.0 only — 3.1 encodes nullability via `type: [..., "null"]`. */
+  /** 3.0 only: 3.1 encodes nullability via `type: [... "null"]`. */
   nullable?: boolean;
-  /** 3.1 / JSON Schema 2020-12 — a single-valued enum shorthand. */
+  /** 3.1 / JSON Schema 2020-12, a single-valued enum shorthand. */
   const?: string | number | boolean | null;
   enum?: Array<string | number | boolean | null>;
   properties?: Record<string, OpenApiSchema>;

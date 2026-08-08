@@ -1,4 +1,4 @@
-// fieldAccesses.ts — Collect property accesses on the API response variable
+// fieldAccesses.ts: Collect property accesses on the API response variable
 //
 // After a consumer branches on status, it reads fields from the response body.
 // This module traces those accesses and builds a TypeShape representing what
@@ -73,7 +73,7 @@ export function findResponseAccessor(
   if (Node.isObjectBindingPattern(nameNode)) {
     const bindings = new Map<string, string>();
     for (const element of nameNode.getElements()) {
-      // Skip rest patterns — `...rest` isn't a known property on the response.
+      // Skip rest patterns: `...rest` isn't a known property on the response.
       if (element.getDotDotDotToken() !== undefined) {
         continue;
       }
@@ -94,7 +94,7 @@ export function findResponseAccessor(
 }
 
 /**
- * @deprecated Kept for compatibility — prefer `findResponseAccessor`.
+ * @deprecated Kept for compatibility: prefer `findResponseAccessor`.
  * Returns the simple identifier name when the consumer assigns the call to
  * one; null for destructured assignments and other shapes.
  */
@@ -108,7 +108,7 @@ export function findResponseVariable(callExpr: CallExpression): string | null {
  * `.then` callbacks instead of a variable binding
  * (`fetch(url).then(res => res.json()).then(data => use(data))`).
  *
- * Every `.then` / `.catch` callback parameter inside `func` that carries a
+ * Every `.then` / `.catch` callback parameter inside `func` that has a
  * `derivedFrom` link (via `thenParameterLink`) is resolved to the property
  * chain, rooted at the response call, that its value stands for. `res`
  * binds to the response itself (`[]`); `res.json()` flowing into the next
@@ -213,7 +213,7 @@ function prefixOfExpr(
 
 /**
  * The property chain of a member expression rooted at a `.then`-bound
- * parameter — `res.json()` → `[...prefix(res), "json"]`, `res.body` →
+ * parameter: `res.json()` → `[...prefix(res), "json"]`, `res.body` →
  * `[...prefix(res), "body"]`. Null when the root isn't such a parameter.
  */
 function prefixOfMemberExpr(
@@ -370,7 +370,7 @@ function collectPropertyAccesses(
       return;
     }
     // Skip the binding's own declaration site (a destructured element or a
-    // callback parameter name) — it isn't a read of the response.
+    // callback parameter name): it isn't a read of the response.
     if (isBindingDeclarationSite(node)) {
       return;
     }
@@ -402,7 +402,7 @@ function collectPropertyAccesses(
 
 /**
  * Whether `node` is the declaration site of a local binding rather than a
- * read of it — a destructured element (inside an object binding pattern)
+ * read of it: a destructured element (inside an object binding pattern)
  * or a callback parameter's own name node.
  */
 function isBindingDeclarationSite(node: Node): boolean {
@@ -450,7 +450,7 @@ function isInsideObjectBindingPattern(node: Node): boolean {
  *
  * Leaf types are `unknown` because we're recording *which* fields are accessed,
  * not what types the consumer expects them to be. The checker compares field
- * presence, not leaf types — a missing field is a definite mismatch, while
+ * presence, not leaf types: a missing field is a definite mismatch, while
  * a present field with the wrong type is caught by the existing body-shape
  * matcher against the contract.
  */
@@ -584,7 +584,7 @@ function isDescendantOf(node: Node, ancestor: Node): boolean {
 // ---------------------------------------------------------------------------
 
 export interface BranchFieldAccesses {
-  /** Terminal location (start, end lines) — used to match back to transitions */
+  /** Terminal location (start, end lines): used to match back to transitions */
   terminalLocation: { start: number; end: number };
   /** The shape of fields the consumer reads from the response in this branch */
   expectedInput: TypeShape | null;
@@ -597,7 +597,7 @@ export interface BranchFieldAccesses {
  * @param callExpr The API call expression (fetch(), client.getUser())
  * @param func The enclosing function
  * @param branchLocations Terminal locations from the extracted branches
- * @param responseSemantics Optional response property mappings from the pack —
+ * @param responseSemantics Optional response property mappings from the pack ,
  *   used to filter non-body properties instead of a hardcoded list
  */
 export function collectClientFieldAccesses(

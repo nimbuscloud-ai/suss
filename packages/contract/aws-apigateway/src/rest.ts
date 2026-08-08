@@ -1,4 +1,4 @@
-// rest.ts — Convert a normalized RestApiConfig into BehavioralSummary[].
+// rest.ts: Convert a normalized RestApiConfig into BehavioralSummary[].
 //
 // Manifest-agnostic: callers (CFN/CDK/Terraform readers) build
 // RestApiConfig from their source format and pass it here. This module
@@ -40,7 +40,7 @@ export function restApiToSummaries(config: RestApiConfig): BehavioralSummary[] {
 
   // Synthesize OPTIONS preflight per unique resource path when CORS is
   // configured at the API level. A real REST API can also declare CORS
-  // per-method via "EnableCorsOnMethod" — readers should turn those
+  // per-method via "EnableCorsOnMethod": readers should turn those
   // into explicit OPTIONS endpoints in `endpoints` and skip the
   // top-level `cors` field, so we don't double-emit.
   if (config.cors !== undefined) {
@@ -95,7 +95,7 @@ function buildEndpointSummary(
   // Endpoints with no integration status codes AND no platform
   // contributions still need at least one transition so they pair
   // with consumers. Default isDefault transition is the under-specified
-  // fallback — manifest didn't tell us what the integration returns.
+  // fallback: manifest didn't tell us what the integration returns.
   if (transitions.length === 0) {
     transitions.push({
       id: `${ownerKey}:integration:default`,

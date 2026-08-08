@@ -18,7 +18,7 @@ const api = axios.create({
 
 // Direct axios.create() instance call with a destructured response and a
 // template-literal path. Branches on `status === 404` to model "not found".
-// Petstore declares 200 / 400 / 404 — the 400 case is unhandled here and
+// Petstore declares 200 / 400 / 404, the 400 case is unhandled here and
 // suss should surface that.
 export async function getPetById(petId: number): Promise<Pet | null> {
   const { data, status } = await api.get(`/pet/${petId}`);
@@ -28,7 +28,7 @@ export async function getPetById(petId: number): Promise<Pet | null> {
   return data;
 }
 
-// Try/catch around axios — axios throws on 4xx/5xx by default, so the
+// Try/catch around axios: axios throws on 4xx/5xx by default, so the
 // realistic 404 shape lives in the catch block as `err.response.status`.
 export async function safeGetPet(petId: number): Promise<Pet | null> {
   try {
@@ -51,7 +51,7 @@ export async function listPets(): Promise<Pet[]> {
 
 // Body field reads through the wrapper. The wrapper has already unwrapped
 // the response via destructuring, so `pet.id` / `pet.name` / `pet.status`
-// are direct body accesses — the synthesised summary's expectedInput
+// are direct body accesses, the synthesised summary's expectedInput
 // captures them and the body-compatibility check surfaces optional-field
 // findings for `id` and `status` (only `name` and `photoUrls` are required
 // on Petstore's Pet schema).
@@ -61,7 +61,7 @@ export async function describePetViaWrapper(petId: number): Promise<string> {
 }
 
 // Reads body fields after destructuring. `name` is required in Petstore's
-// Pet schema; `id` and `status` are optional — suss should emit info-level
+// Pet schema; `id` and `status` are optional, suss should emit info-level
 // "consumer reads optional field" findings for those two.
 export async function describePet(petId: number): Promise<string> {
   const { data } = await api.get(`/pet/${petId}`);

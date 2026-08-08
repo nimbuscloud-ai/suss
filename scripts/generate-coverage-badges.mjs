@@ -1,6 +1,6 @@
 // generate-coverage-badges.mjs
 // Reads coverage-summary.json files from each package and writes SVG badges
-// to .github/badges/. Idempotent — no timestamps in output.
+// to .github/badges/. Idempotent: no timestamps in output.
 //
 // Also normalizes coverage-summary.json: relativizes paths and pretty-prints.
 
@@ -59,7 +59,7 @@ function makeSvg(label, value, color) {
 
 // Normalize and pretty-print any coverage-summary.json files the test
 // run produced (vitest emits minified JSON with absolute paths, which
-// we can't commit — see scripts/normalize-coverage-summary.mjs).
+// we can't commit, see scripts/normalize-coverage-summary.mjs).
 for (const [pkgPath] of packageDirs) {
   const summaryPath = resolve(root, pkgPath, "coverage/coverage-summary.json");
   normalizeSummaryFile(summaryPath);
@@ -74,7 +74,7 @@ for (const [pkgPath, name] of packageDirs) {
     const data = JSON.parse(readFileSync(summaryPath, "utf8"));
     pct = data.total.lines.pct;
   } catch {
-    // No coverage data — skip but still emit a badge
+    // No coverage data: skip but still emit a badge
     pct = 0;
   }
 

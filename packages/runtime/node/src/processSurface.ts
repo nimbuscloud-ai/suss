@@ -1,9 +1,9 @@
-// processSurface.ts — recognize reads of the Node `process` global
+// processSurface.ts: recognize reads of the Node `process` global
 // (argv, cwd, platform, version, versions). Each becomes an effect
 // stamped with an opacity reason so downstream tooling sees the
 // dependency on the runtime surface.
 //
-// `process.env.X` reads are deliberately NOT handled here — the
+// `process.env.X` reads are deliberately NOT handled here, the
 // sibling `envVarRecognizer` (envVars.ts) owns that slice and emits
 // a pairing-grade `config-read` interaction. The two recognizers
 // partition the `process.*` space without duplication: the env-var
@@ -24,7 +24,7 @@ import type { AccessRecognizer } from "@suss/extractor";
 export interface ProcessSurfaceOptions {
   /**
    * Deployment context for argv reads. Same shape as the env-var
-   * recognizer's option — argv and env-vars share the runtime-config
+   * recognizer's option: argv and env-vars share the runtime-config
    * channel concept.
    */
   deploymentTarget?: "lambda" | "ecs-task" | "container" | "k8s-deployment";
@@ -37,7 +37,7 @@ export interface ProcessSurfaceOptions {
 }
 
 /**
- * Read of `process.env.X` — let the sibling `envVarRecognizer`
+ * Read of `process.env.X`, let the sibling `envVarRecognizer`
  * handle these. Returns true when `node` is the outer `.X` access on
  * a `process.env` chain.
  */
@@ -97,7 +97,7 @@ function recognizeProperty(
   deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
   instanceName: string,
 ): Effect[] | null {
-  // Skip env-var reads — handled by the sibling envVarRecognizer.
+  // Skip env-var reads: handled by the sibling envVarRecognizer.
   if (isProcessEnvVarRead(node)) {
     return null;
   }
@@ -105,12 +105,12 @@ function recognizeProperty(
   const subject = node.getExpression();
   const name = node.getName();
 
-  // process.argv as a runtime-config channel — same shape as env vars.
+  // process.argv as a runtime-config channel, same shape as env vars.
   if (isProcessIdentifier(subject) && name === "argv") {
     return [argvRead(deploymentTarget, instanceName, node.getText(), null)];
   }
 
-  // process.cwd / .platform / .version / etc. — opaque metadata.
+  // process.cwd / .platform / .version / etc. opaque metadata.
   if (isProcessIdentifier(subject) && OPAQUE_PROPERTY_NAMES.has(name)) {
     return [opaqueProcessRead(node.getText(), `process.${name}`)];
   }
@@ -172,7 +172,7 @@ function argvRead(
 }
 
 function opaqueProcessRead(callee: string, _label: string): Effect {
-  // Opaque runtime-metadata reads don't have a pairing target — they
+  // Opaque runtime-metadata reads don't have a pairing target. They
   // describe the unit's dependency on the runtime, not a contract.
   // Use a runtime-config interaction with a synthetic "<runtime>"
   // name so the pairing dispatcher routes it correctly while keeping

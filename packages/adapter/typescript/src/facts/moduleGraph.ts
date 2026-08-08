@@ -1,15 +1,15 @@
-// moduleGraph.ts — which files a file imports, and which packages it
+// moduleGraph.ts: which files a file imports, and which packages it
 // reaches through them.
 //
 // Asking ts-morph what a module specifier resolves to is expensive: the
 // compiler runs full module resolution, project-reference redirects and
-// path canonicalisation for every call. The answer never changes within
+// path canonicalisation for every call. The result never changes within
 // a run, so every specifier is resolved once and the edge is kept.
 //
 // Package reachability is a fixpoint over those edges, so the rules
 // engine derives it. Reading a file's specifiers is cheap and resolving
 // them is not, which decides the shape of the walk: a file whose own
-// specifiers already name the package answers the question by itself,
+// specifiers already name the package settles it by itself,
 // and nothing below it needs resolving.
 
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
@@ -17,7 +17,7 @@ import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import type { SourceFile } from "ts-morph";
 
 /**
- * `importsFile(f, g)` says f names a specifier resolving to file g.
+ * `importsFile(f, g)` says f writes a specifier resolving to file g.
  * `importsPackage(f, p)` says one of f's own specifiers is p or a
  * subpath of p. `reachesPackage(f, p)` says p is reachable from f
  * through project files.
@@ -73,11 +73,11 @@ export class ModuleGraph {
   /**
    * For each of these package sets, which files reach any package in it
    * through project-local imports and re-exports, a file's own imports
-   * included. The answer comes back in the order the sets were given.
+   * included. Results come back in the order the sets were given.
    *
    * Every set is answered together because reachability is a fixpoint,
    * and a fixpoint asked twice re-reads what it already concluded. One
-   * pass of the rules over the collected edges answers all of them.
+   * pass of the rules over the collected edges covers all of them.
    */
   filesReachingAnyPackage(
     fileSets: ReadonlyArray<FileSetQuery>,
@@ -119,13 +119,13 @@ export class ModuleGraph {
   }
 
   /**
-   * Collect what the rules need to answer for this file and this
+   * Collect what the rules need in order to settle this file and this
    * package: the edges of every file below it that does not already
    * name the package itself.
    *
-   * A file that names the package stops the walk there. It is reached
+   * A file that imports the package stops the walk there. It is reached
    * whatever it imports, so resolving its specifiers would cost the
-   * expensive half of the walk for an answer already in hand. A file an
+   * expensive half of the walk for something already known. A file an
    * earlier walk settled stops it for the same reason.
    */
   private settle(root: SourceFile, name: string): void {
@@ -212,7 +212,7 @@ function resolveModuleSpecifiers(sourceFile: SourceFile): SourceFile[] {
 }
 
 /**
- * Whether any of these module specifiers names this package. A package
+ * Whether any of these module specifiers points at this package. A package
  * name matches itself and any of its subpaths, mirroring how npm
  * packages export sub-paths.
  */
@@ -225,7 +225,7 @@ export function namesPackage(
   );
 }
 
-/** Whether any of these module specifiers names any of these packages. */
+/** Whether any of these module specifiers points at any of these packages. */
 export function namesAnyPackage(
   specifiers: ReadonlyArray<string>,
   names: ReadonlyArray<string>,

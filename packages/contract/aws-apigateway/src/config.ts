@@ -1,8 +1,8 @@
-// config.ts — Normalized, manifest-agnostic configuration shapes.
+// config.ts: Normalized, manifest-agnostic configuration shapes.
 //
 // All readers (CFN, CDK, Terraform) build one of these and hand it to
 // restApiToSummaries / httpApiToSummaries. Carry the *behavioral* knobs,
-// not just structural identity — authorizers, CORS, throttling, etc.
+// not just structural identity, authorizers, CORS, throttling, etc.
 // produce platform-injected transitions that wouldn't otherwise show up
 // in a handler's static summary.
 
@@ -80,13 +80,13 @@ export interface RequestValidationConfig {
 /**
  * Pointer from a declared route to the code that implements it. A
  * manifest reader (CFN/SAM, CDK, Terraform) fills this in when it knows
- * which module + export backs the route — e.g. a SAM Lambda proxy
- * integration whose `Handler` names the file and export. The fields are
+ * which module + export backs the route, e.g. a SAM Lambda proxy
+ * integration whose `Handler` gives the file and export. The fields are
  * generic "where is the code" identity, not any one manifest's
- * semantics; `aws-apigateway` carries the pointer onto the summary
+ * semantics; `aws-apigateway` puts the pointer onto the summary
  * (`metadata.http.implementingHandler`) without interpreting it, so a
  * checker can later correlate the declared route with the extracted
- * handler summary that carries the same REST binding.
+ * handler summary with the same REST binding.
  */
 export interface HandlerPointer {
   /** Raw handler reference, e.g. "src/handlers/confirmToken.handler". */
@@ -124,7 +124,7 @@ export interface IntegrationConfig {
    * Status codes the backend integration can produce. For proxy
    * integrations this is what the handler emits; for non-proxy it's
    * what `IntegrationResponses` map to. Empty array is allowed and
-   * means "we don't know" — only platform-injected transitions will
+   * means "we don't know", only platform-injected transitions will
    * be emitted.
    */
   statusCodes: number[];
@@ -157,7 +157,7 @@ export interface RestEndpointConfig {
    */
   name?: string;
   /**
-   * Code that implements this endpoint, when the manifest names it
+   * Code that implements this endpoint, when the manifest says which
    * (SAM Lambda proxy `Handler`). Emitted as
    * `metadata.http.implementingHandler`; purely additive.
    */
@@ -174,7 +174,7 @@ export interface RestApiConfig {
   /** API-level defaults that cascade onto endpoints unless overridden. */
   defaultAuthorizer?: AuthorizerConfig;
   defaultThrottle?: ThrottleConfig;
-  /** API-level CORS — produces an OPTIONS endpoint per resource path. */
+  /** API-level CORS: produces an OPTIONS endpoint per resource path. */
   cors?: CorsConfig;
   /** Binary media types declared on the API; doesn't affect transitions. */
   binaryMediaTypes?: string[];
@@ -206,7 +206,7 @@ export interface HttpRouteConfig {
   throttle?: ThrottleConfig;
   name?: string;
   /**
-   * Code that implements this route, when the manifest names it (SAM
+   * Code that implements this route, when the manifest says which (SAM
    * Lambda proxy `Handler`). Emitted as
    * `metadata.http.implementingHandler`; purely additive.
    */

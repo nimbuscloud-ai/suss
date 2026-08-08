@@ -1,12 +1,14 @@
-// Two Lambdas answering one subject, through the pipeline a user runs:
-// extract the handlers with the aws-lambda pack, read the SAM template
-// with the CloudFormation contract reader, then pair.
-//
-// Both packs now name the Lambda each summary belongs to, which is what
-// this pins. Pairing does not read that field yet, so the shared subject
-// still produces every handler against every subscription. The fan-out
-// is asserted here so the count is on record and the change that fixes
-// it has something to move.
+/**
+ * Two Lambdas subscribed to one subject, through the pipeline a user
+ * runs: extract the handlers with the aws-lambda pack, read the SAM
+ * template with the CloudFormation contract reader, then pair.
+ *
+ * Both packs now record which Lambda each summary belongs to, which is
+ * what this pins. Pairing does not read that field yet, so the shared
+ * subject still pairs every handler with every subscription. The
+ * fan-out is asserted here so the count is on record and the change
+ * that fixes it has something to move.
+ */
 
 import path from "node:path";
 
@@ -39,8 +41,8 @@ async function extractCode(): Promise<BehavioralSummary[]> {
     frameworks: [
       awsLambdaFramework({
         // The fixture service owns this factory, so the pack only reads
-        // the subject once the service names it, the way a project does
-        // through `-f aws-lambda=config.json`.
+        // the subject once the service points at it, the way a project
+        // does through `-f aws-lambda=config.json`.
         subjectFactories: [{ property: "subject" }],
       }),
     ],
@@ -74,9 +76,9 @@ describe("aws-lambda fan-out on one subject", () => {
       );
     });
 
-    // Two handlers in code, two subscriptions in the template. Each
-    // names its own Lambda, and the two packs that say so never talk to
-    // each other.
+    // Two handlers in code, two subscriptions in the template. Each one
+    // records its own Lambda, and the two packs that record it never
+    // talk to each other.
     expect(onSubject.map(unitNameOf).sort()).toEqual([
       "OrderIndexerFunction",
       "OrderIndexerFunction",
@@ -92,7 +94,7 @@ describe("aws-lambda fan-out on one subject", () => {
 
     // Four combinations, because the subject is the whole key. Two of
     // them join one function's code to another function's wiring, which
-    // states nothing about either.
+    // tells you nothing about either.
     expect(pairs).toHaveLength(4);
     const crossed = pairs.filter(
       (p) => unitNameOf(p.provider) !== unitNameOf(p.consumer),

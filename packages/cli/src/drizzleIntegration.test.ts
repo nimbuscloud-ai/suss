@@ -1,10 +1,10 @@
-// Drizzle integration test — the recognizer through the REAL
+// Drizzle integration test: the recognizer through the REAL
 // extraction pipeline (not recognizer-in-isolation, which the pack's
 // own tests cover).
 //
 // An Express handler queries Drizzle three ways (builder read, insert,
 // update); extraction runs with both packs active and the resulting
-// handler summary must carry `storage-access` interactions with the
+// handler summary must have `storage-access` interactions with the
 // SQL table names resolved from the schema's `pgTable("...")` calls.
 // Unlike the Prisma equivalent, no generate step exists: Drizzle's
 // schema IS TypeScript, so the whole fixture lives in memory.

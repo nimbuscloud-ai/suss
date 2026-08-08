@@ -1,19 +1,21 @@
-// A summary with the types it names put back into its shapes.
-//
-// An extract writes a named type once and refers to it after that, so a
-// reader following a name has somewhere to look and one megabyte of
-// repeated expansion does not happen. A comparison of two refs can only
-// say whether the names match, which is not what a check is for, so the
-// table goes back in before anything compares them.
-//
-// This is a read of one summary, so the shapes it hands back are new
-// and the summary it was given is untouched.
+/**
+ * A summary with its named types put back into its shapes.
+ *
+ * An extract writes a named type once and refers to it after that, so a
+ * reader following a name has somewhere to look and one megabyte of
+ * repeated expansion never happens. Comparing two refs can only tell
+ * you whether the names match, which is not what a check is for, so the
+ * table goes back in before anything compares them.
+ *
+ * Nothing is modified in place: the shapes handed back are new and the
+ * summary that was passed in is untouched.
+ */
 
 import { withDefinitionsInlined } from "@suss/ir-core";
 
 import type { BehavioralSummary, TypeShape } from "@suss/behavioral-ir";
 
-/** A summary whose shapes spell out the types the summary names. */
+/** A summary whose shapes spell out every type it refers to by name. */
 export function summaryWithDefinitionsInlined(
   summary: BehavioralSummary,
 ): BehavioralSummary {
@@ -44,7 +46,8 @@ export function summaryWithDefinitionsInlined(
   };
 }
 
-/** What an interaction says came back is a shape, named the same way. */
+/** What an interaction returns is a shape too, and refers to types the
+ * same way. */
 function effectSpelledOut(
   effect: BehavioralSummary["transitions"][number]["effects"][number],
   spellOut: (shape: TypeShape) => TypeShape,

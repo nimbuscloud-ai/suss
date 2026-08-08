@@ -1,4 +1,4 @@
-// style.ts — terminal styling, off unless the terminal wants it.
+// style.ts: terminal styling, off unless the terminal wants it.
 //
 // No dependency for this. The handful of codes below is the whole of
 // what the output needs, and a colour library is a supply-chain

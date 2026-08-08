@@ -1,10 +1,10 @@
 // What the rewrite has to preserve, over rule sets nobody hand-picked.
 //
-// Deriving less is only worth anything if the answers are the same, so
-// the property that carries this file is the differential one: the same
-// facts through the plain rules and through the rewritten rules give the
-// same complete relations, tuple for tuple. The rest are the cases a
-// reader would want spelled out.
+// Deriving less is only worth something if the answers are the same, so
+// the main property here is a differential one: the same facts through
+// the plain rules and through the rewritten rules give the same complete
+// relations, tuple for tuple. The rest are the cases a reader would want
+// spelled out.
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -23,8 +23,8 @@ import {
   variable as v,
 } from "./index.js";
 
-// Two base relations rules read, three derived ones they write, and one
-// more that says which values somebody is asking about.
+// There are two base relations the rules read, three derived ones they
+// write, and one more that says which values somebody is asking about.
 const ARITY: Record<string, number> = {
   edge: 2,
   flag: 1,
@@ -62,7 +62,7 @@ const litFor = (relation: string, names: string[]) =>
 
 /**
  * One rule for a derived relation, positive throughout. A body literal
- * may name a base relation, an earlier derived relation, or this one, so
+ * may refer to a base relation, an earlier derived relation, or this one, so
  * generated rule sets recurse the way the resolution rules do.
  */
 function arbRuleFor(index: number): fc.Arbitrary<Rule> {
@@ -121,7 +121,7 @@ function fill(facts: Array<[string, Tuple]>): Database {
   return db;
 }
 
-/** The answer rows for one value, which is all a caller asking reads. */
+/** The answer rows for one value, which is all a caller reads back. */
 const answersAbout = (db: Database, value: string): Record<string, string[]> =>
   Object.fromEntries(
     ANSWERS.map((relation) => [

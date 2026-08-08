@@ -15,12 +15,7 @@ import type {
   RouterComposition,
 } from "./pack.js";
 
-/**
- * Everything a unit's summary says about what nobody could read, as one
- * string to match against. The adapter hands its readings over
- * uncollapsed, so the sentences only exist once the extractor has
- * assembled the summary.
- */
+/** Every gap description on a unit's summary, joined into one string to match against. */
 function unreadTextOf(unit: RawCodeStructure | undefined): string {
   return unit === undefined
     ? ""
@@ -47,12 +42,6 @@ const fastapiLike: PythonPack = {
   ],
 };
 
-/**
- * A class-decorator route shape whose mount reads the other way round:
- * a prefix at the mount call replaces the one the constructor stated
- * rather than going in front of it, and a constructor that states none
- * leaves the path to something this reading does not follow.
- */
 const namespaceClassRoute: DecoratedClassRoute = {
   type: "decoratedClassRoute",
   importModule: ["flask_restx"],
@@ -152,9 +141,6 @@ describe("router prefix composition, one mount hop", () => {
   });
 
   it("composes an empty prefix a library states, where that library adds nothing for one", async () => {
-    // FastAPI's router with `prefix=""` really is mounted with no
-    // prefix of its own, so the empty string reads as written. Only a
-    // library that derives a path from elsewhere treats it as unsaid.
     const units = await unitsOf(
       [
         "from fastapi import FastAPI, APIRouter",
@@ -282,9 +268,6 @@ describe("router prefix composition: abstentions", () => {
   ])(
     "abstains when %s is written as None, for a library that wants a string there",
     async (_name, construction, mountArg) => {
-      // FastAPI never gets to serve any of this: `None + path` stops
-      // the app from starting. A library that reads no value as no
-      // prefix says so in its pack, and this one does not.
       const reason = await abstained(
         [
           "from fastapi import FastAPI, APIRouter",
@@ -380,9 +363,6 @@ describe("router prefix composition: abstentions", () => {
   });
 
   it("abstains when the router's name is reassigned to a second construction", async () => {
-    // FastAPI binds a route to whichever router the name held at
-    // decoration time; this route lives on the first router while the
-    // mount sees the second, so composing from either is a guess.
     const reason = await abstained(
       [
         "from fastapi import FastAPI, APIRouter",
@@ -433,12 +413,6 @@ describe("router prefix composition: abstentions", () => {
   });
 
   it("reads nothing from statements shaped past its one-hop rules", async () => {
-    // Every statement here sits one step outside what the index
-    // reads: an unbound mount argument, an import that resolves to no
-    // file, a module object and a chained construction as the mount's
-    // receiver, and assignments whose left or right side is not a
-    // plain name given one constructor call. None of them may mount
-    // the router, so its route abstains as never mounted.
     const reason = await abstained(
       [
         "from fastapi import FastAPI, APIRouter",
@@ -556,9 +530,6 @@ describe("prefix composition for a class-decorator route", () => {
   });
 
   it("reads an empty route path as the namespace's own path", async () => {
-    // The idiom for a resource sitting at the mount point itself. The
-    // composed path is what the namespace states, and the empty
-    // argument adds nothing to it.
     const units = await unitsOf(
       mounted([
         '@ns.route("")',
@@ -575,9 +546,6 @@ describe("prefix composition for a class-decorator route", () => {
   });
 
   it("drops a trailing slash off the namespace path before joining the route's", async () => {
-    // The library holds a namespace's path with trailing slashes
-    // stripped, so `/trailing/` and `/trailing` serve the same paths.
-    // Joining what the source wrote would report a doubled slash.
     const units = await unitsOf(
       [
         "from flask_restx import Api, Namespace",
@@ -643,9 +611,6 @@ describe("prefix composition for a class-decorator route", () => {
   });
 
   it("leaves a request-body parameter its role when the path goes unread", async () => {
-    // The request-body convention reads a parameter's annotation, not
-    // the path, so it still answers where the path did not. Only the
-    // roles that rest on the path go unnamed.
     const bodyPack: PythonPack = {
       name: "namespace-body-test",
       protocol: "http",
@@ -737,8 +702,6 @@ describe("prefix composition for a class-decorator route", () => {
   ])(
     "abstains for a namespace whose path is written as %s, which its library reads as no path",
     async (_name, keyword) => {
-      // Every one of these is falsy, and the library asks only that:
-      // it serves all five under a path derived from the name.
       const units = await unitsOf(
         [
           "from flask_restx import Api, Namespace",
@@ -773,8 +736,6 @@ describe("prefix composition for a class-decorator route", () => {
   ])(
     "reads a mount whose path is written as %s as no override at all",
     async (_name, keyword) => {
-      // The same falsiness runs on the mount side, so all four leave
-      // the library serving the namespace where it was constructed.
       const units = await unitsOf(
         [
           "from flask_restx import Api, Namespace",
@@ -816,10 +777,7 @@ describe("prefix composition for a class-decorator route", () => {
     expect(unreadTextOf(units[0])).toContain("is mounted more than once");
   });
 
-  it("abstains when nothing mounts the namespace", async () => {
-    // A namespace nobody mounts serves nothing, and a namespace
-    // mounted somewhere the run never read is the same reading from
-    // here. Either way the route keeps its name and names no path.
+  it("abstains when nothing in the files read mounts the namespace", async () => {
     const units = await unitsOf(
       mounted([
         '@ns.route("/<int:behavior_id>")',
@@ -1422,7 +1380,7 @@ describe("prefix composition through the object a mount is called on", () => {
 
   it("serves a trailing slash on the blueprint's prefix at the merged path", async () => {
     // The library concatenates the prefix as written, leaving the rule
-    // carrying two slashes, and Werkzeug answers that at the merged
+    // carrying two slashes, and Werkzeug serves that at the merged
     // path and redirects the written one.
     expect(
       await pathFor([
@@ -1808,7 +1766,7 @@ describe("a blueprint prefix and the site the mount is written at", () => {
   });
 
   it("reads the Api the mount is written beside, not a same-named one at the top of the file", async () => {
-    // The factory's own `Api` is built on the app and carries no
+    // The factory's own `Api` is built on the app and has no
     // prefix; the module-level one on a blueprint serves nothing here.
     expect(
       await pathFor([

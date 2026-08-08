@@ -6,16 +6,13 @@ import {
   resolveAliasedSymbol,
 } from "./moduleExports.js";
 
-// Deep enough that resolving the whole chain in one recursive descent
-// overflows the call stack; the origin file is created first so the
-// compiler's own program walk stays shallow and the depth sits entirely
-// in export resolution.
+// Deep enough that resolving the chain in one recursive descent
+// overflows the call stack.
 const OVERFLOW_DEPTH = 2000;
 
 /**
- * A linear chain of single-name re-exports: `m0.ts` declares `handler`,
- * every `m<i>.ts` re-exports it from `m<i-1>.ts`, and `top.ts`
- * re-exports it from the deepest link.
+ * `m0.ts` declares `handler`, every `m<i>.ts` re-exports it from
+ * `m<i-1>.ts`, and `top.ts` re-exports it from the deepest link.
  */
 function reExportChain(project: Project, depth: number): void {
   project.createSourceFile(
@@ -63,9 +60,8 @@ describe("exportedDeclarationsOf", () => {
       { overwrite: true },
     );
     exportedDeclarationsOf(first);
-    // ts-morph hands back the same wrapper and forgets the nodes the
-    // first parse produced, so a cache that outlived the parse would
-    // answer with declarations that throw on touch.
+    // ts-morph reuses the same wrapper and forgets every node the first
+    // parse produced.
     const second = project.createSourceFile(
       "src/b.ts",
       "export const after = 2;\n",
@@ -79,9 +75,8 @@ describe("exportedDeclarationsOf", () => {
   it("follows a re-export chain deeper than the call stack", () => {
     const project = new Project({ useInMemoryFileSystem: true });
     reExportChain(project, OVERFLOW_DEPTH);
-    // Asking the top first is the order that used to overflow: nothing
-    // below it has been resolved yet, so a recursive descent would
-    // carry the whole chain on the call stack.
+    // Asking for the top of the chain first is the order that used to
+    // overflow the stack.
     const top = project.getSourceFileOrThrow("src/top.ts");
     const exported = exportedDeclarationsOf(top);
     const handler = exported.get("handler")?.[0];

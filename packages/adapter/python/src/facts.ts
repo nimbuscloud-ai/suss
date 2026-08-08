@@ -1,17 +1,20 @@
 // facts.ts: what the binder and the module resolver hand to the shared
-// fact store, per facts-and-rules.md's Layer 1 contract ("discover
-// units, emit summaries, emit these facts").
+// fact store.
 //
-// `entry` reuses the existing relation name and shape (unit is a
-// pack-discovered entry point) so a Python-discovered route is an
-// entry the same way a TypeScript one is, ready for whatever rule
-// wants to join against it later. `pyImport` /
-// `pyImportResolved` / `pyOpenImport` are the two additions the
-// language-adapters proposal names: repo-scoped module resolution
-// recorded as facts (abstaining reads as a status with no resolved
-// file, never a guess), and the open-import relation for `from module
-// import *`, left for a future rule to consult lazily rather than
-// expanded here.
+// This is the Layer 1 contract: discover units, emit summaries, emit
+// these facts.
+//
+// `entry` reuses the existing relation name and shape, where the unit
+// is a pack-discovered entry point, so a Python-discovered route is an
+// entry the same way a TypeScript one is, ready for whatever rule wants
+// to join against it later.
+//
+// `pyImport`, `pyImportResolved` and `pyOpenImport` are the two
+// additions Python needs. The first two record repo-scoped module
+// resolution as facts, where abstaining comes back as a status with no
+// resolved file rather than a guess. The third records `from module
+// import *` for a future rule to consult when it needs to, rather than
+// expanding it here.
 
 import { resolveModule } from "./moduleResolver.js";
 
@@ -20,15 +23,9 @@ import type { ModuleResolverOptions } from "./moduleResolver.js";
 import type { ModuleBinding } from "./scope.js";
 
 /**
- * What names one discovered unit for the rest of a run.
- *
- * The name is part of the key because the range is lines, and two
- * units can share a line: `field :id, ID; field :name, String` is one
- * line and two units in Ruby, and Python allows the same with a
- * semicolon. Keying on the range alone made those one key, and the
- * `entry` relation is a set, so the second unit vanished from it. This
- * is the same thing `summaryIdentity.ts` does when two summaries claim
- * one id: what tells them apart is what they are called.
+ * The name is part of the key because the range is measured in lines, two
+ * units can start on the same line, and `entry` is a set, so keying on the range
+ * alone would drop one of them.
  */
 export function unitKey(
   filePath: string,
@@ -47,23 +44,12 @@ export function emitEntryFact(
   db.add("entry", [unitKey(filePath, range, name)]);
 }
 
-/**
- * `module` as it reads for the `pyImport` relation: the dotted path
- * with its leading dots restored for a relative import, matching how
- * a person reading the fact table would recognize the same import if
- * they saw it written in source.
- */
+/** The dotted path with its leading dots put back, the way the import is written in the source. */
 function importedModuleText(module: string, relativeLevel: number): string {
   return relativeLevel > 0 ? `${".".repeat(relativeLevel)}${module}` : module;
 }
 
-/**
- * Resolve and record every import bound at module scope. Nested
- * (function- or class-scoped) imports are out of v0: the fixtures and
- * the measured corpus both write route wrapper imports at module
- * level, and a resolver call for an import nobody reads yet is work
- * spent on facts nothing consumes.
- */
+/** Module scope only. A function- or class-scoped import is not recorded. */
 export function emitModuleImportFacts(
   db: Database,
   filePath: string,

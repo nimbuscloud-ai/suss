@@ -1,9 +1,11 @@
-// The digest that names an adapter+packs combination in cache keys.
-//
-// These tests run from source, where there is no bundle to hash, so the
-// stamp names the mode instead. What they pin is the part that must not
-// wobble: the same packs in any order produce the same digest, and a
-// pack without a version says so rather than disappearing.
+/**
+ * The digest that identifies an adapter and its packs in a cache key.
+ *
+ * These tests run from source, where there is no bundle to hash, so the
+ * stamp records the mode instead. What they pin down is the part that
+ * must not move: the same packs in any order produce the same digest,
+ * and a pack without a version is recorded as such rather than dropped.
+ */
 
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -121,10 +123,9 @@ describe("computeDistHashFrom", () => {
   });
 
   it("answers empty for a bundle it can see but cannot read", () => {
-    // A bundle it cannot read used to throw out of here, and the caller
-    // turned that into the empty stamp one level up. Answering empty
-    // directly is the same answer to the caller, and this is the path
-    // that says so.
+    // A bundle it cannot read used to throw, and the caller turned that
+    // into the empty stamp one level up. Returning empty from here gets
+    // the caller to the same place.
     const dir = mkdtempSync(path.join(tmpdir(), "dist-"));
     mkdirSync(path.join(dir, "index.js"));
 

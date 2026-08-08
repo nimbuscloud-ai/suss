@@ -672,7 +672,7 @@ describe("BOUNDARY_ROLE", () => {
 });
 
 describe("render-tree summaries", () => {
-  // Parses a component summary whose render output carries a full `root`
+  // Parses a component summary whose render output has a full `root`
   // tree, exercising RenderNodeSchema across all four node variants
   // (element with attrs + children, text, expression, and a conditional
   // with a null else-branch).
@@ -738,7 +738,7 @@ describe("render-tree summaries", () => {
 
   it("rejects a render tree with an unknown node type", () => {
     const bad = structuredClone(renderSummary);
-    // @ts-expect-error — deliberately invalid node variant
+    // @ts-expect-error deliberately invalid node variant
     bad.transitions[0].output.root.children[0] = { type: "marquee" };
     expect(() => parseSummary(bad)).toThrow();
   });

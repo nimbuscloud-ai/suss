@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// rewriteCommitMessage.mjs — bring one commit message up to the writing
+// rewriteCommitMessage.mjs: bring one commit message up to the writing
 // conventions. Reads the old message on stdin, writes the new one on
 // stdout, which is the shape `git filter-branch --msg-filter` wants.
 //

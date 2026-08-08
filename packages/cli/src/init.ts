@@ -1,17 +1,17 @@
-// init.ts — work out which packs a project needs, and say so.
-//
-// Picking packs by hand means reading the pack list, matching it against
-// your dependencies, and knowing that a SAM template implies two of them
-// while a Prisma schema implies a third. That is a research task before
-// anyone has seen a single summary.
-//
-// Everything needed to answer it is already on disk. Dependencies name
-// the frameworks and clients. Files on disk name the contract sources.
-// So read both and print the commands.
-//
-// Nothing is written or installed. The output is a list of commands to
-// run, which stays useful whether the reader wants to paste them, put
-// them in CI, or read them and do something else.
+/**
+ * Work out which packs a project needs, and say so.
+ *
+ * Picking packs by hand means reading the pack list, matching it
+ * against your dependencies, and knowing that a SAM template implies
+ * two of them while a Prisma schema implies a third. That is a research
+ * task before anyone has seen a single summary, and everything needed
+ * to answer it is already on disk: dependencies say which frameworks and
+ * clients, and files on disk name the contract sources.
+ *
+ * Nothing here is written or installed. The output is a list of
+ * commands, which stays useful whether the reader pastes them, puts
+ * them in CI, or reads them and does something else.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -33,12 +33,8 @@ import type { UnreadDependencies } from "./dependencyManifests.js";
 import type { Language } from "./language.js";
 
 /**
- * Per-project values a pack needs before it can read anything, or
- * reads better for having. Every built-in TypeScript pack needs none,
- * because everything they match on is something their library defines.
- * The Python and Ruby packs are the first to need a sentence about this
- * particular project: which module a project re-exports a decorator
- * through, which directory it keeps its classes in.
+ * Per-project values a pack needs before it can read anything: which
+ * module re-exports a decorator, which directory the classes are in.
  */
 export interface PackConfiguration {
   /** Where to write it, relative to the project. */
@@ -51,7 +47,6 @@ export interface PackConfiguration {
   why: string;
 }
 
-/** A pack, and the evidence that suggested it. */
 export interface PackSuggestion {
   /** The `-f` name, or the `--from` name for a contract source. */
   name: string;
@@ -61,8 +56,7 @@ export interface PackSuggestion {
   because: string;
   /**
    * What this pack contributes. An `effects` pack recognises calls
-   * inside units some other pack discovered, so it produces nothing on
-   * its own and asking for it alone always comes back empty.
+   * inside units another pack discovered, so alone it comes back empty.
    */
   kind: "framework" | "client" | "contract" | "effects";
   /** For a contract source, the file to read. */
@@ -74,29 +68,19 @@ export interface PackSuggestion {
 
 export interface InitReport {
   root: string;
-  /** Null when the project has no tsconfig, which is fine. */
+  /** Null when the project has no tsconfig. */
   tsconfig: string | null;
   suggestions: PackSuggestion[];
   /** Every language suss found source for here. */
   languages?: Language[];
-  /**
-   * Where suss looked for the libraries this project uses and could not
-   * read one. A project whose manifest is a program that computes its
-   * dependency list is a project suss cannot suggest packs for, and
-   * saying that is different from finding nothing.
-   */
+  /** Where suss looked and could not read, which is different from
+   * having found no dependencies at all. */
   unread?: UnreadDependencies[];
 }
 
-/** Which package manager names a library, so two ecosystems can share a table. */
 type Ecosystem = "npm" | "pypi" | "rubygems";
 
-/**
- * A dependency a project declares, and the pack that reads code using
- * it. One table across all three ecosystems, because the question is
- * the same in each: this library is here, so which pack knows how to
- * read the code that calls it.
- */
+/** A dependency a project declares, and the pack that reads code using it. */
 const BY_DEPENDENCY: Array<{
   ecosystem: Ecosystem;
   dependency: string;
@@ -294,10 +278,6 @@ const BY_DEPENDENCY: Array<{
   },
 ];
 
-/**
- * A file on disk, and the contract reader that understands it. The
- * matcher takes a filename so a glob-ish check stays in one place.
- */
 const BY_FILE: Array<{
   matches: (filename: string) => boolean;
   name: string;
@@ -342,7 +322,6 @@ const BY_FILE: Array<{
   },
 ];
 
-/** Read the project and work out which packs apply. */
 export function inspectProject(root: string): InitReport {
   const resolved = path.resolve(root);
   const suggestions: PackSuggestion[] = [];
@@ -408,21 +387,16 @@ export function inspectProject(root: string): InitReport {
   };
 }
 
-/** One library this project depends on, and which ecosystem names it. */
 interface DeclaredLibrary {
   ecosystem: Ecosystem;
   name: string;
-  /** The manifest or field that named it. */
+  /** The manifest or field that listed it. */
   where: string;
 }
 
 /**
- * Every library this project says it depends on, whichever language
- * declared it, plus everywhere suss looked and could not tell.
- *
- * A submodule nobody checked out lands in the same place: its code is
- * part of this project, so a missing one hides whatever it would have
- * named the same way an unreadable manifest does.
+ * A submodule nobody checked out hides the dependencies it would have
+ * declared, exactly the way an unreadable manifest does.
  */
 function declaredLibraries(root: string): {
   named: DeclaredLibrary[];
@@ -458,20 +432,10 @@ function declaredLibraries(root: string): {
   return { named, unread };
 }
 
-/** Every dependency name in package.json, with which field it came from. */
 /**
- * Every library this project reaches, and where it was named.
- *
- * A service in a monorepo names its own packages and lets those bring in
- * the SDKs, so its manifest says nothing about the queue it sends to.
- * Reading only the manifest in front of us meant no pack for that queue,
- * nobody looking for the sends, and a run that came back clean because
- * it had not been asked the question.
- *
- * So a dependency that resolves to a package inside this repository is
- * followed into that package's own manifest. A dependency that resolves
- * outside it is a published library and stops here, because whatever it
- * depends on is its business rather than this project's.
+ * A dependency that resolves inside this repository is followed into
+ * that package's own manifest, because a service in a monorepo usually
+ * depends on its own packages and lets those bring in the SDKs.
  */
 function dependenciesOf(root: string): Array<[string, string]> {
   const found: Array<[string, string]> = [];
@@ -505,7 +469,6 @@ function dependenciesOf(root: string): Array<[string, string]> {
   return found;
 }
 
-/** The dependency names one manifest declares, with the field naming each. */
 function declaredIn(manifest: string): Array<[string, string]> {
   if (!fs.existsSync(manifest)) {
     return [];
@@ -530,13 +493,7 @@ function declaredIn(manifest: string): Array<[string, string]> {
   return found;
 }
 
-/**
- * Where a dependency lives when it lives in this repository, or null.
- *
- * A workspace is linked into node_modules, so the link's target is the
- * answer and no workspace globs have to be read. A package resolving
- * outside the tree we were pointed at is somebody else's.
- */
+/** A workspace is linked into node_modules, so follow the link's target. */
 function packageInsideRepository(
   root: string,
   from: string,
@@ -569,10 +526,9 @@ function* filesUnder(
   submodules: ReadonlySet<string>,
   depth = 0,
 ): Generator<string> {
-  // A SAM template or a schema sits near the top of a service, so going
-  // deeper finds mostly source files, which the dependency scan already
-  // covers. Pointed at a home directory, a deeper walk also starts
-  // reporting other people's projects as if they were this one.
+  // A SAM template or a schema is near the top of a service, and if
+  // suss is pointed at a home directory, a deeper walk starts reporting
+  // other people's projects.
   if (depth > 3) {
     return;
   }
@@ -588,15 +544,13 @@ function* filesUnder(
     }
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      // A directory with its own package.json is its own project. Its
-      // schemas belong to it, so stop rather than claim them here.
+      // Its own package.json makes it its own project.
       if (depth > 0 && fs.existsSync(path.join(full, "package.json"))) {
         continue;
       }
-      // Same for a repository checked out inside this one that this
-      // project never asked for. A submodule is the opposite case: this
-      // project's own .gitmodules names it, its code is code this
-      // project imports, so the walk carries on into it.
+      // A nested repository that this project's .gitmodules does not
+      // list belongs to somebody else. One it does list contains code
+      // this project imports, so the walk continues into it.
       if (
         depth > 0 &&
         fs.existsSync(path.join(full, ".git")) &&
@@ -611,12 +565,6 @@ function* filesUnder(
   }
 }
 
-/**
- * What was found, what to install, and what to run.
- *
- * Written to be read top to bottom and stopped at any point: the
- * evidence first, so a wrong guess is visible, then the commands.
- */
 export function formatInitReport(report: InitReport): string {
   const lines: string[] = [];
   const { suggestions } = report;
@@ -674,15 +622,11 @@ export function formatInitReport(report: InitReport): string {
   const code = [...frameworks, ...clients];
   if (code.length > 0) {
     lines.push(...configurationLines([...code, ...effects]));
-    // One pass over the project reads every pack, so one command does,
-    // and a project written in two languages gets one command each: a
-    // pack is written against one language's adapter. The effects packs
-    // ride along: each one recognises calls inside units the others
-    // found, so they add to a command and cannot be the whole of one.
+    // One command per language: a pack is written against one
+    // language's adapter.
     lines.push(...extractCommands([...code, ...effects]));
   } else if (effects.length > 0) {
-    // Asking for these alone gives an empty file and a message about
-    // the code, which reads as though the code were at fault.
+    // Asking for an effects pack alone gives an empty file.
     lines.push(
       `   ${dim(`suss extract ${effects.map((e) => `-f ${e.name}`).join(" ")} ...`)}`,
     );
@@ -763,14 +707,9 @@ export function formatInitReport(report: InitReport): string {
 const readsTypeScript = (suggestions: ReadonlyArray<PackSuggestion>): boolean =>
   suggestions.some((s) => (s.language ?? "typescript") === "typescript");
 
-/** The language a pack reads, with TypeScript as what a pack reads by default. */
 const languageOf = (suggestion: PackSuggestion): Language =>
   suggestion.language ?? "typescript";
 
-/**
- * One extract command per language, since a pack is written against one
- * language's adapter and a run reads one language at a time.
- */
 function extractCommands(items: ReadonlyArray<PackSuggestion>): string[] {
   const languages = [...new Set(items.map(languageOf))];
   return languages.map((language) => {
@@ -791,12 +730,7 @@ function extractCommands(items: ReadonlyArray<PackSuggestion>): string[] {
   });
 }
 
-/**
- * The file each pack that needs one reads its per-project values from.
- *
- * A pack that cannot run without one says so and stops, so this is the
- * difference between a working command and a puzzling error.
- */
+/** A pack that cannot run without its config file throws. */
 function configurationLines(items: ReadonlyArray<PackSuggestion>): string[] {
   const configured = items.filter((item) => item.configuration !== undefined);
   if (configured.length === 0) {
@@ -820,7 +754,6 @@ function configurationLines(items: ReadonlyArray<PackSuggestion>): string[] {
   return lines;
 }
 
-/** What suss looked at and could not read, so nobody mistakes it for nothing to read. */
 function unreadLines(report: InitReport): string[] {
   const unread = report.unread ?? [];
   if (unread.length === 0) {
@@ -839,26 +772,20 @@ function unreadLines(report: InitReport): string[] {
   return lines;
 }
 
-/**
- * A language whose source is here and whose libraries suss could not
- * place. Not knowing which packs apply is worth saying; suggesting
- * nothing and looking confident is not.
- */
+/** A language whose source is here and whose libraries suss could not place. */
 export function unnamedLanguages(report: InitReport): Language[] {
   const languages = report.languages ?? [];
   const covered = new Set(report.suggestions.map(languageOf));
   return languages.filter(
     (language) =>
       !covered.has(language) &&
-      // A stray script in another language is not a project in that
-      // language. What makes it one is a file saying so, or being the
-      // only language here.
+      // A stray script is not a project. It takes a file that says so,
+      // or being the only language here.
       (languages.length === 1 ||
         projectFilesOf(report.root, language).length > 0),
   );
 }
 
-/** What `unnamedLanguages` says, in the printed report. */
 export function unnamedLanguageSentence(language: Language): string {
   return `There is ${LANGUAGE_LABEL[language]} code here and suss could not tell which packs read it.`;
 }
@@ -883,7 +810,6 @@ function describeCount(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
-/** A few pack names, as somebody would say them aloud. */
 function listOfNames(items: ReadonlyArray<PackSuggestion>): string {
   const names = items.map((item) => cyan(item.name));
   if (names.length <= 1) {

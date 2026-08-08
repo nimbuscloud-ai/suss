@@ -38,7 +38,7 @@ export interface ReproducedBug {
 /**
  * Wrong behaviour at the render boundary. How a component is written,
  * how its name is bound, and every way it leaves the module all resolve
- * now, so the sound tier carries those three dimensions. What is left is
+ * now, so the sound tier covers those three dimensions. What is left is
  * the one route that hands the component to a factory, where the value
  * arrives inside an object argument and no rule reads it back out.
  */
@@ -70,7 +70,7 @@ export const SOUND_REACH_PATHS = [
 /**
  * The reach path where the handler is supplied by whoever calls the
  * registering function. No chain reaches it from the file the route is
- * written in, so the summary carries the route and says the handler was
+ * written in, so the summary keeps the route and says the handler was
  * not read, rather than agreeing with a spelling that does state a
  * body. Comparing it against the plainest spelling would report the one
  * difference it is meant to have, so the differential asserts the shape
@@ -108,22 +108,22 @@ export const REACH_BUGS: ReproducedBug[] = [
  *
  * A wide type the project declares used to be walked across its whole
  * breadth at every mention. It is now written down once and named
- * everywhere else, so the sound tier carries the result dimension.
+ * everywhere else, so the sound tier covers the result dimension.
  */
 export const HANDLER_BUGS: ReproducedBug[] = [...REACH_BUGS];
 
 /**
  * Every way a class can announce a controller now resolves, so the
- * sound tier carries the announcement dimension and nothing is listed
+ * sound tier covers the announcement dimension and nothing is listed
  * here. What is left is on the class's inside rather than its outside:
  * which members the walk reads once the class is recognized.
  */
 export const ANNOUNCEMENT_BUGS: ReproducedBug[] = [];
 
 /**
- * Wrong behaviour where a GraphQL field says which function answers it.
+ * Wrong behaviour where a GraphQL field says which function resolves it.
  * Apollo reads the object the constructor is handed, and every route to
- * that object now resolves, spreads included, so the sound tier carries
+ * that object now resolves, spreads included, so the sound tier covers
  * the whole route dimension and nothing is listed here.
  */
 export const APOLLO_RESOLVER_BUGS: ReproducedBug[] = [];
@@ -144,7 +144,7 @@ export const NEST_RESOLVER_BUGS: ReproducedBug[] = [
 
 /**
  * Every place a unit can read its runtime configuration and every way
- * the read can be spelled now resolve, so the sound tier carries both
+ * the read can be spelled now resolve, so the sound tier covers both
  * dimensions whole and nothing is listed here. A read at module scope
  * is reported against the module that performs it rather than against
  * any unit the module declares.
@@ -153,7 +153,7 @@ export const ENV_BUGS: ReproducedBug[] = [];
 
 /**
  * Wrong behaviour at a queue consumer. Every one is the same shape:
- * the subject sits one hop away from the call that names the factory,
+ * the subject is one hop away from the call to the factory,
  * so the consumer keeps a function-call binding and pairs with no
  * producer. Nothing warns about it, and a service whose subjects live
  * in one shared file gets this on every consumer it has.
@@ -191,7 +191,7 @@ export const QUEUE_BUGS: ReproducedBug[] = [
 
 /**
  * Wrong behaviour at the package boundary. Every way of publishing a
- * function resolves, so the provider side carries the whole publish
+ * function resolves, so the provider side covers the whole publish
  * dimension. Both of these are on the calling side, and both leave a
  * call site nothing pairs against: the summary set says the package is
  * imported by nobody.

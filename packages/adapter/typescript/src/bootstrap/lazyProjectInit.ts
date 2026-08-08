@@ -1,25 +1,17 @@
-// lazyProjectInit.ts — bootstrap a ts-morph Project with only the
-// files that any active pack's `requiresImport` gate matches.
-//
-// Default ts-morph behaviour parses every file in the tsconfig
-// include glob at Project construction. On a monorepo that's
-// thousands of files of parse work the extraction never touches —
-// the closure pass only needs files that the discovered units
-// reach, which is usually a small fraction of the project.
-//
-// This module:
-//   1. Parses the tsconfig to get the include file list (no AST work)
-//   2. Reads each file concurrently and runs `ts.preProcessFile`
-//      (token-level scan, ~10× cheaper than a full parse)
-//   3. Decides which files are candidates: any pack's gate matches
-//      the file's imports
-//   4. Adds only candidates to the Project
-//
-// Closure-time lazy loading: the closure pass uses
-// `lazyAddSourceFile` to bring in non-candidate files when symbol
-// resolution points there. The `projectFileSet` returned by this
-// module lists files known to the tsconfig — we won't lazy-load
-// node_modules content the user didn't ask about.
+/**
+ * Builds the ts-morph Project a run works from, and gets the compiler
+ * ahead of the import graph before anything asks it a question.
+ *
+ * `createLazyProject` reads the tsconfig's file list, keeps the files
+ * whose imports match some active pack's `requiresImport` gate, and adds
+ * only those. Everything else is loaded later, one file at a time, by
+ * `lazyAddSourceFile` when symbol resolution points at it.
+ *
+ * The rest of the module is about load order. TypeScript follows a
+ * re-export chain by recursing, so a barrel chain a few hundred files
+ * deep runs the call stack out. `loadImportGraphsDepthFirst` loads each
+ * file after everything it imports. The README says why that matters.
+ */
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -31,27 +23,16 @@ import { collectPackGates, packIsUngated } from "./preFilter.js";
 
 import type { PatternPack } from "@suss/extractor";
 
-// Re-export type so consumers don't need a separate import.
 export type { Project } from "ts-morph";
 
 export interface LazyProjectInit {
   project: Project;
   /** Candidates added at startup. */
   loadedFiles: SourceFile[];
-  /**
-   * Every file in the tsconfig include set, regardless of whether
-   * it's loaded. The closure walk consults this to decide whether
-   * a missing source file is "in the project but not loaded yet"
-   * (eligible for lazy add) or "outside the project" (skip).
-   */
+  /** Every file in the tsconfig include set, loaded or not. */
   projectFileSet: ReadonlySet<string>;
 }
 
-/**
- * Build a Project that has only the gated files loaded. Returns
- * the loaded SourceFiles + the full project file set so the
- * closure pass can lazy-add the rest.
- */
 export async function createLazyProject(
   tsConfigFilePath: string,
   packs: ReadonlyArray<PatternPack>,
@@ -76,29 +57,16 @@ export async function createLazyProject(
   };
 }
 
-/**
- * Parse the tsconfig include set without constructing a Project
- * or reading any source files. Used by the cache layer to
- * compute the coarse key BEFORE the lazy bootstrap (cache hits
- * shouldn't pay for bootstrap).
- */
+/** Reads no source, so a cache hit never pays for the bootstrap. */
 export function readTsconfigFileList(tsConfigFilePath: string): string[] {
   return parseTsconfigFileList(tsConfigFilePath);
 }
 
 /**
- * Add a file to an already-bootstrapped lazy Project. Used by the
- * closure pass when symbol resolution lands on a non-candidate
- * file that's still part of the tsconfig include set. Returns null
- * for paths outside the project file set (e.g. node_modules).
- *
- * Always calls `addSourceFileAtPath` even when `getSourceFile`
- * already returns a SourceFile. ts-morph's type checker can
- * surface a SourceFile via symbol resolution without putting it
- * in `project.getSourceFiles()`; downstream passes that enumerate
- * the project list (rethrow enrichment, partial-hit closure dedup)
- * miss those silently. addSourceFileAtPath is idempotent — a true
- * no-op when the file is genuinely already in the tracker.
+ * `addSourceFileAtPath` runs even when `getSourceFile` already returns
+ * the file. Symbol resolution can produce a SourceFile without putting it
+ * in `project.getSourceFiles()`, and a pass that enumerates the project
+ * list would then miss it.
  */
 export function lazyAddSourceFile(
   project: Project,
@@ -116,43 +84,17 @@ export function lazyAddSourceFile(
 }
 
 /**
- * Load everything a file imports, and everything those files import,
- * with each file loaded before the files that import it.
- *
- * The compiler discovers files by recursing: reading a file, resolving
- * its imports, and reading each of those the same way. Handed one file
- * at the top of a long chain of modules it recurses the whole chain in
- * one descent and the stack runs out, which is what a barrel chain a
- * few hundred deep does to a gated run, where the bootstrap loaded the
- * entry file alone. A file it has already read costs it nothing, so
- * loading the chain from the far end leaves it one hop of work per
- * file whatever the depth.
- *
- * The graph is read from the file text alone: a token scan for the
- * specifiers and the compiler's path resolution for each, neither of
- * which builds a program or parses a file. That keeps the walk here
- * iterative, and it is the same scan the gate pre-filter runs.
- *
- * Only files the project could already reach are loaded. A package
- * under node_modules is left to the resolution that asks for it.
+ * Load everything a file imports, each file before the files that
+ * import it. The package README says why the order matters.
  */
 export function loadImportGraphDepthFirst(root: SourceFile): void {
   loadImportGraphsDepthFirst([root]);
 }
 
 /**
- * The same load for every file a run is about to walk, sharing one
- * visited set so each file is read once however many roots reach it.
- *
- * Running this once up front is what keeps the compiler's own walk
- * shallow for the whole run. Anything that touches the checker builds
- * the program, and discovery gets there long before anything asks a
- * module what it exports.
- *
- * Call it after the walked-file list is settled. It loads modules that
- * resolution would have loaded anyway, but a file that arrives before
- * the list is taken would be walked for units as well, which would
- * change what the run reports.
+ * Call this after the walked-file list is settled. A file arriving
+ * before the list is taken gets walked for units too, which changes
+ * what the run reports.
  */
 export function loadImportGraphsDepthFirst(
   roots: ReadonlyArray<SourceFile>,
@@ -179,14 +121,6 @@ export function loadImportGraphsDepthFirst(
     return paths;
   };
 
-  // Post-order over the import graph, so a file is loaded only after
-  // everything it imports. The visited set is what ends a cycle, and
-  // barrels that import each other are ordinary.
-  //
-  // A file whose graph an earlier walk already settled is not descended
-  // into again. Without that, files sharing a tail each walk the whole
-  // tail, which is the same work the specifier cache saves per file
-  // paid back once per walk instead.
   const chainDepth = settledDepthsFor(project);
   const visited = new Set<string>();
   const loadOrder: string[] = [];
@@ -214,9 +148,8 @@ export function loadImportGraphsDepthFirst(
 
       stack.pop();
       loadOrder.push(top.path);
-      // Deps finished before this file did, so their depths are known.
-      // A cycle leaves one of them unset, and treating that as zero is
-      // right: going round again adds nothing to how deep the graph is.
+      // A cycle leaves a dependency's depth unset. Zero is right, since
+      // going round the cycle again adds nothing to the depth.
       let deepest = 0;
       for (const path of top.deps) {
         deepest = Math.max(deepest, chainDepth.get(path) ?? 0);
@@ -234,14 +167,12 @@ export function loadImportGraphsDepthFirst(
       project.addSourceFileAtPath(filePath);
       loadedAnything = true;
     } catch {
-      // A path the resolver named and the file system does not have.
-      // Whatever asks for it next gets the same answer it gets today.
+      // The resolver gave a path the file system does not have.
     }
   }
 
-  // A run that had nothing to load already had the whole graph, and the
-  // compiler saw those files in an order it could walk. Resolving them
-  // again from the far end would only cost time.
+  // A run with nothing left to load already had the whole graph, in an
+  // order the compiler could walk.
   if (!loadedAnything) {
     return { deepRoots: [] };
   }
@@ -253,29 +184,14 @@ export function loadImportGraphsDepthFirst(
 }
 
 export interface DeepImportGraphs {
-  /**
-   * Roots whose import graph is deep enough that the checker cannot be
-   * left to walk it by itself.
-   */
+  /** Roots too deep for the checker to walk on its own. */
   deepRoots: SourceFile[];
 }
 
-/**
- * How deep an import graph has to be before its aliases are resolved
- * from the far end rather than left to the checker.
- *
- * Warming changes the order things resolve in, never what they resolve
- * to, so this decides where to spend the time and not what the answer
- * is. Well under the depth the checker handles on its own, and far
- * above what an ordinary barrel reaches.
- */
+/** Well under the depth the checker handles alone, far above a barrel. */
 const WARM_DEPTH = 100;
 
-/**
- * The files one file's imports name, from the answers the load walk
- * already worked out. Lets a caller ask what a file sits on top of
- * without going near the checker or the program.
- */
+/** Read from the load walk's record, never from the checker. */
 export function importedFilePathsOf(
   project: Project,
   filePath: string,
@@ -296,21 +212,7 @@ export function importedFilePathsOf(
   return paths;
 }
 
-/**
- * Which files one file's import specifiers name, worked out once per
- * project rather than once per walk.
- *
- * The walk starts again at every file whose chain is not resolved yet,
- * and files sharing a long tail send it down that same tail each time.
- * Reading and resolving one file's specifiers costs the same whichever
- * walk asks, so the answer is kept: on a project where hundreds of
- * entry points sit above one deep core, that is the difference between
- * resolving the core once and resolving it hundreds of times.
- *
- * The project owns the entry, so it goes when the project does, and two
- * projects in one process never read each other's answers. A file's
- * text does not change under a run, which is as long as this lives.
- */
+/** Keyed on the project, so two projects never share results. */
 function specifierCacheFor(project: Project): Map<string, string[]> {
   const existing = specifiersByProject.get(project);
   if (existing !== undefined) {
@@ -324,11 +226,6 @@ function specifierCacheFor(project: Project): Map<string, string[]> {
 
 const specifiersByProject = new WeakMap<Project, Map<string, string[]>>();
 
-/**
- * How deep the import graph under each file goes, for files an earlier
- * walk already finished. Kept per project for the same reason and the
- * same lifetime as the specifier answers.
- */
 function settledDepthsFor(project: Project): Map<string, number> {
   const existing = depthsByProject.get(project);
   if (existing !== undefined) {
@@ -342,7 +239,6 @@ function settledDepthsFor(project: Project): Map<string, number> {
 
 const depthsByProject = new WeakMap<Project, Map<string, number>>();
 
-/** The files a file's import specifiers resolve to, read from its text. */
 function readSpecifierPaths(
   project: Project,
   filePath: string,
@@ -370,7 +266,6 @@ function readSpecifierPaths(
   return paths;
 }
 
-/** A file's text, from the parse the project already has or from disk. */
 function readFileText(project: Project, filePath: string): string | null {
   const loaded = project.getSourceFile(filePath);
   if (loaded !== undefined) {
@@ -382,10 +277,6 @@ function readFileText(project: Project, filePath: string): string | null {
     return null;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Internals
-// ---------------------------------------------------------------------------
 
 function parseTsconfigFileList(tsConfigFilePath: string): string[] {
   const configFile = ts.readConfigFile(tsConfigFilePath, ts.sys.readFile);
@@ -411,12 +302,9 @@ async function selectCandidateFiles(
   allFiles: ReadonlyArray<string>,
   packs: ReadonlyArray<PatternPack>,
 ): Promise<string[]> {
-  // Bucket packs into ungated (apply to every file) + gated.
+  // One pack matching every file leaves nothing to pre-filter.
   const ungatedExists = packs.some(packIsUngated);
   if (ungatedExists) {
-    // At least one pack matches every file — no point pre-filtering.
-    // Return the full set; per-file pre-filter handles per-pack
-    // applicability later.
     return [...allFiles];
   }
   const gates = collectAllGates(packs);
@@ -424,9 +312,6 @@ async function selectCandidateFiles(
     return [];
   }
 
-  // Concurrent read + preProcessFile across the include set.
-  // Bounded concurrency keeps OS file-handle limits sane on huge
-  // projects.
   const fileImports = await readImportsConcurrently(allFiles);
   const matched: string[] = [];
   for (const { path: p, importedModules } of fileImports) {
@@ -447,6 +332,7 @@ function collectAllGates(packs: ReadonlyArray<PatternPack>): string[] {
   return [...gates];
 }
 
+/** Bounded so a huge project does not exhaust the file-handle limit. */
 const READ_CONCURRENCY = 32;
 
 async function readImportsConcurrently(

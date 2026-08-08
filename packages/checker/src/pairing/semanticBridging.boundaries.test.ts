@@ -1,6 +1,6 @@
 // semantic-bridging.boundaries.test.ts
 //
-// Documents the known boundaries of semantic condition bridging — both
+// Documents the known boundaries of semantic condition bridging, both
 // scenarios the checker now handles (kept as regression tests) and the
 // two scenarios it deliberately doesn't, which require Level 6 (local
 // function inlining) in the extractor before they can be addressed.
@@ -68,7 +68,7 @@ function bodyFieldNeq(
 // single-return local functions. Verified by tests in shapes.test.ts.
 //
 // The remaining gap is bodies constructed through multi-return functions,
-// method calls, or cross-module functions — these fall through to the
+// method calls, or cross-module functions. These fall through to the
 // type-checker fallback which sees `string` instead of `"deleted"`.
 // This is the same underlying issue as aspiration 4 (Level 6 territory).
 
@@ -111,7 +111,7 @@ describe("RESOLVED: negated comparisons", () => {
     // !== X covers any distinguishing literal that isn't X.
     //
     // !== "active" at path ["status"] matches any literal at ["status"]
-    // whose value is not "active" — including "deleted".
+    // whose value is not "active", including "deleted".
     const p = provider("getUser", [
       transition("t-200-deleted", {
         output: response(200, record({ status: literal("deleted"), id: text })),
@@ -219,7 +219,7 @@ describe("aspiration: body constructed by multi-return or method helper", () => 
       }),
     ]);
 
-    // Ref shapes are opaque — no structural information to discriminate
+    // Ref shapes are opaque, no structural information to discriminate
     expect(checkSemanticBridging(p, c)).toEqual([]);
   });
 });
@@ -273,8 +273,7 @@ describe("RESOLVED: fetch .json() response pattern", () => {
 
     const findings = checkSemanticBridging(p, c);
 
-    // Consumer tests status === "down" through .json() accessor — finding
-    // suppressed for t-200-down
+    // Consumer tests status === "down" through .json() accessor, finding
     expect(findings.some((f) => f.provider.transitionId === "t-200-down")).toBe(
       false,
     );

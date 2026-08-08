@@ -405,7 +405,7 @@ describe("checkBodyCompatibility", () => {
 });
 
 // ---------------------------------------------------------------------------
-// providerCoversConsumerFields — field-presence comparison, exported and
+// providerCoversConsumerFields: field-presence comparison, exported and
 // tested directly for the leaf/edge shapes that the integration paths above
 // don't naturally reach.
 // ---------------------------------------------------------------------------
@@ -471,7 +471,7 @@ describe("providerCoversConsumerFields", () => {
 });
 
 // ---------------------------------------------------------------------------
-// findOptionalAccesses — dot-paths where the consumer reads a provider field
+// findOptionalAccesses: dot-paths where the consumer reads a provider field
 // declared optional.
 // ---------------------------------------------------------------------------
 describe("findOptionalAccesses", () => {

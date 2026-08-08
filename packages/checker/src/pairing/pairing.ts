@@ -33,26 +33,26 @@ export interface PairingResult {
     providers: BehavioralSummary[];
     consumers: BehavioralSummary[];
     /**
-     * Summaries that took no part in pairing, each carrying why:
+     * Summaries that took no part in pairing, each with the reason.
      * `noBoundary` is internal code with nothing to pair on,
-     * `unnamedBoundary` is a boundary whose name the source never
-     * stated, and `unknownKind` is a summary read from disk with a
-     * kind this build does not know. One list, so a caller walks it
-     * once; the reason is what a reader groups by.
+     * `unnamedBoundary` is a boundary the source never gave a name to,
+     * and `unknownKind` is a summary read from disk with a kind this
+     * build does not know. One list, so a caller walks it once, and the
+     * reason is what a reader groups by.
      */
     unpairable: UnpairableSummary[];
   };
 }
 
 /**
- * Whether two summaries that share a bucket really name the same
+ * Whether two summaries that share a bucket are really the same
  * boundary.
  *
- * A bucket key carries what both sides always know, and what one side
- * may know more precisely is settled by the semantics variant's own
- * agreement rule: buses have to agree on a message-bus bucket,
- * methods on a REST bucket (which is how a `"*"` route meets
- * consumers that each name one method).
+ * A bucket key contains only what both sides always know. Anything one
+ * side knows more precisely is settled by the semantics variant's own
+ * agreement rule: buses have to agree on a message-bus bucket, methods
+ * on a REST bucket (which is how a `"*"` route meets consumers that
+ * each use one method).
  */
 function bindingsPair(
   provider: BehavioralSummary,
@@ -71,7 +71,7 @@ function bindingsPair(
 
 /**
  * The key a pair reports. The bucket key drops what the sides compare
- * in-bucket, so the pair names the consumer's concrete identity (a
+ * in-bucket, so the pair uses the consumer's concrete identity (a
  * consumer of a `"*"` route shows the method it actually uses),
  * falling back to the provider's, then to the bucket.
  */
@@ -121,7 +121,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
     }
 
     // Guard against summaries deserialized from disk with an unknown kind
-    // string — the type system can't see those. Goes away once IR exposes
+    // string: the type system can't see those. Goes away once IR exposes
     // a real parser (see #79); until then, an unknown kind means we can't
     // place it on either side of a pairing.
     const role = BOUNDARY_ROLE[summary.kind];
@@ -139,10 +139,12 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
   }
 
   const pairs: SummaryPair[] = [];
-  // Tracked per summary rather than per key, because a key bucket can
-  // hold a summary that pairs with nothing in it: two message-bus
-  // sides share a subject but name different buses, or two REST sides
-  // share a path but name different methods.
+  /**
+   * Tracked per summary rather than per key, because a key bucket can
+   * contain a summary that pairs with nothing in it: two message-bus
+   * sides share a subject but use different buses, or two REST sides
+   * share a path but use different methods.
+   */
   const matchedProviders = new Set<BehavioralSummary>();
   const matchedConsumers = new Set<BehavioralSummary>();
 

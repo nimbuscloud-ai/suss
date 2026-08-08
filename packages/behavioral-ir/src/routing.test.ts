@@ -1,8 +1,3 @@
-// The document-label convention: a reader composes a nested document's
-// label from the root label and the stack path, and the reachability
-// walk recovers the root to scope its nodes. Both directions live in
-// one module so they cannot drift, and this pins the round trip.
-
 import { describe, expect, it } from "vitest";
 
 import {
@@ -49,9 +44,7 @@ describe("document labels", () => {
     });
   });
 
-  it("reads nothing back from a name that points at source code", () => {
-    // The `::` of a summary ref is what tells the two apart, so a rule
-    // naming a function never reads as a document.
+  it("reads nothing back from a summary ref naming a function in source", () => {
     expect(parseDocumentLabel("src/handlers/pet.ts::getPet")).toBeNull();
     expect(parseDocumentLabel("src/handlers/pet.ts")).toBeNull();
   });

@@ -1,4 +1,4 @@
-// dedupe.ts — Collapse identical findings produced by overlapping providers.
+// dedupe.ts: Collapse identical findings produced by overlapping providers.
 //
 // When a boundary is described by more than one provider summary
 // (e.g. an OpenAPI stub AND a CloudFormation stub for the same REST
@@ -14,7 +14,7 @@
 //   - description
 //   - consumer identity (summary + transitionId)
 //
-// Provider identity is explicitly *not* part of the key — that is the
+// Provider identity is explicitly *not* part of the key. That is the
 // axis we are collapsing across. The first finding seen wins as the
 // representative; its `provider` field is unchanged. `sources` lists
 // every contributing provider-summary identifier, sorted
@@ -36,7 +36,7 @@ function moreSevere(a: FindingSeverity, b: FindingSeverity): FindingSeverity {
 
 function keyFor(f: Finding): string {
   const key = boundaryKey(f.boundary) ?? "_noboundary_";
-  // description is freeform text — if two checks ever produced
+  // description is freeform text, if two checks ever produced
   // descriptions that differed only in trivial whitespace, that would
   // foil dedup. Normalize whitespace before keying.
   const desc = f.description.replace(/\s+/g, " ").trim();
@@ -51,7 +51,7 @@ function keyFor(f: Finding): string {
  * group. When two findings collapse, the representative keeps the
  * most-severe severity observed and unions the `sources` lists.
  *
- * Safe to call on a single-provider result — single-source findings
+ * Safe to call on a single-provider result, single-source findings
  * pass through untouched with `sources` unset.
  */
 export function dedupeFindings(findings: Finding[]): Finding[] {

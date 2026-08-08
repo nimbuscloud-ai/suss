@@ -1,4 +1,4 @@
-// discovery/index.ts — orchestrator + public surface for the discovery
+// discovery/index.ts: orchestrator + public surface for the discovery
 // layer. Each match-type handler lives in its own sibling file; this
 // file is the dispatch table and dedup pass that callers see.
 

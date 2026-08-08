@@ -1,7 +1,7 @@
-// producerShape.ts: a queue producer, and the ways code names its
-// queue.
+// producerShape.ts: a queue producer, and the ways code says which
+// queue it sends to.
 //
-// The property this family holds: however the queue is named, the send
+// The property this family checks: however the queue is named, the send
 // is recorded. A name the code states (a literal, an env var, a const
 // here or in another file) reaches the channel. A name the program
 // cannot state (a parameter, a computed string) leaves the channel
@@ -13,7 +13,7 @@ import { type DispatchTable, dispatchByType } from "../dispatch.js";
 
 import type { PatternPack } from "@suss/extractor";
 
-/** How the program names the queue it sends to. */
+/** How the program says which queue it sends to. */
 export type ProducerNaming =
   | "literalUrl"
   | "envVar"
@@ -45,7 +45,8 @@ const ENV_VAR = "WIDGET_QUEUE_URL";
 
 export interface RenderedProducerShape {
   files: Record<string, string>;
-  /** The channel the summary should carry; null when nothing names it. */
+  /** The channel the summary should have, or null when the source says
+   * nothing about it. */
   expectedChannel: string | null;
 }
 

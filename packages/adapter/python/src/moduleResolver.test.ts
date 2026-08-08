@@ -66,9 +66,6 @@ describe("resolveAbsoluteModule", () => {
   });
 
   it("does not treat the same module found via two candidate forms under one root as ambiguous", () => {
-    // Only the .py form exists for this name, so there is exactly one
-    // answer within the root even though the resolver considers both
-    // forms.
     write("root/myapp/wrappers/restx.py");
     const result = resolveAbsoluteModule("myapp.wrappers.restx", {
       roots: [path.join(tmpDir, "root")],
@@ -131,9 +128,6 @@ describe("resolveRelativeModule", () => {
   });
 
   it("resolves when the walk lands exactly on a configured root (inclusive boundary)", () => {
-    // "proj" is the configured root itself; a 3-dot import from
-    // proj/myapp/routes/todos.py walks up to proj exactly, which is
-    // still inside it, not past it.
     write("proj/__init__.py");
     write("proj/myapp/routes/todos.py");
     const result = resolveRelativeModule(
@@ -147,14 +141,7 @@ describe("resolveRelativeModule", () => {
     });
   });
 
-  it("abstains instead of escaping every configured root on a too-deep relative import", () => {
-    // Reviewer-reported shape: a four-dot relative import from a file
-    // nested two directories inside the one configured root
-    // (proj/myapp/routes/todos.py) walks past "proj" itself on the
-    // fourth dot, landing on the parent of "proj", outside every
-    // configured root. An unrelated file sitting there (a sibling
-    // checkout that happens to share a module name) must not be
-    // reported as this import's answer.
+  it("abstains rather than answering with a file outside every configured root, on a too-deep relative import", () => {
     const root = path.join(tmpDir, "proj");
     write("proj/myapp/routes/todos.py");
     write("sibling.py");

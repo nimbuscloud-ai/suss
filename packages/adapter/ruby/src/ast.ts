@@ -1,11 +1,11 @@
-// ast.ts: small, named helpers over a tree-sitter Ruby node.
-//
-// Nothing here is Ruby-specific beyond the node-type strings, which
-// come straight from tree-sitter-ruby's grammar (see grammar/README.md
-// for the exact version they were read against). Everything downstream
-// (scope.ts, typeShape.ts, discovery.ts) reads a node through these
-// instead of calling `childForFieldName` / `.type` inline, so a grammar
-// bump that renames a field shows up in one place.
+/**
+ * Small helpers for reading a tree-sitter-ruby parse tree.
+ *
+ * The node-type strings here come from tree-sitter-ruby's grammar, at the
+ * version the grammar README gives. Read a node through these helpers rather
+ * than calling `childForFieldName` or `.type` inline, so that a grammar upgrade
+ * that renames a field only has to be fixed in one place.
+ */
 
 import type { RbNode } from "./parser.js";
 
@@ -14,15 +14,7 @@ export interface Range {
   end: number;
 }
 
-/**
- * The lines a node spans, counting from one.
- *
- * A summary's `location.range` is a line number everywhere else in the
- * IR: the TypeScript adapter fills it from `getStartLineNumber`, and
- * `suss inspect` prints it as "line N". tree-sitter counts bytes and
- * rows instead, and handing back the byte offset put `line 348` on a
- * 12-line file.
- */
+/** Lines, counting from one, because a summary's `location.range` is lines everywhere else in the IR. */
 export function rangeOf(node: RbNode): Range {
   return {
     start: node.startPosition.row + 1,
@@ -38,25 +30,11 @@ export function isType(node: RbNode, ...types: string[]): boolean {
   return types.includes(node.type);
 }
 
-/**
- * A `program`, `body_statement`, or `argument_list` node's own direct
- * statements/children, skipping absent slots. tree-sitter-ruby has no
- * wrapper node comparable to Python's `decorated_definition`, so this
- * is a plain `namedChildren` filter.
- */
 export function bodyStatements(body: RbNode): RbNode[] {
   return body.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
-/**
- * The name a `simple_symbol` literal holds, unquoted. tree-sitter-ruby
- * keeps the leading colon in a `simple_symbol` node's own text
- * (`:campaign` → `"campaign"`), unlike a `hash_key_symbol` (see
- * `hashKeySymbolName`), which never carries one. Returns null for
- * anything else (a `delimited_symbol` with interpolation, a string, a
- * method call): v0 reads only the plain literal form, matching the
- * measured corpus's dominant shape.
- */
+/** tree-sitter-ruby leaves the leading colon in a `simple_symbol`'s text, but not in a `hash_key_symbol`'s. */
 export function symbolValue(node: RbNode): string | null {
   return node.type === "simple_symbol" ? node.text.slice(1) : null;
 }
@@ -121,7 +99,7 @@ export function methodHasStatements(method: RbNode): boolean {
   return bodyStatements(body).length > 0;
 }
 
-/** A `pair` node's key, when it is a bare `key:` shorthand symbol (the shape every class-DSL keyword argument in the measured corpus uses). Null for a string- or expression-keyed pair, which v0 does not read. */
+/** A `pair` node's key, when it is written as the bare `key:` shorthand. Null for a pair keyed by a string or an expression. */
 export function hashKeySymbolName(node: RbNode): string | null {
   return node.type === "hash_key_symbol" ? node.text : null;
 }
@@ -136,7 +114,7 @@ export function booleanLiteralValue(node: RbNode): boolean | null {
   return null;
 }
 
-/** A `call` node's positional and keyword arguments, read off its `argument_list`. Keyword arguments are `pair` nodes directly among the argument list's children (Ruby's trailing `key: value` shorthand), not wrapped in a separate hash node. */
+/** Keyword arguments turn up as `pair` nodes directly among the argument list's children, rather than wrapped in a hash node. */
 export interface CallArgs {
   positional: RbNode[];
   keyword: Record<string, RbNode>;

@@ -1,18 +1,17 @@
-// initInteractive.ts — the guided setup.
-//
-// `suss init` on its own reads the project and prints the commands. That
-// is the right output for a script, a CI file, or anyone who would
-// rather see what a tool intends before it acts. It is a poor first run
-// for a person, who now has to copy four commands in order.
-//
-// So when a terminal is attached, the same findings become a set of
-// offers: install these packs, run the first check, keep a suppressions
-// file, add a CI step. Every one is declined by pressing enter on "no",
-// and nothing touches the disk until it is accepted.
-//
-// Without a terminal, or under --yes-less automation, this falls
-// straight through to the printed form. A CI job piping `suss init` must
-// keep working.
+/**
+ * The guided setup.
+ *
+ * `suss init` on its own reads the project and prints the commands,
+ * which is the right output for a script or for anyone who would rather
+ * see what a tool intends before it acts. It is a poor first run for a
+ * person, who then has to copy four commands in order.
+ *
+ * So with a terminal attached, the same findings become a set of
+ * offers: install these packs, run the first check, keep a suppressions
+ * file, add a CI step. Nothing touches the disk until one is accepted.
+ * Without a terminal this falls through to the printed form, which a CI
+ * job piping `suss init` depends on.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -32,7 +31,6 @@ import { readWorkspace } from "./workspaces.js";
 import type { InitReport, PackSuggestion } from "./init.js";
 import type { Workspace } from "./workspaces.js";
 
-/** One package in the run, with what suss found in it. */
 interface Target {
   /** Relative to where init was pointed. "." for a single project. */
   directory: string;
@@ -52,9 +50,7 @@ export async function initInteractive(
   const root = path.resolve(options.dir ?? process.cwd());
   const targets = findTargets(root);
 
-  // No terminal means no prompts. A pipe, a CI job, or `--plain` all get
-  // the printed commands, which are the same instructions the questions
-  // below would carry out.
+  // No terminal means no prompts.
   if (options.plain === true || !p.isTTY(process.stdout) || p.isCI()) {
     process.stdout.write(printable(root, targets));
     return 0;
@@ -62,10 +58,8 @@ export async function initInteractive(
 
   p.intro("suss init");
 
-  // A project whose manifest suss could not read has nothing to
-  // install and something to say, and the something is the more
-  // useful half: a setup.py that computes its dependency list is why
-  // nothing was suggested.
+  // A project whose manifest suss could not read has nothing to install
+  // and something to say.
   const withPacks = targets.filter(
     (target) => target.report.suggestions.length > 0,
   );
@@ -106,16 +100,6 @@ export async function initInteractive(
   return 0;
 }
 
-/**
- * Every package worth saying something about, whether this is one
- * project or many.
- *
- * A package with a pack to suggest is the usual reason. A package whose
- * dependency list suss looked at and could not read is the other one:
- * dropping it here is how a legacy setup.py project ends up being told
- * that nothing matched, when what happened is that suss could not read
- * the file that would have said.
- */
 function findTargets(root: string): Target[] {
   const workspace = readWorkspace(root);
 
@@ -136,19 +120,15 @@ function findTargets(root: string): Target[] {
 }
 
 /**
- * Whether this package gives init anything to say. Packs to suggest is
- * the usual reason, a manifest suss could not read is the second, and
- * source in a language nothing here matched is the third: a directory
- * of Python with no requirements file beside it produces no
- * suggestions and no unread manifest, and dropping it means a person
- * is told nothing matched without being told suss saw the Python.
+ * A directory of Python with no requirements file beside it produces no
+ * suggestions and no unread manifest, and is still worth telling the
+ * reader about.
  */
 const worthReporting = (report: InitReport): boolean =>
   report.suggestions.length > 0 ||
   (report.unread ?? []).length > 0 ||
   unnamedLanguages(report).length > 0;
 
-/** Say what suss could not read, before anything is installed or run. */
 function reportUnread(targets: Target[]): void {
   for (const target of targets) {
     for (const entry of target.report.unread ?? []) {
@@ -161,7 +141,6 @@ function reportUnread(targets: Target[]): void {
   }
 }
 
-/** Say which language's code is here that nothing matched a pack to. */
 function reportUnnamedLanguages(targets: Target[]): void {
   const uncovered = targets.flatMap((target) =>
     unnamedLanguages(target.report),
@@ -246,18 +225,15 @@ function uniquePacks(targets: Target[]): PackSuggestion[] {
 }
 
 interface Progress {
-  /** Hand each line the command prints, to show where it has got to. */
+  /** Called with each line the command prints, so the spinner can show
+   * where it has got to. */
   saw: (line: string) => void;
   stop: (message: string) => void;
 }
 
 /**
- * A spinner that answers "is this stuck?".
- *
- * Installing five packs pulls their dependency trees too, which can run
- * to the better part of a minute on a cold cache. A bare spinner gives
- * no way to tell that from a hang, so this shows the seconds elapsed and
- * the last thing the command said.
+ * Shows seconds elapsed and the last line the command printed, so a
+ * long install is distinguishable from a hang.
  */
 function startProgress(label: string): Progress {
   const spin = p.spinner();
@@ -273,8 +249,7 @@ function startProgress(label: string): Progress {
   };
 
   const tick = setInterval(redraw, 1000);
-  // Nothing should be held open on this timer if the process is otherwise
-  // ready to exit.
+  // This timer must not keep the process alive on its own.
   tick.unref?.();
 
   return {
@@ -289,14 +264,13 @@ function startProgress(label: string): Progress {
   };
 }
 
-/** The part of a line worth putting next to a spinner. */
 function summarize(line: string): string {
   const withoutPrefix = line.replace(
     /^npm (http|warn|notice|verb|sill)\s+/,
     "",
   );
-  // npm's http lines read "fetch GET 200 <url> 43ms". The package being
-  // fetched is the useful part, and it is the last path segment.
+  // npm's http lines look like "fetch GET 200 <url> 43ms", and the
+  // package being fetched is the last path segment.
   const fetched = withoutPrefix.match(/https?:\/\/\S*?\/([^/\s]+)\/-\//);
   const text = fetched?.[1] ?? withoutPrefix;
   return text.length > 48 ? `${text.slice(0, 47)}…` : text;
@@ -337,8 +311,6 @@ async function offerInstall(
   }
 
   progress.stop("Install failed");
-  // A half-done install is worse than none, so say what broke and leave
-  // the command behind rather than carrying on as though it worked.
   p.log.error(lastLines(result.output, 6));
   p.log.info(
     `Nothing else was changed. To retry:\n  npm install --save-dev ${packages.join(" ")}`,
@@ -387,8 +359,8 @@ async function offerFirstRun(
 
     const progress = startProgress(command.display);
     const result = await run(command.bin, command.args, root, progress.saw);
-    // `check` exits non-zero when it finds something, which is the tool
-    // working, so only a crash counts as a failure here.
+    // `check` exits non-zero when it finds something, so only a crash
+    // counts as a failure here.
     if (result.code === 0 || command.findingsAreExpected) {
       progress.stop(command.display);
     } else {
@@ -408,11 +380,7 @@ interface RunnableCommand {
   display: string;
   showOutput?: boolean;
   findingsAreExpected?: boolean;
-  /**
-   * Config files a pack in this command cannot run without, relative to
-   * where init was pointed. Running it before somebody writes them only
-   * produces the pack's own complaint.
-   */
+  /** Config files that a pack in this command cannot run without. */
   needsConfig?: string[];
 }
 
@@ -425,8 +393,7 @@ function runCommandsFor(target: Target): RunnableCommand[] {
   const languages = [...new Set(code.map((s) => s.language ?? "typescript"))];
   for (const language of languages) {
     // One command per language: a pack is written against one
-    // language's adapter, so a Python pack and a TypeScript one cannot
-    // ride in the same run.
+    // language's adapter.
     const args = ["extract"];
     if (target.directory !== ".") {
       args.push("--dir", target.directory);
@@ -498,9 +465,8 @@ async function offerSuppressions(root: string): Promise<void> {
     return;
   }
 
-  // `version` is required, and a file without it does not load, so the
-  // starter carries it. The note that used to sit in a `$comment` key
-  // was one of those files: the schema rejects unknown keys.
+  // The schema requires `version` and rejects unknown keys, so a
+  // `$comment` note would stop the file loading.
   const starter = {
     version: 1,
     rules: [

@@ -11,7 +11,7 @@ export default defineConfig({
         "**/*.test.ts",
         "**/dist/**",
         "**/*.config.ts",
-        // framework.ts is pure type declarations — no executable code to cover.
+        // framework.ts is pure type declarations, no executable code to cover.
         "src/framework.ts",
       ],
       thresholds: {

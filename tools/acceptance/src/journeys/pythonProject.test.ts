@@ -1,18 +1,3 @@
-// A person points suss at a Python service and reads back its routes.
-//
-// Two shapes, because the two packs read Python differently. FastAPI
-// puts the path on a decorator and can carry two prefixes above it,
-// one from the router and one from the mount. flask-restx puts it on a
-// class decorator, which a service reaches either through a wrapper of
-// its own, the one thing the pack needs told, or straight from the
-// library on a namespace that carries the first half of the path. The
-// flask-restx fixture has both, the way the measured service does.
-//
-// The bar is the one the production measurement failed: every route
-// recovered, and every path right. A pack that finds five routes and
-// spells four of them wrong is worse than one that finds none, because
-// the wrong four pair against nothing and read as drift.
-
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -25,7 +10,6 @@ import {
   writePackConfig,
 } from "../harness.js";
 
-/** Every route fixtures/python-fastapi declares, once the prefixes are folded in. */
 const FASTAPI_ROUTES = [
   "GET /health",
   "POST /orders",
@@ -33,7 +17,6 @@ const FASTAPI_ROUTES = [
   "POST /api/items",
 ];
 
-/** Every route fixtures/python-webapp declares through its own wrapper. */
 const WRAPPED_ROUTES = [
   "GET /todos",
   "POST /todos",
@@ -42,18 +25,12 @@ const WRAPPED_ROUTES = [
   "DELETE /orders/{order_id}",
 ];
 
-/** The files those wrapped routes are declared in, for a run that reads them and nothing else. */
 const WRAPPED_ROUTE_FILES = [
   "myapp/routes/todos.py",
   "myapp/routes/users.py",
   "myapp/routes/orders.py",
 ];
 
-/**
- * Every route the same fixture declares on a namespace, importing
- * flask-restx directly. The path is the namespace's own plus the one
- * the resource's decorator writes, and neither is the whole path.
- */
 const NAMESPACE_ROUTES = [
   "GET /behaviors/{school_id}",
   "GET /behaviors/{school_id}/{behavior_id}",
@@ -82,8 +59,6 @@ describe("read a FastAPI service", () => {
     const inspect = runSuss(["inspect", summariesFile]);
     expect(inspect.status, inspect.stderr).toBe(0);
 
-    // /items on the router, /api on the mount, and neither prefix is
-    // written in the file the route lives in.
     for (const route of FASTAPI_ROUTES) {
       expect(inspect.stdout).toContain(route);
     }
@@ -92,10 +67,6 @@ describe("read a FastAPI service", () => {
   it("says which line each route is on, so a person can go there", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
-    // shop/routers/items.py is 26 lines and declares its two routes on
-    // lines 20 and 25. The adapter recorded a byte offset here until
-    // #215, so the guide had to print `line 708` on a 32-line file and
-    // say the number was wrong.
     expect(inspect.stdout).toContain(
       "GET /api/items/{item_id}  (fastapi handler | line 20",
     );
@@ -107,9 +78,6 @@ describe("read a FastAPI service", () => {
   it("abstains on a path it cannot settle, rather than guessing one", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
-    // `@app.get("/reports/" + REPORT_SECTION)` and a mount whose
-    // prefix is a function call. Both come back with no path, and a
-    // sentence saying which of the two happened.
     expect(inspect.stdout).toContain("GET ?");
     expect(inspect.stdout).toContain(
       "The path in this route's decorator is not a string literal",
@@ -118,8 +86,6 @@ describe("read a FastAPI service", () => {
       "The router this route is declared on is mounted with a prefix that is not a string literal",
     );
 
-    // A guessed path is worse than none: it pairs against a client
-    // calling the guess and reports drift on a route nobody has.
     expect(inspect.stdout).not.toContain("/reports/summary");
     expect(inspect.stdout).not.toContain("/internal/admin/stats");
   });
@@ -143,17 +109,10 @@ describe("read a flask-restx service through its own wrapper", () => {
       { cwd: project },
     );
 
-    // Not an error: the pack read the files and recognized nothing in
-    // them, because every decorator in them comes from a module only
-    // this project knows about. What matters is that it says so
-    // instead of printing an empty array and stopping.
     expect(extract.output).toContain("recognized no boundaries");
   });
 
-  it("finds the routes declared on a namespace without being told anything", () => {
-    // The other half of the same service imports flask-restx itself,
-    // so nothing about it is this project's own choice and no
-    // configuration is involved.
+  it("finds the routes declared on a namespace, with no config, since that half imports flask-restx itself", () => {
     const extract = runSuss(
       ["extract", "--lang", "python", "-f", "flask-restx", "-o", "ns.json"],
       { cwd: project },
@@ -199,9 +158,6 @@ describe("read a flask-restx service through its own wrapper", () => {
   it("names no path for a route whose namespace is mounted twice", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
-    // Which of the two mounts serves it is not written down anywhere,
-    // and a guessed path here would pair against a client calling it
-    // and report drift on a route nobody has.
     expect(inspect.stdout).toContain("GET ?");
     expect(inspect.stdout).toContain(
       "The router this route is declared on is mounted more than once",
@@ -212,9 +168,6 @@ describe("read a flask-restx service through its own wrapper", () => {
   it("canonicalizes a Werkzeug converter into a path parameter", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
-    // The source writes /orders/<int:order_id>. A client calling this
-    // route writes /orders/123, and the two only pair if the converter
-    // is read away.
     expect(inspect.stdout).toContain("/orders/{order_id}");
     expect(inspect.stdout).not.toContain("<int:order_id>");
   });
@@ -222,9 +175,6 @@ describe("read a flask-restx service through its own wrapper", () => {
   it("says which line each route is on, so a person can go there", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
-    // myapp/routes/users.py is 7 lines long and declares one route, on
-    // line 6. The adapter recorded a byte offset here until #215, so
-    // this printed `line 78` and pointed into the middle of a token.
     expect(inspect.stdout).toContain(
       "GET /users  (flask-restx handler | line 6",
     );

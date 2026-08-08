@@ -1,4 +1,4 @@
-// transitions.ts — Helpers for building Transition records that carry
+// transitions.ts: Helpers for building Transition records that carry
 // the conventions this package promises to consumers:
 //
 //  - Handler-attributed transitions: no opaque predicate, metadata
@@ -26,7 +26,7 @@ export interface PlatformContribution {
 }
 
 /**
- * Build a PlatformContribution that respects exactOptionalPropertyTypes —
+ * Build a PlatformContribution that respects exactOptionalPropertyTypes,
  * `configRef` is omitted when undefined rather than set to undefined.
  */
 export function makeContribution(

@@ -68,7 +68,7 @@ describe("buildRuntimeConfigSummaries — Lambda", () => {
     const meta = readEnvVars(summaries[0]);
     expect(meta.envVars).toContain("LOG_LEVEL");
     expect(meta.envVarSources?.LOG_LEVEL).toBe("globals");
-    // The function declares this one itself, so it answers for it.
+    // The function declares this one itself, so it is the source.
     expect(meta.envVarSources?.TABLE_NAME).toBe("template");
   });
 
@@ -268,7 +268,7 @@ describe("what recognized the resources", () => {
 
   it("carries another manifest language's name onto every binding it keys", () => {
     // A reader whose document compiles to these resource shapes reads
-    // through this walk and names the document a person wrote.
+    // through this walk and points at the document a person wrote.
     const recognitions = new Set(
       cloudFormationToSummaries(template, { recognition: "serverless" }).map(
         (s) => s.identity.boundaryBinding?.recognition,

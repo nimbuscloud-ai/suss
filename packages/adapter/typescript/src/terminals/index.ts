@@ -1,4 +1,4 @@
-// terminals/index.ts — orchestrator for the per-matcher terminal-finding
+// terminals/index.ts: orchestrator for the per-matcher terminal-finding
 // passes. Each matcher (returns/jsx/throws/functionCall) lives in its
 // own sibling file; this file walks every descendant of the function
 // being analysed and dispatches each node through the matchers in
@@ -29,13 +29,13 @@ import type { FoundTerminal } from "./shared.js";
 export type { FoundTerminal } from "./shared.js";
 
 /**
- * Terminal match types whose observable output flows through a channel
- * the enclosing unit owns rather than the nested function's return
- * value — `res.json(...)` writes to a response object the unit received
- * as a parameter. These stay matchable inside a descended nested
- * function; value-returning terminals (`return`, returned object shape,
- * JSX render) do not, because a `return` inside a callback yields the
- * callback's value, not the unit's.
+ * Terminal match types whose output goes through a channel the
+ * enclosing unit owns rather than through a nested function's return
+ * value. `res.json(...)` writes to a response object the unit received
+ * as a parameter, so it stays matchable inside a nested function.
+ * Value-returning terminals (`return`, a returned object, a JSX render)
+ * do not, because a `return` inside a callback produces the callback's
+ * value and not the unit's.
  */
 const NESTED_ESCAPING_MATCH_TYPES: ReadonlySet<
   TerminalPattern["match"]["type"]
@@ -49,7 +49,7 @@ const NESTED_ESCAPING_MATCH_TYPES: ReadonlySet<
  * terminal output is produced inside a Promise executor or `.then`
  * callback (`res.json(data)` on the unit's own `res` parameter) is still
  * discovered. Inside a nested function only escaping terminals are
- * matched — see `NESTED_ESCAPING_MATCH_TYPES`.
+ * matched: see `NESTED_ESCAPING_MATCH_TYPES`.
  */
 export function findTerminals(
   func: FunctionRoot,
@@ -73,9 +73,9 @@ export function findTerminals(
       let found: FoundTerminal | null = null;
 
       if (pattern.match.type === "returnShape") {
-        // One return can produce several terminals: a handler returning
-        // through a helper that branches produces one per branch the
-        // helper can take at this call site.
+        // One return can produce several terminals. A handler returning
+        // through a helper that branches gets one per branch that helper
+        // can take at this call site.
         const matches = tryMatchReturnShape(node, pattern, pattern.match);
         if (matches.length > 0) {
           results.push(...matches);
@@ -84,7 +84,7 @@ export function findTerminals(
         continue;
       }
       if (pattern.match.type === "parameterMethodCall") {
-        // One call can produce several terminals too: a status written
+        // One call can produce several terminals too. A status written
         // as a choice fires once per arm.
         const matches = tryMatchParameterMethodCall(
           node,
@@ -107,7 +107,7 @@ export function findTerminals(
       } else if (pattern.match.type === "functionCall") {
         found = tryMatchFunctionCall(node, pattern, pattern.match);
       }
-      // `functionFallthrough` is not matched per-node — the assembly
+      // `functionFallthrough` is not matched per-node: the assembly
       // pass emits it as a branch-level fallback when no other
       // terminal covers the function's default-path exit.
 
@@ -166,7 +166,7 @@ export function findTerminals(
  * whether to synthesise a fall-through terminal.
  *
  * Arrow functions with an expression body (`() => expr`) already
- * "return" the expression's value — nothing falls through. Function
+ * "return" the expression's value: nothing falls through. Function
  * bodies that are a block fall through when the last statement isn't
  * a terminator.
  */

@@ -1,9 +1,9 @@
-// templateIndex.ts — locate the SAM/CFN template reachable from a source
+// templateIndex.ts: locate the SAM/CFN template reachable from a source
 // file and index its Serverless::Function handlers by resolved module
 // path.
 //
 // The manifest parse (loading the template and the children it embeds,
-// reading function resources + Events) comes from @suss/manifest-aws —
+// reading function resources + Events) comes from @suss/manifest-aws,
 // this module only
 // does the filesystem discovery (walk up to the template) and the
 // code-path resolution (CodeUri + Handler → an absolute module path)
@@ -28,8 +28,8 @@ import {
 export interface HandlerEntry {
   /**
    * The function's logical id, qualified by the stack path that reaches
-   * its document, so a function declared in a nested stack names the
-   * same deployed Lambda the declared side names.
+   * its document, so a function declared in a nested stack points at the
+   * same deployed Lambda the declared side does.
    */
   functionLogicalId: string;
   /**
@@ -106,7 +106,7 @@ function findTemplate(startDir: string): string | null {
 /**
  * Parse a template into a handler index keyed by resolved module path.
  * A malformed template is surfaced on stderr and cached as an empty
- * index — the pack never crashes the extraction over a bad manifest.
+ * index: the pack never crashes the extraction over a bad manifest.
  */
 function indexForTemplate(templatePath: string): HandlerIndex {
   const cached = templateToIndex.get(templatePath);

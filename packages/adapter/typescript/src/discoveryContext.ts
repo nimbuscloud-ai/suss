@@ -1,11 +1,11 @@
-// discoveryContext.ts — Primitives the TypeScript adapter exposes to
+// discoveryContext.ts: Primitives the TypeScript adapter exposes to
 // packs whose `discoverUnits` callback walks a source file looking
 // for top-level units that don't fit one of the data-driven
 // `DiscoveryMatch` variants.
 //
 // Sibling of `subUnitContext.ts` for the discovery layer. Packs that
 // use this hook (e.g. React's component-export heuristic) cast the
-// `ctx: unknown` argument to `TsDiscoveryContext` — same "I expect the
+// `ctx: unknown` argument to `TsDiscoveryContext`: same "I expect the
 // TypeScript adapter" contract `subUnits` follows.
 //
 // Helpers stay narrow on purpose. They cover the cases real packs need
@@ -27,11 +27,11 @@ export interface TsDiscoveryContext {
 
   /**
    * Yield every export from the source file whose declaration is a
-   * function — function declarations, arrow / function-expression
+   * function: function declarations, arrow / function-expression
    * variable initializers, and re-exports of either. Skips
    * non-function exports (constants, classes, types).
    *
-   * Each entry carries the exported name (the binding the consumer
+   * Each entry has the exported name (the binding the consumer
    * uses), the function root, and whether the export is the file's
    * default export. `default` is included; the pack decides whether
    * to handle it (typically the data-driven `namedExport(["default"])`
@@ -42,24 +42,24 @@ export interface TsDiscoveryContext {
   ): Array<{ name: string; func: FunctionRoot; isDefault: boolean }>;
 
   /**
-   * For an export the project builds by calling a factory, the string a
-   * property of that call's config object holds:
+   * For an export the project builds by calling a factory, the string
+   * under a property of that call's config object:
    * `export const handler = makeWidgetHandler({ subject: "a.b" }, ...)`
-   * with `{ property: "subject" }` answers `"a.b"`.
+   * with `{ property: "subject" }` gives back `"a.b"`.
    *
-   * Which function was called and which argument carried the config are
-   * questions the caller does not have to answer. Every object argument
-   * is read. Naming the callee or fixing the argument position narrows
-   * that, for a project whose factories would otherwise collide.
+   * The caller does not have to say which function was called or which
+   * argument the config was in. Every object argument is read. Giving the
+   * callee or fixing the argument position narrows that down, for a
+   * project whose factories would otherwise collide.
    *
-   * Two arguments holding the property under different values answers
+   * Two arguments with the property set to different values give back
    * null, since nothing says which one was meant.
    *
    * The config argument is usually an object literal at the call site;
    * a variable or import is followed to the literal it resolves to.
    * `as const` and parentheses around the property value are peeled.
    * Anything but a string literal underneath (a computed subject, a
-   * template, a call) answers null — the caller attaches nothing
+   * template, a call) gives back null, and the caller attaches nothing
    * rather than guessing.
    */
   exportedCallConfigString(
@@ -72,10 +72,10 @@ export interface TsDiscoveryContext {
    * Walk a function's body for return statements whose value is a
    * JSX element / fragment / self-closing tag. Returns true on the
    * first match; false otherwise. Skips into nested function bodies
-   * — nested arrow returning JSX is its own component, not part of
+   *: nested arrow returning JSX is its own component, not part of
    * this function's output.
    *
-   * Concise-arrow bodies (`() => <X/>`) are handled — the body IS
+   * Concise-arrow bodies (`() => <X/>`) are handled: the body IS
    * the implicit return.
    */
   hasJsxReturn(func: FunctionRoot): boolean;
@@ -124,14 +124,14 @@ function exportedFunctions(
 }
 
 /**
- * The function an export is, however it got there.
+ * The function behind an export, however the export was written.
  *
- * A name written once is answered from the syntax at the declaration,
- * which is what most exports are and costs nothing. A name written
- * again holds a different value by the time anything imports it, so
- * the binding goes to the fact layer and the rules say which write
- * survives. When they cannot say, the export has no function here,
- * which is the answer rather than the first value.
+ * A name written once is read straight off the syntax at the
+ * declaration, which covers most exports and costs nothing. A name
+ * written more than once has a different value by the time anything
+ * imports it, so the binding goes to the fact layer and the rules decide
+ * which write survives. When they cannot decide, this returns nothing
+ * rather than the first value it saw.
  */
 function exportedFunction(
   decl: Node,
@@ -148,9 +148,8 @@ function exportedFunction(
     return null;
   }
 
-  // The export is a wrapper call, an alias, or a .bind rather than a
-  // function. The fact layer follows those to the function they
-  // resolve to.
+  // The export is a wrapper call, an alias or a `.bind` rather than a
+  // function. The fact layer follows those to the function underneath.
   const value = valueToAskAbout(decl, writtenAgain);
   if (value === null) {
     return null;
@@ -199,13 +198,12 @@ function exportedCallConfigString(
       }
     }
   }
-  // Two answers mean the shape does not say which was meant, and the
-  // same reasoning applies as everywhere else something reaches two
-  // candidates: ambiguity is nothing.
+  // Two candidates mean the code does not say which was meant, and the
+  // rule is the same as everywhere else: return nothing.
   return found.size === 1 ? ([...found][0] as string) : null;
 }
 
-/** A callee the caller did not constrain matches whatever it is. */
+/** When the caller named no callee, every callee matches. */
 function calleeIsNamed(callee: Node, names: string[] | undefined): boolean {
   if (names === undefined || names.length === 0) {
     return true;
@@ -222,7 +220,7 @@ function configArguments(args: Node[], argIndex: number | undefined): Node[] {
   return at === undefined ? [] : [at];
 }
 
-/** The string an argument's object holds under `property`. */
+/** The string an argument's object has under `property`. */
 function configString(
   arg: Node,
   property: string,
@@ -262,8 +260,8 @@ function peelExpression(node: Node | undefined): Node | undefined {
 }
 
 /**
- * The object literal a value is, or resolves to through the fact
- * layer (a config built in a shared constant or another file).
+ * The object literal a value is, or the one it resolves to through the
+ * fact layer (a config built in a shared constant or another file).
  */
 function toObjectLiteral(
   node: Node,

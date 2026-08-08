@@ -23,7 +23,7 @@
 // others. Every declared export still has a summary, every boundary
 // still has a key, and the count is the only thing that moved. That is
 // most of what a dogfood run measures: 785 of today's 987 library
-// summaries sit behind the export surface, reached by the transitive
+// summaries are behind the export surface, reached by the transitive
 // closure, and no invariant counts those. So the counts stay a hard
 // failure, with a way to declare a drop rather than a tolerance that
 // guesses at one.
@@ -80,10 +80,10 @@ const regressions = [];
  * produced at all.
  *
  * The two ways a number can be missing are not the same thing. A
- * baseline that does not carry the field was written before the field
+ * baseline without the field was written before the field
  * existed, and there is nothing to compare; that is the only case worth
  * passing over, and it is a migration affordance that can go once no
- * open branch predates the field. A baseline that carries the field
+ * open branch predates the field. A baseline that has the field
  * while the run no longer produces it means whatever computed that count
  * stopped working, which the gate has to fail on for the same reason it
  * fails on a drop.

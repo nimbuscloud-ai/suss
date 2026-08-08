@@ -28,29 +28,11 @@ import type {
 } from "@suss/behavioral-ir";
 import type { SummaryPair, UnpairableReason } from "./pairing/pairing.js";
 
-/**
- * Human-readable key for unmatched-summary reporting. Each protocol
- * declares its own label; nothing here knows any of them.
- */
 function describeBinding(binding: BoundaryBinding): string {
   return displayLabel(binding);
 }
 
-/**
- * Whether a pair goes through `checkPair`.
- *
- * Every check behind `checkPair` reads status codes and response
- * shapes off an HTTP exchange, so the provider's protocol has to say
- * it has one. A queue and the handler draining it say no, and their
- * agreement is judged by `checkMessageBus` over the same summaries.
- * Pairing them here is reporting: it says which handler answers a
- * declared subscriber and leaves the findings to the pass that knows
- * how to judge them.
- *
- * A summary with no binding at all keeps the checks. Pairing already
- * decided the two sides describe one boundary, and nothing has said
- * this boundary is not an HTTP one.
- */
+/** Every check behind `checkPair` reads an HTTP status or response shape. */
 function pairIsCheckable(pair: SummaryPair): boolean {
   const binding = pair.provider.identity.boundaryBinding;
   if (binding === null || binding === undefined) {
@@ -59,10 +41,6 @@ function pairIsCheckable(pair: SummaryPair): boolean {
   return exchangesHttpResponses(binding);
 }
 
-/**
- * Whether some other pass already reports this summary's boundary when
- * it pairs with nothing, so the unmatched lists here leave it out.
- */
 function reportedByItsOwnPass(summary: BehavioralSummary): boolean {
   const binding = summary.identity.boundaryBinding;
   if (binding === null || binding === undefined) {
@@ -150,15 +128,8 @@ export {
   validateRule,
 } from "./suppressions.js";
 
-/**
- * Compare one boundary's two sides.
- *
- * Each side is read with the types it names put back into its shapes
- * first. A summary writes a named type once and refers to it after
- * that, and a comparison of two refs can only say "same name", so the
- * table goes back in and every check below reads structure the way it
- * always did.
- */
+/** Named types go back into the shapes first, because comparing two
+ * refs only compares their names. */
 export function checkPair(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
@@ -188,27 +159,15 @@ export interface CheckAllResult {
   unmatched: {
     providers: Array<{ name: string; key: string | null }>;
     consumers: Array<{ name: string; key: string | null }>;
-    /**
-     * Summaries that took no part in pairing, each saying why: internal
-     * code with no boundary, a boundary whose name the source never
-     * stated, or a kind this build does not know. Renderers group by
-     * the reason, so a reader tells "nothing to check" from "something
-     * to check, no name to check it by".
-     */
+    /** Summaries that took no part in pairing, each saying why. */
     unpairable: Array<{ name: string; reason: UnpairableReason }>;
   };
 }
 
 /**
- * Given a flat list of summaries, automatically pair providers with consumers
- * by `(method, normalizedPath)` and run `checkPair` on each matched pair.
- *
- * Identical findings from overlapping providers (e.g. an OpenAPI stub and
- * a CloudFormation stub describing the same REST endpoint, both producing
- * the same "consumer doesn't handle 400" finding) are collapsed into one
- * representative carrying `sources` that lists every contributor. This
- * noise reduction is *only* at the N×M pair level — `checkPair` on a
- * single pair is unchanged.
+ * Pairs every provider with every consumer and checks each pair. Two
+ * providers describing one boundary produce one finding between them,
+ * with `sources` set; `checkPair` on its own does no such collapsing.
  */
 export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const { pairs: restPairs, unmatched: restUnmatched } =
@@ -218,13 +177,8 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const findings: Finding[] = [...graphql.findings];
   const pairInfo: CheckAllResult["pairs"] = [];
 
-  // Every pair is reported in `pairInfo`. A pair whose protocol
-  // exchanges HTTP responses also runs the full check-pair machinery
-  // (provider coverage, consumer satisfaction, body and contract
-  // checks); the rest surface for discoverability and are judged by
-  // the pass that knows their protocol. Per-semantics checks for
-  // GraphQL land alongside `pairGraphqlOperations` when a concrete
-  // case motivates them; message-bus already has `checkMessageBus`.
+  // A pair that no check here judges is still reported, so a reader can
+  // see it. The pass that knows its protocol emits the findings.
   for (const pair of restPairs) {
     if (pairIsCheckable(pair)) {
       findings.push(...checkPair(pair.provider, pair.consumer));
@@ -235,14 +189,6 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
       consumer: pair.consumer.identity.name,
     });
   }
-  // Track which summaries got at least one graphql pairing so they
-  // don't double-surface as unmatched below. A summary whose protocol
-  // reports its own unpaired boundaries drops out for a stronger
-  // reason: that pass names the boundary with a severity and with
-  // knowledge of who was involved, and saying "no client to compare
-  // against" afterwards says the same thing a second time in weaker
-  // words. Pairing owns the pair list; the protocol's own pass owns
-  // every judgement about its boundaries.
   const graphqlMatched = new Set<BehavioralSummary>();
   for (const { provider, consumer, key } of graphql.pairs) {
     graphqlMatched.add(provider);
@@ -263,53 +209,18 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
     ),
   };
 
-  // Layer 2: cross-source contract agreement. Runs independently of
-  // pairing — it compares each boundary's declared contracts against
-  // each other without caring about consumers. Findings emitted here
-  // represent disagreement BETWEEN sources, not inconsistency within
-  // a single source (which is Layer 1's job).
+  // These compare each boundary's declared contracts against each other
+  // and never look at consumers, so they run outside pairing.
   findings.push(...checkContractAgreement(summaries));
-
-  // Same shape for GraphQL: when 2+ sources declare a contract for
-  // the same gql:Type.field boundary, compare return types + argument
-  // shapes. Reuses `contractDisagreement` finding kind.
   findings.push(...checkGraphqlContractAgreement(summaries));
-
-  // Cross-shape agreement for React: pair Storybook stub summaries
-  // with inferred component summaries by component name and emit
-  // findings for scenario-arg-vs-component-input mismatches. Sits
-  // alongside contract agreement because it's the same "multiple
-  // declared views of the same boundary" shape, just with a
-  // different payload (args vs declaredContract).
   findings.push(...checkComponentStoryAgreement(summaries));
 
-  // Build the interaction index ONCE and share it across all
-  // per-class pairing passes (storage, message-bus, runtime-config).
-  // Each pass would otherwise walk every transition.effects on its
-  // own — fine on small projects, but the per-pass walks scale
-  // linearly with the number of pairing passes. Shared indexing
-  // walks once, indexes by (class, binding semantics), and hands
-  // each pass its slice via O(1) Map lookup.
+  // Indexed once and shared: each pass would otherwise walk every
+  // transition's effects itself, and the walks add up per pass.
   const interactionIndex = buildInteractionIndex(summaries);
 
-  // Runtime-config pairing: pair runtime providers (CFN/SAM Lambda
-  // env-var declarations) against config-read interaction effects (or
-  // legacy invocation-arg `process.env.X` patterns when the
-  // node runtime pack's env-var recognizer wasn't in the framework
-  // list).
   findings.push(...checkRuntimeConfig(summaries, interactionIndex));
-
-  // Relational-storage pairing: pair schema-derived providers
-  // (Prisma model declarations, Drizzle pgTable() declarations)
-  // against `interaction(class: "storage-access")` effects on code
-  // summaries. Emits the four field-existence findings (read/write
-  // unknown, unused, write-only).
   findings.push(...checkRelationalStorage(summaries, interactionIndex));
-
-  // Message-bus pairing: producer interaction effects (from
-  // recognizers like @suss/framework-aws-sqs) pair against queue
-  // provider summaries (from CFN). Emits orphan-producer/orphan-
-  // consumer/unused-queue findings.
   findings.push(...checkMessageBus(summaries, interactionIndex));
 
   return {

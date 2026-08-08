@@ -1,11 +1,11 @@
-// dispatcher.ts — shared indexing for per-class interaction pairing
+// dispatcher.ts: shared indexing for per-class interaction pairing
 // passes (storage, message-bus, runtime-config, future RPC).
 //
 // The actual PAIRING rules differ per class:
 //   - storage-relational: binding equality on (storageSystem, scope, table)
 //   - message-bus:        binding equality after env-var → CFN-resource collapse
 //   - runtime-config:     env-var-name equality + codeScope file-prefix match
-// — so this file doesn't try to unify the pairing. It only shares the
+//, so this file doesn't try to unify the pairing. It only shares the
 // two ingredients every per-class checker needs:
 //
 //   1. Enumerate provider summaries by binding.semantics.name
@@ -20,7 +20,7 @@
 // The indexes are built in ONE walk (not N walks per pass). On a
 // project with ~thousand summaries the difference is small in
 // absolute terms, but it scales linearly with the number of pairing
-// passes — adding new classes (Drizzle, Redis, k8s, etc.) doesn't
+// passes: adding new classes (Drizzle, Redis, k8s, etc.) doesn't
 // add another walk.
 
 import type { BehavioralSummary, Effect, Semantics } from "@suss/behavioral-ir";
@@ -45,7 +45,7 @@ export interface InteractionRecord<TClass extends string> {
  *   - `providersBySemantics`: provider summaries grouped by their
  *     identity binding's semantics name (e.g. all storage-relational
  *     providers, all message-bus providers, etc.). Includes every
- *     summary with a binding regardless of `kind` — per-class
+ *     summary with a binding regardless of `kind`, per-class
  *     checkers further filter by kind when needed (message-bus
  *     distinguishes `library` providers from `consumer` summaries
  *     under the same semantics).
@@ -80,7 +80,7 @@ export function buildInteractionIndex(
   >();
 
   for (const summary of summaries) {
-    // Provider index — bucket by binding's semantics name.
+    // Provider index: bucket by binding's semantics name.
     const semantics = summary.identity.boundaryBinding?.semantics;
     if (semantics !== undefined) {
       const existing = providersBySemantics.get(semantics.name);
@@ -91,7 +91,7 @@ export function buildInteractionIndex(
       }
     }
 
-    // Interaction-effect index — bucket by class + binding semantics name.
+    // Interaction-effect index: bucket by class + binding semantics name.
     for (const transition of summary.transitions) {
       for (const effect of transition.effects) {
         if (effect.type !== "interaction") {
@@ -125,7 +125,7 @@ export function buildInteractionIndex(
 }
 
 /**
- * Lookup helper — returns the providers whose binding semantics name
+ * Lookup helper: returns the providers whose binding semantics name
  * matches. Returns an empty array (not undefined) when no providers
  * of that name exist; lets per-class checkers iterate without a
  * presence check.
@@ -138,14 +138,14 @@ export function providersOf(
 }
 
 /**
- * Lookup helper — returns the interaction records of the given class
+ * Lookup helper: returns the interaction records of the given class
  * AND binding semantics name. Returns an empty array when no records
  * match.
  *
  * The two-key lookup (class + semantics) is intentional: in v0 the
  * pairing is 1:1 between class and semantics name (e.g. "storage-access"
  * always uses "storage-relational" semantics), but the IR allows future
- * classes to be paired with multiple semantics types — the second key
+ * classes to be paired with multiple semantics types, the second key
  * keeps that option open without locking the dispatcher to today's 1:1
  * convention.
  */
@@ -167,7 +167,7 @@ export function interactionsOf<TClass extends string>(
 
 /**
  * Filter summaries to those whose identity binding has the given
- * semantics name. Builds a one-shot index internally — call sites
+ * semantics name. Builds a one-shot index internally, call sites
  * with multiple lookups should use `buildInteractionIndex` +
  * `providersOf` directly.
  */
@@ -182,7 +182,7 @@ export function findSummariesByBindingSemantics<
 /**
  * Walk every transition's effects and collect interaction effects of
  * the given class + binding semantics. Builds a one-shot pass
- * internally — call sites with multiple lookups should use
+ * internally: call sites with multiple lookups should use
  * `buildInteractionIndex` + `interactionsOf` directly.
  */
 export function collectInteractions<TClass extends string>(

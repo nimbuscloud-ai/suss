@@ -141,7 +141,7 @@ describe("generateSummariesFromStories — shape variants", () => {
       { projectRoot: repoRoot },
     );
     const def = summaries.find((s) => s.identity.name === "Counter.Default");
-    // `args: { label, initial: 0 }` — `label` is shorthand.
+    // `args: { label, initial: 0 }`, `label` is shorthand.
     const labelInput = def?.inputs.find(
       (i) => i.type === "parameter" && i.name === "label",
     );
@@ -168,7 +168,7 @@ describe("generateSummariesFromStories — shape variants", () => {
     // Create an in-memory fixture: a stories-like file that doesn't
     // declare a component. Use the `Counter.stories.tsx` path but
     // the contents are ad-hoc. We do this by asking the API to read
-    // a fixture that doesn't exist as a story — easier to just lean
+    // a fixture that doesn't exist as a story, easier to just lean
     // on the Button fixture, which we already cover. For the
     // negative case, we confirm that a non-stories source file
     // produces no summaries.

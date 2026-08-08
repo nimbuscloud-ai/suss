@@ -11,10 +11,7 @@ describe("unitKey", () => {
     ).toBe("types/campaign_type.rb:10-40#Campaign.id");
   });
 
-  it("tells two fields on one line apart", () => {
-    // `field :id, ID; field :name, String` is one line and two units.
-    // The range is lines, so without the name in the key they are one
-    // key, and `entry` is a set, so the second one disappears from it.
+  it("tells apart two fields written on one line", () => {
     const range = { start: 2, end: 2 };
     expect(unitKey("types/campaign_type.rb", range, "Campaign.id")).not.toBe(
       unitKey("types/campaign_type.rb", range, "Campaign.name"),

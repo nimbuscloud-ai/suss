@@ -1,8 +1,3 @@
-// The prompts are stubbed and answered from a queue, so a test says
-// "yes, no, yes" and asserts what reached the disk. What is not stubbed
-// is the reading: these run against directories laid out on disk, so the
-// questions asked are the ones a person would see in that project.
-
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -91,7 +86,6 @@ describe("suss init, guided", () => {
     return shown.join("\n");
   }
 
-  /** Decline every question that would write or install. */
   function declineEverything(count: number): void {
     answers.push(...Array<boolean>(count).fill(false));
   }
@@ -107,10 +101,6 @@ describe("suss init, guided", () => {
   });
 
   it("names the language it found when nothing in the project names a pack", async () => {
-    // A directory of Python with no requirements file beside it. There
-    // is nothing to suggest, and being told only that nothing matched
-    // leaves a person unable to tell whether suss saw the Python at
-    // all.
     write("app/main.py", "def handler():\n    return {}\n");
 
     const code = await initInteractive({ dir });
@@ -123,10 +113,6 @@ describe("suss init, guided", () => {
   });
 
   it("says what it could not read, rather than reporting a project with nothing in it", async () => {
-    // A legacy Python project whose setup.py computes its dependency
-    // list has no pack to suggest and one thing worth saying. The
-    // generic nothing-matched message on its own reads as though suss
-    // had looked and found nothing there.
     write("setup.py", "setup(install_requires=read_requirements())\n");
 
     const code = await initInteractive({ dir });
@@ -180,7 +166,7 @@ describe("suss init, guided", () => {
   it("writes .sussignore only when asked for it", async () => {
     project(".", "api", ["hono"]);
     // install: no, sussignore: yes, ci: no. The first-run question is
-    // skipped because nothing was installed.
+    // skipped when nothing was installed.
     answers.push(false, true, false);
 
     await initInteractive({ dir });
@@ -326,7 +312,6 @@ describe("suss init, guided", () => {
       expect(output()).toContain("Install failed");
       expect(output()).toContain("npm ERR! 404 not found");
       expect(output()).toContain("Nothing else was changed");
-      // Only the install was attempted; no extract followed it.
       expect(ran).toHaveLength(1);
     });
 

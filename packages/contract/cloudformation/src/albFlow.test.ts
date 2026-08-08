@@ -84,7 +84,7 @@ describe("the ALB flow template", () => {
 
   it("says which unit serves each listener path", () => {
     // The listener rules route /api/orders/* to the ECS service and
-    // /api/health to the Lambda, and now a routesTo edge carries each
+    // /api/health to the Lambda, and now a routesTo edge records each
     // path as match data. This is the gap the fixture existed to close.
     const everything = JSON.stringify(summariesFromFixture());
 
@@ -948,7 +948,7 @@ describe("answers: response shapes", () => {
       },
     });
     const routesTo = edgesOf(summaries, "routesTo")[0];
-    // The third pair names a Key but no Value at all, so it drops
+    // The third pair has a Key but no Value at all, so it drops
     // rather than inventing one, the same way a condition with nothing
     // readable drops.
     expect(routesTo?.routing.conditions).toEqual([

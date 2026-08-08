@@ -48,7 +48,7 @@ export function discoverClientCalls(
 
   // Step 1: Resolve the local name of the imported identifier, in
   // THIS file. A file that neither imports the client itself nor
-  // carries a chain resolution could follow back to one has nothing
+  // has a chain resolution could follow back to one has nothing
   // this pattern can match without cross-file help, so it's only
   // skipped outright when there's no resolution store to ask.
   //
@@ -70,7 +70,7 @@ export function discoverClientCalls(
     return results;
   }
 
-  // Step 2: For non-global imports, find variables holding the result of
+  // Step 2: For non-global imports, find variables set to the result of
   // calling the imported function (`const client = initClient(...)`) OR
   // calling one of its declared factory methods (`const api = axios.create(...)`),
   // built right here in this file.
@@ -109,7 +109,7 @@ export function discoverClientCalls(
       }
     } else if (Node.isPropertyAccessExpression(callee)) {
       // Method call. Three shapes:
-      //   1. client.getUser(...)   `client` is a variable holding the
+      //   1. client.getUser(...)   `client` is a variable set to the
       //      result of calling the import (e.g. `const client =
       //      initClient(...)`), built in THIS file.
       //   2. axios.get("/users")   the import itself is the client and
@@ -157,7 +157,7 @@ export function discoverClientCalls(
 }
 
 /**
- * Whether `subject`, unresolved in this file, names a client instance
+ * Whether `subject`, unresolved in this file, refers to a client instance
  * this pack built somewhere else. `writtenNodeOf` follows the name
  * back to wherever it was written: an import, an alias, a re-export
  * barrel. What it lands on still has to look like this pattern's own
@@ -277,9 +277,9 @@ function resolvedImportLocalName(
  * definition. A path-shaped specifier (starts with "." or "/") names
  * a location relative to wherever it's written, so a factory
  * configured as "./apiClient" and a file importing it as
- * "../apiClient" can name the same file without sharing a single
+ * "../apiClient" can point at the same file without sharing a single
  * character in common; only resolving both to the file they point at
- * answers whether they do.
+ * decides whether they do.
  *
  * Falls back to the literal comparison when a path-shaped specifier
  * doesn't resolve to a project file at all, rather than answering
@@ -306,7 +306,7 @@ function matchingImportDeclarations(
     .filter((decl) => decl.getModuleSpecifierValue() === importModule);
 }
 
-/** A relative or absolute specifier names a location, not a package. */
+/** A relative or absolute specifier points at a location rather than a package. */
 function isPathShapedSpecifier(specifier: string): boolean {
   return specifier.startsWith(".") || specifier.startsWith("/");
 }
@@ -316,7 +316,7 @@ function isPathShapedSpecifier(specifier: string): boolean {
  * ts-morph Project across separate runs (a rebuilt fixture in a test,
  * an editor reusing one project between edits), and a Project doing
  * that removes and re-adds files at the same path rather than staying
- * put, so a node cached from an earlier run answers "removed or
+ * put, so a node cached from an earlier run reports "removed or
  * forgotten" once ts-morph notices the swap. A path never goes stale;
  * looking the current node up by it, fresh, on every hit does.
  *
@@ -337,8 +337,8 @@ const resolvedModuleFileCache = new WeakMap<
  * from the project's own root. A relative specifier has no meaning by
  * itself, only relative to wherever it's written, so a pack config's
  * own module path is anchored the same way regardless of which file
- * ends up asking about it, rather than however that file happens to
- * sit.
+ * ends up asking about it, rather than on where that file happens to
+ * be.
  */
 function resolvedModuleFile(
   project: Project,
@@ -366,9 +366,9 @@ function resolvedModuleFile(
 
 /**
  * The project's own source file `specifier` names, resolved from the
- * common directory every loaded file sits under (the project root
+ * common directory every loaded file is under (the project root
  * when there's a tsconfig; the same anchor an in-memory fixture
- * project's files sit under otherwise). Declaration files are left
+ * project's files are under otherwise). Declaration files are left
  * out of both that directory and the candidate set: a factory is a
  * project's own function, never a `.d.ts`, and a global type root
  * living outside the project tree would otherwise widen the shared

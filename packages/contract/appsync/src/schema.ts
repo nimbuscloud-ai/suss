@@ -1,4 +1,4 @@
-// schema.ts — SDL parsing for AppSync schema-first resolver info.
+// schema.ts: SDL parsing for AppSync schema-first resolver info.
 //
 // AppSync's schema is hand-authored SDL. The reader parses it once per
 // API and indexes every (TypeName, FieldName) pair with its argument
@@ -6,7 +6,7 @@
 // by (TypeName, FieldName) and pick up the shape declared in SDL.
 //
 // Uses graphql-js's parser (the same reference impl AppSync itself
-// uses) so compatibility is guaranteed — any SDL AppSync accepts, we
+// uses) so compatibility is guaranteed, any SDL AppSync accepts, we
 // accept.
 
 import {
@@ -41,7 +41,7 @@ export function schemaKey(typeName: string, fieldName: string): string {
 /**
  * Parse an SDL string and index every field across Query, Mutation,
  * Subscription, and object-type extensions. Returns an empty index if
- * the SDL fails to parse — matches the reader's broader posture that
+ * the SDL fails to parse, matches the reader's broader posture that
  * partial input shouldn't halt extraction.
  */
 export function parseSchema(sdl: string): SchemaIndex {

@@ -1,4 +1,4 @@
-// processRun.ts — run a command and collect what it said.
+// processRun.ts: run a command and collect what it said.
 //
 // Guided init shells out to npm and to suss itself. Both are shown to
 // the person as a spinner line, and both need their output kept rather

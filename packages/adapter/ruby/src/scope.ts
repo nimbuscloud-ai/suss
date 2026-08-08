@@ -1,47 +1,31 @@
-// scope.ts: the lexical binder.
-//
-// Sized to what this slice needs, per the language-adapters proposal:
-// class and module nesting, so a constant written where Ruby itself
-// would resolve it lexically reads the way Ruby reads it, with nothing
-// beyond that. `require` is not resolved (Rails autoloads by naming
-// convention, not by an explicit load graph a static reader could
-// follow): a constant path this module cannot qualify from nesting
-// alone is recorded as the name it was written with, and callers treat
-// that as an unresolved reference rather than a guess.
-//
-// Two constant shapes appear in Ruby source. A compound path written
-// out (`Data::Record`, a `scope_resolution` node) names an absolute
-// path the way Ruby itself resolves it, regardless of where it's
-// written, so its text is the qualified name. A bare name (a
-// `constant` node, e.g. `Record` written inside `module Data`) is
-// nesting-relative.
-//
-// `Module.nesting` itself always prepends the newly opened class or
-// module onto whatever chain is already in effect, regardless of
-// whether the name used to open it was bare or compound: nesting
-// tracks lexical (textual) class/module keyword nesting, not the
-// shape of the name. `module Api; class Types::CampaignType; end; end`
-// carries `Api` on the chain inside `CampaignType`'s body exactly the
-// way a bare name would, even though the class's own qualified name is
-// the compound path as written, not `Api::Types::CampaignType`.
-// Getting this wrong matters beyond cosmetics: a bare reference inside
-// that body is resolved by trying each level of the chain before
-// falling back to a scalar name (see typeShape.ts), and dropping `Api`
-// from it would miss a class the body's own file defines there.
+/**
+ * Resolves Ruby constant paths against lexical nesting.
+ *
+ * A compound path written out, like `Data::Record`, means the same thing
+ * wherever it appears, so its text is the qualified name. A bare name is
+ * relative to the nesting it is written inside. `require` is never resolved,
+ * because Rails autoloads by naming convention rather than through a load graph
+ * a static reader could follow, so a constant that nesting alone cannot qualify
+ * keeps whatever name the source wrote and callers treat it as unresolved.
+ *
+ * Ruby's own `Module.nesting` puts a newly opened class or module on the front
+ * of the chain already in effect, whether the name used to open it was bare or
+ * compound, because nesting follows the class and module keywords in the text
+ * and not the form of the name. So even when a class is opened with a compound
+ * name, as in `module Api; class Types::CampaignType; end; end`, Ruby still
+ * looks up through `Api` inside that body. That matters, because a bare
+ * reference in there is resolved by trying each level of the chain, and dropping
+ * `Api` would miss a class the file itself defines.
+ */
 
 import { bodyStatements, field } from "./ast.js";
 
 import type { RbNode } from "./parser.js";
 
 /**
- * Qualify a `constant` or `scope_resolution` node against `nesting`
- * (innermost first, per `Module.nesting`'s own order). Null for any
- * other node shape, a computed expression, a variable, which callers
- * treat as unresolved rather than guessing a path for it. This always
- * answers with the innermost level, the same single-hop qualification
- * the roadmap's "modest resolver" calls for; `shadowingClassFor` is the
- * one place that walks every level, because only a shadow check needs
- * to.
+ * Qualifies a name against the innermost level of `nesting` and no further. It
+ * returns null for a computed expression or a variable, which callers treat as
+ * unresolved. `shadowingClassFor` is the one place that walks every level.
  */
 export function qualifyConstantRef(
   node: RbNode,
@@ -58,13 +42,9 @@ export function qualifyConstantRef(
 }
 
 /**
- * The qualified name of a project-defined class that a bare `constant`
- * node would resolve to before Ruby ever reaches a scalar inherited
- * from a base class, or null when none of `knownClasses` (every class
- * this file itself defines) sits at any level of `nesting`. Ruby
- * searches `Module.nesting` innermost first, so the first match wins;
- * a compound `scope_resolution` path is already absolute and is never
- * shadowed by nesting, so this only ever answers for a bare name.
+ * The project class a bare `constant` resolves to before Ruby ever
+ * reaches a scalar. Ruby searches `Module.nesting` innermost first, so
+ * the first match wins.
  */
 export function shadowingClassFor(
   node: RbNode,
@@ -85,26 +65,19 @@ export function shadowingClassFor(
 
 export interface ClassInfo {
   node: RbNode;
-  /** Which keyword opened it. A module has no superclass and cannot be subclassed, but its methods answer for every class including it. */
+  /** Which keyword opened it. A module has no superclass and cannot be subclassed, but its methods are available to every class including it. */
   kind: "class" | "module";
   /** This class's own fully-qualified constant path. */
   qualifiedName: string;
-  /** The qualified path of its `< ...` superclass, or null when it declares none or the expression isn't a literal constant path. */
+  /** Null when it declares no superclass, or the expression is not a literal constant path. */
   superclassQualifiedName: string | null;
   /** `body_statement` node, or null for `class Foo; end`. */
   bodyNode: RbNode | null;
-  /** `Module.nesting` in effect inside this class's own body, innermost first: this class's own qualified name prepended onto the chain it's textually nested inside, the same whether its own name was written bare or compound. */
+  /** `Module.nesting` in effect inside this class's own body, innermost first. */
   bodyNesting: readonly string[];
 }
 
-/**
- * Walk every `class` declaration reachable from `root` through direct
- * module/class nesting (not through anything requiring `require`
- * resolution), calling `visit` with each one's qualified identity. Used
- * both for the main project scan (find classes matching a pack's base
- * class names) and for reading one specific file located by the
- * constant-to-path convention (find the class matching a target name).
- */
+/** Every `class` declaration reachable from `root` through direct module/class nesting, in source order. */
 export function walkClasses(
   root: RbNode,
   visit: (info: ClassInfo) => void,
@@ -137,22 +110,13 @@ function walkBody(
     if (stmt.type === "module") {
       visitModule(stmt, nesting, visit);
     }
-    // Every other statement shape (assignment, if/unless, a bare call,
-    // ...) introduces no class/module at this body's level for v0's
-    // purposes.
   }
 }
 
 /**
- * The qualified name a class/module's own `name` field gives it, and
- * the `Module.nesting` chain in effect inside its body, given the
- * chain it's textually written inside (`outerNesting`). The qualified
- * name itself follows `qualifyConstantRef`'s own rule (a compound path
- * is absolute as written; a bare name is qualified against the
- * innermost outer level); `bodyNesting` always prepends that qualified
- * name onto `outerNesting`, because nesting inside the new body
- * carries the full lexical chain regardless of which shape the name
- * took.
+ * The qualified name a class or module's `name` field gives it, along with the
+ * nesting chain inside its body. `bodyNesting` always puts the qualified name on
+ * the front of `outerNesting`, whichever form the name took.
  */
 function ownIdentity(
   nameNode: RbNode,
@@ -177,8 +141,8 @@ function visitClass(
   }
   const superclassWrapper = field(node, "superclass");
   const superclassExpr = superclassWrapper?.namedChild(0) ?? null;
-  // The superclass expression is evaluated in the scope it's textually
-  // written in, before the class's own name joins nesting.
+  // Ruby evaluates the superclass expression in the scope where it is written,
+  // before the class's own name goes onto the nesting chain.
   const superclassQualifiedName =
     superclassExpr !== null
       ? qualifyConstantRef(superclassExpr, nesting)
@@ -225,13 +189,13 @@ function visitModule(
   }
 }
 
-/** A GraphQL type-name derivation this adapter knows how to run. A pack selects the one its library documents; the algorithm lives here. */
+/** A pack picks a derivation by name, and the code for each one lives here. */
 export type GraphqlTypeNameConvention = "stripTypeSuffix";
 
 /**
- * A class's short name (the segment after the last `::`), with a
- * trailing `Type` stripped: `Types::CampaignType` reads as `Campaign`,
- * `Types::QueryType` as `Query`.
+ * A class's short name, meaning the segment after the last `::`, with a trailing
+ * `Type` removed. `Types::CampaignType` becomes `Campaign` and `Types::QueryType`
+ * becomes `Query`.
  */
 function stripTypeSuffixName(qualifiedName: string): string {
   const shortName = qualifiedName.split("::").at(-1) ?? qualifiedName;
@@ -245,12 +209,7 @@ const TYPE_NAME_CONVENTIONS: Record<
   stripTypeSuffix: stripTypeSuffixName,
 };
 
-/**
- * The GraphQL type name a class's own qualified name derives under the
- * selected convention. Which convention applies is the library's own
- * documented naming rule, so the pack states it; an explicit per-class
- * name override is not read in v0.
- */
+/** We never read a per-class name override, so this is always the name the convention derives. */
 export function graphqlTypeNameFromQualified(
   qualifiedName: string,
   convention: GraphqlTypeNameConvention,

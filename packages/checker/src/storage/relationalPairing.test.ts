@@ -203,7 +203,7 @@ describe("checkRelationalStorage", () => {
       makeAccessSummary({
         name: "getUserAll",
         file: "src/getUserAll.ts",
-        // findUnique({ where: { id } }) — no select → reads ALL fields
+        // findUnique({ where: { id } }): no select → reads ALL fields
         accesses: [{ table: "User", kind: "read", fields: ["*"] }],
       }),
     ]);
@@ -255,7 +255,7 @@ describe("checkRelationalStorage", () => {
     );
     expect(unknownReads).toHaveLength(1);
     expect(unknownReads[0].description).toContain("nonExistent");
-    // Both channels' reads count toward usage — nothing is unused.
+    // Both channels' reads count toward usage. Nothing is unused.
     expect(findings.filter((f) => f.kind === "boundaryFieldUnused")).toEqual(
       [],
     );
@@ -264,7 +264,7 @@ describe("checkRelationalStorage", () => {
   it("scopes accesses by (storageSystem, scope, table)", () => {
     const findings = checkRelationalStorage([
       makeProvider({ table: "User", scope: "auth", columns: [{ name: "id" }] }),
-      // Same table name, different scope — should NOT pair as a
+      // Same table name, different scope, should NOT pair as a
       // read-field-unknown finding even though "nonExistent" isn't
       // declared on the auth-scope provider.
       makeAccessSummary({

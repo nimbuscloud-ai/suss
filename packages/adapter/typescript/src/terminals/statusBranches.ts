@@ -1,16 +1,18 @@
-// A status written as a choice.
-//
-// `res.status(created ? 202 : 200)` answers with one of two statuses,
-// and reading it as one unresolved value loses both. A ternary wrapped
-// around the whole call already comes out as two transitions, because
-// the terminal walk follows a conditional's branches, so a ternary
-// inside the status argument answers the same way: one branch per arm,
-// each carrying the condition that picks it.
-//
-// The choice is read through the binding it was given, so
-// `const code = created ? 202 : 200; res.status(code)` says what the
-// inline form says. Anything else about them would be an accident of
-// where somebody put a variable.
+/**
+ * A status written as a choice.
+ *
+ * `res.status(created ? 202 : 200)` sends one of two statuses, and
+ * reading it as a single unresolved value loses both. A ternary wrapped
+ * around the whole call already comes out as two transitions, because
+ * the terminal walk follows a conditional's branches, so a ternary
+ * inside the status argument is treated the same way: one branch per
+ * arm, each with the condition that picks it.
+ *
+ * The choice is followed through a binding, so
+ * `const code = created ? 202 : 200; res.status(code)` means the same as
+ * the inline form. Treating them differently would only reflect where
+ * somebody happened to put a variable.
+ */
 
 import { Node } from "ts-morph";
 
@@ -25,7 +27,7 @@ export interface StatusChoice {
   conditionText: string;
   /** The test itself, so a reader gets the predicate and not only text. */
   condition: Expression;
-  /** Whether this arm is the one taken when the test holds. */
+  /** Whether this arm is the one taken when the test is true. */
   whenTrue: boolean;
 }
 
@@ -33,8 +35,8 @@ export interface StatusChoice {
  * The arms of a status argument written as a choice, or null when the
  * argument is anything else.
  *
- * Null covers every shape this does not read, including a choice whose
- * arms are not both numbers. A partial answer would put one status on a
+ * Null covers everything this does not read, including a choice whose
+ * arms are not both numbers. A partial result would put one status on a
  * boundary that has two.
  */
 export function statusChoicesOf(argument: TsNode): StatusChoice[] | null {
@@ -56,9 +58,9 @@ export function statusChoicesOf(argument: TsNode): StatusChoice[] | null {
 }
 
 /**
- * The conditional an expression is, or the one it was given. A name
- * written once and never assigned again stands for what it was given;
- * a name written more than once stands for nothing this can read.
+ * The conditional an expression is, or the one it was assigned. A name
+ * written once and never assigned again means whatever it was assigned;
+ * a name written more than once means nothing this can read.
  */
 function asConditional(node: TsNode): ReturnType<typeof toConditional> {
   const direct = toConditional(node);
@@ -86,7 +88,7 @@ function asConditional(node: TsNode): ReturnType<typeof toConditional> {
 const toConditional = (node: TsNode) =>
   Node.isConditionalExpression(node) ? node : null;
 
-/** The number a node is, reading through a parenthesis or an `as`. */
+/** The number a node is, looking through parentheses and an `as`. */
 function numberOf(node: TsNode): number | null {
   const inner = unwrap(node);
   if (!Node.isNumericLiteral(inner)) {

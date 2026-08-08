@@ -116,8 +116,8 @@ describe("evalPredicate", () => {
       op: "gt",
       right: lit(3),
     };
-    // page is a string; 'gt' across string/number would invoke JS
-    // coercion — the interpreter abstains instead of modeling it.
+    // page is a string, and 'gt' across a string and a number would
+    // invoke JS coercion, so the interpreter abstains instead.
     expect(evalPredicate(pred, env({ query: { page: "5" } }))).toBe("unknown");
   });
 
@@ -132,7 +132,7 @@ describe("evalPredicate", () => {
     expect(evalPredicate(pred, env({ query: {} }))).toBe("false");
   });
 
-  it("abstains on opaque and call predicates — never guesses", () => {
+  it("abstains on opaque and call predicates: never guesses", () => {
     const opaque: Predicate = {
       type: "opaque",
       sourceText: "await isAllowed(req)",
@@ -227,7 +227,7 @@ describe("evalConditions", () => {
   });
 });
 
-describe("evalPredicate — operator and type-check coverage", () => {
+describe("evalPredicate: operator and type-check coverage", () => {
   const cmp = (
     op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte",
     left: ValueRef,
@@ -262,7 +262,7 @@ describe("evalPredicate — operator and type-check coverage", () => {
     });
     expect(evalPredicate(typeCheck(lit("x"), "string"), env({}))).toBe("true");
     expect(evalPredicate(typeCheck(lit(1), "string"), env({}))).toBe("false");
-    // instanceof-style: the env can't witness prototype chains.
+    // An instanceof-style check: the env cannot see prototype chains.
     expect(evalPredicate(typeCheck(lit("x"), "Date"), env({}))).toBe("unknown");
     // Unknown subject abstains even for a typeof-style check.
     expect(
@@ -319,7 +319,7 @@ describe("evalPredicate — operator and type-check coverage", () => {
   });
 });
 
-describe("interpreter — exhaustive abstention edges", () => {
+describe("interpreter: exhaustive abstention edges", () => {
   it("propagates unknown through chained property reads", () => {
     // First read is off a primitive (unknown); the second read must
     // short-circuit on the already-unknown base.

@@ -1,4 +1,4 @@
-// distBin.test.ts — run the built binary the way an npm user gets it.
+// distBin.test.ts: run the built binary the way an npm user gets it.
 //
 // Every other test in this package imports TypeScript sources, so a
 // dependency that only breaks once tsup has bundled it stays invisible.

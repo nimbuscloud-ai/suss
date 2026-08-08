@@ -9,12 +9,7 @@ import { bindModule } from "./scope.js";
 import type { RawCodeStructure } from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
 
-/**
- * Everything a unit's summary says about what nobody could read, as one
- * string to match against. The adapter hands its readings over
- * uncollapsed, so the sentences only exist once the extractor has
- * assembled the summary.
- */
+/** Every gap description on a unit's summary, joined into one string to match against. */
 function unreadTextOf(unit: RawCodeStructure | undefined): string {
   return unit === undefined
     ? ""
@@ -126,10 +121,6 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
   });
 
   it("takes the pack's declared default for a method whose return annotation states a shape", async () => {
-    // Flask answers an unmarked return with 200, which flask-restx's
-    // pack declares. A class route whose method annotates what it
-    // returns states a status too, and a consumer branching on 200
-    // pairs with it rather than reading as unreachable.
     const annotated = [
       "from myapp.wrappers.restx import route",
       "",
@@ -163,11 +154,6 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
   });
 
   it("classifies a converter-typed path parameter and claims the path in canonical brace form", async () => {
-    // Written the way Flask itself spells a converter-typed template.
-    // The claim canonicalizes to the IR's brace form so it pairs with
-    // consumers, and the parameter the template names reads as a path
-    // parameter. A brace-only reading of this path sees no parameter
-    // at all, which is exactly the bug this pins.
     const orderSource = [
       "from myapp.wrappers.restx import route as api_route",
       "",
@@ -191,10 +177,6 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
   });
 
   it("reads Werkzeug's converter-argument forms, lazily to the first closing parenthesis", async () => {
-    // <int(min=0):id> and <any(home,about):page> are Werkzeug's own
-    // documented converter-argument spelling; a reader without the
-    // parenthesized-arguments arm skips the whole segment and the
-    // parameter silently reads as a query parameter with no gap.
     const argsSource = [
       "from myapp.wrappers.restx import route",
       "",
@@ -219,10 +201,6 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
   });
 
   it("leaves an annotated-class parameter a query parameter when the pattern declares no body convention", async () => {
-    // flask-restx has no Pydantic-model-parameter behavior, so its
-    // pattern leaves `annotatedClassIsRequestBody` unset and an
-    // annotated locally-defined class must not read as the request
-    // body the way it does under FastAPI's pattern.
     const annotatedSource = [
       "from myapp.wrappers.restx import route",
       "",
@@ -430,10 +408,6 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
   });
 
   it("reads Starlette's typed converters and drops the converter from the canonical path", async () => {
-    // {item_id:int} and {file_path:path} are Starlette's PARAM_REGEX
-    // spelling; a reader without the optional-converter arm skips the
-    // segment and the parameter silently reads as a query parameter
-    // with no gap.
     const typedSource = [
       "from fastapi import FastAPI",
       "",
@@ -473,9 +447,6 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
   });
 
   it("claims no status when the decorator writes one the reader cannot read", async () => {
-    // status_code=CODE runs at whatever CODE holds. Found by the
-    // Python differential fuzzer: defaulting to 200 here promised a
-    // status the running app contradicted.
     const computedStatus = [
       "from fastapi import FastAPI",
       "",
@@ -589,11 +560,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     });
   });
 
-  it("matches each pattern only against its own definition shape", async () => {
-    // The class-route decorator sitting on a function, and the
-    // verb-attribute decorator sitting on a class: both resolve to a
-    // configured module, and neither shape is the one its pattern
-    // reads, so neither may produce a unit.
+  it("discovers nothing when a configured decorator sits on the definition shape its pattern does not read", async () => {
     const mixed = [
       "from myapp.wrappers.restx import route",
       "from fastapi import FastAPI",
@@ -633,10 +600,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
   });
 });
 
-describe("a route the readers cannot turn into a unit", () => {
-  // An empty path argument is how a route sitting at its mount point
-  // is written, and the binding builder refuses an empty path. The
-  // route that cannot be built has to cost itself and nothing else.
+describe("a route the readers cannot turn into a unit (an empty path, which the binding builder refuses)", () => {
   const source = [
     "from myapp.wrappers.restx import route",
     "",

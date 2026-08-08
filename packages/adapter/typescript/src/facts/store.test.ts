@@ -1,8 +1,3 @@
-// Each test lays out a small in-memory project shaped like a pattern
-// seen in production code, then asks the store the one question that
-// matters: which function does this export resolve to, or which
-// packages does this file reach.
-
 import { type Node, type Project, type SourceFile, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
@@ -18,7 +13,6 @@ function projectOf(files: Record<string, string>): Project {
   return project;
 }
 
-/** The exported value node for `name` in `file`. */
 function exportValue(project: Project, file: string, name: string): Node {
   const sourceFile = project.getSourceFileOrThrow(file);
   for (const varDecl of sourceFile.getVariableDeclarations()) {
@@ -99,8 +93,6 @@ describe("resolveCallable", () => {
   });
 
   it("unwraps a factory that takes config before the handler", () => {
-    // The handler is not the first argument, so the rule has to find which
-    // parameter the returned function calls.
     const project = projectOf({
       "/mod.ts": `
         function withInstrumentation(
@@ -125,8 +117,6 @@ describe("resolveCallable", () => {
   });
 
   it("unwraps a static class method factory", () => {
-    // The wrapper is a static method rather than a free function, so the
-    // callee is a property access and not an identifier.
     const project = projectOf({
       "/mod.ts": `
         class Handlers {
@@ -208,7 +198,7 @@ describe("resolveCallable", () => {
     ).toContain("sentry wrapped");
   });
 
-  it("ignores a local object spelled like a declared wrapper", () => {
+  it("ignores a local object spelled like a declared wrapper when nothing imported the library", () => {
     const project = projectOf({
       "/mod.ts": `
         const Sentry = { wrapHandler: (fn: unknown) => "not a function" };
@@ -223,7 +213,6 @@ describe("resolveCallable", () => {
       },
     ]);
 
-    // Nothing imported the library, so the declaration does not apply.
     expect(
       store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
     ).toBeNull();
@@ -251,9 +240,6 @@ describe("resolveCallable", () => {
 
   it("takes a declared wrapper re-exported through a project barrel", () => {
     const project = projectOf({
-      // The package has to be on disk for this to mean anything: the
-      // barrel forwards the symbol, and the only thing that can say
-      // where it came from is where it turns out to live.
       "/node_modules/@sentry/aws-serverless/package.json": JSON.stringify({
         name: "@sentry/aws-serverless",
         version: "1.0.0",
@@ -331,8 +317,6 @@ describe("resolveCallable", () => {
       },
     ]);
 
-    // The barrel forwards the library too, but this wrapHandler is the
-    // local one, and the local one is not transparent.
     expect(
       store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
     ).toBeNull();
@@ -369,7 +353,6 @@ describe("resolveCallable", () => {
       },
     ]);
 
-    // The type comes from the library and the function does not.
     expect(
       store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
     ).toBeNull();
@@ -399,8 +382,6 @@ describe("resolveCallable", () => {
       { callee: "wrapHandler", argument: 0, module: "sentry-js" },
     ]);
 
-    // The declaration lives in @types/sentry-js, and a pack names the
-    // package people import.
     expect(
       resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
     ).toContain("typed elsewhere");
@@ -517,7 +498,7 @@ describe("resolveCallable", () => {
     ).toContain("re-exported wrap");
   });
 
-  it("resolves a second export in a file it already extracted", () => {
+  it("resolves a second export in a file it already extracted, walking into the imported file", () => {
     const project = projectOf({
       "/impl.ts": `export const realHandler = async () => "from impl";`,
       "/mod.ts": `
@@ -528,10 +509,6 @@ describe("resolveCallable", () => {
     });
     const store = new ResolutionStore();
 
-    // The first query extracts /mod.ts and answers without leaving it.
-    // The second has to walk into /impl.ts, which it can only do if the
-    // frontier comes from the module graph rather than from what is
-    // left to extract.
     expect(
       resolvedBody(store, exportValue(project, "/mod.ts", "local")),
     ).toContain("local");
@@ -560,8 +537,6 @@ describe("resolveCallable", () => {
     });
     const store = new ResolutionStore();
 
-    // Both arguments qualify, so the rules cannot say which function
-    // this is. Picking one would depend on the order facts arrived in.
     expect(
       store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
     ).toBeNull();
@@ -642,8 +617,6 @@ describe("a name a destructuring pattern binds", () => {
   });
 
   it("answers with neither where a default sits beside a value the container holds", () => {
-    // Which of the two the name ends up holding is a run-time
-    // question, and the code says nothing about it.
     const project = projectOf({
       "/mod.ts": `
         const fallback = async () => "the default";
@@ -732,7 +705,6 @@ describe("a shorthand property", () => {
 });
 
 describe("a query rooted at a wrapped value", () => {
-  /** The argument at `position` of the first call to `callee` in `file`. */
   function argumentOf(
     project: Project,
     file: string,
@@ -782,7 +754,6 @@ describe("a query rooted at a wrapped value", () => {
 });
 
 describe("filesImportingTransitively", () => {
-  /** Whether one file on its own reaches any of `packages`. */
   function reaches(
     store: ResolutionStore,
     file: SourceFile,
@@ -807,8 +778,6 @@ describe("filesImportingTransitively", () => {
   });
 
   it("sees a package through a project-local barrel", () => {
-    // A shared package re-exports the SDK, so the importing file never
-    // names the SDK itself and the gate has to follow the re-export.
     const project = projectOf({
       "/aws/sqs.ts": `export { SendMessageCommand } from "@aws-sdk/client-sqs";`,
       "/service.ts": `
@@ -909,8 +878,6 @@ describe("filesImportingTransitively", () => {
     const store = new ResolutionStore();
     const gates = ["@aws-sdk/client-sqs"];
 
-    // The first ask reads /mid.ts and everything below it. The second
-    // stops at /mid.ts, and the rules carry its answer up to /service.ts.
     expect(reaches(store, project.getSourceFileOrThrow("/mid.ts"), gates)).toBe(
       true,
     );
@@ -964,7 +931,6 @@ describe("filesImportingTransitively", () => {
 });
 
 describe("resolveWrittenValue", () => {
-  /** The identifier `name` where it is passed to a call in `file`. */
   function usageOf(project: Project, file: string, name: string): Node {
     const sourceFile = project.getSourceFileOrThrow(file);
     const found = sourceFile
@@ -1045,8 +1011,6 @@ describe("resolveWrittenValue", () => {
     });
     const store = new ResolutionStore();
 
-    // The ternary is what the name is written as, and it is not a
-    // document, so a caller looking for one comes away with nothing.
     const written = store.resolveWrittenValue(
       usageOf(project, "/mod.ts", "DOC"),
     );
@@ -1055,7 +1019,6 @@ describe("resolveWrittenValue", () => {
 });
 
 describe("a binding written more than once", () => {
-  /** The exported variable declaration named `name`. */
   function bindingOf(project: Project, file: string, name: string): Node {
     return project
       .getSourceFileOrThrow(file)
@@ -1205,12 +1168,6 @@ describe("a binding declared without a value", () => {
 });
 
 describe("importedNamesOf", () => {
-  /**
-   * A project wrapper around a library decorator. Asking what the
-   * wrapper stands for makes the store join a module and a name into
-   * one key and read both halves back, which is the pattern that goes
-   * wrong when the two are joined on a separator a name could contain.
-   */
   it("names the library export a project wrapper stands for", () => {
     const project = projectOf({
       "/section.ts": `

@@ -21,6 +21,14 @@ const binding = restBinding({
 });
 ```
 
+## Message-bus channels
+
+A channel is a subject, optionally qualified by the bus that carries it, written `${bus}#${subject}`. Two channels pair when their subjects are equal and their buses agree, and buses agree when they are the same or when either side does not know its bus.
+
+The two sides rarely know the same amount. A CloudFormation template gives both the bus and the detail-type, and it goes out of its way to distinguish one bus from another, so when a side does know its bus we keep that precision. Code usually knows only the subject: the code pack reads `subject: 'order.placed'` from a handler's config, but which bus actually reaches that handler is deployment configuration the code never mentions. So `default#order.placed` pairs with `order.placed`, while `staging#order.placed` does not pair with `default#order.placed`.
+
+The boundary key uses only the subject, so both forms end up in the same bucket and `channelsPair` compares the buses within it.
+
 Schemas are the single source of truth (`@suss/ir-core/schemas`); the types are derived from them. The recursive `TypeShape` is a hand-written named export so consuming packages reference it by name across the package boundary rather than inlining the recursion.
 
 ## Where it fits in suss

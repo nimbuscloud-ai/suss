@@ -49,7 +49,7 @@ describe("resolveTopicChannel", () => {
   });
 
   it("rejects an ARN of another service", () => {
-    // The value falls through as an opaque string, never as a name.
+    // The value comes back whole, never read as a resource name.
     expect(
       resolveTopicChannel("arn:aws:sqs:us-east-1:123456789012:orders"),
     ).toBe("arn:aws:sqs:us-east-1:123456789012:orders");

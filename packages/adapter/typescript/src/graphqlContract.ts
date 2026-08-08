@@ -1,4 +1,4 @@
-// graphqlContract.ts — derive a declared-contract object for a single
+// graphqlContract.ts: derive a declared-contract object for a single
 // resolver field from an SDL string. Mirrors what
 // @suss/contract-graphql does at the SDL-source level, but used by the
 // adapter when an Apollo / yoga / graphql-tools pack supplies the SDL
@@ -11,7 +11,7 @@
 // same boundary (for example, an SDL-based @suss/contract-graphql
 // run).
 //
-// The parser is graphql-js — same library @suss/contract-graphql uses.
+// The parser is graphql-js, same library @suss/contract-graphql uses.
 // Failures are silent (return null) so a malformed schema doesn't
 // crash extraction; the SDL stays attached at metadata.graphql.schemaSdl
 // for inspection / fallback.
@@ -49,7 +49,7 @@ function parseSchema(sdl: string): DocumentNode | null {
 }
 
 /**
- * Always "derived" for adapter-emitted contracts — the SDL field
+ * Always "derived" for adapter-emitted contracts, the SDL field
  * declaration is what drives both the contract and the resolver's
  * declared identity, so self-comparison would be tautological.
  */

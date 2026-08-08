@@ -1,10 +1,10 @@
-// @suss/contract-cloudformation — Generate behavioral summaries from
+// @suss/contract-cloudformation: Generate behavioral summaries from
 // CloudFormation / SAM templates.
 //
 // Three extraction paths run side by side:
 //
 //   1. Inline-OpenAPI: API Gateway resources whose Properties.Body or
-//      Properties.DefinitionBody carries an OpenAPI document. Each body
+//      Properties.DefinitionBody contains an OpenAPI document. Each body
 //      is handed to @suss/contract-openapi.
 //
 //   2. CFN-native REST: AWS::ApiGateway::RestApi + AWS::ApiGateway::Method
@@ -12,7 +12,7 @@
 //      resource graph to derive paths, reads authorization / integration
 //      / api-key / validation knobs, and builds a normalized
 //      RestApiConfig per RestApi. Delegates to @suss/contract-aws-apigateway
-//      for the resource semantics — the CFN package is a *manifest reader*,
+//      for the resource semantics, the CFN package is a *manifest reader*,
 //      not a behavior model.
 //
 //   3. CFN-native HTTP API: AWS::ApiGatewayV2::Api + AWS::ApiGatewayV2::Route
@@ -21,7 +21,7 @@
 //
 // SAM AWS::Serverless::Function.Events { Api | HttpApi } blocks are
 // expanded into synthetic Method / Route entries in the appropriate
-// API's config — that's the dominant SAM authoring idiom.
+// API's config: that's the dominant SAM authoring idiom.
 //
 // Reading a template from disk reads the templates it embeds too. Each
 // document is walked on its own, because a logical id, a SAM `Globals`
@@ -84,7 +84,7 @@ export {
 } from "@suss/manifest-aws";
 
 export { ALB_MATCH_LANGUAGE, albRouterSelector } from "./albMatch.js";
-// Where a document sits decides which flow scope its resources join, so
+// Where a document is decides which flow scope its resources join, so
 // every manifest reader labels its documents the same way.
 export { documentSourceLabel } from "./documentLabel.js";
 // The runtime-config walk is the one summary builder another manifest
@@ -115,8 +115,8 @@ export interface CloudFormationToSummariesOptions {
 }
 
 /**
- * Resource types whose `Body` / `DefinitionBody` typically holds an OpenAPI
- * definition. Each entry names the property to read.
+ * Resource types whose `Body` / `DefinitionBody` usually contains an OpenAPI
+ * definition. Each entry says which property to read.
  */
 const API_RESOURCE_BODIES: Record<string, "Body" | "DefinitionBody"> = {
   "AWS::ApiGateway::RestApi": "Body",
@@ -217,13 +217,13 @@ export function cloudFormationToSummaries(
  * A logical id is unique within one document and nowhere else, so two
  * nested documents can each declare `HandlerFunction` and mean two
  * different Lambdas. The deployed instance is the identity the checker
- * joins the code side against, so it is the one that has to carry the
+ * joins the code side against, so it is the one that has to include the
  * path. A channel keeps the name its document writes, because a queue
  * name is what the code says and the code cannot know which document
  * declared the queue.
  *
  * A `fronts` edge's `resource` field follows the same rule as
- * `deployableUnit.instanceName` when it names a deployable unit's own
+ * `deployableUnit.instanceName` when it points at a deployable unit's own
  * identity (an ECS container's or a Lambda's instanceName): the ALB
  * flow reader and the runtime-config reader must qualify it the same
  * way for the two to still name the same thing once nested. A fronted
@@ -262,7 +262,7 @@ function deployedWithinStack(
           }
         : {}),
       // A runtime-config boundary is keyed on the instance, so the
-      // binding holds its own copy of the name and both have to move.
+      // binding has its own copy of the name and both have to move.
       ...(binding !== null && binding?.semantics.name === "runtime-config"
         ? {
             boundaryBinding: {
@@ -290,7 +290,7 @@ function deployedWithinStack(
 }
 
 /**
- * A `fronts` edge's resource, when it names a deployable unit the stack
+ * A `fronts` edge's resource, when it points at a deployable unit the stack
  * path has to qualify. Null when the edge is not `fronts`, when nothing
  * resolved, or when the resource is a declared load balancer, which
  * stays bare.
@@ -326,7 +326,7 @@ function buildRestApiConfigs(
   // Collect RestApi resources up front so we can look up cascading
   // defaults (CORS settings on Properties, throttle defaults from a
   // companion AWS::ApiGateway::Stage, etc.) when building per-endpoint
-  // configs. SAM's AWS::Serverless::Api also lands here — it's the
+  // configs. SAM's AWS:Serverless:Api also lands here. It's the
   // SAM-side authoring shape that transforms into a RestApi.
   const restApis = new Map<string, CloudFormationResource>();
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -847,7 +847,7 @@ function readHttpAuthorizer(
 // ---------------------------------------------------------------------------
 //
 // AWS::Serverless::Function declares per-Lambda Events of type Api or
-// HttpApi. This is the dominant SAM authoring idiom — instead of separate
+// HttpApi. This is the dominant SAM authoring idiom, instead of separate
 // AWS::ApiGateway::Method resources, the routes are attached directly to
 // each Function. We expand them into the same RestEndpointConfig /
 // HttpRouteConfig shapes the manual Method walks produce.

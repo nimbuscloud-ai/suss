@@ -1,17 +1,17 @@
-// globals.ts: fold the SAM `Globals` section into the resources that
-// inherit from it, so every reader sees one set of properties per
-// resource and none of them has to know that `Globals` exists.
-//
-// SAM applies a section's properties to each resource of the matching
-// type, and the resource's own value wins where both declare one:
-// https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-specification-template-anatomy-globals.html
-//
-// The combining rules come from that page as well. A map is merged key
-// by key, a list holds the section's entries followed by the resource's,
-// and anything else is replaced outright by the resource. Merging keys
-// is what makes `Globals.Function.Environment.Variables` behave the way
-// a template author expects: a function that declares one variable of
-// its own still receives the section's others.
+/**
+ * globals.ts folds the SAM `Globals` section into the resources that
+ * inherit from it, so every reader sees one set of properties per resource
+ * and none of them has to know that `Globals` exists.
+ *
+ * SAM applies a section's properties to each resource of the matching type,
+ * and the resource's own value wins where both declare one, per
+ * https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-specification-template-anatomy-globals.html
+ *
+ * That page has the combining rules too. A map is merged key by key, a list
+ * becomes the section's entries followed by the resource's, and anything
+ * else is replaced outright. Merging keys is what makes a function that sets
+ * one environment variable of its own still get the section's others.
+ */
 
 import type {
   CloudFormationResource,
@@ -30,8 +30,8 @@ const GLOBALS_SECTION_TYPES: Record<string, string> = {
 
 /**
  * The template's resources with each `Globals` section already applied
- * to the resources it covers. A resource of a type no section names, or
- * a template with no `Globals`, comes back untouched.
+ * to the resources it covers. A resource whose type no section covers,
+ * or a template with no `Globals`, comes back untouched.
  */
 export function resourcesWithGlobals(
   template: CloudFormationTemplate,
@@ -60,8 +60,9 @@ export function resourcesWithGlobals(
  * Per function logical id, the environment variables the `Function`
  * section supplies that the function does not declare for itself. A
  * consumer that treats a function's environment as its own contract
- * needs the distinction: a name every function in the document receives
- * says something about the document, not about any one function.
+ * needs the difference, because a variable every function in the
+ * document receives tells you about the document, not about one
+ * function.
  */
 export function inheritedEnvVars(
   template: CloudFormationTemplate,

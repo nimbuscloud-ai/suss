@@ -1,9 +1,3 @@
-// The walk's generic half, tested without any reader: facts read off
-// the routing namespace, admission dispatched by match language,
-// serving claims placed by code scope, and the two certainty
-// relations. Everything protocol-specific arrives through the
-// selector table or the semantics registry, the way a caller wires it.
-
 import { describe, expect, it } from "vitest";
 
 import { withRoutingMetadata } from "@suss/behavioral-ir";
@@ -109,7 +103,7 @@ const toySelector: RouterMatchSelector = (records) => ({
 const TOY = { toy: toySelector };
 
 describe("collectFlowInputs", () => {
-  it("skips a row with an unresolved end: nothing to join on", () => {
+  it("skips a row with an unresolved end but keeps its match record", () => {
     const inputs = collectFlowInputs([
       routingSummary("broken", {
         edge: "routesTo",
@@ -130,8 +124,6 @@ describe("collectFlowInputs", () => {
 
     expect(inputs.edges.routesTo).toEqual([]);
     expect(inputs.edges.fronts).toEqual([]);
-    // The match record is still there: the rule exists even though its
-    // target does not resolve, and a selector may still rank it.
     expect(
       inputs.edges.routers
         .get(scopedFlowNode(DOCUMENT, "L"))
@@ -320,9 +312,6 @@ describe("possible chains and serving claims", () => {
     const view = analyzeFlow(summaries, REQUEST, TOY).from("L");
 
     expect(view.units.certain).toEqual(["Task/app"]);
-    // The named route that matches is certain; the route whose path
-    // nothing named might still answer, so it stays possible; the
-    // route that matches another path is neither.
     expect(view.claims).toEqual({
       certain: ["src/app/a.ts::hit"],
       possible: ["src/app/a.ts::unnamed"],
@@ -391,8 +380,6 @@ describe("possible chains and serving claims", () => {
 });
 
 describe("document scoping", () => {
-  // Two unrelated documents, same router and matchId spellings,
-  // different targets. Nothing may join across them.
   const summaries = [
     routingSummary(
       "edge",
@@ -448,9 +435,6 @@ describe("document scoping", () => {
   });
 
   it("shares one scope across a nested tree, so in-tree joins still hold", () => {
-    // A child document's summaries carry the root label plus the stack
-    // path that reaches them; the walk scopes by the root part, so a
-    // routing edge and the unit it fronts, both in the child, join.
     const child = "cloudformation:root.yaml#OrdersStack";
     const nested = [
       routingSummary(
@@ -622,9 +606,6 @@ describe("the chain behind an answer", () => {
   });
 
   it("says an admitted rule sent it somewhere nothing could follow", () => {
-    // The rule takes the request; its target lives in another stack, so
-    // the walk has nowhere to go. Reporting the node as declaring
-    // nothing would lose the one fact the reader needs.
     const crossStack = [
       routingSummary("forward", {
         edge: "routesTo",
@@ -701,8 +682,6 @@ describe("the chain behind an answer", () => {
   });
 
   it("counts the chains it did not keep rather than dropping them silently", () => {
-    // One router forwarding to 60 target groups: more chains than an
-    // answer prints, and the answer has to say how many more.
     const many = [
       ...Array.from({ length: 60 }, (_, index) =>
         routingSummary(`edge-${index}`, {

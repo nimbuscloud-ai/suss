@@ -15,7 +15,7 @@
 // will serve it and whether extraction is expected to claim that path
 // or abstain.
 //
-// The two frameworks carry the same dimensions on purpose. A mount
+// The two frameworks have the same dimensions on purpose. A mount
 // the generator always writes one way is a mount the differential
 // cannot judge: while every generated namespace mounted at "/", a
 // pack that ignored namespace paths entirely scored the same as one
@@ -23,7 +23,7 @@
 //
 // Bodies stay inside what v0 extraction reads, which is declarations
 // only: an annotated handler returns a dict matching its annotation,
-// and a status-declaring decorator gets a handler that answers with
+// and a status-declaring decorator gets a handler that returns
 // that status. A body that contradicts its own declaration is the
 // disagreement class, which arrives with the path-engine slice, not
 // here.
@@ -34,9 +34,9 @@ export type PyVerb = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
  * How a fastapi decorator states the response status: not at all
- * (the framework answers 200), a literal the pack reads, or a module
+ * (the framework returns 200), a literal the pack reads, or a module
  * constant the pack must decline to read even though the running app
- * answers with the constant's value.
+ * returns the constant's value.
  */
 export type PyStatusSpec =
   | { type: "absent" }
@@ -101,12 +101,12 @@ export interface FlaskMethodSpec {
   verb: PyVerb;
   /**
    * `-> Shape` return annotation, the one declaration the pack reads
-   * off a resource method. Annotated methods answer a plain dict
+   * off a resource method. An annotated method returns a plain dict
    * (status 200) so the declared 200 stays true; a body contradicting
    * its own annotation is the disagreement class, out of scope here.
    */
   annotated: boolean;
-  /** "tuple" answers `return body, status`, which the pack claims nothing about. Never combined with `annotated`. */
+  /** "tuple" means `return body, status`, which the pack claims nothing about. Never combined with `annotated`. */
   returnStyle: "dict" | "tuple";
   tupleStatus: number;
 }
@@ -130,7 +130,7 @@ export type FlaskImportStyle = "direct" | "wrapper" | "wrapperAliased";
  * library keeps that path with trailing slashes stripped and falls
  * back to one it derives from the namespace's name, so what the
  * source writes and what the app serves come apart in exactly the
- * ways this union names.
+ * ways this union spells out.
  */
 export type FlaskNamespacePath =
   /** `path="/nsK"`, or `path="/nsK/"` with `trailingSlash`, which serves the same paths. */
@@ -166,7 +166,7 @@ export type FlaskMountSite =
   | "factory"
   /** Inside that function, looping over a list literal holding the namespace. */
   | "loopLiteral"
-  /** Inside that function, looping over what a call returns, which names no namespace the source states. */
+  /** Inside that function, looping over what a call returns, which points at no namespace the source writes. */
   | "loopCall";
 
 /**
@@ -200,7 +200,7 @@ export type FlaskNamespaceSpec =
  * rather than stripping a trailing slash off first: `Api(prefix=...)`
  * and `Blueprint(name, __name__, url_prefix=...)`. A trailing slash
  * there really does serve a doubled slash, which is why the literal
- * spelling carries the flag.
+ * spelling has the flag.
  */
 export type FlaskWrittenPrefix =
   | { type: "literal"; trailingSlash: boolean }
@@ -258,7 +258,7 @@ export interface PyRouteIntent {
   method: PyVerb;
   servedPaths: string[];
   expectation: "claim" | "abstain";
-  /** JSON body a well-formed probe request must carry, for routes with a model body parameter. */
+  /** JSON body a well-formed probe request must send, for routes with a model body parameter. */
   requestBody: Record<string, unknown> | null;
 }
 
@@ -272,7 +272,7 @@ export interface RenderedPythonProgram {
   wrapperModules: string[];
 }
 
-/** The dict a model-shaped handler answers with, matching the rendered model's two fields. */
+/** The dict a model-shaped handler returns, matching the rendered model's two fields. */
 export const MODEL_BODY: Record<string, unknown> = { id: 1, name: "x" };
 
 const MODEL_BODY_LITERAL = '{"id": 1, "name": "x"}';
@@ -378,7 +378,7 @@ function routeNeedsModel(route: FastapiRouteSpec): boolean {
   return route.response !== "none" || route.hasBodyParam;
 }
 
-/** The path the app serves a route at under composed prefixes, resolving a computed decorator path to the value its constant holds. */
+/** The path the app serves a route at under composed prefixes, resolving a computed decorator path to the value of its constant. */
 function servedPath(
   route: FastapiRouteSpec,
   n: number,
@@ -626,7 +626,7 @@ function fastapiGroupRenderers(
         ...group.firstRoutes,
         ...group.secondRoutes,
       ]);
-      // Decoration binds to whichever object the name holds at that
+      // Decoration binds to whichever object the name refers to at that
       // point, so the first construction's routes are lost once the
       // mount only sees the second. Extraction abstains on both.
       return {
@@ -682,7 +682,7 @@ function fastapiGroupRenderers(
         ...group.innerRoutes,
         ...group.outerRoutes,
       ]);
-      // The inner router sits two mount hops from the app, one past
+      // The inner router is two mount hops from the app, one past
       // what the prefix reading follows, so its routes abstain while
       // the outer router's own routes still claim.
       return {
@@ -856,12 +856,12 @@ function flaskResourceLines(
  * The rendered source spells a template parameter the way Werkzeug
  * does (`<int:orders0_id>`, `<int(min=0):orders0_id>`); intents and
  * observations both speak the IR's canonical brace spelling, the one
- * an extracted claim carries, so the judge compares one spelling
+ * an extracted claim uses, so the judge compares one spelling
  * everywhere.
  */
 function canonicalFlaskPath(path: string): string {
   // A prefix written with a trailing slash leaves the rule carrying a
-  // repeated slash, and Werkzeug answers that at the merged path and
+  // repeated slash, and Werkzeug serves that at the merged path and
   // redirects the written one.
   return path
     .replace(/<(?:\w+(?:\(.*?\))?:)?(\w+)>/g, "{$1}")
@@ -878,7 +878,7 @@ interface RenderFlaskResourcesOptions {
   state: FlaskRenderState;
   /** What the resource decorator is written as at this site (`api.route`, `route`, `ns.route`). */
   routeDecorator: string;
-  /** What the app puts in front of every resource's own path here, already as the library holds it. */
+  /** What the app puts in front of every resource's own path here, already in the form the library stores it. */
   prefix: string;
   /** Whether a literal-path resource here is one the pack claims a path for. */
   claimable: boolean;
@@ -886,7 +886,7 @@ interface RenderFlaskResourcesOptions {
    * Declares the first resource with an empty route path, which serves
    * the namespace's own path. Only set where the namespace states a
    * path: with nothing of its own the rule would come out as the Api's
-   * own root, which the library answers 404 at, or as no path at all,
+   * own root, which the library returns 404 for, or as no path at all,
    * which the app refuses to register.
    */
   emptyFirstPath?: boolean;
@@ -904,7 +904,7 @@ function renderFlaskResources(options: RenderFlaskResourcesOptions): string[] {
     const empty = index === 0 && options.emptyFirstPath === true;
     // An empty route path states no parameter, so the methods must
     // take none either: a handler asking for one the rule never binds
-    // is a program that answers 500, not a program under test.
+    // is a program that returns 500, not a program under test.
     const declared = empty ? { ...resource, hasPathParam: false } : resource;
     const writtenPath = empty ? "" : flaskResourcePath(declared, ri);
     lines.push(
@@ -945,7 +945,7 @@ interface NamespaceRendering {
   factoryMounts: string[];
 }
 
-/** What the library holds a namespace's path as, and what the source writes to get it. */
+/** What the library stores a namespace's path as, and what the source writes to get it. */
 interface NamespacePathRendering {
   /** The keyword argument on the constructor call, empty when the source writes none. */
   constructorArg: string;
@@ -1058,7 +1058,7 @@ function mountPathRenderings(
   };
 }
 
-/** Where one namespace's mount call is written, and whether the pack follows it to the namespace it names. */
+/** Where one namespace's mount call is written, and whether the pack follows it to the namespace it points at. */
 interface MountSiteRendering {
   prelude: string[];
   moduleMounts: string[];
@@ -1207,7 +1207,7 @@ function namespaceRenderers(
       ],
       factoryMounts: [],
     }),
-    // Decoration binds to whichever namespace the name holds at that
+    // Decoration binds to whichever namespace the name refers to at that
     // point, so the first construction's resources are never mounted
     // and never served. Extraction abstains on both sets.
     reassigned: (namespace) => ({
@@ -1261,7 +1261,7 @@ function registerFunctionLines(mounts: string[]): string[] {
 
 /** What one written prefix contributes, and whether the pack reads it. */
 interface WrittenPrefixRendering {
-  /** The keyword arguments the call carries for this prefix: one, or none where the source writes none. */
+  /** The keyword arguments the call passes for this prefix: one, or none where the source writes none. */
   arguments: string[];
   /** A module constant the call reads its prefix from, for the non-literal shape. */
   prelude: string[];
@@ -1395,7 +1395,7 @@ function apiMountRenderings(
         prefixOverride: "/reg",
         readable: false,
       }),
-    // A blueprint registered inside another sits one hop past what the
+    // A blueprint registered inside another is one hop past what the
     // prefix reading follows.
     blueprintNested: () =>
       onBlueprint({
@@ -1420,7 +1420,7 @@ const FLASK_ROUTE_DECORATORS: Record<FlaskImportStyle, string> = {
   wrapperAliased: "api_route",
 };
 
-/** The `Api` variable main.py mounts namespaces on, which each import style names differently. */
+/** The `Api` variable main.py mounts namespaces on, which each import style refers to differently. */
 const FLASK_API_VARIABLES: Record<FlaskImportStyle, string> = {
   direct: "api",
   wrapper: "restx_api",
@@ -1444,7 +1444,7 @@ function renderFlaskProgram(
 
   // Resources with no namespace of their own hang on whatever the
   // import style gives them, and are served under whatever the Api
-  // carries plus the paths their decorators write.
+  // has plus the paths their decorators write.
   const resourceLines = renderFlaskResources({
     resources: spec.resources,
     state,

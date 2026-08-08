@@ -10,7 +10,7 @@ import { apolloFramework } from "./index.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
-// Fixture project — loads fixtures/apollo/*.ts into an in-memory ts-morph project
+// Fixture project: loads fixtures/apollo/*.ts into an in-memory ts-morph project
 // ---------------------------------------------------------------------------
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/apollo");
@@ -66,7 +66,7 @@ describe("apolloFramework — pack shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration — run the adapter against the fixture
+// Integration: run the adapter against the fixture
 // ---------------------------------------------------------------------------
 
 describe("apolloFramework — integration", () => {
@@ -108,7 +108,7 @@ describe("apolloFramework — integration", () => {
     const roles = userQuery?.inputs
       .filter((i) => i.type === "parameter")
       .map((i) => (i.type === "parameter" ? i.role : null));
-    // Only 3 params declared in the fixture — `info` is not present.
+    // Only 3 params declared in the fixture, `info` is not present.
     expect(roles).toEqual(["parent", "args", "context"]);
   });
 
@@ -148,7 +148,7 @@ describe("apolloFramework — integration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// In-memory edge cases — exercise discovery branches without relying on
+// In-memory edge cases: exercise discovery branches without relying on
 // a full fixture file.
 // ---------------------------------------------------------------------------
 

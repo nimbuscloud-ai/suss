@@ -139,7 +139,7 @@ describe("checkConsumerContract", () => {
       ]),
       [{ statusCode: 200, body: record({ id: text, name: text }) }],
     );
-    // Default branch reads `role` — not in declared schema
+    // Default branch reads `role`, not in declared schema
     const c = consumer("UserPage", [
       transition("ct-default", {
         output: { type: "return", value: null },

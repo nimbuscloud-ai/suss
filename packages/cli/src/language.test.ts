@@ -47,7 +47,7 @@ describe("detectLanguages", () => {
   });
 
   it("recognizes a Rails app by config/application.rb", () => {
-    // graphql-ruby's root sits under app/, so a Rails app with its gems
+    // graphql-ruby's root is under app/, so a Rails app with its gems
     // vendored and no lock file in reach still has to be recognized.
     write("config/application.rb", "module MyApp\nend\n");
     expect(detectLanguages(dir)).toEqual(["ruby"]);

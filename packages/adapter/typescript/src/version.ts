@@ -1,11 +1,11 @@
-// version.ts — adapter version stamp, used as an input to cache keys.
+// version.ts: adapter version stamp, used as an input to cache keys.
 //
 // `ADAPTER_VERSION` is the hand-bumped semver. Bump it on any change
-// that affects extraction output — IR shape, discovery semantics,
+// that affects extraction output: IR shape, discovery semantics,
 // terminal classification, anything that would invalidate previously-
 // cached summaries.
 //
-// During development, manual bumps are easy to forget — every src
+// During development, manual bumps are easy to forget: every src
 // change rebuilds dist, but the cache still hits stale entries because
 // the version constant didn't change. To avoid that footgun the cache
 // key also mixes in a hash of the loaded dist file. In production
@@ -13,17 +13,17 @@
 // release. In dev (rebuilt dist), the hash changes on every rebuild
 // and invalidates the cache automatically.
 //
-// The hash covers the packages the analysis runs through, not only
+// The hash covers every package the analysis runs through, not only
 // this one. The extractor turns what the adapter reads into summaries
 // and the resolution rules decide what an export comes down to, and
-// both ship separately, so a release changing only one of them would
-// otherwise keep serving summaries the previous one produced.
+// both ship separately, so a release that changed only one of them
+// would otherwise keep serving the summaries the previous one produced.
 //
 // Under vitest, ts-node or tsx there is no bundle beside this module,
-// so nothing here can see the adapter's own code and the stamp says
-// "source" instead of naming a hash. A run in that mode does not get
-// to cache: every edit to the adapter would otherwise be invisible to
-// the key and the previous run's answers would come back unchanged.
+// so nothing here can find the adapter's own code and the stamp says
+// "source" instead of a hash. A run in that mode does not cache:
+// otherwise every edit to the adapter would be invisible to the key and
+// the previous run's results would come back unchanged.
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -33,14 +33,14 @@ import { fileURLToPath } from "node:url";
 
 export const ADAPTER_VERSION = "0.2.1";
 
-/** Packages whose behaviour shapes extraction output. */
+/** Packages whose behaviour affects what an extraction produces. */
 const ANALYSIS_PACKAGES = ["@suss/extractor", "@suss/resolution"];
 
 /**
- * Whether this process can see the adapter's own code. `bundle` carries
- * a hash that moves whenever the code does; `source` means nothing here
- * could find it, so no cache key built from this stamp describes the
- * code that will produce the answers.
+ * Whether this process can see the adapter's own code. `bundle` includes
+ * a hash that changes whenever the code does. `source` means nothing
+ * here could find it, so a cache key built from this stamp says nothing
+ * about the code that will produce the results.
  */
 export type AdapterCodeStamp =
   | { kind: "bundle"; hash: string }
@@ -51,9 +51,9 @@ const SOURCE_STAMP: AdapterCodeStamp = { kind: "source" };
 let cachedCodeStamp: AdapterCodeStamp | null = null;
 
 /**
- * The stamp for the running adapter. Computed once per process; the
- * files behind it cannot change under a process that has already loaded
- * them.
+ * The stamp for the running adapter. Computed once per process, since
+ * the files behind it cannot change under a process that has already
+ * loaded them.
  */
 export function adapterCodeStamp(): AdapterCodeStamp {
   if (cachedCodeStamp !== null) {
@@ -77,9 +77,9 @@ function readAdapterCodeStamp(): AdapterCodeStamp {
 }
 
 /**
- * The hash for a bundle directory: the bundle itself plus every
- * analysis package that can be placed. Empty when the directory holds
- * no bundle, which is what running from source looks like.
+ * The hash for a bundle directory: the bundle itself plus every analysis
+ * package that can be located. Empty when the directory has no bundle in
+ * it, which is what running from source looks like.
  */
 export function computeDistHashFrom(dir: string): string {
   const candidates = [path.join(dir, "index.js"), path.join(dir, "index.cjs")];
@@ -95,10 +95,10 @@ export function computeDistHashFrom(dir: string): string {
 /**
  * Content hash of the given files, in the order they arrive. Empty when
  * the list is empty or a file cannot be read, so a caller that could not
- * place a file gets the same "no stamp" answer as a run from source
+ * locate a file gets the same "no stamp" result as a run from source
  * rather than a hash of a shorter list.
  *
- * The caller resolves the paths, because who a specifier resolves to
+ * The caller resolves the paths, because where a specifier resolves to
  * depends on which package is asking.
  */
 export function computeContentHash(paths: readonly string[]): string {
@@ -119,9 +119,9 @@ export function computeContentHash(paths: readonly string[]): string {
 
 /**
  * Where the analysis packages were loaded from. Only consulted once the
- * adapter has found its own bundle, so a run from source keeps the
- * empty stamp and its deterministic keys. A package that cannot be
- * placed is skipped rather than failing the hash.
+ * adapter has found its own bundle, so a run from source keeps the empty
+ * stamp and its deterministic keys. A package that cannot be located is
+ * skipped rather than failing the hash.
  */
 function analysisBundles(): string[] {
   const require = createRequire(import.meta.url);
@@ -131,7 +131,7 @@ function analysisBundles(): string[] {
       found.push(require.resolve(name));
     } catch {
       // A host that bundles everything has no separate file to hash,
-      // and its own bundle already carries the code.
+      // and its own bundle already contains the code.
     }
   }
   return found;
@@ -148,9 +148,9 @@ function analysisBundles(): string[] {
  * came from, so folding the config and the code into the stamp is the
  * loader's job.
  *
- * A source run says so in the digest rather than leaving the adapter
- * out of it. Nothing writes under that digest today, and a key that
- * names the mode cannot be mistaken for a key that named the code.
+ * A source run says as much in the digest rather than leaving the
+ * adapter out of it. Nothing writes under that digest today, and a key
+ * that says "source" cannot be mistaken for one built from the code.
  */
 export function computeAdapterPacksDigest(
   packVersions: ReadonlyArray<{ name: string; version?: string }>,

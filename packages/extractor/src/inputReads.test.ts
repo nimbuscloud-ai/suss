@@ -1,5 +1,5 @@
-// A summary should say what a unit reads out of what it was given,
-// rather than leaving a reader to walk the derivations and work it out.
+// A summary should say what a unit reads out of what it was given, rather
+// than leaving somebody to walk the derivations and work it out themselves.
 
 import { describe, expect, it } from "vitest";
 
@@ -44,8 +44,8 @@ describe("what a unit reads", () => {
   });
 
   it("stops at a step it has no name for", () => {
-    // An index access says something was reached through the list,
-    // and inventing a name for which one would be worse than stopping.
+    // An index access tells us something was reached through the list, and
+    // inventing a name for which element would be worse than stopping.
     const throughAnElement: ValueRef = {
       type: "derived",
       from: reading(input("req"), "items"),

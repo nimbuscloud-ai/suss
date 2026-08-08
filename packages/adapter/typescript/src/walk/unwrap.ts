@@ -1,8 +1,8 @@
-// unwrap.ts — language-structural rules for peeling wrappers that carry
-// a value along without changing what it is.
+// unwrap.ts: language-structural rules for peeling off wrappers that
+// pass a value along without changing what it is.
 //
 // This is ECMAScript knowledge, the same category as descent.ts, so it
-// lives in the adapter rather than in any pack. It sits under walk/
+// lives in the adapter rather than in any pack. It is under walk/
 // rather than beside either caller because the shape passes and the
 // resolution passes both need it and already import each other.
 //

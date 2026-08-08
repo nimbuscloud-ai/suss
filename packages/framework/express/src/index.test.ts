@@ -10,7 +10,7 @@ import { expressFramework } from "./index.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
-// Fixture project — adds fixtures/express/*.ts to an in-memory ts-morph project
+// Fixture project: adds fixtures/express/*.ts to an in-memory ts-morph project
 // ---------------------------------------------------------------------------
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/express");
@@ -27,10 +27,10 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Structural sanity checks — cheap, catch accidental changes to exported shape
+// Structural sanity checks: cheap, catch accidental changes to exported shape
 // ---------------------------------------------------------------------------
 
-describe("expressFramework — pack shape", () => {
+describe("expressFramework: pack shape", () => {
   it("exposes the expected discovery, terminals, and inputMapping keys", () => {
     const pack = expressFramework();
     expect(pack.name).toBe("express");
@@ -42,11 +42,11 @@ describe("expressFramework — pack shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration — run the adapter against the express fixture
+// Integration: run the adapter against the express fixture
 // ---------------------------------------------------------------------------
 
-describe("expressFramework — integration", () => {
-  // ts-morph project setup dominates — build the summaries once and reuse.
+describe("expressFramework: integration", () => {
+  // ts-morph project setup dominates: build the summaries once and reuse.
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
     summaries = await runAdapter();
@@ -219,9 +219,9 @@ describe("expressFramework, mount prefix composition (aws-alb fixture)", () => {
       .map((sem) => `${sem.method} ${sem.path}`)
       .sort();
 
-    // ordersRouter's own /_health carries the app.use("/api/orders", ...)
-    // prefix it was mounted under. app.all keeps its own wildcard path,
-    // since nothing mounts app itself.
+    // ordersRouter's own /_health gets the app.use("/api/orders", ...) prefix
+    // it was mounted under. app.all keeps its own wildcard path, since nothing
+    // mounts app itself.
     expect(paths).toEqual(["* /api/orders/*", "GET /api/orders/_health"]);
   });
 });

@@ -1,6 +1,8 @@
-// A summary has to be nameable, or nothing can refer to it. Two copies
-// of a service, and a function called the same thing in both, are the
-// case this exists for.
+/**
+ * A summary needs a name of its own, or nothing can point at it. The
+ * case this exists for is two copies of a service in one repository,
+ * each with a function of the same name.
+ */
 
 import { describe, expect, it } from "vitest";
 
@@ -70,7 +72,7 @@ describe("naming a summary", () => {
   });
 
   it("gives everything in one run a name of its own", () => {
-    // Two summaries agreeing on everything a name is built from.
+    // These two agree on every part a name is built from.
     const first = summary({ name: "read", file: "src/a.ts", start: 10 });
     const second = summary({ name: "read", file: "src/a.ts", start: 40 });
 
@@ -110,7 +112,8 @@ describe("naming a summary", () => {
     });
 
     expect(asRest.identity.id).not.toBe(asOther.identity.id);
-    // The boundary settled it, so nothing had to fall back to the line.
+    // The boundary told them apart, so neither had to fall back to
+    // the line number.
     expect(asRest.identity.id).not.toContain("@10");
   });
 });
@@ -169,7 +172,8 @@ describe("a call", () => {
       projectRoot: undefined,
     });
 
-    // A gap a reader can see beats a link that might be wrong.
+    // Leaving the link out is better than pointing at the wrong one,
+    // because a reader can see a gap and cannot see a mistake.
     expect(callsOf(caller)).toEqual([{ callee: "read", reaches: undefined }]);
   });
 

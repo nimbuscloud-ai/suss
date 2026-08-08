@@ -1,4 +1,4 @@
-// throws.ts — match `throw <expr>` statements and produce a throw
+// throws.ts: match `throw <expr>` statements and produce a throw
 // terminal. Status code / body / message extraction delegates to the
 // shared extract helpers.
 
@@ -70,7 +70,7 @@ export function tryMatchThrowExpression(
  * The first string-literal argument (StringLiteral or no-substitution
  * template literal) is returned regardless of position, so constructors
  * that put the code before the message still surface the message. Template
- * literals with substitutions (`Error: ${e}`) preserve their source text —
+ * literals with substitutions (`Error: ${e}`) preserve their source text,
  * runtime value isn't resolvable, but the composition stays visible.
  * Returns null when no static message is present (no string args, or the
  * thrown expression is a bare identifier / member access).
@@ -96,9 +96,9 @@ function extractThrowMessage(callArgs: Expression[] | null): string | null {
 /**
  * Inspect a `throw <expr>` expression and produce the (exceptionType,
  * callArgs) pair the terminal builder needs. Three shapes:
- *   - `throw fn(args)`          — callExpression; callArgs filled.
- *   - `throw new Ctor(args)`    — newExpression; callArgs filled.
- *   - `throw err` / `throw obj` — identifier / member / etc; no args.
+ *   - `throw fn(args)`, callExpression; callArgs filled.
+ *   - `throw new Ctor(args)`, newExpression; callArgs filled.
+ *   - `throw err` / `throw obj`, identifier / member / etc; no args.
  *
  * When the match specifies `constructorPattern`, the leading portion
  * of the callee text has to match it; anything else returns null.

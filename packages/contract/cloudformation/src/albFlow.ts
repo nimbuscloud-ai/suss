@@ -260,7 +260,7 @@ type ActionClassification =
  * v0 does not model the auth gate, only where traffic ends up), else
  * the response the first non-authenticate action states. A list that is
  * nothing but authenticate actions falls back to its first entry, so
- * the row still records the only type the template names.
+ * the row still records the only type the template gives.
  */
 function classifyActions(actionsRaw: unknown): ActionClassification {
   const actions = Array.isArray(actionsRaw) ? actionsRaw : [];
@@ -316,7 +316,7 @@ function readForwardTargets(action: Record<string, unknown>): ForwardTarget[] {
     });
 }
 
-/** A non-forward action's response, or the null-typed record when the template names no readable action. */
+/** A non-forward action's response, or the null-typed record when the template gives no readable action. */
 function readResponse(action: unknown): RoutingResponse {
   if (action === null || typeof action !== "object") {
     return { type: null };
@@ -411,7 +411,7 @@ function readCondition(condition: Record<string, unknown>): MatchCondition {
  * A condition's `Values` array as strings. Most fields list plain
  * strings; `query-string` lists `{Key?, Value}` pairs instead, flattened
  * to `key=value` (or the bare value with no Key) so every field fits
- * the one string list the match record carries.
+ * the one string list on the match record.
  */
 function readConditionValues(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) {
@@ -445,7 +445,7 @@ function flattenConditionValue(entry: unknown): string | null {
 
 /**
  * The listener's own membership: which load balancer its
- * LoadBalancerArn names. One row per listener, named apart from the
+ * LoadBalancerArn points at. One row per listener, named apart from the
  * listener's default-action row so the two summaries stay two facts.
  */
 function buildBelongsToSummary(
@@ -496,7 +496,7 @@ function buildFrontsSummary(
 }
 
 /**
- * What a target group ultimately names as its own registered target,
+ * What a target group ultimately points at as its own registered target,
  * one hop: a Lambda function, the ECS container behind whichever
  * service registers it, or, for an NLB fronting an ALB directly,
  * another load balancer. Never follows a second target group itself, so
@@ -587,9 +587,9 @@ function resolveLoadBalancerTarget(
 /**
  * The ECS chain a target group of any other TargetType (ip, instance,
  * or unset) resolves through: search every AWS::ECS::Service for the
- * one whose LoadBalancers entry names this target group, then that
+ * one whose LoadBalancers entry points at this target group, then that
  * service's TaskDefinition, then the container name the same
- * LoadBalancers entry carries. A fixed three-hop lookup the reader
+ * LoadBalancers entry gives. A fixed three-hop lookup the reader
  * settles once here, not a walk.
  */
 function resolveEcsTarget(
@@ -665,9 +665,9 @@ function resolveEcsTarget(
 // ---------------------------------------------------------------------------
 
 /**
- * Follow a CFN reference and confirm it names a declared resource of
+ * Follow a CFN reference and confirm it points at a declared resource of
  * one of the expected types. Every failure mode, an unset value, a
- * value that names nothing CFN resolves, a dangling logical id, or a
+ * value that points at nothing CFN resolves, a dangling logical id, or a
  * resource of the wrong type, comes back as `unresolved` with a reason
  * rather than as an exception or a silently dropped edge.
  */

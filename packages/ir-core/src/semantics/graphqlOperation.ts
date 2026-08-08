@@ -1,9 +1,11 @@
-// graphqlOperation.ts: the consumer side of a GraphQL boundary.
-//
-// A document sent from client to server, bound by operation name and
-// type. Operations pair through their own dedicated pass rather than
-// through the generic keyed pairing, so this protocol has no identity
-// key.
+/**
+ * The consumer side of a GraphQL boundary.
+ *
+ * A document sent from a client to a server, identified by its
+ * operation name and type. Operations are paired by their own dedicated
+ * pass rather than by the generic keyed pairing, so this protocol has no
+ * identity key at all.
+ */
 
 import { z } from "zod";
 
@@ -11,7 +13,7 @@ import { defineBoundarySemantics } from "./definition.js";
 
 export const GraphqlOperationSemanticsSchema = z.object({
   name: z.literal("graphql-operation"),
-  /** Optional operation name — anonymous queries / mutations leave this unset. */
+  /** Optional operation name. An anonymous query or mutation leaves it unset. */
   operationName: z.string().optional(),
   operationType: z.enum(["query", "mutation", "subscription"]),
 });
@@ -31,7 +33,7 @@ export const graphqlOperationSemantics = defineBoundarySemantics({
     exchangesHttpResponses: false,
     reportsUnpairedItself: false,
     identityKey: () => null,
-    /** "query GetUser"; the contract checker pairs it, not the key. */
+    /** "query GetUser". The contract checker pairs it, the key does not. */
     displayLabel(semantics) {
       return `${semantics.operationType} ${semantics.operationName ?? "<anonymous>"}`;
     },

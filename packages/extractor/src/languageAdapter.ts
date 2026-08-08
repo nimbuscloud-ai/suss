@@ -1,9 +1,12 @@
-// languageAdapter.ts: the coarse surface every language adapter answers
-// to, independent of how that language's own tooling works underneath.
-// A TypeScript-specific extra (the ts-morph Project a caller needs for
-// something adapter-specific, such as corroborate's sandboxed execution)
-// lives on that adapter's own type, not here, so this interface never
-// carries a field naming a particular language's tooling.
+/**
+ * The small surface every language adapter implements, whatever that
+ * language's own tooling looks like underneath.
+ *
+ * Anything TypeScript-specific, such as the ts-morph Project a caller needs
+ * for corroborate's sandboxed execution, belongs on that adapter's own type
+ * rather than here. This interface never gets a field that mentions one
+ * particular language's tooling.
+ */
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 

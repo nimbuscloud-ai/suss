@@ -48,7 +48,7 @@ describe("statusAccessorsFor", () => {
 
   it("ignores unscoped flat keys (migration guard)", () => {
     // A summary written pre-namespacing that still has the flat key should
-    // NOT be honored — it's a signal the producer is out of date.
+    // NOT be honored: it's a signal the producer is out of date.
     const result = statusAccessorsFor(
       summary(undefined, { statusAccessors: ["responseStatus"] }),
     );

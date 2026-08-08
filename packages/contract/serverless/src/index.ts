@@ -1,22 +1,22 @@
 // @suss/contract-serverless: behavioral summaries from a Serverless
 // Framework service file.
 //
-// A serverless.yml deploys working functions, and until this reader
+// A serverless.yml deploys working functions, and before this reader
 // existed suss saw none of them: no deployable unit, no environment
-// contract, no event wiring. The functions block states the same
-// facts a SAM template states, in the framework's own spelling, so the
+// contract, no event wiring. The functions block states the same facts
+// a SAM template states, in the framework's own spelling, so this
 // reader translates the spelling and hands the result to
 // @suss/contract-cloudformation. Every boundary a service declares
-// therefore comes out the way the same wiring comes out of a SAM
-// template, and the two manifest languages cannot drift.
+// then comes out the way the same wiring comes out of a SAM template,
+// and the two manifest languages cannot drift apart.
 //
-// What a service file states, and what this reader does with it:
+// What a service file says, and what this reader does with it:
 //
-//   provider        runtime, and the environment every function
-//                   inherits, read as SAM Globals. region is read and
-//                   left symbolic: no boundary keys on it today.
+//   provider        the runtime, and the environment every function
+//                   inherits, read as SAM Globals. The region is read
+//                   and left symbolic, since no boundary keys on it.
 //   functions       one Lambda each, keyed by the name it is written
-//                   under, with the handler naming its code.
+//                   under, with the handler saying where its code is.
 //   events          httpApi and http become API Gateway routes; sqs,
 //                   sns, schedule and eventBridge become the message
 //                   bus wirings they compile to.
@@ -26,11 +26,11 @@
 //
 // Two documents, one service. The functions block and the resources
 // block deploy into a single stack, so a logical id means the same
-// thing in both and a queue declared in `resources:` is the queue an
-// `sqs` event names. They carry different provenance labels
-// (`serverless:<file>` and `serverless:<file>#resources`) built the way
-// a nested stack's label is, so a reader can tell which block declared
-// what while the flow walk still scopes both to one service.
+// thing in both, and a queue declared in `resources:` is the queue an
+// `sqs` event points at. They get different provenance labels
+// (`serverless:<file>` and `serverless:<file>#resources`), built the
+// way a nested stack's label is, so a reader can tell which block
+// declared what while the flow walk still scopes both to one service.
 
 import path from "node:path";
 
@@ -73,24 +73,17 @@ export {
 /** The manifest language recorded on every binding this reader writes. */
 const RECOGNITION = "serverless";
 
-/** The stack-path segment the raw CloudFormation block's label carries. */
+/** The stack-path segment in the raw CloudFormation block's label. */
 const RESOURCES_DOCUMENT = "resources";
 
 export interface ServerlessToSummariesOptions {
   /** Override the logical source file recorded on each summary. */
   source?: string;
-  /**
-   * Called once per wiring the reader did not translate. Defaults to a
-   * line on stderr, so a service whose events went unread says so
-   * rather than reading as a service that declares nothing.
-   */
+  /** Called once per wiring the reader did not translate. Defaults to
+   * printing a line on stderr. */
   onUnread?: (wiring: UnreadWiring) => void;
 }
 
-/**
- * Convert an in-memory Serverless Framework service into a
- * `BehavioralSummary[]`.
- */
 export function serverlessToSummaries(
   document: ServerlessDocument,
   options: ServerlessToSummariesOptions = {},
@@ -119,10 +112,7 @@ export function serverlessToSummaries(
   ];
 }
 
-/**
- * Read a Serverless Framework service from disk and convert it. The
- * path may name the service file itself or the directory holding it.
- */
+/** The path may be the service file itself or the directory it is in. */
 export function serverlessFileToSummaries(
   servicePath: string,
   options: ServerlessToSummariesOptions = {},
@@ -132,10 +122,6 @@ export function serverlessFileToSummaries(
     throw new Error(`Serverless service file not found: ${servicePath}`);
   }
   if (located.kind === "program") {
-    // A `.ts` or `.js` service file is a program, and a reader does not
-    // run one to find out what it declares. Reading stopped here, which
-    // is a line the caller gets rather than a throw that takes the rest
-    // of the run with it.
     const report = options.onUnread ?? reportUnread;
     report({
       functionName: null,

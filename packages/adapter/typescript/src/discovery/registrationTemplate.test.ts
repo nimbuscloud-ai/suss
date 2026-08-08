@@ -99,7 +99,7 @@ describe("registrationTemplate discovery", () => {
       function registerCrud(_app: unknown, _resource: string, _handlers: any) {}
       function getHandlers(): { list: () => void } { return { list: () => {} }; }
       const app = {};
-      // Handler arg is a call result — out of v0 scope.
+      // Handler arg is a call result, out of v0 scope.
       registerCrud(app, "users", getHandlers());
     `);
     const units = discoverUnits(file, [CRUD_PATTERN], new ResolutionStore());
@@ -119,7 +119,7 @@ describe("registrationTemplate discovery", () => {
       },
     };
     const file = makeFile(`
-      // No import from "./helpers" — should not match.
+      // No import from "./helpers", should not match.
       function registerCrud(_app: unknown, _resource: string, _handlers: any) {}
       const app = {};
       const handlers = { list() {} };

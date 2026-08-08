@@ -1,4 +1,4 @@
-// shared.ts — Helpers used by both REST (v1) and HTTP API (v2).
+// shared.ts: Helpers used by both REST (v1) and HTTP API (v2).
 // REST and HTTP API differ in routing structure (per-method+path vs
 // `<METHOD> <path>` route keys) and authorizer types, but the platform
 // contracts that produce 502/504/429 and the CORS preflight synthesis
@@ -55,7 +55,7 @@ export interface CorsPreflightOptions {
 
 /**
  * Build a synthesized OPTIONS preflight summary for one resource path.
- * The platform genuinely responds at this boundary — there's no handler
+ * The platform genuinely responds at this boundary. There's no handler
  * code, but a real OPTIONS request gets a real 204 with CORS headers.
  * Treating it as a real boundary lets a TS consumer that does
  * `fetch(path, { method: "OPTIONS" })` pair against it normally.

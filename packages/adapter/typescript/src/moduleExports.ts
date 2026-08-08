@@ -16,13 +16,10 @@ import type {
 type ExportedDeclarationMap = ReturnType<SourceFile["getExportedDeclarations"]>;
 
 /**
- * What a module exports, by exported name.
- *
- * ts-morph rebuilds this map from scratch on every `getExportedDeclarations`
- * call, walking the file's export symbols and following each alias through
- * the type checker. Callee resolution asks the same file the same question
- * once per import site, so the answer is kept for as long as the parse it
- * was read out of.
+ * What a module exports, by exported name. Cached, because ts-morph
+ * rebuilds the map from scratch on every `getExportedDeclarations` call
+ * and callee resolution asks the same file the same thing once per
+ * import site.
  */
 export function exportedDeclarationsOf(
   sourceFile: SourceFile,
@@ -40,15 +37,11 @@ export function exportedDeclarationsOf(
 const exportsByFile = createPerFileCache<ExportedDeclarationMap>();
 
 /**
- * `Symbol.getAliasedSymbol` behind re-export warming, so an import at
- * the top of a deep re-export chain resolves at any depth instead of
- * overflowing the call stack. A chain the warmed checker still cannot
- * follow answers undefined, the answer an unresolvable alias gives.
+ * `Symbol.getAliasedSymbol`, with the re-export chains warmed first so
+ * that an import sitting at the top of a deep chain still resolves
+ * instead of running the call stack out.
  */
 export function resolveAliasedSymbol(symbol: TsSymbol): TsSymbol | undefined {
-  // Warming the file the alias is written in loads the modules it
-  // names and resolves the chain under it. Following an import is what
-  // this is, so the imports are the part to resolve from the far end.
   for (const declaration of symbol.getDeclarations()) {
     warmReExportChains(declaration.getSourceFile(), "every import");
   }
@@ -59,8 +52,9 @@ export function resolveAliasedSymbol(symbol: TsSymbol): TsSymbol | undefined {
     if (!(error instanceof RangeError)) {
       throw error;
     }
-    // This one did fail, and undefined is indistinguishable from an
-    // import that names nothing, so the run has to be told.
+    // Returning undefined here looks exactly like an import that points
+    // at nothing, so record the file or the run reports the two the same
+    // way.
     for (const declaration of symbol.getDeclarations()) {
       reportUnreadableExports(declaration.getSourceFile());
     }
@@ -68,26 +62,12 @@ export function resolveAliasedSymbol(symbol: TsSymbol): TsSymbol | undefined {
   }
 }
 
-/**
- * Resolve the alias chains under each of these files now.
- *
- * Discovery reaches an import chain by resolving the symbol a handler
- * came from, which is the checker doing the same recursive descent
- * from the other side, and it gets there before anything asks a module
- * what it exports. Doing every walked file up front means whatever
- * asks next, at either end, finds the hop below it already resolved.
- */
 export function warmExportChains(files: ReadonlyArray<SourceFile>): void {
   for (const file of files) {
     warmReExportChains(file, "every import");
   }
 }
 
-/**
- * The exported-declarations map, warmed first so the checker never has
- * to recurse a whole re-export chain, and an abstention instead of a
- * crash for a chain it cannot follow even then.
- */
 function readExportedDeclarations(
   sourceFile: SourceFile,
 ): ExportedDeclarationMap {
@@ -105,22 +85,9 @@ function readExportedDeclarations(
 }
 
 /**
- * Resolve the alias chains under a file starting from the far end.
- *
- * The checker resolves `export { x } from "./next"` by recursing into
- * the next hop, so the first ask about the top of a deep re-export
- * chain carries the whole chain on the call stack, and a barrel chain
- * deep enough overflows it. This walks the re-export graph below the
- * file on an explicit stack instead, and resolves each file's aliases
- * only after every file it re-exports from is done, so each checker
- * call finds the hop below it already cached and returns without
- * recursing. The visited set ends a chain that loops back on itself:
- * the checker answers a re-export cycle with no declarations, which is
- * what a cycle exports.
- *
- * Loading comes first, because asking the checker about a module that
- * is not loaded yet makes it discover the chain by its own recursion
- * before any of this runs.
+ * Load the graph before warming it. If the checker is asked about a
+ * module it has not loaded yet, it goes and finds the whole chain by
+ * recursing, which is the stack overflow this is meant to avoid.
  */
 function warmReExportChains(
   root: SourceFile,
@@ -131,9 +98,8 @@ function warmReExportChains(
   }
 
   if (sitsOnWarmChains(root)) {
-    // One hop from answers the checker already has, which is the depth
-    // it handles by itself. On a project where hundreds of entry points
-    // share one deep core, this is every entry point but the first.
+    // Everything this file imports is already warm, so the checker only
+    // has one hop left to make and can do that on its own.
     markWarmed(root);
     return;
   }
@@ -145,10 +111,8 @@ function warmReExportChains(
     if (!(error instanceof RangeError)) {
       throw error;
     }
-    // Warming is preparation. Failing to get ahead of the checker is
-    // not the same as failing to answer, and the ask that follows
-    // often resolves the same name by a route this walk never took.
-    // Whether anything was lost is decided where the asking happens.
+    // Warming only makes the later lookup cheaper, so give up quietly
+    // and let that lookup report if it also fails.
   }
 }
 
@@ -182,13 +146,7 @@ function walkAndWarm(root: SourceFile, reach: Reach): void {
 
 const warmedFiles = createPerFileCache<true>();
 
-/**
- * Whether everything this file imports is already resolved.
- *
- * Read from the load walk's own record of what each file imports, so
- * the question costs two map lookups and never touches the checker.
- * Asking it any other way would cost more than warming the file.
- */
+/** Uses the load walk's record rather than the checker, which is slower. */
 function sitsOnWarmChains(file: SourceFile): boolean {
   const project = file.getProject();
   const warmed = warmedPathsIn(project);
@@ -205,11 +163,6 @@ function markWarmed(file: SourceFile): void {
   warmedPathsIn(file.getProject()).add(file.getFilePath());
 }
 
-/**
- * Files this run has resolved, by path. The per-parse record answers
- * "is this SourceFile warm"; this answers "is the file at this path
- * warm", which is what a caller holding only a path can ask.
- */
 function warmedPathsIn(project: Project): Set<string> {
   const existing = warmedPathsByProject.get(project);
   if (existing !== undefined) {
@@ -234,13 +187,9 @@ function frameOf(file: SourceFile, reach: Reach): WalkFrame {
 }
 
 /**
- * How much of a file to resolve ahead of time.
- *
- * Reading a module's exports only needs the aliases those exports are
- * written from. Discovery arrives from the other side, following what
- * a handler imported, so a run that had to load the graph itself
- * resolves every import as well. Doing that everywhere costs far more
- * than it saves on a project whose files were loaded up front.
+ * How much of a file to warm. Reading a module's exports only needs the
+ * aliases those exports are written from; following a handler's import
+ * needs every alias in the file.
  */
 type Reach = "re-exports" | "every import";
 
@@ -252,16 +201,9 @@ interface ReExportShape {
 }
 
 /**
- * The alias surface of one file, read from syntax alone: which files
- * its imports and re-exports reach into, and which declarations carry
- * them. Import bindings come before export specifiers in the
- * resolution order because `export { x }` resolves through the local
- * import that bound `x`.
- *
- * Which imports count depends on what is being asked. Reading exports
- * needs only the imports those exports re-export; following an import
- * needs all of them, because what a handler imported is what discovery
- * follows into the same chain from the other side.
+ * The files this one re-exports from, and the aliases to resolve. Import
+ * bindings come before export specifiers, because `export { x }`
+ * resolves through the local import that bound `x`.
  */
 function reExportShapeOf(file: SourceFile, reach: Reach): ReExportShape {
   const targets: SourceFile[] = [];
@@ -305,9 +247,8 @@ function reExportShapeOf(file: SourceFile, reach: Reach): ReExportShape {
     if (target !== undefined) {
       targets.push(target);
     }
-    // A binding an export re-exports has to be resolved before that
-    // export is; the rest are resolved here because something else
-    // will ask about them later, and this is where it is cheap.
+    // Within one import declaration, the bindings an export re-exports
+    // go first, for the same reason imports go before exports overall.
     const reExported = bindings.filter((b) => localNames.has(b.name));
     const rest = bindings.filter((b) => !localNames.has(b.name));
     importNodes.push(...[...reExported, ...rest].map((b) => b.node));
@@ -316,7 +257,6 @@ function reExportShapeOf(file: SourceFile, reach: Reach): ReExportShape {
   return { targets, aliasNodes: [...importNodes, ...exportNodes] };
 }
 
-/** The local names an import declaration binds, with their nodes. */
 function importBindingsOf(
   decl: ImportDeclaration,
 ): Array<{ name: string; node: Node }> {
@@ -341,9 +281,8 @@ function importBindingsOf(
 }
 
 /**
- * Ask the checker to resolve each alias now, while everything under it
- * is cached. A throw that is not the stack running out surfaces again
- * from the caller's own ask, which is where it is handled.
+ * Resolve each alias in a file. The caller has already warmed everything
+ * below it, so each of these is one hop rather than a whole chain.
  */
 function warmFileAliases(aliasNodes: Node[]): void {
   for (const node of aliasNodes) {
@@ -358,20 +297,16 @@ function warmFileAliases(aliasNodes: Node[]): void {
       if (!(error instanceof RangeError)) {
         throw error;
       }
-      // One alias this walk could not get ahead of. The caller that
-      // wants it will find out for itself.
+      // One alias too deep to warm. The rest of the file still warms,
+      // and the caller reports if the later lookup fails too.
     }
   }
 }
 
 /**
- * Files whose exports could not be read, so the run can say so.
- *
- * A provider whose exports the checker could not follow otherwise
- * looks exactly like a provider that exports nothing: same empty map,
- * same absent summaries, same exit code. The extraction report reads
- * this back and states it, since stderr is not part of the artifact
- * anyone checks later.
+ * The files whose exports could not be read. These also go to stderr,
+ * but the extraction report needs them in the artifact, where a later
+ * reader can see why something is missing.
  */
 export function unreadableExportFiles(): string[] {
   return [...filesWithUnreadableExports].sort();
@@ -381,13 +316,6 @@ export function forgetUnreadableExportFiles(): void {
   filesWithUnreadableExports.clear();
 }
 
-/**
- * Record that a file's modules could not be followed, from outside
- * this module. The chain that outran the stack while a file's exports
- * were being read outruns it again when a pack walks the same file, and
- * a run that says so and carries on beats a run that dies holding the
- * summaries it already built.
- */
 export function noteUnreadableExports(file: SourceFile): void {
   reportUnreadableExports(file);
 }

@@ -1,11 +1,11 @@
-// corroborateCommand.ts — `suss corroborate` (experimental).
+// corroborateCommand.ts: `suss corroborate` (experimental).
 //
 // Extract, then execute: run the normal extraction, then run each
 // handler's real function in a sandbox against inputs that satisfy
 // its own extracted conditions, and write the verdicts back onto the
 // summaries (`transition.confidence.corroboration`). The engine and
 // its scope live in `corroborate.ts`; this file is the command shell
-// around it — source resolution, the human report, and the optional
+// around it: source resolution, the human report, and the optional
 // annotated-summaries output.
 
 import path from "node:path";
@@ -52,9 +52,9 @@ export interface CorroborateResult {
 function summaryLabel(summary: BehavioralSummary): string {
   const binding = summary.identity.boundaryBinding;
   if (binding !== null && binding.semantics.name === "rest") {
-    // A wildcard route answers every method, and an unnamed one names
-    // none; neither label should start with the gap where a method
-    // would go.
+    // A wildcard route serves every method, and an unnamed one gives no
+    // method at all. Neither label should start with the gap where a
+    // method would go.
     const { method, path } = binding.semantics;
     if (path === null) {
       return summary.identity.name;
@@ -155,7 +155,7 @@ function formatReport(reports: SummaryReport[], total: number): string {
  * Extract the project, corroborate every in-scope summary against the
  * same source, print the report to stdout, and optionally write the
  * annotated summaries. Returns counts so the CLI can pick an exit
- * code (refuted claims fail the run — they are findings).
+ * code (refuted claims fail the run: they are findings).
  */
 export async function corroborate(
   options: CorroborateCommandOptions,

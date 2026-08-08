@@ -1,5 +1,11 @@
-// discovery.ts: find class DSL field declarations and turn each into a
-// RawCodeStructure.
+// discovery.ts: find class DSL field declarations and turn each one into
+// a RawCodeStructure.
+//
+// A field's boundary binding and its declared contract both come from
+// the arguments of its own DSL call. A field written with one of the
+// pack's wiring keywords is the exception. It declares no type of its
+// own, so its contract and the method behind it are read from the class
+// it points at, one hop away.
 //
 // See this package's README for what a field's summary says about the
 // method behind it and where the reading stops.
@@ -56,12 +62,7 @@ import type { RbNode } from "./parser.js";
 import type { ClassInfo } from "./scope.js";
 import type { TypeReadContext } from "./typeShape.js";
 
-/**
- * A parsed file, kept by absolute path, so a class referenced through a
- * wiring keyword from several fields (or a file that is both a project
- * file and someone else's one-hop target) is parsed once. See
- * `createFileCache`.
- */
+/** Parsed files by absolute path, so a class that several fields refer to is only parsed once. */
 export interface FileCache {
   get(absPath: string): Promise<RbNode | null>;
 }
@@ -92,13 +93,12 @@ export interface DiscoveryOptions {
   cache: FileCache;
 }
 
-/** Where a bare constant is read from: the `Module.nesting` chain in effect, and every class the file it sits in defines, for shadow detection (see typeShape.ts). */
+/** What a bare constant is resolved against: the nesting chain in effect, plus every class the file defines, so we can spot shadowing. */
 interface FileScope {
   nesting: readonly string[];
   knownClasses: ReadonlySet<string>;
 }
 
-/** What a one-hop wiring lookup needs beyond the field's own scope: the pattern whose vocabulary is being read, and the parse cache. */
 interface FieldReadContext {
   pattern: GraphqlObjectFields;
   cache: FileCache;
@@ -121,7 +121,6 @@ function fieldReadContext(
   };
 }
 
-/** The pattern's scalar and naming vocabulary joined with one scope, the shape typeShape.ts reads against. */
 function typeContext(
   scope: FileScope,
   pattern: GraphqlObjectFields,
@@ -146,7 +145,7 @@ export async function discoverUnits(
   const units: RawCodeStructure[] = [];
   for (const info of classes) {
     // A class reopened in one file is one class, so a method written in
-    // a later block answers a field declared in an earlier one.
+    // a later block redeclares a field declared in an earlier one.
     const ownBlocks: ReachedBody[] = classes
       .filter((other) => other.qualifiedName === info.qualifiedName)
       .map((other) => ({ info: other, knownClasses }));
@@ -168,9 +167,6 @@ function unitsFor(
   ownBlocks: readonly ReachedBody[],
   options: DiscoveryOptions,
 ): Promise<RawCodeStructure[]> {
-  // One variant today; kept as a dispatch table (docs/internal/style.md,
-  // decision 8) so a second Ruby discovery shape adds a case here
-  // rather than an if-chain.
   const table: DispatchTable<
     RubyDiscoveryPattern,
     Promise<RawCodeStructure[]>
@@ -204,12 +200,9 @@ async function graphqlObjectFieldUnits(
   const scope: FileScope = { nesting: info.bodyNesting, knownClasses };
   const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
 
-  // The class DSL stores fields by name, so a field redefined later in
-  // the same body replaces the earlier declaration rather than the two
-  // coexisting. A Map keyed by the resolved field name keeps the
-  // insertion order of the first sighting while letting a later
-  // statement overwrite the stored declaration, so the discovered unit
-  // is the one the library itself would end up with.
+  // The class DSL stores fields by name, so a field redefined later in the same
+  // body replaces the earlier declaration. Keying this Map on the resolved field
+  // name gives the same last-write-wins result.
   const declsByName = new Map<string, FieldDeclaration>();
   for (const stmt of bodyStatements(info.bodyNode)) {
     const decl = await readFieldCall(stmt, scope, ctx, ancestry);
@@ -241,7 +234,7 @@ interface FieldDeclaration {
   body: BodyReport;
 }
 
-/** What one field's declaration and the method behind it come to together, since a wiring keyword answers both at once. */
+/** What one field's declaration and the method behind it come to together, since a wiring keyword settles both at once. */
 interface FieldReading {
   contract: FieldContract | null;
   body: BodyReport;
@@ -260,7 +253,7 @@ function bodyOfMethod(method: RbNode): BodyReport {
   };
 }
 
-/** The library answers a field with no method behind it by reading the attribute off the object it was resolved against, so there is no body anywhere to read. */
+/** The library resolves a field with no method behind it by reading the attribute off the object it was resolved against, so there is no body anywhere to read. */
 const NO_METHOD_BEHIND_IT: BodyReport = {
   bodyContent: "absent",
   readings: [],
@@ -293,13 +286,9 @@ function bodyFromLookup(
 }
 
 /**
- * Read one field-declaring call from an object type's own body. A
- * field name this module can't read (anything but a plain symbol
- * literal) means there's no unit to discover at all; a field whose
- * declared shape this module can't read still gets discovered, with no
- * declared contract, per the language-adapters proposal's unresolved
- * convention: existence is known from the symbol alone, the shape is
- * not.
+ * If we cannot read the field's name there is no unit to discover at all. If we
+ * can read the name but not the type, the field is still discovered with no
+ * declared contract, since the symbol alone tells you the field exists.
  */
 async function readFieldCall(
   stmt: RbNode,
@@ -335,7 +324,7 @@ async function readFieldCall(
   };
 }
 
-/** The referenced-class node named by the first of the pattern's wiring keywords present on this call, or null when none is. */
+/** When a call uses more than one of the pattern's wiring keywords, the first one listed in the pattern wins. */
 function wiringReference(
   callArgs: CallArgs,
   wiringKeywords: readonly string[],
@@ -391,7 +380,7 @@ function literalContract(
   return returnType === null ? null : { returnType, args: [] };
 }
 
-/** A wiring keyword names the class that answers the field, so its ancestry supplies both the declared shape and the resolver method. */
+/** A wiring keyword points at the class that resolves the field, so its ancestry supplies both the declared shape and the resolver method. */
 async function readWiredClass(
   ref: RbNode,
   scope: FileScope,
@@ -437,9 +426,9 @@ async function readWiredClass(
 }
 
 interface ClassContractAccumulator {
-  /** Set by a type-declaring call (a referenced class's own declared return type). */
+  /** Set by a type-declaring call, which is how a referenced class declares its own return type. */
   typeCallShape: TypeShape | null;
-  /** Built from field-declaring calls (a referenced class's own payload). */
+  /** Built up from field-declaring calls, which is how a referenced class describes its own payload. */
   fieldProperties: Record<string, TypeShape>;
   args: Map<string, ArgDeclaration>;
 }
@@ -499,8 +488,6 @@ function readArgumentCall(
       ? typeShapeFromNode(typeArg, typeContext(scope, pattern))
       : null;
   const requiredNode = callArgs.keyword[pattern.requiredKeyword];
-  // What an argument defaults to when the keyword is absent is the
-  // library's own registration default, so the pack states it.
   const required =
     requiredNode !== undefined
       ? (booleanLiteralValue(requiredNode) ?? pattern.requiredDefault)
@@ -514,7 +501,6 @@ function readArgumentCall(
   });
 }
 
-/** The per-call-name handler table for one pattern, keyed by the call names the pack declares. */
 function classCallHandlers(
   pattern: GraphqlObjectFields,
 ): Record<string, ClassCallHandler> {
@@ -563,13 +549,7 @@ function readClassContract(
     : { returnType, args: [...out.args.values()] };
 }
 
-/**
- * The schema name a field/argument symbol resolves to. Whether a
- * snake_case symbol is exposed in camelCase by default, and which
- * keyword overrides that default for one call, are both the pack's to
- * state; the camelization itself is the ordinary snake_case-to-
- * camelCase transform and stays here.
- */
+/** The name the schema exposes a field or argument symbol under. */
 function resolvedName(
   symbol: string,
   callArgs: CallArgs,

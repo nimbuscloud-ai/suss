@@ -1,19 +1,3 @@
-// fixtureExtraction.test.ts: the acceptance test for the Ruby
-// adapter's v0 slice (docs/internal/proposals/language-adapters.md).
-//
-// Extracts over fixtures/ruby-graphql, a small invented fixture
-// (sourced from nothing private) anchoring the shape the proposal
-// names for Ruby: graphql-ruby's class DSL, literal fields on a couple
-// of object types, one mutation-wired root field, one resolver-wired
-// root field, and one field whose type is computed rather than
-// literal, which abstains. `pairGraphqlOperations` (the checker's own
-// graphql-operation-vs-graphql-resolver pass) pairs the extracted
-// providers against hand-built apollo-client-shaped consumer
-// summaries by (typeName, fieldName), which is the cross-language
-// existence-pairing acceptance bar the proposal names: nothing here
-// depends on the consumer summaries having come from Ruby, so the
-// same pairing works once a TypeScript client extracts these documents.
-
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,16 +24,7 @@ const repoRoot = path.resolve(
 const fixtureRoot = path.join(repoRoot, "fixtures", "ruby-graphql");
 const graphqlRoot = path.join(fixtureRoot, "app", "graphql");
 
-/**
- * The shape `@suss/client-apollo` produces for a `useQuery` /
- * `useMutation` call: a `client`-kind summary bound to a
- * `graphql-operation`, with the operation document carried as
- * `metadata.graphql.document` for the checker's pairing pass to parse.
- * Hand-built here rather than run through the TypeScript adapter,
- * matching the flask-restx acceptance test's own hand-built REST
- * consumers: the point is proving the pairing, not re-deriving what
- * the client pack already does.
- */
+/** The summary `@suss/client-apollo` produces for a `useQuery` or `useMutation` call, built by hand here rather than extracted. */
 function operation(
   name: string,
   operationType: "query" | "mutation",
@@ -236,9 +211,6 @@ describe("extraction over fixtures/ruby-graphql", () => {
       ].sort(),
     );
 
-    // The consumer selecting a root field no provider implements
-    // surfaces as a finding rather than a silent non-pair, proving
-    // pairing does existence checking, beyond bucketing alone.
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0]?.kind).toBe("boundaryFieldUnknown");
     expect(result.findings[0]?.description).toContain("doesNotExist");

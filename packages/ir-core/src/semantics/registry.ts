@@ -1,11 +1,13 @@
-// registry.ts: where the protocol modules compose.
-//
-// Each protocol under this directory exports one
-// `BoundarySemanticsDefinition`. This file lists them twice, once for
-// the schema union and once for the behavior lookup, and the type
-// check at the bottom fails compilation if the two lists ever name
-// different sets. This is the only file that changes shape when a
-// protocol is added, and it changes by one line in each list.
+/**
+ * Where the protocol modules come together.
+ *
+ * Each protocol under this directory exports one
+ * `BoundarySemanticsDefinition`. This file lists them twice, once for
+ * the schema union and once for the behavior lookup, and the type check
+ * at the bottom fails compilation if the two lists ever cover different
+ * sets. Adding a protocol changes this file and no other, by one line in
+ * each list.
+ */
 
 import { z } from "zod";
 
@@ -50,9 +52,9 @@ const BY_NAME = new Map<string, (typeof DEFINITIONS)[number]>(
 );
 
 /**
- * The behavior for a semantics value. The one cast seam between the
- * per-protocol definitions and the runtime lookup, same as
- * `dispatchByType`.
+ * The behavior for a semantics value. This is the one place a cast
+ * bridges the per-protocol definitions and the runtime lookup, the same
+ * way `dispatchByType` does.
  */
 export function behaviorOf(semantics: Semantics): BoundaryBehavior<Semantics> {
   const definition = BY_NAME.get(semantics.name);
@@ -65,9 +67,9 @@ export function behaviorOf(semantics: Semantics): BoundaryBehavior<Semantics> {
 }
 
 /**
- * Every protocol's behavior, for lookups that start from a string
- * rather than a semantics value, the way a suppression rule's
- * boundary arrives. Same cast seam as `behaviorOf`.
+ * Every protocol's behavior, for a lookup that starts from a string
+ * rather than a semantics value, which is how a suppression rule's
+ * boundary arrives. Same cast as `behaviorOf`.
  */
 export function allBehaviors(): ReadonlyArray<BoundaryBehavior<Semantics>> {
   return DEFINITIONS.map((d) => d.behavior as BoundaryBehavior<Semantics>);

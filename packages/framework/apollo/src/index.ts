@@ -1,4 +1,4 @@
-// @suss/framework-apollo — PatternPack for Apollo Server (code-first).
+// @suss/framework-apollo: PatternPack for Apollo Server (code-first).
 //
 // Discovers resolver functions attached to the `resolvers` property of
 // an `ApolloServer` constructor-argument object. Each inner property
@@ -7,7 +7,7 @@
 //
 // Deferred:
 //   - Schema-first shapes where resolvers are attached via
-//     `addResolversToSchema` or `makeExecutableSchema` — separate
+//     `addResolversToSchema` or `makeExecutableSchema`: separate
 //     discovery pattern, tracked with the stub-appsync work.
 //   - `mergeResolvers(...)` and anything else that composes the map by
 //     calling a function. A map assembled by naming and spreading
@@ -38,7 +38,7 @@ export function apolloFramework(): PatternPack {
           type: "resolverMap",
           importModule: "@apollo/server",
           importName: "ApolloServer",
-          // Apollo v4 convention — the config key is `resolvers`.
+          // Apollo v4 convention: the config key is `resolvers`.
           mapProperty: "resolvers",
         },
         requiresImport: ["@apollo/server"],
@@ -83,7 +83,7 @@ export function apolloFramework(): PatternPack {
         match: { type: "throwExpression" },
         extraction: {},
       },
-      // Resolvers often fall off the end without an explicit return —
+      // Resolvers often fall off the end without an explicit return,
       // a type resolver can delegate to the default-resolver behavior
       // by returning nothing. Keep the default transition so
       // `transitions: []` isn't the shape we ship.

@@ -23,7 +23,7 @@ function git(args) {
 
 /**
  * Read `<ref>:<relPath>` and parse it. Returns `{ found: false }` when
- * the ref resolves but does not carry that path. Throws when the ref
+ * the ref resolves but does not include that path. Throws when the ref
  * does not resolve or the file does not parse.
  */
 export function readJsonFromRef(ref, relPath) {
@@ -66,7 +66,7 @@ export function printDelta(label, before, after, format = asCount) {
 
 /**
  * Print the collected regressions and say whether there were any, so the
- * caller can exit on the answer. Each regression carries its own reason
+ * caller can exit on the answer. Each regression has its own reason
  * because the two gates fail for different sorts of reasons.
  */
 export function reportRegressions({ title, regressions, hint }) {

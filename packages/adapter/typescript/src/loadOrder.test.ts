@@ -1,7 +1,9 @@
-// The same source has to produce the same summaries however the files
-// reached the project. Order is the one input a caller does not think
-// they are giving us: a glob walks a directory in whatever order the
-// file system hands back, and two machines can disagree about that.
+/**
+ * The same source has to produce the same summaries however the files
+ * got into the project. File order is the one input a caller does not
+ * realise they are giving us: a glob walks a directory in whatever order
+ * the file system returns, and two machines can disagree about that.
+ */
 
 import { describe, expect, it } from "vitest";
 
@@ -46,8 +48,8 @@ const routePack: PatternPack = {
 };
 
 // Two modules each declare a type called Account, and the routes reach
-// them through a shared re-export. Whichever of the two the walk sees
-// first used to be the one a later reader got.
+// them through a shared re-export. Whichever one the walk saw first used
+// to be the one every later reader ended up with.
 const FILES: Array<[string, string]> = [
   [
     "src/billing/account.ts",
@@ -106,8 +108,8 @@ const comparingName = (a: BehavioralSummary, b: BehavioralSummary): number =>
   a.identity.name.localeCompare(b.identity.name);
 
 /**
- * The same summary read on two machines differs in one way that says
- * nothing: where the checkout sits. Everything else has to match.
+ * The same summary read on two machines differs in exactly one way that
+ * does not matter: where the checkout is. Everything else has to match.
  */
 function withoutAbsolutePaths(summary: BehavioralSummary): unknown {
   return JSON.parse(

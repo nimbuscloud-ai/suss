@@ -21,7 +21,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-/** One (path, method) the running app serves, with the unit that answers it and the status a well-formed probe observed. */
+/** One (path, method) the running app serves, with the unit that
+ * handles it and the status a well-formed probe observed. */
 export interface ObservedEndpoint {
   path: string;
   method: string;
@@ -41,7 +42,7 @@ export interface ObserveManifestEntry {
   program: string;
   packageName: string;
   framework: "fastapi" | "flask-restx";
-  /** JSON body per unit name, for routes whose probe must carry one. */
+  /** JSON body per unit name, for routes whose probe must send one. */
   requests: Record<string, Record<string, unknown>>;
 }
 
@@ -52,10 +53,10 @@ const REQUIRED_MODULES = ["flask", "flask_restx", "fastapi", "httpx"];
 /**
  * Fail early, with the install command, when the interpreter or the
  * frameworks are missing. The differential cannot degrade here: no
- * runtime means no truth side. Answers the interpreter's version, and
- * names it in the failure too, so a wrong-interpreter mixup (a bare
+ * runtime means no truth side. Returns the interpreter's version, and
+ * repeats it in the failure too, so a wrong-interpreter mixup (a bare
  * python3 that is not the one the frameworks were installed into)
- * reads off the message instead of needing a shell to settle.
+ * is visible in the message instead of needing a shell to settle.
  */
 export function assertPythonEnvironment(python: string): string {
   const versionProbe = spawnSync(
@@ -93,7 +94,7 @@ export function assertPythonEnvironment(python: string): string {
 }
 
 // The observer itself is generated text, like the apps it observes.
-// It answers with framework-reported truth only: route tables and
+// It reports framework truth only: route tables and
 // probe statuses, no interpretation.
 const OBSERVER_SOURCE = `import importlib
 import json

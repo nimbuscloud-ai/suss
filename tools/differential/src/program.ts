@@ -1,9 +1,9 @@
-// program.ts — the generated-handler DSL and its renderer.
+// program.ts: the generated-handler DSL and its renderer.
 //
 // A `HandlerProgram` is a tiny AST over the constructs suss claims to
 // model for HTTP handlers: sequential early-return guards over request
-// fields, a final response (plain / if-else / ternary), and — in the
-// known-gap tiers — nested guards and loop guards. Rendering produces
+// fields, a final response (plain / if-else / ternary), and, in the
+// known-gap tiers: nested guards and loop guards. Rendering produces
 // two views of the *same* body: an Express module for extraction and a
 // bare arrow function for execution, so the two sides of the
 // differential can never drift apart.
@@ -27,7 +27,7 @@ export type Cond =
 export interface Terminal {
   /** null → `res.json(body)` (implicit 200); otherwise `res.status(N).json(body)`. */
   status: number | null;
-  /** The response body is always `{ [key]: value }` — enough to tell terminals apart. */
+  /** The response body is always `{ [key]: value }`, enough to tell terminals apart. */
   key: string;
   value: string;
 }
@@ -93,7 +93,7 @@ export type SwitchClause =
 
 /**
  * The switch's mandatory `default` clause. A `switchGuard` always
- * carries one (never `fallthrough`, never absent), so the switch is
+ * has one (never `fallthrough`, never absent), so the switch is
  * exhaustive: every possible field value produces exactly one
  * response from inside it. A "break" clause only exits the switch,
  * not the function, so an unmatched value with no default would fall
@@ -391,7 +391,7 @@ export function renderBodyLines(
   ];
 }
 
-/** The bare arrow function — what the vm harness executes. */
+/** The bare arrow function, what the vm harness executes. */
 export function renderHandlerSource(
   program: HandlerProgram,
   renderTerminal: TerminalRenderer,
@@ -403,7 +403,7 @@ export function renderHandlerSource(
 }
 
 // ---------------------------------------------------------------------------
-// Field collection — which request fields does this program observe?
+// Field collection: which request fields does this program observe?
 // ---------------------------------------------------------------------------
 
 function condFields(cond: Cond): ReqField[] {
@@ -496,7 +496,7 @@ const FINAL_COMPARED: DispatchTable<FinalStmt, (field: ReqField) => string[]> =
 
 /**
  * The string literals a field is compared against anywhere in the
- * program — the request battery uses these as candidate values so
+ * program: the request battery uses these as candidate values so
  * equality guards get exercised on both sides.
  */
 export function collectComparedValues(

@@ -1,4 +1,4 @@
-// @suss/runtime-node — pack for the Node.js runtime surface.
+// @suss/runtime-node: pack for the Node.js runtime surface.
 //
 // Models scheduling primitives (setImmediate / setTimeout / setInterval /
 // queueMicrotask / process.nextTick), the process surface (argv, env,
@@ -88,7 +88,7 @@ export function nodeRuntimePack(
     invocationRecognizers: [schedulingRecognizer],
     accessRecognizers: [
       // `envRecognizer` owns `process.env.X`; `processRecognizer`
-      // owns the rest of the process surface and skips env reads —
+      // owns the rest of the process surface and skips env reads,
       // together they partition `process.*` without duplication.
       envRecognizer,
       processRecognizer,

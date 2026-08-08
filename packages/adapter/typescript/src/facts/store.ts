@@ -1,21 +1,17 @@
-// store.ts - the resolution store and the questions it answers.
-//
-// resolveCallable: which function does this value resolve to, through
-// any depth of aliasing, imports, re-export barrels, wrapper
-// factories, and .bind.
-//
-// resolveWrittenValue: which expression is this value written as, for
-// callers after something that is neither a function nor an object.
-//
-// filesImportingTransitively: for each set of files and packages, which
-// of those files reach any of those packages through their imports,
-// following project-local re-export chains. The per-file import check
-// is defeated by a barrel package that re-exports an SDK; this one is
-// not.
-//
-// Facts are extracted per file on demand and only along the module
-// edges a query follows, so cost tracks the indirection present, not
-// project size.
+/**
+ * The resolution store, and the three questions callers ask it.
+ *
+ * `resolveCallable` says which function a value comes down to, through
+ * any depth of aliasing, imports, re-export barrels, wrapper factories
+ * and `.bind`. `resolveWrittenValue` says which expression a value is
+ * written as, for callers chasing something that is neither a function
+ * nor an object. `filesImportingTransitively` says which of a set of
+ * files reach any of a set of packages, which a per-file import check
+ * misses whenever a local barrel re-exports the SDK.
+ *
+ * Facts are extracted per file on demand and only along the module
+ * edges a query follows, so cost tracks how indirect the code is.
+ */
 
 import { Node } from "ts-morph";
 
@@ -57,7 +53,7 @@ import type { TransparentWrapper } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 
 const JS_RULES = [
-  // f.bind(...) comes to whatever f comes to.
+  // f.bind(...) resolves to whatever f resolves to.
   rule(
     "comesTo",
     [v("r"), v("h")],
@@ -66,14 +62,9 @@ const JS_RULES = [
 ];
 
 /**
- * What this adapter evaluates: the shared language rules, the ones that
- * are about JavaScript in particular, and the questions a caller asks,
- * rewritten so a chain is followed only where a question reaches it.
- *
- * On a codebase dense enough for these rules to matter the rewrite is
- * most of the run, so the escape hatch stays: `SUSS_RESOLUTION_ON_DEMAND=0`
- * runs the same rules unrestricted. Both settings answer every question
- * the same way, and the difference is how much never gets derived.
+ * `SUSS_RESOLUTION_ON_DEMAND=0` runs the same rules unrestricted. Both
+ * settings give the same result for every question; they differ only in
+ * how much never gets derived at all.
  */
 const RESOLUTION_PROGRAM: OnDemandRules =
   process.env.SUSS_RESOLUTION_ON_DEMAND === "0"
@@ -86,34 +77,19 @@ const RESOLUTION_PROGRAM: OnDemandRules =
         ANSWER_RELATIONS,
       );
 
-/**
- * The two ways a caller can ask about a value: what it is, or where the
- * name came from. Each one is a fact the rules read.
- */
 type Question = "wanted" | "wantedOrigin";
 
 /**
- * What one query brings into the database, and what goes again once its
- * answer has been read: the asking fact, the chain the rules followed
- * from it, and the demand that made them follow it.
- *
- * Without this a query pays for every question asked before it. Asking
- * marks the store stale, so the next file's facts are derived over all
- * the demand accumulated so far, and a pack that asks about every
- * export turns a run into the square of what it asks. The answer
- * relations are not in here: they hold one row per value asked about,
- * which is what a repeated query reads back instead of asking again.
+ * Dropped once a query's result has been read, so the next query does
+ * not re-derive over every question asked before it. The answer
+ * relations stay, and a repeated query reads its result from those.
  */
 const QUERY_FACTS: readonly string[] =
   RESOLUTION_PROGRAM.demandDriven.length === 0
     ? []
     : [...RESOLUTION_PROGRAM.demandDriven, "wanted", "wantedOrigin"];
 
-/**
- * How many module hops a query follows when pulling in facts. Deep
- * enough for barrels of barrels; a bound so a pathological import
- * graph stays cheap.
- */
+/** Deep enough for barrels of barrels, bounded so a wide graph stays cheap. */
 const MAX_MODULE_HOPS = 6;
 
 export class ResolutionStore {
@@ -122,7 +98,6 @@ export class ResolutionStore {
   private readonly fullyExtracted = new Set<string>();
   private readonly seededValues = new Set<string>();
   private readonly importedNames = new Map<string, string[]>();
-  /** What each value was found to refer to, so the key costs once. */
   private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
 
@@ -135,26 +110,11 @@ export class ResolutionStore {
     }
   }
 
-  /**
-   * The function `value` resolves to, or null when no chain reaches
-   * one. The result is a ts-morph node in whatever file the function
-   * actually lives.
-   *
-   * Facts come in waves: extract the file the value lives in, ask, and
-   * only widen to the files it imports when the answer is still
-   * missing. A value that resolves without leaving its own file costs
-   * one file of extraction, not the whole import closure.
-   */
   resolveCallable(value: Node): Node | null {
     const target = factKeyOf(value);
     return this.resolveByWaves(target, "wanted", () => this.lookup(target));
   }
 
-  /**
-   * The object literal `value` ends up being, or null. The route a
-   * registration call names often lives on a shared object built in
-   * another file, and this is how discovery reads it back.
-   */
   resolveObject(value: Node): Node | null {
     const target = factKeyOf(value);
     return this.resolveByWaves(target, "wanted", () =>
@@ -163,15 +123,8 @@ export class ResolutionStore {
   }
 
   /**
-   * The expression `value` is written as, or null. Unlike the other two
-   * questions this one does not care what kind of expression it lands
-   * on, so it answers for values that are neither functions nor
-   * objects: a GraphQL document held in a named constant in another
-   * file comes back as the template literal or tag call that built it.
-   *
-   * A value the code computes has no written form to report, so the
-   * answer is the computing expression itself and the caller gets
-   * nothing it can use, which is the point.
+   * For a value that is neither a function nor an object, such as a
+   * GraphQL document kept in a constant in another file.
    */
   resolveWrittenValue(value: Node): Node | null {
     const target = factKeyOf(value);
@@ -181,29 +134,12 @@ export class ResolutionStore {
   }
 
   /**
-   * The names from `modules` this value stands for. A value stands for
-   * a library name two ways, and a caller asking which library concept
-   * something is wants both:
-   *
-   *   - it is that name, under whatever local spelling. `import
-   *     { Controller as Resource }` makes `Resource` the library's
-   *     `Controller`.
-   *   - calling it calls that name. A project decorator written as
-   *     `(path) => Controller(path)` marks a controller, and so does
-   *     one written as `applyDecorators(Controller(path))`.
-   *
-   * Several names is the normal answer rather than an ambiguity, since
-   * a wrapper composing two library decorators applies both. The caller
-   * asks whether the name it cares about is among them.
-   *
-   * One wrapper is applied across hundreds of files, so the answer is
-   * memoized against the declaration it was asked about. Without that,
-   * every use site seeds a fresh value and pays another fixpoint.
+   * Which names from `modules` this value comes down to, either by being
+   * one of them under a local name or by calling into one. Getting
+   * several back is normal, since a wrapper can compose two library
+   * decorators.
    */
   importedNamesOf(value: Node, modules: string[]): string[] {
-    // Asking the checker what a value refers to is the expensive part of
-    // building this key, and it is the same answer every time, so it is
-    // remembered rather than paid again on each hit.
     let refersTo = this.declarations.get(value);
     if (refersTo === undefined) {
       refersTo = declarationOf(value);
@@ -225,17 +161,9 @@ export class ResolutionStore {
   }
 
   /**
-   * The names from `modules` this value stands for, or null while the
-   * walk should keep widening.
-   *
-   * The distinction is what keeps the cost down. A value that has
-   * arrived at a package has nothing more to give, because a library's
-   * own body is not here to read, so a decorator from a library the
-   * caller did not ask about stops on the first wave rather than
-   * running out the import closure looking for a match it will never
-   * find. A value that has only arrived at another file in the project
-   * keeps going, since the wrapper it names is declared somewhere the
-   * walk has not reached yet.
+   * Null tells the walk to keep widening. A value that landed in a
+   * package returns empty instead, because a library's own body is not
+   * here to read and widening would never find anything.
    */
   private lookupImportedNames(value: Node, modules: string[]): string[] | null {
     this.derive();
@@ -277,10 +205,9 @@ export class ResolutionStore {
     this.wantValue(question, value);
     this.seedValue(value);
 
-    // Where the walk has been on this query, which is separate from
-    // which files already have facts. A file extracted by an earlier
-    // query still has to be walked through, or the frontier collapses
-    // and later queries into the same file answer null.
+    // Per query rather than per store. A file an earlier query extracted
+    // still has to be walked through, or the frontier collapses and this
+    // query comes back null.
     const walked = new Set<string>();
     let frontier = [value.getSourceFile()];
 
@@ -307,14 +234,9 @@ export class ResolutionStore {
   }
 
   /**
-   * The answer has been read, so the question and the chain that
-   * answered it can go. What the query extracted stays: files are the
-   * expensive part and the next query reads the same facts.
-   *
-   * Nothing is owed after this. The rules have seen every fact the
-   * database holds and concluded what the demand still present asks
-   * for, which is none, so the next query starts from its own asking
-   * fact.
+   * The question and the chain that settled it are dropped. The files
+   * the query extracted stay, since the next query reads the same facts.
+   * Nothing is left half-done, so the store is not stale afterwards.
    */
   private forgetQuery(): void {
     if (QUERY_FACTS.length === 0) {
@@ -324,12 +246,6 @@ export class ResolutionStore {
     this.stale = false;
   }
 
-  /**
-   * Somebody asked about this value, which is what the rules follow
-   * chains for. Separate from `seedValue`, which only speaks for values
-   * that are expressions; a caller can ask about a declaration too, and
-   * the answer is still owed.
-   */
   private wantValue(question: Question, value: Node): void {
     if (this.db.add(question, [nodeId(value)])) {
       this.stale = true;
@@ -337,10 +253,8 @@ export class ResolutionStore {
   }
 
   /**
-   * Facts for the queried value itself. File extraction only reaches
-   * values that hang off exports, and a query can be rooted anywhere:
-   * a registration call passes `routes.provision` as an argument, and
-   * nothing else ever emits facts for that expression.
+   * File extraction only reaches values hanging off exports, and a query
+   * can be rooted anywhere, so the queried value gets its own facts.
    */
   private seedValue(value: Node): void {
     if (!Node.isExpression(value)) {
@@ -374,11 +288,9 @@ export class ResolutionStore {
   }
 
   /**
-   * Reaching two different expressions means the rules cannot tell
-   * which one the value is written as, and the same reasoning applies
-   * as for the other two questions: ambiguity is nothing. The value
-   * itself is not an answer, or every identifier would answer with
-   * itself the moment its chain went nowhere.
+   * Two candidates give null, since ambiguity is nothing. The value
+   * itself is never a result either, or an identifier whose chain went
+   * nowhere would come back as itself.
    */
   private lookupWritten(value: Node): Node | null {
     this.derive();
@@ -399,9 +311,9 @@ export class ResolutionStore {
   }
 
   /**
-   * For each set of files and packages, which of those files reach any
-   * of those packages through their imports, following project-local
-   * re-export chains.
+   * Which of these files reach any of these packages, following
+   * project-local re-export chains. A barrel package that re-exports an
+   * SDK defeats a per-file import check and does not defeat this.
    */
   filesImportingTransitively(
     fileSets: ReadonlyArray<FileSetQuery>,
@@ -410,11 +322,8 @@ export class ResolutionStore {
   }
 
   /**
-   * The one function this value resolves to. Several rules can reach
-   * the same answer, which is fine, but reaching two different
-   * functions means the rules cannot tell which one the value is, and
-   * picking whichever landed in the relation first would make the
-   * answer depend on the order facts arrived in. Ambiguity is nothing.
+   * Two candidates give null. Picking whichever arrived first would make
+   * the result depend on the order the facts came in.
    */
   private lookup(value: Node): Node | null {
     this.derive();
@@ -436,7 +345,6 @@ export class ResolutionStore {
     return [...candidates][0] as Node;
   }
 
-  /** Run the rules to fixpoint. */
   private derive(): void {
     if (!this.stale) {
       return;
@@ -445,25 +353,15 @@ export class ResolutionStore {
     evaluate(this.db, RESOLUTION_PROGRAM.rules);
   }
 
-  /**
-   * The second column of an answer relation, for the value asked about.
-   * The database indexes a column the first time somebody looks it up
-   * and keeps that index as facts arrive, so this is a map hit and the
-   * answers a query never asks about cost nothing.
-   */
   private answersFor(relation: string, value: string): string[] {
     return this.db.lookup(relation, 0, value).map((tuple) => String(tuple[1]));
   }
 
   /**
-   * The trailing pair of a three-column answer relation, joined into
-   * one string so a Set can dedupe on both halves at once.
-   *
-   * The join is the database's own tuple encoding, where every half
-   * carries its own length. A module specifier or an identifier can
-   * hold any character, so a separator picked here would sooner or
-   * later be one of them and two different pairs would answer to the
-   * same string.
+   * The trailing pair of a three-column relation, joined so a Set dedupes
+   * on both halves. The join uses the database's own tuple encoding,
+   * since a specifier or an identifier can contain any separator
+   * character.
    */
   private answerPairsFor(relation: string, value: string): string[] {
     return this.db
@@ -471,7 +369,6 @@ export class ResolutionStore {
       .map((tuple) => tupleKey([String(tuple[1]), String(tuple[2])]));
   }
 
-  /** Emit a file's facts, unless some earlier query already did. */
   private extractFile(sourceFile: SourceFile): void {
     const filePath = sourceFile.getFilePath();
     if (this.fullyExtracted.has(filePath)) {
@@ -483,7 +380,6 @@ export class ResolutionStore {
   }
 }
 
-/** The names among these module-and-name pairs that come from `packages`. */
 function namesFrom(pairs: string[], packages: string[]): string[] {
   const names = new Set<string>();
   for (const pair of pairs) {
@@ -495,26 +391,22 @@ function namesFrom(pairs: string[], packages: string[]): string[] {
   return [...names].sort();
 }
 
-/** The two halves of a joined module-and-name pair, back apart. */
 function pairHalves(pair: string): { module: string; name: string } {
   const [module = "", name = ""] = tupleKeyParts(pair);
   return { module, name };
 }
 
 /**
- * Whether a module key names a package rather than a file in the
- * project. A specifier that did not resolve stays as written, and one
- * that resolved into a dependency is an absolute path through
- * node_modules.
+ * A specifier that did not resolve stays as written, and one that
+ * resolved into a dependency is an absolute path through node_modules.
  */
 function namesAPackage(moduleKey: string): boolean {
   return !moduleKey.startsWith("/") || moduleKey.includes("/node_modules/");
 }
 
 /**
- * Whether an `imports` module key names one of these packages. The key
- * is a resolved file path when the package is installed and the raw
- * specifier when it is not, so both readings have to answer.
+ * The key is a resolved file path when the package is installed and the
+ * raw specifier when it is not, so both forms have to be looked up.
  */
 function namesPackage(moduleKey: string, packages: string[]): boolean {
   return namesAnyPackage(
@@ -523,11 +415,7 @@ function namesPackage(moduleKey: string, packages: string[]): boolean {
   );
 }
 
-/**
- * The declaration a value refers to, so one wrapper applied across a
- * hundred files is asked about once. A value that refers to nothing
- * speaks for itself.
- */
+/** A value that refers to nothing speaks for itself. */
 function declarationOf(value: Node): Node {
   const nameNode = Node.isPropertyAccessExpression(value)
     ? value.getNameNode()

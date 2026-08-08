@@ -1,7 +1,8 @@
 // paths/pathConditions.ts, CFG-semantics path conditions.
 //
-// This file used to hold the whole enumeration engine directly against
-// ts-morph nodes. It now holds only what's TypeScript-specific: the
+// This file used to contain the whole enumeration engine, written
+// directly against ts-morph nodes. It now has only what is
+// TypeScript-specific: the
 // function-body special cases (an ambient declaration, an
 // expression-bodied arrow), the labeled-statement bail, and the
 // degrade-on-catch wrapper. The enumeration itself (entry-to-terminal
@@ -24,7 +25,7 @@
 //   - a guard nested one block deep contributes its own per-path
 //     conditions (`if (a) { if (b) return; } T` sends T down the two
 //     paths `[¬a]` and `[a, ¬b]`, never `[]` or `[¬a ∧ ¬b]`);
-//   - paths that cross a loop whose body can exit the function carry an
+//   - paths that cross a loop whose body can exit the function get an
 //     explicit opaque condition. Quantified-over-iterations facts are
 //     not statically decidable, so the engine under-specifies rather
 //     than fabricating one.

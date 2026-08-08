@@ -9,7 +9,6 @@ import {
 import { parsePython } from "./parser.js";
 import { bindModule } from "./scope.js";
 
-/** The `type` annotation node of the first parameter of the module's first function. */
 async function firstParamType(source: string) {
   const tree = await parsePython(source);
   const binding = bindModule(tree.rootNode);
@@ -210,11 +209,6 @@ describe("annotationToShape: local classes", () => {
   });
 
   it("stops at a self-referential model instead of recursing forever", async () => {
-    // A class naming itself (a `parent` field typed as its own class,
-    // say) has to meet its own reserved key mid-expansion rather than
-    // expand without end. Called directly through `shapeFromName`,
-    // since a forward-reference annotation isn't needed to exercise
-    // the reserve-before-expand guard itself.
     const { scope, ctx } = await firstParamType(
       "class Node:\n    id: int\n\n\ndef f(x: Node):\n    pass\n",
     );

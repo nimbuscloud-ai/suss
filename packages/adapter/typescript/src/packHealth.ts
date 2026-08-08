@@ -1,24 +1,18 @@
-// packHealth.ts: when a pack is probably not working.
-//
-// The funnel says where a run's counts reached zero. This asks a
-// narrower question of each pack on its own: did this pack drop
-// everything it was holding at some stage, having been holding
-// something the stage before?
-//
-// One rule covers most of it. A pack that finds nothing on a codebase
-// that does not use its library is working correctly, so a bare count
-// of zero is never the signal. What makes zero a signal is the count
-// before it. The pack's own import gate selecting forty files and its
-// discovery finding no unit in any of them is the pack saying "look
-// here" and then failing to look. The same shape repeats at every
-// later stage, which is why the checks below are one comparison
-// applied to a list of pairs rather than a check written per stage.
-//
-// Everything here reports. Nothing here fails a run, because a
-// threshold nobody has watched fire is a threshold nobody should be
-// blocked by. That also means one count above zero anywhere silences
-// the pair holding it, which the notes next to `stagesOf` say more
-// about.
+/**
+ * Checks that tell you a pack is probably not working.
+ *
+ * The funnel shows where a run's counts dropped to zero. These checks
+ * ask something narrower of each pack on its own: did this pack lose
+ * everything at some stage, when the stage before it had something?
+ *
+ * A pack that finds nothing in a codebase that does not use its library
+ * is working correctly, so a count of zero on its own is never the
+ * signal. What makes zero a signal is the count before it. A pack whose
+ * import gate picked forty files and whose discovery then found no unit
+ * in any of them said "look here" and failed to look. Every later stage
+ * works the same way, which is why these checks are one comparison run
+ * over a list of pairs rather than one check written per stage.
+ */
 
 import type {
   ExtractionReport,
@@ -26,21 +20,21 @@ import type {
   PackFunnel,
 } from "./diagnostics.js";
 
-/** One thing that looks wrong, in the same shape the dogfood invariants report. */
+/** One thing that looks wrong, reported the way the dogfood invariants are. */
 export interface HealthViolation {
   label: string;
   detail: string;
 }
 
 export interface HealthCheck {
-  /** The property, as something that either holds or does not. */
+  /** The property being checked, as something either true or false. */
   name: string;
   /**
    * The heading printed when this check finds something.
    *
-   * The property reads as an assertion, so printing `name` above the
-   * violations of it says "no pack collides with itself" and then lists
-   * a pack colliding with itself.
+   * `name` is written as an assertion, so printing it above the
+   * violations would say "no pack collides with itself" and then list a
+   * pack colliding with itself.
    */
   whenBroken: string;
   /**
@@ -48,10 +42,10 @@ export interface HealthCheck {
    *
    * A `run` check found something about the code in front of it, and
    * the person who started the run can do something about it: drop a
-   * pack, install a dependency, open an issue with the file that
-   * broke. A `pack` check found something about how a pack was built,
-   * which only whoever ships that pack can fix. Printing the second
-   * kind on every run would teach people to skim past the first.
+   * pack, install a dependency, open an issue with the file that broke.
+   * A `pack` check found something about how a pack was built, which
+   * only whoever ships that pack can fix. Printing the second kind on
+   * every run would teach people to skim past the first.
    */
   audience: "run" | "pack";
   violations: HealthViolation[];
@@ -60,18 +54,16 @@ export interface HealthCheck {
 /**
  * A pack's funnel, as the ordered stages a health check walks.
  *
- * The discovery pair comes first, and it is comparable only when the
+ * The discovery pair comes first, and it only means something when the
  * pack gated itself: an ungated pack is handed every file in the
- * project, so its candidate count says only that the project has files.
+ * project, so its candidate count only tells you the project has files.
  *
- * Every count compared here is the pack's own work. That rules out the
- * one thing a pack made of recognisers could be measured against,
- * because a recogniser fires inside units some other pack discovered,
- * so any count of what it had to look at is a count of what its
- * companions found. Measuring against it made the same pack read as
- * working or broken depending on which unrelated pack was passed
- * alongside it. Those packs are counted, in `effectsRecognized`, and
- * not judged.
+ * Every count compared here is the pack's own work, which is why a pack
+ * made only of recognisers is counted and never judged. A recogniser
+ * fires inside units some other pack discovered, so any count of what it
+ * had to look at is really a count of what the packs beside it found.
+ * Measuring against that made the same pack look working or broken
+ * depending on which unrelated pack was passed alongside it.
  */
 function stagesOf(funnel: PackFunnel): Array<{
   from: { name: string; count: number };
@@ -110,7 +102,7 @@ function stagesOf(funnel: PackFunnel): Array<{
   return stages;
 }
 
-/** A stage went to zero while the stage feeding it did not. */
+/** A stage dropped to zero while the stage feeding it did not. */
 function funnelDrops(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
   const violations: HealthViolation[] = [];
   for (const funnel of packs) {
@@ -131,12 +123,12 @@ function funnelDrops(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
  * A pack declares no version.
  *
  * The extraction cache keys on the pack's name and version together. A
- * pack that never stamps a version is indistinguishable from every
- * earlier build of itself, so editing it and re-running answers from
- * the cache written by the code that was there before.
+ * pack that never stamps a version looks identical to every earlier
+ * build of itself, so editing it and re-running gives you back what the
+ * code that was there before produced.
  *
- * This is the one check that needs no codebase to be true or false, and
- * the one that costs a pack author something: it asks for a field.
+ * This is the one check that needs no codebase to decide, and the one
+ * that costs a pack author something: it asks for a field.
  */
 function unversionedPacks(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
   return packs
@@ -151,10 +143,10 @@ function unversionedPacks(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
 /**
  * A pack discovered the same unit twice.
  *
- * Two packs claiming one unit is the point of the claim set and the
- * user's `-f` order decides it. One pack claiming a unit twice means
- * two of its own patterns overlap, and the second is dropped with
- * nobody choosing which of the two readings was wanted.
+ * Two packs claiming one unit is the point of the claim set, and the
+ * user's `-f` order decides it. One pack claiming a unit twice means two
+ * of its own patterns overlap, and the second is dropped without anybody
+ * choosing which of the two was wanted.
  */
 function selfCollisions(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
   return packs
@@ -168,9 +160,9 @@ function selfCollisions(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
 /**
  * A pack's hook threw while it was reading.
  *
- * The run carries on so one bad file does not cost a whole extract, and
- * the pack's counts stop being totals the moment that happens. This
- * says so, because a pack that broke on every file it was handed
+ * The run continues so that one bad file does not cost a whole extract,
+ * and the pack's counts stop being totals the moment that happens. This
+ * check says so, because a pack that broke on every file it was given
  * reports the same zero as a pack that looked and found nothing.
  *
  * This is the one check whose finding is never about the codebase. The
@@ -232,10 +224,10 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
 /**
  * The health checks that fired, as lines for a terminal.
  *
- * `audiences` is who the caller is printing for, and it is required
- * because there is no answer that suits every caller: a CLI run prints
- * what the person who started it can act on, and a run whose reader is
- * a pack author wants both.
+ * `audiences` is who the caller is printing for. It is required because
+ * no single choice suits every caller: a CLI run prints what the person
+ * who started it can act on, while a run a pack author is reading wants
+ * both kinds.
  */
 export function formatPackHealth(
   checks: ReadonlyArray<HealthCheck>,

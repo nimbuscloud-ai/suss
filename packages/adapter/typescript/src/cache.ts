@@ -95,7 +95,7 @@ export interface CacheDiagnostic {
 }
 
 /**
- * Result of a cache lookup. A hit carries the whole summary set; a miss
+ * Result of a cache lookup. A hit gives back the whole summary set; a miss
  * says why, so a caller can render the reason.
  */
 export type CacheLookup =
@@ -126,7 +126,7 @@ export interface CacheInput {
   /**
    * Either a list of absolute file paths OR a Project. The first
    * form lets the cache run BEFORE the project's lazy bootstrap
-   * — pass the file list from the tsconfig parse so a cache hit
+   *, pass the file list from the tsconfig parse so a cache hit
    * doesn't pay for the bootstrap. The Project form keeps back-
    * compat for callers that already have a populated Project.
    */
@@ -138,7 +138,7 @@ export interface CacheInput {
 
 /**
  * Construct a cache layer rooted at `cacheDir`. Pass `null` to
- * opt out of caching entirely — the returned layer's `tryHit`
+ * opt out of caching entirely, the returned layer's `tryHit`
  * always misses and `write` is a no-op. Useful for one-shot
  * extracts where caching adds latency without payoff.
  */
@@ -314,7 +314,7 @@ async function readManifest(manifestPath: string): Promise<Manifest | null> {
     const raw = await fs.readFile(manifestPath, "utf-8");
     return JSON.parse(raw) as Manifest;
   } catch {
-    // Missing file, invalid JSON, permission denied — all manifest
+    // Missing file, invalid JSON, permission denied, all manifest
     // failures collapse to "miss." Cache reads are advisory; the
     // worst case is a redundant extraction.
     return null;
@@ -337,7 +337,7 @@ async function stampTsconfig(
 
 /**
  * Resolve the file list from whichever input form the caller used.
- * `files` (paths) takes precedence — the cache-pre-bootstrap path
+ * `files` (paths) takes precedence, the cache-pre-bootstrap path
  * passes that. `project` falls back to the Project's loaded
  * source files.
  */
@@ -361,7 +361,7 @@ async function stampProjectFiles(project: Project): Promise<FileStamp[]> {
 
 async function stampPaths(paths: ReadonlyArray<string>): Promise<FileStamp[]> {
   const files = paths;
-  // Concurrent stats — bounded by Node's libuv thread pool. For
+  // Concurrent stats: bounded by Node's libuv thread pool. For
   // 5,500-file projects this is the dominant cost of the coarse
   // key (~25ms total).
   const stamped = await Promise.all(
@@ -371,14 +371,14 @@ async function stampPaths(paths: ReadonlyArray<string>): Promise<FileStamp[]> {
         return { path: p, mtimeMs: stat.mtimeMs, size: stat.size };
       } catch {
         // File disappeared between project enumeration and stat.
-        // Returning a sentinel makes the cache always miss —
+        // Returning a sentinel makes the cache always miss,
         // that's correct; the project is in flux.
         return { path: p, mtimeMs: -1, size: -1 };
       }
     }),
   );
   // Sort by path so the manifest is stable regardless of project's
-  // traversal order — important for git-friendly storage if anyone
+  // traversal order: important for git-friendly storage if anyone
   // ever versions the cache.
   stamped.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return stamped;

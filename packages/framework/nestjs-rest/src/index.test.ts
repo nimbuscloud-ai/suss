@@ -10,7 +10,7 @@ import { nestjsRestFramework } from "./index.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
-// Fixture project — exercise NestJS REST controller decorator shapes
+// Fixture project: exercise NestJS REST controller decorator shapes
 // ---------------------------------------------------------------------------
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/nestjs-rest");
@@ -19,7 +19,7 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
   const project = createDecoratorFixtureProject(fixturesDir, "*.ts");
   // Stub `@nestjs/common` so ts-morph import resolution succeeds.
   // Discovery only needs the decorator names + import module to
-  // match — runtime behaviour is irrelevant to static analysis.
+  // match: runtime behaviour is irrelevant to static analysis.
   project.createSourceFile(
     "node_modules/@nestjs/common/index.d.ts",
     `export const Controller: (...args: unknown[]) => ClassDecorator;
@@ -86,7 +86,7 @@ describe("nestjsRestFramework — pack shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration — run the adapter against the controller fixture
+// Integration: run the adapter against the controller fixture
 // ---------------------------------------------------------------------------
 
 describe("nestjsRestFramework — integration", () => {

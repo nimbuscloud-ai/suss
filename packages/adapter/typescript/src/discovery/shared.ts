@@ -1,10 +1,10 @@
-// shared.ts — types + helpers shared by every discovery handler.
+// shared.ts: types + helpers shared by every discovery handler.
 //
 // The dispatch and the public discoverUnits orchestrator live in
-// ./index.ts; this file holds only what the per-handler files need
+// ./index.ts; this file has only what the per-handler files need
 // in common (the DiscoveredUnit type, the FunctionRoot adapter, and
 // the simple "walk-to-enclosing-function" helper that two unrelated
-// handlers — clientCall and packageImport — both need).
+// handlers: clientCall and packageImport: both need).
 
 import { type CallExpression, Node } from "ts-morph";
 
@@ -40,7 +40,7 @@ export interface DiscoveredUnit {
   /**
    * "label" when the name was coined for the reader rather than
    * naming a binding other code can call, the way a registration
-   * verb names its handler. Absent means the name is a binding.
+   * verb identifies its handler. Absent means the name is a binding.
    */
   nameKind?: "binding" | "label";
   callSite?: ClientCallSite;
@@ -75,14 +75,14 @@ export interface DiscoveredUnit {
    * fields without needing a separate schema provenance.
    */
   resolverInfo?: {
-    /** Null when the source never names the type the resolver attaches to. */
+    /** Null when the source never says which type the resolver attaches to. */
     typeName: string | null;
     fieldName: string;
     schemaSdl?: string;
   };
   /**
    * Populated by `graphqlHookCall` discovery (GraphQL consumer side).
-   * Carries the operation shape the adapter uses to build a
+   * Has the operation shape the adapter uses to build a
    * `graphql-operation` binding. `operationName` is absent for
    * anonymous operations (`gql\`query { ... }\``, no identifier).
    *
@@ -91,7 +91,7 @@ export interface DiscoveredUnit {
    * alongside the parsed shape so downstream tools can re-parse if
    * they need additional detail beyond what we surface here. Absent
    * when the document body wasn't statically readable and the header
-   * was recovered from `TypedDocumentNode` type arguments — a
+   * was recovered from `TypedDocumentNode` type arguments: a
    * cross-module codegen reference to a document produced by a helper.
    *
    * `variables` list the `$name: Type` declarations at the operation
@@ -99,7 +99,7 @@ export interface DiscoveredUnit {
    * pairing layers can match against resolver args. Empty when the
    * document body wasn't read.
    *
-   * `rootFields` is the list of root-level selection names — the
+   * `rootFields` is the list of root-level selection names: the
    * fields the operation actually selects under Query / Mutation /
    * Subscription. Used by the checker's pairing pass. Empty when the
    * document body wasn't read.
@@ -119,9 +119,9 @@ export interface DiscoveredUnit {
     unresolved?: { reference: string; reason: string };
   };
   /**
-   * Populated by `packageExports` discovery. Carries the package
-   * identity the adapter uses to build a `function-call` binding
-   * with `package` + `exportPath` fields — i.e. a provider summary
+   * Populated by `packageExports` discovery. Has the package identity
+   * the adapter uses to build a `function-call` binding
+   * with `package` + `exportPath` fields: i.e. a provider summary
    * for a publicly-exported library function.
    */
   packageExportInfo?: {
@@ -133,7 +133,7 @@ export interface DiscoveredUnit {
    * controllers). The adapter uses it to build a `rest` binding
    * with `(method, path)` directly, bypassing the
    * `bindingExtraction` config used by Express / Fastify (which
-   * extract from `app.get(...)` registration calls — the wrong
+   * extract from `app.get(...)` registration calls: the wrong
    * shape for decorator-driven controllers).
    */
   routeInfo?: {
@@ -142,8 +142,8 @@ export interface DiscoveredUnit {
   };
   /**
    * Populated by a pack's `discoverUnits` callback for a message-bus
-   * consumer whose channel the code names (a handler factory whose
-   * config carries the expected subject). The adapter uses it to build
+   * consumer whose channel the code gives (a handler factory whose
+   * config includes the expected subject). The adapter uses it to build
    * a `message-bus` binding directly, which pairs with producers
    * sending on the same channel.
    */
@@ -157,23 +157,23 @@ export interface DiscoveredUnit {
    * Metadata merged onto the assembled summary's `metadata` field.
    * Populated when a pack's `discoverUnits` callback stamps provenance
    * on the units it returns (the discovery-layer sibling of the
-   * per-sub-unit `metadata` the `subUnits` hook carries).
+   * per-sub-unit `metadata` the `subUnits` hook returns).
    */
   metadata?: Record<string, unknown>;
   /**
    * What a discovery handler could not read about the boundary this
-   * unit sits on. A route whose path is computed is still a route
+   * unit is on. A route whose path is computed is still a route
    * somebody declared, so the unit goes out with no path claimed and
-   * this sentence saying which part went unread. Carried onto the
+   * this sentence saying which part went unread. It ends up on the
    * summary as an `unreadOutcome` gap.
    */
   unreadBinding?: string;
 }
 
 /**
- * Where a unit sits in source: the function it is, or the registration
+ * Where a unit is in source: the function it is, or the registration
  * that announced a boundary whose handler was never reached. Null when
- * a caller handed over neither, which nothing downstream can place.
+ * a caller supplied neither, which nothing downstream can locate.
  */
 export function unitNode(unit: DiscoveredUnit): Node | null {
   return unit.func ?? unit.announcedAt ?? null;
@@ -221,8 +221,8 @@ export function unitDedupKey(unit: DiscoveredUnit): string {
     unit.channelInfo === undefined
       ? ""
       : `${unit.channelInfo.messageBus}:${unit.channelInfo.channel}`,
-    // An anonymous operation has no name to key on, so the unit name
-    // stands in; it already carries the document reference discovery
+    // An anonymous operation has no name to key on, so use the unit
+    // name, which already includes the document reference discovery
     // fell back to.
     unit.operationInfo === undefined
       ? ""
@@ -247,9 +247,8 @@ export function isFunctionRoot(node: Node): boolean {
  *
  * An overload signature is the same function written again with its
  * body left off, and TypeScript hands back every spelling under one
- * name. Putting facts down under each of them leaves two candidates
- * where the language has one function, and the store answers with
- * neither.
+ * name. Recording facts under each of them leaves two candidates where
+ * the language has one function, and the store then picks neither.
  *
  * A function a declaration file declares has no body anywhere, and the
  * declaration is all there is of the function, so it speaks for itself.
@@ -266,15 +265,15 @@ export function declarationCarryingTheBody(declaration: Node): Node {
 
 /**
  * The function root this node is, or null when it is not one. A name
- * written more than once answers with the one declaration that carries
- * the body, so two spellings of one function do not become two units.
+ * written more than once resolves to the one declaration with the body
+ * on it, so two spellings of one function do not become two units.
  */
 
 /**
- * Whether a value is shaped like something that could name a function.
- * Most exports are object literals, string constants, or schemas, and
- * asking the fact layer about those pulls in their import closure for
- * an answer that is always null.
+ * Whether a value could possibly refer to a function. Most exports are
+ * object literals, string constants or schemas, and asking the fact
+ * layer about those pulls in their import closure to produce a null
+ * that was never in doubt.
  */
 export function couldResolveToFunction(value: Node): boolean {
   return (
@@ -292,9 +291,9 @@ export function couldResolveToFunction(value: Node): boolean {
  * Whether following this name could still arrive at a function.
  *
  * A name the file itself writes as an object literal, a string or a
- * tagged template holds that, and every rule that could follow the name
- * ends there. Asking anyway walks the file's import closure for a null.
- * One hop is enough to tell: what the declaration is written as.
+ * tagged template is that, and every rule that could follow the name
+ * ends there. Asking anyway walks the file's import closure to produce
+ * a null. One hop is enough to tell: what the declaration is set to.
  */
 export function couldStillNameAFunction(value: Node): boolean {
   if (!couldResolveToFunction(value)) {
@@ -316,14 +315,14 @@ export function couldStillNameAFunction(value: Node): boolean {
 }
 
 /**
- * Whether this name is one the surrounding function was handed. A
- * registering function's own parameter holds whatever its callers
- * passed, so no chain from here reaches a function, however many rules
- * are added.
+ * Whether this name is one the surrounding function was given. A
+ * registering function's own parameter is whatever its callers passed,
+ * so no chain from here reaches a function, however many rules get
+ * added.
  *
- * The one-hop reading of the fact layer's `flowsToParam`: a name bound
- * to a parameter. A value that arrives at a parameter through a wrapper
- * call answers false here.
+ * This is one hop of the fact layer's `flowsToParam`: a name bound to a
+ * parameter. A value that reaches a parameter through a wrapper call
+ * comes out false here.
  */
 export function namesAParameter(value: Node): boolean {
   if (!Node.isIdentifier(value)) {

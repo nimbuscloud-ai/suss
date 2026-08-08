@@ -1,6 +1,6 @@
 // The shapes a handler factory comes in, and what each one has to
 // resolve to. Every case here is one function reaching another through
-// arguments, and no rule names any of them: the rules describe one hop
+// arguments, and no rule mentions any of them: the rules describe one hop
 // and the engine composes the rest. A case that stops working is a
 // missing fact rather than a missing rule.
 

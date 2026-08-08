@@ -1,10 +1,10 @@
-// extract.ts — run the real suss pipeline over a generated module.
+// extract.ts: run the real suss pipeline over a generated module.
 //
 // One in-memory ts-morph project is shared per module path, with the
 // source file overwritten per program: project bootstrap dominates
-// cost (~500ms) while a re-extract over fresh content is ~5–30ms, and
+// cost (~500ms) while a re-extract over fresh content is ~5, 30ms, and
 // the differential wants hundreds of programs per run. A fresh adapter
-// per call keeps adapter-level caching out of the trust chain — only
+// per call keeps adapter-level caching out of the trust chain, only
 // the ts-morph Project object is reused.
 
 import { Project } from "ts-morph";
@@ -115,7 +115,7 @@ export interface ExtractFromDiskOptions {
    * Absolute path to source, for every TypeScript file the program
    * spans. A family lands here when a pack reads something off the
    * filesystem, a deployment template or a package manifest, and the
-   * files have to sit where that reader looks.
+   * files have to be where that reader looks.
    */
   files: Record<string, string>;
   pack: PatternPack | PatternPack[];

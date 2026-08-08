@@ -1,23 +1,25 @@
-// What the reachability walk needs, read once off a summary set: the
-// routing edges as joinable tuples, each router's match records
-// grouped for its language's selector, the resources that are
+// routingFacts.ts: what the reachability walk needs, read once off a
+// summary set.
+//
+// That means the routing edges as joinable tuples, each router's match
+// records grouped for its language's selector, the resources that are
 // deployable units, and the serving claims placed inside those units.
 //
 // Everything here reads the routing metadata namespace and the
-// summaries' own identity fields; nothing names a protocol or a
+// summaries' own identity fields. Nothing here mentions a protocol or a
 // resource kind. An edge with an unresolved end contributes no tuple,
-// since there is nothing to join it on; the summary still carries the
-// unresolved record for a reader to render.
+// because there is nothing to join it on, and the summary still keeps
+// the unresolved record for a reader to render.
 //
 // Every node the walk joins on is keyed by (document scope, name),
 // never by the bare name. A logical id is unique inside one document
 // and nowhere else, so two unrelated stacks that both declare an
-// `HttpListener` are two nodes, and neither can answer for the other.
-// The scope is the root document label read off the summary's own
-// provenance (`rootDocumentLabel`), so every document of one nested
-// tree shares one scope and joins within the tree still hold. The
-// summaries themselves keep their bare names; only the walk's keying
-// is scoped.
+// `HttpListener` are two separate nodes, and neither can stand in for
+// the other. The scope is the root document label read off the
+// summary's own provenance (`rootDocumentLabel`), so every document of
+// one nested tree shares one scope and joins within the tree still
+// work. The summaries themselves keep their bare names; only the walk's
+// keying is scoped.
 
 import {
   BOUNDARY_ROLE,
@@ -38,24 +40,20 @@ import type { UnitScope, UnitsByFile } from "../scope/unitScope.js";
 
 type RoutingResponse = NonNullable<RoutingMetadata["response"]>;
 
-/** An answers row as a reader sees it: bare names, the way its document wrote them. */
+/** Bare names, the way the document wrote them. */
 export interface AnsweredMatch {
   matchId: string;
   router: string;
   response?: RoutingResponse;
 }
 
-/** An answers row keyed for the walk: the scoped router node beside the bare record. */
 export interface ScopedAnswer {
+  /** Scoped node. */
   router: string;
   answer: AnsweredMatch;
 }
 
-/**
- * Every match one router declares, with every condition language its
- * rows name. `router` is the scoped node; the records keep their bare
- * matchIds, which is what the language's own selector ranks.
- */
+/** `router` is the scoped node; the records keep their bare matchIds. */
 export interface RouterMatches {
   router: string;
   scope: string;
@@ -63,77 +61,64 @@ export interface RouterMatches {
   records: Map<string, RoutingMatchRecord>;
 }
 
+/** Every column of every row here is a scoped node key. */
 export interface RoutingEdgeFacts {
-  /**
-   * [router, target, matchId] rows that carry traffic when their match
-   * wins, every column scoped. A row declared with weight 0 carries
-   * none by its own declaration, so it stays out of the walk; the
-   * summary still records it.
-   */
+  /** [router, target, matchId]. A row declared with weight 0 stays out. */
   routesTo: [string, string, string][];
-  /** [target, resource], scoped. */
+  /** [target, resource]. */
   fronts: [string, string][];
-  /** [listener, loadBalancer], scoped. */
+  /** [listener, loadBalancer]. */
   belongsTo: [string, string][];
   /** Keyed by the scoped matchId. */
   answers: Map<string, ScopedAnswer>;
   /** Keyed by the scoped router node. */
   routers: Map<string, RouterMatches>;
-  /** Keyed by the scoped node the edge leaves: what it forwards to, that nothing here could follow. */
+  /** Keyed by the scoped node the edge leaves. */
   unfollowed: Map<string, UnfollowedEdge[]>;
 }
 
 /**
- * An edge a document declares whose far end nothing resolved: a
- * cross-stack import, a reference to a resource another template owns.
- * It joins nothing, so the walk cannot take it, and dropping it would
- * turn "the request goes here and suss cannot say what happens next"
- * into "nothing is declared here". They are different answers, so the
- * reference and the reader's reason travel with the edge.
+ * An edge whose far end nothing resolved, such as a reference to a
+ * resource another template owns. The walk cannot take it, and dropping
+ * it would look like nothing being declared at that node.
  */
 export interface UnfollowedEdge {
-  /** The match that has to take the request for this edge to matter, or null when the wiring itself declares it. */
+  /** Null when the wiring itself declares the edge, with no match to take. */
   matchId: string | null;
-  /** The same match, keyed the way admissions are, so a reader can ask whether it took the request. */
   scopedMatchId: string | null;
-  /** The reference as the document wrote it. */
   reference: string | null;
-  /** Why the reader stopped there. */
   reason: string | null;
 }
 
-/** One deployable unit as a walk node: its document scope and the bare instance name. */
 export interface ScopedUnit {
   scope: string;
   instanceName: string;
 }
 
-/** A provider summary that might answer a request inside a unit. */
 export interface ServingClaimSite {
-  /** `file::name`, the way findings name a summary. */
+  /** `file::name`. */
   ref: string;
   binding: BoundaryBinding;
-  /** The units whose code scope holds this claim. */
+  /** The units whose code scope contains this claim. */
   units: ScopedUnit[];
 }
 
 export interface FlowInputs {
   edges: RoutingEdgeFacts;
-  /** Scoped node keys of every resource some summary declares a code scope for: the walk's notion of a deployable unit. */
+  /** Scoped keys of every node some summary declares a code scope for. */
   units: Set<string>;
   claims: ServingClaimSite[];
-  /** Bare name of every scoped node key, for rendering a view. */
+  /** Bare name of every scoped node key. */
   nodeNames: Map<string, string>;
-  /** Which document scopes declare each bare node name, for resolving a query's entry. */
+  /** Which document scopes declare each bare node name. */
   nodeScopes: Map<string, Set<string>>;
 }
 
-/** The scoped key one document's node joins under. */
 export function scopedFlowNode(scope: string, name: string): string {
   return `${scope}::${name}`;
 }
 
-/** The document scope a summary's nodes belong to: the root label of its own provenance. */
+/** The root label, so every document of one nested tree shares one scope. */
 function documentScopeOf(summary: BehavioralSummary): string {
   return rootDocumentLabel(summary.location.file);
 }
@@ -167,11 +152,7 @@ function registerNode(inputs: FlowInputs, scope: string, name: string): string {
   return key;
 }
 
-// ---------------------------------------------------------------------------
-// Edges
-// ---------------------------------------------------------------------------
-
-/** Whether an edge end is missing or unresolved, either way not joinable. */
+/** An edge end that is missing or unresolved, either way not joinable. */
 function unset(value: string | null | undefined): value is null | undefined {
   return value === null || value === undefined;
 }
@@ -278,11 +259,9 @@ function recordUnfollowed(
 }
 
 /**
- * File a routesTo / answers row under its router's matches. A weighted
- * forward's rows share one matchId and one match record: the match
- * admits the request, and which target then carries it is the edges'
- * business. Every language the router's rows name is kept, because a
- * router whose rows disagree has no one selector to trust.
+ * File a routesTo or answers row under its router's matches. Every
+ * language the router's rows mention is kept, because a router whose
+ * rows disagree has no single selector to trust.
  */
 function recordMatch(
   routing: RoutingMetadata,
@@ -325,19 +304,14 @@ function collectEdges(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Units and serving claims
-// ---------------------------------------------------------------------------
-
 interface NamedUnitScope {
   unit: ScopedUnit;
   scope: UnitScope;
 }
 
 /**
- * The unit scopes the summary set declares: one per summary that names
- * both a deployable unit and the code scope deployed into it, deduped
- * by scoped instance name.
+ * One per summary that gives both a deployable unit and the code scope
+ * deployed into it, deduped by scoped instance name.
  */
 function namedUnitScopes(summaries: BehavioralSummary[]): NamedUnitScope[] {
   const byNode = new Map<string, NamedUnitScope>();
@@ -367,12 +341,8 @@ function namedUnitScopes(summaries: BehavioralSummary[]): NamedUnitScope[] {
 }
 
 /**
- * Deployable units become walk nodes, and provider summaries are
- * placed into the units whose code scope holds them. Whether a claim
- * would answer any particular request is its protocol's question,
- * asked per query; placement is the part that does not change between
- * queries. A provider no unit holds claims nothing the walk can
- * reach, so it stays out.
+ * Placement only. Whether a claim serves any particular request is a
+ * question for its protocol, asked once per query.
  */
 function collectUnitsAndClaims(
   summaries: BehavioralSummary[],

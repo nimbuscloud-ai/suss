@@ -1,6 +1,3 @@
-// The harness itself, so a broken one fails here rather than as
-// twenty confusing journey failures.
-
 import fs from "node:fs";
 import path from "node:path";
 

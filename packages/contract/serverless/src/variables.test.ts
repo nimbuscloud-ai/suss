@@ -95,9 +95,7 @@ describe("self references", () => {
     );
   });
 
-  it("stays symbolic when a reference is nested inside another", () => {
-    // Only the inner reference matches, so what comes back is a
-    // half-built reference rather than a value the document states.
+  it("stays symbolic when a reference is nested inside another, so only the inner one matches", () => {
     expect(
       resolver.resolveString("${self:custom.${self:custom.basePath}}"),
     ).toEqual({ kind: "symbolic", token: "${self:custom.api}" });
@@ -120,8 +118,6 @@ describe("deploy-time references", () => {
   });
 
   it("keeps an opt reference as its token, fallback and all", () => {
-    // Which way an invocation went is not a fact the document states,
-    // so the fallback does not resolve the reference.
     expect(resolver.resolveString("${opt:region, 'us-east-1'}")).toEqual({
       kind: "symbolic",
       token: "opt:region",
@@ -166,8 +162,6 @@ describe("a CloudFormation subtree", () => {
   });
 
   it("leaves a reference belonging to Fn::Sub exactly as written", () => {
-    // CloudFormation writes ${...} too, and rewriting one would turn an
-    // intrinsic the document meant into a token nothing answers.
     const subtree = {
       "Fn::Sub": "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/orders",
     };

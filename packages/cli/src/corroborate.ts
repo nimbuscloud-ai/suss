@@ -1,24 +1,24 @@
-// corroborate.ts — upgrade derivations with observations (experimental).
+// corroborate.ts: upgrade derivations with observations (experimental).
 //
 // For each transition of a handler summary: generate inputs that
 // satisfy the transition's own extracted conditions (rejection
-// sampling with the three-valued interpreter as the oracle — no
+// sampling with the three-valued interpreter as the oracle, no
 // constraint solver), execute the real handler function in a vm with
 // a stub response object, and compare the observed status with the
 // claimed one. The verdict lands on
 // `transition.confidence.corroboration`:
 //
-//   - observed  — every satisfying run produced the claimed status
-//   - refuted   — some satisfying run produced a different status;
+//   - observed: every satisfying run produced the claimed status
+//   - refuted: some satisfying run produced a different status;
 //                 the counterexample is attached (an extractor bug or
-//                 a genuine surprise — both are product output)
-//   - untested  — no satisfying input was found (conditions abstain
+//                 a genuine surprise: both are product output)
+//   - untested: no satisfying input was found (conditions abstain
 //                 or sampling missed), or every run hit a dependency
 //                 the harness cannot supply (a bare `ReferenceError`
 //                 in the sandbox marks the path as dependency-gated)
 //
 // Scope (v0): `handler`-kind summaries with rest semantics recognized
-// by the express or fastify packs — the response-object protocols the
+// by the express or fastify packs, the response-object protocols the
 // vm stub can speak. Everything else is skipped untouched.
 
 import vm from "node:vm";
@@ -34,7 +34,7 @@ import {
 } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
-// Input synthesis — pools from the summary's own predicates
+// Input synthesis: pools from the summary's own predicates
 // ---------------------------------------------------------------------------
 
 interface InputPath {
@@ -112,7 +112,7 @@ function collectPredicateFacts(
   }
 }
 
-/** mulberry32 — deterministic PRNG so corroboration runs reproduce. */
+/** mulberry32: deterministic PRNG so corroboration runs reproduce. */
 function mulberry32(seed: number): () => number {
   let state = seed;
   return () => {

@@ -1,19 +1,17 @@
-// nestedStacks.ts — read a template and every child template it embeds,
-// as a list of documents.
-//
-// A stack resource names another template and CloudFormation deploys
-// that template's resources alongside the parent's. Each document keeps
-// its own namespace, its own SAM `Globals` section and its own
-// directory, so the tree is a list of documents rather than one merged
-// document: folding them together would apply one document's section
-// defaults to another document's resources and would let two logical
-// ids of the same spelling overwrite each other.
-//
-// What this does not do: a name in a child that names one of the
-// child's parameters is not followed to whatever the parent bound, and
-// a `Fn::GetAtt` on a stack resource is not followed to the child's
-// output. Both read as a name that arrives at nothing, which is what an
-// unresolvable name already reads as.
+/**
+ * nestedStacks.ts reads a template and every child template it embeds, as a
+ * list of documents.
+ *
+ * A stack resource points at another template, and CloudFormation deploys that
+ * template's resources alongside the parent's. Each document keeps its own
+ * namespace, its own SAM `Globals` section, and its own directory, so the tree
+ * stays a list of documents. Merging them would apply one document's defaults
+ * to another's resources, and let two logical ids spelled the same way collide.
+ *
+ * A child's reference to one of its own parameters is not followed to what the
+ * parent bound, and a `Fn::GetAtt` on a stack resource is not followed to the
+ * child's output. Both point at nothing, like any reference we can't resolve.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -24,8 +22,8 @@ import {
 } from "./templateLoader.js";
 
 /**
- * The property each embedding resource type names its child template
- * with. `AWS::Serverless::Application` is SAM's spelling of the same
+ * The property each embedding resource type uses to point at its child
+ * template. `AWS::Serverless::Application` is SAM's spelling of the same
  * relationship, and its `Location` accepts a path the same way.
  */
 const CHILD_TEMPLATE_PROPERTY: Record<string, string> = {
@@ -41,7 +39,7 @@ const CHILD_TEMPLATE_PROPERTY: Record<string, string> = {
  */
 export const MAX_STACK_DEPTH = 10;
 
-/** One template file, and where it sits in the tree that reached it. */
+/** One template file, and where it lives in the tree that reached it. */
 export interface TemplateDocument {
   /** Absolute path of the file this document was read from. */
   path: string;
@@ -55,8 +53,8 @@ export interface TemplateDocument {
 
 /**
  * Why a child template was not read. Every value is a limit on what the
- * reader could reach, so a consumer should report it as reading that
- * stopped rather than treat the child as a template holding nothing.
+ * reader could reach, so a consumer should report it as a read that
+ * stopped rather than treat the child as an empty template.
  */
 export type UnfollowedReason =
   | "remoteUrl"
@@ -75,7 +73,7 @@ export interface UnfollowedStack {
   /** The template location as the document writes it, when it is a string. */
   templateUrl: string | null;
   reason: UnfollowedReason;
-  /** One phrase naming what stopped the read, for a message to a person. */
+  /** One phrase saying what stopped the read, for a message to a person. */
   detail: string;
 }
 
@@ -130,7 +128,7 @@ export function loadTemplateTree(rootPath: string): TemplateTree {
 
 /**
  * A logical id qualified by the stack path that reaches it, so two
- * documents that both declare `HandlerFunction` name two different
+ * documents that both declare `HandlerFunction` refer to two different
  * deployed things. A resource in the root document keeps its bare id,
  * which is also what CloudFormation shows for it.
  */
@@ -141,7 +139,7 @@ export function qualifiedLogicalId(
   return [...stackPath, logicalId].join("/");
 }
 
-/** A line naming one child the reader could not open, and why. */
+/** A line saying which child the reader could not open, and why. */
 export function unfollowedStackMessage(stack: UnfollowedStack): string {
   const name = stack.stackPath.join("/");
   return `could not follow nested stack ${name} declared in ${stack.declaredIn}: ${stack.detail}`;
@@ -207,8 +205,8 @@ function childStack(opts: {
   }
   if (url.includes("${")) {
     // An `Fn::Sub` location parses back to the string with its tokens
-    // still in it. Nothing static fills those in, so the path names no
-    // file rather than naming one that happens to be absent.
+    // still in it. Nothing static fills those in, so the path points at
+    // no file at all, rather than at one that happens to be missing.
     return report(
       "notALiteralPath",
       `${url} holds a substitution nothing here can fill in`,

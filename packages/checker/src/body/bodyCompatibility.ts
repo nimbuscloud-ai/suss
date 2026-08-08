@@ -1,4 +1,4 @@
-// body-compatibility.ts — Cross-boundary body shape comparison
+// body-compatibility.ts: Cross-boundary body shape comparison
 //
 // For each consumer transition that has expectedInput (fields the consumer
 // reads from the response body), find the matching provider transition(s)
@@ -31,7 +31,7 @@ import type { MatchResult } from "../match.js";
 /**
  * Check whether `provider` contains all fields that `consumer` expects.
  *
- * This is NOT the same as `bodyShapesMatch` — that function checks type
+ * This is NOT the same as `bodyShapesMatch`: that function checks type
  * compatibility (is `actual` assignable to `declared`). This function checks
  * **field presence**: does the provider's record have every key the consumer
  * reads?
@@ -43,23 +43,22 @@ import type { MatchResult } from "../match.js";
  * Returns:
  *   - "match" when every field the consumer reads exists in the provider
  *   - "nomatch" when the consumer reads a field the provider doesn't have
- *   - "unknown" when the provider shape is opaque (ref, unknown, dictionary)
+ *   - "unknown" when the provider shape is opaque (a ref or an unknown)
  */
 export function providerCoversConsumerFields(
   provider: TypeShape,
   consumer: TypeShape,
 ): MatchResult {
-  // Consumer leaf is unknown → field exists is all we need, accept
   if (consumer.type === "unknown") {
     return "match";
   }
 
-  // Provider is opaque — we can't tell if the fields exist
+  // Provider is opaque: we can't tell if the fields exist
   if (provider.type === "unknown" || provider.type === "ref") {
     return "unknown";
   }
 
-  // Optional provider field (`union<T, undefined>`) — the field exists at the
+  // Optional provider field (`union<T, undefined>`): the field exists at the
   // type level, so unwrap and continue the field-presence comparison against
   // the non-undefined variant. The fact that it's optional is surfaced as a
   // separate info-level finding via findOptionalAccesses, not as a mismatch.
@@ -67,20 +66,18 @@ export function providerCoversConsumerFields(
     return providerCoversConsumerFields(unwrapOptional(provider), consumer);
   }
 
-  // Both records: check that every consumer key exists in provider
   if (consumer.type === "record" && provider.type === "record") {
     let result: MatchResult = "match";
     for (const key of Object.keys(consumer.properties)) {
       const providerProp = provider.properties[key];
       if (providerProp === undefined) {
-        // Check spreads — if provider has spreads, we can't be sure
+        // Check spreads: if provider has spreads, we can't be sure
         if (provider.spreads && provider.spreads.length > 0) {
           result = combineResults(result, "unknown");
           continue;
         }
         return "nomatch";
       }
-      // Recurse for nested records
       const nested = providerCoversConsumerFields(
         providerProp,
         consumer.properties[key],
@@ -90,12 +87,11 @@ export function providerCoversConsumerFields(
     return result;
   }
 
-  // Consumer expects a record but provider is a dictionary — all keys exist
+  // Consumer expects a record but provider is a dictionary: all keys exist
   if (consumer.type === "record" && provider.type === "dictionary") {
     return "match";
   }
 
-  // Consumer expects a record but provider is not a record — mismatch
   if (consumer.type === "record") {
     return "nomatch";
   }
@@ -245,7 +241,6 @@ export function checkBodyCompatibility(
       }
     }
 
-    // Default branch: compare against all provider 2xx transitions
     if (consumerStatuses.length === 0 && ct.isDefault) {
       for (const pt of provider.transitions) {
         const providerStatus = extractResponseStatus(pt);

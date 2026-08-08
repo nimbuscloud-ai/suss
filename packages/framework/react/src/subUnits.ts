@@ -1,4 +1,4 @@
-// sub-units.ts — React sub-unit synthesis.
+// sub-units.ts: React sub-unit synthesis.
 //
 // A React component's render body is the parent DiscoveredUnit. This
 // module produces the child units the React runtime schedules on its
@@ -7,7 +7,7 @@
 //   - One `handler`-kind unit per JSX event-handler prop (`onClick`,
 //     `onChange`, …) that resolves to a locally-authored function.
 //     Prop-delegating references (`onClick={props.onDelete}`) are
-//     skipped — those invoke an external handler we don't own.
+//     skipped: those invoke an external handler we don't own.
 //
 //   - One `handler`-kind unit per `useEffect(fn, deps?)` call inside
 //     the component body, with `metadata.react.kind = "effect"` and
@@ -48,7 +48,7 @@ export function reactSubUnits(
 ): DiscoveredSubUnit[] {
   // The extractor signatures declare `ctx: unknown` so no framework
   // pack's code is leaked into the generic interface. React's pack
-  // is written against the TypeScript adapter — cast here, and the
+  // is written against the TypeScript adapter, cast here, and the
   // cast is the "I require the TS adapter" contract. Packs paired
   // with other adapters would perform their own equivalent narrowing.
   const tsCtx = ctx as TsSubUnitContext;
@@ -66,7 +66,7 @@ export function reactSubUnits(
 
 /**
  * A JSX prop counts as an event handler when its name starts with "on"
- * followed by an uppercase letter — `onClick`, `onChange`, `onSubmit`,
+ * followed by an uppercase letter, `onClick`, `onChange`, `onSubmit`,
  * and user-authored callback props like `onDelete`. This matches the
  * React convention without hardcoding a list of DOM event names.
  */
@@ -102,7 +102,7 @@ function synthesizeEventHandlers(
     const resolved = ctx.resolveAttributeValueFunction(attr, parentFunc);
     if (resolved === null) {
       // Prop delegation, external reference, or boolean-shorthand
-      // attribute — nothing to extract.
+      // attribute: nothing to extract.
       continue;
     }
     raw.push({
@@ -163,7 +163,7 @@ function disambiguateHandlers(
  * handlers become `Component.fnName`; anonymous handlers become
  * `Component.tag.propName` with `#N` suffixed when the (tag, propName)
  * key has more than one. Mutates `anonSeen` to advance the per-key
- * counter — kept adjacent to the map's creation site at the caller.
+ * counter: kept adjacent to the map's creation site at the caller.
  */
 function handlerUnitName(
   m: HandlerRaw,

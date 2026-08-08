@@ -1,15 +1,15 @@
 // document.ts: find and parse a Serverless Framework service file.
 //
 // The framework reads `serverless.yml`, `serverless.yaml`,
-// `serverless.json`, and `serverless.ts`, in that order, from the
-// service directory. This reader handles the two YAML spellings and
-// the JSON one; a `.ts` service file is a program, and running it to
-// find out what it declares is not something a reader does.
+// `serverless.json` and `serverless.ts`, in that order, from the
+// service directory. This reader handles the two YAML spellings and the
+// JSON one. A `.ts` service file is a program, and running it to find
+// out what it declares is not something a reader does.
 //
-// The `resources:` block holds raw CloudFormation, so the CloudFormation
-// intrinsic tags are registered on the parse. A serverless.yml usually
-// writes the full form (`Fn::GetAtt: [Q, Arn]`), but the short form is
-// accepted there too.
+// The `resources:` block contains raw CloudFormation, so the
+// CloudFormation intrinsic tags are registered on the parse. A
+// serverless.yml usually writes the full form (`Fn::GetAtt: [Q, Arn]`),
+// but the short form is accepted there too.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -41,40 +41,28 @@ export interface ServerlessDocument {
   [key: string]: unknown;
 }
 
-/**
- * The service file names the framework itself looks for, in its own
- * order of preference.
- */
+/** In the framework's own order of preference. */
 export const SERVICE_FILE_NAMES = [
   "serverless.yml",
   "serverless.yaml",
   "serverless.json",
 ] as const;
 
-/**
- * The service file names the framework reads by running them. A
- * program can declare anything at all, and a reader does not run one,
- * so these are recognized in order to be reported rather than read.
- */
+/** Recognized in order to be reported rather than read. */
 export const PROGRAM_SERVICE_FILE_NAMES = [
   "serverless.ts",
   "serverless.js",
 ] as const;
 
-/**
- * What a path holds: a service file this reader parses, a service file
- * that is a program, or nothing the framework would read either.
- */
 export type ServiceLocation =
   | { kind: "readable"; file: string }
   | { kind: "program"; file: string }
   | { kind: "missing" };
 
 /**
- * Find the service file a path names. A path naming a file is taken as
- * that file; a path naming a directory is searched the way the
- * framework searches it, parseable spellings first, so a service that
- * has both a yml and a ts is read from the yml.
+ * A path that points at a file is taken as that file. A directory is
+ * searched parseable spellings first, so a service with both a yml and
+ * a ts is read from the yml.
  */
 export function locateServiceFile(candidate: string): ServiceLocation {
   const resolved = path.resolve(candidate);
@@ -108,21 +96,14 @@ function isProgram(file: string): boolean {
   return (PROGRAM_SERVICE_FILE_NAMES as readonly string[]).includes(name);
 }
 
-/**
- * The service file this reader can parse at a path, or null when the
- * path holds none.
- */
+/** Null when the path contains no service file this reader can parse. */
 export function findServiceFile(candidate: string): string | null {
   const located = locateServiceFile(candidate);
 
   return located.kind === "readable" ? located.file : null;
 }
 
-/**
- * Parse a service file into plain data. Throws when the file is missing
- * or does not parse to an object: a malformed manifest is a load-time
- * error, not a silent empty result, matching the CloudFormation loader.
- */
+/** Throws when the file is missing or does not parse to an object. */
 export function loadServerlessDocument(
   servicePath: string,
 ): ServerlessDocument {

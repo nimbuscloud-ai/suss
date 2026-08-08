@@ -1,4 +1,4 @@
-// jsx.ts — JSX-return matching + render-tree construction. Used by
+// jsx.ts: JSX-return matching + render-tree construction. Used by
 // React (and any JSX-emitting framework) to classify component
 // outputs as `render` terminals with a recursive renderTree.
 
@@ -21,8 +21,8 @@ export function tryMatchJsxReturn(
   node: Node,
   pattern: TerminalPattern,
 ): FoundTerminal | null {
-  // Normal `return <X />` — returns JSX from a block-body function.
-  // Expression-body arrow `() => <X />` — the body expression IS JSX.
+  // Normal `return <X />`, returns JSX from a block-body function.
+  // Expression-body arrow `() => <X />`, the body expression IS JSX.
   // Either shape returns the JSX, so the source is the return statement
   // itself or, for an arrow written without one, its body.
   let expr: Node | undefined;
@@ -100,7 +100,7 @@ function jsxToRenderNode(node: Node): RenderNode | null {
     };
   }
   if (Node.isJsxFragment(node)) {
-    // Fragments don't have attributes — the `<>...</>` syntax forbids
+    // Fragments don't have attributes, the `<>...</>` syntax forbids
     // them, and `<React.Fragment key={...}>` is a JSX element, not a
     // fragment node.
     const children = node
@@ -117,7 +117,7 @@ function jsxToRenderNode(node: Node): RenderNode | null {
 
 /**
  * Build the `attrs` record for a JSX opening / self-closing element.
- * Returns null when the element has no attributes — the caller then
+ * Returns null when the element has no attributes, the caller then
  * omits the field entirely so the render tree stays terse for
  * attribute-free markup. Spreads (`{...props}`) are preserved as a
  * single entry keyed on the empty string with the spread expression's
@@ -153,7 +153,7 @@ function collectJsxAttributes(
       continue;
     }
     // String-literal-valued attribute (`type="button"`). Keep the
-    // full source text including quotes — downstream consumers can
+    // full source text including quotes, downstream consumers can
     // strip if they want, but preserving raw text is consistent with
     // the expression case.
     entries[name] = initializer.getText();
@@ -202,7 +202,7 @@ function jsxChildToRenderNode(child: Node): RenderNode | null {
  * Anything else (identifiers, property access, `.map()` calls, function
  * calls, JSX references that aren't inline-constructed) falls through
  * to the opaque `expression` node with source text preserved. We
- * deliberately don't recurse into arbitrary expressions — if the
+ * deliberately don't recurse into arbitrary expressions, if the
  * conditional's branches aren't JSX or null, the whole thing stays
  * opaque so downstream tools don't confuse "we decomposed this" with
  * "we understood this." `||` is left opaque: the common idiom
@@ -243,7 +243,7 @@ function jsxExpressionToRenderNode(expr: Node): RenderNode {
       };
     }
     if (falsy.kind === "jsx") {
-      // {cond ? someValue : <Fallback/>} — decompose with the condition
+      // {cond ? someValue : <Fallback/>}, decompose with the condition
       // negated textually. We can't invert an arbitrary expression
       // structurally, so the `!(...)` wrap keeps the source text legible.
       return {

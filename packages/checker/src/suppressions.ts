@@ -1,4 +1,4 @@
-// suppressions.ts — apply .sussignore rules to behavioural findings.
+// suppressions.ts: apply .sussignore rules to behavioural findings.
 //
 // The pipeline (rule shape, first-match-wins, effect application,
 // threshold counting) lives in @suss/ir-core so the intent checker
@@ -9,7 +9,7 @@
 // computed from the finding's BoundaryBinding, per-side summary and
 // transitionId compared directly).
 //
-// File I/O stays out — the CLI reads .sussignore.yml / .sussignore.json
+// File I/O stays out: the CLI reads .sussignore.yml / .sussignore.json
 // from disk and hands the parsed rules here.
 
 import {
@@ -36,16 +36,16 @@ export {
 } from "@suss/ir-core";
 
 /**
- * Does a rule's `summary` name this summary? Exact match first. Then
- * the one legacy spelling: a manifest reader used to label a document
- * by its file name alone, so `cloudformation:template.yaml` named every
- * template.yaml a run read at once. The label now carries the path, and
- * an old rule would quietly stop matching, so a rule naming a document
- * by file name still matches that reader's documents with that file
- * name. It matches exactly the set it matched before the label
- * changed, and nothing more: a rule with no reader label (every rule
- * naming source code) and a rule already written with a path both take
- * the exact comparison above.
+ * Does a rule's `summary` refer to this summary? Exact match first.
+ * Then the one legacy spelling: a manifest reader used to label a
+ * document by its file name alone, so `cloudformation:template.yaml`
+ * covered every template.yaml a run read at once. The label now
+ * includes the path, and an old rule would quietly stop matching, so a
+ * rule written with a bare file name still matches that reader's
+ * documents with that file name. It matches exactly the set it matched
+ * before the label changed and nothing more: a rule with no reader
+ * label and a rule already written with a path both take the exact
+ * comparison above.
  */
 function summaryMatches(ruleSummary: string, findingSummary: string): boolean {
   if (ruleSummary === findingSummary) {
@@ -65,8 +65,8 @@ function summaryMatches(ruleSummary: string, findingSummary: string): boolean {
 }
 
 /**
- * Both sides of a finding carry the same two discriminators, so one
- * helper answers for either side.
+ * Both sides of a finding have the same two discriminators, so one
+ * helper works for either side.
  */
 function ruleSideMatches(
   side: SuppressionRule["consumer"],
@@ -92,7 +92,7 @@ function ruleSideMatches(
 
 /**
  * Dedupe keeps one representative and lists the other contributing
- * providers in `sources`; a rule naming any contributor matches.
+ * providers in `sources`; a rule that gives any contributor matches.
  */
 function providerSideMatches(
   side: SuppressionRule["provider"],

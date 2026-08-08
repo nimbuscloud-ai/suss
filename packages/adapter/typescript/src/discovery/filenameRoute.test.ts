@@ -29,7 +29,7 @@ const remixFlat: Convention = {
   flat: true,
 };
 
-describe("routePathFromFile — Next.js app directory", () => {
+describe("routePathFromFile: Next.js app directory", () => {
   it("reads the directories below the root as the path", () => {
     expect(routePathFromFile("/src/app/api/orders/route.ts", nextApp)).toBe(
       "/api/orders",
@@ -65,7 +65,7 @@ describe("routePathFromFile — Next.js app directory", () => {
   });
 
   it("keeps a route segment that happens to be named like the root", () => {
-    // Taking the last match here would answer "/", which then pairs
+    // Taking the last match here would give "/", which then pairs
     // with whatever calls the site root.
     expect(routePathFromFile("/src/app/api/app/route.ts", nextApp)).toBe(
       "/api/app",
@@ -113,7 +113,7 @@ describe("routePathFromFile — Next.js app directory", () => {
   });
 });
 
-describe("routePathFromFile — Next.js pages directory", () => {
+describe("routePathFromFile: Next.js pages directory", () => {
   it("reads the filename as the last segment", () => {
     expect(routePathFromFile("/src/pages/api/orders.ts", nextPages)).toBe(
       "/api/orders",
@@ -133,7 +133,7 @@ describe("routePathFromFile — Next.js pages directory", () => {
   });
 });
 
-describe("routePathFromFile — flat routes", () => {
+describe("routePathFromFile: flat routes", () => {
   it("splits one filename into its segments", () => {
     expect(
       routePathFromFile("/app/routes/orders.$id.edit.tsx", remixFlat),

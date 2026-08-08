@@ -1,4 +1,4 @@
-// reachableClosure.ts — transitive-closure library discovery
+// reachableClosure.ts: transitive-closure library discovery
 //
 // After pack-based discovery produces summaries for handlers, components,
 // resolvers, and consumers, this pass walks the call graph from those
@@ -9,14 +9,14 @@
 // author having to enumerate them.
 //
 // Scope:
-//   * Same-project only — declarations in node_modules or `.d.ts` files
+//   * Same-project only: declarations in node_modules or `.d.ts` files
 //     are skipped. Package boundaries go through `packageExports` /
 //     `packageImport`, not this pass.
-//   * Direct CallExpressions only — higher-order indirection (`fns.map(f)`
+//   * Direct CallExpressions only: higher-order indirection (`fns.map(f)`
 //     where `f` is a parameter, dispatch-table lookups) isn't resolved.
-//   * Function-shaped declarations — FunctionDeclaration, ArrowFunction,
+//   * Function-shaped declarations: FunctionDeclaration, ArrowFunction,
 //     FunctionExpression, MethodDeclaration (as a module-level export).
-//   * One summary per function node — dedup against pack-produced
+//   * One summary per function node: dedup against pack-produced
 //     summaries to avoid double-coverage.
 
 import { Node, type Project, type SourceFile } from "ts-morph";
@@ -41,7 +41,7 @@ import type { FunctionRoot } from "../conditions.js";
 import type { ClosureFacts } from "./boundaryEffects.js";
 
 // ---------------------------------------------------------------------------
-// The "reachable" pack — terminals and input mapping for library functions
+// The "reachable" pack: terminals and input mapping for library functions
 // ---------------------------------------------------------------------------
 
 const reachablePack: PatternPack = {
@@ -53,7 +53,7 @@ const reachablePack: PatternPack = {
     { kind: "return", match: { type: "returnStatement" }, extraction: {} },
     { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
     {
-      // Implicit fall-through at the end of a function body — covers
+      // Implicit fall-through at the end of a function body: covers
       // void-returning orchestrators that never write `return`.
       kind: "return",
       match: { type: "functionFallthrough" },
@@ -91,7 +91,7 @@ function isInExternalCode(sourceFile: SourceFile): boolean {
   }
   const filePath = sourceFile.getFilePath();
   // ts-morph surfaces files from node_modules when they're transitively
-  // imported; skip them — the package-exports / package-import packs
+  // imported; skip them: the package-exports / package-import packs
   // handle library boundaries separately.
   if (filePath.includes("/node_modules/")) {
     return true;
@@ -103,13 +103,13 @@ function isInExternalCode(sourceFile: SourceFile): boolean {
  * Follow a declaration node to an underlying function-shaped declaration
  * we can extract from. Returns null for declarations that don't resolve
  * (namespaces, classes without a called method, external-module imports,
- * parameters, etc.) — the closure skips those.
+ * parameters, etc.): the closure skips those.
  */
 function hasBody(fn: FunctionRoot): boolean {
   // FunctionDeclaration / MethodDeclaration can be ambient (`declare
   // function foo()`) or overload signatures; both lack a body node.
   // Arrow + function expressions always have an associated body. We
-  // don't want to follow into ambient declarations — they're type-
+  // don't want to follow into ambient declarations: they're type-
   // only and have no behaviour to summarize.
   if (
     Node.isFunctionDeclaration(fn) ||
@@ -168,7 +168,7 @@ function resolveDecl(
 }
 
 /**
- * Best-effort name extraction for a reached declaration — used for
+ * Best-effort name extraction for a reached declaration: used for
  * `summary.identity.name`. FunctionDeclaration / MethodDeclaration have
  * a direct name. Arrow/function expressions bound to a variable borrow
  * the variable name.
@@ -218,8 +218,8 @@ function resolveCallee(
 // Walk all CallExpressions in a function body (including nested callbacks)
 // ---------------------------------------------------------------------------
 //
-// Unlike `extractInvocationEffects` — which skips nested functions because
-// their calls belong to their own summaries — reachability follows every
+// Unlike `extractInvocationEffects`: which skips nested functions because
+// their calls belong to their own summaries: reachability follows every
 // CallExpression regardless of nesting. Callbacks passed to higher-order
 // functions (`bluebird.map(rs, async r => helper(r))`) would otherwise
 // leave `helper` unreachable because no pack matches the callback itself.
@@ -284,7 +284,7 @@ function extractReachableSummary(
 // The closure semantics, as rules: a function is reachable when it is
 // an entry point (a pack-discovered seed) or when a reachable function
 // calls it. Termination and the fixpoint are the engine's job; this
-// file's job shrinks to *fact emission* — saying which call edges
+// file's job shrinks to *fact emission*: saying which call edges
 // exist, one frontier function at a time.
 const REACHABLE_RULES = [
   rule("reachable", [variable("f")], [lit("entry", variable("f"))]),
@@ -316,7 +316,7 @@ const REACHABLE_RULES = [
  * function is where a service keeps most of its work, so a pack's
  * recognizer has to fire there for the same reason it fires in a
  * handler: the queue write, the query, the config read is behaviour of
- * the code under analysis wherever it sits.
+ * the code under analysis wherever it happens to be.
  */
 export interface ClosureRecognizers {
   invocation: InvocationRecognizer[];

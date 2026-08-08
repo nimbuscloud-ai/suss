@@ -3,7 +3,7 @@
 //
 // Express's `app.use(prefix, router)` and Hono's `app.route(prefix,
 // sub)` register a sub-router under a literal path segment, and a
-// route declared on that sub-router answers to the combined path, not
+// route declared on that sub-router serves the combined path, not
 // the one written at its own registration call. The sub-router is
 // often built in a different file than the one that mounts it
 // (app.ts imports a router from routes/ordersRouter.ts and mounts it
@@ -112,8 +112,8 @@ export function buildMountPrefixIndex(
   }
 
   // Second pass: scan for mount calls, one pack's own registry at a
-  // time, now that subjectIdsByPack holds every file's subjects for
-  // each pack.
+  // time, now that subjectIdsByPack has every file's subjects for each
+  // pack.
   const edgesByChild = new Map<string, MountEdge[]>();
   for (const [packName, work] of mountWorkByPack) {
     const knownSubjectIds = subjectIdsByPack.get(packName) ?? new Set<string>();
@@ -154,23 +154,22 @@ function recordEdge(
 }
 
 /**
- * The prefix routes on `childId` answer to, composed through however
- * many routers it was mounted onto in turn. `null` means unresolvable
- * rather than "no prefix": a cycle has nothing sane to compose, and a
- * router mounted more than once doesn't settle which prefix a route
- * under it actually takes unless every mount, once each one's own
- * ancestor chain is fully resolved, agrees on the same answer.
+ * The prefix routes on `childId` are served under, composed through
+ * however many routers it was mounted onto in turn. `null` means
+ * unresolvable rather than "no prefix": a cycle has nothing sensible to
+ * compose, and a router mounted more than once does not settle which
+ * prefix a route under it takes, unless every mount agrees once each
+ * one's own ancestor chain is resolved.
  *
- * Agreement is checked on the resolved result, not the literal prefix
- * a mount call states. Two mounts naming the identical local prefix
+ * Agreement is checked on the resolved result, not on the literal
+ * prefix a mount call gives. Two mounts with the identical local prefix
  * can still land at different full paths if one mount's own router is
  * itself mounted somewhere the other isn't (`app1.use("/api", r)`
  * where `app1` is mounted under `/v1`, next to `app2.use("/api", r)`
  * where `app2` is not mounted anywhere composes `/v1/api` for one and
  * `/api` for the other), and picking one of those arbitrarily would be
- * a wrong answer stated as a right one. Comparing full resolutions
- * catches that; comparing the literal prefixes a mount call states
- * would not.
+ * a wrong result presented as a right one. Comparing full resolutions
+ * catches that; comparing the literal prefixes would not.
  */
 function resolvePrefix(
   edgesByChild: ReadonlyMap<string, MountEdge[]>,

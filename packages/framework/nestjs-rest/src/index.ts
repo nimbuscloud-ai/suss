@@ -1,28 +1,28 @@
-// @suss/framework-nestjs-rest — PatternPack for NestJS REST controllers
+// @suss/framework-nestjs-rest: the PatternPack for NestJS REST controllers
 // (`@nestjs/common`).
 //
 // NestJS expresses REST endpoints as classes decorated with
-// `@Controller(pathPrefix?)`, where each method carries an HTTP-verb
-// decorator (`@Get` / `@Post` / `@Put` / `@Delete` / `@Patch` /
-// `@Options` / `@Head` / `@All`). The framework wires routing
-// internally, so there is no `app.get(...)` / `router.get(...)`
-// registration call in user code — the existing Express / Fastify
+// `@Controller(pathPrefix?)`, where each method has an HTTP-verb decorator on
+// it (`@Get`, `@Post`, `@Put`, `@Delete`, `@Patch`, `@Options`, `@Head`, or
+// `@All`). The framework wires routing internally, so there is no
+// `app.get(...)` or `router.get(...)` registration call in user code, and the
+// existing Express and Fastify
 // `registrationCall` discovery finds nothing here. Decorator-driven
 // route discovery covers it.
 //
 // Route path is the class decorator's first arg (path prefix) joined
 // with the method decorator's first arg (path suffix). Both are
-// optional — `@Controller()` mounts at root, `@Get()` matches the
+// optional. `@Controller()` mounts at root, and `@Get()` matches the
 // controller's prefix exactly.
 //
 // HTTP method comes from the method decorator's name itself (`@Get`
-// → "GET", `@Post` → "POST", etc.). `@All` maps to "*" — matches
-// every method, treated as a wildcard by downstream pairing.
+// becomes "GET", `@Post` becomes "POST", and so on). `@All` maps to "*",
+// which downstream pairing treats as a wildcard matching every method.
 //
 // Inputs map by parameter decorator. NestJS uses `@Body`, `@Param`,
 // `@Query`, `@Headers`, `@Req` / `@Request`, `@Res` / `@Response`,
 // and `@Next`. `@Param('id')` and `@Query('search')` accept an
-// optional field name — v0 surfaces these uniformly as their role,
+// optional field name: v0 surfaces these uniformly as their role,
 // not the field path.
 //
 // Deferred:
@@ -32,7 +32,7 @@
 //     logic that wants per-arg type checking will need richer
 //     decorator-arg parsing.
 //   - Path normalisation for NestJS-style globs (`*` / `(.*)`) is
-//     deferred — the joined path goes through unchanged today.
+//     deferred: the joined path goes through unchanged today.
 //   - Class inheritance / mixins: controllers split across an
 //     abstract base + concrete child are discovered separately but
 //     pairing doesn't yet collapse them.
@@ -88,7 +88,7 @@ export function nestjsRestFramework(
     terminals: [
       // NestJS controllers serialise the returned value as the
       // response body and pick a 200 default unless the method
-      // declares `@HttpCode(N)` (deferred — that decorator is
+      // declares `@HttpCode(N)` (deferred: that decorator is
       // metadata-only). Match bare returns and treat object literals
       // / identifiers / awaited calls as 200 responses.
       {

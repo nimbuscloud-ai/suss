@@ -8,7 +8,7 @@ import { typeShapeFromNode } from "./typeShape.js";
 import type { RbNode } from "./parser.js";
 import type { TypeReadContext } from "./typeShape.js";
 
-/** A read context carrying graphql-ruby's scalar and naming vocabulary the way a pack supplies it, over the given scope. */
+/** graphql-ruby's scalars and naming conventions, supplied the way a pack would, over the given scope. */
 function contextOf(
   nesting: readonly string[] = [],
   knownClasses: ReadonlySet<string> = new Set(),
@@ -53,10 +53,6 @@ describe("typeShapeFromNode: scalars", () => {
   });
 
   it("does not qualify a bare scalar against enclosing nesting when nothing shadows it", async () => {
-    // A bare `ID` reaches a field call by inheritance from graphql-ruby's
-    // base classes, not by the writer's own module nesting, so nesting
-    // must not shadow the scalar lookup with a guessed project type
-    // when the file defines no class of that name.
     const node = await typeExprNode("ID\n");
     expect(typeShapeFromNode(node, contextOf(["Types::CampaignType"]))).toEqual(
       { type: "text" },
@@ -64,12 +60,6 @@ describe("typeShapeFromNode: scalars", () => {
   });
 
   it("resolves to the project's own class when it shadows a scalar name at some level of nesting", async () => {
-    // A project defining `Types::ID` (unusual, but legal Ruby) shadows
-    // the builtin the same way Ruby's own constant lookup would find
-    // the nesting-reachable class before ever falling through to a
-    // base-class-inherited scalar. Nesting is checked before the
-    // scalar table specifically so this doesn't silently read as the
-    // builtin `ID` scalar.
     const node = await typeExprNode("ID\n");
     const knownClasses = new Set(["Types::ID", "Types::CampaignType"]);
     const shape = typeShapeFromNode(

@@ -1,18 +1,17 @@
-// flow.ts: `suss inspect --flow` command implementation.
-//
-// Answers "who serves this request" at the terminal: the entry the
-// request came in by, every hop it took with the rule that admitted
-// that hop, the unit it landed in, and the handler inside that unit.
-//
-// Two things this rendering will not do. It will not print a possible
-// answer as though it were settled: a chain gated on a condition nobody
-// here evaluates says so on the hop that is gated, in the heading above
-// it, and on the line that names what serves the request, which is the
-// line somebody pastes into a ticket. And it will not report an absence
-// it did not find: when nothing serves the request it says where the
-// walk stopped and why, whether that is a declared response, the rules
-// that refused, or a rule that took the request and sent it somewhere
-// nothing here could follow.
+/**
+ * `suss inspect --flow`: who serves this request.
+ *
+ * The output is the entry the request came in by, every hop it took
+ * along with the rule that let it through, the unit it landed in, and
+ * the handler inside that unit.
+ *
+ * Two things this rendering will not do. It will not print a possible
+ * answer as though it were settled: a chain gated on a condition nobody
+ * here evaluates says so on the gated hop, in the heading above it, and
+ * on the line somebody pastes into a ticket. And it will not report an
+ * absence it did not find: when nothing serves the request it says
+ * where the walk stopped and why.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -47,7 +46,7 @@ export interface FlowOptions {
   request: string;
   file?: string;
   dir?: string;
-  /** Which node to start from, when the summaries hold more than one. */
+  /** Which node to start from, when the summaries contain more than one. */
   entry?: string;
   /** Which document's node, when two documents declare that name. */
   scope?: string;
@@ -57,9 +56,9 @@ export interface FlowOptions {
 /**
  * The condition languages this run can settle, one per manifest reader
  * that emits routing edges. A reader owns the glob rules and the
- * ordering of the language it stamps, so both the selector and the
- * name it answers to come from the reader; assembling the table is all
- * that happens here.
+ * ordering of the language it stamps, so both the selector and the name
+ * it goes by come from the reader; all that happens here is assembling
+ * the table.
  */
 async function routerSelectors(): Promise<Record<string, RouterMatchSelector>> {
   const cloudformation = await import("@suss/contract-cloudformation");
@@ -95,7 +94,7 @@ function targetOf(raw: string): { host: string | null; path: string } | null {
 
 /**
  * The request a person typed: a method and a URL, or a method and a
- * path when the question names no host. A host-header rule cannot be
+ * path when the question gives no host. A host-header rule cannot be
  * settled without a host, and the rendering says so rather than
  * guessing one.
  */
@@ -140,7 +139,8 @@ function listEntries(entries: FlowEntry[]): string {
     .join("\n");
 }
 
-/** The entry the caller named, checked against the documents that declare it. */
+/** The entry the caller asked for, checked against the documents that
+ * declare it. */
 function namedEntry(
   analysis: FlowAnalysis,
   name: string,
@@ -184,7 +184,8 @@ function namedEntry(
   return { ok: true, entry: { name, scope: scopes[0] } };
 }
 
-/** Where the request comes in: what the caller named, or the one way in the summaries hold. */
+/** Where the request comes in: whatever the caller asked for, or the
+ * single way in if that is all the summaries have. */
 function chooseEntry(
   analysis: FlowAnalysis,
   options: FlowOptions,
@@ -216,7 +217,8 @@ function chooseEntry(
 // Rendering
 // ---------------------------------------------------------------------------
 
-/** How a condition reads: the field, what it compares against, and whether anyone settled it. */
+/** How a condition is printed: the field, what it compares against, and
+ * whether anyone settled it. */
 function conditionText(condition: RoutingMatchCondition): string {
   const field = condition.field ?? "a condition with no field";
   const values = condition.values.join(", ");
@@ -251,7 +253,8 @@ function hopLine(hop: FlowHop): string {
   return `    -> ${hop.to}   ${HOP_REASONS[hop.edge](hop)}`;
 }
 
-/** A response as it reads: the status, the type, and the body a client gets. */
+/** A response as it is printed: the status, the type, and the body a
+ * client gets. */
 function responseText(
   end: Extract<FlowEnd, { type: "answers" }>,
   certainty: FlowCertainty,
@@ -279,9 +282,9 @@ function refusedLines(matches: RoutingMatchRecord[]): string {
 }
 
 /**
- * Where a reference went, and why nobody could follow it. A reader that
- * names the node itself as the reference (a target group nothing
- * registers behind) has already said which node this is, so the line
+ * Where a reference went, and why nobody could follow it. When a reader
+ * gives the node itself as the reference (a target group nothing
+ * registers behind) it has already said which node this is, so the line
  * does not repeat it.
  */
 function unfollowedLines(node: string, edges: UnfollowedEdge[]): string {
@@ -299,7 +302,8 @@ function unfollowedLines(node: string, edges: UnfollowedEdge[]): string {
     .join("\n");
 }
 
-/** A serving claim, named the way a person reads code: the handler, what it serves, and where it is written. */
+/** A serving claim, written the way a person talks about code: the
+ * handler, what it serves, and where it is written. */
 function claimLine(
   ref: string,
   certainty: FlowCertainty,
@@ -323,10 +327,10 @@ interface FlowRenderContext {
 
 interface EndContext extends FlowRenderContext {
   /**
-   * The certainty of the chain this ending closes, which is what every
-   * line of it has to read as. A hop nobody could settle leaves the
-   * whole chain unsettled, and a terminal line saying a handler answers
-   * the request is the line somebody pastes into a ticket.
+   * The certainty of the chain this ending closes, which every line of
+   * it has to reflect. A hop nobody could settle leaves the whole chain
+   * unsettled, and the terminal line saying a handler answers the
+   * request is the line somebody pastes into a ticket.
    */
   certainty: FlowCertainty;
 }
@@ -402,8 +406,9 @@ function heading(certainty: FlowCertainty, chains: FlowChain[]): string {
 
 /**
  * What was left out, when the walk found more chains than an answer
- * keeps. The count is a floor once the walk stopped enumerating, and it
- * says so, because a wrong number reads worse than a bounded one.
+ * keeps. Once the walk stops enumerating the count is only a lower
+ * bound, and the line says so, because a wrong number is worse than an
+ * admitted floor.
  */
 function omittedLine(omitted: FlowChainsOmitted): string {
   const count = omitted.exact
@@ -455,7 +460,7 @@ function renderFlow(
 // The command
 // ---------------------------------------------------------------------------
 
-/** The summaries to walk, read the way the rest of inspect reads them. */
+/** The summaries to walk, loaded the way the rest of inspect loads them. */
 function readSummaries(options: FlowOptions): BehavioralSummary[] | null {
   if (options.dir !== undefined) {
     return readSummariesFromDir(options.dir);
@@ -470,9 +475,9 @@ function readSummaries(options: FlowOptions): BehavioralSummary[] | null {
 }
 
 /**
- * Ask who serves one request. Returns the exit code: a request nothing
- * serves is an answer, not a failure, so only a question suss could
- * not read exits non-zero.
+ * Ask who serves one request. Returns the exit code. A request nothing
+ * serves is still an answer rather than a failure, so only a question
+ * suss could not parse exits non-zero.
  */
 export async function inspectFlow(options: FlowOptions): Promise<number> {
   const parsed = parseFlowRequest(options.request);

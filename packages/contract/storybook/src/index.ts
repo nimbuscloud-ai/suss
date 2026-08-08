@@ -1,4 +1,4 @@
-// @suss/contract-storybook — generate behavioral summaries from Storybook CSF.
+// @suss/contract-storybook: generate behavioral summaries from Storybook CSF.
 //
 // A Storybook story file declares (a) a default export with meta info
 // (the `component` being storied) and (b) named exports, each a story
@@ -13,7 +13,7 @@
 //   * Parse `.stories.ts[x]` via ts-morph.
 //   * Find the default export and extract `meta.component` (usually an
 //     identifier referring to the component under test). Preserve the
-//     identifier name — resolving it to a module path is a follow-up
+//     identifier name: resolving it to a module path is a follow-up
 //     when we formalise cross-module component references.
 //   * Find each named export and extract `args` as a literal object.
 //     Each story produces one `component`-kind BehavioralSummary with
@@ -23,15 +23,15 @@
 //     but don't enumerate the full behavior space.
 //
 // Explicitly deferred:
-//   * `play` function parsing — capturing the event sequence that
+//   * `play` function parsing, capturing the event sequence that
 //     exercises an interactive story. Useful for cross-referencing
 //     event-handler sub-units once Phase 3 lands.
-//   * `argTypes` extraction — per-arg metadata (control type, option
+//   * `argTypes` extraction: per-arg metadata (control type, option
 //     list). Informs stricter type checking in later phases.
-//   * `decorators` / `parameters` — Storybook-specific runtime
+//   * `decorators` / `parameters`, Storybook-specific runtime
 //     plumbing, not behavioral.
-//   * CSF1 / MDX stories — CSF3 is the supported format.
-//   * Cross-file component resolution — we preserve the meta component
+//   * CSF1 / MDX stories, CSF3 is the supported format.
+//   * Cross-file component resolution. We preserve the meta component
 //     identifier but don't follow the import to the component's
 //     module. Follow-up when a downstream consumer needs it.
 
@@ -58,7 +58,7 @@ import type {
 
 export interface StorybookStubOptions {
   /**
-   * Project root — used to compute portable relative paths in each
+   * Project root: used to compute portable relative paths in each
    * summary's `location.file`. Defaults to the cwd.
    */
   projectRoot?: string;
@@ -153,7 +153,7 @@ function findMetaObjectLiteral(node: Node): ObjectLiteralExpression | null {
   if (node.isKind(SyntaxKind.ExportAssignment)) {
     return unwrapToObjectLiteral(node.getExpression());
   }
-  // `const meta = { ... }; export default meta;` — the default-export
+  // `const meta = { ... }; export default meta;`, the default-export
   // symbol's declaration is the VariableDeclaration itself.
   if (node.isKind(SyntaxKind.VariableDeclaration)) {
     const init = node.getInitializer();
@@ -214,7 +214,7 @@ function extractStories(sf: SourceFile): StoryInfo[] {
   const results: StoryInfo[] = [];
 
   // CSF3: each named export is a `const Name: Story = { args: { ... } }`.
-  // We don't type-check the `Story` annotation — just look at the
+  // We don't type-check the `Story` annotation, just look at the
   // shape.
   for (const [name, decls] of exportedDeclarationsOf(sf)) {
     if (name === "default") {
@@ -285,7 +285,7 @@ function buildSummary(
   }));
 
   // Single default transition: "this story renders the component."
-  // v0 doesn't simulate the render; the transition carries the
+  // v0 doesn't simulate the render; the transition records the
   // component identity as the render output's `component` field and
   // leaves `root` unset. Later work can populate `root` by evaluating
   // the inferred render tree against the story's args.

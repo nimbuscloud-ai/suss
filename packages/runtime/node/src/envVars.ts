@@ -1,4 +1,4 @@
-// envVars.ts — recognize `process.env.X` reads and emit
+// envVars.ts: recognize `process.env.X` reads and emit
 // `interaction(class: "config-read")` effects on the units that
 // contain them.
 //
@@ -15,15 +15,15 @@
 // read by an element access, and a destructuring by the declaration it
 // initializes.
 //
-// `process.env` is Node-defined behavior — the env-var channel is part
-// of the deployable unit's runtime-config contract — so this lives
+// `process.env` is Node-defined behavior, the env-var channel is part
+// of the deployable unit's runtime-config contract, so this lives
 // alongside the rest of the process surface in the node runtime pack.
 // The sibling `processSurfaceRecognizer` (processSurface.ts) covers
 // argv / cwd / platform / etc. and skips `process.env.X` so the two
 // recognizers partition the `process.*` space without duplication.
 //
 // Pairing identity for config-read interactions doesn't need a
-// boundaryBinding — the env-var name IS the channel identity, and
+// boundaryBinding: the env-var name IS the channel identity, and
 // runtime-config providers carry the full env-var set in their
 // metadata. The recognizer emits effects with a synthetic binding
 // (recognition: "@suss/runtime-node", semantics: runtime-config) so
@@ -52,8 +52,8 @@ export interface EnvVarRecognizerOptions {
    * Deployment target context for the emitted binding. Defaults to
    * `"lambda"` since that's the dominant deployment for which suss
    * has runtime-config providers today (CFN/SAM Lambda env-var
-   * declarations). The value isn't load-bearing for pairing — the
-   * env-var name does the work — but it keeps the binding's
+   * declarations). The value does not affect pairing, the
+   * env-var name does the work, but it keeps the binding's
    * semantics shape consistent with provider summaries.
    */
   deploymentTarget?: "lambda" | "ecs-task" | "container" | "k8s-deployment";
@@ -75,7 +75,7 @@ interface EnvRead {
 }
 
 /**
- * How an effect names the read. All three spellings reach the same
+ * How an effect spells the read. All three spellings reach the same
  * variable, so all three are named the same way: a consumer grouping
  * reads of one variable should not have to parse an index argument or
  * a binding pattern to see that it is looking at one channel.
@@ -91,7 +91,7 @@ function isProcessEnv(node: Node): node is PropertyAccessExpression {
   return N.isIdentifier(root) && root.getText() === "process";
 }
 
-/** `process.env.NAME`, where the property names the variable. */
+/** `process.env.NAME`, where the property is the variable's name. */
 function dottedRead(node: PropertyAccessExpression): EnvRead[] {
   if (!isProcessEnv(node.getExpression())) {
     return [];
@@ -100,8 +100,8 @@ function dottedRead(node: PropertyAccessExpression): EnvRead[] {
 }
 
 /**
- * `process.env["NAME"]`, where the index names the variable. An index
- * the pack cannot read back as a literal names a variable nothing can
+ * `process.env["NAME"]`, where the index is the variable's name. An index
+ * the pack cannot read back as a literal refers to a variable nothing can
  * pair against, so it reports nothing rather than a guess.
  */
 function bracketRead(access: ElementAccessExpression): EnvRead[] {
@@ -265,7 +265,7 @@ export function findProcessEnvReads(
 
 /**
  * Access recognizer for `process.env.X` reads. Sister to
- * `processSurfaceRecognizer` — both fire on PropertyAccessExpression
+ * `processSurfaceRecognizer`: both fire on PropertyAccessExpression
  * nodes; this one owns the `process.env.*` slice, the other owns the
  * rest of the process surface.
  */

@@ -1,4 +1,4 @@
-// refs.ts — CloudFormation scalar / reference readers shared by the raw
+// refs.ts: CloudFormation scalar / reference readers shared by the raw
 // AWS::AppSync::* walk (cfn.ts) and the SAM AWS::Serverless::GraphQLApi
 // normalizer (sam.ts).
 

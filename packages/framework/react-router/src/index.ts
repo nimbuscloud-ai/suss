@@ -1,4 +1,4 @@
-// @suss/framework-react-router — PatternPack for React Router
+// @suss/framework-react-router: the PatternPack for React Router.
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
@@ -23,7 +23,8 @@ const RESPONSE_MODULES = [
 /**
  * Status codes for the `http-errors` package's named constructors. A
  * loader that throws through a project wrapper passes one of these, and
- * the argument's class name is the status source. Kept as a module-scope
+ * the argument's class name is where the status comes from. Kept as a
+ * module-scope
  * constant so pack consumers can inspect / extend the mapping.
  */
 const HTTP_ERRORS_CODES: Record<string, number> = {
@@ -60,7 +61,7 @@ const ROUTER_MODULES = ["react-router", "react-router-dom"];
  * How React Router declares routes in the app itself, rather than in
  * the file layout: a `Route` element carrying a path and the element
  * it renders, nested inside other routes whose paths it joins, with an
- * index route answering its parent's path. `createBrowserRouter` takes
+ * index route serving its parent's path. `createBrowserRouter` takes
  * the same keys as an array of objects, nesting through `children`
  * where the JSX form nests elements, and `createRoutesFromElements`
  * turns the JSX form into that array.
@@ -91,7 +92,7 @@ export interface ReactRouterPackOptions {
    * declares no such helper, so nothing is assumed by default and a
    * project that installs this pack never matches a call on a name some
    * other codebase happened to use. The thrown argument's class name
-   * carries the status, read against the `http-errors` constructors.
+   * gives the status, read against the `http-errors` constructors.
    */
   errorHelpers?: string[];
 }
@@ -118,9 +119,9 @@ export function reactRouterFramework(
         // Empty gate: route files often re-export `loader` /
         // `action` from non-router-importing modules
         // (server-side data functions, shared util re-exports).
-        // A heuristic gate would miss those. The dispatch is
-        // cheap (just looks at named exports), so paying the
-        // walk on every file is acceptable.
+        // A heuristic gate would miss those. The dispatch only
+        // looks at named exports, so paying for the walk on
+        // every file is fine.
         requiresImport: [],
       },
       {
@@ -144,7 +145,7 @@ export function reactRouterFramework(
         // The route tree the app declares in its own JSX, which is how
         // most React Router apps say what serves which URL. Gated on
         // the router import, since the whole pattern is written with
-        // names that come from it.
+        // names that come out of it.
         kind: "component",
         match: JSX_ROUTES,
         requiresImport: ROUTER_MODULES,
@@ -153,7 +154,7 @@ export function reactRouterFramework(
 
     terminals: [
       {
-        // json(data, init?) — e.g. return json({ user })
+        // json(data, init?), for example `return json({ user })`
         kind: "response",
         match: {
           type: "functionCall",
@@ -169,7 +170,7 @@ export function reactRouterFramework(
         },
       },
       {
-        // data(value, init?) — React Router v7 replacement for json()
+        // data(value, init?), React Router v7's replacement for json()
         kind: "response",
         match: {
           type: "functionCall",
@@ -185,7 +186,7 @@ export function reactRouterFramework(
         },
       },
       {
-        // redirect(url, status?) — e.g. return redirect("/login")
+        // redirect(url, status?), for example `return redirect("/login")`
         kind: "response",
         match: {
           type: "functionCall",
@@ -201,7 +202,7 @@ export function reactRouterFramework(
         },
       },
       {
-        // What a routed component answers with. The route says which
+        // What a routed component renders. The route says which
         // URL reaches this component, and the JSX it returns is what
         // that URL renders, so the pack reads both rather than
         // reporting the route and nothing behind it.
@@ -217,8 +218,8 @@ export function reactRouterFramework(
           body: { from: "argument", position: 0 },
         },
       },
-      // A project's error helper carries the status in the class name of
-      // its argument, so resolve through `argumentConstructor` rather
+      // A project's error helper puts the status in the class name of its
+      // argument, so resolve through `argumentConstructor` rather
       // than taking the argument's raw source text as a status value.
       ...(options.errorHelpers ?? []).map((helper) => ({
         kind: "throw" as const,

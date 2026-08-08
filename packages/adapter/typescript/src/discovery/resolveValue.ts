@@ -1,12 +1,14 @@
-// resolveValue.ts — what a value written at a discovery site turns out
-// to be, whether it was written out there or named.
-//
-// A recognizer reading an argument, a property or a loop's iterable is
-// asking one of two questions: which function is this, and which object
-// is this. The resolution store answers both over the fact layer, which
-// follows a name through a property read, an array element, an alias,
-// an import and a barrel. A recognizer that reads the syntax sitting at
-// the position instead sees an identifier and stops there.
+/**
+ * What a value at a discovery site turns out to be, whether it was
+ * written out there or referred to by name.
+ *
+ * A recognizer reading an argument, a property or a loop's iterable is
+ * asking one of two things: which function is this, and which object is
+ * this. The resolution store settles both over the fact layer, which
+ * follows a name through a property read, an array element, an alias, an
+ * import and a barrel. A recognizer that reads the syntax at the
+ * position instead sees an identifier and gets no further.
+ */
 
 import { Node } from "ts-morph";
 
@@ -22,10 +24,10 @@ import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
 /**
- * Whether a value is written as a name rather than written out where it
+ * Whether a value is a name rather than something written out where it
  * is used. A route's path argument is a string, and asking the fact
- * layer about that pulls in the file's import closure for an answer
- * that was always going to be null.
+ * layer about that pulls in the file's import closure to produce a null
+ * that was never in doubt.
  */
 export function couldNameAValue(value: Node): boolean {
   return (
@@ -37,9 +39,9 @@ export function couldNameAValue(value: Node): boolean {
 }
 
 /**
- * The expression a property of an object literal holds, when it holds
- * one. A shorthand holds whatever its name refers to, which is what the
- * name node stands for.
+ * The expression a property of an object literal is set to, when it has
+ * one. A shorthand property is set to whatever its name refers to, so
+ * the name node is the expression.
  */
 export function propertyValueOf(property: Node): Node | null {
   if (Node.isPropertyAssignment(property)) {
@@ -52,12 +54,13 @@ export function propertyValueOf(property: Node): Node | null {
 }
 
 /**
- * The function this value is, whether it was written out here or named.
+ * The function this value is, whether it was written out here or
+ * referred to by name.
  *
- * A value the rules reach two different functions from answers null,
+ * A value the rules can reach two different functions from returns null,
  * because picking one would report a boundary's behaviour from a
  * function that may not be the one that runs. So does a handler that
- * arrives as a parameter, which no chain reaches from here.
+ * arrives as a parameter, which nothing here can follow.
  */
 export function functionValueOf(
   value: Node,
@@ -75,7 +78,7 @@ export function functionValueOf(
   return resolved === null ? null : toFunctionRoot(resolved);
 }
 
-/** The object literal this value is, whether written out here or named. */
+/** The object literal this value is, written out here or named. */
 export function objectLiteralOf(
   value: Node,
   resolution: ResolutionStore | undefined,
@@ -89,14 +92,14 @@ export function objectLiteralOf(
 }
 
 /**
- * The properties an object literal holds, with a spread standing for
- * the properties of whatever it names.
+ * The properties of an object literal, with a spread replaced by the
+ * properties of whatever it spreads.
  *
- * A spread is a name in property position, so it asks the same question
- * `objectLiteralOf` answers, and a spread of something the rules do not
- * reach an object from contributes nothing, the same as a property
- * whose value nothing resolves. An object that spreads its way back to
- * itself is walked once.
+ * A spread is a name in property position, so it is the same question
+ * `objectLiteralOf` settles. A spread of something the rules cannot
+ * reach an object from contributes nothing, the same as a property whose
+ * value nothing resolves. An object that spreads its way back to itself
+ * is walked once.
  */
 export function propertiesOf(
   object: ObjectLiteralExpression,
@@ -125,13 +128,13 @@ function propertiesReached(
 }
 
 /**
- * The expression `value` is written as, whatever kind of expression
- * that turns out to be, whether it names something or is written out
- * where it's used. A mount call's target argument is sometimes a call
- * or `new` expression right there (`app.use("/x", Router())`), and
- * sometimes a name imported from wherever the sub-router is declared;
- * a caller comparing the result's identity against another value's own
- * creation site doesn't care which.
+ * The expression `value` comes down to, whatever kind of expression that
+ * turns out to be, whether it was a name or written out where it is
+ * used. A mount call's target argument is sometimes a call or `new`
+ * expression right there (`app.use("/x", Router())`) and sometimes a
+ * name imported from wherever the sub-router is declared. A caller
+ * comparing that against another value's creation site does not care
+ * which.
  */
 export function writtenNodeOf(
   value: Node,
@@ -147,7 +150,7 @@ export function writtenNodeOf(
   return resolution.resolveWrittenValue(written);
 }
 
-/** The array literal this value is, whether written out here or named. */
+/** The array literal this value is, written out here or named. */
 export function arrayLiteralOf(
   value: Node,
   resolution: ResolutionStore | undefined,

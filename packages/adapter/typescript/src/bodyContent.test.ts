@@ -1,6 +1,8 @@
-// A summary with nothing in it means one of two things, and only the
-// adapter can see which: a declaration with no body behind it, or a
-// body with nothing in it.
+/**
+ * An empty summary means one of two things, and only the adapter can
+ * tell which: a declaration with no body behind it, or a body with
+ * nothing in it.
+ */
 
 import { describe, expect, it } from "vitest";
 
@@ -46,7 +48,7 @@ describe("bodyContentOf", () => {
 
   it("says an overload signature has no body behind it", () => {
     // The signature and the implementation are separate declarations,
-    // and whoever discovers the signature reads no body at all.
+    // so whatever discovers the signature finds no body to read.
     const project = createTestProject();
     const file = project.createSourceFile(
       "/mod.ts",

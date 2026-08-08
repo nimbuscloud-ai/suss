@@ -1,15 +1,18 @@
-// eventPattern.ts: read what an EventBridge rule states about the
-// events it matches, and which bus carries them.
-//
-// A rule's EventPattern and its EventBusName are written the same way
-// in a CloudFormation template and in a serverless.yml eventBridge
-// event, so both readers reduce them here.
+/**
+ * eventPattern.ts reads what an EventBridge rule says about the events it
+ * matches, and which bus those events arrive on.
+ *
+ * A rule's EventPattern and its EventBusName are written the same way in a
+ * CloudFormation template and in a serverless.yml eventBridge event, so
+ * both readers reduce them here.
+ */
 
 import { refTarget } from "./templateLoader.js";
 
 /**
- * How far a rule's EventPattern reduced: to the exact detail-types it
- * lists, or not at all, with the reason a person can read back.
+ * How far a rule's EventPattern reduced: either to the exact
+ * detail-types it lists, or not at all, along with a reason someone can
+ * read.
  */
 export type PatternReduction =
   | { kind: "exact"; detailTypes: string[] }
@@ -61,9 +64,9 @@ export function reduceEventPattern(pattern: unknown): PatternReduction {
 
 /**
  * Resolve a rule's EventBusName to the channel's bus token: the CFN
- * logical id when it's a Ref/GetAtt, the segmented name from an event-
- * bus ARN, the literal string otherwise, or "default" when omitted (the
- * EventBridge default event bus).
+ * logical id when it's a Ref/GetAtt, the name segment of an event-bus
+ * ARN, the literal string otherwise, or "default" when it's left out
+ * (the EventBridge default event bus).
  */
 export function resolveEventBusToken(value: unknown): string {
   if (value === null || value === undefined) {
@@ -72,7 +75,8 @@ export function resolveEventBusToken(value: unknown): string {
   if (typeof value === "object") {
     const logicalId = refTarget(value);
     // Prefer the logical id even when the referenced resource isn't in
-    // this template; the producer side chain-collapses to the same id.
+    // this template, because the producer side collapses its own chain
+    // of references down to the same id.
     return logicalId ?? "default";
   }
   if (typeof value === "string") {

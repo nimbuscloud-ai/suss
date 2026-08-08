@@ -17,7 +17,6 @@ import {
 import type { ComponentProgram } from "../jsx/componentProgram.js";
 import type { BindingForm } from "./shapeProgram.js";
 
-/** How the component function is written. */
 export type ComponentForm =
   | "declaration"
   | "functionExpression"
@@ -27,7 +26,6 @@ export type ComponentForm =
   | "overloaded"
   | "method";
 
-/** How the component reaches the module's export surface. */
 export type ExportRoute =
   | "namedDeclaration"
   | "namedBinding"
@@ -65,8 +63,8 @@ export const SIMPLEST_COMPONENT_SHAPE: Omit<ComponentShapeSpec, "body"> = {
 
 /**
  * Routes that rename what they export. The exported name is then a
- * defensible answer for the summary's name as well as the source name,
- * so the "a named unit keeps its name" invariant sits those out.
+ * defensible value for the summary's name as well as the source name,
+ * so the "a named unit keeps its name" invariant skips them.
  */
 export const RENAMING_ROUTES = new Set<ExportRoute>(["aliasedNamed"]);
 
@@ -77,14 +75,12 @@ export const RENAMING_ROUTES = new Set<ExportRoute>(["aliasedNamed"]);
 interface ComponentText {
   /** Statements the function needs before anything can refer to it. */
   statements: string[];
-  /** The expression that evaluates to the component. */
   expression: string;
-  /** The name the function carries in source, when it carries one. */
   sourceName: string | null;
   /**
    * The function written as its own export, when the form allows it
    * (`export function Panel() {}`, `export const Panel = () => …`). A
-   * method has to sit in an object literal, so it has none.
+   * method has to be in an object literal, so it has none.
    */
   inlineExport: string[] | null;
 }
@@ -214,20 +210,19 @@ function bindingStatements(
 
 export interface RenderedComponentShape {
   files: Record<string, string>;
-  /** The name a summary should carry, when the route does not rename. */
+  /** The name a summary should have, when the route does not rename. */
   expectedName: string | null;
 }
 
 interface RouteRendering {
   /** Statements after the binding, in the component's own file. */
   statements: string[];
-  /** Export statements in the component's own file. */
   exports: string[];
   /**
    * Whether the component is bound to the name `Panel` before it is
    * exported. A route that exports the function where it is written
    * has no binding, so the binding dimension does not apply and the
-   * name a summary should carry is the function's own.
+   * name a summary should have is the function's own.
    */
   bindsName: boolean;
   extraFiles: Record<string, string>;

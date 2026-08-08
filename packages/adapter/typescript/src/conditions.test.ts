@@ -35,7 +35,7 @@ function getFunction(
     return decl;
   }
 
-  // Try variable declarations holding arrow functions
+  // Try variable declarations whose initializer is an arrow function
   const varDecl = sourceFile.getVariableDeclaration(name);
   if (varDecl !== undefined) {
     const init = varDecl.getInitializer();
@@ -56,7 +56,7 @@ function getReturnNodes(func: FunctionRoot) {
 // fixture-if-else.ts
 // ---------------------------------------------------------------------------
 
-describe("fixture-if-else.ts — collectAncestorBranches", () => {
+describe("fixture-if-else.ts: collectAncestorBranches", () => {
   const sourceFile = loadFixture("fixture-if-else.ts");
   const func = getFunction(sourceFile, "twoPath");
   const returns = getReturnNodes(func);
@@ -91,7 +91,7 @@ describe("fixture-if-else.ts — collectAncestorBranches", () => {
 // fixture-early-returns.ts
 // ---------------------------------------------------------------------------
 
-describe("fixture-early-returns.ts — guard chains via the path engine", () => {
+describe("fixture-early-returns.ts: guard chains via the path engine", () => {
   const sourceFile = loadFixture("fixture-early-returns.ts");
   const func = getFunction(sourceFile, "guardedHandler");
   const returns = getReturnNodes(func);
@@ -126,7 +126,7 @@ describe("fixture-early-returns.ts — guard chains via the path engine", () => 
 // fixture-switch.ts
 // ---------------------------------------------------------------------------
 
-describe("fixture-switch.ts — collectAncestorBranches", () => {
+describe("fixture-switch.ts: collectAncestorBranches", () => {
   const sourceFile = loadFixture("fixture-switch.ts");
   const func = getFunction(sourceFile, "statusHandler");
   const returns = getReturnNodes(func);
@@ -161,19 +161,19 @@ describe("fixture-switch.ts — collectAncestorBranches", () => {
 });
 
 // ---------------------------------------------------------------------------
-// fixture-switch-fallthrough.ts — fallthrough + nested block cases
+// fixture-switch-fallthrough.ts: fallthrough + nested block cases
 // ---------------------------------------------------------------------------
 
-describe("fixture-switch-fallthrough.ts — classify fallthrough", () => {
+describe("fixture-switch-fallthrough.ts: classify fallthrough", () => {
   const sourceFile = loadFixture("fixture-switch-fallthrough.ts");
   const func = getFunction(sourceFile, "classify");
   const returns = getReturnNodes(func);
 
-  it("finds three returns — the fallthrough case ('a') has no body of its own", () => {
+  it("finds three returns: the fallthrough case ('a') has no body of its own", () => {
     expect(returns).toHaveLength(3);
   });
 
-  it("the 'ab' return picks up both case labels via fallthrough — `kind === 'a' || kind === 'b'`", () => {
+  it("the 'ab' return picks up both case labels via fallthrough: `kind === 'a' || kind === 'b'`", () => {
     const r = returns[0];
     const conditions = collectAncestorBranches(r, func);
     expect(conditions).toHaveLength(1);
@@ -194,7 +194,7 @@ describe("fixture-switch-fallthrough.ts — classify fallthrough", () => {
   });
 });
 
-describe("fixture-switch-fallthrough.ts — classifyBlock nested-block case", () => {
+describe("fixture-switch-fallthrough.ts: classifyBlock nested-block case", () => {
   const sourceFile = loadFixture("fixture-switch-fallthrough.ts");
   const func = getFunction(sourceFile, "classifyBlock");
   const returns = getReturnNodes(func);
@@ -217,7 +217,7 @@ describe("fixture-switch-fallthrough.ts — classifyBlock nested-block case", ()
 // fixture-try-catch.ts
 // ---------------------------------------------------------------------------
 
-describe("fixture-try-catch.ts — collectAncestorBranches", () => {
+describe("fixture-try-catch.ts: collectAncestorBranches", () => {
   const sourceFile = loadFixture("fixture-try-catch.ts");
   const func = getFunction(sourceFile, "risky");
   const returns = getReturnNodes(func);
@@ -244,10 +244,10 @@ describe("fixture-try-catch.ts — collectAncestorBranches", () => {
 });
 
 // ---------------------------------------------------------------------------
-// fixture-nested.ts — exercises both functions together
+// fixture-nested.ts: exercises both functions together
 // ---------------------------------------------------------------------------
 
-describe("fixture-nested.ts — ancestor walk + early returns combined", () => {
+describe("fixture-nested.ts: ancestor walk + early returns combined", () => {
   const sourceFile = loadFixture("fixture-nested.ts");
   const func = getFunction(sourceFile, "nested");
   const returns = getReturnNodes(func);
@@ -278,7 +278,7 @@ describe("fixture-nested.ts — ancestor walk + early returns combined", () => {
   });
 
   it("'just-a' return: the path engine carries the sibling guard 'b'", () => {
-    // Inside if(a), `if (b) return "both"` is a prior sibling guard —
+    // Inside if(a), `if (b) return "both"` is a prior sibling guard ,
     // invisible to the deleted legacy collector, carried per-path now.
     const justAReturn = returns[1];
     const result = computePathConditions(func, [justAReturn]);
@@ -297,7 +297,7 @@ describe("fixture-nested.ts — ancestor walk + early returns combined", () => {
   it("'neither' return: the path engine records exactly [¬a]", () => {
     // The if(a) block always returns ("both" or "just-a"), so reaching
     // "neither" requires only ¬a. The deleted legacy collector recorded
-    // the over-conjoined ¬a ∧ ¬b here — the unsoundness that motivated
+    // the over-conjoined ¬a ∧ ¬b here: the unsoundness that motivated
     // the per-path engine.
     const neitherReturn = returns[2];
     const result = computePathConditions(func, [neitherReturn]);

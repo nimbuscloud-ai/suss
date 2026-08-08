@@ -1,14 +1,16 @@
-// resolverShape.ts: how a GraphQL field says which resolver answers it.
-//
-// Two frameworks say it two ways. Apollo hands the server an object
-// whose nesting is the schema: a type, a field, and the function under
-// it. NestJS decorates a class and its methods, and the framework
-// builds the same map at runtime. Either way the summary has to name
-// the pair the client addresses, `typeName.fieldName`, because that
-// pair is what a query pairs against.
-//
-// So there are two spec shapes here, one per framework, and each one's
-// plainest spelling is the one its own documentation opens with.
+/**
+ * How a GraphQL field says which resolver serves it.
+ *
+ * Two frameworks say it two ways. Apollo hands the server an object
+ * whose nesting is the schema: a type, a field, and the function under
+ * it. NestJS decorates a class and its methods, and the framework
+ * builds the same map at runtime. Either way the summary has to record
+ * the pair the client addresses, `typeName.fieldName`, because that
+ * pair is what a query pairs against.
+ *
+ * So there are two spec shapes here, one per framework, and each one's
+ * plainest spelling is the one its own documentation opens with.
+ */
 
 import { type DispatchTable, dispatchByType } from "../dispatch.js";
 
@@ -26,7 +28,6 @@ export type MapRoute =
   | "typeMapConst"
   | "importedMap";
 
-/** How the resolver function under the field is written. */
 export type FieldForm =
   | "arrow"
   | "asyncArrow"
@@ -34,7 +35,7 @@ export type FieldForm =
   | "methodShorthand"
   | "namedReference";
 
-/** The type whose field this resolver answers. */
+/** The type whose field this resolver serves. */
 export type FieldOwner = "Query" | "Mutation" | "Widget";
 
 export interface ApolloResolverSpec {
@@ -57,20 +58,20 @@ export const SIMPLEST_APOLLO_RESOLVER: ApolloResolverSpec = {
 export interface RenderedResolverShape {
   files: Record<string, string>;
   /**
-   * The type whose field the program answers, or null where the program
-   * does not say. A field resolver on a class that names no type is the
-   * one shape with no answer: the class argument is where the type
-   * would have been written. Nothing should bind that field to a type,
-   * because every type is a guess.
+   * The type whose field the program serves, or null where the program
+   * does not say. A field resolver on a class with no type given is the
+   * one shape with no answer, since the class argument is where the
+   * type would have been written. Nothing should bind that field to a
+   * type, because every candidate type is a guess.
    */
   typeName: string | null;
   fieldName: string;
   /**
    * The name the source gives the unit, where the source gives it one.
    * Apollo writes the type and the field as the nesting of the map, so
-   * `Query.widget` is what the program says. A decorated class names
-   * its own class and method, and the field it answers is a decorator
-   * argument, so there the binding carries the identity and the name is
+   * `Query.widget` is what the program says. A decorated class gives
+   * only its class and method, and the field it serves is a decorator
+   * argument, so there the binding has the identity and the name is
    * whatever the class is called.
    */
   unitName: string | null;
@@ -224,10 +225,10 @@ export function renderApolloResolverShape(
 }
 
 // ---------------------------------------------------------------------------
-// NestJS, where the class and the method carry decorators
+// NestJS, where the class and the method both have decorators
 // ---------------------------------------------------------------------------
 
-/** How the class says it holds resolvers. */
+/** How the class declares that it contains resolvers. */
 export type ResolverAnnouncement =
   | "typeArgument"
   | "noTypeArgument"
@@ -235,10 +236,8 @@ export type ResolverAnnouncement =
   | "wrappedDecorator"
   | "composedDecorator";
 
-/** The operation the method answers. */
 export type Operation = "Query" | "Mutation" | "ResolveField";
 
-/** How the method itself is written. */
 export type ResolverMethodForm =
   | "method"
   | "asyncMethod"
@@ -281,7 +280,7 @@ const nestDecorators: DispatchTable<
     typeName: OWNER_TYPE,
   }),
   // With no type argument the class says nothing about which type it
-  // resolves for, and the operation decorator has to answer.
+  // resolves for, and the operation decorator has to agree.
   noTypeArgument: () => ({
     preamble: [GQL_IMPORT],
     applied: "@Resolver()",
@@ -316,8 +315,8 @@ const nestDecorators: DispatchTable<
 };
 
 /**
- * The type a field's binding names, given what the class announced, or
- * null where the program names none.
+ * The type a field's binding points at, given what the class announced,
+ * or null where the program gives none.
  *
  * `@Query` and `@Mutation` put their field on the root type of the same
  * name, so those two say it themselves. `@ResolveField` reads the type

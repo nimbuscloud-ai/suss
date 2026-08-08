@@ -1,4 +1,4 @@
-// @suss/framework-aws-sqs — recognize AWS SQS producer-side calls in
+// @suss/framework-aws-sqs: recognize AWS SQS producer-side calls in
 // TypeScript and emit `interaction(class: "message-send")` effects.
 //
 // Producer-side recognition only. Consumer-side handlers gain a
@@ -16,18 +16,18 @@
 //   }));
 //
 // AWS SDK v2 (`new AWS.SQS().sendMessage(...).promise()`) is a
-// follow-up — the surface is similar but the call shape differs.
+// follow-up: the surface is similar but the call shape differs.
 //
 // A service that sends through its own dispatcher writes no
 // SendMessageCommand of its own, so this recognizer never fires on it.
-// Such a project names the dispatcher in the pack's `producers`
+// Such a project says which dispatcher in the pack's `producers`
 // option:
 //
 //   { module: "@acme/async", receiver: "CommandDispatcher",
 //     method: "dispatch", subjectArg: 0, bodyArg: 1 }
 //
 // which reads `dispatcher.dispatch("order.placed", order, { queueUrl })`
-// as a send on channel "order.placed" — the same subject the consumer
+// as a send on channel "order.placed": the same subject the consumer
 // names, so the two pair. A subject the source does not state as a
 // string yields no effect.
 //
@@ -97,7 +97,7 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   // command class rather than on the receiver type because:
   //   1. Command classes are unambiguously SQS-specific;
   //   2. Resolving the receiver to SQSClient via type checking is
-  //      possible but expensive and not strictly needed — the command
+  //      possible but expensive and not strictly needed: the command
   //      class identity is the discriminator.
   const args = callNode.getArguments();
   if (args.length === 0) {
@@ -109,10 +109,9 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   }
   const ctorExpr = firstArg.getExpression();
 
-  // The constructor leaf name is what we look up in SEND_COMMANDS.
-  // For named imports it's just the identifier (`SendMessageCommand`);
-  // for namespace imports it's the property name on the namespace
-  // (`sqs.SendMessageCommand` → `SendMessageCommand`).
+  // The constructor leaf name is what we look up in SEND_COMMANDS. For a named
+  // import that is the identifier (`SendMessageCommand`), and for a namespace
+  // import it is the property name (`sqs.SendMessageCommand`).
   const ctorLeafName = N.isPropertyAccessExpression(ctorExpr)
     ? ctorExpr.getName()
     : ctorExpr.getText();
@@ -135,7 +134,7 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
     return null;
   }
 
-  // Extract the command's first arg — the input object literal.
+  // Extract the command's first arg: the input object literal.
   const ctorArgs = firstArg.getArguments();
   if (ctorArgs.length === 0) {
     return null;
@@ -147,12 +146,12 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   }
 
   // A send whose queue is named by a variable, a parameter, or a
-  // config lookup used to be dropped whole, so a service that sends to
-  // a queue it names at runtime read as a service that sends nothing.
-  // The send happened either way. A null channel says the code did not
-  // name one, and it pairs with nothing rather than pairing wrongly.
-  // A host older than the resolution-threaded context answers null,
-  // and the pattern match runs on the raw node, as it always did.
+  // config lookup used to be dropped entirely, so a service that sends to a
+  // queue it works out at runtime looked like a service that sends nothing. The
+  // send happened either way. A null channel says the code never gave us a
+  // name, and it pairs with nothing rather than pairing with the wrong thing.
+  // A host older than the resolution-threaded context returns null here, and
+  // the pattern match runs on the raw node, the way it always did.
   const channel = readQueueUrlChannel(
     input,
     recognizerCtx.resolveWrittenValue ?? (() => null),
@@ -207,14 +206,12 @@ function rootIdentifier(node: Node): Node | null {
 
 /**
  * Read the QueueUrl property of the SendMessageCommand input object
- * and return the channel identifier as a string. Two shapes name a
- * channel:
- *   - `QueueUrl: process.env.ORDERS_QUEUE_URL` answers "ORDERS_QUEUE_URL"
- *   - `QueueUrl: "https://sqs..."` answers the literal URL
+ * and return the channel identifier as a string. Two forms give us a channel:
+ *   - `QueueUrl: process.env.ORDERS_QUEUE_URL` gives "ORDERS_QUEUE_URL"
+ *   - `QueueUrl: "https://sqs..."` gives the literal URL
  *
- * Anything else is asked of the resolution store first. A const
- * holding a literal, here or in another file, resolves to the literal
- * and names the channel:
+ * Anything else goes to the resolution store first. A const set to a literal,
+ * here or in another file, resolves to that literal and gives us the channel:
  *
  *   const url = "https://sqs/.../orders";
  *   new SendMessageCommand({ QueueUrl: url })   // the literal URL
@@ -358,7 +355,7 @@ function messageReceiveRecognizer(
   ctx: unknown,
 ): Effect[] | null {
   const callNode = call as CallExpression;
-  // The ctx is unused for now — the recognizer's structural checks
+  // The ctx is unused for now: the recognizer's structural checks
   // (JSON.parse on .body of a for-of loop variable iterating .Records)
   // don't require the source file. Future shape extensions (e.g. type-
   // checker driven inference) will need it.
@@ -503,7 +500,7 @@ function extractDestructuredFields(
     // `{ id, total: totalAmount }`, the property is `id` and `total`
     // (NOT the local alias `totalAmount`). The pairing layer is
     // matching against the producer's emitted field set, which uses
-    // the producer's chosen names — which match the property names
+    // the producer's chosen names: which match the property names
     // here, not the consumer's local aliases.
     const propertyNameNode = element.getPropertyNameNode();
     let fieldName: string;
@@ -516,7 +513,7 @@ function extractDestructuredFields(
       }
       fieldName = nameInner.getText();
     }
-    // Placeholder leaf — the pairing layer compares field-name SETS,
+    // Placeholder leaf: the pairing layer compares field-name SETS,
     // not value shapes, in v0. Future: thread the typed shape.
     fields[fieldName] = {
       kind: "identifier",
@@ -580,8 +577,8 @@ function configuredProducerRecognizer(
 }
 
 /**
- * Pack export. Two invocation recognizers — producer-side and
- * consumer-side — plus one per configured dispatcher, and an import
+ * Pack export. Two invocation recognizers: producer-side and
+ * consumer-side: plus one per configured dispatcher, and an import
  * gate that admits `@aws-sdk/client-sqs` (producer files),
  * `aws-lambda` (consumer files; SQSEvent type comes from there), and
  * every module a configured dispatcher is declared in.

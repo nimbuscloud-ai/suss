@@ -1,8 +1,8 @@
-// suppressions-loader.ts — read .sussignore from disk for `suss check`.
+// suppressions-loader.ts: read .sussignore from disk for `suss check`.
 //
 // Checker owns the rule types and matching; this module is just I/O:
 // find the right file, parse YAML or JSON, and validate against
-// SuppressionFileSchema. Invalid rules fail loud — silent malformed
+// SuppressionFileSchema. Invalid rules fail loud: silent malformed
 // suppressions are the worst kind.
 
 import fs from "node:fs";
@@ -44,7 +44,7 @@ export const DEFAULT_SUPPRESSIONS_FILENAMES = [
  * `suss check --dir summaries/` starts at the summaries folder, and a
  * reader who keeps their `.sussignore` beside `package.json` expects it
  * to apply. Walking up finds both. The walk stops at the first
- * directory holding a `package.json` or a `.git`, so a file in a
+ * directory that contains a `package.json` or a `.git`, so a file in a
  * parent project or in the home directory never reaches a run.
  */
 export function suppressionsSearchDirs(startDir: string): string[] {
@@ -89,7 +89,7 @@ export function findSuppressionsFile(searchDir: string): string | null {
 
 /**
  * Leaving `version` off is the mistake people make copying a rule out
- * of the docs, and the schema error for it names a literal rather than
+ * of the docs, and the schema error for it gives a literal rather than
  * the fix.
  */
 function isMissingVersion(raw: unknown): boolean {
@@ -148,11 +148,11 @@ export function loadSuppressions(filePath: string): SuppressionRule[] {
 }
 
 /**
- * Say when a rule names a document the way readers used to label them,
- * by file name alone. Such a rule still matches, by file name, across
- * every document of that reader with that name; suss now records where
- * the document sits, and writing the path pins the rule to one of them.
- * Left unsaid, the rule reads as pinned when it is not.
+ * Warn when a rule identifies a document the way readers used to label
+ * them, by file name alone. Such a rule still matches every document of
+ * that reader with that name. suss now records where the document
+ * lives, and writing the path pins the rule to one of them. Say nothing
+ * and the rule looks pinned when it is not.
  */
 function reportDocumentsNamedByFileName(
   filePath: string,

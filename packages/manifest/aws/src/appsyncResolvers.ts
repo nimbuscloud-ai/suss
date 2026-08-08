@@ -1,15 +1,17 @@
-// appsyncResolvers.ts — which GraphQL field each Lambda serves.
-//
-// AppSync does not wire a field to a handler in code. The template says
-// it, across three hops: a resolver names a pipeline function, the
-// function names a data source, and the data source names a Lambda. Both
-// authoring shapes are covered, the raw AWS::AppSync::* resources and
-// the SAM AWS::Serverless::GraphQLApi shorthand whose DataSources,
-// Functions, and Resolvers blocks the transform expands into them.
-//
-// Like the rest of this package, this answers only what the template
-// says. Whether a field has an implementation, and whether that
-// implementation matches the schema, belongs to a reader above.
+/**
+ * appsyncResolvers.ts works out which GraphQL field each Lambda serves.
+ *
+ * AppSync does not wire a field to a handler in code. The template does it,
+ * over three hops: a resolver points at a pipeline function, the function
+ * points at a data source, and the data source points at a Lambda. Both ways
+ * of writing that are covered, the raw AWS::AppSync::* resources and the SAM
+ * AWS::Serverless::GraphQLApi shorthand whose DataSources, Functions, and
+ * Resolvers blocks the transform expands into those same resources.
+ *
+ * Like the rest of this package, this reports only what the template says.
+ * Whether a field has an implementation, and whether that implementation
+ * matches the schema, is for a reader above to decide.
+ */
 
 import { refTarget } from "./templateLoader.js";
 
@@ -25,10 +27,10 @@ export interface AppSyncResolverBinding {
   /**
    * Every Lambda a request for this field runs, in pipeline order.
    * Usually one. A pipeline can chain several, and nothing in the
-   * template says which of them is the one that produces the value:
-   * the first is as often an auth step as it is the resolver, and the
-   * last is as often a formatter. So all of them are reported, and a
-   * reader that needs to pick says so itself.
+   * template says which of them produces the value: the first is as
+   * often an auth step as it is the resolver, and the last is as often
+   * a formatter. So all of them are reported, and a reader that needs
+   * to pick one decides for itself.
    *
    * Empty when the field is served by something other than a Lambda.
    */
@@ -139,15 +141,16 @@ function dataSourcesReached(
 // Raw AWS::AppSync::* resources
 // ---------------------------------------------------------------------------
 
+/**
+ * A resolver refers to a data source either by logical id or by the Name
+ * property, and the two need not match. Logical ids are unique across a
+ * template, unique only within one API, and every one of these resources says
+ * which API it belongs to. So a name is looked up against the resolver's own
+ * API, and two APIs are free to use the same one.
+ */
 function fromRawResources(
   resources: Record<string, CloudFormationResource | undefined>,
 ): AppSyncResolverBinding[] {
-  // A resolver names a data source by logical id or by the Name
-  // property, and the two need not match. Logical ids are unique across
-  // a template, names only within one API, and every one of these
-  // resources says which API it belongs to. So a name is looked up
-  // against the resolver's own API, and two APIs are free to use the
-  // same one.
   const lambdaByLogicalId = new Map<string, string>();
   const lambdaByApiAndName = new Map<string, string>();
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -171,11 +174,9 @@ function fromRawResources(
     }
   }
 
-  // A pipeline resolver names functions, and each function names the
-  // data source. This is also the shape the SAM transform expands the
-  // shorthand into, so it has to be read whichever way the template was
-  // authored. Function names are scoped the same way data-source names
-  // are.
+  // A pipeline resolver points at functions, each of which points at a
+  // data source. The SAM transform expands the shorthand into exactly
+  // this, so it is read either way, and function names scope per API too.
   const dataSourceByLogicalId = new Map<string, string>();
   const dataSourceByApiAndName = new Map<string, string>();
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -256,7 +257,7 @@ function rawDataSourcesReached(
 }
 
 // ---------------------------------------------------------------------------
-// Shapes
+// Reading plain values
 // ---------------------------------------------------------------------------
 
 function asRecord(value: unknown): Record<string, unknown> | null {

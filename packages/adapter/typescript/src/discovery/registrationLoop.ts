@@ -1,4 +1,4 @@
-// registrationLoop.ts (discovery handler) — expand a `for-of` loop
+// registrationLoop.ts (discovery handler): expand a `for-of` loop
 // over a literal array of route specs into N virtual registrations.
 //
 // Recognized shape:
@@ -187,7 +187,7 @@ function readStringLiteralValue(node: Node): string | null {
 }
 
 /**
- * What to call the handler an element holds. A name is the answer where
+ * What to call the handler an element is. A name is used where
  * there is one; a function written out in the array has none, and the
  * kind is what the unit has carried there since this handler was
  * written.

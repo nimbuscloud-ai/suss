@@ -1804,7 +1804,7 @@ describe("buildMessageBusSummaries: S3", () => {
   });
 
   it("does not resolve an S3 ARN carrying a region segment", () => {
-    // An S3 ARN never carries a region; one that does is malformed and
+    // An S3 ARN never includes a region; one that does is malformed and
     // must not fall through to a bare bucket name.
     const out = cloudFormationToSummaries({
       Resources: {

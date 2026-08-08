@@ -1,8 +1,10 @@
-// What the adapter says about a file has to depend on the file, not on
-// what the file used to say. A cache that outlives a parse breaks that,
-// and the failure is quiet: ts-morph keeps the source-file wrapper and
-// forgets the nodes under it, so a stale entry hands back nodes that
-// answer for text nobody has.
+/**
+ * What the adapter says about a file has to depend on the file, not on
+ * what the file used to contain. A cache that outlives a parse breaks
+ * that, and it breaks quietly: ts-morph keeps the source-file wrapper
+ * and forgets the nodes under it, so a stale entry gives back nodes
+ * describing text nobody has any more.
+ */
 
 import { describe, expect, it } from "vitest";
 
@@ -64,8 +66,8 @@ app.post("/orders", (req, res) => {
 `;
 
 // A handler reached through another module, so the second read goes back
-// through import resolution and the fact store rather than answering off
-// one file's syntax.
+// through import resolution and the fact store rather than coming
+// straight off one file's syntax.
 const handlersHolding = (status: number): string => `
 export const list = (req: unknown, res: {
   status: (n: number) => { json: (b: unknown) => void };

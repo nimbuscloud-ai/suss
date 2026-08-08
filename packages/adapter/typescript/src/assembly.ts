@@ -1,4 +1,12 @@
-// assembly.ts — Compose Steps 1-4 into RawBranch[] (Task 2.5)
+/**
+ * Turns one function into the list of branches a summary is built from.
+ *
+ * Terminal matching, path-condition enumeration, predicate parsing and
+ * effect capture each live in their own module. This one runs them over
+ * the same function and lines the results up: every terminal gets the
+ * conditions on each path that reaches it, and the calls in the body get
+ * attached to the branch they fire on.
+ */
 
 import { Node } from "ts-morph";
 
@@ -52,18 +60,18 @@ const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
   );
 
 /**
- * What sits where this unit's body should be. A declaration with no
- * body behind it and a body with nothing in it both produce a summary
- * with nothing in it, and the confidence on that summary is a different
- * answer in each case.
+ * Whether this unit has a body, and whether that body does anything. A
+ * declaration with nothing behind it and a body with nothing in it both
+ * produce an empty summary, and the confidence we put on that summary
+ * is different in each case.
  */
 export function bodyContentOf(func: FunctionRoot): BodyContent {
   const body = func.getBody?.();
   if (body === undefined) {
     return "absent";
   }
-  // A concise arrow produces its value from an expression, which is
-  // work whatever it is.
+  // A concise arrow has an expression where the block would be, and
+  // evaluating that expression is work, so it is never "empty".
   if (!Node.isBlock(body)) {
     return "statements";
   }
@@ -71,9 +79,9 @@ export function bodyContentOf(func: FunctionRoot): BodyContent {
 }
 
 /**
- * Return statements the terminal patterns did not claim. A return that
- * belongs to a nested scope belongs to whatever owns that scope, which
- * is the same rule the terminal search applies.
+ * How many return statements no terminal pattern matched. A return
+ * inside a nested scope belongs to that scope and is not counted here,
+ * which is the same rule the terminal search follows.
  */
 export function countUnmatchedReturns(
   func: FunctionRoot,
@@ -92,8 +100,8 @@ export function countUnmatchedReturns(
     }
   }
 
-  // A concise arrow produces its value with no return statement, so the
-  // body itself is the thing a terminal either claimed or did not.
+  // A concise arrow has no return statement to look for, so the body
+  // expression itself is the one thing a terminal either matched or not.
   if (Node.isArrowFunction(func) && Node.isExpression(body)) {
     return claimed.has(body) ? 0 : 1;
   }
@@ -104,8 +112,9 @@ export function countUnmatchedReturns(
       traversal.skip();
       return;
     }
-    // A nested scope returns for itself, and it gets its own summary if
-    // anything discovers it.
+    // A return in a nested scope is that scope's, and it gets its own
+    // summary if anything discovers it, so counting it here would
+    // report the same return twice.
     if (startsItsOwnScope(node)) {
       traversal.skip();
       return;
@@ -113,7 +122,8 @@ export function countUnmatchedReturns(
     if (!Node.isReturnStatement(node)) {
       return;
     }
-    // A bare return leaves by the same door as falling off the end.
+    // A bare `return;` produces the same result as falling off the end
+    // of the function, so nothing was missed by not matching it.
     if (node.getExpression() === undefined) {
       return;
     }
@@ -125,20 +135,6 @@ export function countUnmatchedReturns(
 }
 
 /**
- * Extract all raw branches from a function, composing:
- *   1. findTerminals, to locate terminal nodes
- *   2. computePathConditions, for the conditions on each path (CFG
- *      enumeration; declined shapes degrade to sound
- *      under-specification)
- *   3. parseConditionExpression, turning an Expression into a Predicate
- *   4. extractInvocationEffects, for bare expression-statement calls,
- *      attached to the default branch so handler and useEffect bodies
- *      carry their side-effect set
- *
- * `isDefault` is true when the branch has no conditions, or all
- * conditions come from early returns or throws.
- */
-/**
  * The branches a function produces, alongside the terminals they came
  * from. A caller that wants to know which returns went unclaimed needs
  * the terminals, and searching for them a second time costs about as
@@ -149,6 +145,13 @@ export interface RawBranchResult {
   terminals: FoundTerminal[];
 }
 
+/**
+ * Every branch a function produces: one per path that reaches a
+ * terminal, with the conditions on that path and the effects that fire
+ * along it. A branch is `isDefault` when it has no conditions at all,
+ * or when every condition on it came from an early return or throw,
+ * since those are the paths that run when no guard fired.
+ */
 export function extractRawBranches(
   func: FunctionRoot,
   terminalPatterns: TerminalPattern[],
@@ -169,10 +172,9 @@ export function extractRawBranches(
     ...runAccessRecognizers(func, accessRecognizers, barriers),
   ];
 
-  // One engine: CFG-path enumeration (`paths/pathConditions.ts`),
-  // one condition list per entry→terminal path. Shapes it declines
-  // degrade inside the engine to enclosure conditions plus an opaque
-  // conjunct — sound under-specification, no second code path.
+  // One condition list per path from entry to terminal. Anything the
+  // path engine cannot enumerate comes back as the enclosing conditions
+  // plus an opaque conjunct, so there is no second code path here.
   const { byTerminal } = computePathConditions(
     func,
     terminals.map(({ node }) => node),
@@ -186,10 +188,10 @@ export function extractRawBranches(
   // Fall-through is a JS language fact (every function implicitly
   // returns `undefined`) but whether it counts as a *terminal* is
   // pack-specific: HTTP handlers treat no-response as a bug (no
-  // synthetic terminal — `no matching terminals` stays empty so
+  // synthetic terminal: `no matching terminals` stays empty so
   // downstream gap detection flags the handler); React event
   // handlers treat implicit return as normal (synthesised default
-  // transition carries the body's side effects). Pack opt-in via
+  // transition records the body's side effects). Pack opt-in via
   // the `functionFallthrough` match keeps the decision close to
   // where the semantics are declared.
   const wantsFallthrough = terminalPatterns.some(
@@ -215,12 +217,12 @@ export function extractRawBranches(
   const rawBranches: RawBranch[] = terminals.flatMap(
     ({ node, terminal, whenAlso }) => {
       // Dead-code terminals (no entry path reaches them) produce no
-      // branches — a terminal that cannot fire is not behavior.
+      // branches: a terminal that cannot fire is not behavior.
       const conditionLists = byTerminal.get(node) ?? [];
       return conditionLists.map((infos): RawBranch => {
-        // A terminal sharing its node with another one carries the
-        // test that tells them apart. The path to the node cannot
-        // say, because both were reached the same way.
+        // When two terminals share a node, `whenAlso` is the only thing
+        // that tells them apart. The path conditions cannot, because
+        // both were reached exactly the same way.
         const conditions: RawCondition[] = [
           ...infos.map(conditionInfoToRawCondition),
           ...(whenAlso === undefined ? [] : [whenAlso]),
@@ -236,11 +238,9 @@ export function extractRawBranches(
     },
   );
 
-  // Two branches that agree on their conditions, their terminal and
-  // where they sit describe one behaviour, however many ways the walk
-  // arrived at them. A status written as a choice reaches its call
-  // through every path the choice makes, and each path would otherwise
-  // repeat every arm.
+  // Two branches with the same conditions, terminal and location are
+  // one behaviour, however many paths the walk arrived by. Without
+  // this, a status written as a choice repeats every arm on every path.
   const seenBranches = new Set<string>();
   const distinctBranches = rawBranches.filter((branch) => {
     const key = [
@@ -259,14 +259,13 @@ export function extractRawBranches(
 
   // Attach invocation effects to the default branch. A default branch
   // is the code path that runs when no early-return / guard clause
-  // fires — exactly the path every body-top-level call executes on.
+  // fires: exactly the path every body-top-level call executes on.
   // Non-default branches (explicit early returns) don't fire those
   // calls, so they stay effect-free. Calls nested inside `if`/`for`
-  // blocks are attributed to the default branch too in v0 — a coarse
-  // over-approximation we'll refine when branch-scoped effect
-  // attribution becomes load-bearing (Phase 1.5c).
+  // blocks are attributed to the default branch too, which is coarser
+  // than it should be and waits on branch-scoped effect attribution.
   //
-  // Exclude calls whose location coincides with a terminal's — e.g.
+  // Exclude calls whose location coincides with a terminal's: e.g.
   // Express's `res.json(body)` is matched as a `parameterMethodCall`
   // terminal and shouldn't be double-counted as a side-effect
   // invocation.
@@ -287,7 +286,7 @@ export function extractRawBranches(
 
   // Recognized typed effects (interaction(class: ...)) attach to
   // the same default branch. They bypass the terminal-line dedup
-  // because they're additive to the invocation effect — a Prisma
+  // because they're additive to the invocation effect: a Prisma
   // call that's also somehow a terminal would emit BOTH a typed
   // interaction (paired against the schema) AND any terminal-
   // shaped invocation, and that's the right behavior.

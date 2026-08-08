@@ -55,7 +55,7 @@ describe("readSubmodules", () => {
 
   it("finds the declaration from a service inside the repository", () => {
     // The directory suss is pointed at is usually a service, and
-    // .gitmodules sits at the repository root above it.
+    // .gitmodules is at the repository root above it.
     writeGitmodules("libs/framework");
     fs.mkdirSync(path.join(dir, "services", "orders"), { recursive: true });
     fs.mkdirSync(path.join(dir, "libs", "framework"), { recursive: true });

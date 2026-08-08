@@ -10,11 +10,11 @@
 // Which write a read sees is reaching definitions, and answering it in
 // general needs control-flow facts nothing in this adapter emits. What
 // is answerable without them is the case where control flow cannot
-// vary the answer: every write sits directly in the module's own
+// change the result: every write is directly in the module's own
 // statement list, so each runs exactly once in the order it is
 // written, and nothing at that level reads the binding before the last
 // one. Anywhere else, a write inside a branch, a loop, or a function
-// body, this has no answer and says so, and the name resolves to
+// body, this cannot decide and says so, and the name resolves to
 // nothing.
 
 import { Node, SyntaxKind, VariableDeclarationKind } from "ts-morph";
@@ -55,15 +55,15 @@ const byDeclaration = new WeakMap<VariableDeclaration, BindingWrites>();
 
 /**
  * Every value a binding takes, the declaration's initializer first.
- * A binding written once answers with that one value and `inOrder`,
+ * A binding written once gives that one value and `inOrder`,
  * which is what every `const` and most `let`s are.
  */
 export function writesToBinding(
   declaration: VariableDeclaration,
 ): BindingWrites {
   // Extraction meets the same declaration once per reference to it,
-  // and working the answer out means reading the file around it, so
-  // the answer is kept.
+  // and working it out means reading the file around it, so the result
+  // is cached.
   const remembered = byDeclaration.get(declaration);
   if (remembered !== undefined) {
     return remembered;
@@ -204,7 +204,6 @@ function writeAt(node: Node): { target: Node; write: Write } | null {
   return null;
 }
 
-/** The variable declarations a name refers to. */
 function declarationsOf(name: Node): VariableDeclaration[] {
   const symbol = name.getSymbol();
   if (symbol === undefined) {
@@ -225,11 +224,11 @@ function declarationsOf(name: Node): VariableDeclaration[] {
  * They do when every one of them is a statement of the module itself.
  * A module's top-level statements run through once, top to bottom;
  * they cannot repeat, and nothing skips one. A write anywhere else
- * runs when something calls or enters the construct holding it, and
+ * runs when something calls or enters the construct it is inside, and
  * how many times is not a question this reads.
  *
  * The last write also has to be the one every read sees, so a read
- * standing between the declaration and it makes the answer depend on
+ * between the declaration and it makes the result depend on
  * where the reader is, which the rules have no way to express.
  */
 function writesRunInOrder(
@@ -249,7 +248,6 @@ function writesRunInOrder(
   return last !== undefined && !isReadBefore(declaration, last.node.getStart());
 }
 
-/** The statement a node sits in, when it sits in one. */
 function statementOf(node: Node): Statement | null {
   let current: Node | undefined = node;
   while (current !== undefined) {

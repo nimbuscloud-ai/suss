@@ -7,7 +7,7 @@
 // apart and a new package is added in exactly one place.
 //
 // Each entry is [packageDir, badgeSlug]. The slug is the badge filename
-// stem (.github/badges/coverage-<slug>.svg) — kept stable across
+// stem (.github/badges/coverage-<slug>.svg): kept stable across
 // renames and disambiguated where a bare directory name would collide
 // (framework/apollo → "apollo" vs client/apollo → "apollo-client").
 

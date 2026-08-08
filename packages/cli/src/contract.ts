@@ -1,4 +1,4 @@
-// contract.ts — `suss contract` command implementation
+// contract.ts: `suss contract` command implementation
 //
 // Generates BehavioralSummary[] from a declared contract source rather than
 // from TypeScript code. Each --from value maps to a tiny loader that knows
@@ -33,7 +33,7 @@ export interface ContractOptions {
 /**
  * `source` is the label to record on every summary, and it is set only
  * for a spec that came from a URL: a reader reading a file off disk
- * labels it by where it sits in the repository, which is the better
+ * labels it by where it is in the repository, which is the better
  * answer and one only the reader can give, since a directory spec
  * resolves to its file inside the reader.
  */
@@ -55,7 +55,7 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
   },
   serverless: async (specPath, source) => {
     // `--from serverless` reads a Serverless Framework service file
-    // (the path may name the file or the directory holding it) and
+    // (the path may be the file itself or the directory it is in) and
     // emits the same summaries the wiring would produce from a SAM
     // template: one runtime-config provider per function, routes for
     // httpApi / http events, and message-bus summaries for the rest.
@@ -108,7 +108,7 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
 
 function expandStoryPaths(spec: string): string[] {
   // Check if it's a direct file path first. If the path exists on
-  // disk, use it — simplest and covers the single-file case.
+  // disk, use it: simplest and covers the single-file case.
   const absolute = path.resolve(spec);
   if (fs.existsSync(absolute)) {
     const stat = fs.statSync(absolute);
@@ -116,7 +116,7 @@ function expandStoryPaths(spec: string): string[] {
       return [absolute];
     }
     if (stat.isDirectory()) {
-      // Directory — walk for `.stories.ts[x]` files (one level of
+      // Directory: walk for `.stories.ts[x]` files (one level of
       // recursion; callers can pass a deeper subdirectory if they
       // want finer scope).
       return walkForStoryFiles(absolute);
@@ -199,7 +199,7 @@ export async function contract(
   }
 
   const resolved = await resolveSpec(options.spec);
-  // A fetched spec sits in a temp file whose name says nothing about
+  // A fetched spec lands in a temp file whose name says nothing about
   // which document it is, so the URL it came from stays its identity.
   const source =
     resolved.fetchedFrom === undefined

@@ -1,4 +1,4 @@
-// Both authoring shapes of an AppSync API, read for the one question a
+// Both ways of writing an AppSync API, read for the one question a
 // framework pack asks: which Lambda serves this GraphQL field.
 
 import { describe, expect, it } from "vitest";
@@ -105,8 +105,8 @@ describe("readAppSyncResolvers", () => {
   });
 
   it("reports every Lambda a pipeline runs, in order", () => {
-    // An auth step ahead of the one that loads the data is the common
-    // shape, and nothing in the template says which is which.
+    // An auth step running ahead of the one that loads the data is
+    // common, and nothing in the template says which is which.
     const bindings = readAppSyncResolvers({
       Resources: {
         Api: {

@@ -30,7 +30,8 @@ afterEach(() => {
 
 describe("what a service reaches", () => {
   it("finds a library its own package brings in", () => {
-    // The service names a package of its own; that package names the SDK.
+    // The service depends on a package of its own, and that package is
+    // what depends on the SDK.
     const root = makeRepo({
       "package.json": { name: "svc", dependencies: { "@acme/messaging": "*" } },
       "packages/messaging/package.json": {

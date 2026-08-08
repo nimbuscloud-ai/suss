@@ -1,6 +1,6 @@
 // envShape.test.ts: the properties for runtime configuration reads.
 //
-// The sound tier is every place a read can sit crossed with every way
+// The sound tier is every place a read can appear crossed with every way
 // it can be spelled, and nothing is pinned: the pack reads all of them.
 //
 // Knobs: SUSS_FUZZ_RUNS (default 150), SUSS_FUZZ_SEED.

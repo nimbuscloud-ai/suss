@@ -1,7 +1,7 @@
 // channelPairing.ts: the message-bus side's index over channels.
 //
 // The split itself (`${bus}#${subject}`) and the rule for when two
-// channels name the same thing are shared comparison primitives owned
+// channels mean the same thing are shared comparison primitives owned
 // by @suss/ir-core, because `boundaryKey` builds the pairing key from
 // the same split and the generic pairing pass compares buses with the
 // same rule. Re-exported here so this module's callers are unaffected
@@ -18,7 +18,7 @@ export {
 
 /**
  * The channels seen on one side of the bus, indexed by subject so a
- * lookup asks "does anything here carry this subject on an agreeing
+ * lookup can ask "is anything here using this subject on an agreeing
  * bus?" without scanning every channel.
  */
 export type ChannelSet = Map<string, (string | null)[]>;

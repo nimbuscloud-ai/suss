@@ -1,4 +1,4 @@
-// promiseThen.ts — the `derivedFrom` link for Promise `.then` / `.catch`
+// promiseThen.ts: the `derivedFrom` link for Promise `.then` / `.catch`
 // callback parameters.
 //
 // ECMAScript defines what `Promise.prototype.then` resolves to, so this
@@ -27,7 +27,7 @@ import {
 } from "ts-morph";
 
 /**
- * The link a `.then` / `.catch` callback parameter carries to the value
+ * The link from a `.then` / `.catch` callback parameter to the value
  * it stands in for: the resolved value of `upstream`. `method` selects
  * `.then` (resolved value) versus `.catch` (rejected value, opaque).
  */
@@ -78,7 +78,7 @@ export function receiverIsPromiseTyped(receiver: Expression): boolean {
 }
 
 /**
- * The expression a callback resolves to — its expression body, or the
+ * The expression a callback resolves to: its expression body, or the
  * argument of a single trailing `return` in a block body. Null when the
  * callback isn't a resolvable function or its return can't be pinned to
  * one expression.
@@ -110,7 +110,7 @@ export function callbackReturnExpression(
 /**
  * The `derivedFrom` link for `decl` when it is the first parameter of a
  * `.then` / `.catch` callback whose receiver is `Promise`-typed. Null
- * when `decl` isn't such a binding — the parameter is then an ordinary
+ * when `decl` isn't such a binding: the parameter is then an ordinary
  * unit input.
  */
 export function thenParameterLink(

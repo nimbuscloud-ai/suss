@@ -1,14 +1,15 @@
-// serverlessFunctions.ts — read AWS::Serverless::Function resources into
-// a code-facing view: which module + export each function points at, and
-// which route / non-route Events it declares.
-//
-// The summary-generation paths (index.ts) expand SAM Events into API
-// Gateway route summaries. This reader answers the complementary
-// question the code-side pairing needs: "given the template, where is
-// each handler's implementation, and what routes is it bound to?" The
-// manifest semantics (Handler string layout, CodeUri inheritance from
-// Globals, Api vs HttpApi Events) stay owned here rather than being
-// reconstructed inside a framework pack.
+/**
+ * serverlessFunctions.ts reads AWS::Serverless::Function resources into a
+ * code-facing view: which module and export each function points at, and
+ * which route and non-route Events it declares.
+ *
+ * The summary-generation paths expand SAM Events into API Gateway route
+ * summaries. This reader covers the other question the code-side pairing
+ * needs: given the template, where is each handler's implementation, and
+ * what routes is it bound to? The manifest semantics (how a Handler string
+ * is laid out, how CodeUri is inherited from Globals, Api versus HttpApi
+ * Events) stay here rather than being reconstructed in a framework pack.
+ */
 
 import { codeScopePath } from "@suss/ir-core";
 
@@ -30,9 +31,10 @@ export interface ServerlessHttpRoute {
 }
 
 /**
- * A recognized SAM Event that isn't an HTTP route — SQS / Schedule /
- * SNS / S3 / etc. Surfaced (not dropped) so the code side can account
- * for handlers it recognizes but deliberately doesn't extract as HTTP.
+ * A recognized SAM Event that isn't an HTTP route (SQS, Schedule, SNS,
+ * S3, and so on). These are reported rather than dropped, so the code
+ * side can account for handlers it recognizes but deliberately doesn't
+ * extract as HTTP.
  */
 export interface ServerlessNonHttpEvent {
   eventId: string;
@@ -47,7 +49,7 @@ export interface ServerlessFunctionInfo {
   handler: string;
   /** Module-path portion of the handler (everything before the final dot). */
   modulePath: string;
-  /** Exported symbol the handler names (everything after the final dot). */
+  /** Exported symbol the handler points at (everything after the final dot). */
   exportName: string;
   /**
    * CodeUri base directory the handler resolves against: the function's
@@ -67,7 +69,7 @@ export interface ParsedHandler {
  * Split a SAM Handler string into its module path and exported symbol.
  * The final dot separates them: `"src/handlers/confirmToken.handler"` →
  * `{ modulePath: "src/handlers/confirmToken", exportName: "handler" }`.
- * Returns null when there's no dot (nothing names an export to bind to).
+ * Returns null when there's no dot, since there's no export to bind to.
  */
 export function parseHandler(handler: string): ParsedHandler | null {
   const trimmed = handler.trim();
@@ -89,8 +91,8 @@ function readCodeUri(resource: {
     return ".";
   }
   // This one is joined onto the template directory rather than tested
-  // as a prefix, and a join needs a directory to name, so the project
-  // root reads back as "." instead of the empty string.
+  // as a prefix, and a join needs an actual directory, so the project
+  // root comes back as "." instead of the empty string.
   return codeScopePath(codeUri) || ".";
 }
 
@@ -121,8 +123,9 @@ function classifyEvents(events: Record<string, unknown>): {
     const method = String(props.Method ?? "").toUpperCase();
     const path = String(props.Path ?? "");
     if (method === "" || path === "") {
-      // A route event missing its method or path can't bind; record it
-      // as a non-HTTP recognition so it still surfaces in accounting.
+      // A route event missing its method or path can't bind, so record
+      // it as a non-HTTP recognition and it still shows up in the
+      // accounting.
       nonHttpEvents.push({ eventId, eventType: type });
       continue;
     }
@@ -143,9 +146,9 @@ function classifyEvents(events: Record<string, unknown>): {
 /**
  * Read every AWS::Serverless::Function resource in the template into a
  * code-facing `ServerlessFunctionInfo`. Functions without a parseable
- * Handler are skipped (there's no export to bind). Functions with no
- * Events still appear (empty route + non-route lists) so a consumer can
- * see them.
+ * Handler are skipped, since there's no export to bind. Functions with
+ * no Events still appear, with both event lists empty, so a consumer
+ * can see them.
  */
 export function readServerlessFunctions(
   template: CloudFormationTemplate,

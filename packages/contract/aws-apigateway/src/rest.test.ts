@@ -174,7 +174,7 @@ describe("restApiToSummaries — other knobs", () => {
       }),
     );
     // Both authorizer and api-key produce 403; should be ONE 403 transition,
-    // not two — that's the collapse rule that keeps the consumer from having
+    // not two: that's the collapse rule that keeps the consumer from having
     // to disambiguate platform causes.
     const at403 = summaries[0].transitions.filter(
       (t) => statusFromOutput(t.output) === 403,

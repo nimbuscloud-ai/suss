@@ -1,4 +1,4 @@
-// differential.ts — the adjudicator.
+// differential.ts: the adjudicator.
 //
 // For one generated program: extract a summary once, execute the same
 // body against a deterministic request battery, and check the summary's

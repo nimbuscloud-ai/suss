@@ -27,7 +27,7 @@ export function checkContractConsistency(
   // When the contract is "derived" from the same source as the
   // transitions (e.g. an OpenAPI stub's contract extracted from the
   // same operation that produced its transitions), self-comparison is
-  // tautological — any mismatch would indicate a bug in the producing
+  // tautological: any mismatch would indicate a bug in the producing
   // pack itself, not a contract violation. Skip the provider-vs-its-own-
   // contract checks; consumer-vs-contract checks still run because the
   // consumer is always an independent observation.
@@ -35,10 +35,9 @@ export function checkContractConsistency(
 
   if (!skipSelfComparison) {
     for (const gap of provider.gaps) {
-      // A gap saying part of the handler went unread says the pack has
-      // no shape for what it returns, which is a limit on the reading
-      // rather than something the handler did wrong. Holding it against
-      // the contract fails checks on code that is answering correctly.
+      // A gap saying part of the handler went unread means the pack has
+      // no shape for what it returns, which is a limit in what suss
+      // could read rather than a fault in the handler.
       if (gap.type === "unreadOutcome") {
         findings.push({
           kind: "lowConfidence",

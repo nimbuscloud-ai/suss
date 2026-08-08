@@ -1,4 +1,4 @@
-// @suss/framework-hono — PatternPack for Hono
+// @suss/framework-hono: PatternPack for Hono
 //
 // A Hono handler takes one context and returns its response, rather than
 // writing to a response object it was handed:
@@ -82,8 +82,8 @@ export function honoFramework(): PatternPack {
         // app.openapi(route, handler), where the route is a
         // createRoute({ method, path, ... }) object that usually lives
         // on a shared contract in another file. The fact layer follows
-        // the reference; the route object carries its own method and
-        // path.
+        // the reference, and the route object has its own method and path on
+        // it.
         kind: "handler",
         match: {
           type: "registrationCall",

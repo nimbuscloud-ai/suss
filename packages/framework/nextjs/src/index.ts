@@ -1,8 +1,8 @@
-// @suss/framework-nextjs — PatternPack for Next.js route handlers.
+// @suss/framework-nextjs: the PatternPack for Next.js route handlers.
 //
 // Next.js puts the route in the tree rather than in a registration call.
 // A file at `app/api/orders/[id]/route.ts` serves `/api/orders/{id}`,
-// and each HTTP method it answers is a separate export:
+// and each HTTP method it serves is a separate export:
 //
 //   export async function GET(req: Request, { params }) {
 //     const order = await findOrder(params.id);
@@ -10,17 +10,16 @@
 //     return NextResponse.json(order);
 //   }
 //
-// So discovery looks at where a file sits and which names it exports,
-// and the route comes out of the path. An `/api/orders/{id}` handler
+// So discovery looks at where a file is and which names it exports, and the
+// route comes out of the path. An `/api/orders/{id}` handler
 // here pairs with a client calling the same URL, and with an Express
 // service writing `/api/orders/:id`.
 //
 // The older `pages/api` routes are found too, and they stop short of
 // pairing. A pages handler is one default export that switches on
-// `req.method` inside, so it answers every method, and a REST binding
-// holds one. The summary carries the path and no method, which is
-// enough to see the route in an inventory and not enough to match it
-// with a caller.
+// `req.method` inside, so it serves every method, while a REST binding only
+// records one. The summary gets the path and no method, which is enough to see
+// the route in an inventory and not enough to match it with a caller.
 //
 // Out of scope for now: server actions, whose identity is a compiler
 // generated ID rather than a URL, and page components, which the React
@@ -40,7 +39,7 @@ const ROUTE_METHODS = [
 ];
 
 /**
- * How the app directory names a route. Nested directories are path
+ * How the app directory spells a route. Nested directories are path
  * segments, a directory in brackets is a parameter, a directory in
  * parentheses groups files without showing up in the URL, and the
  * filename says what the file is rather than adding a segment.
@@ -99,9 +98,8 @@ export function nextjsFramework(): PatternPack {
           exportNames: ["default"],
         },
         bindingExtraction: {
-          // One export answers every method, which is what the method
-          // wildcard says. Pairing matches it with whichever method a
-          // consumer names.
+          // One export serves every method, which is what the wildcard says.
+          // Pairing matches it against whichever method a consumer used.
           method: { type: "literal", value: "*" },
           path: PAGES_ROUTES,
         },

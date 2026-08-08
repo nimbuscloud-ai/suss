@@ -168,7 +168,7 @@ describe("inheritedEnvVars", () => {
       },
     });
 
-    // The function that declares TABLE_NAME itself answers for it.
+    // A function that declares TABLE_NAME itself does not inherit it.
     expect(inherited.Ingest).toEqual(["LOG_LEVEL"]);
     expect(inherited.Notify).toEqual(["LOG_LEVEL", "TABLE_NAME"]);
     expect(inherited.Queue).toBeUndefined();

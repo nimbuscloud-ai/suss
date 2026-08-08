@@ -12,7 +12,7 @@
 // a router nobody mounts by name, a router mounted twice, a router
 // mounted onto another router (a second hop), or a mount that
 // overrides the prefix the constructor stated. Discovery turns an
-// abstention into a unit that keeps its name and carries no path, so
+// abstention into a unit that keeps its name and gives no path, so
 // it pairs with nothing rather than with whatever a guessed path
 // would have named.
 //
@@ -49,23 +49,22 @@ import type {
 import type { PyNode } from "./parser.js";
 import type { Binding, ModuleBinding, Scope } from "./scope.js";
 
-/** One parsed-and-bound file, the shape `buildRouterIndex` reads a project as. */
+/** One file, already parsed and bound. `buildRouterIndex` takes a project as a list of these. */
 export interface BoundPythonFile {
-  /** Absolute path, the identity module resolution joins on. */
+  /** The absolute path, which is what module resolution joins on. */
   file: string;
-  /** The path a gap names this file by, which a reader has to be able to open. */
+  /** The path a gap refers to this file by, which a reader has to be able to open. */
   displayPath: string;
   root: PyNode;
   module: ModuleBinding;
 }
 
 /**
- * What a decorator's base object turns out to be. `notRouter` covers
- * the app itself and anything the index never saw constructed, so the
- * decorator's own path stands as written; `composed` carries the
- * mount-plus-constructor prefix to put in front of that path;
- * `abstain` keeps the route pathless, with a reason phrased to follow
- * "the router this route is declared on ...".
+ * What the object a decorator hangs on turns out to be. `notRouter` covers the
+ * app itself and anything the index never saw constructed, so the decorator's
+ * own path stands as written. `composed` gives the prefix to put in front of
+ * that path. An `abstain` reason is written to follow "the router this route is
+ * declared on ...".
  */
 export type RoutePrefixResolution =
   | { kind: "notRouter" }
@@ -98,10 +97,9 @@ interface Construction {
 }
 
 /**
- * What a prefix keyword turned out to say at one site. "unstated"
- * covers a keyword nobody wrote and one written with a value the
- * library takes as none of its own; "unreadable" is an expression
- * this reading does not evaluate.
+ * What a prefix keyword says at one site. "unstated" covers a keyword nobody
+ * wrote, and one written with a value the library treats as no value at all.
+ * "unreadable" means an expression we do not evaluate.
  */
 type PrefixReading =
   | { kind: "stated"; value: string }
@@ -111,7 +109,6 @@ type PrefixReading =
 const UNSTATED_PREFIX: PrefixReading = { kind: "unstated" };
 const UNREADABLE_PREFIX: PrefixReading = { kind: "unreadable" };
 
-/** What a construction's own prefix contributes, or why nothing can be said about it. */
 type OwnPrefixResolution =
   | { kind: "composed"; value: string }
   | { kind: "abstain"; reason: string };
@@ -159,12 +156,6 @@ interface PatternIndex {
 
 const NOT_ROUTER: RoutePrefixResolution = { kind: "notRouter" };
 
-/**
- * Scan every file once per composition-bearing pattern and answer
- * discovery's question: given the variable a route decorator hangs
- * on, what prefix (if any) does its mount compose, or why does the
- * reading abstain.
- */
 export function buildRouterIndex(
   files: BoundPythonFile[],
   packs: PythonPack[],
@@ -277,7 +268,7 @@ function loopsClause(loops: UnenumerableLoop[], verb: string): string {
   return `loops at ${locations.join(", ")} ${verb}`;
 }
 
-/** Why a router nobody mounted by name still names no path, naming the loop when there is one to read. */
+/** Why a router nobody mounted by name still gives no path, pointing at the loop when there is one to read. */
 function unmountedReason(index: PatternIndex): string {
   const loops = [...index.unenumerableLoops.values()];
   if (loops.length === 0) {
@@ -406,12 +397,10 @@ function buildPatternIndex(
 }
 
 /**
- * The call node a module-level name was assigned from, when its callee
- * is a name imported from one of the accepted modules. Returns that
- * callee's imported name alongside the call, so a caller can tell the
- * router constructor from the app's. Same one-hop bound as
- * `classifyDecorator`'s object tracing: one assignment back to a
- * constructor, never a chain.
+ * The call a module-level name was assigned from, when the thing being called
+ * was imported from one of the accepted modules. This follows a single
+ * assignment back to a constructor and never a chain, the same one-hop limit
+ * `classifyDecorator` uses when it traces an object.
  */
 function constructionOf(
   name: string,
@@ -439,12 +428,7 @@ function constructionOf(
   return { constructorName: calleeBinding.importedName, call: binding.value };
 }
 
-/**
- * The prefix as the library holds it, which for some libraries is not
- * quite what the source wrote: one joins a route's path to the prefix
- * as written, another drops trailing slashes first, and composing
- * without that reports a doubled slash nobody serves.
- */
+/** The prefix as the library stores it. A library that drops trailing slashes ends up with something other than what the source wrote. */
 const PREFIX_TRAILING_SLASH_READERS: Record<
   PrefixTrailingSlash,
   (prefix: string) => string
@@ -454,11 +438,9 @@ const PREFIX_TRAILING_SLASH_READERS: Record<
 };
 
 /**
- * Whether a written argument is one of the values a library can take
- * as no value at all. Python's `None` and `False`, zero, and the
- * empty string are the four, and a library reaches them all at once
- * by asking whether the value is truthy. Whether this library does
- * that is the pack's to say; what the four are is the language's.
+ * The four values a library can treat as no value at all, which is what a
+ * truthiness check on the argument comes down to. Python decides what the four
+ * are. Whether a given library treats them that way is the pack's to say.
  */
 const NO_VALUE_LITERALS: Partial<
   Record<DecoratorArg["kind"], (arg: DecoratorArg) => boolean>
@@ -469,12 +451,7 @@ const NO_VALUE_LITERALS: Partial<
   none: () => true,
 };
 
-/**
- * What a prefix keyword says at one site. Every site reads it through
- * here, so a spelling means the same thing at a constructor and at a
- * mount, which is the property this reading kept getting wrong one
- * site at a time.
- */
+/** Every site reads a prefix through here, so the same spelling means the same thing at a constructor and at a mount. */
 function readPrefixKeyword(
   keywordArgs: Record<string, DecoratorArg>,
   keyword: string,
@@ -499,7 +476,6 @@ function readPrefixKeyword(
   return UNREADABLE_PREFIX;
 }
 
-/** The prefix a constructor call leaves the router holding, trailing slash handled the way the library handles it. */
 function constructorPrefix(
   keywordArgs: Record<string, DecoratorArg>,
   composition: RouterComposition,
@@ -564,10 +540,9 @@ function constructionStatement(
 }
 
 /**
- * Walks the module's statements rather than its bindings map: the
- * binder keeps one binding per name, and a name assigned a router
- * construction twice has to surface as `reassigned` instead of
- * quietly reading as whichever assignment came last.
+ * Walks the module's statements rather than its bindings map, because the
+ * binder keeps one binding per name, and a name assigned twice has to come out
+ * as `reassigned` rather than as its last assignment.
  */
 function recordConstruction(
   construction: { name: string; constructorName: string; call: PyNode },
@@ -624,7 +599,7 @@ function collectConstructions(
 
 /**
  * Keeps every construction from the carrier's modules, not only the
- * carrier's own: the plain app sits in the same argument position and
+ * carrier's own: the plain app is in the same argument position and
  * has no prefix, and telling it from a name this reading could not
  * follow at all is what keeps `Api(app)` composing while
  * `Api(blueprint_from_elsewhere)` abstains. Walks function bodies too,
@@ -711,12 +686,7 @@ function constructionNamed(
   return resolvers[binding.kind]?.() ?? null;
 }
 
-/**
- * What a prefix the mount call states leaves the router mounted at,
- * per what the library does with it. A mount that states none, in any
- * of the spellings the library takes as none, never reaches here: it
- * leaves the router mounted where its constructor put it.
- */
+/** What a prefix written on the mount call does to where the router is mounted. A mount that writes no prefix never gets here. */
 const MOUNT_STATE_BY_EFFECT: Record<
   MountPrefixEffect,
   (statedPrefix: string, site: MountSite) => MountState
@@ -811,7 +781,7 @@ type StatementVisitor = (
   scan: Scan,
 ) => void;
 
-/** Statement shapes whose body can hold a call the reading follows. Every other block statement is left alone, since the binder records no name written inside one. */
+/** Statement shapes whose body can contain a call the reading follows. Every other block statement is left alone, since the binder records no name written inside one. */
 const WALK_DESCENTS: Record<
   string,
   (
@@ -976,7 +946,7 @@ function mountCallOf(
   };
 }
 
-/** The names one mount call registers: the argument's own, or the literal sequence a loop binds it from. Empty when the loop names nobody, and then the loop itself is recorded. */
+/** The names one mount call registers: the argument's own, or the literal sequence a loop binds it from. Empty when the loop registers nobody, and then the loop itself is recorded. */
 function mountedNames(
   arg: DecoratorArg | undefined,
   position: WalkPosition,

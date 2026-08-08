@@ -140,8 +140,6 @@ describe("boundaryKey", () => {
   });
 
   it("has no key for a boundary shape it does not know", () => {
-    // A runtime-config or storage binding names a boundary with no
-    // counterpart to pair against, so it stays out of the buckets.
     expect(
       boundaryKey({
         transport: "in-process",
@@ -186,8 +184,6 @@ describe("boundaryKey", () => {
   });
 
   it("has no key for a channel that names a bus and no subject", () => {
-    // `default#` says which bus and never says what travels on it, so
-    // there is nothing for the other side to match.
     expect(
       boundaryKey(
         messageBusBinding({
@@ -218,10 +214,7 @@ describe("boundaryKey", () => {
     expect(bare).toBe(qualified);
   });
 
-  it("keeps two buses carrying one subject in the same bucket", () => {
-    // Whether they pair is `channelsPair`'s call, made inside the
-    // bucket. The key cannot make it: a side that names no bus has to
-    // land with the sides that do.
+  it("keeps two buses carrying one subject in the same bucket, leaving the pairing call to channelsPair", () => {
     expect(
       boundaryKey(
         messageBusBinding({

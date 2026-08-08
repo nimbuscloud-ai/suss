@@ -1,10 +1,10 @@
-// componentGenerators.ts — fast-check arbitraries over the component DSL.
+// componentGenerators.ts: fast-check arbitraries over the component DSL.
 //
 // One sound tier for now: guards + JSX trees with inline logical /
 // ternary conditionals are all constructs the React pack documents as
-// modeled (decisions #33–#45). Constructs the pack documents as
+// modeled (decisions #33: #45). Constructs the pack documents as
 // staying opaque (`||` rendering, `.map()`, custom components) are
-// deliberately absent — they would only exercise abstention. Gap arms
+// deliberately absent: they would only exercise abstention. Gap arms
 // get added the way the HTTP side earned them: when a fuzz session
 // or a documented deferral produces a reproducible mismatch shape.
 

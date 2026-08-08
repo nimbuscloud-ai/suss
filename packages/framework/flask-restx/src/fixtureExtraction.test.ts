@@ -1,25 +1,3 @@
-// fixtureExtraction.test.ts: the acceptance test for the Python
-// adapter's v0 slice (docs/internal/proposals/language-adapters.md).
-//
-// Extracts over fixtures/python-webapp, a small invented fixture
-// (sourced from nothing private) anchoring the shape the proposal's
-// corpus measurement found: an internal wrapper module re-exporting
-// flask-restx's route decorator, route files importing it (one
-// aliased), namespaces constructed with a path and mounted with
-// `add_namespace`, and a FastAPI-style file with annotated parameters
-// and a response model class. `pairSummaries` (the same pairing @suss/checker
-// runs for same-language boundaries) buckets the extracted provider
-// routes against hand-built consumer summaries by method and path
-// alone, which is the existence-pairing acceptance bar the proposal
-// names: nothing here depends on the consumer summaries having come
-// from Python, so the same bucketing works across languages once both
-// sides extract.
-//
-// The FastAPI-style file is read through the inline `fastapiPack`
-// below rather than the shipped `@suss/framework-fastapi`, which has
-// its own fixture and extraction test: depending on a sibling pack
-// here would only re-test it.
-
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,13 +21,7 @@ const repoRoot = path.resolve(
 );
 const fixtureRoot = path.join(repoRoot, "fixtures", "python-webapp");
 
-/**
- * Not the shipped `@suss/framework-fastapi`: an inline config proving
- * the same `decoratedFunctionRoute` mechanism (verb in the decorator's
- * own attribute name, `response_model` / `status_code` keywords)
- * covers both route shapes in one extraction, without a cross-pack
- * dependency on a sibling that has its own extraction test.
- */
+/** Inline rather than the shipped `@suss/framework-fastapi`, which has its own extraction test. */
 const fastapiPack: PythonPack = {
   name: "fastapi-inline-test-pack",
   protocol: "http",
@@ -102,7 +74,7 @@ function consumer(
   };
 }
 
-/** Everything a summary says about what nobody could read, as one string to match against. */
+/** Every gap description on a summary, joined into one string to match against. */
 function gapTextOf(summary: BehavioralSummary | undefined): string {
   return summary === undefined
     ? ""
@@ -157,12 +129,6 @@ describe("extraction over fixtures/python-webapp", () => {
   });
 
   it("reads Flask's converter template into a canonical path claim with a path-parameter role", async () => {
-    // The fixture writes the route the way Flask spells it,
-    // `/orders/<int:order_id>`. The claim has to canonicalize to the
-    // IR's brace form and classify `order_id` as a path parameter;
-    // a reader that only understands braces leaves the path in Flask's
-    // spelling and the parameter demoted to a query parameter, which
-    // is the bug this pins.
     const { summaries } = await extractFixture();
     const orderGet = summaries.find(
       (s) => s.identity.name === "OrderDetail.get",
@@ -196,9 +162,6 @@ describe("extraction over fixtures/python-webapp", () => {
   });
 
   it("reads an empty route path as the namespace's own path, parameter roles and all", async () => {
-    // The resource sitting at the mount point writes no path of its
-    // own, and its only parameter is named in the namespace's path.
-    // Both readings come from the same composition.
     const { summaries } = await extractFixture();
     const list = summaries.find((s) => s.identity.name === "BehaviorList.get");
     expect(list?.identity.boundaryBinding?.semantics).toEqual({
@@ -218,9 +181,6 @@ describe("extraction over fixtures/python-webapp", () => {
   });
 
   it("serves a namespace written with a trailing slash where the library serves it", async () => {
-    // flask-restx holds the path with trailing slashes stripped, so
-    // joining what the source wrote would report a doubled slash the
-    // app never serves.
     const { summaries } = await extractFixture();
     const paths = ["InvoiceList.get", "InvoiceDetail.get"].map((name) => {
       const semantics = summaries.find((s) => s.identity.name === name)
@@ -246,10 +206,6 @@ describe("extraction over fixtures/python-webapp", () => {
   });
 
   it("names no role either, for a route whose path nobody could read", async () => {
-    // `report_id` is a path parameter, and the only thing that would
-    // say so is the path. Calling it a query parameter because the
-    // path went unread is the same confident guess the composed path
-    // exists to remove.
     const { summaries } = await extractFixture();
     const report = summaries.find(
       (s) => s.identity.name === "ReportDetail.get",
@@ -292,9 +248,8 @@ describe("extraction over fixtures/python-webapp", () => {
       consumer("listTodos", "GET", "/todos"),
       consumer("getOrder", "GET", "/orders/{order_id}"),
       consumer("readItem", "GET", "/items/{item_id}"),
-      // The path this consumer calls only exists once the namespace's
-      // own path is composed in front of the route's; against the route
-      // path alone it lands unmatched.
+      // This path only exists once the namespace's own path is put in front
+      // of the route's.
       consumer("listBehaviors", "GET", "/behaviors/{school_id}"),
       consumer("getNothing", "GET", "/does-not-exist"),
     ];
@@ -313,14 +268,10 @@ describe("extraction over fixtures/python-webapp", () => {
       ].sort(),
     );
 
-    // The consumer with no matching route lands in unmatched, proving
-    // pairing does bucket rather than pass everything through.
     expect(result.unmatched.consumers.map((c) => c.identity.name)).toEqual([
       "getNothing",
     ]);
 
-    // Providers with no hand-built consumer (POST /todos, DELETE
-    // /orders/{order_id}, GET /users, create_item) land unmatched too.
     expect(result.unmatched.providers.length).toBeGreaterThan(0);
   });
 });

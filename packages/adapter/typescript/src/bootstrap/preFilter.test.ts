@@ -68,7 +68,7 @@ describe("computePackApplicability — pack-level requiresImport", () => {
   it("recognizer-only pack WITHOUT requiresImport stays ungated (every file)", () => {
     const nodeRuntimePack = basePack({
       name: "node",
-      // No requiresImport — the process surface is a Node.js global
+      // No requiresImport: the process surface is a Node.js global
       accessRecognizers: [noopAccess],
     });
     const [file1, file2] = makeFiles({

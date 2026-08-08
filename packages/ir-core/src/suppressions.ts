@@ -1,20 +1,17 @@
-// suppressions.ts — the suppression pipeline over the shared finding base.
-//
-// Both finding shapes (behavioural `Finding`, intent `IntentFinding`)
-// carry `kind` / `severity` / optional `suppressed`; that thin base is
-// all the pipeline needs. The rule schema, first-match-wins semantics,
-// effect application, and threshold counting live here so both
-// checkers share one implementation without depending on each other.
-// What differs per checker is only *how a rule's discriminators match
-// a finding* (behavioural findings key their boundary from a binding
-// and have a consumer side; intent findings carry the key directly) —
-// callers supply that as a matcher.
-//
-// This module owns rules and matching, NOT file I/O — the CLI reads
-// .sussignore.yml / .sussignore.json from disk and hands parsed rules
-// here. It also can't enumerate valid finding kinds (those live in the
-// IR packages above it), so `kind` is an open string; the CLI loader
-// validates kinds against the published kind enums and rejects typos.
+/**
+ * The suppression pipeline, over the smallest finding both checkers share.
+ *
+ * Behavioural `Finding` and intent `IntentFinding` both have `kind`,
+ * `severity`, and an optional `suppressed`, which is all the pipeline
+ * needs. The rule schema, first-match-wins matching, effect application,
+ * and threshold counting are here so the two checkers share one
+ * implementation without depending on each other. Only the matching of a
+ * rule's discriminators differs, and a caller passes that in.
+ *
+ * The module owns rules and matching, not file I/O. The CLI reads a
+ * .sussignore file, checks each kind against the published enums, and
+ * hands the parsed rules over.
+ */
 
 import { z } from "zod";
 
@@ -35,9 +32,9 @@ const SuppressionSideSchema = z
 export const SuppressionRuleSchema = z
   .object({
     /**
-     * Finding kind to match — any behavioural or intent finding kind.
-     * Open here (this package sits below both IRs); the loader
-     * validates against the published kind enums.
+     * The finding kind to match, behavioural or intent. It is an open
+     * string here because this package is below both IRs, and the loader
+     * is what validates it against the published kind enums.
      */
     kind: z.string().optional(),
     /**
@@ -48,26 +45,26 @@ export const SuppressionRuleSchema = z
      */
     boundary: z.string().optional(),
     /**
-     * Consumer-side discriminators (narrowest useful match). Only
-     * meaningful for behavioural findings — a rule that specifies
-     * `consumer` never matches an intent finding, which has no
-     * consumer side.
+     * Consumer-side discriminators, the narrowest useful match. These
+     * mean something only for behavioural findings: a rule that
+     * specifies `consumer` never matches an intent finding, because an
+     * intent finding has no consumer side.
      */
     consumer: SuppressionSideSchema,
     /**
      * Provider-side discriminators, the mirror of `consumer`. A finding
-     * about a status the provider produces carries its transition id on
-     * this side, and that id is the only handle narrow enough to name
-     * that one finding. Like `consumer`, a rule that specifies
+     * about a status the provider produces has its transition id on this
+     * side, and that id is the only handle narrow enough to pick out
+     * that one finding. As with `consumer`, a rule that specifies
      * `provider` never matches an intent finding.
      */
     provider: SuppressionSideSchema,
     /**
-     * "narrow" (default): requires kind plus one of boundary,
-     * consumer.transitionId, or provider.transitionId — enough to
-     * target a specific finding class. "broad" opts in to kind-only or
-     * boundary-only matches, which silence future regressions in that
-     * category too.
+     * "narrow", the default, requires kind plus one of boundary,
+     * consumer.transitionId, or provider.transitionId, which is enough
+     * to target a specific class of finding. "broad" opts in to
+     * kind-only or boundary-only matches, which also silence future
+     * regressions in that category.
      */
     scope: z.enum(["narrow", "broad"]).default("narrow"),
     /** Required human-written justification. */
@@ -103,9 +100,9 @@ export interface FindingSuppression {
 }
 
 /**
- * The structural base both finding shapes satisfy. Behavioural
+ * The structural base that both finding types satisfy. Behavioural
  * `Finding` and intent `IntentFinding` each declare these fields in
- * their own schemas (kept structurally identical); the pipeline needs
+ * their own schemas, kept structurally identical, and the pipeline needs
  * nothing more. The `| undefined` unions match what zod infers for
  * `.optional()` fields under exactOptionalPropertyTypes.
  */
@@ -120,10 +117,10 @@ export interface SuppressibleFinding {
 // ---------------------------------------------------------------------------
 
 /**
- * Validate that a narrow rule actually constrains *something* — a bare
- * rule with only `reason` would suppress every finding in the codebase,
- * which is almost always a mistake. Broad-scope rules deliberately
- * allow less-specific matching.
+ * Check that a narrow rule constrains something. A bare rule with only
+ * a `reason` would suppress every finding in the codebase, which is
+ * almost always a mistake. Broad-scope rules are allowed to match less
+ * specifically, on purpose.
  */
 export function validateRule(rule: SuppressionRule): string | null {
   if (rule.scope === "broad") {
@@ -155,9 +152,9 @@ export function validateRule(rule: SuppressionRule): string | null {
 export { normalizeRuleBoundary } from "./boundaryKey.js";
 
 /**
- * Does a rule's `boundary` discriminator match a finding's boundary
- * key? Exact match first (covers "fn:...", "gql:..."), then the
- * REST-normalized form.
+ * Whether a rule's `boundary` discriminator matches a finding's boundary
+ * key. It tries an exact match first, which covers "fn:..." and
+ * "gql:...", and then the REST-normalized form.
  */
 export function ruleBoundaryMatchesKey(
   ruleBoundary: string,
@@ -187,9 +184,9 @@ function applyRuleToFinding<T extends SuppressibleFinding>(
     reason: rule.reason,
     effect: rule.effect,
   } as const;
-  // The casts are sound for any T whose severity / suppressed fields
-  // are the full base unions (true of both finding shapes); TS can't
-  // prove it for arbitrary narrowings of T.
+  // The casts are safe for any T whose severity and suppressed fields
+  // are the full base unions, which both finding types are. TypeScript
+  // cannot prove that for an arbitrary narrowing of T.
   if (rule.effect === "downgrade") {
     return {
       ...finding,
@@ -201,10 +198,10 @@ function applyRuleToFinding<T extends SuppressibleFinding>(
 }
 
 /**
- * Apply suppression rules to a list of findings. Generic over the
- * finding shape: `matches` decides whether a rule's discriminators
- * beyond `kind` (boundary, consumer, ...) match a finding — the kind
- * check itself is universal and handled here.
+ * Apply suppression rules to a list of findings. This works for either
+ * finding type: `matches` decides whether a rule's discriminators past
+ * `kind` (boundary, consumer, and so on) match a finding, and the kind
+ * check itself is the same everywhere, so it happens here.
  *
  * Returns a new array. Findings with `effect: "hide"` are omitted from
  * the output entirely unless `keepHidden` is set. Findings with
@@ -236,10 +233,10 @@ export function applySuppressionsToFindings<T extends SuppressibleFinding>(
 }
 
 /**
- * `hide` and `mark` findings are excluded from exit-code threshold
- * calculations; `downgrade` findings count at their post-downgrade
- * severity. Callers use this to decide whether a finding contributes
- * to `hasErrors`-style gating.
+ * `hide` and `mark` findings are left out of the exit-code threshold,
+ * and a `downgrade` finding counts at the severity it was downgraded
+ * to. Callers use this to decide whether a finding contributes to
+ * `hasErrors`-style gating.
  */
 export function countsForThreshold(finding: SuppressibleFinding): boolean {
   if (finding.suppressed === undefined) {

@@ -1,4 +1,4 @@
-// registrationCall.ts (discovery handler) — handlers registered
+// registrationCall.ts (discovery handler): handlers registered
 // through a library call. Covers Express (`app.get("/users", h)`),
 // ts-rest (`s.router(contract, { getUser })`), Fastify, and similar
 // shapes where a runtime API call associates a handler function with a
@@ -6,8 +6,9 @@
 //
 // `router.get("/users", listUsers)` is how most Express code is
 // written, and reading the syntax at the argument position sees an
-// identifier and stops. Which function sits there, and which object
-// carries a route's method and path, are both asked of the fact layer.
+// identifier and gets no further. Which function that is, and which
+// object has the route's method and path on it, both go to the fact
+// layer.
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
@@ -59,8 +60,8 @@ export function discoverRegistrationCalls(
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
 
-  // Steps 1 and 2: which import this pattern names, and which
-  // variables in the file hold the result of calling it.
+  // Steps 1 and 2: which import this pattern is about, and which
+  // variables in the file are set to the result of calling it.
   const registrationSubjects = registrationSubjectsOf(
     sourceFile,
     match.importModule,
@@ -143,7 +144,7 @@ export function discoverRegistrationCalls(
       // shape is `subject.<method>(arg0, ..., handler)`. The pack's
       // own `bindingExtraction` decides whether the surrounding call
       // has a (method, path) pair the adapter can lift into a routed
-      // boundary binding — HTTP packs declare this (their `method`
+      // boundary binding: HTTP packs declare this (their `method`
       // and `path` extractors point at the registration call); a
       // non-HTTP pack like a future `bus.on("event", handler)` would
       // simply omit those extractors, and the adapter falls back to
@@ -167,20 +168,19 @@ export function discoverRegistrationCalls(
         results.push({
           func: handler,
           kind,
-          // The verb names the unit for the reader; nothing calls it.
+          // The verb is there to label the unit for the reader; nothing calls it.
           name: methodName,
           nameKind: "label",
           ...(routeInfo !== null ? { routeInfo } : {}),
         });
         return;
       }
-      // A route this call states, registered with a handler its own
-      // caller supplies. The route is a fact about the code and the
-      // handler is a limit on the reading, so the boundary is reported
-      // and the summary says what was not read. Every other unresolved
-      // argument is a chain that could still be followed, and reporting
-      // those the same way would call a missing rule a fact about the
-      // code.
+      // A route this call gives, registered with a handler its own
+      // caller supplies. The route is a fact about the code, and the
+      // handler is something we could not read, so report the boundary
+      // and record what was missed. Every other unresolved argument is a
+      // chain that could still be followed, and reporting those the same
+      // way would present a missing rule as a fact about the code.
       if (
         routeInfo !== null &&
         lastArg !== undefined &&
@@ -230,7 +230,7 @@ function withMountPrefix(
  * starting `//`, neither of which `normalizePath` collapses, so
  * neither ever pairs against anything.
  *
- * `path` is assumed to carry its own leading slash already, the way
+ * `path` is assumed to have its own leading slash already, the way
  * every route path and every mount prefix this composes does.
  * Stripping `prefix`'s own trailing slash first, then requiring that
  * leading slash to do the joining, is what keeps the seam single: a
@@ -243,7 +243,7 @@ export function joinMountedPath(prefix: string, path: string): string {
 }
 
 /**
- * The local variables in `sourceFile` that hold the result of calling
+ * The local variables in `sourceFile` set to the result of calling
  * `importName` (imported from `importModule`), plus any parameter
  * typed with it. This is what a registration call's subject, and a
  * mount call's subject, both have to resolve to: the routable itself.
@@ -264,7 +264,6 @@ export function registrationSubjectsOf(
       continue;
     }
 
-    // Named import
     for (const namedImport of importDecl.getNamedImports()) {
       if (
         namedImport.getName() === importName ||
@@ -280,14 +279,12 @@ export function registrationSubjectsOf(
       break;
     }
 
-    // Default import
     const defaultImport = importDecl.getDefaultImport();
     if (defaultImport !== undefined && defaultImport.getText() === importName) {
       importedLocalName = defaultImport.getText();
       break;
     }
 
-    // Namespace import
     const namespaceImport = importDecl.getNamespaceImport();
     if (
       namespaceImport !== undefined &&
@@ -303,8 +300,9 @@ export function registrationSubjectsOf(
     return subjects;
   }
 
-  // What variable holds the result of calling the imported function,
-  // e.g. const s = initServer(); or const router = Router();
+  // Which variable is set to the result of calling the imported
+  // function, as in `const s = initServer()` or `const router =
+  // Router()`.
   for (const varDecl of sourceFile.getVariableDeclarations()) {
     const init = varDecl.getInitializer();
     if (init === undefined) {
@@ -325,7 +323,7 @@ export function registrationSubjectsOf(
   }
 
   // A function that takes the app as a parameter registers on it the
-  // same way. The type annotation names the imported class, which is
+  // same way. The type annotation points at the imported class, which is
   // how a service split across files hands its app around. There is
   // no single creation site to key a mount edge on here, so a router
   // mounted under this name composes only the prefix its own mount
@@ -477,7 +475,7 @@ export function discoverMountEdges(
 /**
  * Every mounted router among a mount call's trailing arguments.
  * `app.use(prefix, router)` puts the router right after the prefix,
- * but middleware can sit in between, and Express applies every
+ * but middleware can come in between, and Express applies every
  * argument from `targetPosition` on at the same prefix: `app.use("/a",
  * r1, r2)` mounts both `r1` and `r2` under `/a`. So `targetPosition`
  * is a floor rather than a single fixed slot: nothing before it is a
@@ -538,13 +536,13 @@ function stringProperty(obj: Node, name: string): string | null {
  * both halves of the config target the registration call itself
  * (the HTTP pattern: method comes from `.get` / `.post` / etc., path
  * is the first argument). Returns null when either half points
- * elsewhere (e.g. `fromContract`, `fromFilename`) — those shapes
+ * elsewhere (e.g. `fromContract`, `fromFilename`): those shapes
  * need other discovery wiring and don't apply at the registration
  * call site.
  *
  * The point of routing through `bindingExtraction` rather than
  * hardcoding HTTP assumptions is that registrationCall is a generic
- * shape — any pack whose registration looks like
+ * shape: any pack whose registration looks like
  * `subject.method(arg0, ..., handler)` can use it. Only packs whose
  * `bindingExtraction` says "the method name IS the method and arg N
  * IS the path" should get routed-boundary bindings; everything else
@@ -557,8 +555,8 @@ function extractRouteInfoFromBinding(
   resolution?: ResolutionStore,
 ): { method: string; path: string } | null {
   // Both halves on one argument's properties: the registration passes
-  // a route object, `app.openapi(route, handler)`, and the object
-  // carries its own method and path. The object usually lives on a
+  // a route object, `app.openapi(route, handler)`, with the method and
+  // path on it. The object usually lives on a
   // shared contract in another file, so the fact layer follows the
   // reference to the literal before the properties are read.
   if (

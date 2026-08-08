@@ -43,7 +43,7 @@ export const FASTIFY_SHAPE_TARGET: ShapeTarget = {
 // A pack whose handler returns its response (Hono, ts-rest) needs one
 // more seam here: the shape renderer spells a terminal as a statement,
 // and a returned terminal has to be an expression so a concise arrow
-// can hold it. Express and Fastify both write to a response object, so
+// can express it. Express and Fastify both write to a response object, so
 // the two wired targets share one spelling today.
 export const ALL_SHAPE_TARGETS: ShapeTarget[] = [
   EXPRESS_SHAPE_TARGET,

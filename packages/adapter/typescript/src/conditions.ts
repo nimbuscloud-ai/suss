@@ -1,4 +1,4 @@
-// conditions.ts — AST traversal for branch condition extraction (Task 2.1)
+// conditions.ts: AST traversal for branch condition extraction (Task 2.1)
 // Refactored in Task 2.5 to expose Expression nodes for assembly.
 
 import {
@@ -118,13 +118,13 @@ export function collectAncestorConditionInfosBelow(
         // One label: `x === "a"`. Multiple (fallthrough): disjunction
         // `x === "a" || x === "b"`. Each predecessor case with an empty
         // body falls through to this one's body, so the return fires
-        // for any of their match values too — capturing only the
+        // for any of their match values too: capturing only the
         // direct case label would silently narrow the branch.
         const condText =
           labels.length === 1
             ? `${switchExpr} === ${labels[0]}`
             : labels.map((l) => `${switchExpr} === ${l}`).join(" || ");
-        // Synthetic condition — no single Expression node to preserve
+        // Synthetic condition: no single Expression node to preserve
         result.unshift(
           makeConditionInfo(condText, "positive", "explicit", null),
         );
@@ -172,7 +172,7 @@ export function collectAncestorConditionInfosBelow(
 }
 
 /**
- * Public API — returns RawCondition[] with structured: null.
+ * Public API: returns RawCondition[] with structured: null.
  * Use collectAncestorConditionInfos when you need the Expression nodes.
  */
 export function collectAncestorBranches(
@@ -184,7 +184,6 @@ export function collectAncestorBranches(
   );
 }
 
-/** True if `maybeAncestor` is `node` itself or contains it as a descendant. */
 export function isAncestorOrSelf(maybeAncestor: Node, node: Node): boolean {
   let current: Node | undefined = node;
   while (current !== undefined) {
@@ -217,7 +216,7 @@ export function conditionInfoToRawCondition(info: ConditionInfo): RawCondition {
  * Collect the case-expression labels whose match value would cause
  * `caseClause`'s body to execute. This is the direct label, plus
  * every previous sibling CaseClause whose statement body is empty
- * (classic JS fallthrough — `case "a": case "b": doThing();`).
+ * (classic JS fallthrough: `case "a": case "b": doThing();`).
  *
  * Returns labels in source order (outermost/earliest first).
  */

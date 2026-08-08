@@ -1,4 +1,4 @@
-// componentDifferential.ts — the render-boundary differential runner.
+// componentDifferential.ts: the render-boundary differential runner.
 //
 // For one generated component: extract a summary once, transpile once,
 // execute against a deterministic props battery, and judge every
@@ -52,7 +52,7 @@ export function propsBattery(
   program: ComponentProgram,
 ): Record<string, string>[] {
   const observed = new Set(collectObservedProps(program));
-  // Unobserved props never affect behavior — pin them to one value so
+  // Unobserved props never affect behavior, pin them to one value so
   // the cross product stays over props that matter.
   const pools = program.props.map((prop) => {
     if (!observed.has(prop)) {

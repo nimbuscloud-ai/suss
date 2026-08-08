@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// checkCoveragePackages.mjs — every package this repo publishes has to be
+// checkCoveragePackages.mjs: every package this repo publishes has to be
 // under the coverage gate.
 //
 // The badge generator and the regression gate both read
 // scripts/coverage-packages.mjs. A package missing from that list gets no
-// badge and no baseline, so its coverage can sit at zero, or fall to
+// badge and no baseline, so its coverage can be zero, or fall to
 // zero, without failing anything. Four packages shipped that way for
 // months before this check existed, and nothing in the build would have
 // said so.
@@ -144,7 +144,7 @@ const COUNT_CLAIMS = [
  * into something nobody measured.
  *
  * Each pattern matches the shape of the record it protects, not words
- * that appear in it. A phrase a later sentence could reuse would carry
+ * that appear in it. A phrase a later sentence could reuse would give
  * the exemption to that sentence and hide a stale count inside it.
  */
 const MEASURED_IN_THE_PAST = [

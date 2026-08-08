@@ -1,7 +1,9 @@
-// storageRelational.ts: a relational storage table as a boundary.
-//
-// Columns are FIELDS on the table's contract. Storage pairs through
-// its own dedicated pass, so this protocol has no identity key.
+/**
+ * A relational storage table as a boundary.
+ *
+ * The columns are fields on the table's contract. Storage is paired by
+ * its own dedicated pass, so this protocol has no identity key.
+ */
 
 import { z } from "zod";
 
@@ -11,11 +13,11 @@ export const StorageRelationalSemanticsSchema = z.object({
   name: z.literal("storage-relational"),
   storageSystem: z.enum(["postgres", "mysql", "sqlite"]),
   /**
-   * ORM / driver scope. Defaults to `"default"` for single-database
-   * setups; monorepos with multiple schemas use distinct values.
+   * The ORM or driver scope. A single-database setup uses `"default"`,
+   * and a monorepo with several schemas gives each one its own value.
    */
   scope: z.string(),
-  /** Table / model name as declared in the schema. */
+  /** The table or model name, as declared in the schema. */
   table: z.string(),
 });
 

@@ -1,4 +1,4 @@
-// schema-to-shape.ts — Convert an OpenAPI Schema object into a suss TypeShape.
+// schema-to-shape.ts: Convert an OpenAPI Schema object into a suss TypeShape.
 //
 // $ref is resolved against `components.schemas`. Cycles are broken by
 // emitting a `{ type: "ref", name }` placeholder when we re-enter a ref
@@ -22,7 +22,7 @@ import type {
 
 export interface SchemaContext {
   spec: OpenApiSpec;
-  /** Names of refs currently being resolved — used for cycle detection. */
+  /** Names of refs currently being resolved, used for cycle detection. */
   resolving: Set<string>;
 }
 
@@ -105,7 +105,7 @@ export function schemaToShape(
     case "null":
       return { type: "null" };
     case null:
-      // No type, no enum, no $ref, no composition — really unknown.
+      // No type, no enum, no $ref, no composition, really unknown.
       return { type: "unknown" };
   }
 }
@@ -128,7 +128,7 @@ function normalizeType(schema: OpenApiSchema): {
     return { primary: "null", nullable: false };
   }
   // For multi-type arrays (e.g. ["string", "integer"]) we take the first
-  // concrete type as primary. That's a v0 simplification — a proper
+  // concrete type as primary. That's a v0 simplification, a proper
   // handling would emit a union. Deferred; the common case in practice
   // is [T, "null"].
   return { primary: nonNull[0], nullable };
@@ -149,7 +149,7 @@ function objectToShape(schema: OpenApiSchema, ctx: SchemaContext): TypeShape {
   }
 
   // OpenAPI's `required` lists the property names that MUST be present.
-  // Anything not in the list is optional — encode that as a union with
+  // Anything not in the list is optional, encode that as a union with
   // `undefined` so downstream consumers (and the cross-boundary checker)
   // can distinguish guaranteed vs absent-able fields.
   const required = new Set(schema.required ?? []);
@@ -204,7 +204,7 @@ function mergeAllOf(parts: OpenApiSchema[], ctx: SchemaContext): TypeShape {
  * narrowing composes with whatever the variant already declared.
  *
  * Without a mapping entry for this variant we return the variant
- * unchanged — consumers have to rely on the variant's own schema to
+ * unchanged: consumers have to rely on the variant's own schema to
  * include the narrowed literal, if any. With a mapping entry, we add
  * a synthetic property declaration that pins the discriminator to the
  * mapping key.
@@ -262,7 +262,7 @@ function resolveRef(ref: string, ctx: SchemaContext): TypeShape {
   const name = match[1];
 
   if (ctx.resolving.has(name)) {
-    // Cycle — emit a named ref instead of recursing. Consumers reading the
+    // Cycle: emit a named ref instead of recursing. Consumers reading the
     // summary as a graph can resolve back through their own component map.
     return { type: "ref", name };
   }

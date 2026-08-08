@@ -1,11 +1,11 @@
-// run.ts — CLI dispatch (testable; returns exit codes, never calls
-// process.exit).
+// run.ts: CLI dispatch. It returns exit codes and never calls
+// process.exit, so a test can drive it directly.
 //
-// index.ts is a thin entry point: it forwards process.argv.slice(2) here,
-// awaits the resulting exit code, and wires it to process.exit. Splitting
-// the dispatch out lets tests invoke the CLI surface directly without
-// subprocess overhead and without the runtime swallowing assertions via
-// process.exit.
+// index.ts is a thin entry point. It forwards process.argv.slice(2)
+// here, awaits the exit code, and passes that to process.exit.
+// Splitting the dispatch out lets tests drive the CLI surface without
+// subprocess overhead, and without the runtime swallowing assertions
+// through process.exit.
 
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -127,24 +127,11 @@ Exit codes:
   corroborate exits non-zero when a claim is refuted by execution.
 `.trim();
 
-/**
- * Dispatch a CLI invocation. Returns the process exit code; never calls
- * process.exit and never throws for user-visible errors (those go to
- * stderr and yield a non-zero exit code instead).
- *
- * A subcommand that throws a UsageError is reporting something the
- * person can fix by typing something else, so its message is printed
- * on its own and the run exits 1. Every other throw propagates, and
- * the entry point turns it into "Error: <message>" plus a stack, which
- * is what a bug in suss deserves.
- */
+/** Returns the exit code rather than calling process.exit, so tests can run it. */
 export async function runCli(args: string[]): Promise<number> {
   try {
     return await dispatch(args);
   } catch (err) {
-    // Anything a person can fix by typing something else is a
-    // sentence. Every other throw keeps its stack, because that one is
-    // a bug in suss and the stack says where.
     const sentence = asSentence(err);
     if (sentence === null) {
       throw err;
@@ -156,15 +143,9 @@ export async function runCli(args: string[]): Promise<number> {
 }
 
 /**
- * What to print for a throw a person caused, or null when the throw is
- * a bug in suss.
- *
- * Node's own argument parser counts. `suss inspect --flow --dir
- * summaries/` is somebody who forgot to type the request in quotes,
- * and node reports it as a TypeError, which unhandled reaches them as
- * ten frames of node internals for what is a typo. Its message is
- * already the right sentence, so it only needs the frames taken off
- * and a pointer to the flags.
+ * What to print for a throw a person caused, or null when the throw is a
+ * bug in suss. Node's own argument parser counts: an unquoted flag value
+ * reaches it as a TypeError whose message is already the right sentence.
  */
 function asSentence(err: unknown): string | null {
   if (err instanceof UsageError) {
@@ -275,8 +256,6 @@ async function runExtract(args: string[]): Promise<number> {
     return 1;
   }
 
-  // A path that was typed and does not exist is a usage error, so it
-  // reports like one rather than surfacing as a thrown error.
   if (tsconfig !== undefined && !existsSync(path.resolve(tsconfig))) {
     process.stderr.write(
       `No tsconfig at ${path.resolve(tsconfig)}. Leave -p off to read the current directory instead.\n`,
@@ -289,7 +268,6 @@ async function runExtract(args: string[]): Promise<number> {
     return 1;
   }
 
-  // Files can come from --files or positionals
   const files =
     values.files !== undefined && values.files.length > 0
       ? values.files

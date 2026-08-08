@@ -1,4 +1,4 @@
-// target.ts — the pack-specific surface of the differential harness.
+// target.ts: the pack-specific surface of the differential harness.
 //
 // The DSL, the interpreter, and the adjudicator are IR-generic; what
 // varies per framework pack is concrete syntax (how a terminal is
@@ -84,7 +84,7 @@ export const FASTIFY_TARGET: FuzzTarget = {
       ? `res.send(${body})`
       : `res.code(${terminal.status}).send(${body})`;
   },
-  // The generated handler still names its params (req, res) — parameter
+  // The generated handler still names its params (req, res), parameter
   // names are user-chosen in real code, and keeping them stable lets
   // the DSL's conditions (`req.query.q`) and the interpreter's env key
   // (`req`) stay target-independent.

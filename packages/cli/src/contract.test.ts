@@ -1,4 +1,4 @@
-// contract.test.ts — `suss contract` CLI command tests
+// contract.test.ts: `suss contract` CLI command tests
 
 import fs from "node:fs";
 import http from "node:http";
@@ -133,7 +133,7 @@ describe("contract CLI command", () => {
     process.stdout.write = (() => true) as typeof process.stdout.write;
     try {
       const summaries = await contract({ from: "storybook", spec: storiesDir });
-      // Multiple story files in the directory — expect multiple
+      // Multiple story files in the directory, expect multiple
       // component prefixes in the output.
       const components = new Set(
         summaries.map(

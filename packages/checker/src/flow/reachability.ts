@@ -1,22 +1,22 @@
-// Flow reachability: who a request reaches, walked as rules over the
+// reachability.ts: who a request reaches, walked as rules over the
 // facts `collectFlowInputs` reads off a summary set.
 //
-// The split is the one the flow-reachability proposal draws. The
-// engine holds tuples and joins them by equality, so it cannot run a
-// matcher or pick a winner; deciding which match takes the request is
-// settled in TypeScript first, per router, by the selector for the
-// router's own condition language. The walk over settled edges is
-// recursive, which is what the engine is for, so that part is rules:
-// a fixpoint over a finite node set, which is also why a cycle of
-// edges terminates instead of looping.
+// The split is the one the flow-reachability proposal draws. The engine
+// stores tuples and joins them by equality, so it cannot run a matcher
+// or pick a winner. Deciding which match takes the request is settled
+// in TypeScript first, per router, by the selector for that router's
+// own condition language. The walk over settled edges is recursive,
+// which is what the engine is for, so that part is rules: a fixpoint
+// over a finite node set, which is also why a cycle of edges terminates
+// instead of looping.
 //
-// Certainty is two relations, never a guess. `reaches` walks edges
-// whose match took the request outright; `mayReach` also walks edges
+// Certainty is two relations rather than a guess. `reaches` walks edges
+// whose match took the request outright. `mayReach` also walks edges
 // whose match could take it once a condition nobody here evaluates is
 // decided at runtime. Everything `reaches` derives, `mayReach` derives
 // too, so "possible but not certain" is a set difference the reader
-// takes, and an unevaluated condition can never turn a reachable
-// answer into an unreachable one.
+// takes, and an unevaluated condition can never turn a reachable answer
+// into an unreachable one.
 
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import { servesRequest } from "@suss/ir-core";
@@ -41,9 +41,9 @@ import type {
   RouterMatches,
 } from "./routingFacts.js";
 
+// `may*` derives everything its certain counterpart derives, so an
+// unevaluated condition can never turn a reachable answer unreachable.
 export const FLOW_RULES: Rule[] = [
-  // One settled hop: an admitted forward, what a target group fronts,
-  // or a fronted balancer handing to its own listeners.
   rule(
     "step",
     [v("x"), v("y")],
@@ -52,8 +52,6 @@ export const FLOW_RULES: Rule[] = [
   rule("step", [v("x"), v("y")], [lit("fronts", v("x"), v("y"))]),
   rule("step", [v("x"), v("y")], [lit("belongsTo", v("y"), v("x"))]),
 
-  // A hop that might carry the request: every settled hop, plus a
-  // forward whose match is possible rather than admitted.
   rule("hop", [v("x"), v("y")], [lit("step", v("x"), v("y"))]),
   rule(
     "hop",
@@ -74,8 +72,6 @@ export const FLOW_RULES: Rule[] = [
     [lit("mayReach", v("x"), v("y")), lit("hop", v("y"), v("z"))],
   ),
 
-  // A terminal response: an admitted answers action on the entry
-  // itself or on any router the walk reaches.
   rule(
     "reachesAnswer",
     [v("x"), v("m")],
@@ -119,8 +115,6 @@ export const FLOW_RULES: Rule[] = [
     ],
   ),
 
-  // A serving claim inside a reached unit whose own protocol says it
-  // answers (or might answer) the request.
   rule(
     "servedBy",
     [v("x"), v("c")],
@@ -150,56 +144,37 @@ export const FLOW_RULES: Rule[] = [
   ),
 ];
 
-/** Names, split by what the declarations can say: `certain` holds, `possible` waits on something undeclared. */
+/** `possible` is waiting on a condition nobody here evaluates. */
 export interface FlowEndpointSets {
   certain: string[];
   possible: string[];
 }
 
-/** What one entry's walk found for the request. */
 export interface FlowView {
-  /** Every node an edge chain connects the entry to: routers, targets, resources. */
   nodes: FlowEndpointSets;
-  /** The reached nodes that are deployable units (a code scope was declared for them). */
   units: FlowEndpointSets;
-  /** Terminal responses: answers actions the request lands on. */
   answers: { certain: AnsweredMatch[]; possible: AnsweredMatch[] };
-  /** Serving claims (`file::name`) inside reached units that answer the request. */
+  /** Serving claims, named `file::name`. */
   claims: FlowEndpointSets;
-  /** The same answer as a route: each path the request takes, hop by hop. */
   chains: FlowChain[];
-  /** Chains beyond the ones kept, so an answer can say it is not the whole of it. */
   omitted: FlowChainsOmitted;
 }
 
-/** A node a question can start from: one that hands traffic on and takes none. */
 export interface FlowEntry {
   name: string;
-  /** The document that declared it, which is also the scope its walk stays inside. */
+  /** The root document label that declared it, which is also the scope
+   * its walk stays inside. */
   scope: string;
 }
 
 export interface FlowAnalysis {
   /**
-   * The view from one entry node, a client-facing listener being the
-   * usual one. A bare `entry` resolves against every document in the
-   * summary set; when two documents both declare the name, the caller
-   * has to say which document it is asking about by passing that
-   * summary's root document label as `documentScope`, because merging
-   * them would answer one stack's question from another stack's rules.
+   * Throws when two documents declare `entry` and no `documentScope`
+   * says which one the question is about.
    */
   from(entry: string, documentScope?: string): FlowView;
-  /**
-   * Where a request can come in: every node that hands traffic on and
-   * is handed none, which is the balancer or router a client reaches
-   * first. Sorted by name, then by document.
-   */
+  /** Sorted by name, then by scope. */
   entries(): FlowEntry[];
-  /**
-   * The documents that declare a node of this name. More than one and
-   * `from` needs to be told which, since neither document's rules may
-   * answer the other's question.
-   */
   scopesOf(entry: string): string[];
 }
 
@@ -208,10 +183,8 @@ interface Admissions {
   may: Set<string>;
 }
 
-/**
- * The language a router's matches can be selected by: the one language
- * every row named, or undefined when the rows disagree or named none.
- */
+/** Undefined when the router's rows disagree on a language, or give
+ * none at all. */
 function routerLanguage(matches: RouterMatches): string | undefined {
   if (matches.languages.size !== 1) {
     return undefined;
@@ -222,15 +195,9 @@ function routerLanguage(matches: RouterMatches): string | undefined {
 }
 
 /**
- * Settle each router's matches for the request. A router whose
- * language has a selector in the table gets that selector's answer.
- * A router with no usable selector abstains: every one of its matches
- * stays possible, never admitted and never refused, the same standing
- * an unevaluated condition has.
- *
- * A selector sees and answers with the bare matchIds its document
- * wrote; the admission sets carry them scoped, so two documents'
- * same-named matches stay two admissions.
+ * A selector takes and returns the bare matchIds its document wrote.
+ * The admission sets keep them scoped, so two documents with
+ * same-named matches stay two separate admissions.
  */
 function selectAdmissions(
   routers: Map<string, RouterMatches>,
@@ -266,12 +233,6 @@ function selectAdmissions(
   return { admits, may };
 }
 
-/**
- * Which serving claims answer the request, and how surely, placed in
- * the units that hold them. Whether a claim answers is its own
- * protocol's question, asked once here and used by both the walk and
- * the chains behind it.
- */
 interface ServingIndex {
   byUnit: Map<string, FlowServingClaim[]>;
   byRef: Map<string, FlowServingClaim>;
@@ -352,11 +313,7 @@ function targetsOf(db: Database, relation: string, entry: string): Set<string> {
   return found;
 }
 
-/**
- * A view's name lists, rendered bare. Every node one view holds shares
- * the entry's document scope, because edges never cross scopes, so
- * stripping the scope for display loses nothing a reader needed.
- */
+/** Stripping the scope is safe here: edges never cross scopes. */
 function endpointSets(
   certain: Set<string>,
   may: Set<string>,
@@ -369,12 +326,7 @@ function endpointSets(
   };
 }
 
-/**
- * The scoped node a query's entry names, or null when the name is
- * declared nowhere. A bare name declared by two documents is refused
- * rather than resolved, because whichever document was picked, the
- * other stack's question would be answered from the wrong rules.
- */
+/** Null when the name is declared nowhere. */
 function resolveEntry(
   inputs: FlowInputs,
   entry: string,
@@ -409,11 +361,7 @@ const EMPTY_VIEW: FlowView = {
   omitted: { count: 0, exact: true },
 };
 
-/**
- * The nodes traffic can enter by: those with an edge out and none in.
- * A listener belongs to its balancer, so the balancer is the entry and
- * its listeners sit one hop in.
- */
+/** The nodes with an edge out and none in. */
 function entryNodes(inputs: FlowInputs): FlowEntry[] {
   const entered = new Set<string>();
   const leaves = new Set<string>();
@@ -432,8 +380,8 @@ function entryNodes(inputs: FlowInputs): FlowEntry[] {
     leaves.add(balancer);
   }
 
-  // A node whose only edge out is one nothing could follow still hands
-  // traffic on, and is still where a question starts.
+  // A node whose only edge out is one nothing could follow still passes
+  // traffic on, and is still somewhere a question can start.
   for (const node of inputs.edges.unfollowed.keys()) {
     leaves.add(node);
   }
@@ -452,7 +400,6 @@ function entryNodes(inputs: FlowInputs): FlowEntry[] {
   );
 }
 
-/** A scoped node key read back as the document that declared it and the name it wrote. */
 function splitFlowNode(node: string, inputs: FlowInputs): [string, string] {
   const name = inputs.nodeNames.get(node) ?? node;
   return [node.slice(0, Math.max(node.length - name.length - 2, 0)), name];
@@ -460,10 +407,8 @@ function splitFlowNode(node: string, inputs: FlowInputs): [string, string] {
 
 /**
  * Walk the summary set's routing edges for one request. `selectors`
- * maps each condition language to the selector its reader exports;
- * the walk itself never interprets a condition or a priority. The
- * result answers per entry, where an entry is any node the caller
- * starts from, a client-facing listener being the usual one.
+ * maps each condition language to the selector its reader exports; the
+ * walk itself never interprets a condition or a priority.
  */
 export function analyzeFlow(
   summaries: BehavioralSummary[],

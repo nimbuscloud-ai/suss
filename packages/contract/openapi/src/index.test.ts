@@ -22,7 +22,7 @@ function restPathOf(summary: BehavioralSummary): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Fixture specs — hand-built so each test reads on one screen
+// Fixture specs: hand-built so each test reads on one screen
 // ---------------------------------------------------------------------------
 
 const minimalSpec: OpenApiSpec = {
@@ -101,7 +101,7 @@ const refSpec: OpenApiSpec = {
         properties: {
           id: { type: "string" },
           name: { type: "string" },
-          // Self-referential field — exercises cycle protection
+          // Self-referential field: exercises cycle protection
           friend: { $ref: "#/components/schemas/User" },
         },
       },
@@ -257,7 +257,7 @@ describe("openApiToSummaries — basic mapping", () => {
           get: {
             operationId: "getItem",
             parameters: [
-              // Operation-level wins — schema should be integer
+              // Operation-level wins: schema should be integer
               { name: "id", in: "path", schema: { type: "integer" } },
             ],
             responses: { "200": { description: "ok" } },
@@ -458,7 +458,7 @@ describe("openApiToSummaries — $ref handling", () => {
     if (ok.output.type !== "response" || ok.output.body?.type !== "record") {
       throw new Error("expected record body");
     }
-    // The `friend` property recurses back to User — should be a ref
+    // The `friend` property recurses back to User, should be a ref
     // placeholder rather than infinite expansion.
     expect(ok.output.body.properties.friend).toEqual({
       type: "ref",
@@ -795,9 +795,9 @@ describe("openApiToSummaries — schema feature coverage", () => {
     expect(t.output.body).toEqual({
       type: "record",
       properties: {
-        // Required — kept as-is
+        // Required: kept as-is
         id: { type: "text" },
-        // Optional — wrapped with undefined
+        // Optional: wrapped with undefined
         name: {
           type: "union",
           variants: [{ type: "text" }, { type: "undefined" }],
@@ -1115,7 +1115,7 @@ paths:
 });
 
 // ---------------------------------------------------------------------------
-// Cross-boundary checking smoke test — stubs pair correctly with ts code
+// Cross-boundary checking smoke test, stubs pair correctly with ts code
 // ---------------------------------------------------------------------------
 
 describe("openApiToSummaries — pairing", () => {

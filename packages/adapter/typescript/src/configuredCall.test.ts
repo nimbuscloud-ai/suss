@@ -17,8 +17,8 @@ const DISPATCH: ConfiguredCallSpec = {
 };
 
 /**
- * A project holding a wrapper package the user file imports, so the
- * checker can name the receiver's type the way it does on a service.
+ * A project with a wrapper package the user file imports, so the checker
+ * can name the receiver's type the way it does in a service.
  */
 function makeProject(userSource: string): SourceFile {
   const project = createTestProject();
@@ -74,7 +74,7 @@ function readAll(
   return out;
 }
 
-/** The shapes this helper reads: strings, objects, everything else opaque. */
+/** What this helper reads: strings, objects, and everything else opaque. */
 function extractArgsForTest(call: CallExpression): EffectArg[] {
   return call.getArguments().map((arg) => extractArgForTest(arg));
 }

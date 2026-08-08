@@ -1,17 +1,3 @@
-// A person points suss at something it cannot read.
-//
-// Every case here is a mistake somebody makes on their first afternoon
-// with the tool: an empty directory, a pack name that does not exist,
-// a JSON file that is not summaries, a folder of summaries with one
-// stray file in it. What they should get back is a sentence saying
-// what went wrong and what to type instead.
-//
-// A stack trace is the failure this file exists to catch. The message
-// under it is usually already a good sentence, written by whoever
-// threw it, and printing eight frames of bundled `dist/bin.js` on top
-// buries it and tells a person their input broke the tool rather than
-// that they mistyped something.
-
 import fs from "node:fs";
 import path from "node:path";
 
@@ -19,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import { fixture, runSuss, workspace } from "../harness.js";
 
-/** What a stack trace looks like in output, wherever it came from. */
 const STACK_FRAME = /\n\s+at .+:\d+:\d+/;
 
 describe("point suss at something it cannot read", () => {
@@ -114,8 +99,6 @@ describe("point suss at something it cannot read", () => {
 
     const extract = runSuss(["extract", "--dir", empty, "-f", "express"]);
 
-    // Silence and a zero exit is the other half of the failure this
-    // file guards: a CI job cannot tell it apart from a passing run.
     expect(extract.status).not.toBe(0);
     expect(extract.output.trim()).not.toBe("");
   });

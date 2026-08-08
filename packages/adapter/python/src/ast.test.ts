@@ -105,10 +105,7 @@ describe("field / fields / isType / rangeOf / bodyStatements", () => {
     expect(rangeOf(root).start).toBe(1);
   });
 
-  it("stays inside the file for a definition far down it", async () => {
-    // tree-sitter counts bytes. Handing the byte offset back put
-    // `line 708` on a 32-line file, because `suss inspect` reads this
-    // as a line number and every other adapter fills it with one.
+  it("answers a line number, not tree-sitter's byte offset, for a definition far down the file", async () => {
     const root = await moduleOf(
       `${"# padding\n".repeat(20)}def f():\n    pass\n`,
     );

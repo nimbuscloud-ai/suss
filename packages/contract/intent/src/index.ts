@@ -1,18 +1,18 @@
-// @suss/contract-intent — read team-authored intent specs into
+// @suss/contract-intent: read team-authored intent specs into
 // IntentSummary[]. A thin reader over @suss/intent-ir: file / directory
 // discovery and YAML / JSON parsing live here; the schema and the
 // normalisation to IntentSummary live in intent-ir.
 //
 // Two file shapes, discriminated by the top-level `kind`:
 //
-//   kind: boundary  — engineer-authored system intent (REST or
+//   kind: boundary: engineer-authored system intent (REST or
 //                     function-call): the outcomes a boundary should
 //                     produce.
-//   kind: prd       — PM-authored outcome intent: scenarios that link to
+//   kind: prd: PM-authored outcome intent: scenarios that link to
 //                     system-intent outcomes by qualified id.
 //
 // Unlike the other contract readers, intent does NOT produce
-// BehavioralSummary — intent is a separate citizen with its own type
+// BehavioralSummary: intent is a separate citizen with its own type
 // (IntentSummary) and its own checker. The full design lives in
 // docs/internal/proposals/intent-specs.md.
 
@@ -35,7 +35,7 @@ export type {
 
 /**
  * Validate an in-memory intent doc (already parsed from YAML / JSON) and
- * normalise it to an IntentSummary. Throws on validation failure —
+ * normalise it to an IntentSummary. Throws on validation failure,
  * malformed specs are a load-time error, never a comparison finding.
  *
  * Accepts both `kind: boundary` and `kind: prd`; the transform
@@ -50,7 +50,7 @@ export function loadIntentDoc(raw: unknown): IntentSummary {
  * normalise it. JSON is parsed strictly; everything else goes through
  * the YAML parser, which also accepts JSON syntax.
  *
- * Accepts both `*.intent.{yaml,yml,json}` and `*.prd.{yaml,yml,json}` —
+ * Accepts both `*.intent.{yaml,yml,json}` and `*.prd.{yaml,yml,json}`,
  * the document's `kind` picks the shape.
  */
 export function loadIntentFile(filepath: string): IntentSummary {

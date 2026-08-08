@@ -115,7 +115,8 @@ export interface ShapeResult {
   requestsRun: number;
 }
 
-/** Kept small: the risk a wide type carries is breadth, not size on disk. */
+/** Kept small, because the risk a wide type poses is breadth rather
+ * than size on disk. */
 export const WIDE_TYPE_SIZE: WideTypeSize = { width: 10, depth: 4 };
 
 /** The plainest spelling of the same behavior. */
@@ -402,7 +403,7 @@ export async function runAnnounceShapeDifferential(
 }
 
 // ---------------------------------------------------------------------------
-// GraphQL resolvers, where the pair a query names is what has to survive
+// GraphQL resolvers, where the pair a query addresses is what has to survive
 // ---------------------------------------------------------------------------
 
 /**
@@ -491,10 +492,10 @@ export async function runApolloResolverDifferential(
 }
 
 /**
- * A class that names no type resolves for a different type than one
- * that names it, and a method that renames its field answers a
+ * A class with no type given resolves for a different type than one
+ * that gives a type, and a method that renames its field serves a
  * different field, so neither has a plainest spelling to compare
- * against and the invariants carry them.
+ * against and the invariants cover them instead.
  */
 function nestResolverBaseline(spec: NestResolverSpec): NestResolverSpec | null {
   if (
@@ -543,12 +544,12 @@ export function envPacks(): PatternPack[] {
 const ENV_EXTRACT = { includeReachable: true } as const;
 
 /**
- * Where the read sits and how it is spelled are two different
+ * Where the read happens and how it is spelled are two different
  * questions. Two spellings of a read in the same place mean the same
  * program, so those compare against each other. Two places do not: a
  * read at module scope runs when the module loads and one in the
  * handler runs per request, so there is no plainest spelling across
- * sites and the invariants carry that dimension alone.
+ * sites, and the invariants cover that dimension on their own.
  */
 function envBaselineOf(spec: EnvShapeSpec): EnvShapeSpec | null {
   if (spec.form === SIMPLEST_ENV_SHAPE.form || spec.form === "defaulted") {
@@ -614,7 +615,6 @@ export async function runEnvShapeDifferential(
 // Queue consumers, where the program and its configuration are one thing
 // ---------------------------------------------------------------------------
 
-/** The TypeScript files a rendered queue program spans. */
 const typeScriptFiles = (
   files: Record<string, string>,
 ): Record<string, string> =>
@@ -664,7 +664,7 @@ export async function runQueueShapeDifferential(
     }),
   );
 
-  // A consumer built by no factory names no subject, so it is a
+  // A consumer built by no factory states no subject, so it is a
   // different program rather than another spelling of this one.
   const baseline =
     spec.build === "bareFunction" ||
@@ -861,8 +861,8 @@ export function checkerFindings(
 
 /**
  * The pack a project points at its own package, the same one the
- * dogfood run builds: the manifest names the provider side, and the
- * package name names the call sites.
+ * dogfood run builds. The manifest gives the provider side, and the
+ * package name finds the call sites.
  */
 function packageBoundaryPack(rendered: RenderedPackageShape): PatternPack {
   return {

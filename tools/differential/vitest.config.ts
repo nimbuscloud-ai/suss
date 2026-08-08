@@ -8,7 +8,7 @@ export default defineConfig({
     testTimeout: 120_000,
     coverage: {
       provider: "v8",
-      // text only — no json-summary. This package deliberately stays out
+      // text only: no json-summary. This package deliberately stays out
       // of the committed-coverage / badge / regression-gate machinery
       // (scripts/coverage-packages.mjs); emitting coverage-summary.json
       // would get it auto-committed by CI's refresh step.

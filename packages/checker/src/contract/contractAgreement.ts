@@ -1,4 +1,4 @@
-// contract-agreement.ts — Layer 2 cross-source contract consistency.
+// contract-agreement.ts: Layer 2 cross-source contract consistency.
 //
 // When multiple providers describe the same boundary (an OpenAPI stub,
 // a CloudFormation stub, an extracted handler, …) each may carry its
@@ -145,7 +145,7 @@ function compareSources(
   // --- Body-shape disagreements at shared statuses -----------------------
   // For each (status, source) tuple where both sources declare a body,
   // check shape compatibility in both directions. Only flag at the
-  // first-vs-each-other level to avoid N×(N-1)/2 expansion — one
+  // first-vs-each-other level to avoid N×(N-1)/2 expansion, one
   // finding per (status, disagreeing-pair-of-sources) is enough signal.
   for (const [status, declaringSources] of statusAttribution) {
     const contributors = sources.filter((s) =>

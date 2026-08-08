@@ -242,7 +242,7 @@ interface BindingConfig {
  * The fragment definitions of the whole read set, keyed by name, plus
  * the names that more than one file defines. The first definition in
  * read order wins so that two runs over the same files agree, and any
- * operation that spreads a contested name carries a gap saying the
+ * operation that spreads a contested name gets a gap saying the
  * choice was ambiguous.
  */
 interface FragmentIndex {

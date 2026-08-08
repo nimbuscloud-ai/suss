@@ -256,7 +256,7 @@ function reference({ sha, pull }, repository) {
 
 /**
  * A link to the whole diff. The end of the range is the tag this
- * release is about to carry, which the workflow pushes before it puts
+ * release is about to have, which the workflow pushes before it puts
  * the notes anywhere a reader can reach them.
  */
 function compareLink({ from, to, version, repository }) {

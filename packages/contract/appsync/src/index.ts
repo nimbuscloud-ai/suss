@@ -1,4 +1,4 @@
-// @suss/contract-appsync — Generate behavioral summaries from AWS AppSync
+// @suss/contract-appsync: Generate behavioral summaries from AWS AppSync
 // CloudFormation / SAM templates.
 //
 // AppSync is schema-first: the SDL is authored by hand, either inline in
@@ -19,7 +19,7 @@
 //
 // Fields are indexed by (TypeName, FieldName); one `resolver`-kind
 // BehavioralSummary is emitted per resolver with `graphql-resolver`
-// semantics — pairing key `gql:<TypeName>.<fieldName>` matches the Apollo
+// semantics: pairing key `gql:<TypeName>.<fieldName>` matches the Apollo
 // side of the story without additional plumbing. Lambda data-source
 // attribution rides on each summary so it can later correlate to handler
 // code.

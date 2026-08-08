@@ -1,4 +1,4 @@
-// resolveImport.ts — locate the local binding for a target import.
+// resolveImport.ts: locate the local binding for a target import.
 //
 // Used by handlers that gate on a specific module + named export
 // (resolverMap, graphqlImperativeCall) and need the local identifier
@@ -7,7 +7,7 @@
 import type { SourceFile } from "ts-morph";
 
 /**
- * Locate local identifiers that hold the imported symbol (named,
+ * Locate local identifiers bound to the imported symbol (named,
  * default, or namespace import). Returns null when the consumer
  * doesn't import the target.
  */

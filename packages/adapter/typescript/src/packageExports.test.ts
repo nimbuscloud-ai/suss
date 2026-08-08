@@ -1,4 +1,4 @@
-// packageExports.test.ts — resolver + discovery handler tests for
+// packageExports.test.ts: resolver + discovery handler tests for
 // the packageExports pack variant.
 
 import fs from "node:fs";
@@ -180,7 +180,7 @@ describe("discoverPackageExports", () => {
   function runDiscovery(pkgJsonPath: string) {
     const project = new Project({ useInMemoryFileSystem: false });
     // Add the resolved source file to the project explicitly rather
-    // than letting the project walk the tree — keeps the test
+    // than letting the project walk the tree, keeps the test
     // hermetic and ensures getFilePath() matches the resolver output.
     const { entries } = resolvePackageExports(pkgJsonPath);
     const sources = entries.map((e) =>
@@ -380,7 +380,7 @@ describe("discoverPackageExports", () => {
       .map((u) => u.packageExportInfo?.exportPath.join("."))
       .sort();
     // createClient itself plus three method-shorthand / arrow / fn-expr
-    // properties. `project` is a non-callable shorthand value — skipped.
+    // properties. `project` is a non-callable shorthand value, skipped.
     expect(paths).toEqual([
       "createClient",
       "createClient.create",
@@ -415,7 +415,7 @@ describe("discoverPackageExports", () => {
     const paths = units
       .map((u) => u.packageExportInfo?.exportPath.join("."))
       .sort();
-    // helper's return-shape doesn't belong to outer — `unused` is not surfaced.
+    // helper's return-shape doesn't belong to outer, `unused` is not surfaced.
     expect(paths).toEqual(["outer", "outer.real"]);
   });
 
@@ -448,7 +448,7 @@ describe("discoverPackageExports", () => {
       .sort();
     // get + post + static create. private + #hidden are skipped.
     // The class itself isn't a FunctionRoot, so no top-level
-    // [ApiClient] unit yet — known gap (constructor synthesis).
+    // [ApiClient] unit yet: known gap (constructor synthesis).
     expect(paths).toEqual([
       "ApiClient.create",
       "ApiClient.get",
@@ -684,7 +684,7 @@ describe("packageExports — end-to-end summary", () => {
     const returnValues = classify?.transitions.map((t) =>
       t.output.type === "return" ? t.output.value : null,
     );
-    // Each branch returns a distinct string literal — without the shape
+    // Each branch returns a distinct string literal, without the shape
     // fix these would all be null.
     expect(returnValues).toEqual([
       { type: "literal", value: "negative" },
@@ -702,7 +702,7 @@ describe("packageExports — end-to-end summary", () => {
 });
 
 // ---------------------------------------------------------------------------
-// packageImport — consumer-side discovery
+// packageImport: consumer-side discovery
 // ---------------------------------------------------------------------------
 
 describe("discoverPackageImports", () => {
@@ -781,7 +781,7 @@ describe("discoverPackageImports", () => {
       info: u.packageExportInfo,
     }));
     // loadOne calls parseSummary; loadSafely calls safeParseSummary;
-    // validate calls BehavioralSummarySchema.parse — a method on the
+    // validate calls BehavioralSummarySchema.parse, a method on the
     // imported binding, attributed to exportPath
     // [BehavioralSummarySchema, parse].
     expect(summary).toContainEqual({
@@ -878,7 +878,7 @@ describe("discoverPackageImports", () => {
 });
 
 // ---------------------------------------------------------------------------
-// packageImport — factory / class / await binding tracking
+// packageImport: factory / class / await binding tracking
 // ---------------------------------------------------------------------------
 //
 // These tests lock in the consumer-side method-call attribution: when
@@ -1103,7 +1103,7 @@ describe("discoverPackageImports — factory / class binding tracking", () => {
         return c.fetchAll();
       }
     `);
-    // unrelated() doesn't trace to @ex/lib — c.fetchAll() is invisible.
+    // unrelated() doesn't trace to @ex/lib, c.fetchAll() is invisible.
     expect(summary).toHaveLength(0);
   });
 

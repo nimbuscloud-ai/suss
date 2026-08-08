@@ -1,4 +1,4 @@
-// @suss/framework-fastify — PatternPack for Fastify
+// @suss/framework-fastify: PatternPack for Fastify
 
 import { httpRouteDiscovery } from "@suss/extractor";
 
@@ -43,7 +43,7 @@ export function fastifyFramework(): PatternPack {
         },
       },
       {
-        // reply.status(N).send(body) — `.status` is the Express-style alias
+        // reply.status(N).send(body), `.status` is the Express-style alias
         kind: "response",
         match: {
           type: "parameterMethodCall",
@@ -56,7 +56,7 @@ export function fastifyFramework(): PatternPack {
         },
       },
       {
-        // reply.send(body) — implicit 200
+        // reply.send(body): implicit 200
         kind: "response",
         match: {
           type: "parameterMethodCall",
@@ -92,10 +92,10 @@ export function fastifyFramework(): PatternPack {
         extraction: {},
       },
       {
-        // `return user`, `return { id, name }`, `return await db.find(id)` —
+        // `return user`, `return { id, name }`, `return await db.find(id)`,
         // Fastify serialises the returned value as a 200 response body.
         // `excludeCallReturns: true` keeps `return reply.send(...)` out
-        // of this branch — that call already lands as a parameterMethodCall
+        // of this branch: that call already lands as a parameterMethodCall
         // terminal above, and matching it here would double-fire.
         kind: "response",
         match: {

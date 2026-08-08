@@ -1,4 +1,4 @@
-// A ref names a type suss chose not to expand. Two questions follow
+// A ref gives the name of a type suss chose not to expand. Two questions follow
 // from that: does the name identify the type, and does the same type
 // always get the same ref?
 //

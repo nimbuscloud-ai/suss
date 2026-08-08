@@ -1,4 +1,4 @@
-// helperResolution.ts — follow a return statement into the helper it
+// helperResolution.ts: follow a return statement into the helper it
 // calls, and read what that helper returns.
 //
 // A handler usually builds its response in a helper rather than at the
@@ -19,10 +19,10 @@
 // because the pack assumed `json(payload, status)`.
 //
 // What a pack does know is the shape the platform requires, and it
-// already declares it: an object carrying `statusCode`. So instead of
-// naming helpers, follow the call and apply that declaration to what the
-// helper returns, carrying along which argument the caller passed for
-// each parameter.
+// already declares it: an object with a `statusCode` on it. So instead
+// of listing helper names, follow the call and apply that declaration to
+// what the helper returns, keeping track of which argument the caller
+// passed for each parameter.
 //
 // A helper that branches returns more than one value, and each becomes
 // its own transition. Branches that cannot run at a given call site are
@@ -48,7 +48,7 @@ export type HelperResolution =
       /**
        * Every value the helper can return, in source order. A helper
        * that branches returns more than one, and each becomes its own
-       * transition, which is how the IR expresses alternatives.
+       * transition, which is how the IR writes down alternatives.
        *
        * A branch that cannot run once the caller's arguments are bound
        * is left out: `if (status > 399)` does not run when the caller
@@ -60,7 +60,7 @@ export type HelperResolution =
     }
   /**
    * The callee is not a function in this project, so there is nothing to
-   * follow. The caller carries on with its own matching.
+   * follow. The caller goes on with its own matching.
    */
   | { kind: "notLocal" }
   /** The callee is in this project, and nothing in it could be read. */
@@ -94,13 +94,13 @@ export function resolveHelperReturn(call: CallExpression): HelperResolution {
 }
 
 /**
- * Can the branch holding this return statement run, given what the
- * caller passed? False means it cannot, so the branch is dead at this
- * call site. True covers both "it runs" and "cannot tell", which are the
+ * Can the branch this return statement is in run, given what the caller
+ * passed? False means it cannot, so the branch is dead at this call
+ * site. True covers both "it runs" and "cannot tell", which come to the
  * same instruction: keep the branch.
  *
  * Only a comparison between a bound parameter and a number is decided,
- * which is the shape a status guard takes. Anything else keeps its
+ * which is what a status guard looks like. Anything else keeps its
  * branch: dropping one wrongly loses behaviour, while keeping one
  * needlessly costs an extra transition.
  */
@@ -121,10 +121,9 @@ function branchCanRun(
  * Everything that has to be true for this return to run.
  *
  * Two sources. An enclosing `if` contributes its condition, true or
- * false depending on which arm the return sits in. And an earlier `if`
- * in the same block that returns contributes its condition negated,
- * because reaching anything after an early return means that guard did
- * not hold:
+ * false depending on which arm the return is in. And an earlier `if` in
+ * the same block that returns contributes its condition negated, because
+ * reaching anything after an early return means that guard was false:
  *
  *   if (statusCode > 399) { return ... }   // needs the guard true
  *   return ...                             // needs the guard false
@@ -182,7 +181,7 @@ function earlyReturnGuardsBefore(
   return guards;
 }
 
-/** Does this statement leave the function on every path through it? */
+/** Does every path through this statement leave the function? */
 function alwaysReturns(statement: TsNode): boolean {
   if (Node.isReturnStatement(statement) || Node.isThrowStatement(statement)) {
     return true;
@@ -207,8 +206,8 @@ const COMPARISONS: Record<string, (a: number, b: number) => boolean> = {
 };
 
 /**
- * A comparison between a bound parameter and a number, evaluated.
- * Null when it is any other shape.
+ * A comparison between a bound parameter and a number, worked out. Null
+ * for anything else.
  */
 function evaluateComparison(
   condition: TsNode,
@@ -251,8 +250,8 @@ type LocalHelper =
 /**
  * The callee's declaration, when it is a function in this project that
  * returns one object. Anything resolving into node_modules or an ambient
- * declaration comes back "external", where the pack's own description is
- * the right answer.
+ * declaration comes back "external", and there the pack's own
+ * description is the right one to use.
  *
  * Covers `function json(...)` and `const json = (...) => ...`, both of
  * which show up as a project's response helper.
@@ -265,8 +264,8 @@ function resolveLocalHelper(callee: Identifier): LocalHelper {
     }
 
     // A .d.ts describes a helper without saying what it does. When the
-    // implementation sits next to it, which is how a compiled package in
-    // a workspace ships, read that instead.
+    // implementation is beside it, which is how a compiled package in a
+    // workspace ships, read that instead.
     if (file.isDeclarationFile()) {
       const implementation = implementationBeside(
         declaration,
@@ -289,8 +288,8 @@ function resolveLocalHelper(callee: Identifier): LocalHelper {
     if (fn === null) {
       continue;
     }
-    // `declare function json(...)` has no body to read. It stands for
-    // something defined elsewhere, so it belongs with the library case.
+    // `declare function json(...)` has no body to read. It refers to
+    // something defined elsewhere, so treat it like a library call.
     if (fn.getBody() === undefined) {
       return { kind: "external" };
     }
@@ -308,8 +307,8 @@ function resolveLocalHelper(callee: Identifier): LocalHelper {
 
 /**
  * The function a `.d.ts` describes, found in the implementation file
- * beside it. `response.d.ts` sits next to `response.js`, so the export
- * with the same name in that file is the one being described.
+ * beside it. `response.d.ts` is next to `response.js`, so the export of
+ * the same name in that file is the one being described.
  */
 function implementationBeside(
   declaration: TsNode,

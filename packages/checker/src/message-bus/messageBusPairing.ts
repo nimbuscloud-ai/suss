@@ -1,39 +1,17 @@
-// messageBusPairing.ts — pair message-send interaction effects (from
-// recognizers like @suss/framework-aws-sqs) against queue provider
-// summaries (from @suss/contract-cloudformation), with a chain-collapse
-// step to bridge env-var-named producer channels to CFN-resource-named
-// queue channels.
-//
-// This is a v0 dispatcher-style implementation that consolidates into
-// the unified pairing pass (#174) when other interaction classes
-// migrate. Lives in its own directory for now to keep the message-bus
-// finding generators self-contained.
-//
-// Findings emitted:
-//   messageBusProducerOrphan       warning  code sends to channel X but no provider declares X
-//   messageBusConsumerOrphan       warning  consumer Lambda exists for channel X but no producer sends to X
-//   messageBusUnused               warning  channel X declared but no producer or consumer
-//   unsupportedSemantics           info     an EventBridge rule's EventPattern, an SNS
-//                                           subscription's FilterPolicy, or an S3 notification's
-//                                           Filter couldn't be reduced to an exact match; the
-//                                           target Lambda is surfaced as unpaired-unresolvable
-//   boundaryFieldUnknown (aspect: receive)
-//                                  warning  consumer destructures field X from JSON.parse(record.body)
-//                                           but no producer to this channel sends X
-//
-// Channels pair on their subject, with the bus required to agree only
-// when both sides carry one; see channelPairing.ts for why.
-//
-// Body-shape pairing (the field-shape finding) joins producer
-// `message-send` effects against consumer `message-receive` effects
-// by channel. Producer-side bodies come from object-literal
-// MessageBody calls (extracted as EffectArg by the SQS recognizer);
-// consumer-side bodies come from destructuring patterns on
-// `JSON.parse(record.body)` (extracted by the same pack's
-// messageReceiveRecognizer). When either side's body is opaque
-// (identifier args, dynamic builders, plain variable assignment),
-// the comparison is skipped — absence of the finding doesn't imply
-// agreement.
+/**
+ * Pair the message sends a recognizer found in code against the queue
+ * and topic providers a deployment template declares.
+ *
+ * The two sides rarely spell a channel the same way. Code refers to the
+ * queue through an env var and the template refers to it by CFN resource,
+ * so pairing collapses that chain first and only then compares
+ * channels. Comparison is on the subject, with the bus required to
+ * agree only when both sides carry one; channelPairing.ts says why.
+ *
+ * Message bodies are compared too, producer object literals against
+ * consumer destructuring. Either side can be opaque, and then the
+ * comparison is skipped, so a missing finding is not agreement.
+ */
 
 import {
   readMessageBusMetadata,
@@ -72,33 +50,10 @@ import type {
 } from "@suss/behavioral-ir";
 
 type ProducerRecord = InteractionRecord<"message-send"> & {
-  /**
-   * Resolved CFN-channel after env-var → resource collapse, or null
-   * when no chain-collapse mapping was found.
-   */
+  /** Null when no env var resolved to a template resource. */
   resolvedChannel: string | null;
 };
 
-/**
- * Pair message-bus consumers (CFN queue providers + Lambda consumer
- * summaries) against producer-side message-send interaction effects.
- *
- * Channel resolution: producer effects emit channel = env-var name
- * (the name the recognizer could see at extraction time, e.g.
- * "ORDERS_QUEUE_URL"). Provider summaries use channel = CFN logical
- * id (e.g. "OrdersQueue"). The bridge: each runtime-config provider
- * summary's metadata.runtimeContract.envVars knows which env vars
- * the Lambda has, but not the resolved targets (those would need to
- * be added in a future runtime-config extension). For v0, we collapse
- * via direct channel string match — works when the recognizer can be
- * configured to emit CFN-resource names directly, and works when env
- * var names happen to match queue logical ids (a common convention).
- *
- * Future improvement: extend runtime-config provider metadata to
- * carry envVarTargets so the chain-collapse can resolve
- * "ORDERS_QUEUE_URL" → "OrdersQueue" via the producer Lambda's
- * Environment block.
- */
 export function checkMessageBus(
   summaries: BehavioralSummary[],
   index?: InteractionIndex,
@@ -106,29 +61,19 @@ export function checkMessageBus(
   const findings: Finding[] = [];
   const idx = index ?? buildInteractionIndex(summaries);
 
-  // Both queue providers (kind=library) and Lambda consumer summaries
-  // (kind=consumer) live under message-bus semantics. Filter by kind
-  // to split them.
   const messageBusSummaries = providersOf(idx, "message-bus");
   const queueProviders = messageBusSummaries.filter(
     (s) => s.kind === "library",
   );
   const allConsumers = messageBusSummaries.filter((s) => s.kind === "consumer");
-  // A code unit bound to a channel is the receiving end the template
-  // declares: the aws-lambda pack binds a handler to the subject its
-  // factory config names. Its channel counts as consumed, so a channel
-  // some handler answers is not reported unused. These units are not
-  // orphan-checked. A handler reading a subject says nothing about
-  // whether anyone sends it; only a declared subscription does.
+  // A handler bound to a subject counts that channel as consumed, but is
+  // never orphan-checked: reading a subject says nothing about who sends
+  // it, and only a declared subscription does.
   const codeReceivers = messageBusSummaries.filter(
     (s) => s.kind !== "library" && s.kind !== "consumer",
   );
-  // EventBridge rules whose pattern couldn't be reduced to exact
-  // detail-types, and scheduled invocations, carry a patternResolution
-  // marker. Unresolvable rules surface as an info finding (never
-  // silent); scheduled invocations are accounted for by their summary's
-  // presence and exempt from producer/consumer pairing (a schedule has
-  // no message producer by design). Everything else pairs normally.
+  // A schedule has no producer by design, so it is dropped rather than
+  // reported as an orphan.
   const consumers: BehavioralSummary[] = [];
   for (const consumer of allConsumers) {
     const resolution = readPatternResolution(consumer);
@@ -147,11 +92,6 @@ export function checkMessageBus(
     "message-bus",
   ).map((record) => ({ ...record, resolvedChannel: null }));
 
-  // Build the env-var → CFN-channel mapping by walking runtime-config
-  // providers' codeScope vs the producer effect's source file. For
-  // each producer, find the runtime-config summary whose codeScope
-  // contains the producer file; the env vars on that runtime are the
-  // candidate channels. v0 simplification: trust direct name match.
   const byFile = unitsByFile(summaries);
   resolveProducerChannels(producers, summaries, byFile);
 
@@ -170,9 +110,8 @@ export function checkMessageBus(
     if (ch !== null) {
       addChannel(consumerChannels, ch);
     }
-    // A subject-channelled SQS consumer still drains a concrete queue.
-    // The CFN contract keeps that queue's logical id in metadata so the
-    // queue is not mis-reported as unused.
+    // A consumer channelled by subject still drains a concrete queue,
+    // which would otherwise be reported unused.
     const queue = consumedQueueOf(c);
     if (queue !== null) {
       addChannel(consumerChannels, queue);
@@ -191,11 +130,9 @@ export function checkMessageBus(
     }
   }
 
-  // Producer nothing declares → orphan producer. A declared queue and
-  // a handler bound to the subject are both declarations: a producer
-  // that names the subject a handler answers has been paired, even
-  // when no queue in scope carries that name, because a wrapper names
-  // the subject and the template names the queue.
+  // A handler bound to the subject counts as a declaration, so a
+  // producer sending to it pairs even when no queue in scope has that
+  // name.
   for (const p of producers) {
     const semantics = p.effect.binding.semantics;
     if (semantics.name !== "message-bus") {
@@ -212,9 +149,6 @@ export function checkMessageBus(
     findings.push(makeOrphanProducerFinding(p, semantics, ch));
   }
 
-  // Consumer with no producer → orphan consumer (warning, not error
-  // — the Lambda might be feature-flagged off, or the producer might
-  // be in a different repo we don't analyse).
   for (const c of consumers) {
     const semantics = c.identity.boundaryBinding?.semantics;
     if (semantics?.name !== "message-bus" || semantics.channel === null) {
@@ -226,9 +160,9 @@ export function checkMessageBus(
     findings.push(makeOrphanConsumerFinding(c, semantics));
   }
 
-  // Queue declared but no producer AND no consumer → unused. Unnamed
-  // sends on the queue's own technology could reach it, so the finding
-  // carries their count; other technologies cannot.
+  // A send whose queue the code only works out at runtime could reach
+  // any queue on its own bus, so the unused finding says how many of
+  // those sends there were.
   const unnamedSendsByBus = new Map<string, number>();
   for (const p of producers) {
     const sendSemantics = p.effect.binding.semantics;
@@ -262,10 +196,6 @@ export function checkMessageBus(
     );
   }
 
-  // Body-shape pairing: for each channel that has both producer
-  // (sends) and consumer (receives), compare field sets and emit
-  // findings for fields the consumer reads but the producer
-  // doesn't send.
   findings.push(
     ...checkBodyShapes({
       cfnConsumers: consumers,
@@ -289,20 +219,18 @@ function channelOf(s: BehavioralSummary): string | null {
 
 /**
  * The CFN logical id of the queue a subject-channelled SQS consumer
- * drains, or null when the consumer's channel already names the queue.
+ * drains, or null when the consumer's channel is already the queue name.
  */
 function consumedQueueOf(s: BehavioralSummary): string | null {
   return readMessageBusMetadata(s)?.queue ?? null;
 }
 
 /**
- * Effective channel after env-var → CFN-resource resolution. Producers
- * emit channel = env-var name; if the chain-collapse resolved it to
- * a CFN logical id, prefer that for pairing — otherwise fall back to
- * the recognizer's original channel string. Pairing against providers
- * (CFN-resource-named) succeeds only on the resolved form; falling
- * back to the env-var name surfaces the orphan-producer finding,
- * which is the right behaviour when chain-collapse fails.
+ * Providers name their channels after template resources, so pairing
+ * only succeeds on a resolved channel. Falling back to the env-var name
+ * surfaces the producer as an orphan, which is the right thing to
+ * report when resolution failed. Null means the code only works the
+ * queue out at runtime, so there is nothing to pair on either way.
  */
 function effectiveChannel(p: ProducerRecord): string | null {
   if (p.resolvedChannel !== null) {
@@ -313,31 +241,13 @@ function effectiveChannel(p: ProducerRecord): string | null {
     return null;
   }
 
-  // A null channel is a send whose queue the code names at runtime.
-  // The send is recorded, and there is no name to pair on or to call
-  // an orphan.
   return sem.channel;
 }
 
 /**
- * Resolve env-var-named channels to CFN-resource-named channels.
- *
- * Producer effects emit `channel = env-var name` (the only thing the
- * recognizer can see at extraction time, e.g. "ORDERS_QUEUE_URL").
- * Provider summaries use `channel = CFN logical id` (e.g. "OrdersQueue").
- *
- * The bridge: each runtime-config provider summary carries
- * `metadata.runtimeContract.envVarTargets`, a map from env-var name
- * to the CFN resource the var Refs. For each producer, find the
- * runtime-config provider whose codeScope contains the producer's
- * file, look up the env-var name in envVarTargets, and stash the
- * resolved CFN id on the producer record.
- *
- * Producers whose env var doesn't resolve (no runtime-config in
- * scope, or env var has a plain-string value) keep their original
- * env-var-named channel. Pairing then naturally falls through to
- * "orphan producer" since no provider declares an env-var-named
- * channel.
+ * A recognizer can only see the env var a send reads, so this looks the
+ * name up in the environment of whichever runtime deploys that file and
+ * records the resource it points at.
  */
 function resolveProducerChannels(
   producers: ProducerRecord[],
@@ -356,17 +266,12 @@ function resolveProducerChannels(
       continue;
     }
 
-    // A send with no channel has nothing to resolve. Skipping it here
-    // also keeps a resolved channel from ever outranking the null
-    // channel in effectiveChannel, whatever a template happens to hold.
+    // Skipping keeps a resolved channel from outranking a null one in
+    // `effectiveChannel`, whatever a template happens to contain.
     if (semantics.channel === null) {
       continue;
     }
 
-    // SQS keys the whole channel on the env-var name. EventBridge keys
-    // it on `${bus}#${detailType}`, where only the bus segment is env-
-    // derived — split it off, resolve the bus, recompose with the
-    // detail-type intact.
     const { busToken, detailSuffix } = splitBusChannel(
       semantics.messageBus,
       semantics.channel,
@@ -387,10 +292,8 @@ function resolveProducerChannels(
 }
 
 /**
- * Whether this bus writes two things into one channel string. Only
- * EventBridge does: a bus and the detail-type a rule matches on it.
- * Every other bus spends the whole channel on one queue or topic
- * identity, so a `#` in it is part of that name.
+ * Only EventBridge writes two things into one channel. Elsewhere a `#`
+ * is part of the queue or topic name.
  */
 function channelNamesBusAndSubject(
   messageBus: MessageBusSemantics["messageBus"],
@@ -398,16 +301,8 @@ function channelNamesBusAndSubject(
   return messageBus === "eventbridge";
 }
 
-/**
- * Split a message-bus channel into the env-resolvable bus token and an
- * optional detail suffix. Only the bus segment resolves via the
- * env-var chain-collapse, so it comes out on its own and the
- * detail-type is recomposed after resolution.
- *
- * The split itself belongs to `parseChannel`, which every reader of
- * the wire format goes through. What is decided here is when to ask
- * for it.
- */
+/** Only the bus token resolves through an env var; the detail is put
+ * back afterwards. */
 function splitBusChannel(
   messageBus: MessageBusSemantics["messageBus"],
   channel: string,
@@ -427,13 +322,7 @@ function splitBusChannel(
   return { busToken: bus, detailSuffix: subject };
 }
 
-/**
- * Read the EventBridge pattern-resolution marker off a CFN consumer
- * summary. Present only on EventBridge consumers: "schedule" for time-
- * triggered invocations, "unresolvable" for rules whose EventPattern
- * couldn't be reduced to exact detail-types, "exact" for reduced rules.
- * Absent (null) on SQS consumers and any summary without the marker.
- */
+/** Null on every consumer but EventBridge, which is the only one marked. */
 function readPatternResolution(
   summary: BehavioralSummary,
 ): "exact" | "schedule" | "unresolvable" | null {
@@ -484,9 +373,8 @@ function makeOrphanProducerFinding(
   semantics: MessageBusSemantics,
   effectiveCh: string,
 ): Finding {
-  // Note the channel difference (recognizer's env-var name vs the
-  // CFN id we tried to resolve to) so users can debug whether the
-  // failure is in chain-collapse or in the missing provider.
+  // Showing both channels lets a reader tell a failed env-var resolution
+  // apart from a missing provider.
   const original = semantics.channel;
   const channelDisplay =
     effectiveCh === original
@@ -523,9 +411,6 @@ function makeUnusedQueueFinding(
   unnamedSendCount: number,
 ): Finding {
   const binding = provider.identity.boundaryBinding as BoundaryBinding;
-  // A send whose queue the code names at runtime could reach this
-  // queue, so the finding says what is known instead of claiming
-  // nothing produces to it.
   const caveat =
     unnamedSendCount === 0
       ? ""
@@ -540,14 +425,6 @@ function makeUnusedQueueFinding(
   };
 }
 
-/**
- * An EventBridge rule whose EventPattern, or an SNS subscription whose
- * FilterPolicy, couldn't be reduced to an exact match (no detail-type
- * field, content filters, a FilterPolicy at all, etc.). v0 pairs on an
- * exact match only, so this consumer can't be matched to producers.
- * Surfaced as info rather than dropped — the wiring might well be
- * correct; suss just can't verify the pattern/filter subsumption.
- */
 function makeUnresolvableRuleFinding(consumer: BehavioralSummary): Finding {
   const binding = consumer.identity.boundaryBinding as BoundaryBinding;
   const semantics = binding.semantics as MessageBusSemantics;
@@ -564,7 +441,7 @@ function makeUnresolvableRuleFinding(consumer: BehavioralSummary): Finding {
   };
 }
 
-/** The reason shown when a consumer is unresolvable but names no reason of its own. Should not happen in practice, since every producer of this state also sets `unresolvableReason`. */
+/** Every writer of this state also sets `unresolvableReason`, so this is a backstop. */
 function defaultUnresolvableReason(
   messageBus: MessageBusSemantics["messageBus"],
 ): string {
@@ -577,11 +454,6 @@ function defaultUnresolvableReason(
   return "the EventPattern couldn't be reduced to exact detail-types";
 }
 
-/**
- * The unresolvable finding's description, in the wording that matches
- * where the consumer came from: an EventBridge rule's EventPattern, an
- * SNS subscription's FilterPolicy, or an S3 notification's Filter.
- */
 function unresolvableDescription(
   consumer: BehavioralSummary,
   semantics: MessageBusSemantics,
@@ -628,17 +500,8 @@ interface ReceiveRecord {
 }
 
 /**
- * For each CFN consumer summary with a known channel + codeScope,
- * find every code summary scoped under that path that emits
- * `interaction(class: "message-receive")` effects with object-shaped
- * bodies. Compare each receive-side field set against the producer's
- * send-side field sets for the same channel. Emit
- * `boundaryFieldUnknown` (aspect: receive) for fields the consumer
- * reads but no producer sends.
- *
- * Skipped silently when either side's body is opaque (call-shaped,
- * identifier-shaped, or absent) — we'd be guessing, and a false
- * positive on body shape is worse than a missed finding.
+ * An opaque body on either side is skipped without a finding, so a
+ * missing finding here does not mean the two sides agree.
  */
 function checkBodyShapes(opts: {
   cfnConsumers: BehavioralSummary[];
@@ -740,11 +603,7 @@ function collectReceives(
   return out;
 }
 
-/**
- * Collect the union of field names emitted by all producers targeting
- * the given channel. Returns null when no producer has an extractable
- * (object-shaped) body — at that point we can't usefully compare.
- */
+/** Null when no producer on the channel has a body that can be compared. */
 function collectProducerFields(
   producers: ProducerRecord[],
   channel: string,
@@ -772,12 +631,7 @@ function collectProducerFields(
   return anyExtractable ? out : null;
 }
 
-/**
- * Read the field-name set out of an EffectArg shape, but only when
- * the body is object-shaped (`{ kind: "object", fields: { ... } }`).
- * Returns null for any other shape (string literal, identifier, call,
- * absent) — those are opaque to v0 body-shape comparison.
- */
+/** Null for any body that is not an object literal, which is opaque here. */
 function readObjectBodyFields(body: unknown): string[] | null {
   if (body === null || body === undefined || typeof body !== "object") {
     return null;
@@ -802,7 +656,7 @@ function makeBodyShapeFinding(
     boundary: binding,
     provider: makeSide(cfnConsumer),
     consumer: makeSide(receive.summary, receive.transitionId),
-    description: `${receive.summary.identity.name} reads field "${missingField}" from a message on ${semantics.messageBus} channel "${semantics.channel}" but no producer in the analysed scope sends "${missingField}". Likely a producer/consumer drift — the producer renamed or removed the field, or the consumer expects a field that was never sent.`,
+    description: `${receive.summary.identity.name} reads field "${missingField}" from a message on ${semantics.messageBus} channel "${semantics.channel}" but no producer in the analysed scope sends "${missingField}". Likely a producer/consumer drift: the producer renamed or removed the field, or the consumer expects a field that was never sent.`,
     severity: "warning",
   };
 }

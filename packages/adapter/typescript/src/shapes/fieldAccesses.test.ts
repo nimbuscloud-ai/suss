@@ -198,7 +198,7 @@ describe("expectedInput on client transitions", () => {
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
-    // No body field accesses — all transitions should have no expectedInput
+    // No body field accesses: all transitions should have no expectedInput
     for (const t of summaries[0].transitions) {
       expect(t.expectedInput).toBeUndefined();
     }
@@ -341,15 +341,15 @@ describe("expectedInput on client transitions", () => {
     const input = withInput?.expectedInput;
     if (input?.type === "record" && input.properties.data?.type === "record") {
       // Local binding was `payload` but it's recorded against the underlying
-      // `data` property — that's what the provider declares.
+      // `data` property: that's what the provider declares.
       expect(input.properties.data.properties).toHaveProperty("id");
     } else {
       throw new Error("expected data record with id");
     }
   });
 
-  // A pack with fetch-shaped response semantics so `.json()` reads as a
-  // body accessor and `.status` filters out. Mirrors @suss/client-web.
+  // A pack with fetch-shaped response semantics, so `.json()` counts as
+  // a body accessor and `.status` gets filtered out. Mirrors @suss/client-web.
   const webPack: PatternPack = {
     ...fetchPack,
     name: "web",
@@ -394,7 +394,7 @@ describe("expectedInput on client transitions", () => {
     );
     expect(withInput).toBeDefined();
     const input = withInput?.expectedInput;
-    // Body reached via `res.json()` — recorded under the `json` accessor,
+    // Body reached via `res.json()`: recorded under the `json` accessor,
     // which the checker strips as a body accessor when comparing.
     if (input?.type === "record" && input.properties.json?.type === "record") {
       expect(input.properties.json.properties).toHaveProperty("name");

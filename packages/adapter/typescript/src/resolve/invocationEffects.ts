@@ -1,10 +1,10 @@
-// invocationEffects.ts — Capture call expressions as `invocation`
+// invocationEffects.ts: Capture call expressions as `invocation`
 // RawEffects. Two patterns covered:
 //
-//   1. Bare expression-statement calls — `setCount(n);`,
+//   1. Bare expression-statement calls: `setCount(n);`,
 //      `onChange(value);`, `emitter.emit("x", y);`. Result is
 //      discarded; the call fires for side effect.
-//   2. Container-building calls — `return [...checkProviderCoverage(p, c),
+//   2. Container-building calls: `return [...checkProviderCoverage(p, c),
 //      ...checkConsumerSatisfaction(p, c)]` and similar. The call's
 //      return value is composed into an array or object literal;
 //      the call still *fires* when the container expression
@@ -14,7 +14,7 @@
 //
 // Scope:
 //   * Descend into nested function expressions / arrows (Promise
-//     executors, `.then` callbacks, `forEach` bodies, IIFEs) — their
+//     executors, `.then` callbacks, `forEach` bodies, IIFEs): their
 //     calls are behavior of the enclosing unit. Named nested
 //     declarations and pack-declared sub-unit boundaries are hard
 //     stops (see `walk/descent.ts`).
@@ -60,7 +60,7 @@ export interface InvocationEffectLocation {
    * direct element in an array/object literal) rather than an
    * expression-statement call. Container calls are never themselves
    * terminals, so the assembly-level terminal-line dedup must skip
-   * them — otherwise single-line orchestrators lose their effects.
+   * them: otherwise single-line orchestrators lose their effects.
    */
   neverTerminal: boolean;
 }
@@ -77,7 +77,7 @@ export interface RecognizedEffectLocation {
 }
 
 /**
- * Context handed to TypeScript-adapter access recognizers — sister
+ * Context handed to TypeScript-adapter access recognizers: sister
  * to TsInvocationRecognizerContext but for property-access nodes.
  * No `extractArgs` since property accesses don't take arguments.
  */
@@ -116,7 +116,7 @@ export interface TsInvocationRecognizerContext {
    *
    * Named, default, and namespace imports all match. So does an import
    * through a project-local barrel that re-exports the module: the
-   * aliased symbol still sits in the package that declared it.
+   * aliased symbol is still in the package that declared it.
    */
   isImportedFrom(identifier: Node, expectedModule: string): boolean;
   /**
@@ -127,10 +127,10 @@ export interface TsInvocationRecognizerContext {
    *   const url = "https://sqs/.../orders";
    *   client.send(new SendMessageCommand({ QueueUrl: url }));
    *
-   * Resolving `url` answers the string literal, and the recognizer's
+   * Resolving `url` gives back the string literal, and the recognizer's
    * own pattern match runs on that. Null when the value has no written
-   * form (a parameter, a call result), which is when null on the
-   * binding is the truthful answer.
+   * form (a parameter, a call result), which is exactly when null on the
+   * binding is correct.
    */
   resolveWrittenValue(value: Node): Node | null;
 }
@@ -164,14 +164,14 @@ export function isImportedFrom(
     );
 }
 
-/** Whether an import-shaped declaration names `expectedModule`. */
+/** Whether an import-shaped declaration imports from `expectedModule`. */
 function importSpecifierMatches(decl: Node, expectedModule: string): boolean {
   if (Node.isImportSpecifier(decl)) {
     return (
       decl.getImportDeclaration().getModuleSpecifierValue() === expectedModule
     );
   }
-  // An ImportClause's parent is the declaration; a NamespaceImport sits
+  // An ImportClause's parent is the declaration; a NamespaceImport is
   // one level deeper, under the clause.
   const owner = Node.isNamespaceImport(decl) ? decl.getParent() : decl;
   if (!Node.isImportClause(owner)) {
@@ -196,7 +196,7 @@ export function extractInvocationEffects(
       return;
     }
 
-    // Case 1: bare expression statement — `foo();`, `await foo();`.
+    // Case 1: bare expression statement: `foo();`, `await foo();`.
     if (Node.isExpressionStatement(node)) {
       const { call, async } = unwrapCall(node.getExpression());
       if (call !== null) {
@@ -216,9 +216,9 @@ export function extractInvocationEffects(
       return;
     }
 
-    // Case 2: spread-element call in an array/object literal —
+    // Case 2: spread-element call in an array/object literal ,
     // `[...foo()]`, `{...foo()}`. The spread could be inside a
-    // return, a variable declaration, a function argument — in
+    // return, a variable declaration, a function argument: in
     // each case the call still fires when the container is built.
     if (Node.isSpreadElement(node)) {
       const parent = node.getParent();
@@ -274,9 +274,9 @@ export function extractInvocationEffects(
     }
 
     // Case 3: direct call element in an array literal or property
-    // assignment value — `[foo(), bar()]`, `{ key: foo() }`. These
+    // assignment value: `[foo(), bar()]`, `{ key: foo() }`. These
     // also fire when the container evaluates. Skip arguments to
-    // other calls (`foo(bar())`) — those are argument positions,
+    // other calls (`foo(bar())`): those are argument positions,
     // not composition positions.
     if (Node.isCallExpression(node)) {
       const parent = node.getParent();
@@ -314,7 +314,7 @@ export function extractInvocationEffects(
  * declarations and pack-declared sub-unit boundaries are hard stops.
  *
  * Distinct from `extractInvocationEffects` because the existing
- * walker is intentionally narrow — it captures a specific subset
+ * walker is intentionally narrow: it captures a specific subset
  * of call positions (bare expression statement, container building)
  * to avoid double-counting calls that already become terminals
  * (`return foo()`) or whose return value is consumed (`const x =
@@ -349,8 +349,8 @@ export function runInvocationRecognizers(
       sourceFile,
       extractArgs: () => extractArgs(node),
       isImportedFrom,
-      // A context built without a store answers null, and the
-      // recognizer's own pattern match runs on the raw node.
+      // A context built without a store gives null, and the recognizer's
+      // own pattern match runs on the raw node.
       resolveWrittenValue: resolveWrittenValue ?? (() => null),
     };
     const line = enclosingStatementLine(node);
@@ -360,14 +360,14 @@ export function runInvocationRecognizers(
         emitted = recognizer(node, ctx);
       } catch (err) {
         // A recognizer throwing shouldn't take down the whole
-        // extraction, but it also shouldn't disappear silently —
+        // extraction, but it also shouldn't disappear silently ,
         // the user has no way to know their pack is buggy. Log to
         // stderr with file + line so authors can find the call site
         // that broke the recognizer, and continue.
         const filePath = sourceFile.getFilePath();
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(
-          `[suss] invocationRecognizer threw at ${filePath}:${line} — ${message}\n`,
+          `[suss] invocationRecognizer threw at ${filePath}:${line}: ${message}\n`,
         );
         emitted = null;
       }
@@ -449,7 +449,7 @@ function dispatchAccessRecognizers(
         const filePath = sourceFile.getFilePath();
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(
-          `[suss] accessRecognizer threw at ${filePath}:${line} — ${message}\n`,
+          `[suss] accessRecognizer threw at ${filePath}:${line}: ${message}\n`,
         );
         emitted = null;
       }
@@ -470,7 +470,7 @@ function dispatchAccessRecognizers(
  * literal values (strings, numbers, booleans), object literals
  * whose fields resolve to literals, and array literals whose
  * elements resolve to literals. Anything not a literal becomes
- * `null` in the positional slot — the caller retains the argument
+ * `null` in the positional slot: the caller retains the argument
  * count but the value is opaque.
  *
  * Depth is bounded to prevent runaway on pathological source, but
@@ -484,7 +484,7 @@ function extractArgs(call: CallExpression): EffectArg[] {
 }
 
 function extractArg(node: Node, depth: number): EffectArg {
-  // Unwrap type-cast wrappers — `value as Type`, `<Type>value`,
+  // Unwrap type-cast wrappers: `value as Type`, `<Type>value`,
   // `value satisfies Type`, and the non-null assertion `value!`.
   // These are TS-only annotations that don't affect runtime shape;
   // recursing into the inner expression preserves field/argument
@@ -513,7 +513,7 @@ function extractArg(node: Node, depth: number): EffectArg {
   if (Node.isFalseLiteral(node)) {
     return { kind: "boolean", value: false };
   }
-  // Template literals with substitutions (`Error: ${x}`) — preserve
+  // Template literals with substitutions (`Error: ${x}`): preserve
   // source text so the composition is visible even when runtime
   // value isn't resolvable. Simple template literals without
   // substitutions already match Node.isNoSubstitutionTemplateLiteral
@@ -528,7 +528,7 @@ function extractArg(node: Node, depth: number): EffectArg {
   // is bound at module level to a simple initializer (literal, property
   // access, template, nested call), inline that initializer's EffectArg
   // form instead of the identifier name. That collapses the closure-
-  // over-constants indirection — `const QUEUE_URL = process.env.QUEUE_URL;
+  // over-constants indirection: `const QUEUE_URL = process.env.QUEUE_URL;
   // send(QUEUE_URL)` reads the same as `send(process.env.QUEUE_URL)` at
   // the call site.
   if (Node.isIdentifier(node)) {
@@ -547,7 +547,7 @@ function extractArg(node: Node, depth: number): EffectArg {
   if (depth <= 0) {
     return null;
   }
-  // Nested call — `log(formatError(e))`, `enqueue(buildPayload(ctx))`.
+  // Nested call: `log(formatError(e))`, `enqueue(buildPayload(ctx))`.
   // Recurse into the arguments with decremented depth so the shape of
   // the composition survives in the summary.
   if (Node.isCallExpression(node)) {
@@ -557,7 +557,7 @@ function extractArg(node: Node, depth: number): EffectArg {
       args: node.getArguments().map((a) => extractArg(a, depth - 1)),
     };
   }
-  // `new Foo(...)` — same shape as a call. Lets recognizers that
+  // `new Foo(...)`: same shape as a call. Lets recognizers that
   // walk over command-pattern argument objects (AWS SDK v3
   // `client.send(new SendMessageCommand({...}))`) reach the inner
   // object-literal fields without re-implementing the unwrap.
@@ -574,7 +574,7 @@ function extractArg(node: Node, depth: number): EffectArg {
       if (Node.isShorthandPropertyAssignment(prop)) {
         const nameNode = prop.getNameNode();
         if (Node.isIdentifier(nameNode)) {
-          // `{ userId }` — shorthand expands to `{ userId: userId }`.
+          // `{ userId }`: shorthand expands to `{ userId: userId }`.
           fields[nameNode.getText()] = {
             kind: "identifier",
             name: nameNode.getText(),
@@ -600,7 +600,7 @@ function extractArg(node: Node, depth: number): EffectArg {
       if (initializer === undefined) {
         continue;
       }
-      // Record every named field, even when the value is opaque — the
+      // Record every named field, even when the value is opaque: the
       // field *name* is information about the call's shape. Previously
       // null-valued fields were skipped and all-null objects collapsed
       // to null; that lost the shape itself.
@@ -645,7 +645,7 @@ function collectPreconditions(node: Node, func: FunctionRoot): RawCondition[] {
  * This is the "closure-over-constants" fix: `const QUEUE_URL =
  * process.env.QUEUE_URL; send(QUEUE_URL, ...)` reads the same at the
  * call site as `send(process.env.QUEUE_URL, ...)`. Same for any
- * simple module-level binding — string literals, numeric constants,
+ * simple module-level binding: string literals, numeric constants,
  * aliased property chains. One hop only, same file only, so we don't
  * traverse arbitrary alias graphs.
  */
@@ -661,7 +661,7 @@ function inlineModuleBinding(ident: Node, depth: number): EffectArg {
     if (!Node.isVariableDeclaration(decl)) {
       continue;
     }
-    // Only follow module-level declarations — local consts (inside a
+    // Only follow module-level declarations: local consts (inside a
     // function body) are already opaque-by-scope to this summary; the
     // closure-over pattern we're targeting is file-scope constants
     // aliased to runtime / platform values.
@@ -673,7 +673,7 @@ function inlineModuleBinding(ident: Node, depth: number): EffectArg {
       continue;
     }
     const unwrapped = unwrapCasts(init);
-    // Re-enter extractArg on the initializer — covers literals,
+    // Re-enter extractArg on the initializer: covers literals,
     // property access (`process.env.X`, `config.url`), templates,
     // nested calls, everything else extractArg knows about. Depth
     // is decremented so a chain of module-level aliases can't loop
@@ -687,7 +687,7 @@ function inlineModuleBinding(ident: Node, depth: number): EffectArg {
 }
 
 function isModuleScoped(decl: Node): boolean {
-  // Module-level consts sit inside a VariableDeclarationList → VariableStatement
+  // Module-level consts are inside a VariableDeclarationList → VariableStatement
   // whose parent is the SourceFile. Anything else (a VariableStatement nested
   // in a Block / function body / loop) is local scope.
   let current: Node | undefined = decl.getParent();
@@ -726,7 +726,7 @@ function unwrapCasts(node: Node): Node {
 /**
  * Walk up from a composition-position call to find the enclosing
  * statement line. This is what should be used for branch
- * attribution — the line of the statement that contains the
+ * attribution: the line of the statement that contains the
  * container expression.
  */
 function enclosingStatementLine(node: Node): number {

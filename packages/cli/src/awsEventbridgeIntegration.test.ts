@@ -1,4 +1,4 @@
-// AWS EventBridge integration test — end-to-end producer → rule pairing.
+// AWS EventBridge integration test, end-to-end producer → rule pairing.
 //
 // Pipeline (mirrors awsSqsIntegration):
 //   1. Extract code summaries from fixtures/aws-eventbridge via the

@@ -1,4 +1,4 @@
-// extract.ts — status-code and body extraction helpers used by every
+// extract.ts: status-code and body extraction helpers used by every
 // terminal matcher. Each matcher constructs an ExtractionContext from
 // the source material it has (returned object, throw call args, method
 // chain) and asks extractStatusCode / extractBody to produce the
@@ -61,13 +61,13 @@ export function unwrapJsonStringify(node: Expression): Expression {
 
 export interface ExtractionContext {
   extraction: TerminalExtraction;
-  /** Object literal — supplied by returnShape. */
+  /** Object literal: supplied by returnShape. */
   returnedObj?: ObjectLiteralExpression;
-  /** Args of a throw's call expression — supplied by throwExpression / functionCall. */
+  /** Filled in by throwExpression / functionCall, never by the caller. */
   throwCallArgs?: Expression[];
-  /** Method-chain calls (innermost → outermost) — supplied by parameterMethodCall. */
+  /** Method-chain calls (innermost → outermost): supplied by parameterMethodCall. */
   calls?: CallExpression[];
-  /** Text of the thrown constructor — supplied by throwExpression only. */
+  /** Text of the thrown constructor: supplied by throwExpression only. */
   exceptionType?: string;
   /**
    * Parameter name to call argument, when `returnedObj` came from a
@@ -144,9 +144,9 @@ function matchConstructorCode(
 }
 
 /**
- * The status a named property of an object literal carries. A number
- * written out is the status; anything else is reported as the source
- * text, so a reader sees where the value comes from.
+ * The status under a named property of an object literal. A number
+ * written out is the status; anything else is reported as source text,
+ * so a reader can see where the value comes from.
  */
 function statusFromProperty(
   obj: ObjectLiteralExpression,
@@ -156,9 +156,9 @@ function statusFromProperty(
   if (prop === undefined) {
     return null;
   }
-  // `{ status }` names a variable holding the status. The value is not
-  // readable here, and reporting the pack default instead would put a
-  // number on the summary that the handler never sends.
+  // `{ status }` refers to a variable with the status in it. The value
+  // cannot be read here, and reporting the pack default instead would
+  // put a number on the summary that the handler never sends.
   if (Node.isShorthandPropertyAssignment(prop)) {
     return { type: "dynamic", sourceText: prop.getName() };
   }
@@ -184,8 +184,8 @@ function extractStatusCodeFromRule(
   }
 
   if (sc.from === "constructor") {
-    // The map says which classes carry a status; an unmatched class
-    // answers null, whatever its arguments hold.
+    // The map says which classes imply a status. A class that is not in
+    // it gives null, whatever its arguments are.
     if (ctx.exceptionType === undefined) {
       return null;
     }
@@ -208,8 +208,8 @@ function extractStatusCodeFromRule(
 
   if (sc.from === "argumentConstructor") {
     // Wrapper pattern: `throw wrap(new NotFound(...))`. The arg at the
-    // configured position carries the status via its class name. Only
-    // throwCallArgs is relevant — this source doesn't make sense for
+    // configured position implies the status through its class name. Only
+    // throwCallArgs is relevant: this source doesn't make sense for
     // parameterMethodCall terminals (no thrown-value wrapping there).
     if (ctx.throwCallArgs === undefined) {
       return null;
@@ -224,8 +224,8 @@ function extractStatusCodeFromRule(
 
   if (sc.from === "argumentProperty") {
     // `NextResponse.json(body, { status: 404 })`. The init object is an
-    // argument, so a call whose args this context does not carry has
-    // nothing to read.
+    // argument, so a call whose arguments this context does not have
+    // gives nothing to read.
     const args = ctx.throwCallArgs ?? ctx.calls?.[0]?.getArguments();
     const arg = args?.[sc.position];
     if (arg === undefined || !Node.isObjectLiteralExpression(arg)) {
@@ -241,10 +241,9 @@ function extractStatusCodeFromRule(
 
     for (const prop of ctx.returnedObj.getProperties()) {
       if (!Node.isPropertyAssignment(prop)) {
-        // Handle shorthand: ShorthandPropertyAssignment
         if (Node.isShorthandPropertyAssignment(prop)) {
           if (prop.getName() === sc.name) {
-            // `{ statusCode }` inside a helper names one of its
+            // `{ statusCode }` inside a helper refers to one of its
             // parameters, so the caller's argument is the status.
             const resolved = ctx.substitutions?.get(prop.getName());
             if (resolved !== undefined) {
@@ -345,7 +344,7 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
       if (!Node.isPropertyAssignment(prop)) {
         if (Node.isShorthandPropertyAssignment(prop)) {
           if (prop.getName() === b.name) {
-            // `{ body }` inside a helper names one of its parameters, so
+            // `{ body }` inside a helper refers to one of its parameters, so
             // the caller's argument is the payload.
             const resolved = ctx.substitutions?.get(prop.getName());
             if (resolved !== undefined) {

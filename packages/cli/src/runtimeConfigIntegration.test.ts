@@ -1,15 +1,15 @@
-// runtime-config integration test — end-to-end env-var pairing.
+// runtime-config integration test: end-to-end env-var pairing.
 //
 // Pipeline: extract Lambda handler summaries (via a tiny inline pack
 // that discovers `export async function handler`), generate
 // runtime-config provider summaries from the SAM template, run
 // checkAll, assert the three drift findings:
 //
-//   1. envVarUnprovided — Checkout reads STRIPE_API_KEY,
+//   1. envVarUnprovided: Checkout reads STRIPE_API_KEY,
 //      template misnames it STRIPE_KEY (typo)
-//   2. envVarUnprovided — WebhookHandler reads KAFKA_BROKER,
+//   2. envVarUnprovided: WebhookHandler reads KAFKA_BROKER,
 //      template doesn't declare it (omission)
-//   3. envVarUnused     — BatchReconcile declares
+//   3. envVarUnused: BatchReconcile declares
 //      LEGACY_FEATURE_FLAG, no code reads it (dead config)
 
 import path from "node:path";
@@ -29,7 +29,7 @@ const fixtureRoot = path.join(repoRoot, "fixtures/runtime-config");
 /**
  * Tiny pack that discovers `export async function handler` (and
  * `export const handler = ...`) in any source file. Lambdas don't
- * fit a framework pack — they're plain function exports — so a
+ * fit a framework pack. They're plain function exports, so a
  * synthetic namedExport pack is the most direct fit here.
  */
 const lambdaHandlerPack: PatternPack = {
@@ -94,7 +94,7 @@ describe("runtime-config integration", () => {
   it("does not flag platform-injected vars as unused", async () => {
     const findings = await runPipeline();
     const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
-    // AWS_REGION etc. are platform-injected — no code in the fixture
+    // AWS_REGION etc. are platform-injected, no code in the fixture
     // reads them, but they should NOT surface as envVarUnused
     // because the stub marks them as source=platform.
     const platformLeak = unused.find((f) =>

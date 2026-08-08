@@ -1,15 +1,15 @@
-// pack.ts: the Python adapter's own pattern-pack contract.
-//
-// Not the TypeScript adapter's `PatternPack` (packages/extractor's
-// `framework.ts`): that type's discovery variants are dispatched by
-// ts-morph-specific handlers, and Python's two route shapes (a class
-// decorator plus method-name dispatch, and a function decorator whose
-// own attribute name carries the verb) have no exact match in that
-// union anyway. Per the language-adapters proposal's invariant, match
-// shapes stay per-language until a second implementation shows what's
-// actually shared; this is that per-language shape for Python. A pack
-// is still plain data, the same discipline the TypeScript packs
-// follow: naming what a library defines, nothing a project chose.
+/**
+ * The Python adapter's own pattern-pack contract.
+ *
+ * This is deliberately not the TypeScript adapter's `PatternPack`. That type
+ * dispatches its discovery variants through ts-morph-specific handlers, and
+ * Python's two route shapes have no exact match in its union anyway. Match
+ * shapes stay per-language until a second implementation shows what is actually
+ * shared, and this is the per-language one for Python.
+ *
+ * A pack is still plain data, following the same rule the TypeScript packs
+ * follow: it describes what a library defines, never anything a project chose.
+ */
 
 export interface PythonPack {
   name: string;
@@ -22,199 +22,78 @@ export type PythonDiscoveryPattern =
   | DecoratedClassRoute
   | DecoratedFunctionRoute;
 
-/**
- * Conventions both route shapes share, each naming behavior the
- * library defines, never a project's choice.
- */
+/** Conventions both kinds of route share. Each one describes what the library does, never a project's choice. */
 export interface RouteConventions {
-  /**
-   * How the library spells a parameter inside a route path template,
-   * as a named syntax the adapter has a reader for: "braces" for
-   * `{name}` and `{name:converter}` (FastAPI's, via Starlette),
-   * "flaskConverters" for `<name>` / `<converter:name>` /
-   * `<converter(arguments):name>` (flask-restx's, via Werkzeug). The
-   * adapter canonicalizes a read template to the IR's bare-brace
-   * spelling and classifies parameters named in it as path parameters.
-   * Unset means the library declares no template syntax: paths stand
-   * as written and no parameter reads as a path parameter. Note for
-   * pack authors upgrading from 0.3: the adapter used to apply the
-   * brace reading unconditionally, so a pack that relied on that
-   * without declaring anything now has to state "braces" here. A named
-   * syntax the adapter has no reader for keeps the route discovered
-   * with no path and a stated gap, never a guessed reading.
-   */
+  /** How the library spells a path parameter. The README lists the syntaxes we know how to read. */
   pathParamSyntax?: string;
-  /**
-   * Whether a parameter annotated with a locally-defined class is the
-   * declared request body (FastAPI's Pydantic-model-parameter
-   * behavior). Library-defined: set it only when the library itself
-   * binds such a parameter to the body. Unset means no such
-   * convention, and the parameter reads as a query parameter, the
-   * weakest claim.
-   */
+  /** Set it only when the library itself binds an annotated local class to the request body. */
   annotatedClassIsRequestBody?: boolean;
   /**
-   * What the library serves for a composed path that ends up with
-   * repeated slashes in it. "merged" is Werkzeug's behavior, which
-   * answers at the merged path and redirects the written one, so a
-   * flask-restx route behind a blueprint prefix written `"/api/v1/"`
-   * is reached at `/api/v1/orders`, not `/api/v1//orders`. "kept" is
-   * the default and is what Starlette does: the path stands as
-   * composed.
+   * What the library serves when a composed path ends up with repeated
+   * slashes in it. Werkzeug serves the merged path and redirects
+   * the written one, so "merged" is what Flask needs; "kept" is the
+   * default and is what Starlette does.
    */
   pathRepeatedSlashes?: PathRepeatedSlashes;
-  /**
-   * The status the library answers a declared response with when the
-   * route states none (FastAPI's 200). Library-defined, so it is
-   * declared here as data rather than baked into the adapter: without
-   * it, a route that declares a response shape and no status claims no
-   * status at all, which is what a reader should see when nobody can
-   * say what the status is.
-   */
+  /** The status the library returns for a declared response when the route does not give one. Library-defined. */
   defaultStatusCode?: number;
-  /**
-   * How a route declared on a sub-router composes its full path. Unset
-   * means the library has no router mounting, and a route's decorator
-   * path stands as written. Both route shapes can carry one: a library
-   * may hang its routes off a mounted object with a function decorator
-   * or with a class decorator, and where the mount prefix comes from is
-   * the same question either way.
-   */
+  /** Unset means the library has no router mounting, and a route's decorator path stands as written. */
   routerComposition?: RouterComposition;
 }
 
 /**
- * A class carries a decorator resolving to a configured module, whose
- * call's first string-literal argument is the route path. Each
- * HTTP-verb-named method declared directly in the class body becomes
- * its own discovered unit, verb read from the method's own name
- * rather than from a decorator on it (flask-restx's `Resource`
- * dispatch convention).
- *
- * Closest TypeScript analogue: `decoratedRoute` in
- * `@suss/extractor`'s `framework.ts`, which also tolerates a
- * project-wrapped `importModule`. It differs in where the verb comes
- * from (a per-method decorator there, the method's own name here), so
- * it isn't reused as-is.
+ * A class has a decorator whose first string-literal argument is the route path,
+ * and each method in its body named after an HTTP verb becomes its own unit,
+ * with the verb taken from the method name.
  */
 export interface DecoratedClassRoute extends RouteConventions {
   type: "decoratedClassRoute";
-  /**
-   * Modules a project may have imported the decorator from, directly
-   * or through a project-local wrapper re-exporting it. Mirrors
-   * `DiscoveryMatch["decoratedRoute"].importModule` on the TypeScript
-   * side: the library names its own module here; a project's wrapper
-   * module is supplied through pack options by whoever configures the
-   * pack, not hardcoded into it.
-   */
+  /** The library's own module, plus any wrapper module the person configuring the pack lists alongside it. */
   importModule: string[];
-  /** The decorator's name as the library exports it (e.g. "route" for flask-restx's `Namespace.route`). */
+  /** The decorator's name as the library exports it, "route" for flask-restx's `Namespace.route`. */
   decoratorName: string;
   /** Method name written in the class body, mapped to the HTTP verb it dispatches. */
   verbMethodNames: Record<string, string>;
 }
 
 /**
- * A function carries a decorator resolving to a configured module,
- * where the decorator's own attribute name is the HTTP verb and its
- * call's first string-literal argument is the route path (FastAPI's
- * `@app.get(path)` convention, whether `app` is itself imported or
- * built one hop away by a call to something imported, e.g. `app =
- * FastAPI()`).
- *
- * No TypeScript analogue: TS route registration is call-based
- * (`app.get(path, handler)`), never decorator-based with the verb
- * carried in the decorator's own name.
+ * A function has a decorator whose attribute name is the HTTP verb and whose
+ * first string-literal argument is the route path, the `@app.get(path)`
+ * convention. The object it hangs on may be imported, or built one hop away by
+ * a call to something imported.
  */
 export interface DecoratedFunctionRoute extends RouteConventions {
   type: "decoratedFunctionRoute";
   importModule: string[];
-  /** Decorator attribute name, mapped to the HTTP verb it names (e.g. { get: "GET", post: "POST" }). */
+  /** Decorator attribute name, mapped to the HTTP verb it means. */
   verbAttributeNames: Record<string, string>;
-  /**
-   * Keyword argument on the decorator call naming a locally-defined
-   * class as the declared response body shape (FastAPI's
-   * `response_model`). Unset means the pack doesn't declare one, and
-   * the return annotation is the only source for the response shape.
-   */
+  /** Unset leaves the return annotation as the only source for the response shape. */
   responseModelKeyword?: string;
-  /** Keyword argument on the decorator call naming a literal response status code (FastAPI's `status_code`). */
   statusCodeKeyword?: string;
 }
 
 /**
- * The names a library gives router mounting, so the route path a
- * reader would see at the wire composes from the literal prefixes
- * written along the way: the router constructor's own, the one at the
- * single call that mounts the router (FastAPI's
- * `APIRouter(prefix=...)` plus `app.include_router(router,
- * prefix=...)`), and, where the pack says so, the prefix the object
- * the mount is called on states. Anything the composition cannot
- * read as one construction, one mount, and literal prefixes abstains:
- * the route is still discovered by name, with no path (see
- * routers.ts).
+ * What a library calls the pieces of router mounting, so a route's served path
+ * can be built from the literal prefixes written along the way: the router
+ * constructor's own, the one at the call that mounts it, and, where the pack
+ * says so, the prefix on the object the mount is called on. What each spelling
+ * of a prefix means, and what makes a composition abstain, is the grid in the
+ * adapter's README.
  */
 export interface RouterComposition {
-  /** Constructor whose call builds a mountable router, as the library exports it (FastAPI's `APIRouter`). */
+  /** Constructor whose call builds a mountable router, FastAPI's `APIRouter`. */
   routerConstructorName: string;
-  /** Method that mounts a router onto the app, as the library defines it (FastAPI's `include_router`). */
+  /** Method that mounts a router onto the app, FastAPI's `include_router`. */
   includeMethodName: string;
-  /**
-   * Keyword naming the literal path prefix, on the constructor and on
-   * the mount call alike (FastAPI's `prefix`). One name serving both
-   * sites is an assumption FastAPI happens to satisfy; a library that
-   * spells the constructor's prefix differently from the mount's
-   * needs this split into two fields.
-   */
+  /** One keyword serves the constructor and the mount alike. A library that spells them apart needs two fields here. */
   prefixKeyword: string;
-  /**
-   * What that keyword at the mount call does to the prefix the
-   * constructor stated. "prefixes" (the default) puts it in front, the
-   * way FastAPI's `include_router(router, prefix=...)` does. "replaces"
-   * swaps the constructor's prefix out, and a mount that states one
-   * abstains rather than composing: the reading would otherwise report
-   * a path the mount overrode. Composing a replacement is readable and
-   * a later change can do it; abstaining is what keeps the wrong path
-   * out in the meantime.
-   */
+  /** Default "prefixes". */
   mountPrefixEffect?: MountPrefixEffect;
-  /**
-   * Whether the constructor has to state the prefix for the mounted
-   * path to be readable. Set it when the library serves a router that
-   * states no prefix under a path it derives from something else (a
-   * name, say), which this reading does not derive: such a router
-   * abstains instead of composing an empty prefix and reporting a path
-   * that is short by a segment. Unset means a router with no prefix
-   * really does add nothing to the path, which is FastAPI's behavior.
-   */
+  /** Set it when the library works out a path for a router that gives no prefix. We cannot work that path out, so such routes abstain. */
   constructorPrefixRequired?: boolean;
-  /**
-   * What the library makes of a prefix keyword written with a value
-   * it takes as no value at all: Python's `None` or `False`, zero, or
-   * the empty string. "unstated" reads all four the way it reads a
-   * keyword nobody wrote, which is flask-restx's behavior at the
-   * constructor and at the mount alike, since it asks whether the
-   * path is truthy. "unreadable" is the default and abstains, which
-   * is what FastAPI needs: an empty string there is an ordinary
-   * prefix that adds nothing, and the other three stop the app from
-   * starting, so nothing about a served path can be read off them.
-   *
-   * One answer covers both sites on purpose. Reading the same
-   * spelling one way at the constructor and another at the mount is
-   * how this went wrong twice.
-   */
+  /** Default "unreadable". The same setting covers the constructor and the mount. */
   noValuePrefix?: NoValuePrefix;
-  /**
-   * What the library does with a trailing slash on the constructor's
-   * prefix before the route's own path is joined to it. "kept" (the
-   * default) joins the two as written, which is what FastAPI needs:
-   * it refuses a prefix ending in a slash at construction, so a kept
-   * one never reaches a served path. "trimmed" drops trailing slashes
-   * first, which is what flask-restx does, so a prefix written
-   * `"/orders/"` serves the same paths as `"/orders"` and a prefix
-   * written `"/"` adds nothing. Composing without this reports a
-   * doubled slash that the app never serves.
-   */
+  /** Default "kept". */
   constructorPrefixTrailingSlash?: PrefixTrailingSlash;
   /**
    * Where the object the mount is called on states a prefix of its
@@ -245,7 +124,7 @@ export interface MountObjectPrefix {
  * An object handed to the mount object's constructor, one hop further
  * out, with a prefix of its own (the Flask blueprint behind an
  * `Api`). Naming it here is what lets the adapter tell that object
- * apart from the plain app that sits in the same argument position and
+ * apart from the plain app that appears in the same argument position and
  * has no prefix at all.
  */
 export interface MountObjectCarrier {
@@ -274,14 +153,15 @@ export interface MountObjectCarrier {
   registerMethodName: string;
 }
 
-/** What a literal prefix at the mount call does to the one the constructor stated. */
 export type MountPrefixEffect = "prefixes" | "replaces";
 
-/** What a library does with a trailing slash on a prefix before joining a path to it. */
 export type PrefixTrailingSlash = "kept" | "trimmed";
 
-/** What a library makes of a prefix written as a value it takes as no value at all. */
 export type NoValuePrefix = "unstated" | "unreadable";
 
-/** What a library serves for a path with repeated slashes in it. */
+/**
+ * Werkzeug serves the merged path and redirects the written one, so Flask
+ * needs "merged". Starlette leaves the path as composed, so FastAPI keeps
+ * the default.
+ */
 export type PathRepeatedSlashes = "kept" | "merged";

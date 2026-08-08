@@ -1,13 +1,10 @@
-// annotations.ts: read a Python type annotation as a declared shape.
-//
-// This is contract reading, not type checking (per the language-adapters
-// proposal's "Types" decision): a parameter annotation, a return
-// annotation, and an annotated class body (the Pydantic shape) are all
-// syntax already sitting in the parse tree, converted into the same
-// `TypeShape` the IR already carries for a TypeScript type. What stays
-// out is inference: nothing here propagates a value's type through
-// code that never annotated it, and a shape this module doesn't
-// recognize degrades to an opaque `ref` by name rather than a guess.
+/**
+ * Turns a Python annotation into an IR type shape.
+ *
+ * Nothing here infers anything. A value nobody annotated has no shape at all,
+ * and an annotation this module does not recognize comes back as a `ref` by
+ * name, which says only what the source called it.
+ */
 
 import { createHash } from "node:crypto";
 
@@ -19,13 +16,9 @@ import type { PyNode } from "./parser.js";
 import type { Scope } from "./scope.js";
 
 /**
- * Where converted class shapes are filed so a type mentioned twice
- * (once as a parameter, once nested in another model) is written once.
- * `scopeFor` is the binder's module-wide map from a class/function
- * node to the scope its own body introduces, needed to resolve names
- * written *inside* a referenced class's body (a field's own
- * annotation) rather than only names written at the annotation's own
- * use site.
+ * `definitions` stores each converted class shape once, however many annotations
+ * mention it. `scopeFor` is here so a name written inside a referenced class's
+ * body resolves too, not only one written at the annotation's use site.
  */
 export interface AnnotationContext {
   scopeFor: Map<number, Scope>;
@@ -73,12 +66,7 @@ const TUPLE_SET_NAMES = new Set([
   "FrozenSet",
 ]);
 
-/**
- * Convert a `type` grammar node (a parameter's or a function's
- * annotation) into a `TypeShape`. `scope` is where the annotation is
- * written, used to tell a project-local Pydantic-shaped class from an
- * unresolved or external name.
- */
+/** `scope` is where the annotation is written, which is how we tell a project-local class from an external name. */
 export function annotationToShape(
   typeNode: PyNode,
   scope: Scope,
@@ -115,15 +103,7 @@ function shapeFromExpression(
     : { type: "unknown" };
 }
 
-/**
- * A bare name's declared shape, resolved through `scope`: a builtin
- * scalar, a bare `list`/`dict`, a locally-defined class read as a
- * record, or an opaque ref by name. Exported so a decorator keyword
- * argument naming a class directly (FastAPI's `response_model=Todo`)
- * reads the same way a `Todo` written in annotation position would,
- * without discovery.ts fabricating a `type` node to satisfy this
- * module's usual entry point.
- */
+/** Exported so a decorator keyword that gives a class name reads the same way as that name written in annotation position. */
 export function shapeFromName(
   name: string,
   scope: Scope,
@@ -180,16 +160,14 @@ function shapeFromGenericType(
     return { type: "array", items: shapeOf(args[0]) };
   }
   if (baseName !== null && DICT_NAMES.has(baseName)) {
-    // Dict[KeyType, ValueType]: the IR's "dictionary" shape carries
-    // only the value type, matching how `TypeShape` already represents
-    // a TypeScript index signature.
+    // The key type is dropped here, because the IR's dictionary shape only
+    // records the value type: `dict[str, int]` and `dict[int, int]` come out
+    // the same.
     return { type: "dictionary", values: shapeOf(args[1] ?? args[0]) };
   }
   if (baseName !== null && TUPLE_SET_NAMES.has(baseName)) {
     return { type: "array", items: shapeOf(args[0]) };
   }
-  // An unrecognized generic (a project's own `Page[Todo]`, say):
-  // opaque by its base name rather than a guessed structure.
   return { type: "ref", name: baseName ?? node.text };
 }
 
@@ -214,12 +192,7 @@ function shapeFromBinaryOperator(
   };
 }
 
-/**
- * A locally-defined class's annotated body, filed once under a key
- * that pairs its name with a hash of its own source: two classes named
- * the same in different files (or edited between reads) don't collide,
- * mirroring the TypeScript adapter's `${name}@${hash}` convention.
- */
+/** Keyed `${name}@${hash}`, following the TypeScript adapter, so two classes with the same name do not collide. */
 function recordShapeRef(
   name: string,
   classNode: PyNode,
@@ -230,9 +203,9 @@ function recordShapeRef(
   if (ctx.definitions.has(key)) {
     return ref;
   }
-  // Reserved before expanding, so a self-referential model (a `Todo`
-  // whose `parent: Optional["Todo"]`, say) meets its own key and stops
-  // rather than recursing forever.
+  // The key is reserved before expanding the body, so a model that refers to
+  // itself finds its own key already there and stops instead of recursing
+  // forever.
   ctx.definitions.set(key, null);
   const bodyNode = field(classNode, "body");
   const classScope = ctx.scopeFor.get(classNode.id);
@@ -245,11 +218,7 @@ function recordShapeRef(
   return ref;
 }
 
-/**
- * Annotated assignments in a class body become record fields;
- * unannotated attributes carry no declared shape and are left out, the
- * way Pydantic itself only treats annotated names as model fields.
- */
+/** Only annotated assignments become fields, which is also all Pydantic counts as model fields. */
 export function recordShapeOf(
   bodyNode: PyNode,
   classScope: Scope,

@@ -40,10 +40,7 @@ describe("rangeOf", () => {
     expect(rangeOf(call)).toEqual({ start: 1, end: 1 });
   });
 
-  it("stays inside the file for a declaration far down it", async () => {
-    // tree-sitter counts bytes. Handing the byte offset back put
-    // `line 348` on a 12-line file, because `suss inspect` reads this
-    // as a line number and every other adapter fills it with one.
+  it("answers a line number, not tree-sitter's byte offset, for a declaration far down the file", async () => {
     const call = await firstCall(
       `${"\n".repeat(20)}field :id, ID, null: false\n`,
     );

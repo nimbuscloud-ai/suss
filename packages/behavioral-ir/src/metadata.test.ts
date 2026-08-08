@@ -248,8 +248,8 @@ describe("the graphql metadata namespace", () => {
           document: "query GetUser { user { id } }",
           rootType: "Query",
           declaredContract: {
-            // Missing `returnType` — the whole nested field fails to
-            // parse and drops, while `document` and `rootType` survive.
+            // `returnType` is missing, so the whole nested field fails
+            // to parse and drops, while `document` and `rootType` stay.
             args: [],
             provenance: "derived",
           },
@@ -301,7 +301,7 @@ describe("the http metadata namespace", () => {
   it("round-trips what a writer sets on a transition, not just a summary", () => {
     // statusRange describes one response, so a range-coded OpenAPI
     // operation writes it on the transition itself rather than the
-    // summary. The same reader answers both carriers.
+    // summary. One reader handles both.
     const metadata = withHttpMetadata(undefined, {
       statusRange: { min: 200, max: 299, spec: "2XX" },
     });
@@ -326,7 +326,7 @@ describe("the http metadata namespace", () => {
   it("still answers responses when a writer omits framework", () => {
     // A writer that leaves framework unset shouldn't lose the whole
     // contract to the field-level drop; framework is informational,
-    // not required to trust the responses it names.
+    // not required to trust the responses it lists.
     const read = readHttpMetadata(
       summaryWith({
         http: {

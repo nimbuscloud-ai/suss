@@ -1,15 +1,17 @@
-// Naming a summary, so something else can refer to it.
-//
-// A name is not enough. Reading suss's own source produces 404
-// summaries that share a name with another one, and a repository of any
-// size is worse: two services holding the same `src/handlers.ts` give
-// every summary in one an exact twin in the other. Anything that
-// followed a call by matching names was guessing which one it meant.
-//
-// So a summary carries the project it came from, the file it sits in,
-// and the path its export is reached by. That is unique across
-// everything one run can see, and it reads as something a person could
-// have written down.
+/**
+ * Naming a summary, so that something else can point at it.
+ *
+ * A bare function name is not enough. Reading suss's own source turns up
+ * 404 summaries that share a name with another one, and a large
+ * repository is worse: two services with the same `src/handlers.ts` give
+ * every summary in one an exact twin in the other. Following a call by
+ * matching names was always a guess about which one was meant.
+ *
+ * So the name includes the project the summary came from, the file it is
+ * in, and the path its export is reached by. That is unique across
+ * everything one run can see, and it still looks like something a person
+ * would have written down.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -30,9 +32,9 @@ export function workspaceNameFor(root: string | undefined): string | null {
   if (root === undefined) {
     return null;
   }
-  // The files a run reads usually sit under `src`, and the project is
-  // whatever declares itself above them. Looking only where the files
-  // are called every package `src`.
+  // The files a run reads are usually under `src`, and the project is
+  // whatever declares itself above them. Looking only in the directory
+  // the files are in named every package `src`.
   let at = path.resolve(root);
   for (let up = 0; up < 12; up += 1) {
     try {
@@ -74,12 +76,12 @@ export function nameSummaries(
     summary.identity.id = idFor(args.workspace, file, summary);
   }
 
-  // One function can hold several summaries, one per thing it
-  // consumes, and those share a name, a file and an export path. What
-  // tells those apart is the boundary each one is about, which is the
-  // same thing that decides what a summary pairs with. An anonymous
-  // function has no name to begin with, so where the boundary does not
-  // settle it either, the line does.
+  // One function can produce several summaries, one per thing it
+  // consumes, and those share a name, a file and an export path. The
+  // boundary each one is about is what tells them apart, and it is also
+  // what decides which summaries pair with each other. An anonymous
+  // function has no name to start from, so when the boundary does not
+  // separate them either, the line number does.
   settleWith(summaries, (summary) =>
     summary.identity.boundaryBinding === null
       ? null
@@ -91,9 +93,9 @@ export function nameSummaries(
 }
 
 /**
- * Add something to the ids that more than one summary is using, and
- * leave the ones nothing else claims alone. Short ids stay short, and
- * they survive the code moving.
+ * Extend only the ids that more than one summary ended up with, and
+ * leave the rest alone. An id nothing collides with stays short, and
+ * stays the same when the code around it moves.
  */
 function settleWith(
   summaries: BehavioralSummary[],
@@ -115,7 +117,7 @@ function settleWith(
   }
 }
 
-/** The file as the id says it, so the id survives moving the checkout. */
+/** Relative to the project, so the id survives moving the checkout. */
 function relativeFile(file: string, projectRoot: string | undefined): string {
   if (projectRoot === undefined || !path.isAbsolute(file)) {
     return file;
@@ -140,11 +142,11 @@ function idFor(
 /**
  * Point each call at the summary it reaches.
  *
- * A name is answered by the summary in the same file first, since that
- * is where an unqualified call usually goes, and by the run as a whole
- * after that. Two answers mean the name does not decide it, and the
- * call keeps saying only what it said before. A gap a reader can see
- * beats a link that might be wrong.
+ * A name is matched against the summaries in the same file first, since
+ * that is where an unqualified call usually goes, and against the whole
+ * run after that. Two matches mean the name does not settle it, and the
+ * call is left saying only what it said before: a reader can see a
+ * missing link, and cannot see a wrong one.
  */
 function nameWhatEachCallReaches(summaries: BehavioralSummary[]): void {
   const byName = new Map<string, BehavioralSummary[]>();
@@ -163,9 +165,9 @@ function nameWhatEachCallReaches(summaries: BehavioralSummary[]): void {
   };
 
   for (const summary of summaries) {
-    // A label names the unit for the reader; nothing in the code can
-    // call it, so a callee segment matching one is a coincidence
-    // (Promise.all against a route registered with .all).
+    // A label is there for the reader and nothing in the code can call
+    // it, so a callee segment that matches one is a coincidence, as
+    // `Promise.all` is against a route registered with `.all`.
     if (summary.identity.nameKind === "label") {
       continue;
     }
@@ -192,7 +194,7 @@ function nameWhatEachCallReaches(summaries: BehavioralSummary[]): void {
         if (effect.type !== "invocation") {
           continue;
         }
-        // A method call names its receiver too, and the last part is
+        // A method call includes its receiver, and the last segment is
         // the function, which is what a summary is named after.
         const called = effect.callee.split(".").pop() ?? effect.callee;
         const reached =

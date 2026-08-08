@@ -167,7 +167,6 @@ describe("loadSuppressions", () => {
 });
 
 describe("naming a document by file name", () => {
-  /** Load a one-rule file naming this document, and keep what it printed. */
   function loadNaming(document: string): {
     rules: SuppressionRule[];
     warning: string;
@@ -197,7 +196,7 @@ describe("naming a document by file name", () => {
     }
   }
 
-  /** A finding whose provider sits one directory down from `template.yaml`. */
+  /** A finding whose provider is one directory below `template.yaml`. */
   function findingAtPath(document: string): Finding {
     return {
       kind: "deadConsumerBranch",
@@ -229,11 +228,9 @@ describe("naming a document by file name", () => {
     };
   }
 
-  // The loader warns about a rule that names a document by file name, and
-  // the checker widens exactly those rules to every document of that
-  // reader with that name. One shape decides both, so a rule that draws
-  // the warning is a rule that still matches, and one that does not is
-  // pinned to the path it names.
+  // One shape decides both the warning and the widening, so a rule that
+  // draws the warning still matches a deeper document, and one that does
+  // not is pinned to the path it names.
   it.each([
     {
       document: "cloudformation:template.yaml",

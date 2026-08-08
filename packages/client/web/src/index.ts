@@ -23,7 +23,7 @@ export function webFetchPack(): PatternPack {
           },
           path: { type: "fromArgumentLiteral", position: 0 },
         },
-        // No import gate: `fetch` is a global. Walk every file —
+        // No import gate: `fetch` is a global. Walk every file,
         // the discovery dispatch is itself cheap (just looks for
         // call expressions named `fetch`), so the lack of pre-
         // filter doesn't blow up perf.

@@ -10,7 +10,7 @@ import { fastifyFramework } from "./index.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
-// Fixture project — adds fixtures/fastify/*.ts to an in-memory ts-morph project
+// Fixture project: adds fixtures/fastify/*.ts to an in-memory ts-morph project
 // ---------------------------------------------------------------------------
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/fastify");
@@ -30,12 +30,12 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
 // Structural sanity checks
 // ---------------------------------------------------------------------------
 
-describe("fastifyFramework — pack shape", () => {
+describe("fastifyFramework: pack shape", () => {
   it("exposes the expected discovery, terminals, and inputMapping keys", () => {
     const pack = fastifyFramework();
     expect(pack.name).toBe("fastify");
     expect(pack.languages).toEqual(["typescript", "javascript"]);
-    // Two discovery patterns — default-import and named-import variants
+    // Two discovery patterns: default-import and named-import variants
     expect(pack.discovery).toHaveLength(2);
     expect(pack.contractReading).toBeUndefined();
     expect(pack.inputMapping.type).toBe("positionalParams");
@@ -63,10 +63,10 @@ describe("fastifyFramework — pack shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration — run the adapter against the fastify fixture
+// Integration: run the adapter against the fastify fixture
 // ---------------------------------------------------------------------------
 
-describe("fastifyFramework — integration", () => {
+describe("fastifyFramework: integration", () => {
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
     summaries = await runAdapter();
@@ -82,7 +82,7 @@ describe("fastifyFramework — integration", () => {
       expect(s.identity.boundaryBinding?.semantics.name).toBe("rest");
     }
     // The (method, path) on each binding should reflect the literal
-    // registration call — `bindingExtraction` on the Fastify pack
+    // registration call: `bindingExtraction` on the Fastify pack
     // routes the registration method name into `method` and arg 0
     // into `path`, so every handler ends up with the route it was
     // declared at.
@@ -185,8 +185,8 @@ describe("fastifyFramework — integration", () => {
     // /me has three transitions: 401 (early return reply.code(401).send(...)),
     // 404 (early return reply.code(404).send(...)), and a default 200 from
     // bare `return user`. The two `return reply.code(...).send(...)` paths
-    // must each produce exactly ONE response transition — the inner
-    // parameterMethodCall — not also a second from the wrapping return.
+    // must each produce exactly ONE response transition: the inner
+    // parameterMethodCall: not also a second from the wrapping return.
     const meHandler = summaries.find((s) => s.transitions.length === 3);
     expect(meHandler).toBeDefined();
     if (!meHandler) {
@@ -198,7 +198,7 @@ describe("fastifyFramework — integration", () => {
         : null,
     );
     expect(statuses.sort()).toEqual([200, 401, 404]);
-    // The 200 default-branch transition should carry a body shape derived
+    // The 200 default-branch transition should get a body shape worked out
     // from the returned identifier (`user`).
     const defaultTxn = meHandler.transitions.find((t) => t.isDefault);
     expect(defaultTxn?.output.type).toBe("response");
@@ -218,7 +218,7 @@ describe("fastifyFramework — integration", () => {
     //   2. default                  → return await db.findById(id)     → 200
     // The trailing `return await db.findById(id)` must NOT be skipped
     // by `excludeCallReturns`. That guard exists to suppress the
-    // `return reply.X(...)` double-fire — calls on parameters that the
+    // `return reply.X(...)` double-fire: calls on parameters that the
     // parameterMethodCall matcher already captures. A free call on a
     // non-parameter (`db.findById`) should fall through to the
     // returnStatement matcher and produce a 200 response.

@@ -152,7 +152,8 @@ export function unhandledCaseGap(description: string): Gap {
   };
 }
 
-/** A gap saying part of the unit was not described, not that it misbehaved. */
+/** A gap saying part of the unit went undescribed, rather than that it
+ * misbehaved. */
 export function unreadOutcomeGap(description: string): Gap {
   return {
     type: "unreadOutcome",

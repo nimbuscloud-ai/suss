@@ -1,4 +1,4 @@
-// ancestry.ts: the chain a lookup walks to find what answers for a
+// ancestry.ts: the chain a lookup walks to find the method behind a
 // class. See this package's README for why it walks and where it stops.
 
 import {
@@ -34,7 +34,7 @@ export type AncestorEntry =
 /** A class and everything it inherits from, in Ruby's own method-lookup order. */
 export type Ancestry = readonly AncestorEntry[];
 
-/** What a walk needs to reach a class it holds only the name of. */
+/** What a walk needs to reach a class it knows only by name. */
 export interface AncestorLookup {
   /** Directory the constant-to-path convention resolves an ancestor's name against. */
   root: string;
@@ -49,7 +49,7 @@ export interface AncestorLookup {
 
 /**
  * Every block a file defines under `qualifiedName`, or null when the
- * constant-to-path convention names no file, no file sits there, or
+ * constant-to-path convention points at no file, no file is there, or
  * the file defines nothing by that name.
  */
 export async function reachDefinition(

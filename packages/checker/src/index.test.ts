@@ -115,11 +115,6 @@ describe("checkPair", () => {
 });
 
 describe("checkAll, which pairs get the response-shaped checks", () => {
-  /**
-   * A pair whose two sides carry status codes, on a protocol that does
-   * not exchange HTTP responses. Only REST says it does, so this pair
-   * stands in for every protocol added after it.
-   */
   function packageExportPair(): BehavioralSummary[] {
     const binding = packageExportBinding({
       recognition: "packageExports",

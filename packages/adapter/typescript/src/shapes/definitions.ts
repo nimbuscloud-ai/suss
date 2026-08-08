@@ -1,6 +1,6 @@
 // The types a summary refers to but does not spell out.
 //
-// A shape that names a type rather than expanding it leaves a reader
+// A shape that gives a type's name rather than expanding it leaves a reader
 // with a name and nowhere to look. The same type expanded at every
 // mention is the other way to be unhelpful, and it is how one summary
 // came to be a megabyte: 700 record nodes across 51 distinct shapes,
@@ -60,8 +60,8 @@ export function createDefinitionTable(): DefinitionTable {
 }
 
 /**
- * Read one unit with a table of its own, and hand back what was written
- * into it alongside whatever the reading produced.
+ * Read one unit with a table of its own, and give back both what was
+ * written into that table and what the read produced.
  */
 export function withDefinitions<T>(read: () => T): {
   value: T;

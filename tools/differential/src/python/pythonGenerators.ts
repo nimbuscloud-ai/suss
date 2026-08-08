@@ -1,10 +1,10 @@
 // pythonGenerators.ts: fast-check arbitraries over the Python program
 // DSL.
 //
-// The whole space is the sound tier: every shape here is either one
-// the shipped packs claim a path for or one they document as an
+// The whole space is the sound tier. Every shape here is either one the
+// shipped packs claim a path for, or one they document as an
 // abstention, and the adjudicator penalizes neither abstaining nor
-// declining. A falseClaim from any of it is an undocumented
+// declining. So a falseClaim from any of it is an undocumented
 // extraction bug.
 
 import fc from "fast-check";
@@ -45,7 +45,7 @@ const VERBS: PyVerb[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const BODY_VERBS = new Set<PyVerb>(["POST", "PUT", "PATCH"]);
 
 // 204 and 304 are left out on purpose: both forbid a response body,
-// and every generated handler answers with one.
+// and every handler we generate returns one.
 const STATUSES = [201, 202, 400, 404, 418];
 
 const arbStatus: fc.Arbitrary<PyStatusSpec> = fc.oneof(
@@ -85,9 +85,8 @@ const arbFastapiRoute: fc.Arbitrary<FastapiRouteSpec> = fc
   })
   .map((route) => ({
     ...route,
-    // A body parameter belongs to verbs that carry request bodies; a
-    // computed path stays parameterless to keep its serve-time value
-    // a single string concatenation.
+    // A computed path stays parameterless, so its serve-time value is one
+    // string concatenation.
     hasBodyParam: route.hasBodyParam && BODY_VERBS.has(route.verb),
     hasPathParam: route.hasPathParam && !route.pathComputed,
   }));
@@ -172,8 +171,7 @@ const arbFlaskMethod: fc.Arbitrary<FlaskMethodSpec> = fc
   })
   .map((method) => ({
     ...method,
-    // An annotated method answers the plain 200 dict its annotation
-    // declares (see the DSL's doc comment).
+    // An annotated method returns the plain 200 dict its annotation declares.
     returnStyle: method.annotated ? ("dict" as const) : method.returnStyle,
   }));
 
@@ -201,7 +199,7 @@ const arbFlaskResources = fc.array(arbFlaskResource, {
   maxLength: 2,
 });
 
-/** Every spelling of a value the library reads as no value, drawn evenly, since it treats all four the same and the reader has to as well. */
+/** The library reads all four spellings as no value, so draw them evenly. */
 const arbNoValue: fc.Arbitrary<FlaskNoValue> = fc.constantFrom<FlaskNoValue>(
   "empty",
   "none",
@@ -209,12 +207,8 @@ const arbNoValue: fc.Arbitrary<FlaskNoValue> = fc.constantFrom<FlaskNoValue>(
   "zero",
 );
 
-/**
- * How a namespace states its path. The two literal spellings serve
- * the same paths, since the library holds the path with trailing
- * slashes stripped; the root spelling adds nothing at all; and the
- * last two are the shapes the pack documents as abstentions.
- */
+// The library strips trailing slashes from a namespace path before it
+// stores it, so both literal spellings serve the same paths.
 const arbFlaskNamespacePath: fc.Arbitrary<FlaskNamespacePath> = fc.oneof(
   {
     weight: 4,
@@ -239,11 +233,8 @@ const arbFlaskNamespacePath: fc.Arbitrary<FlaskNamespacePath> = fc.oneof(
   },
 );
 
-/**
- * How the mount states a path, if it states one. The falsy spellings
- * are no override at all, which is a cell the pack reads rather than
- * abstains over, so they belong here as much as the override does.
- */
+// A falsy mount path is no override at all, which the pack reads rather
+// than abstains over.
 const arbFlaskMountPath: fc.Arbitrary<FlaskNamespaceMountPath> = fc.oneof(
   {
     weight: 4,
@@ -410,9 +401,9 @@ export const arbFlaskProgramSpec: fc.Arbitrary<FlaskProgramSpec> = fc
     resources: fc.array(arbFlaskResource, { minLength: 1, maxLength: 3 }),
     namespaces: fc.array(arbFlaskNamespace, { minLength: 0, maxLength: 2 }),
   })
-  // A resource reached through the project wrapper carries a bare
+  // A resource reached through the project wrapper has a bare
   // function as its decorator, so extraction has no object to ask what
-  // prefix sits in front of it and claims the decorator's path as
+  // prefix comes before it and claims the decorator's path as
   // written. The wrapper's own namespace is pinned at "/" for that
   // reason, and the app the wrapper style builds is pinned to no
   // prefix for the same one.
@@ -426,7 +417,6 @@ export const arbFlaskProgramSpec: fc.Arbitrary<FlaskProgramSpec> = fc
         },
   );
 
-/** Both frameworks, drawn evenly, so one sampled stream covers the two packs. */
 export const arbPythonProgramSpec: fc.Arbitrary<PythonProgramSpec> = fc.oneof(
   arbFastapiProgramSpec.map(
     (program): PythonProgramSpec => ({ framework: "fastapi", program }),

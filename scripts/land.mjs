@@ -264,7 +264,7 @@ async function main() {
 /**
  * The branch to land, from the PR number or from --branch.
  *
- * The refusal to rewrite main sits at the end, where it sees whatever
+ * The refusal to rewrite main comes at the end, where it sees whatever
  * either path resolved to. A same-repo pull request can be opened with
  * main as its head branch, and everything else here passes it: it is
  * not cross-repository and it is open.

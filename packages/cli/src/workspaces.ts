@@ -1,8 +1,8 @@
-// workspaces.ts — find the packages in a monorepo.
+// workspaces.ts: find the packages in a monorepo.
 //
 // Pointed at a repo root, `inspectProject` finds nothing: it stops at
 // every nested package.json, which is the right call for a single
-// service and the wrong one for a workspace holding twelve. Pointed at
+// service and the wrong one for a workspace of twelve. Pointed at
 // one service, it misses the other eleven.
 //
 // So look for the workspace declaration first. Four tools are in wide
@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 export interface Workspace {
-  /** Directory holding the package, relative to the repo root. */
+  /** The package's directory, relative to the repo root. */
   directory: string;
   /** Its name from package.json, when it has one. */
   name: string | null;
@@ -30,8 +30,8 @@ export interface WorkspaceLayout {
 
 /**
  * The workspace a directory belongs to, whether it is the root or one of
- * the packages. Returns no packages when this is a single project, which
- * the caller reads as "treat it as one".
+ * the packages. Returns no packages when this is a single project, and
+ * the caller takes that to mean "treat it as one".
  */
 export function readWorkspace(dir: string): WorkspaceLayout {
   const root = path.resolve(dir);
@@ -97,7 +97,7 @@ function fromPackageJson(root: string): Declaration | null {
   if (parsed === null) {
     return null;
   }
-  // npm and yarn accept an array, or an object holding one under
+  // npm and yarn accept an array, or an object with one under
   // `packages`, which is the yarn-berry shape.
   const workspaces = parsed.workspaces;
   const patterns = Array.isArray(workspaces)

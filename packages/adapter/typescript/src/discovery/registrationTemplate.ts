@@ -1,12 +1,12 @@
-// registrationTemplate.ts (discovery handler) — expand a single
+// registrationTemplate.ts (discovery handler): expand a single
 // helper-call into N virtual route registrations using pack-author
 // templates. Each template substitutes positional arguments via
-// `{N}` placeholders; the synthesized DiscoveredUnit carries
+// `{N}` placeholders; the synthesized DiscoveredUnit gets
 // `routeInfo` so the adapter pipeline picks up the REST binding
 // directly (same path the decoratedRoute handler uses).
 //
 // A handler argument is written `{N}` or `{N}.prop`. Which function
-// sits there is asked of the fact layer, so a helper handed a name, an
+// is there goes to the fact layer, so a helper given a name, an
 // imported object or a re-exported one reads the same as one handed a
 // function written at the call. A computed property name and a chain
 // deeper than one property are still unread, and a registration whose
@@ -135,7 +135,7 @@ function substitutePath(template: string, args: Node[]): string | null {
     }
     const literal = readStringLiteral(arg);
     if (literal === null) {
-      // Non-literal arg in a path slot — return null so caller can
+      // Non-literal arg in a path slot: return null so caller can
       // skip this registration. Tombstone emission is a v1 concern.
       return null;
     }
@@ -183,7 +183,7 @@ function resolveHandler(
 }
 
 /**
- * What to call the handler an argument names. A name is the answer
+ * What to call the handler an argument refers to. A name is used
  * where there is one; a function written out at the call has none, and
  * the kind is what a unit discovered here has carried since this
  * handler was written.
@@ -193,9 +193,9 @@ function handlerName(value: Node): string {
 }
 
 /**
- * The function a named property of an argument holds. The argument is
+ * The function a named property of an argument is set to. The argument is
  * an object literal at the call site, a name bound to one, or one built
- * in another module, and the fact layer answers for all three.
+ * in another module, and the fact layer covers all three.
  */
 function readPropertyAsFunction(
   arg: Node,
@@ -225,7 +225,7 @@ function readPropertyAsFunction(
   return null;
 }
 
-/** The name an object literal holds a property under. */
+/** The name an object literal writes a property under. */
 function propertyName(property: Node): string | null {
   if (
     Node.isPropertyAssignment(property) ||

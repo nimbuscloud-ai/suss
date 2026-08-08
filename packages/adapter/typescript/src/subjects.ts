@@ -1,4 +1,4 @@
-// subjects.ts — ValueRef resolution from ts-morph Expression nodes (Task 2.2)
+// subjects.ts: ValueRef resolution from ts-morph Expression nodes (Task 2.2)
 
 import { type Expression, Node, type ParameterDeclaration } from "ts-morph";
 
@@ -87,9 +87,9 @@ function resolvePromiseValue(expr: Expression, depth: number): ValueRef {
 }
 
 /**
- * When `decl` carries a `.then` / `.catch` `derivedFrom` link, resolve it
+ * When `decl` has a `.then` / `.catch` `derivedFrom` link, resolve it
  * to the upstream resolved value. Null when the parameter isn't such a
- * binding — the caller then treats it as an ordinary unit input.
+ * binding: the caller then treats it as an ordinary unit input.
  */
 function resolveThenParameter(
   decl: ParameterDeclaration,
@@ -99,7 +99,7 @@ function resolveThenParameter(
   if (link === null) {
     return null;
   }
-  // `.catch(err => ...)` binds to the rejected value — opaque.
+  // `.catch(err => ...)` binds to the rejected value: opaque.
   if (link.method === "catch") {
     return { type: "unresolved", sourceText: decl.getName() };
   }
@@ -108,7 +108,7 @@ function resolveThenParameter(
 
 /**
  * Resolve a ts-morph Expression node to a structured ValueRef.
- * Uses only expr.getSymbol()?.getDeclarations()[0] for symbol lookup —
+ * Uses only expr.getSymbol()?.getDeclarations()[0] for symbol lookup ,
  * never findReferencesAsNodes() which is project-wide and quadratic.
  *
  * Follows intermediate variable assignments (const data = result.body)
@@ -121,42 +121,34 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
   }
   const sourceText = expr.getText();
 
-  // Strip parentheses — recurse into inner expression
   if (Node.isParenthesizedExpression(expr)) {
     return resolveSubject(expr.getExpression(), depth + 1);
   }
 
-  // Strip await — recurse into inner expression
   if (Node.isAwaitExpression(expr)) {
     return resolveSubject(expr.getExpression(), depth + 1);
   }
 
-  // Strip as-expression (type cast) — recurse into inner expression
   if (Node.isAsExpression(expr)) {
     return resolveSubject(expr.getExpression(), depth + 1);
   }
 
-  // Literal: null keyword
   if (Node.isNullLiteral(expr)) {
     return { type: "literal", value: null };
   }
 
-  // Literal: true
   if (Node.isTrueLiteral(expr)) {
     return { type: "literal", value: true };
   }
 
-  // Literal: false
   if (Node.isFalseLiteral(expr)) {
     return { type: "literal", value: false };
   }
 
-  // Literal: numeric
   if (Node.isNumericLiteral(expr)) {
     return { type: "literal", value: Number(expr.getLiteralValue()) };
   }
 
-  // Literal: string
   if (Node.isStringLiteral(expr)) {
     return { type: "literal", value: expr.getLiteralValue() };
   }
@@ -173,7 +165,7 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
   // ElementAccessExpression: obj[key] → derived(resolveSubject(obj), indexAccess(key))
   // The index must be a *value*, not source text: `obj["role"]` and
   // `obj[roleVar]` would otherwise both encode as the same string and a
-  // dynamic access would masquerade as a static property read — a
+  // dynamic access would masquerade as a static property read: a
   // fabricated condition (extraction-algorithm.md, correctness
   // principle #2). Resolve the index expression; concretize only when
   // it lands on a string/number literal (directly or through a const
@@ -196,7 +188,7 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
     return { type: "unresolved", sourceText };
   }
 
-  // Identifier — the core case with symbol resolution
+  // Identifier: the core case with symbol resolution
   if (Node.isIdentifier(expr)) {
     const name = expr.getText();
 
@@ -226,13 +218,13 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
       return { type: "input", inputRef: decl.getName(), path: [] };
     }
 
-    // BindingElement: `const { user } = expr` — the declaration IS the binding element.
+    // BindingElement: `const { user } = expr`: the declaration IS the binding element.
     // Navigate to the parent VariableDeclaration's initializer for the RHS.
     if (Node.isBindingElement(decl)) {
       const bindingName = decl.getName();
       const objectPattern = decl.getParent();
       if (Node.isObjectBindingPattern(objectPattern)) {
-        // Destructured *parameter* (`function C({ user }: Props)`) — the
+        // Destructured *parameter* (`function C({ user }: Props)`): the
         // binding is an input, same as a plain parameter. Input mappings
         // that destructure (React componentProps, react-router
         // singleObjectParam) emit one Input per destructured name, so
@@ -272,7 +264,6 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
       return { type: "unresolved", sourceText };
     }
 
-    // Variable declaration (handles VariableDeclaration from const/let/var)
     if (Node.isVariableDeclaration(decl)) {
       const init = decl.getInitializer();
       if (init === undefined) {

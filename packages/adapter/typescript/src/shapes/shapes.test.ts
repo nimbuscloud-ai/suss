@@ -30,7 +30,7 @@ function parseExpression(src: string): Expression {
  */
 function parseExpressionWithPrelude(prelude: string, src: string): Expression {
   // A prelude declares the values the expression reads, and what the
-  // checker says a declared value holds turns on strictNullChecks.
+  // checker says a declared value is depends on strictNullChecks.
   const project = createStrictTestProject();
   const sf = project.createSourceFile("in.ts", `${prelude}\nconst _ = ${src};`);
   const statements = sf.getVariableStatements();
@@ -100,7 +100,7 @@ describe("extractShape", () => {
 
   describe("wire-format fidelity", () => {
     it("raw preserves integers beyond Number.MAX_SAFE_INTEGER", () => {
-      // 2^53 + 1 cannot be represented exactly as a JS number — `value`
+      // 2^53 + 1 cannot be represented exactly as a JS number: `value`
       // silently rounds down. `raw` must preserve the exact source text so
       // consumers needing precision can parse it themselves.
       const shape = extractShape(parseExpression("9007199254740993"));
@@ -237,7 +237,7 @@ describe("extractShape", () => {
     });
 
     it("homogeneous string array collapses to one literal variant per distinct value", () => {
-      // Different string literals dedupe only structurally — three different
+      // Different string literals dedupe only structurally: three different
       // values produce a union of three literals. Consumers widening for
       // array summaries can collapse literal variants of the same kind.
       expect(extractShape(parseExpression('["a", "b", "c"]'))).toEqual({
@@ -394,8 +394,8 @@ describe("extractShape", () => {
     it('untyped `const x = "ok"; x` resolves to the literal via the AST', () => {
       // The type checker at the reference site would give `string` (widened).
       // The AST walker follows the declaration to the literal initializer and
-      // preserves `"ok"`. (Name chosen to avoid `status` — a DOM global in
-      // `lib.dom.d.ts` — which the type checker shadows over local decls in
+      // preserves `"ok"`. (Name chosen to avoid `status`: a DOM global in
+      // `lib.dom.d.ts`: which the type checker shadows over local decls in
       // this in-memory test setup.)
       const expr = parseExpressionWithPrelude(
         'const greeting = "ok" as const;',

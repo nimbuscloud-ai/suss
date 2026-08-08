@@ -75,7 +75,7 @@ const prd = {
     {
       when: "the id is unknown",
       expect: "the caller is told it wasn't found",
-      // no link — pending-link
+      // no link: pending-link
     },
   ],
 };

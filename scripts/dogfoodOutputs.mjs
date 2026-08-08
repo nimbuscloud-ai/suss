@@ -2,7 +2,7 @@
 //
 // Where a dogfood run puts what it produces. Two scripts have to agree
 // about these: dogfood.mjs writes them, and checkDogfoodBaseline.mjs
-// reads the baseline back. The per-package location carries a second
+// reads the baseline back. The per-package location serves a second
 // reason to live here, which is that it has to stay somewhere npm will
 // not pick up, and a second spelling of it elsewhere would be how that
 // quietly stops being true.
@@ -13,7 +13,7 @@ import { ROOT } from "./workspacePackages.mjs";
 
 /**
  * A dogfood run writes each package's own summaries to
- * `<pkg>/.suss/suss-summaries.json`. That directory already holds the
+ * `<pkg>/.suss/suss-summaries.json`. That directory already contains the
  * adapter's extraction cache, so it is already gitignored and already
  * outside every manifest's `files`. Writing into `dist/` instead put the
  * file inside what npm ships, and since nothing reads it back, being in

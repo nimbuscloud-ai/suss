@@ -1,11 +1,11 @@
 // pythonJudge.ts: adjudicate Python extraction claims against the
 // running app.
 //
-// The verdicts carry over from the handler differential, adapted to
+// The verdicts come across from the handler differential, adapted to
 // what v0 Python summaries claim, which is boundary declarations
 // rather than condition-gated transitions:
 //
-// - falseClaim: a summary names a method and path the running app
+// - falseClaim: a summary gives a method and path the running app
 //   does not serve, or declares a literal status a well-formed probe
 //   contradicts. The claim asserted something about the app and was
 //   wrong.
@@ -13,7 +13,7 @@
 //   summary owns by name, and no generated intent classifies as a
 //   documented abstention. Observed behavior unaccounted for.
 //
-// Abstention is never a finding. A summary whose binding names no
+// Abstention is never a finding. A summary whose binding gives no
 // path (or a route discovery declines entirely, the flask-restx
 // non-literal-path shape) counts toward the abstention rate, the
 // cost metric the run reports rather than hides.
@@ -22,7 +22,8 @@ import type { BehavioralSummary, RestSemantics } from "@suss/behavioral-ir";
 import type { ObservedEndpoint } from "./pythonObserve.js";
 import type { PyRouteIntent } from "./pythonProgram.js";
 
-/** One path-and-status claim read off a summary's boundary binding and declared transition. */
+/** One path-and-status claim read off a summary's boundary binding
+ * and declared transition. */
 export interface PyClaim {
   name: string;
   method: string;
@@ -67,7 +68,8 @@ function declaredStatus(summary: BehavioralSummary): number | null {
   return null;
 }
 
-/** Split a program's summaries into path claims and the names that abstained from one. */
+/** Split a program's summaries into path claims and the names of the
+ * ones that made no claim. */
 export function readSummaryClaims(summaries: BehavioralSummary[]): {
   claims: PyClaim[];
   abstainedNames: Set<string>;

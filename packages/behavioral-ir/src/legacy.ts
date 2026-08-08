@@ -1,46 +1,33 @@
-// legacy.ts: reading summaries written before the format said what it
-// meant.
-//
-// Version 1 artifacts (everything up to 0.3.x, and any summary with no
-// `schemaVersion`) spell "the source did not name this identity" as an
-// empty string in a binding's identity fields. Version 2 spells it
-// null and rejects the empty string. Published artifacts do not get
-// rewritten, so every parse entry point runs this normalization first
-// and old summaries keep reading correctly for as long as anyone holds
-// one.
-//
-// The same version boundary also catches a summary whose identity
-// never got an id: a contract reader reads one file at a time and has
-// no run to stamp one against, and any artifact from before a
-// producer stamped ids at all has none either. Both read back with a
-// deterministic id computed from the fields they do carry, the same
-// formula a full run would have settled on before any cross-run
-// disambiguation.
+/**
+ * Reading summaries written before the format said what it meant.
+ *
+ * Version 1 is everything up to 0.3.x, plus any summary with no
+ * `schemaVersion` at all. It writes "the source did not say what this
+ * identity is" as an empty string in a binding's identity fields, and
+ * version 2 writes null there and rejects the empty string. Nobody
+ * rewrites a published artifact, so every parse entry point runs the
+ * normalization here first and an old summary still reads.
+ *
+ * The same boundary catches a summary whose identity never got an id.
+ * Those read back with an id computed from the fields they do have, by
+ * the same formula a full run would have arrived at.
+ */
 
 import { summaryIdFromParts } from "./summaryId.js";
 
 /**
- * The summary format version this build writes. Absent on an artifact
- * means version 1.
+ * The summary format version this build writes. Absent means version 1.
  *
- * 2: identity fields a source can fail to name are null, the empty
- *    string is invalid, and `"*"` is the REST method wildcard.
- * 3: a parameter input's `role` is null where nobody could read which
- *    role it has. Nothing needs rewriting on the way in, since every
- *    older artifact names a role; the bump is here so a reader holding
- *    a v3 artifact can tell a null role from a field its own version
- *    never allowed.
+ * 1: an identity field a source did not name is the empty string.
+ * 2: those fields are null instead, the empty string is invalid, and
+ *    `"*"` is the REST method wildcard.
+ * 3: a parameter input's `role` is null where nobody could read it.
+ *    Older artifacts all name one, so nothing is rewritten on the way
+ *    in and the bump only marks that null as allowed.
  */
 export const SUMMARY_SCHEMA_VERSION = 3;
 
-/**
- * The version that started spelling an unnamed identity field null.
- * The rewriting below belongs to the versions before it and to no
- * other, so it is gated on this rather than on whatever the current
- * version happens to be: an artifact at or above it says what it
- * means, and an empty identity field there is invalid rather than
- * something to quietly fix on the way in.
- */
+/** An empty identity field at or above this version is invalid, not legacy. */
 const NULL_IDENTITY_VERSION = 2;
 
 type LooseRecord = Record<string, unknown>;
@@ -49,7 +36,6 @@ function isRecord(value: unknown): value is LooseRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The identity fields each semantics variant could leave empty in v1. */
 const V1_EMPTY_IDENTITY_FIELDS: Record<string, readonly string[]> = {
   rest: ["method", "path"],
   "graphql-resolver": ["typeName"],
@@ -75,13 +61,7 @@ function normalizeBindingInPlace(binding: unknown): void {
   }
 }
 
-/**
- * Stamp `identity.id` from the summary's own fields when its producer
- * left it unset. Leaves an id already present untouched, and leaves
- * the summary alone entirely when it lacks the fields the formula
- * needs (a shape that will fail validation on its own terms right
- * after this returns).
- */
+/** A summary missing the fields the formula needs fails validation next. */
 function backfillIdentityId(input: LooseRecord): void {
   const identity = input.identity;
   if (!isRecord(identity) || typeof identity.id === "string") {
@@ -106,14 +86,7 @@ function backfillIdentityId(input: LooseRecord): void {
   identity.id = summaryIdFromParts({ workspace, file, name, exportPath });
 }
 
-/**
- * Rewrite a version-1 summary's empty identity fields to null and
- * backfill a missing `identity.id`, in the summary's own untyped form,
- * before validation sees it. A summary from version 2 on passes
- * through untouched: its producer spelled identity the current way,
- * id included, so there is nothing left to fill in. Mutates and
- * returns its input: parse boundaries own the object they are decoding.
- */
+/** Mutates and returns its input, which a parse boundary owns. */
 export function normalizeLegacySummary(input: unknown): unknown {
   if (!isRecord(input)) {
     return input;

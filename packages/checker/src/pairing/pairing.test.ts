@@ -265,7 +265,7 @@ describe("pairSummaries over a message bus", () => {
 
     const result = pairSummaries([handler, subscriber]);
 
-    // Same key bucket, since the key carries the subject alone, so the
+    // Same key bucket, since the key uses the subject alone, so the
     // bus comparison is what has to keep them apart.
     expect(result.pairs).toHaveLength(0);
     expect(result.unmatched.providers).toEqual([handler]);

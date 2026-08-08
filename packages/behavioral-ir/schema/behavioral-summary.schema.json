@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://suss.dev/schemas/behavioral-summary.schema.json",
   "title": "BehavioralSummaryArray",
-  "description": "Array of behavioral summaries — see https://github.com/nimbuscloud-ai/suss/blob/main/docs/behavioral-summary-format.md",
+  "description": "Array of behavioral summaries, see https://github.com/nimbuscloud-ai/suss/blob/main/docs/behavioral-summary-format.md",
   "type": "array",
   "items": {
     "type": "object",

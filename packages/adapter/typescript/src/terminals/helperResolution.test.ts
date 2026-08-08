@@ -1,4 +1,4 @@
-// helperResolution.test.ts — reading a project's own response helper.
+// helperResolution.test.ts: reading a project's own response helper.
 //
 // A handler that returns through a helper of the project's own gives the
 // pack nothing to match on but the helper's name, and a pack that guesses
@@ -15,7 +15,7 @@ import { findTerminals } from "./index.js";
 import type { TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 
-/** The AWS Lambda pack's response declaration, which names no helper. */
+/** The AWS Lambda pack's response declaration, which gives no helper. */
 const RESPONSE_SHAPE: TerminalPattern = {
   kind: "response",
   match: { type: "returnShape", requiredProperties: ["statusCode"] },
@@ -228,7 +228,7 @@ describe("reading a local response helper", () => {
 
     // `terse` is whatever the caller was handed, so both branches stand.
     // The IR expresses that as two transitions, not as one status
-    // holding a set of possibilities.
+    // with a set of possibilities on it.
     const statuses = terminals
       .map((t) =>
         t.terminal.statusCode?.type === "literal"

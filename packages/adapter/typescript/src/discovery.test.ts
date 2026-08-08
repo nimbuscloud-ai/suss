@@ -1,4 +1,4 @@
-// discovery.test.ts — exhaustive tests for discoverUnits (Task 2.4)
+// discovery.test.ts: exhaustive tests for discoverUnits (Task 2.4)
 
 import { describe, expect, it } from "vitest";
 
@@ -52,7 +52,7 @@ function makeExpressPattern(): DiscoveryPattern {
 }
 
 // ---------------------------------------------------------------------------
-// namedExport — function declaration form
+// namedExport: function declaration form
 // ---------------------------------------------------------------------------
 
 describe("namedExport — export function loader()", () => {
@@ -123,7 +123,7 @@ describe("namedExport — export function loader()", () => {
 });
 
 // ---------------------------------------------------------------------------
-// namedExport — arrow function form
+// namedExport: arrow function form
 // ---------------------------------------------------------------------------
 
 describe("namedExport — export const loader = async () => {}", () => {
@@ -158,7 +158,7 @@ describe("namedExport — export const loader = async () => {}", () => {
 });
 
 // ---------------------------------------------------------------------------
-// namedExport — function expression form
+// namedExport: function expression form
 // ---------------------------------------------------------------------------
 
 describe("namedExport — export const loader = async function() {}", () => {
@@ -180,7 +180,7 @@ describe("namedExport — export const loader = async function() {}", () => {
 });
 
 // ---------------------------------------------------------------------------
-// namedExport — default export form
+// namedExport: default export form
 // ---------------------------------------------------------------------------
 
 describe("namedExport — export default function", () => {
@@ -293,7 +293,7 @@ describe("namedExport — export default function", () => {
     expect(declared).toHaveLength(1);
     expect(declared[0].name).toBe("panel");
 
-    // The barrel names a function it does not contain, so the file that
+    // The barrel exports a name for a function it does not contain, so the file that
     // declares it is the one that claims it.
     expect(
       discoverUnits(barrel, [makeNamedExportPattern(["default"])], store),
@@ -403,7 +403,7 @@ describe("namedExport, an overload set", () => {
 });
 
 // ---------------------------------------------------------------------------
-// registrationCall — ts-rest style
+// registrationCall: ts-rest style
 // ---------------------------------------------------------------------------
 
 describe("registrationCall — ts-rest style (initServer / s.router)", () => {
@@ -489,7 +489,7 @@ describe("registrationCall — ts-rest style (initServer / s.router)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// registrationCall — Express Router style
+// registrationCall: Express Router style
 // ---------------------------------------------------------------------------
 
 describe("registrationCall — Express Router style", () => {
@@ -561,7 +561,7 @@ describe("registrationCall — Express Router style", () => {
     );
 
     const units = discoverUnits(file, [makeExpressPattern()]);
-    // myHandler is an identifier, not an inline arrow/function — should be skipped
+    // myHandler is an identifier, not an inline arrow/function, should be skipped
     expect(units).toHaveLength(0);
   });
 
@@ -583,7 +583,7 @@ describe("registrationCall — Express Router style", () => {
 });
 
 // ---------------------------------------------------------------------------
-// decorator and fileConvention — stubs
+// decorator and fileConvention: stubs
 // ---------------------------------------------------------------------------
 
 describe("decorator and fileConvention — stubs return []", () => {
@@ -673,7 +673,7 @@ describe("deduplication", () => {
 });
 
 // ---------------------------------------------------------------------------
-// namedExport — React Router discovery patterns
+// namedExport: React Router discovery patterns
 // ---------------------------------------------------------------------------
 
 describe("namedExport — React Router style (loader, action, default)", () => {
@@ -723,7 +723,7 @@ describe("namedExport — React Router style (loader, action, default)", () => {
 
     const units = discoverUnits(file, makeReactRouterPatterns());
     expect(units).toHaveLength(1);
-    // Component identity is the function name when one exists — the
+    // Component identity is the function name when one exists, the
     // React pack relies on this to distinguish default-exported
     // components across files.
     expect(units[0].name).toBe("UserPage");
@@ -787,7 +787,7 @@ describe("namedExport — React Router style (loader, action, default)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// clientCall — global (fetch)
+// clientCall: global (fetch)
 // ---------------------------------------------------------------------------
 
 function makeFetchPattern(): DiscoveryPattern {
@@ -884,7 +884,7 @@ describe("clientCall — global fetch", () => {
 });
 
 // ---------------------------------------------------------------------------
-// clientCall — imported client (ts-rest style)
+// clientCall: imported client (ts-rest style)
 // ---------------------------------------------------------------------------
 
 describe("clientCall — imported client", () => {
@@ -1019,7 +1019,7 @@ describe("clientCall — imported client", () => {
   });
 
   it("matches method calls directly on the imported binding (axios style)", () => {
-    // axios pattern: `import axios from "axios"; axios.get(...)` — the import
+    // axios pattern: `import axios from "axios"; axios.get(...)`, the import
     // itself is the client object, no construction call.
     const project = createProject();
     const file = project.createSourceFile(
@@ -1114,7 +1114,7 @@ describe("clientCall — imported client", () => {
     );
 
     const units = discoverUnits(file, [makeClientCallPattern()]);
-    // Two calls in the same function — should deduplicate to one unit
+    // Two calls in the same function, should deduplicate to one unit
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("loadAll");
   });
@@ -1824,7 +1824,7 @@ describe("resolverMap discovery", () => {
 });
 
 // ---------------------------------------------------------------------------
-// graphqlHookCall discovery (consumer side — Apollo client)
+// graphqlHookCall discovery (consumer side, Apollo client)
 // ---------------------------------------------------------------------------
 
 function makeGraphqlHookPattern(
@@ -2095,7 +2095,7 @@ describe("graphqlHookCall discovery", () => {
   });
 
   it("skips calls whose enclosing scope isn't a function", () => {
-    // Top-level `useQuery(GET)` not inside any function — rare but
+    // Top-level `useQuery(GET)` not inside any function, rare but
     // possible in a module-scope setup. Discovery should bail rather
     // than attach to the module.
     const project = createProject();
@@ -2397,7 +2397,7 @@ describe("graphqlImperativeCall discovery", () => {
     `,
     );
     const units = discoverUnits(file, [makeImperativePattern()]);
-    // Anonymous doc — method spec declares operationType: "query".
+    // Anonymous doc: method spec declares operationType: "query".
     expect(units[0].operationInfo?.operationType).toBe("query");
     expect(units[0].operationInfo?.operationName).toBeUndefined();
   });
@@ -2420,7 +2420,7 @@ describe("graphqlImperativeCall discovery", () => {
   });
 
   it("names an anonymous-arrow-in-IIFE caller as <anon>", () => {
-    // Exercises `functionNameOrAnon`'s fall-through branch — the
+    // Exercises `functionNameOrAnon`'s fall-through branch, the
     // enclosing function is an arrow whose parent is NOT a
     // variable declaration (e.g. passed inline to an IIFE).
     const project = createProject();
@@ -2472,7 +2472,7 @@ describe("decoratedMethod discovery", () => {
     const file = project.createSourceFile(
       "stub.ts",
       `
-      // No @nestjs/graphql import — the file just happens to have
+      // No @nestjs/graphql import: the file just happens to have
       // a class with a Resolver decorator from elsewhere.
       declare const Resolver: ClassDecorator;
       declare const Query: MethodDecorator;
@@ -2536,7 +2536,7 @@ describe("decoratedMethod discovery", () => {
   });
 
   it("accepts a project decorator built from the framework's own", () => {
-    // Nothing names the wrapper. It is recognized because calling it
+    // Nothing refers to the wrapper by name. It is recognized because calling it
     // calls `Resolver` from `@nestjs/graphql`, which is what makes the
     // class a resolver in the first place.
     const project = createProject();
@@ -2777,7 +2777,7 @@ describe("decoratedMethod discovery", () => {
         @Query()
         all(): Pet[] { return []; }
 
-        // No GraphQL decorator — a plain method on the class
+        // No GraphQL decorator: a plain method on the class
         // shouldn't surface as a resolver.
         format(p: Pet): string { return p.id; }
       }
@@ -2822,7 +2822,7 @@ describe("decoratedRoute discovery", () => {
     const file = project.createSourceFile(
       "stub.ts",
       `
-      // No @nestjs/common import — the file just happens to have
+      // No @nestjs/common import: the file just happens to have
       // a class with a Controller decorator from elsewhere.
       declare const Controller: ClassDecorator;
       declare const Get: MethodDecorator;
@@ -2945,7 +2945,7 @@ describe("decoratedRoute discovery", () => {
         @Get()
         list() { return []; }
 
-        // No verb decorator — a plain helper on the controller
+        // No verb decorator: a plain helper on the controller
         // shouldn't surface as a route.
         format(_id: string): string { return "ok"; }
       }

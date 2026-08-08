@@ -1,4 +1,4 @@
-// @suss/contract-openapi — Generate behavioral summaries from OpenAPI 3.x specs.
+// @suss/contract-openapi: Generate behavioral summaries from OpenAPI 3.x specs.
 
 import fs from "node:fs";
 import path from "node:path";

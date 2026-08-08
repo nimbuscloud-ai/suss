@@ -17,11 +17,9 @@ export function checkConsumerSatisfaction(
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
 
-  // A provider nobody could read produces no status, and calling the
-  // consumer's branches dead on that basis blames the consumer for a
-  // limit on the reading. Same treatment as a status that came back
-  // opaque: say it cannot be confirmed, and leave the warning for a
-  // provider that was read.
+  // A provider nobody could read produces no status, so calling the
+  // consumer's branches dead would blame the consumer for a limit in
+  // what suss could read. Say it cannot be confirmed instead.
   const unread = nothingWasRead(provider);
 
   const providerStatuses = new Set<number>();

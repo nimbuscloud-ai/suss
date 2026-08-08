@@ -1,4 +1,4 @@
-// relationalPairing.ts — pair storage-relational provider summaries
+// relationalPairing.ts: pair storage-relational provider summaries
 // (Prisma model declarations, Drizzle pgTable() declarations, raw
 // SQL DDL) against `interaction(class: "storage-access")` effects
 // on code summaries.
@@ -15,9 +15,9 @@
 // and boundarySelectorMismatch with appropriate aspects when emitters
 // land.
 //
-// Pairing key: (storageSystem, scope, table) — pulled from the
+// Pairing key: (storageSystem, scope, table), pulled from the
 // effect's `binding.semantics` (StorageRelationalSemantics), same as
-// the provider's. Multi-attribution is intentional — a shared util
+// the provider's. Multi-attribution is intentional, a shared util
 // file's storage access pairs against every provider whose key
 // matches, just like runtime-config did for env vars.
 
@@ -48,7 +48,7 @@ interface StorageContractMetadata {
   indexes?: Array<{ fields: string[]; unique: boolean }>;
   /**
    * The physical SQL table name when it differs from the binding's
-   * `table` channel — e.g. a Prisma model `User` with
+   * `table` channel: e.g. a Prisma model `User` with
    * `@@map("users")`. Consumers that speak SQL names directly
    * (Drizzle, raw SQL) match through this alias, so both ORMs'
    * accesses land on the same schema provider.
@@ -58,8 +58,8 @@ interface StorageContractMetadata {
 
 type StorageAccessRecord = InteractionRecord<"storage-access"> & {
   /**
-   * Cached storage-relational semantics from the effect's binding —
-   * carries the (storageSystem, scope, table) pairing key. Pulled
+   * Cached storage-relational semantics from the effect's binding,
+   * has the (storageSystem, scope, table) pairing key. Pulled
    * out so the inner-loop in-scope filter doesn't repeat the type
    * narrow.
    */
@@ -105,7 +105,7 @@ export function checkRelationalStorage(
     );
 
     // In-scope accesses: same storageSystem + scope, and a table
-    // matching either of the provider's names — the binding's own
+    // matching either of the provider's names, the binding's own
     // channel (Prisma model name) or the physical SQL name from the
     // schema's @@map. Both are declared facts, so matching either is
     // exact, never a guess.
@@ -161,7 +161,7 @@ export function checkRelationalStorage(
           // A wildcard write isn't a meaningful Prisma / Drizzle
           // pattern (you can't `create` without naming columns), but
           // future packs might emit it. Treat as "wrote everything"
-          // — symmetric with default-shape reads.
+          //, symmetric with default-shape reads.
           for (const col of declaredColumns) {
             writtenNames.add(col);
           }
@@ -175,7 +175,7 @@ export function checkRelationalStorage(
 
     // Unused / write-only checks per declared column. Skip the
     // unused check entirely when ANY caller used a default-shape
-    // read on this table — we can't tell whether the unused-looking
+    // read on this table. We can't tell whether the unused-looking
     // column is actually consumed by a default-shape caller.
     if (!anyDefaultShapeRead) {
       for (const column of contract.columns ?? []) {
