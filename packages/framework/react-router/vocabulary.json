@@ -6,5 +6,11 @@
   "redirect": "react-router: response helper",
   "request": "suss: input role",
   "params": "react-router: loader argument key holding the path parameters",
-  "context": "suss: input role"
+  "context": "suss: input role",
+  "Route": "react-router: the element a route tree is written with",
+  "path": "react-router: the Route prop holding a route's path pattern",
+  "index": "react-router: the Route prop marking a route that answers its parent's path",
+  "children": "react-router: the route-object key holding the routes nested under one",
+  "createBrowserRouter": "react-router: the factory taking an array of route objects",
+  "createRoutesFromElements": "react-router: the factory turning route elements into route objects"
 }

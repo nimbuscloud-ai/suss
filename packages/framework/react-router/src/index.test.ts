@@ -3,6 +3,8 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { restBinding } from "@suss/behavioral-ir";
+import { pairSummaries } from "@suss/checker";
 import { createFixtureProject } from "@suss/test-project";
 
 import { reactRouterFramework } from "./index.js";
@@ -29,6 +31,44 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
   return await adapter.extractAll();
 }
 
+/** The same, over the fixtures that declare routes in JSX. */
+async function runOverRouteDeclarations(): Promise<BehavioralSummary[]> {
+  const project = createFixtureProject(fixturesDir, "*.tsx");
+
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: [reactRouterFramework()],
+  });
+
+  return await adapter.extractAll();
+}
+
+/** A caller of one URL, to pair the discovered routes against. */
+function consumerOf(name: string, routePath: string): BehavioralSummary {
+  return {
+    kind: "client",
+    location: {
+      file: "src/api.ts",
+      range: { start: 0, end: 0 },
+      exportName: null,
+    },
+    identity: {
+      name,
+      exportPath: null,
+      boundaryBinding: restBinding({
+        transport: "http",
+        method: "GET",
+        path: routePath,
+        recognition: "fetch",
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Structural sanity checks
 // ---------------------------------------------------------------------------
@@ -40,10 +80,36 @@ describe("reactRouterFramework — pack shape", () => {
     expect(pack.discovery.map((d) => d.kind).sort()).toEqual([
       "action",
       "component",
+      "component",
       "loader",
     ]);
     expect(pack.inputMapping.type).toBe("singleObjectParam");
     expect(pack.contractReading).toBeUndefined();
+  });
+
+  it("reads route declarations from the names react-router exports", () => {
+    const pack = reactRouterFramework();
+    const routes = pack.discovery.find(
+      (d) => d.match.type === "jsxElementRoute",
+    );
+    expect(routes?.match).toEqual({
+      type: "jsxElementRoute",
+      importModule: ["react-router", "react-router-dom"],
+      routeElement: "Route",
+      pathAttribute: "path",
+      elementAttribute: "element",
+      indexAttribute: "index",
+      childrenAttribute: "children",
+      routeObjectFactories: ["createBrowserRouter"],
+      elementsFactories: ["createRoutesFromElements"],
+      method: "GET",
+    });
+  });
+
+  it("declares a render terminal, so a routed component's JSX is read", () => {
+    const pack = reactRouterFramework();
+    const render = pack.terminals.find((t) => t.kind === "render");
+    expect(render?.match).toEqual({ type: "jsxReturn" });
   });
 
   it("ships no throw terminal, since React Router declares no error helper", () => {
@@ -162,9 +228,101 @@ describe("reactRouterFramework — integration", () => {
     for (const s of summaries) {
       expect(s.gaps).toEqual([]);
       // metadata carries only the derived effects closure (when the
-      // unit has effects) — no contract-reading metadata appears.
+      // unit has effects), and no contract-reading metadata appears.
       const keys = Object.keys(s.metadata ?? {});
       expect(keys.filter((k) => k !== "effectsClosure")).toEqual([]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Routes the app declares itself, in JSX and as route objects
+// ---------------------------------------------------------------------------
+
+describe("reactRouterFramework: declared route trees", () => {
+  let routed: BehavioralSummary[];
+  beforeAll(async () => {
+    routed = await runOverRouteDeclarations();
+  }, 90_000);
+
+  const routeOf = (name: string): string | null => {
+    const semantics = routed.find((s) => s.identity.name === name)?.identity
+      .boundaryBinding?.semantics;
+    return semantics?.name === "rest" ? semantics.path : null;
+  };
+
+  it("joins a child route's path onto the route it is nested under", () => {
+    expect(routeOf("UserDetail")).toBe("/users/:id");
+  });
+
+  it("gives an index route the path of the route it sits under", () => {
+    expect(routeOf("UsersIndex")).toBe("/users");
+  });
+
+  it("reads a route element imported under another name", () => {
+    expect(routeOf("Reports")).toBe("/reports");
+  });
+
+  it("reads the route objects a router is created from, through the name they are bound to", () => {
+    expect(routeOf("Home")).toBe("/");
+    expect(routeOf("Shell")).toBe("/billing");
+  });
+
+  it("joins the paths of routes nested under a route object, two deep", () => {
+    expect(routeOf("InvoicesIndex")).toBe("/billing/invoices");
+    expect(routeOf("Invoice")).toBe("/billing/invoices/:invoiceId");
+    expect(routeOf("InvoiceLines")).toBe("/billing/invoices/:invoiceId/lines");
+  });
+
+  it("gives an index child the path of the route object it sits under", () => {
+    expect(routeOf("Billing")).toBe("/billing");
+  });
+
+  it("records the component a route renders as the unit the route reaches", () => {
+    const detail = routed.find((s) => s.identity.name === "UserDetail");
+    expect(detail?.kind).toBe("component");
+    expect(detail?.location.file).toContain("pages.tsx");
+    expect(detail?.transitions.map((t) => t.output.type)).toEqual(["render"]);
+  });
+
+  it("claims no path for a route whose path is built at runtime, and says so", () => {
+    const settings = routed.find((s) => s.identity.name === "Settings");
+    expect(settings?.identity.boundaryBinding?.semantics).toEqual({
+      name: "function-call",
+    });
+    expect(settings?.gaps.map((g) => g.description)).toContain(
+      "The path this route declares is not written as a string literal, so no path is claimed and this route pairs with nothing",
+    );
+  });
+
+  it("claims no path for routes a spread stands in for, and says so", () => {
+    const spread = routed.find((s) => s.identity.name === "extraRoutes");
+    expect(spread?.identity.boundaryBinding?.semantics).toEqual({
+      name: "function-call",
+    });
+    expect(spread?.gaps.map((g) => g.description)).toContain(
+      "A spread stands in for routes declared elsewhere in this array, and they are not read here, so no path is claimed for any of them",
+    );
+  });
+
+  it("pairs the discovered routes against callers of the same URLs", () => {
+    const consumers = [
+      consumerOf("loadUser", "/users/{id}"),
+      consumerOf("loadBilling", "/billing"),
+      consumerOf("loadSettings", "/settings/general"),
+    ];
+
+    const result = pairSummaries([...routed, ...consumers]);
+    const paired = result.pairs
+      .map((p) => `${p.consumer.identity.name}<->${p.provider.identity.name}`)
+      .sort();
+    // /billing is answered by the layout and by the index route inside
+    // it, which is what the router renders there, so a caller of that
+    // URL pairs with both.
+    expect(paired).toEqual([
+      "loadBilling<->Billing",
+      "loadBilling<->Shell",
+      "loadUser<->UserDetail",
+    ]);
   });
 });

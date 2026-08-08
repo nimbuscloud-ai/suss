@@ -1293,6 +1293,14 @@ function extractFromSourceFile(
         raw.deployableUnit = unit.deployableUnit;
       }
 
+      // What discovery could not read about this unit's boundary. Set
+      // before the binding branches so a handler that abstained on a
+      // route's path has already said so whichever binding shape the
+      // unit ends up with.
+      if (unit.unreadBinding !== undefined) {
+        raw.unreadBinding = unit.unreadBinding;
+      }
+
       // The discovery pattern that produced this unit is attached by
       // discoverUnits — fall back to the first kind-match if missing so older
       // call paths keep working.

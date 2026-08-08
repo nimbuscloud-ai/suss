@@ -3,9 +3,9 @@
     "packages": 43,
     "packagesWithExports": 42,
     "exports": 345,
-    "internal": 1256,
-    "consumers": 509,
-    "pairs": 501
+    "internal": 1284,
+    "consumers": 513,
+    "pairs": 505
   },
   "packages": {
     "packages/adapter/python": {
@@ -23,7 +23,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 30,
-      "internal": 530,
+      "internal": 558,
       "consumers": 30
     },
     "packages/behavioral-ir": {
@@ -228,7 +228,7 @@
       "name": "@suss/framework-react-router",
       "exports": 2,
       "internal": 0,
-      "consumers": 2
+      "consumers": 6
     },
     "packages/framework/ts-rest": {
       "name": "@suss/framework-ts-rest",
