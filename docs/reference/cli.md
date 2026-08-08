@@ -60,10 +60,11 @@ and leaves the command behind for you to retry.
 
 ## `suss extract`
 
-Extract behavioral summaries from TypeScript or JavaScript source.
+Extract behavioral summaries from source.
 
-Python and Ruby have adapters of their own, which you call from a
-script rather than through this command. See
+Python and Ruby have adapters of their own, which this command
+reaches: it works out which language a directory holds, and `--lang`
+says so outright. See
 [Read a Python or Ruby project](/guides/python-and-ruby).
 
 **What it does.** Walks every function the framework pack discovers
@@ -73,7 +74,8 @@ its branches and terminals into a decision tree, and emits one
 annotations.
 
 ```
-suss extract [-p TSCONFIG | --dir DIR] -f FRAMEWORK [-f FRAMEWORK ...]
+suss extract [-p TSCONFIG | --dir DIR] [--lang typescript|python|ruby]
+             -f FRAMEWORK [-f FRAMEWORK ...]
              [-o OUTPUT] [--files FILE ...]
              [--gaps strict|permissive|silent]
              [--explain] [--timing] [--no-cache] [--fail-on-empty]
@@ -84,6 +86,7 @@ suss extract [-p TSCONFIG | --dir DIR] -f FRAMEWORK [-f FRAMEWORK ...]
 | `-f`, `--framework NAME` | yes | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. A name that is not built in resolves in three tries: a name starting with `@` or containing a `/` is imported as you wrote it, otherwise `@suss/framework-NAME` and then `@suss/NAME`. |
 | `-p`, `--project PATH` | no | Path to `tsconfig.json`, for the same type resolution your compiler sees. Leave it off and suss uses the nearest tsconfig or jsconfig above the working directory. |
 | `--dir PATH` | no | Read this directory directly, for a project with no tsconfig. |
+| `--lang NAME` | no | Which language to read this project as: `typescript`, `python`, or `ruby`. Leave it off and suss works that out from what the directory holds, from the packs you named, and from the nearest tsconfig, and says so when it cannot tell. |
 | `-o`, `--output PATH` | no | Write JSON to file. Default: stdout. Parent dirs created automatically. |
 | `--files F1 F2 ...` | no | Scope extraction to specific files. Default: every file in the tsconfig. Paths are resolved relative to cwd. File paths written as bare arguments, with no flag in front of them, mean the same thing when `--files` is absent. |
 | `--gaps MODE` | no | `permissive` (default) records gaps in the summary: returns and declared statuses the pack couldn't account for. `strict` records the same gaps, then exits non-zero if the run recorded any. `silent` skips gap detection entirely, recording none. |
@@ -93,6 +96,18 @@ suss extract [-p TSCONFIG | --dir DIR] -f FRAMEWORK [-f FRAMEWORK ...]
 | `--no-cache` | no | Skip the on-disk extraction cache for this run. Normal runs benefit from it; reach for this when debugging cache invalidation. |
 | `--fail-on-empty` | no | Exit non-zero when the run produces no summaries. Worth turning on in CI, where a silent zero looks the same as a passing check. |
 | `--fail-on-pack-error` | no | Exit non-zero when a pack throws while it reads. By default the run reports the throw and continues with the other packs. |
+
+### When a run could not read everything
+
+With `-o`, a run that could not read part of the project writes a note
+beside the summaries, at `summaries.incomplete.json` next to
+`summaries.json`, so a job that knows where the summaries went can tell
+whether extraction was complete. It holds a key per reason:
+`filesWithUnreadableExports` for re-export chains suss could not follow
+in a TypeScript run, and `submodulesNotCheckedOut` for a submodule with
+nothing in it, which any language can hit. A run with nothing to report
+removes a note an earlier run left, so a stale file never fails a job
+that has since been fixed.
 
 ### Built-in packs
 
@@ -115,6 +130,17 @@ suss extract [-p TSCONFIG | --dir DIR] -f FRAMEWORK [-f FRAMEWORK ...]
 | `axios` | `@suss/client-axios` | axios call sites + `axios.create` factories |
 | `apollo-client` | `@suss/client-apollo` | `@apollo/client` hooks + imperative `client.query` / `mutate` |
 | `node` | `@suss/runtime-node` | `setTimeout` and friends, the `process` surface including `process.env.X`, module-loading globals |
+
+Three of them read another language, so they come with `--lang` or with
+a directory suss reads as that language, and cannot ride in the same
+run as a TypeScript pack. Two want a sentence about your project, which
+they take through `-f NAME=config.json`:
+
+| Name | Package | What it discovers |
+|---|---|---|
+| `fastapi` | `@suss/framework-fastapi` | FastAPI routes (Python): the verb from the decorator's attribute name, router prefixes composed one mount hop deep. Optional `wrapperModules`. |
+| `flask-restx` | `@suss/framework-flask-restx` | flask-restx `Resource` routes (Python), one per HTTP-verb-named method. Optional `wrapperModules`. |
+| `graphql-ruby` | `@suss/framework-graphql-ruby` | graphql-ruby's class-based `field` DSL (Ruby), one resolver per field. Needs `root`, and reads nothing without it. |
 
 Four more names are built in the same way, and discover no units of
 their own. They attach typed effects to calls inside whatever units

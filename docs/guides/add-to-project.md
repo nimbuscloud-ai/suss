@@ -4,7 +4,8 @@ Assumes a TypeScript project with at least one boundary suss
 recognises: an HTTP handler, a GraphQL resolver, a React component
 tree, a queue producer, a Prisma call, or a `process.env` access. For a
 Python or Ruby project, start at
-[Read a Python or Ruby project](/guides/python-and-ruby) instead.
+[Read a Python or Ruby project](/guides/python-and-ruby) instead, which
+covers the same ground for those two languages.
 
 ## What you're setting up
 

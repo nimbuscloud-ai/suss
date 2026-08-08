@@ -12,6 +12,7 @@ import {
   extract,
   formatCacheDiagnostic,
   formatEmptyLanguageRun,
+  incompletenessPathFor,
   languageOfPack,
   languageOfRun,
   parseFrameworkSpec,
@@ -449,6 +450,54 @@ describe("extract over a Ruby project", () => {
         "Mutation.campaignUpdate",
       ].sort(),
     );
+  });
+});
+
+describe("the note a run writes beside its summaries", () => {
+  /** A Python project whose shared framework submodule is empty. */
+  function projectMissingItsSubmodule(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-missing-sub-"));
+    fs.cpSync(path.join(pythonFixture, "myapp"), path.join(root, "myapp"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(root, ".gitmodules"),
+      '[submodule "libs/framework"]\n\tpath = libs/framework\n',
+    );
+    fs.mkdirSync(path.join(root, "libs", "framework"), { recursive: true });
+    return root;
+  }
+
+  it("says a Python run was incomplete when a submodule is not checked out", async () => {
+    // The summaries look complete on their own. Whatever the missing
+    // submodule defines is not in them and nothing in the file says so,
+    // which is what a job reading the file needs to know.
+    const root = projectMissingItsSubmodule();
+    const out = path.join(root, "summaries.json");
+
+    await extract({ dir: root, frameworks: ["fastapi"], output: out });
+
+    const note = JSON.parse(
+      fs.readFileSync(incompletenessPathFor(out), "utf8"),
+    ) as { submodulesNotCheckedOut: string[] };
+    expect(note.submodulesNotCheckedOut).toEqual(["libs/framework"]);
+  });
+
+  it("takes the note away once the submodule is there", async () => {
+    // A note left behind from a previous run fails a job that has since
+    // been fixed.
+    const root = projectMissingItsSubmodule();
+    const out = path.join(root, "summaries.json");
+    await extract({ dir: root, frameworks: ["fastapi"], output: out });
+    expect(fs.existsSync(incompletenessPathFor(out))).toBe(true);
+
+    fs.writeFileSync(
+      path.join(root, "libs", "framework", "api.py"),
+      "def route(path): ...\n",
+    );
+    await extract({ dir: root, frameworks: ["fastapi"], output: out });
+
+    expect(fs.existsSync(incompletenessPathFor(out))).toBe(false);
   });
 });
 

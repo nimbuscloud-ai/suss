@@ -2,10 +2,10 @@
   "totals": {
     "packages": 44,
     "packagesWithExports": 43,
-    "exports": 368,
-    "internal": 1339,
-    "consumers": 559,
-    "pairs": 551
+    "exports": 374,
+    "internal": 1409,
+    "consumers": 584,
+    "pairs": 576
   },
   "packages": {
     "packages/adapter/python": {
@@ -22,8 +22,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 30,
-      "internal": 558,
+      "exports": 32,
+      "internal": 580,
       "consumers": 30
     },
     "packages/behavioral-ir": {
@@ -34,8 +34,8 @@
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "exports": 30,
-      "internal": 115,
+      "exports": 33,
+      "internal": 132,
       "consumers": 67
     },
     "packages/checker-intent": {
@@ -47,8 +47,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 190,
-      "consumers": 135
+      "internal": 217,
+      "consumers": 150
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -82,9 +82,9 @@
     },
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
-      "exports": 7,
-      "internal": 60,
-      "consumers": 95
+      "exports": 8,
+      "internal": 65,
+      "consumers": 102
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -114,13 +114,13 @@
       "name": "@suss/contract-serverless",
       "exports": 9,
       "internal": 19,
-      "consumers": 10
+      "consumers": 11
     },
     "packages/contract/storybook": {
       "name": "@suss/contract-storybook",
       "exports": 1,
-      "internal": 4,
-      "consumers": 1
+      "internal": 3,
+      "consumers": 2
     },
     "packages/datalog": {
       "name": "@suss/datalog",
@@ -161,8 +161,8 @@
     "packages/framework/drizzle": {
       "name": "@suss/framework-drizzle",
       "exports": 2,
-      "internal": 15,
-      "consumers": 1
+      "internal": 14,
+      "consumers": 2
     },
     "packages/framework/express": {
       "name": "@suss/framework-express",
@@ -191,7 +191,7 @@
     "packages/framework/graphql-ruby": {
       "name": "@suss/framework-graphql-ruby",
       "exports": 2,
-      "internal": 0,
+      "internal": 1,
       "consumers": 5
     },
     "packages/framework/hono": {

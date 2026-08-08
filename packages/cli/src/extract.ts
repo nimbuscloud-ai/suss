@@ -552,6 +552,13 @@ interface LanguageRunOptions {
   options: ExtractOptions;
   /** The directory the command was pointed at. */
   root: string;
+  /**
+   * The submodules of the repository this directory belongs to, read
+   * once for the whole run. Every language cares: a submodule holds
+   * code this project imports, and one nobody checked out is a hole in
+   * whatever the run produced.
+   */
+  submodules: readonly Submodule[];
 }
 
 /**
@@ -634,11 +641,8 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // A service that imports its shared framework from a submodule
   // resolves those imports only if the submodule is a root too, and the
   // decorator a pack matches on is usually defined in exactly that
-  // framework. One that is not checked out resolves to nothing, which
-  // is worth saying out loud rather than leaving as a short run.
-  const submodules = readSubmodules(runOptions.root);
-  process.stderr.write(formatMissingSubmodules(submodules));
-
+  // framework.
+  const submodules = runOptions.submodules;
   const files = filesToRead(runOptions, findPythonFiles, submodules);
   const roots = [
     runOptions.root,
@@ -658,10 +662,7 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // findRubyFiles walks the same way findPythonFiles does, skipping a
   // directory named .git without noticing the repository it marks, so
   // the same filter applies.
-  const submodules = readSubmodules(runOptions.root);
-  process.stderr.write(formatMissingSubmodules(submodules));
-
-  const files = filesToRead(runOptions, findRubyFiles, submodules);
+  const files = filesToRead(runOptions, findRubyFiles, runOptions.submodules);
   const { summaries } = await extractRubyProject({ files, packs });
   return languageRun(summaries, runOptions.root, files.length);
 }
@@ -750,8 +751,19 @@ export async function extract(
 
   const language = languageOfRun(options);
   const root = path.resolve(options.dir ?? process.cwd());
+
+  // A submodule holds code this project imports, so one nobody checked
+  // out is a hole in whatever the run produces: the imports into it
+  // resolve to nothing and the boundaries behind them go missing. Read
+  // once here, because that is true of all three languages.
+  const submodules = readSubmodules(root);
+  const missingSubmodules = submodules
+    .filter((submodule) => !submodule.checkedOut)
+    .map((submodule) => submodule.declaredPath);
+  process.stderr.write(formatMissingSubmodules(submodules));
+
   const runExtraction = (): Promise<LanguageRun> =>
-    RUN_BY_LANGUAGE[language]({ options, root });
+    RUN_BY_LANGUAGE[language]({ options, root, submodules });
 
   const profiled =
     options.datalogProfile === true
@@ -778,6 +790,7 @@ export async function extract(
       outPath,
       projectRoot,
       report: extractionReport,
+      missingSubmodules,
     });
     // An empty run gets its own line. "Wrote 0 summaries" announces an
     // empty file as if it were an accomplishment, and the funnel that
@@ -909,15 +922,23 @@ export function incompletenessPathFor(summariesPath: string): string {
  * Write down what the run could not read, or remove a note an earlier
  * run left. A stale file saying the last extract was incomplete is
  * worse than none: it fails a job that has since been fixed.
+ *
+ * A key per reason, because a job reading this wants to know which
+ * kind of hole it is looking at. Re-exports suss could not follow are
+ * a TypeScript answer and only a TypeScript run has them. A submodule
+ * nobody checked out is every language's, and it is the same kind of
+ * incompleteness: code this project imports is not on disk, so the
+ * boundaries in it are missing from the counts and from the file.
  */
 async function writeIncompleteness(args: {
   outPath: string;
   projectRoot: string;
   report: ExtractionReport | null;
+  missingSubmodules: readonly string[];
 }): Promise<void> {
   const notePath = incompletenessPathFor(args.outPath);
   const unreadable = args.report?.filesWithUnreadableExports ?? [];
-  if (unreadable.length === 0) {
+  if (unreadable.length === 0 && args.missingSubmodules.length === 0) {
     fs.rmSync(notePath, { force: true });
     return;
   }
@@ -925,9 +946,16 @@ async function writeIncompleteness(args: {
   await writeJson({
     value: {
       schemaVersion: SUMMARY_SCHEMA_VERSION,
-      filesWithUnreadableExports: unreadable.map((file) =>
-        path.relative(args.projectRoot, file),
-      ),
+      ...(unreadable.length > 0
+        ? {
+            filesWithUnreadableExports: unreadable.map((file) =>
+              path.relative(args.projectRoot, file),
+            ),
+          }
+        : {}),
+      ...(args.missingSubmodules.length > 0
+        ? { submodulesNotCheckedOut: [...args.missingSubmodules] }
+        : {}),
     },
     indent: 2,
     file: notePath,
