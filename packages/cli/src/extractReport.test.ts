@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatExtractionReport } from "./extract.js";
+import { formatExtractionReport, incompletenessPathFor } from "./extract.js";
 
 import type { ExtractionReport, PackFunnel } from "@suss/adapter-typescript";
 
@@ -282,5 +282,19 @@ describe("formatExtractionReport", () => {
     expect(output).toContain("/src/barrel0.ts");
     expect(output).not.toContain("/src/barrel7.ts");
     expect(output).toContain("and 3 more");
+  });
+});
+
+describe("incompletenessPathFor", () => {
+  it("sits beside the summaries under a name derived from theirs", () => {
+    expect(incompletenessPathFor("/out/summaries.json")).toBe(
+      "/out/summaries.incomplete.json",
+    );
+  });
+
+  it("names a note for a summaries file with no extension", () => {
+    expect(incompletenessPathFor("/out/summaries")).toBe(
+      "/out/summaries.incomplete.json",
+    );
   });
 });

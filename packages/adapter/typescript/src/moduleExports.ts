@@ -59,6 +59,11 @@ export function resolveAliasedSymbol(symbol: TsSymbol): TsSymbol | undefined {
     if (!(error instanceof RangeError)) {
       throw error;
     }
+    // This one did fail, and undefined is indistinguishable from an
+    // import that names nothing, so the run has to be told.
+    for (const declaration of symbol.getDeclarations()) {
+      reportUnreadableExports(declaration.getSourceFile());
+    }
     return undefined;
   }
 }
@@ -140,9 +145,10 @@ function warmReExportChains(
     if (!(error instanceof RangeError)) {
       throw error;
     }
-    // Nothing below is warm, so every ask that follows abstains too
-    // rather than answering from a half-resolved chain.
-    reportUnreadableExports(root);
+    // Warming is preparation. Failing to get ahead of the checker is
+    // not the same as failing to answer, and the ask that follows
+    // often resolves the same name by a route this walk never took.
+    // Whether anything was lost is decided where the asking happens.
   }
 }
 
@@ -169,7 +175,7 @@ function walkAndWarm(root: SourceFile, reach: Reach): void {
     }
 
     stack.pop();
-    warmFileAliases(top.file, top.shape.aliasNodes);
+    warmFileAliases(top.shape.aliasNodes);
     markWarmed(top.file);
   }
 }
@@ -339,8 +345,7 @@ function importBindingsOf(
  * is cached. A throw that is not the stack running out surfaces again
  * from the caller's own ask, which is where it is handled.
  */
-function warmFileAliases(file: SourceFile, aliasNodes: Node[]): void {
-  let overflowed = false;
+function warmFileAliases(aliasNodes: Node[]): void {
   for (const node of aliasNodes) {
     const symbol = node.getSymbol();
     if (symbol === undefined || !symbol.isAlias()) {
@@ -350,14 +355,12 @@ function warmFileAliases(file: SourceFile, aliasNodes: Node[]): void {
     try {
       symbol.getAliasedSymbol();
     } catch (error) {
-      if (error instanceof RangeError) {
-        overflowed = true;
+      if (!(error instanceof RangeError)) {
+        throw error;
       }
+      // One alias this walk could not get ahead of. The caller that
+      // wants it will find out for itself.
     }
-  }
-
-  if (overflowed) {
-    reportUnreadableExports(file);
   }
 }
 

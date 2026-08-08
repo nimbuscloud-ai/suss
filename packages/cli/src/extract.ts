@@ -411,6 +411,11 @@ export async function extract(
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
     await writeJson({ value: summaries, indent: 2, file: outPath });
+    await writeIncompleteness({
+      outPath,
+      projectRoot,
+      report: extractionReport,
+    });
     // An empty run gets its own line. "Wrote 0 summaries" announces an
     // empty file as if it were an accomplishment, and the funnel that
     // follows explains what actually happened.
@@ -513,6 +518,49 @@ export async function extract(
  */
 /** Enough unreadable files to see the pattern, not the whole list. */
 const UNREADABLE_FILES_SHOWN = 5;
+
+/**
+ * Where a run records that it could not read part of the project.
+ *
+ * Sits beside the summaries under a name derived from theirs, so a job
+ * that knows where the summaries went knows where to look. The
+ * summaries file itself stays what every reader validates it as, a
+ * bare array, which is why this is not a field on it.
+ */
+export function incompletenessPathFor(summariesPath: string): string {
+  const ext = path.extname(summariesPath);
+  const base = summariesPath.slice(0, summariesPath.length - ext.length);
+  return `${base}.incomplete${ext === "" ? ".json" : ext}`;
+}
+
+/**
+ * Write down what the run could not read, or remove a note an earlier
+ * run left. A stale file saying the last extract was incomplete is
+ * worse than none: it fails a job that has since been fixed.
+ */
+async function writeIncompleteness(args: {
+  outPath: string;
+  projectRoot: string;
+  report: ExtractionReport | null;
+}): Promise<void> {
+  const notePath = incompletenessPathFor(args.outPath);
+  const unreadable = args.report?.filesWithUnreadableExports ?? [];
+  if (unreadable.length === 0) {
+    fs.rmSync(notePath, { force: true });
+    return;
+  }
+
+  await writeJson({
+    value: {
+      schemaVersion: SUMMARY_SCHEMA_VERSION,
+      filesWithUnreadableExports: unreadable.map((file) =>
+        path.relative(args.projectRoot, file),
+      ),
+    },
+    indent: 2,
+    file: notePath,
+  });
+}
 
 const EMPTY_STAGE_COPY: Record<
   EmptyStage,
