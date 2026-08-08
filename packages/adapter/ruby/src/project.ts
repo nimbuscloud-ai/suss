@@ -67,12 +67,12 @@ export async function extractRubyProject(
     });
     for (const raw of rawUnits) {
       const summary = assembleSummary(raw, { gapHandling: "permissive" });
-      // Every discovered field is a declaration read from the class
-      // DSL, not a body anybody traced (v0 does no path-engine work
-      // per the language-adapters proposal), so confidence is pinned
-      // low here rather than left to a heuristic built for a
-      // transition-bearing summary, the same convention the Python
-      // adapter's v0 slice follows.
+      // A field carries the method behind it, and nothing traced
+      // through that method: v0 does no path-engine work, per the
+      // language-adapters proposal. So confidence is pinned low here
+      // rather than left to a heuristic built for a transition-bearing
+      // summary, the same convention the Python adapter's v0 slice
+      // follows.
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);

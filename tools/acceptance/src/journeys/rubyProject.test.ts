@@ -22,6 +22,8 @@ const DECLARED_FIELDS = [
   "gql:Campaign.budget",
   "gql:Organizer.id",
   "gql:Organizer.email",
+  "gql:Organizer.displayName",
+  "gql:Organizer.phone",
   "gql:Organizer.status",
 ];
 
@@ -65,7 +67,7 @@ describe("read a graphql-ruby schema", () => {
     for (const field of DECLARED_FIELDS) {
       expect(inspect.stdout).toContain(field);
     }
-    expect(inspect.stdout).toContain("8 summaries.");
+    expect(inspect.stdout).toContain("10 summaries.");
   });
 
   it("says which line each field is on, so a person can go there", () => {

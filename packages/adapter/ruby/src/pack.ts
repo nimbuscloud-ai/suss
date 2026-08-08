@@ -78,6 +78,14 @@ export interface GraphqlObjectFields {
    */
   wiringKeywords: string[];
   /**
+   * The method a wired class defines to answer the field it is wired
+   * to. Library-defined: the library calls this one method on the
+   * class it was handed.
+   */
+  resolverMethodName: string;
+  /** The library's own classes a project's class chain ends at. Library-defined: above one of these is library code, which defines no method answering a project's field. */
+  ancestryRootClassNames: string[];
+  /**
    * Keyword on an argument call stating whether the argument is
    * required. Library-defined.
    */

@@ -1,41 +1,27 @@
 // discovery.ts: find class DSL field declarations and turn each into a
 // RawCodeStructure.
 //
-// v0 discovers a field-declaring call written directly in the body of a
-// class whose superclass names a pack-configured base class and reads
-// no further: the boundary binding and the declared contract are what
-// the call's own arguments state, nothing traced through a method
-// body. That's the existence-class shape the language-adapters proposal
-// calls for: a summary low-confidence enough to state nothing about
-// behavior nobody read, transitionless (`branches: []`), enough to pair
-// against a client operation by (typeName, fieldName). Every call name,
-// keyword, and naming convention read here comes off the pack's
-// pattern (see pack.ts); this module hardcodes none of them.
-//
-// A field carrying one of the pack's wiring keywords is the one-hop
-// exception: the field itself declares no type, so its declared
-// contract comes from the referenced class's own type-declaring call
-// (a declared return type) or its own field-declaring calls (a payload,
-// read as a record). The referenced class is located by the pack's
-// constant-to-path convention, parsed once per file and cached, and
-// read with the same per-statement reader this module already uses for
-// the discovering class's own body. A class reopened more than once in
-// that file (ordinary Ruby) contributes every block to the same
-// contract, in the order Ruby would evaluate them, and a field or
-// argument redefined along the way keeps its last-written shape, the
-// same last-wins registration the class DSL itself has.
+// See this package's README for what a field's summary says about the
+// method behind it and where the reading stops.
 
 import { dispatchByType, graphqlResolverBinding } from "@suss/behavioral-ir";
+import { unreadableReading } from "@suss/extractor";
 
+import {
+  ancestryOf,
+  inheritedStatements,
+  methodInAncestry,
+  reachDefinition,
+} from "./ancestry.js";
 import {
   bodyStatements,
   booleanLiteralValue,
   field,
+  methodHasStatements,
   rangeOf,
   readCallArgs,
   symbolValue,
 } from "./ast.js";
-import { resolveConstantFile } from "./constantPath.js";
 import {
   graphqlTypeNameFromQualified,
   qualifyConstantRef,
@@ -48,8 +34,19 @@ import type {
   GraphqlDeclaredContract,
   TypeShape,
 } from "@suss/behavioral-ir";
-import type { RawCodeStructure, RawParameter } from "@suss/extractor";
-import type { CallArgs } from "./ast.js";
+import type {
+  BodyContent,
+  RawCodeStructure,
+  RawParameter,
+  Reading,
+} from "@suss/extractor";
+import type {
+  AncestorLookup,
+  Ancestry,
+  MethodLookup,
+  ReachedBody,
+} from "./ancestry.js";
+import type { CallArgs, Range } from "./ast.js";
 import type {
   GraphqlObjectFields,
   RubyDiscoveryPattern,
@@ -105,6 +102,23 @@ interface FileScope {
 interface FieldReadContext {
   pattern: GraphqlObjectFields;
   cache: FileCache;
+  lookup: AncestorLookup;
+}
+
+function fieldReadContext(
+  pattern: GraphqlObjectFields,
+  cache: FileCache,
+): FieldReadContext {
+  return {
+    pattern,
+    cache,
+    lookup: {
+      root: pattern.root,
+      pathConvention: pattern.pathConvention,
+      ancestryRootClassNames: pattern.ancestryRootClassNames,
+      parsedFile: (absPath) => cache.get(absPath),
+    },
+  };
 }
 
 /** The pattern's scalar and naming vocabulary joined with one scope, the shape typeShape.ts reads against. */
@@ -131,10 +145,15 @@ export async function discoverUnits(
 
   const units: RawCodeStructure[] = [];
   for (const info of classes) {
+    // A class reopened in one file is one class, so a method written in
+    // a later block answers a field declared in an earlier one.
+    const ownBlocks: ReachedBody[] = classes
+      .filter((other) => other.qualifiedName === info.qualifiedName)
+      .map((other) => ({ info: other, knownClasses }));
     for (const pack of options.packs) {
       for (const pattern of pack.discovery) {
         units.push(
-          ...(await unitsFor(pattern, pack, info, options, knownClasses)),
+          ...(await unitsFor(pattern, pack, info, ownBlocks, options)),
         );
       }
     }
@@ -146,8 +165,8 @@ function unitsFor(
   pattern: RubyDiscoveryPattern,
   pack: RubyPack,
   info: ClassInfo,
+  ownBlocks: readonly ReachedBody[],
   options: DiscoveryOptions,
-  knownClasses: ReadonlySet<string>,
 ): Promise<RawCodeStructure[]> {
   // One variant today; kept as a dispatch table (docs/internal/style.md,
   // decision 8) so a second Ruby discovery shape adds a case here
@@ -157,7 +176,7 @@ function unitsFor(
     Promise<RawCodeStructure[]>
   > = {
     graphqlObjectFields: (p) =>
-      graphqlObjectFieldUnits(p, pack, info, options, knownClasses),
+      graphqlObjectFieldUnits(p, pack, info, ownBlocks, options),
   };
   return dispatchByType(table, pattern);
 }
@@ -166,8 +185,8 @@ async function graphqlObjectFieldUnits(
   pattern: GraphqlObjectFields,
   pack: RubyPack,
   info: ClassInfo,
+  ownBlocks: readonly ReachedBody[],
   options: DiscoveryOptions,
-  knownClasses: ReadonlySet<string>,
 ): Promise<RawCodeStructure[]> {
   if (
     info.superclassQualifiedName === null ||
@@ -180,8 +199,10 @@ async function graphqlObjectFieldUnits(
     info.qualifiedName,
     pattern.typeNameConvention,
   );
-  const ctx: FieldReadContext = { pattern, cache: options.cache };
+  const ctx = fieldReadContext(pattern, options.cache);
+  const knownClasses = ownBlocks[0]?.knownClasses ?? new Set<string>();
   const scope: FileScope = { nesting: info.bodyNesting, knownClasses };
+  const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
 
   // The class DSL stores fields by name, so a field redefined later in
   // the same body replaces the earlier declaration rather than the two
@@ -191,7 +212,7 @@ async function graphqlObjectFieldUnits(
   // is the one the library itself would end up with.
   const declsByName = new Map<string, FieldDeclaration>();
   for (const stmt of bodyStatements(info.bodyNode)) {
-    const decl = await readFieldCall(stmt, scope, ctx);
+    const decl = await readFieldCall(stmt, scope, ctx, ancestry);
     if (decl !== null) {
       declsByName.set(decl.fieldName, decl);
     }
@@ -217,6 +238,58 @@ interface FieldDeclaration {
   fieldName: string;
   node: RbNode;
   contract: FieldContract | null;
+  body: BodyReport;
+}
+
+/** What one field's declaration and the method behind it come to together, since a wiring keyword answers both at once. */
+interface FieldReading {
+  contract: FieldContract | null;
+  body: BodyReport;
+}
+
+interface BodyReport {
+  /** Left unset when no value of it would be true: the extractor writes its own sentence from this one, and there is a truer sentence in `readings`. */
+  bodyContent?: BodyContent;
+  readings: Reading<unknown>[];
+}
+
+function bodyOfMethod(method: RbNode): BodyReport {
+  return {
+    bodyContent: methodHasStatements(method) ? "statements" : "empty",
+    readings: [],
+  };
+}
+
+/** The library answers a field with no method behind it by reading the attribute off the object it was resolved against, so there is no body anywhere to read. */
+const NO_METHOD_BEHIND_IT: BodyReport = {
+  bodyContent: "absent",
+  readings: [],
+};
+
+function methodNotSettled(reason: string, range: Range): BodyReport {
+  return { readings: [unreadableReading(reason, range)] };
+}
+
+/**
+ * What a search of an ancestry says about the body, given what it
+ * should say when the search read everything and found nothing.
+ */
+function bodyFromLookup(
+  found: MethodLookup,
+  range: Range,
+  subject: string,
+  nothingThere: BodyReport,
+): BodyReport {
+  const table: DispatchTable<MethodLookup, BodyReport> = {
+    found: (lookup) => bodyOfMethod(lookup.method),
+    unsettled: (lookup) =>
+      methodNotSettled(
+        `${subject} could be answered by a method ${lookup.reason}, so whether one exists was not settled here`,
+        range,
+      ),
+    none: () => nothingThere,
+  };
+  return dispatchByType(table, found);
 }
 
 /**
@@ -232,6 +305,7 @@ async function readFieldCall(
   stmt: RbNode,
   scope: FileScope,
   ctx: FieldReadContext,
+  ancestry: Ancestry,
 ): Promise<FieldDeclaration | null> {
   if (stmt.type !== "call" || field(stmt, "receiver") !== null) {
     return null;
@@ -245,11 +319,19 @@ async function readFieldCall(
   if (symbol === null) {
     return null;
   }
-  const contract = await declaredContractFor(callArgs, scope, ctx);
+  const read = await readFieldShape(
+    symbol,
+    callArgs,
+    scope,
+    ctx,
+    ancestry,
+    rangeOf(stmt),
+  );
   return {
     fieldName: resolvedName(symbol, callArgs, ctx.pattern),
     node: stmt,
-    contract,
+    contract: read.contract,
+    body: read.body,
   };
 }
 
@@ -267,24 +349,37 @@ function wiringReference(
   return null;
 }
 
-/**
- * The field's own declared shape: a literal type argument, or, for a
- * call carrying one of the pattern's wiring keywords, the referenced
- * class's own declaration read from its file. Null when neither is
- * readable (no type argument and no wiring keyword, or a type
- * expression that isn't a literal constant path).
- */
-async function declaredContractFor(
+/** A contract of null means the shape wasn't readable, which is not the same as a field that declares none. */
+async function readFieldShape(
+  symbol: string,
   callArgs: CallArgs,
   scope: FileScope,
   ctx: FieldReadContext,
-): Promise<FieldContract | null> {
+  ancestry: Ancestry,
+  range: Range,
+): Promise<FieldReading> {
   const oneHopRef = wiringReference(callArgs, ctx.pattern.wiringKeywords);
   if (oneHopRef !== null) {
-    const target = qualifyConstantRef(oneHopRef, scope.nesting);
-    return target === null ? null : readReferencedClass(target, ctx);
+    return readWiredClass(oneHopRef, scope, ctx);
   }
 
+  return {
+    contract: literalContract(callArgs, scope, ctx),
+    body: bodyFromLookup(
+      methodInAncestry(ancestry, symbol),
+      range,
+      "This field",
+      NO_METHOD_BEHIND_IT,
+    ),
+  };
+}
+
+/** The shape a field states outright in its own type argument, or null when it states none this module can read. */
+function literalContract(
+  callArgs: CallArgs,
+  scope: FileScope,
+  ctx: FieldReadContext,
+): FieldContract | null {
   const typeArg = callArgs.positional[1];
   if (typeArg === undefined) {
     return null;
@@ -296,44 +391,49 @@ async function declaredContractFor(
   return returnType === null ? null : { returnType, args: [] };
 }
 
-/**
- * Locate `targetQualifiedName`'s file by the pack's constant-to-path
- * convention, parse it, and read the declared shape off every class in
- * it with that exact qualified name. Null at any step that doesn't
- * resolve: no file at that path, no class in it with the exact
- * qualified name, or the matching class (or classes) states neither a
- * type-declaring call nor any field-declaring call.
- */
-async function readReferencedClass(
-  targetQualifiedName: string,
+/** A wiring keyword names the class that answers the field, so its ancestry supplies both the declared shape and the resolver method. */
+async function readWiredClass(
+  ref: RbNode,
+  scope: FileScope,
   ctx: FieldReadContext,
-): Promise<FieldContract | null> {
-  const filePath = resolveConstantFile(
-    ctx.pattern.root,
-    targetQualifiedName,
-    ctx.pattern.pathConvention,
-  );
-  if (filePath === null) {
-    return null;
+): Promise<FieldReading> {
+  const range = rangeOf(ref);
+
+  const targetQualifiedName = qualifyConstantRef(ref, scope.nesting);
+  if (targetQualifiedName === null) {
+    return {
+      contract: null,
+      body: methodNotSettled(
+        `This field is wired to ${ref.text}, which is not a constant path this reader follows, so nothing about what it does was read here`,
+        range,
+      ),
+    };
   }
-  const fileRoot = await ctx.cache.get(filePath);
-  if (fileRoot === null) {
-    return null;
+
+  const reached = await reachDefinition(targetQualifiedName, ctx.lookup);
+  if (reached === null) {
+    return {
+      contract: null,
+      body: methodNotSettled(
+        `This field is wired to ${targetQualifiedName}, which this run did not read, so nothing about what it does was read here`,
+        range,
+      ),
+    };
   }
-  const allClasses: ClassInfo[] = [];
-  walkClasses(fileRoot, (info) => allClasses.push(info));
-  // A class can be reopened more than once in the same file, ordinary
-  // Ruby; every block with this exact qualified name contributes to
-  // the one contract rather than the last block silently replacing
-  // whatever an earlier block declared.
-  const matches = allClasses.filter(
-    (info) => info.qualifiedName === targetQualifiedName,
-  );
-  if (matches.length === 0) {
-    return null;
-  }
-  const knownClasses = new Set(allClasses.map((info) => info.qualifiedName));
-  return readClassContract(matches, knownClasses, ctx.pattern);
+
+  const ancestry = await ancestryOf(targetQualifiedName, reached, ctx.lookup);
+  return {
+    contract: readClassContract(ancestry, ctx.pattern),
+    body: bodyFromLookup(
+      methodInAncestry(ancestry, ctx.pattern.resolverMethodName),
+      range,
+      `This field's ${targetQualifiedName}`,
+      methodNotSettled(
+        `This field is wired to ${targetQualifiedName}, which defines no ${ctx.pattern.resolverMethodName} method anywhere in its ancestry, so nothing about what it does was read here`,
+        range,
+      ),
+    ),
+  };
 }
 
 interface ClassContractAccumulator {
@@ -425,20 +525,9 @@ function classCallHandlers(
   };
 }
 
-/**
- * Read every matching block's type-, field-, and argument-declaring
- * calls into one declared contract, processed in the order `matches`
- * lists them (source order, since `walkClasses` walks top to bottom):
- * a type-declaring call wins when present; otherwise the field calls
- * found become a record. A field or argument named more than once,
- * whether across reopened blocks or within one, keeps its last-written
- * declaration, both `Map`- and object-key assignment naturally doing
- * that as later statements overwrite earlier ones under the same name.
- * Null when nothing matching states either shape.
- */
+/** The declared contract an ancestry states. Null when nothing in it states a shape. */
 function readClassContract(
-  matches: ClassInfo[],
-  knownClasses: ReadonlySet<string>,
+  ancestry: Ancestry,
   pattern: GraphqlObjectFields,
 ): FieldContract | null {
   const out: ClassContractAccumulator = {
@@ -448,22 +537,20 @@ function readClassContract(
   };
   const handlers = classCallHandlers(pattern);
 
-  for (const match of matches) {
-    if (match.bodyNode === null) {
+  for (const { block, statement } of inheritedStatements(ancestry)) {
+    if (statement.type !== "call" || field(statement, "receiver") !== null) {
       continue;
     }
-    const scope: FileScope = { nesting: match.bodyNesting, knownClasses };
-    for (const stmt of bodyStatements(match.bodyNode)) {
-      if (stmt.type !== "call" || field(stmt, "receiver") !== null) {
-        continue;
-      }
-      const method = field(stmt, "method")?.text;
-      const handler = method !== undefined ? handlers[method] : undefined;
-      if (handler === undefined) {
-        continue;
-      }
-      handler(readCallArgs(field(stmt, "arguments")), scope, pattern, out);
+    const method = field(statement, "method")?.text;
+    const handler = method !== undefined ? handlers[method] : undefined;
+    if (handler === undefined) {
+      continue;
     }
+    const scope: FileScope = {
+      nesting: block.info.bodyNesting,
+      knownClasses: block.knownClasses,
+    };
+    handler(readCallArgs(field(statement, "arguments")), scope, pattern, out);
   }
 
   const returnType =
@@ -553,9 +640,12 @@ function buildFieldUnit(
     }),
     parameters,
     branches: [],
-    bodyContent: "absent",
+    ...(decl.body.bodyContent !== undefined
+      ? { bodyContent: decl.body.bodyContent }
+      : {}),
     dependencyCalls: [],
     declaredContract: null,
+    ...(decl.body.readings.length > 0 ? { readings: decl.body.readings } : {}),
     ...(graphqlDeclaredContract !== undefined
       ? { graphqlDeclaredContract }
       : {}),

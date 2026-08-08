@@ -80,6 +80,14 @@ function operation(
   };
 }
 
+/** What the extractor says about a summary whose body nobody read at all. */
+const NO_BODY =
+  "This unit is a declaration with no body behind it, so nothing about what it does was read here";
+
+/** What it says instead once a body is attached and nothing in it matched a shape the pack looks for. */
+const BODY_READ_NOTHING_MATCHED =
+  "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here";
+
 async function extractFixture() {
   const files = findRubyFiles(graphqlRoot);
   return extractRubyProject({
@@ -99,6 +107,8 @@ describe("extraction over fixtures/ruby-graphql", () => {
         "Campaign.budget",
         "Organizer.id",
         "Organizer.email",
+        "Organizer.displayName",
+        "Organizer.phone",
         "Organizer.status",
         "Query.campaign",
         "Mutation.campaignUpdate",
@@ -106,7 +116,7 @@ describe("extraction over fixtures/ruby-graphql", () => {
     );
   });
 
-  it("every discovered field is low-confidence: v0 reads no method body", async () => {
+  it("every discovered field is low-confidence: v0 traces nothing through a body", async () => {
     const { summaries } = await extractFixture();
     expect(summaries.every((s) => s.confidence.level === "low")).toBe(true);
   });
@@ -114,6 +124,44 @@ describe("extraction over fixtures/ruby-graphql", () => {
   it("every discovered field is transitionless: v0 does no path-engine work", async () => {
     const { summaries } = await extractFixture();
     expect(summaries.every((s) => s.transitions.length === 0)).toBe(true);
+  });
+
+  describe("the method behind a field", () => {
+    async function gapsFor(name: string): Promise<string[]> {
+      const { summaries } = await extractFixture();
+      const summary = summaries.find((s) => s.identity.name === name);
+      expect(summary, name).toBeDefined();
+      return (summary?.gaps ?? []).map((gap) => gap.description);
+    }
+
+    it("attaches the method written below the field in the same class", async () => {
+      expect(await gapsFor("Organizer.displayName")).toEqual([
+        BODY_READ_NOTHING_MATCHED,
+      ]);
+    });
+
+    it("attaches the method a concern the class includes defines", async () => {
+      expect(await gapsFor("Organizer.phone")).toEqual([
+        BODY_READ_NOTHING_MATCHED,
+      ]);
+    });
+
+    it("attaches the resolve method of the class a mutation-wired field points at", async () => {
+      expect(await gapsFor("Mutation.campaignUpdate")).toEqual([
+        BODY_READ_NOTHING_MATCHED,
+      ]);
+    });
+
+    it("attaches the resolve method of the class a resolver-wired field points at", async () => {
+      expect(await gapsFor("Query.campaign")).toEqual([
+        BODY_READ_NOTHING_MATCHED,
+      ]);
+    });
+
+    it("still says a field with no method behind it has no body, and says nothing else", async () => {
+      expect(await gapsFor("Campaign.id")).toEqual([NO_BODY]);
+      expect(await gapsFor("Organizer.email")).toEqual([NO_BODY]);
+    });
   });
 
   it("resolves the resolver-wired field's return shape from the referenced class's own type call", async () => {

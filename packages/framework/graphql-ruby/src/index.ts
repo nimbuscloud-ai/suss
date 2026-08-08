@@ -120,6 +120,14 @@ export function graphqlRubyFramework(
     typeCallName: "type",
     argumentCallName: "argument",
     wiringKeywords: ["mutation", "resolver"],
+    resolverMethodName: "resolve",
+    // The three classes graphql-ruby's own generated base classes
+    // extend. A project's chain ends at one of them.
+    ancestryRootClassNames: [
+      "GraphQL::Schema::Object",
+      "GraphQL::Schema::Mutation",
+      "GraphQL::Schema::Resolver",
+    ],
     requiredKeyword: "required",
     // graphql-ruby registers an argument as required unless the call
     // opts out with `required: false`; the library's own default, not
