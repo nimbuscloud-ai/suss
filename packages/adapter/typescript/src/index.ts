@@ -18,6 +18,14 @@ export { createTsDiscoveryContext } from "./discoveryContext.js";
 // Exported so a pack's test harness can hand recognizers the same
 // resolution the adapter threads through at extraction time.
 export { ResolutionStore } from "./facts/store.js";
+// Reading a module's exports and following an import to what it names
+// are the adapter's to do, not each pack's: both walk re-export chains
+// that overflow the checker when asked about naively, and the handling
+// belongs in one place.
+export {
+  exportedDeclarationsOf,
+  resolveAliasedSymbol,
+} from "./moduleExports.js";
 export { evaluatePackHealth, formatPackHealth } from "./packHealth.js";
 export { parseConditionExpression } from "./predicates.js";
 export { isImportedFrom } from "./resolve/invocationEffects.js";

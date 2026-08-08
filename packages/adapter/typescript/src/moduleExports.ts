@@ -1,5 +1,6 @@
-import { Node, SyntaxKind } from "ts-morph";
+import { Node } from "ts-morph";
 
+import { loadImportGraphDepthFirst } from "./bootstrap/lazyProjectInit.js";
 import { createPerFileCache } from "./perFileCache.js";
 
 import type {
@@ -41,11 +42,11 @@ const exportsByFile = createPerFileCache<ExportedDeclarationMap>();
  * follow answers undefined, the answer an unresolvable alias gives.
  */
 export function resolveAliasedSymbol(symbol: TsSymbol): TsSymbol | undefined {
+  // Warming the file the alias is written in loads the modules it
+  // names and resolves the chain under it. Following an import is what
+  // this is, so the imports are the part to resolve from the far end.
   for (const declaration of symbol.getDeclarations()) {
-    const target = moduleTargetOf(declaration);
-    if (target !== undefined) {
-      warmReExportChains(target);
-    }
+    warmReExportChains(declaration.getSourceFile(), "every import");
   }
 
   try {
@@ -55,6 +56,21 @@ export function resolveAliasedSymbol(symbol: TsSymbol): TsSymbol | undefined {
       throw error;
     }
     return undefined;
+  }
+}
+
+/**
+ * Resolve the alias chains under each of these files now.
+ *
+ * Discovery reaches an import chain by resolving the symbol a handler
+ * came from, which is the checker doing the same recursive descent
+ * from the other side, and it gets there before anything asks a module
+ * what it exports. Doing every walked file up front means whatever
+ * asks next, at either end, finds the hop below it already resolved.
+ */
+export function warmExportChains(files: ReadonlyArray<SourceFile>): void {
+  for (const file of files) {
+    warmReExportChains(file, "every import");
   }
 }
 
@@ -74,7 +90,7 @@ function readExportedDeclarations(
       throw error;
     }
 
-    warnChainTooDeep(sourceFile);
+    reportUnreadableExports(sourceFile);
     return new Map();
   }
 }
@@ -92,14 +108,35 @@ function readExportedDeclarations(
  * recursing. The visited set ends a chain that loops back on itself:
  * the checker answers a re-export cycle with no declarations, which is
  * what a cycle exports.
+ *
+ * Loading comes first, because asking the checker about a module that
+ * is not loaded yet makes it discover the chain by its own recursion
+ * before any of this runs.
  */
-function warmReExportChains(root: SourceFile): void {
+function warmReExportChains(
+  root: SourceFile,
+  reach: Reach = "re-exports",
+): void {
   if (warmedFiles.get(root) !== undefined) {
     return;
   }
 
+  try {
+    loadImportGraphDepthFirst(root);
+    walkAndWarm(root, reach);
+  } catch (error) {
+    if (!(error instanceof RangeError)) {
+      throw error;
+    }
+    // Nothing below is warm, so every ask that follows abstains too
+    // rather than answering from a half-resolved chain.
+    reportUnreadableExports(root);
+  }
+}
+
+function walkAndWarm(root: SourceFile, reach: Reach): void {
   const visited = new Set<string>([root.getFilePath()]);
-  const stack: WalkFrame[] = [frameOf(root)];
+  const stack: WalkFrame[] = [frameOf(root, reach)];
   while (stack.length > 0) {
     const top = stack[stack.length - 1] as WalkFrame;
     const target = top.shape.targets[top.next];
@@ -115,7 +152,7 @@ function warmReExportChains(root: SourceFile): void {
       }
 
       visited.add(path);
-      stack.push(frameOf(target));
+      stack.push(frameOf(target, reach));
       continue;
     }
 
@@ -133,9 +170,20 @@ interface WalkFrame {
   next: number;
 }
 
-function frameOf(file: SourceFile): WalkFrame {
-  return { file, shape: reExportShapeOf(file), next: 0 };
+function frameOf(file: SourceFile, reach: Reach): WalkFrame {
+  return { file, shape: reExportShapeOf(file, reach), next: 0 };
 }
+
+/**
+ * How much of a file to resolve ahead of time.
+ *
+ * Reading a module's exports only needs the aliases those exports are
+ * written from. Discovery arrives from the other side, following what
+ * a handler imported, so a run that had to load the graph itself
+ * resolves every import as well. Doing that everywhere costs far more
+ * than it saves on a project whose files were loaded up front.
+ */
+type Reach = "re-exports" | "every import";
 
 interface ReExportShape {
   /** Files this file re-exports from, directly or through a local import. */
@@ -145,13 +193,18 @@ interface ReExportShape {
 }
 
 /**
- * The re-export surface of one file, read from syntax alone: which
- * files its exports reach into, and which alias declarations carry
+ * The alias surface of one file, read from syntax alone: which files
+ * its imports and re-exports reach into, and which declarations carry
  * them. Import bindings come before export specifiers in the
  * resolution order because `export { x }` resolves through the local
  * import that bound `x`.
+ *
+ * Which imports count depends on what is being asked. Reading exports
+ * needs only the imports those exports re-export; following an import
+ * needs all of them, because what a handler imported is what discovery
+ * follows into the same chain from the other side.
  */
-function reExportShapeOf(file: SourceFile): ReExportShape {
+function reExportShapeOf(file: SourceFile, reach: Reach): ReExportShape {
   const targets: SourceFile[] = [];
   const exportNodes: Node[] = [];
   const localNames = new Set<string>();
@@ -179,21 +232,26 @@ function reExportShapeOf(file: SourceFile): ReExportShape {
   }
 
   const importNodes: Node[] = [];
-  if (localNames.size > 0) {
-    for (const decl of file.getImportDeclarations()) {
-      const bound = importBindingsOf(decl).filter((binding) =>
-        localNames.has(binding.name),
-      );
-      if (bound.length === 0) {
-        continue;
-      }
-
-      const target = decl.getModuleSpecifierSourceFile();
-      if (target !== undefined) {
-        targets.push(target);
-      }
-      importNodes.push(...bound.map((binding) => binding.node));
+  for (const decl of file.getImportDeclarations()) {
+    const all = importBindingsOf(decl);
+    const bindings =
+      reach === "every import"
+        ? all
+        : all.filter((binding) => localNames.has(binding.name));
+    if (bindings.length === 0) {
+      continue;
     }
+
+    const target = decl.getModuleSpecifierSourceFile();
+    if (target !== undefined) {
+      targets.push(target);
+    }
+    // A binding an export re-exports has to be resolved before that
+    // export is; the rest are resolved here because something else
+    // will ask about them later, and this is where it is cheap.
+    const reExported = bindings.filter((b) => localNames.has(b.name));
+    const rest = bindings.filter((b) => !localNames.has(b.name));
+    importNodes.push(...[...reExported, ...rest].map((b) => b.node));
   }
 
   return { targets, aliasNodes: [...importNodes, ...exportNodes] };
@@ -246,30 +304,48 @@ function warmFileAliases(file: SourceFile, aliasNodes: Node[]): void {
   }
 
   if (overflowed) {
-    warnChainTooDeep(file);
+    reportUnreadableExports(file);
   }
 }
 
-function warnChainTooDeep(file: SourceFile): void {
+/**
+ * Files whose exports could not be read, so the run can say so.
+ *
+ * A provider whose exports the checker could not follow otherwise
+ * looks exactly like a provider that exports nothing: same empty map,
+ * same absent summaries, same exit code. The extraction report reads
+ * this back and states it, since stderr is not part of the artifact
+ * anyone checks later.
+ */
+export function unreadableExportFiles(): string[] {
+  return [...filesWithUnreadableExports].sort();
+}
+
+export function forgetUnreadableExportFiles(): void {
+  filesWithUnreadableExports.clear();
+}
+
+/**
+ * Record that a file's modules could not be followed, from outside
+ * this module. The chain that outran the stack while a file's exports
+ * were being read outruns it again when a pack walks the same file, and
+ * a run that says so and carries on beats a run that dies holding the
+ * summaries it already built.
+ */
+export function noteUnreadableExports(file: SourceFile): void {
+  reportUnreadableExports(file);
+}
+
+const filesWithUnreadableExports = new Set<string>();
+
+function reportUnreadableExports(file: SourceFile): void {
+  const filePath = file.getFilePath();
+  if (filesWithUnreadableExports.has(filePath)) {
+    return;
+  }
+
+  filesWithUnreadableExports.add(filePath);
   process.stderr.write(
-    `[suss] Resolving the exports of ${file.getFilePath()} overflowed the call stack, so this run treats what they re-export as resolving to nothing. Units reachable only through them are missing from the results.\n`,
+    `[suss] Resolving the exports of ${filePath} overflowed the call stack, so this run treats what they re-export as resolving to nothing. Units reachable only through them are missing from the results.\n`,
   );
-}
-
-/** The file an alias declaration reaches into, when its syntax names one. */
-function moduleTargetOf(declaration: Node): SourceFile | undefined {
-  if (Node.isImportSpecifier(declaration)) {
-    return declaration.getImportDeclaration().getModuleSpecifierSourceFile();
-  }
-
-  if (Node.isExportSpecifier(declaration)) {
-    return declaration.getExportDeclaration().getModuleSpecifierSourceFile();
-  }
-
-  if (Node.isImportClause(declaration) || Node.isNamespaceImport(declaration)) {
-    return declaration
-      .getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
-      ?.getModuleSpecifierSourceFile();
-  }
-  return undefined;
 }

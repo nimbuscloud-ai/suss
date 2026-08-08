@@ -45,6 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@suss/adapter-typescript": "0.3.2",
     "@suss/behavioral-ir": "0.3.2",
     "ts-morph": "*"
   },

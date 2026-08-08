@@ -119,6 +119,17 @@ export interface ExtractionReport {
   packs: PackFunnel[];
   summaries: number;
   /**
+   * Files whose exports the checker could not follow, so the run read
+   * them as exporting nothing.
+   *
+   * Without this the artifact cannot tell the two apart: a module
+   * whose barrel chain outran the call stack and a module that
+   * genuinely exports nothing both produce no summaries and exit 0.
+   * Anything reachable only through these files is missing, and every
+   * count below is a floor while this is non-empty.
+   */
+  filesWithUnreadableExports: string[];
+  /**
    * The first stage whose count was zero, when the run produced
    * nothing. Null when the run produced summaries.
    */
@@ -376,6 +387,8 @@ export function buildExtractionReport(args: {
   tsConfigFilePath: string | undefined;
   /** Where to resolve gate specifiers from when there is no tsconfig. */
   projectRoot: string | undefined;
+  /** Files whose exports the checker could not follow. */
+  filesWithUnreadableExports?: ReadonlyArray<string>;
 }): ExtractionReport {
   const bySummary = summaryCountsByPack(args.summaries);
 
@@ -414,6 +427,7 @@ export function buildExtractionReport(args: {
     filesWalked: args.filesWalked,
     packs: packFunnels,
     summaries: args.summaries.length,
+    filesWithUnreadableExports: [...(args.filesWithUnreadableExports ?? [])],
     emptyStage:
       args.summaries.length === 0 ? firstEmptyStage(packFunnels, args) : null,
   };

@@ -31,6 +31,7 @@ const firedBy = (name: string, packs: PackFunnel[]) =>
     filesWalked: 20,
     packs,
     summaries: 0,
+    filesWithUnreadableExports: [],
     emptyStage: null,
   }).find((check) => check.name === name)?.violations ?? [];
 
@@ -128,6 +129,7 @@ describe("who a check is addressed to", () => {
       filesWalked: 20,
       packs: [funnel()],
       summaries: 0,
+      filesWithUnreadableExports: [],
       emptyStage: null,
     });
     const audienceOf = (name: string) =>
@@ -161,6 +163,7 @@ describe("formatPackHealth", () => {
       filesWalked: 20,
       packs: [funnel({ version: null, summariesWithBehavior: 0 })],
       summaries: 0,
+      filesWithUnreadableExports: [],
       emptyStage: null,
     });
 
