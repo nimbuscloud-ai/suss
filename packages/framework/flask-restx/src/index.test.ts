@@ -22,6 +22,7 @@ describe("flaskRestxFramework", () => {
           options: "OPTIONS",
         },
         pathParamSyntax: "flaskConverters",
+        defaultStatusCode: 200,
       },
     ]);
   });

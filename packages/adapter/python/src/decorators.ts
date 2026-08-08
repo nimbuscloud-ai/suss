@@ -15,9 +15,10 @@
 // import-of-module-X, and let the pack list every module X it accepts
 // (see PythonPack.importModule in pack.ts).
 
-import { field, stringLiteralValue } from "./ast.js";
+import { field, rangeOf, stringLiteralValue } from "./ast.js";
 import { resolveName } from "./scope.js";
 
+import type { Range } from "./ast.js";
 import type { PyNode } from "./parser.js";
 import type { Scope } from "./scope.js";
 
@@ -50,6 +51,13 @@ export interface DecoratorClassification {
   /** Positional call arguments, in order; empty for a bare decorator (`@staticmethod`). */
   args: DecoratorArg[];
   keywordArgs: Record<string, DecoratorArg>;
+  /**
+   * Where the decorator is written. A reading of one of its arguments
+   * carries this as the provenance of what it found, which is the
+   * syntax a reader would go look at. Per-argument ranges wait until
+   * something in the IR has a place to put them.
+   */
+  range: Range;
 }
 
 function readArg(node: PyNode): DecoratorArg {
@@ -211,10 +219,12 @@ export function classifyDecorator(
   decoratorNode: PyNode,
   scope: Scope,
 ): DecoratorClassification {
+  const range = rangeOf(decoratorNode);
   const expr = decoratorNode.namedChild(0);
   if (expr === null) {
-    return { ...UNRESOLVED, args: [], keywordArgs: {} };
+    return { ...UNRESOLVED, args: [], keywordArgs: {}, range };
   }
+
   if (expr.type === "call") {
     const callee = field(expr, "function");
     const argumentList = field(expr, "arguments");
@@ -224,7 +234,8 @@ export function classifyDecorator(
       argumentList?.type === "argument_list"
         ? readCallArguments(argumentList)
         : { args: [], keywordArgs: {} };
-    return { ...resolved, args, keywordArgs };
+    return { ...resolved, args, keywordArgs, range };
   }
-  return { ...resolveCallee(expr, scope), args: [], keywordArgs: {} };
+
+  return { ...resolveCallee(expr, scope), args: [], keywordArgs: {}, range };
 }
