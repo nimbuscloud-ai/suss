@@ -70,7 +70,6 @@ const RATCHET = {
   "packages/adapter/typescript/src/resolve/boundaryEffects.ts": 6,
   "packages/adapter/typescript/src/adapter.ts": 4,
   "packages/checker-intent/src/index.ts": 1,
-  "packages/checker/src/index.ts": 1, // #150
   "packages/cli/src/check.ts": 2,
   "packages/cli/src/corroborate.ts": 1,
   "packages/cli/src/corroborateCommand.ts": 1,

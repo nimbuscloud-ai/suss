@@ -79,7 +79,7 @@ import {
 } from "ts-morph";
 
 import { readConfiguredCall } from "@suss/adapter-typescript";
-import { messageBusBinding } from "@suss/behavioral-ir";
+import { formatChannel, messageBusBinding } from "@suss/behavioral-ir";
 
 import type {
   ConfiguredCallContext,
@@ -336,7 +336,7 @@ function buildEntryEffect(
   // a put named by half of one would pair across buses. The put still
   // happened, so it is recorded with nothing claimed about where it went.
   const channel =
-    bus === null || detailType === null ? null : `${bus}#${detailType}`;
+    bus === null || detailType === null ? null : formatChannel(bus, detailType);
 
   // Body extraction mirrors the SQS pack: prefer the inner object when
   // Detail is `JSON.stringify({...})` (the dominant pattern) so the body

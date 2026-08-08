@@ -59,7 +59,9 @@ import {
   type ChannelSet,
   channelsPair,
   createChannelSet,
+  formatChannel,
   hasPair,
+  parseChannel,
 } from "./channelPairing.js";
 
 import type {
@@ -377,20 +379,34 @@ function resolveProducerChannels(
     const target = targets[busToken];
     if (target !== undefined) {
       producer.resolvedChannel =
-        detailSuffix !== null
-          ? `${target.logicalId}#${detailSuffix}`
-          : target.logicalId;
+        detailSuffix === null
+          ? target.logicalId
+          : formatChannel(target.logicalId, detailSuffix);
     }
   }
 }
 
 /**
+ * Whether this bus writes two things into one channel string. Only
+ * EventBridge does: a bus and the detail-type a rule matches on it.
+ * Every other bus spends the whole channel on one queue or topic
+ * identity, so a `#` in it is part of that name.
+ */
+function channelNamesBusAndSubject(
+  messageBus: MessageBusSemantics["messageBus"],
+): boolean {
+  return messageBus === "eventbridge";
+}
+
+/**
  * Split a message-bus channel into the env-resolvable bus token and an
- * optional detail suffix. SQS channels are a single token (the whole
- * channel is the bus / queue identity). EventBridge channels are
- * `${bus}#${detailType}` — only the bus segment resolves via the
- * env-var chain-collapse, so it's split out and the detail-type is
- * recomposed after resolution.
+ * optional detail suffix. Only the bus segment resolves via the
+ * env-var chain-collapse, so it comes out on its own and the
+ * detail-type is recomposed after resolution.
+ *
+ * The split itself belongs to `parseChannel`, which every reader of
+ * the wire format goes through. What is decided here is when to ask
+ * for it.
  */
 function splitBusChannel(
   messageBus: MessageBusSemantics["messageBus"],
@@ -399,16 +415,16 @@ function splitBusChannel(
   busToken: string;
   detailSuffix: string | null;
 } {
-  if (messageBus === "eventbridge") {
-    const hash = channel.indexOf("#");
-    if (hash !== -1) {
-      return {
-        busToken: channel.slice(0, hash),
-        detailSuffix: channel.slice(hash + 1),
-      };
-    }
+  if (!channelNamesBusAndSubject(messageBus)) {
+    return { busToken: channel, detailSuffix: null };
   }
-  return { busToken: channel, detailSuffix: null };
+
+  const { bus, subject } = parseChannel(channel);
+  if (bus === null) {
+    return { busToken: channel, detailSuffix: null };
+  }
+
+  return { busToken: bus, detailSuffix: subject };
 }
 
 /**

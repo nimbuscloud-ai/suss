@@ -74,13 +74,24 @@ const plainly = (value: unknown): unknown =>
     ? (value as { toJSON: () => unknown }).toJSON()
     : value;
 
-/** `!GetAtt Table.Arn` and `!GetAtt [Table, Arn]` name the same thing. */
+/**
+ * `!GetAtt Table.Arn` and `!GetAtt [Table, Arn]` name the same thing.
+ *
+ * Only the first dot separates the logical id from the attribute. The
+ * attribute itself can hold dots, which is how a nested stack's
+ * outputs are read: `!GetAtt NestedStack.Outputs.QueueUrl` names the
+ * attribute `Outputs.QueueUrl` on `NestedStack`.
+ */
 const getAttParts = (value: unknown): string[] => {
   if (Array.isArray(value)) {
     return value.map(String);
   }
   const text = String(value);
-  return text.includes(".") ? text.split(".") : [text];
+  const dot = text.indexOf(".");
+  if (dot === -1) {
+    return [text];
+  }
+  return [text.slice(0, dot), text.slice(dot + 1)];
 };
 
 export const CLOUDFORMATION_YAML_TAGS = [
@@ -161,8 +172,7 @@ export function refTarget(value: unknown): string | null {
     return getAtt[0];
   }
   if (typeof getAtt === "string") {
-    const dot = getAtt.indexOf(".");
-    return dot === -1 ? getAtt : getAtt.slice(0, dot);
+    return getAttParts(getAtt)[0] ?? null;
   }
   return null;
 }

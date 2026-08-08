@@ -110,6 +110,9 @@ export const restSemantics = defineBoundarySemantics({
   name: "rest",
   schema: RestSemanticsSchema,
   behavior: {
+    /** A request goes out, a status and a body come back. */
+    exchangesHttpResponses: true,
+    reportsUnpairedItself: false,
     /** `"METHOD /normalized/path"`; null when either half is unnamed. */
     identityKey(semantics) {
       if (semantics.method === null || semantics.path === null) {

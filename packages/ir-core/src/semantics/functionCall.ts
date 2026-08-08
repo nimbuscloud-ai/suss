@@ -45,6 +45,9 @@ export const functionCallSemantics = defineBoundarySemantics({
   name: "function-call",
   schema: FunctionCallSemanticsSchema,
   behavior: {
+    /** A call returns a value, which is not a status and a body. */
+    exchangesHttpResponses: false,
+    reportsUnpairedItself: false,
     /**
      * `"fn:<package>::<exportPath>"` when both are set; other
      * in-process function-call units (intra-repo components, bare

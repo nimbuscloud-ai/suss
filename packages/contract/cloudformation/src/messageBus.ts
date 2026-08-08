@@ -60,7 +60,7 @@
 // to consumers.
 
 import { messageBusBinding, withMessageBusMetadata } from "@suss/behavioral-ir";
-import { codeScopePath } from "@suss/ir-core";
+import { codeScopePath, formatChannel } from "@suss/ir-core";
 import {
   type PatternReduction,
   reduceEventPattern,
@@ -608,7 +608,7 @@ function buildQueueSubjectMap(
       }
       const routed = map.get(queueId) ?? new Map<string, RoutedSubject>();
       for (const detailType of reduction.detailTypes) {
-        const channel = `${eventBus}#${detailType}`;
+        const channel = formatChannel(eventBus, detailType);
         routed.set(channel, { channel, eventBus, detailType });
       }
       map.set(queueId, routed);
@@ -901,7 +901,7 @@ function emitRuleSummaries(opts: EmitRuleOpts): void {
     return;
   }
   for (const detailType of opts.reduction.detailTypes) {
-    const channel = `${opts.eventBus}#${detailType}`;
+    const channel = formatChannel(opts.eventBus, detailType);
     opts.emitProvider(channel, opts.eventBus, detailType, opts.ruleLabel);
     for (const target of opts.targets) {
       opts.out.push(

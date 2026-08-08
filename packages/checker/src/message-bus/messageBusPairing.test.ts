@@ -515,6 +515,68 @@ describe("eventbridge pairing", () => {
     ).toEqual([]);
   });
 
+  it("keeps a detail-type that carries a hash of its own", () => {
+    // The bus and the detail-type are separated by the first hash.
+    // A later one belongs to the detail-type and stays there, or the
+    // producer resolves to a channel the rule never declared.
+    const summaries = [
+      eventBridgeProvider("OrderEventBus#Order#Placed"),
+      eventBridgeConsumer({
+        name: "OrderConsumer#Order#Placed",
+        channel: "OrderEventBus#Order#Placed",
+        patternResolution: "exact",
+      }),
+      eventBridgeProducer({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "ORDER_EVENT_BUS_NAME#Order#Placed",
+      }),
+      runtimeConfigProvider({
+        instanceName: "OrderProducer",
+        codeScopePath: "src/order-producer/",
+        envVarTargets: {
+          ORDER_EVENT_BUS_NAME: { kind: "ref", logicalId: "OrderEventBus" },
+        },
+      }),
+    ];
+
+    const findings = checkMessageBus(summaries);
+
+    expect(
+      findings.filter((f) => f.kind === "messageBusProducerOrphan"),
+    ).toEqual([]);
+  });
+
+  it("leaves a hash inside an SQS queue name alone", () => {
+    // Only EventBridge writes two things into one channel. Everywhere
+    // else the whole channel is the queue's identity, hash and all.
+    const summaries = [
+      consumerSummary({
+        name: "OrdersQueue",
+        channel: "Orders#Queue",
+        codeScopePath: "src/order-producer/",
+      }),
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "ORDERS#QUEUE_URL",
+      }),
+      runtimeConfigProvider({
+        instanceName: "OrderProducer",
+        codeScopePath: "src/order-producer/",
+        envVarTargets: {
+          "ORDERS#QUEUE_URL": { kind: "ref", logicalId: "Orders#Queue" },
+        },
+      }),
+    ];
+
+    const findings = checkMessageBus(summaries);
+
+    expect(
+      findings.filter((f) => f.kind === "messageBusProducerOrphan"),
+    ).toEqual([]);
+  });
+
   it("flags an orphan producer when the env-derived bus can't chain-collapse", () => {
     const summaries = [
       eventBridgeProvider("OrderEventBus#OrderPlaced"),

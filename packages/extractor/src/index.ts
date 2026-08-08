@@ -2,7 +2,11 @@
 
 import { createHash } from "node:crypto";
 
-import { withGraphqlMetadata, withHttpMetadata } from "@suss/behavioral-ir";
+import {
+  exchangesHttpResponses,
+  withGraphqlMetadata,
+  withHttpMetadata,
+} from "@suss/behavioral-ir";
 
 import { inputReadsOf } from "./inputReads.js";
 
@@ -780,6 +784,24 @@ function buildGraphqlMetadataValue(
 // Gap detection
 // =============================================================================
 
+/**
+ * Whether comparing this unit's declared statuses against the ones it
+ * produces would say anything about it. The declared contract holds
+ * HTTP statuses, so the boundary it describes has to be one that
+ * answers with them; a subscriber that declares a message shape would
+ * otherwise be told which of its statuses the handler never produced.
+ *
+ * A unit with no binding keeps the comparison. Whoever filled in the
+ * contract said the unit has declared responses, and nothing here says
+ * they are not HTTP ones.
+ */
+function answersWithHttpResponses(raw: RawCodeStructure): boolean {
+  if (raw.boundaryBinding === null || raw.boundaryBinding === undefined) {
+    return true;
+  }
+  return exchangesHttpResponses(raw.boundaryBinding);
+}
+
 export function detectGaps(
   raw: RawCodeStructure,
   transitions: Transition[],
@@ -828,7 +850,7 @@ export function detectGaps(
     });
   }
 
-  if (raw.declaredContract) {
+  if (raw.declaredContract && answersWithHttpResponses(raw)) {
     const producedStatuses = new Set(
       transitions.flatMap((t) => {
         if (t.output.type !== "response") {

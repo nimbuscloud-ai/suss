@@ -24,10 +24,9 @@
 // attribution rides on each summary so it can later correlate to handler
 // code.
 
-import fs from "node:fs";
 import path from "node:path";
 
-import YAML from "yaml";
+import { loadCloudFormationTemplate } from "@suss/manifest-aws";
 
 import { readAppSyncFromCfn } from "./cfn.js";
 import { parseSchema } from "./schema.js";
@@ -103,49 +102,9 @@ export function appsyncFileToSummaries(
   filePath: string,
   options: AppsyncToSummariesOptions = {},
 ): BehavioralSummary[] {
-  const raw = fs.readFileSync(filePath, "utf8");
-  const template = parseTemplate(filePath, raw);
+  const template = loadCloudFormationTemplate(filePath);
   return appsyncToSummaries(template, {
     source: options.source ?? path.relative(process.cwd(), filePath),
     baseDir: options.baseDir ?? path.dirname(filePath),
   });
-}
-
-// CloudFormation YAML uses shorthand intrinsic tags (`!Ref`, `!GetAtt`,
-// `!Sub`, ...) the default `yaml` schema doesn't know. We fold the
-// reference-bearing tags into their `Fn::`/`Ref` object form and collapse
-// the rest to their raw scalar so an unrelated tag never fails the parse.
-const CLOUDFORMATION_YAML_TAGS = [
-  { tag: "!Ref", resolve: (value: string) => ({ Ref: value }) },
-  {
-    tag: "!GetAtt",
-    resolve: (value: string) => ({
-      "Fn::GetAtt": value.includes(".") ? value.split(".") : [value],
-    }),
-  },
-  ...[
-    "!Sub",
-    "!Join",
-    "!Select",
-    "!Split",
-    "!FindInMap",
-    "!ImportValue",
-    "!Base64",
-    "!Cidr",
-    "!If",
-    "!Not",
-    "!And",
-    "!Or",
-    "!Equals",
-  ].map((tag) => ({ tag, resolve: (value: unknown) => value })),
-];
-
-function parseTemplate(filePath: string, raw: string): CfnTemplate {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".json") {
-    return JSON.parse(raw) as CfnTemplate;
-  }
-  return YAML.parse(raw, {
-    customTags: CLOUDFORMATION_YAML_TAGS,
-  }) as CfnTemplate;
 }

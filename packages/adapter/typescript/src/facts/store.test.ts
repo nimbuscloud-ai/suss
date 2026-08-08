@@ -1203,3 +1203,45 @@ describe("a binding declared without a value", () => {
     );
   });
 });
+
+describe("importedNamesOf", () => {
+  /**
+   * A project wrapper around a library decorator. Asking what the
+   * wrapper stands for makes the store join a module and a name into
+   * one key and read both halves back, which is the pattern that goes
+   * wrong when the two are joined on a separator a name could contain.
+   */
+  it("names the library export a project wrapper stands for", () => {
+    const project = projectOf({
+      "/section.ts": `
+        import { Controller } from "@nestjs/common";
+        export const Section = (path: string) => Controller(path);
+      `,
+    });
+    const store = new ResolutionStore();
+    const wrapper = project
+      .getSourceFileOrThrow("/section.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression)[0];
+
+    expect(
+      store.importedNamesOf(wrapper.getExpression(), ["@nestjs/common"]),
+    ).toEqual(["Controller"]);
+  });
+
+  it("says nothing about a module nobody asked about", () => {
+    const project = projectOf({
+      "/section.ts": `
+        import { Controller } from "@other/pkg";
+        export const Section = (path: string) => Controller(path);
+      `,
+    });
+    const store = new ResolutionStore();
+    const wrapper = project
+      .getSourceFileOrThrow("/section.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression)[0];
+
+    expect(
+      store.importedNamesOf(wrapper.getExpression(), ["@nestjs/common"]),
+    ).toEqual([]);
+  });
+});

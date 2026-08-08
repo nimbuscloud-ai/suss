@@ -47,6 +47,22 @@ export function parseChannel(channel: string): ParsedChannel {
   return { bus: channel.slice(0, hash), subject: channel.slice(hash + 1) };
 }
 
+/**
+ * Write a bus and a subject as one channel string, the form
+ * `parseChannel` reads back. A side that does not know its bus passes
+ * null and gets the subject alone.
+ *
+ * Anything that mints a channel comes through here, so the wire format
+ * has one author. A template reader that hand-writes the `#` is a
+ * second author, and the two drift the first time either changes.
+ */
+export function formatChannel(bus: string | null, subject: string): string {
+  if (bus === null) {
+    return subject;
+  }
+  return `${bus}#${subject}`;
+}
+
 /** Two buses agree when they are the same, or when either is unknown. */
 export function busesAgree(a: string | null, b: string | null): boolean {
   return a === null || b === null || a === b;

@@ -627,6 +627,24 @@ describe("appsyncFileToSummaries — external schema file (raw AppSync)", () => 
   });
 });
 
+describe("appsyncFileToSummaries, list-form intrinsics", () => {
+  // The template names everything through the shared loader's tag set,
+  // in the list and flow forms. A reader with its own scalar-only copy
+  // leaves these unresolved and loses the resolver's Lambda.
+  const file = path.join(fixturesDir, "list-form", "template.yaml");
+  const summaries = appsyncFileToSummaries(file);
+
+  it("reads a resolver whose api is named by a list-form GetAtt", () => {
+    expect(summaries.map((s) => s.identity.name)).toEqual(["Query.note"]);
+  });
+
+  it("attributes the Lambda behind a list-form GetAtt data source", () => {
+    expect(appsyncMeta(summaries[0]).lambdaFunctionLogicalId).toBe(
+      "NotesFunction",
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // SAM shorthand — AWS::Serverless::GraphQLApi
 // ---------------------------------------------------------------------------

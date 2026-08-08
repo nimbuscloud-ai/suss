@@ -8,6 +8,8 @@ import {
   notLit,
   rule,
   stratify,
+  tupleKey,
+  tupleKeyParts,
   variable,
 } from "./index.js";
 
@@ -561,5 +563,46 @@ describe("evaluate — taking conclusions back", () => {
 
     expect(sorted(db.facts("r"))).toEqual(["1"]);
     expect(sorted(db.facts("q"))).toEqual(["1"]);
+  });
+});
+
+describe("tupleKey", () => {
+  it("gives two different tuples two different keys", () => {
+    // Joined on a separator, "a" + "b|c" and "a|b" + "c" would be the
+    // same string and a lookup would answer with the wrong facts.
+    expect(tupleKey(["a", "b|c"])).not.toBe(tupleKey(["a|b", "c"]));
+  });
+
+  it("keeps values apart when one of them holds the unit separator", () => {
+    expect(tupleKey(["a\u001fb", "c"])).not.toBe(tupleKey(["a", "b\u001fc"]));
+  });
+
+  it("hands back the values it was given", () => {
+    expect(tupleKeyParts(tupleKey(["/src/mod.ts", "handler"]))).toEqual([
+      "/src/mod.ts",
+      "handler",
+    ]);
+  });
+
+  it("hands back a value that is empty, and one that holds a colon", () => {
+    expect(tupleKeyParts(tupleKey(["", "s3:", "n1:"]))).toEqual([
+      "",
+      "s3:",
+      "n1:",
+    ]);
+  });
+
+  it("keeps a number apart from the text of that number", () => {
+    expect(tupleKey([7])).not.toBe(tupleKey(["7"]));
+    expect(tupleKeyParts(tupleKey([7, "x"]))).toEqual(["7", "x"]);
+  });
+
+  it("refuses a string it did not write", () => {
+    // A key that does not parse means two encodings were joined, and
+    // every answer read out of it after that would be wrong.
+    expect(() => tupleKeyParts("s3:ab")).toThrow("not a tuple key");
+    expect(() => tupleKeyParts("nope")).toThrow("not a tuple key");
+    expect(() => tupleKeyParts("x1:a")).toThrow("not a tuple key");
+    expect(() => tupleKeyParts("s-1:a")).toThrow("not a tuple key");
   });
 });

@@ -2,10 +2,10 @@
   "totals": {
     "packages": 44,
     "packagesWithExports": 43,
-    "exports": 374,
-    "internal": 1414,
-    "consumers": 586,
-    "pairs": 578
+    "exports": 381,
+    "internal": 1409,
+    "consumers": 598,
+    "pairs": 590
   },
   "packages": {
     "packages/adapter/python": {
@@ -23,20 +23,20 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 32,
-      "internal": 580,
-      "consumers": 30
+      "internal": 579,
+      "consumers": 32
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 37,
+      "exports": 39,
       "internal": 10,
       "consumers": 3
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 132,
-      "consumers": 67
+      "internal": 131,
+      "consumers": 71
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -71,8 +71,8 @@
     "packages/contract/appsync": {
       "name": "@suss/contract-appsync",
       "exports": 2,
-      "internal": 46,
-      "consumers": 3
+      "internal": 44,
+      "consumers": 5
     },
     "packages/contract/aws-apigateway": {
       "name": "@suss/contract-aws-apigateway",
@@ -83,8 +83,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 8,
-      "internal": 65,
-      "consumers": 102
+      "internal": 64,
+      "consumers": 104
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -124,15 +124,15 @@
     },
     "packages/datalog": {
       "name": "@suss/datalog",
-      "exports": 19,
-      "internal": 49,
+      "exports": 21,
+      "internal": 48,
       "consumers": 0
     },
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 16,
       "internal": 25,
-      "consumers": 2
+      "consumers": 3
     },
     "packages/framework/apollo": {
       "name": "@suss/framework-apollo",
@@ -144,7 +144,7 @@
       "name": "@suss/framework-aws-eventbridge",
       "exports": 2,
       "internal": 12,
-      "consumers": 7
+      "consumers": 8
     },
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
@@ -250,14 +250,14 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 34,
+      "exports": 37,
       "internal": 9,
       "consumers": 0
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
       "exports": 16,
-      "internal": 24,
+      "internal": 25,
       "consumers": 1
     },
     "packages/resolution": {

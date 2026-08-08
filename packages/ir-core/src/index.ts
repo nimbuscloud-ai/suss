@@ -88,13 +88,16 @@ export {
   boundaryKey,
   boundaryLabel,
   displayLabel,
+  exchangesHttpResponses,
   pairingKey,
+  reportsUnpairedItself,
   semanticsAgree,
   servesRequest,
 } from "./boundaryKey.js";
 export {
   busesAgree,
   channelsPair,
+  formatChannel,
   type ParsedChannel,
   parseChannel,
 } from "./channel.js";

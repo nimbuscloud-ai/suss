@@ -1,4 +1,8 @@
-import { displayLabel } from "@suss/ir-core";
+import {
+  displayLabel,
+  exchangesHttpResponses,
+  reportsUnpairedItself,
+} from "@suss/ir-core";
 
 import { checkBodyCompatibility } from "./body/bodyCompatibility.js";
 import { checkConsumerContract } from "./consumer/consumerContract.js";
@@ -36,18 +40,35 @@ function describeBinding(binding: BoundaryBinding): string {
  * Whether a pair goes through `checkPair`.
  *
  * Every check behind `checkPair` reads status codes and response
- * shapes off an HTTP exchange, which a queue and the handler draining
- * it never have. Message-bus agreement is checked by `checkMessageBus`
- * over the same summaries, so pairing here is reporting: it says which
- * handler answers a declared subscriber and leaves the findings to the
- * pass that knows how to judge them.
+ * shapes off an HTTP exchange, so the provider's protocol has to say
+ * it has one. A queue and the handler draining it say no, and their
+ * agreement is judged by `checkMessageBus` over the same summaries.
+ * Pairing them here is reporting: it says which handler answers a
+ * declared subscriber and leaves the findings to the pass that knows
+ * how to judge them.
+ *
+ * A summary with no binding at all keeps the checks. Pairing already
+ * decided the two sides describe one boundary, and nothing has said
+ * this boundary is not an HTTP one.
  */
 function pairIsCheckable(pair: SummaryPair): boolean {
-  return !isMessageBus(pair.provider);
+  const binding = pair.provider.identity.boundaryBinding;
+  if (binding === null || binding === undefined) {
+    return true;
+  }
+  return exchangesHttpResponses(binding);
 }
 
-function isMessageBus(summary: BehavioralSummary): boolean {
-  return summary.identity.boundaryBinding?.semantics.name === "message-bus";
+/**
+ * Whether some other pass already reports this summary's boundary when
+ * it pairs with nothing, so the unmatched lists here leave it out.
+ */
+function reportedByItsOwnPass(summary: BehavioralSummary): boolean {
+  const binding = summary.identity.boundaryBinding;
+  if (binding === null || binding === undefined) {
+    return false;
+  }
+  return reportsUnpairedItself(binding);
 }
 
 export { checkBodyCompatibility } from "./body/bodyCompatibility.js";
@@ -197,14 +218,13 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const findings: Finding[] = [...graphql.findings];
   const pairInfo: CheckAllResult["pairs"] = [];
 
-  // REST pairs run through the full check-pair machinery
-  // (provider coverage, consumer satisfaction, body / contract
-  // checks). GraphQL and message-bus pairs surface in `pairInfo` for
-  // discoverability but skip checkPair, because the REST checks all key
-  // on status-code + response shape, which doesn't apply to resolvers or
-  // to queues. Per-semantics checks for GraphQL land alongside
-  // `pairGraphqlOperations` when a concrete case motivates them;
-  // message-bus already has `checkMessageBus`.
+  // Every pair is reported in `pairInfo`. A pair whose protocol
+  // exchanges HTTP responses also runs the full check-pair machinery
+  // (provider coverage, consumer satisfaction, body and contract
+  // checks); the rest surface for discoverability and are judged by
+  // the pass that knows their protocol. Per-semantics checks for
+  // GraphQL land alongside `pairGraphqlOperations` when a concrete
+  // case motivates them; message-bus already has `checkMessageBus`.
   for (const pair of restPairs) {
     if (pairIsCheckable(pair)) {
       findings.push(...checkPair(pair.provider, pair.consumer));
@@ -216,14 +236,13 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
     });
   }
   // Track which summaries got at least one graphql pairing so they
-  // don't double-surface as unmatched below. Message-bus summaries are
-  // dropped from the unmatched lists for a stronger reason: a channel
-  // that paired with nothing is already reported by `checkMessageBus`,
-  // as `messageBusUnused` or one of the orphan findings, with a
-  // severity and with knowledge of who sends to it. Listing it again as
-  // "no client to compare against" says the same thing a second time,
-  // in weaker words. Pairing owns the pair list; `checkMessageBus` owns
-  // every judgement about a channel.
+  // don't double-surface as unmatched below. A summary whose protocol
+  // reports its own unpaired boundaries drops out for a stronger
+  // reason: that pass names the boundary with a severity and with
+  // knowledge of who was involved, and saying "no client to compare
+  // against" afterwards says the same thing a second time in weaker
+  // words. Pairing owns the pair list; the protocol's own pass owns
+  // every judgement about its boundaries.
   const graphqlMatched = new Set<BehavioralSummary>();
   for (const { provider, consumer, key } of graphql.pairs) {
     graphqlMatched.add(provider);
@@ -235,7 +254,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
     });
   }
   const stillUnmatched = (s: BehavioralSummary): boolean =>
-    !graphqlMatched.has(s) && !isMessageBus(s);
+    !graphqlMatched.has(s) && !reportedByItsOwnPass(s);
   const unmatched = {
     providers: restUnmatched.providers.filter(stillUnmatched),
     consumers: restUnmatched.consumers.filter(stillUnmatched),

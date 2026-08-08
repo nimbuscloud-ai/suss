@@ -4,12 +4,14 @@ import {
   boundaryKey,
   boundaryLabel,
   displayLabel,
+  exchangesHttpResponses,
   functionCallBinding,
   graphqlResolverBinding,
   messageBusBinding,
   methodsAgree,
   normalizePath,
   pairingKey,
+  reportsUnpairedItself,
   restBinding,
 } from "./index.js";
 
@@ -340,5 +342,29 @@ describe("displayLabel", () => {
     });
     expect(boundaryLabel(binding)).toBeNull();
     expect(displayLabel(binding)).toBe("rest:express");
+  });
+});
+
+describe("what a protocol says about its own checking", () => {
+  const route = restBinding({
+    transport: "http",
+    method: "GET",
+    path: "/users",
+    recognition: "express",
+  });
+  const channel = messageBusBinding({
+    messageBus: "sqs",
+    channel: "OrdersQueue",
+    recognition: "aws-sqs",
+  });
+
+  it("says a route exchanges an HTTP response and a channel does not", () => {
+    expect(exchangesHttpResponses(route)).toBe(true);
+    expect(exchangesHttpResponses(channel)).toBe(false);
+  });
+
+  it("says the message-bus pass reports its own unpaired channels", () => {
+    expect(reportsUnpairedItself(channel)).toBe(true);
+    expect(reportsUnpairedItself(route)).toBe(false);
   });
 });

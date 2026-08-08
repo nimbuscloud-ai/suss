@@ -34,12 +34,22 @@ skips labels.
 
 **The semantics registry.** One module per protocol declares a schema
 and a behavior: `identityKey`, `pairingKey`, `sidesAgree`,
-`displayLabel`, `ruleBoundary`. The registry composes them with a
-compile-time completeness check, and generic code calls
-`boundaryKey`, `pairingKey`, `semanticsAgree`, `displayLabel`, or
-`normalizeRuleBoundary` without knowing which protocol answers.
+`displayLabel`, `ruleBoundary`, `servesRequest`,
+`exchangesHttpResponses`, `reportsUnpairedItself`. The registry
+composes them with a compile-time completeness check, and generic code
+calls `boundaryKey`, `pairingKey`, `semanticsAgree`, `displayLabel`,
+or `normalizeRuleBoundary` without knowing which protocol answers.
 Adding protocol behavior to a generic surface means adding a member
 here, not a branch there.
+
+Two of those members are declared rather than optional, because the
+question they answer has no safe default. A protocol says whether its
+two sides exchange an HTTP response, which is what every status-code
+and response-body check needs before it means anything, and whether
+its own pass already reports the boundaries that paired with nothing.
+A protocol added later has to answer both, so it is left out of the
+HTTP-shaped checks by saying so rather than by someone remembering to
+exclude it (#150, #148).
 
 **Name provenance.** Discovery says whether a unit's name is a
 binding other code can call or a label coined for the reader. The
@@ -67,7 +77,9 @@ it.
   protocol-name branch. Packs and per-protocol checker modules are
   allowed outright; the pre-existing generic sites carry counts that
   only go down, each one a place a registry member should replace an
-  if (#147, #150 are the tracked ones).
+  if (#147 is the one left). It matches per line rather than parsing,
+  so a comparison split across two lines or a switch on the name goes
+  past it (#164).
 - `check:vocabulary` holds the hardcoding rule.
 - The registry's completeness check makes a protocol added to the
   union without a definition, or the reverse, a compile error.

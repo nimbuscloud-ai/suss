@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { busesAgree, channelsPair, parseChannel } from "./channel.js";
+import {
+  busesAgree,
+  channelsPair,
+  formatChannel,
+  parseChannel,
+} from "./channel.js";
 
 describe("parseChannel", () => {
   it("reads a bus off a qualified channel", () => {
@@ -81,5 +86,21 @@ describe("channelsPair", () => {
 
   it("keeps subject case, since a bus compares its subjects byte for byte", () => {
     expect(channelsPair("order.placed", "Order.Placed")).toBe(false);
+  });
+});
+
+describe("formatChannel", () => {
+  it("writes a bus and a subject in the form parseChannel reads", () => {
+    expect(formatChannel("default", "order.placed")).toBe(
+      "default#order.placed",
+    );
+    expect(parseChannel(formatChannel("default", "order.placed"))).toEqual({
+      bus: "default",
+      subject: "order.placed",
+    });
+  });
+
+  it("writes the subject alone for a side that does not know its bus", () => {
+    expect(formatChannel(null, "OrdersQueue")).toBe("OrdersQueue");
   });
 });

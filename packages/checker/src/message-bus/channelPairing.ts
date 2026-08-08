@@ -9,7 +9,12 @@
 
 import { busesAgree, parseChannel } from "@suss/ir-core";
 
-export { channelsPair, type ParsedChannel, parseChannel } from "@suss/ir-core";
+export {
+  channelsPair,
+  formatChannel,
+  type ParsedChannel,
+  parseChannel,
+} from "@suss/ir-core";
 
 /**
  * The channels seen on one side of the bus, indexed by subject so a
