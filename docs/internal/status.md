@@ -171,7 +171,8 @@ Progress tracker. Updated as phases land.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Python adapter | ⏸ | Same `RawCodeStructure` interface, Pyright or ast-grep. |
+| Python adapter | 🚧 | Shipped on tree-sitter (WASM) with its own lexical binder, reading flask-restx and FastAPI routes. No path-engine work yet, and the CLI has no way to reach it. |
+| Ruby adapter | 🚧 | Shipped on tree-sitter (WASM), reading graphql-ruby's class-based field DSL. No `routes.rb`, no path-engine work, and the CLI has no way to reach it. |
 | React component support | 🚧 | Phase 1.1 (component discovery + JSX-return terminals), 1.2 (destructured-prop Inputs + type resolution), 1.5 (event handlers as separate code units), 1.6 (nested render tree) shipped. Phases 1.4 (inline JSX conditionals), 1.6b (handler references in render tree), 1.7 (`useEffect` bodies), Phase 2 (Storybook stub), Phase 3 (cross-shape agreement) are next. Figma punted. See [`docs/roadmap-react.md`](roadmap-react.md). |
 | GitHub Action / CI integration | ⏸ | PR-scoped extraction wrapper. |
 | GraphQL / gRPC stubs | ⏸ | Different protocol shape than HTTP req/resp; the IR's `boundaryBinding` doesn't currently model RPC method + service or query/mutation operation. |

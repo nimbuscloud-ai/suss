@@ -26,7 +26,7 @@ features:
     link: /glossary
     linkText: Glossary
   - title: Add a framework in one file
-    details: "Nineteen packs ship, for HTTP handlers, GraphQL resolvers, React components, queue consumers, database calls and client call sites. Adding a framework means writing a small pack, not forking the analyzer."
+    details: "Twenty-two packs ship, for HTTP handlers, GraphQL resolvers, React components, queue consumers, database calls and client call sites. Adding a framework means writing a small pack, not forking the analyzer."
     link: /guides/writing-a-pack
     linkText: Write a pack
   - title: Compare against declared contracts
@@ -37,6 +37,10 @@ features:
     details: "Point suss at your tsconfig and get summaries from the source as it stands. No annotations or decorators to add."
     link: /guides/add-to-project
     linkText: Add to a project
+  - title: More than TypeScript
+    details: "TypeScript and JavaScript through the CLI. Python routes (flask-restx, FastAPI) and graphql-ruby fields through their own adapters. CloudFormation, SAM and serverless.yml read as declared contracts, so the deployment and the code it deploys compare directly."
+    link: /guides/python-and-ruby
+    linkText: Python and Ruby
   - title: Explicit about what it can't analyze
     details: "When a condition is too dynamic for static analysis, the branch is labeled unresolved rather than silently dropped. Coverage stops are visible in the output."
     link: /motivation#what-suss-is-not
@@ -96,6 +100,7 @@ The navigation splits conceptual material into **Understanding suss** (for users
 - **First time on the site:** [Get started](/tutorial/get-started) walks the smallest end-to-end example, then [Motivation](/motivation) explains why this layer exists.
 - **Adding suss to an existing project:** [Add suss to a project](/guides/add-to-project), then [Set up CI](/guides/ci-integration).
 - **Looking up a flag, finding, or term:** [CLI reference](/reference/cli) · [Findings catalog](/reference/findings) · [Glossary](/glossary) · [FAQ](/faq).
+- **Working in Python or Ruby:** [Read a Python or Ruby project](/guides/python-and-ruby).
 - **Choosing packs for your stack:** [Packages & packs](/reference/packages).
 - **Writing or modifying a pack:** [Write a pack](/guides/writing-a-pack).
 - **Consuming the summary format:** [Behavioral summary format](/behavioral-summary-format), then [IR reference](/ir-reference).

@@ -1,7 +1,10 @@
 # Compatibility
 
-suss reads your project through its tsconfig, so it sees the same files
-and the same module resolution your compiler does.
+`suss extract` reads your project through its tsconfig, so it sees the
+same files and the same module resolution your compiler does. The rest
+of this page is about that command. Python and Ruby are read by
+separate adapters with their own rules; see
+[Read a Python or Ruby project](/guides/python-and-ruby).
 
 ## Languages
 
@@ -9,6 +12,8 @@ and the same module resolution your compiler does.
 |---|---|
 | TypeScript | Yes |
 | JavaScript | Yes, with `allowJs` in your tsconfig |
+| Python | Routes only, through `@suss/adapter-python`. Not reachable from the CLI. |
+| Ruby | graphql-ruby fields only, through `@suss/adapter-ruby`. Not reachable from the CLI. |
 | Anything else | No |
 
 ## Modules and resolution
@@ -121,6 +126,7 @@ suss check --dir auth/
 
 | | |
 |---|---|
-| Other languages | A Python or Ruby service is invisible. The adapter interface is language-agnostic, so one could be written. |
+| Other languages | Go, Java, C# and the rest are invisible. The adapter interface is language-agnostic, so one could be written; Python and Ruby were. |
+| Python or Ruby from the CLI | `suss extract` cannot reach either adapter. You call them from a script, as the [guide](/guides/python-and-ruby) shows. |
 | Routes registered at runtime | `registerRoutes(configBuiltAtRuntime)`. suss reads what the code says without running it. |
 | Your own wrapper around a library | A project that wraps `useQuery` in a hook of its own is invisible to the Apollo pack, which looks for the library call itself. |
