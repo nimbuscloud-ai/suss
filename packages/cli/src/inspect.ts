@@ -1470,7 +1470,7 @@ export function inspectDiff(options: DiffOptions): void {
 // Dir command — boundary pair overview
 // ---------------------------------------------------------------------------
 
-function readSummariesFromDir(dir: string): BehavioralSummary[] {
+export function readSummariesFromDir(dir: string): BehavioralSummary[] {
   const resolved = path.resolve(dir);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
     throw new Error(`Directory not found: ${resolved}`);
@@ -1490,7 +1490,7 @@ function readSummariesFromDir(dir: string): BehavioralSummary[] {
   return all;
 }
 
-function parseSummaryFile(
+export function parseSummaryFile(
   filePath: string,
   content: string,
 ): BehavioralSummary[] {

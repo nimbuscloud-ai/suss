@@ -28,8 +28,6 @@
 // section and a relative path all mean something only inside the
 // document that writes them.
 
-import path from "node:path";
-
 import {
   nestedDocumentLabel,
   readRoutingMetadata,
@@ -65,6 +63,7 @@ import {
 } from "@suss/manifest-aws";
 
 import { buildAlbFlowSummaries } from "./albFlow.js";
+import { documentSourceLabel } from "./documentLabel.js";
 import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 
@@ -85,6 +84,9 @@ export {
 } from "@suss/manifest-aws";
 
 export { ALB_MATCH_LANGUAGE, albRouterSelector } from "./albMatch.js";
+// Where a document sits decides which flow scope its resources join, so
+// every manifest reader labels its documents the same way.
+export { documentSourceLabel } from "./documentLabel.js";
 // The runtime-config walk is the one summary builder another manifest
 // reader reuses whole: @suss/contract-serverless synthesizes SAM-shaped
 // function resources and runs the same walk, so the two manifest
@@ -1155,8 +1157,7 @@ export function cloudFormationFileToSummaries(
     );
   }
   const rootLabel =
-    options.source ??
-    `cloudformation:${path.basename(path.resolve(templatePath))}`;
+    options.source ?? documentSourceLabel("cloudformation", templatePath);
   return tree.documents.flatMap((document) =>
     cloudFormationToSummaries(document.template, {
       source: nestedDocumentLabel(rootLabel, document.stackPath),

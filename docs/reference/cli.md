@@ -20,7 +20,9 @@ suss has four commands. They form one pipeline:
 The summary JSON is the canonical artifact. `inspect` is a renderer
 over it; `check` is a comparator. Anything you can do in `inspect` or
 `check` you can also do by reading the JSON yourself, they're
-conveniences, not parsing layers.
+conveniences, not parsing layers. The one reading that computes rather
+than renders is [`inspect --flow`](#suss-inspect-flow), which walks the
+routing a set of summaries declares to answer who serves a request.
 
 Two more commands sit outside the pipeline. `suss init` works out which
 packs your project needs and offers to set them up. `suss corroborate`
@@ -344,6 +346,9 @@ suss inspect --dir DIR
 
 # Diff two summary files (shows changed transitions)
 suss inspect --diff BEFORE.json AFTER.json
+
+# Who serves a request, hop by hop
+suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
 ```
 
 | Flag | Description |
@@ -351,10 +356,81 @@ suss inspect --diff BEFORE.json AFTER.json
 | `--dir PATH` | Render every summary in a directory, grouped by boundary with pair-discovery annotations. |
 | `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions. |
 | `--types` | Spell out the named types a summary references instead of printing their names. It applies to a single file and to `--dir`; a `--diff` run ignores it. |
+| `--flow "METHOD URL"` | Answer who serves one request, hop by hop. See [below](#suss-inspect-flow). |
 
-No JSON output mode, `inspect` is always human-formatted. For
-programmatic consumption, read the summary files directly (they
-ARE JSON).
+Rendering has no JSON output mode, it is always human-formatted. For
+programmatic consumption, read the summary files directly (they ARE
+JSON). `--flow` is the exception: it computes an answer rather than
+rendering a file, and `--json` gives you that answer as data.
+
+### `suss inspect --flow`
+
+Ask who serves a request, and get the chain back.
+
+**What it does.** Walks the routing a set of summaries declares, hop by
+hop, and answers with the entry the request came in by, every hop it
+took and the rule that admitted that hop, the unit it lands in, and the
+handler inside that unit.
+
+It reads both sides of the question, so point it at a directory holding
+both: a deploy template read with `suss contract` for the wiring, and
+`suss extract` over the code for the handlers that answer.
+
+```
+suss inspect --flow "<METHOD URL>" [SUMMARIES.json | --dir DIR]
+```
+
+Asking the ALB fixture who serves an order lookup:
+
+```
+suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir summaries/
+```
+
+```
+GET https://shop.example.com/api/orders/123
+in by ShopAlb, declared in cloudformation:fixtures/aws-alb/template.yaml
+
+What serves it, as the declarations settle it:
+
+  ShopAlb
+    -> ShopHttpsListener   ShopHttpsListener belongs to ShopAlb
+    -> OrdersTargetGroup   OrdersListenerRule takes it (priority 10; path-pattern /api/orders/*)
+    -> OrdersTaskDefinition/orders-app   OrdersTargetGroup fronts it
+  OrdersTaskDefinition/orders-app serves it
+    allOrders answers it: * /api/orders/*   (src/orders-app/app.ts)
+```
+
+| Flag | Description |
+|---|---|
+| `--flow "METHOD URL"` | The request to ask about. A path works too (`"GET /api/orders/123"`), and then a host-header rule cannot be settled and says so. |
+| `--dir PATH` | Read every summary file in a directory, instead of the one file named as an argument. |
+| `--entry NAME` | Which node the request comes in by, when the summaries hold more than one way in. |
+| `--scope DOCUMENT` | Which document's node, when two documents declare that name. |
+| `--json` | Write the chains as JSON instead of prose. |
+
+Certainty is visible, and a possible answer never reads as a settled
+one. A hop whose rule takes the request outright is certain; a hop
+gated on something the declarations leave open, an unevaluated
+condition field or a tie between two rules, is possible, and the chain
+carrying it is grouped under its own heading and says which hop is
+unsettled.
+
+When nothing serves the request, the answer says where the walk
+stopped: the response a listener's own default action gives it, the last
+node it got to and the rules declared there that refused it, or a rule
+that took the request and sent it somewhere nothing here resolved, which
+reads with the reference the document wrote and the reader's reason for
+stopping (a target another template declares, for instance).
+
+A question whose wiring branches wider than the answer prints ends with
+how many chains were left out, so a partial answer never reads as the
+whole of it. The JSON form carries the same count under `omitted`.
+
+Two documents that both declare a listener called `HttpListener` are
+two listeners, and neither one's rules may answer the other's question.
+Asking about a name they share is refused with the documents listed, so
+`--entry HttpListener --scope cloudformation:services/beta/template.yaml`
+says which stack you meant.
 
 ### Reading the output
 

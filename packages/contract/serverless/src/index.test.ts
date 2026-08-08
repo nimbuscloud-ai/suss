@@ -138,10 +138,10 @@ describe("the serverless fixture", () => {
     const summaries = summariesFromFixture();
 
     expect(named(summaries, "processOrders").location.file).toBe(
-      "serverless:serverless.yml",
+      "serverless:fixtures/serverless/serverless.yml",
     );
     expect(named(summaries, "OrdersQueue").location.file).toBe(
-      "serverless:serverless.yml#resources",
+      "serverless:fixtures/serverless/serverless.yml#resources",
     );
   });
 

@@ -2,10 +2,10 @@
   "totals": {
     "packages": 44,
     "packagesWithExports": 43,
-    "exports": 368,
-    "internal": 1298,
-    "consumers": 555,
-    "pairs": 547
+    "exports": 372,
+    "internal": 1341,
+    "consumers": 577,
+    "pairs": 569
   },
   "packages": {
     "packages/adapter/python": {
@@ -34,8 +34,8 @@
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "exports": 30,
-      "internal": 115,
+      "exports": 33,
+      "internal": 132,
       "consumers": 67
     },
     "packages/checker-intent": {
@@ -47,8 +47,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 149,
-      "consumers": 131
+      "internal": 170,
+      "consumers": 145
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -82,9 +82,9 @@
     },
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
-      "exports": 7,
-      "internal": 60,
-      "consumers": 95
+      "exports": 8,
+      "internal": 65,
+      "consumers": 102
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -114,7 +114,7 @@
       "name": "@suss/contract-serverless",
       "exports": 9,
       "internal": 19,
-      "consumers": 10
+      "consumers": 11
     },
     "packages/contract/storybook": {
       "name": "@suss/contract-storybook",

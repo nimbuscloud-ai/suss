@@ -143,7 +143,44 @@ export function loadSuppressions(filePath: string): SuppressionRule[] {
   if (problems.length > 0) {
     throw new Error(`Invalid rules in ${filePath}:\n${problems.join("\n")}`);
   }
+  reportDocumentsNamedByFileName(filePath, file.rules);
   return file.rules;
+}
+
+/** A reader's document label with no path in it: `cloudformation:template.yaml`. */
+const DOCUMENT_BY_FILE_NAME = /^[a-z][a-z0-9-]*:(?!:)[^/]+$/;
+
+/**
+ * Say when a rule names a document the way readers used to label them,
+ * by file name alone. Such a rule still matches, by file name, across
+ * every document of that reader with that name; suss now records where
+ * the document sits, and writing the path pins the rule to one of them.
+ * Left unsaid, the rule reads as pinned when it is not.
+ */
+function reportDocumentsNamedByFileName(
+  filePath: string,
+  rules: SuppressionRule[],
+): void {
+  const named = new Set<string>();
+  for (const rule of rules) {
+    for (const side of [rule.consumer, rule.provider]) {
+      const summary = side?.summary;
+      if (summary === undefined) {
+        continue;
+      }
+
+      const [document] = summary.split("::");
+      if (DOCUMENT_BY_FILE_NAME.test(document)) {
+        named.add(document);
+      }
+    }
+  }
+
+  for (const document of [...named].sort()) {
+    process.stderr.write(
+      `[suss] ${filePath}: a rule names ${document}, which suss now records with the path the document sits at. The rule still matches every document of that reader with that file name; write the path to pin it to one.\n`,
+    );
+  }
 }
 
 /**

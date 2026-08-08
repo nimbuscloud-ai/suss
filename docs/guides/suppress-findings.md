@@ -139,6 +139,18 @@ Each `-> output when conditions` line is a transition; the ID is
 deterministic per `(function name, terminal kind, status key,
 condition hash)`, see [Behavioral summary format](/behavioral-summary-format).
 
+## Naming a summary read from a deploy template
+
+A rule can name a summary directly, and a summary read from a template
+is named by the document it came from:
+`cloudformation:services/orders/template.yaml::GetOrders`. Documents
+used to be named by file name alone
+(`cloudformation:template.yaml::GetOrders`), which made every
+`template.yaml` in a repository one name. A rule written that way still
+matches, by file name, across every document of that reader that has
+that file name, and suss says so on stderr when it reads the file.
+Writing the path pins the rule to one document.
+
 ## Reasons are required
 
 Every rule needs a `reason` string. No default, no elision. The

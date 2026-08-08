@@ -99,9 +99,11 @@ describe("a template split across nested stacks", () => {
   it("records which document each summary was read from", () => {
     const files = new Set(summariesFromFixture().map((s) => s.location.file));
 
-    expect(files).toContain("cloudformation:template.yaml");
-    expect(files).toContain("cloudformation:template.yaml#OrdersStack");
-    expect(files).toContain("cloudformation:template.yaml#BillingStack");
+    const root = "cloudformation:fixtures/aws-nested-stacks/template.yaml";
+
+    expect(files).toContain(root);
+    expect(files).toContain(`${root}#OrdersStack`);
+    expect(files).toContain(`${root}#BillingStack`);
   });
 
   it("says which children it could not open, and why", () => {
