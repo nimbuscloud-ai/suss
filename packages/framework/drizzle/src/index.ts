@@ -43,6 +43,7 @@
 
 import { type CallExpression, Node as N, type Node } from "ts-morph";
 
+import { resolveAliasedSymbol } from "@suss/adapter-typescript";
 import { storageRelationalBinding } from "@suss/behavioral-ir";
 
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
@@ -356,7 +357,9 @@ function tableNameFromDeclaration(decl: Node): string | null {
   // Import specifiers point one hop further — follow to the aliased
   // symbol's declarations once.
   if (N.isImportSpecifier(decl)) {
-    const aliased = decl.getNameNode().getSymbol()?.getAliasedSymbol();
+    const symbol = decl.getNameNode().getSymbol();
+    const aliased =
+      symbol === undefined ? undefined : resolveAliasedSymbol(symbol);
     for (const target of aliased?.getDeclarations() ?? []) {
       const name = tableNameFromDeclaration(target);
       if (name !== null) {

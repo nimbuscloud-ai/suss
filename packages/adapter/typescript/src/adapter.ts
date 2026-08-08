@@ -48,6 +48,7 @@ import {
 } from "./assembly.js";
 import {
   createLazyProject,
+  loadImportGraphsDepthFirst,
   readTsconfigFileList,
 } from "./bootstrap/lazyProjectInit.js";
 import { computePackApplicability } from "./bootstrap/preFilter.js";
@@ -83,6 +84,12 @@ import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { ResolutionStore } from "./facts/store.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
 import { endLineOf, startLineOf } from "./lines.js";
+import {
+  forgetUnreadableExportFiles,
+  noteUnreadableExports,
+  unreadableExportFiles,
+  warmExportChains,
+} from "./moduleExports.js";
 import { moduleInitSummary } from "./moduleInit.js";
 import {
   type ClosureFacts,
@@ -2118,6 +2125,8 @@ export function createTypeScriptAdapter(
     async extractAll(): Promise<BehavioralSummary[]> {
       const timer = createTimer();
       const tallies = createPackTallies(config.frameworks);
+      // What this run could not read is this run's to report.
+      forgetUnreadableExportFiles();
 
       // For lazy-bootstrap-eligible runs (tsconfig path supplied
       // by caller), get the include file list cheaply via the TS
@@ -2205,6 +2214,19 @@ export function createTypeScriptAdapter(
         project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
       );
 
+      // Everything below here touches the type checker, and the first
+      // touch builds the program. Left to itself the compiler finds the
+      // modules these files import by recursing through them, which
+      // runs out of stack on a project whose barrels chain a few
+      // hundred deep. Loading them here, each before the files that
+      // import it, leaves that walk one hop deep whatever the project.
+      // After the list above, so the run walks the same files it always
+      // walked.
+      const deep = timer.time("loadImportGraphs", () =>
+        loadImportGraphsDepthFirst(sourceFiles),
+      );
+      timer.time("warmExportChains", () => warmExportChains(deep.deepRoots));
+
       // Pre-filter: for each file, figure out which packs have any
       // pattern that could match (based on `requiresImport` gates
       // against the file's imports). Files where NO pack matches
@@ -2232,17 +2254,28 @@ export function createTypeScriptAdapter(
           if (applicablePacks === undefined) {
             continue;
           }
-          summaries.push(
-            ...extractFromSourceFile(
-              sourceFile,
-              applicablePacks,
-              claimedUnits,
-              config.extractorOptions,
-              tallies,
-              resolution,
-              mountPrefixes,
-            ),
-          );
+          // A module graph too deep for the checker to walk takes the
+          // stack down wherever it is followed from, and the run
+          // reporting one unreadable file is worth more than the run
+          // dying with every summary before it unwritten.
+          try {
+            summaries.push(
+              ...extractFromSourceFile(
+                sourceFile,
+                applicablePacks,
+                claimedUnits,
+                config.extractorOptions,
+                tallies,
+                resolution,
+                mountPrefixes,
+              ),
+            );
+          } catch (error) {
+            if (!(error instanceof RangeError)) {
+              throw error;
+            }
+            noteUnreadableExports(sourceFile);
+          }
         }
       });
 
@@ -2352,6 +2385,7 @@ export function createTypeScriptAdapter(
             projectRoot: commonDirectoryOf(
               sourceFiles.map((f) => f.getFilePath()),
             ),
+            filesWithUnreadableExports: unreadableExportFiles(),
           }),
         );
       }

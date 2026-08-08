@@ -411,6 +411,11 @@ export async function extract(
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
     await writeJson({ value: summaries, indent: 2, file: outPath });
+    await writeIncompleteness({
+      outPath,
+      projectRoot,
+      report: extractionReport,
+    });
     // An empty run gets its own line. "Wrote 0 summaries" announces an
     // empty file as if it were an accomplishment, and the funnel that
     // follows explains what actually happened.
@@ -511,6 +516,52 @@ export async function extract(
  * @apollo/client and the package is missing" tells a user what to do;
  * "a gate specifier did not resolve" does not.
  */
+/** Enough unreadable files to see the pattern, not the whole list. */
+const UNREADABLE_FILES_SHOWN = 5;
+
+/**
+ * Where a run records that it could not read part of the project.
+ *
+ * Sits beside the summaries under a name derived from theirs, so a job
+ * that knows where the summaries went knows where to look. The
+ * summaries file itself stays what every reader validates it as, a
+ * bare array, which is why this is not a field on it.
+ */
+export function incompletenessPathFor(summariesPath: string): string {
+  const ext = path.extname(summariesPath);
+  const base = summariesPath.slice(0, summariesPath.length - ext.length);
+  return `${base}.incomplete${ext === "" ? ".json" : ext}`;
+}
+
+/**
+ * Write down what the run could not read, or remove a note an earlier
+ * run left. A stale file saying the last extract was incomplete is
+ * worse than none: it fails a job that has since been fixed.
+ */
+async function writeIncompleteness(args: {
+  outPath: string;
+  projectRoot: string;
+  report: ExtractionReport | null;
+}): Promise<void> {
+  const notePath = incompletenessPathFor(args.outPath);
+  const unreadable = args.report?.filesWithUnreadableExports ?? [];
+  if (unreadable.length === 0) {
+    fs.rmSync(notePath, { force: true });
+    return;
+  }
+
+  await writeJson({
+    value: {
+      schemaVersion: SUMMARY_SCHEMA_VERSION,
+      filesWithUnreadableExports: unreadable.map((file) =>
+        path.relative(args.projectRoot, file),
+      ),
+    },
+    indent: 2,
+    file: notePath,
+  });
+}
+
 const EMPTY_STAGE_COPY: Record<
   EmptyStage,
   (report: ExtractionReport) => { cause: string; next: string }
@@ -613,6 +664,23 @@ export function formatExtractionReport(report: ExtractionReport): string {
   const width = Math.max(...rows.map(([count]) => String(count).length));
   for (const [count, label] of rows) {
     lines.push(`    ${String(count).padStart(width)}  ${label}`);
+  }
+
+  // A file suss could not read the exports of leaves every count above
+  // it short by an unknown amount, so it is said plainly rather than
+  // left to look like a module that exports nothing.
+  const unreadable = report.filesWithUnreadableExports;
+  if (unreadable.length > 0) {
+    lines.push("");
+    lines.push(
+      `  Warning: suss could not follow the re-exports of ${unreadable.length} ${unreadable.length === 1 ? "file" : "files"}, so it read them as exporting nothing. Anything reachable only through them is missing from the counts above.`,
+    );
+    for (const file of unreadable.slice(0, UNREADABLE_FILES_SHOWN)) {
+      lines.push(`    ${file}`);
+    }
+    if (unreadable.length > UNREADABLE_FILES_SHOWN) {
+      lines.push(`    and ${unreadable.length - UNREADABLE_FILES_SHOWN} more`);
+    }
   }
 
   // A dependency suss could not resolve while the pack still produced

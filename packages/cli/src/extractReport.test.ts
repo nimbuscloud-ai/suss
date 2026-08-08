@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatExtractionReport } from "./extract.js";
+import { formatExtractionReport, incompletenessPathFor } from "./extract.js";
 
 import type { ExtractionReport, PackFunnel } from "@suss/adapter-typescript";
 
@@ -39,6 +39,7 @@ function report(overrides: Partial<ExtractionReport> = {}): ExtractionReport {
     filesWalked: 5,
     packs: [pack()],
     summaries: 2,
+    filesWithUnreadableExports: [],
     emptyStage: null,
     ...overrides,
   };
@@ -61,6 +62,7 @@ describe("formatExtractionReport", () => {
         filesInProject: 0,
         filesWalked: 0,
         summaries: 0,
+        filesWithUnreadableExports: [],
         emptyStage: "tsconfig",
         packs: [
           pack({ candidateFiles: 0, unitsDiscovered: 0, summariesProduced: 0 }),
@@ -76,6 +78,7 @@ describe("formatExtractionReport", () => {
     const output = formatExtractionReport(
       report({
         summaries: 0,
+        filesWithUnreadableExports: [],
         emptyStage: "gateResolution",
         packs: [
           pack({
@@ -105,6 +108,7 @@ describe("formatExtractionReport", () => {
     const output = formatExtractionReport(
       report({
         summaries: 0,
+        filesWithUnreadableExports: [],
         emptyStage: "candidateFiles",
         packs: [
           pack({
@@ -131,6 +135,7 @@ describe("formatExtractionReport", () => {
     const output = formatExtractionReport(
       report({
         summaries: 1,
+        filesWithUnreadableExports: [],
         emptyStage: null,
         packs: [
           pack({
@@ -162,6 +167,7 @@ describe("formatExtractionReport", () => {
     const output = formatExtractionReport(
       report({
         summaries: 0,
+        filesWithUnreadableExports: [],
         emptyStage: "candidateFiles",
         packs: [
           pack({ candidateFiles: 0, unitsDiscovered: 0, summariesProduced: 0 }),
@@ -177,6 +183,7 @@ describe("formatExtractionReport", () => {
     const output = formatExtractionReport(
       report({
         summaries: 0,
+        filesWithUnreadableExports: [],
         emptyStage: "discovery",
         packs: [pack({ unitsDiscovered: 0, summariesProduced: 0 })],
       }),
@@ -190,6 +197,7 @@ describe("formatExtractionReport", () => {
     const output = formatExtractionReport(
       report({
         summaries: 0,
+        filesWithUnreadableExports: [],
         emptyStage: "assembly",
         packs: [pack({ summariesProduced: 0 })],
       }),
@@ -238,6 +246,7 @@ describe("formatExtractionReport", () => {
     const output = formatExtractionReport(
       report({
         summaries: 0,
+        filesWithUnreadableExports: [],
         emptyStage: "gateResolution",
         packs: [
           pack({
@@ -252,5 +261,40 @@ describe("formatExtractionReport", () => {
 
     expect(output).toContain("axios and @apollo/client");
     expect(output).toContain("those packages are");
+  });
+
+  it("says which files it could not read the re-exports of", () => {
+    const output = formatExtractionReport(
+      report({ filesWithUnreadableExports: ["/src/barrel.ts"] }),
+    );
+
+    expect(output).toContain("could not follow the re-exports of 1 file");
+    expect(output).toContain("/src/barrel.ts");
+  });
+
+  it("names a few unreadable files and counts the rest", () => {
+    const files = Array.from({ length: 8 }, (_, i) => `/src/barrel${i}.ts`);
+    const output = formatExtractionReport(
+      report({ filesWithUnreadableExports: files }),
+    );
+
+    expect(output).toContain("re-exports of 8 files");
+    expect(output).toContain("/src/barrel0.ts");
+    expect(output).not.toContain("/src/barrel7.ts");
+    expect(output).toContain("and 3 more");
+  });
+});
+
+describe("incompletenessPathFor", () => {
+  it("sits beside the summaries under a name derived from theirs", () => {
+    expect(incompletenessPathFor("/out/summaries.json")).toBe(
+      "/out/summaries.incomplete.json",
+    );
+  });
+
+  it("names a note for a summaries file with no extension", () => {
+    expect(incompletenessPathFor("/out/summaries")).toBe(
+      "/out/summaries.incomplete.json",
+    );
   });
 });

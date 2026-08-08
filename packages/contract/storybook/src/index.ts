@@ -45,6 +45,7 @@ import {
   SyntaxKind,
 } from "ts-morph";
 
+import { exportedDeclarationsOf } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
 import type {
@@ -215,7 +216,7 @@ function extractStories(sf: SourceFile): StoryInfo[] {
   // CSF3: each named export is a `const Name: Story = { args: { ... } }`.
   // We don't type-check the `Story` annotation — just look at the
   // shape.
-  for (const [name, decls] of sf.getExportedDeclarations()) {
+  for (const [name, decls] of exportedDeclarationsOf(sf)) {
     if (name === "default") {
       continue;
     }

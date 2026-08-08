@@ -17,6 +17,8 @@ import {
 } from "graphql";
 import { Node } from "ts-morph";
 
+import { resolveAliasedSymbol } from "../moduleExports.js";
+
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -404,7 +406,7 @@ function importedVariableInitializers(identifier: Node): Node[] {
   if (symbol === undefined) {
     return [];
   }
-  const resolved = symbol.getAliasedSymbol() ?? symbol;
+  const resolved = resolveAliasedSymbol(symbol) ?? symbol;
   const inits: Node[] = [];
   for (const decl of resolved.getDeclarations()) {
     if (Node.isVariableDeclaration(decl)) {
@@ -540,7 +542,7 @@ function resolveTypedDocumentHeader(arg: Node): DocumentResolution | null {
   if (symbol === undefined) {
     return null;
   }
-  const resolved = symbol.getAliasedSymbol() ?? symbol;
+  const resolved = resolveAliasedSymbol(symbol) ?? symbol;
   for (const decl of resolved.getDeclarations()) {
     if (!Node.isVariableDeclaration(decl)) {
       continue;

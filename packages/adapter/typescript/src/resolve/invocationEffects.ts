@@ -30,6 +30,7 @@ import {
   type FunctionRoot,
 } from "../conditions.js";
 import { startLineOf } from "../lines.js";
+import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
   type DescentBarriers,
   isDescentStop,
@@ -152,7 +153,7 @@ export function isImportedFrom(
     }
   }
 
-  const aliased = symbol.getAliasedSymbol() ?? symbol;
+  const aliased = resolveAliasedSymbol(symbol) ?? symbol;
   return aliased
     .getDeclarations()
     .some((decl) =>

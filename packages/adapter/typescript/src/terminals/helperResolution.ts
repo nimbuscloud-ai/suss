@@ -30,6 +30,7 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { resolveAliasedSymbol } from "../moduleExports.js";
 import { peelParens } from "../walk/unwrap.js";
 
 import type {
@@ -343,7 +344,7 @@ function declarationsFor(callee: Identifier): TsNode[] {
   if (symbol === undefined) {
     return [];
   }
-  const aliased = symbol.getAliasedSymbol();
+  const aliased = resolveAliasedSymbol(symbol);
   return (aliased ?? symbol).getDeclarations();
 }
 

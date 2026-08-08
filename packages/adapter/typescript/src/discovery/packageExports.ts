@@ -6,6 +6,7 @@ import fs from "node:fs";
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { exportedDeclarationsOf } from "../moduleExports.js";
 import {
   type ResolvedPackageExport,
   resolvePackageExports,
@@ -90,7 +91,7 @@ export function discoverPackageExports(
   const seenNames = new Set<string>();
 
   for (const entry of matching) {
-    const exported = sourceFile.getExportedDeclarations();
+    const exported = exportedDeclarationsOf(sourceFile);
     for (const [exportName, decls] of exported) {
       if (exclude.has(exportName)) {
         continue;
