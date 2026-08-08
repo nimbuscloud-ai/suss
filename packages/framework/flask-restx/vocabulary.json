@@ -4,9 +4,16 @@
   "Namespace": "flask-restx: the constructor for a mountable group of resources",
   "add_namespace": "flask-restx: the Api method that mounts a namespace",
   "path": "flask-restx: the path keyword on Namespace(...) and add_namespace(...)",
+  "prefix": "flask-restx: the prefix keyword on Api(...), served in front of every namespace path",
+  "init_app": "flask-restx: the Api method that takes the app or blueprint after the Api was built",
+  "flask": "flask: the package Blueprint is imported from",
+  "Blueprint": "flask: the constructor for a group of routes registered under one url_prefix",
+  "url_prefix": "flask: the prefix keyword on Blueprint(...) and register_blueprint(...)",
+  "register_blueprint": "flask: the method that registers a blueprint on an app or on another blueprint",
   "decoratedClassRoute": "suss: PythonDiscoveryPattern variant tag, defined in @suss/adapter-python",
   "flaskConverters": "suss: path-template syntax name, defined in @suss/adapter-python; selects the <name> / <converter:name> reader for Flask-style paths",
   "replaces": "suss: MountPrefixEffect value, defined in @suss/adapter-python; says a mount-call prefix swaps out the constructor's rather than going in front of it",
   "trimmed": "suss: PrefixTrailingSlash value, defined in @suss/adapter-python; says the library drops trailing slashes off a namespace path before a route path joins it",
-  "unstated": "suss: NoValuePrefix value, defined in @suss/adapter-python; says the library reads a path written as an empty string, None, False or zero the way it reads no path at all"
+  "unstated": "suss: NoValuePrefix value, defined in @suss/adapter-python; says the library reads a path written as an empty string, None, False or zero the way it reads no path at all",
+  "merged": "suss: PathRepeatedSlashes value, defined in @suss/adapter-python; says the library answers a path carrying repeated slashes at the merged one"
 }

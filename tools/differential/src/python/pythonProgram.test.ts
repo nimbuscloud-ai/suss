@@ -182,6 +182,8 @@ describe("renderPythonProgram", () => {
       framework: "flask-restx",
       program: {
         importStyle: "direct",
+        apiMount: { type: "app" },
+        apiPrefix: { type: "absent" },
         resources: [
           {
             segment: "orders",
@@ -276,6 +278,8 @@ describe("renderPythonProgram", () => {
       framework: "flask-restx",
       program: {
         importStyle: "direct",
+        apiMount: { type: "app" },
+        apiPrefix: { type: "absent" },
         resources: [],
         namespaces: [
           {
@@ -351,6 +355,8 @@ describe("renderPythonProgram", () => {
       framework: "flask-restx",
       program: {
         importStyle: "direct",
+        apiMount: { type: "app" },
+        apiPrefix: { type: "absent" },
         resources: [],
         namespaces: [
           {
@@ -396,6 +402,8 @@ describe("renderPythonProgram", () => {
       framework: "flask-restx",
       program: {
         importStyle: "direct",
+        apiMount: { type: "app" },
+        apiPrefix: { type: "absent" },
         resources: [],
         namespaces: [
           {
@@ -458,6 +466,8 @@ describe("renderPythonProgram", () => {
       framework: "flask-restx",
       program: {
         importStyle: "direct",
+        apiMount: { type: "app" },
+        apiPrefix: { type: "absent" },
         resources: [],
         namespaces: [
           {

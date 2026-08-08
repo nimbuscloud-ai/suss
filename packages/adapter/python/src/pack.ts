@@ -54,6 +54,16 @@ export interface RouteConventions {
    */
   annotatedClassIsRequestBody?: boolean;
   /**
+   * What the library serves for a composed path that ends up with
+   * repeated slashes in it. "merged" is Werkzeug's behavior, which
+   * answers at the merged path and redirects the written one, so a
+   * flask-restx route behind a blueprint prefix written `"/api/v1/"`
+   * is reached at `/api/v1/orders`, not `/api/v1//orders`. "kept" is
+   * the default and is what Starlette does: the path stands as
+   * composed.
+   */
+  pathRepeatedSlashes?: PathRepeatedSlashes;
+  /**
    * The status the library answers a declared response with when the
    * route states none (FastAPI's 200). Library-defined, so it is
    * declared here as data rather than baked into the adapter: without
@@ -134,12 +144,14 @@ export interface DecoratedFunctionRoute extends RouteConventions {
 
 /**
  * The names a library gives router mounting, so the route path a
- * reader would see at the wire composes from up to two literal
- * prefixes: the router constructor's own, and the one at the single
- * call that mounts the router (FastAPI's `APIRouter(prefix=...)` plus
- * `app.include_router(router, prefix=...)`). Anything the composition
- * cannot read as one construction, one mount, and literal prefixes
- * abstains: the route is still discovered by name, with no path (see
+ * reader would see at the wire composes from the literal prefixes
+ * written along the way: the router constructor's own, the one at the
+ * single call that mounts the router (FastAPI's
+ * `APIRouter(prefix=...)` plus `app.include_router(router,
+ * prefix=...)`), and, where the pack says so, the prefix the object
+ * the mount is called on states. Anything the composition cannot
+ * read as one construction, one mount, and literal prefixes abstains:
+ * the route is still discovered by name, with no path (see
  * routers.ts).
  */
 export interface RouterComposition {
@@ -204,6 +216,62 @@ export interface RouterComposition {
    * doubled slash that the app never serves.
    */
   constructorPrefixTrailingSlash?: PrefixTrailingSlash;
+  /**
+   * Where the object the mount is called on states a prefix of its
+   * own, in front of everything the constructor and the mount state.
+   * Unset means it states none, which is FastAPI's behavior: an app
+   * serves a mounted router exactly where the two prefixes put it.
+   */
+  mountObjectPrefix?: MountObjectPrefix;
+}
+
+/**
+ * The prefix the object a mount is called on states, and where it is
+ * written. flask-restx needs both halves: `Api(prefix=...)` states one
+ * on the object itself, and the Flask blueprint the `Api` was built
+ * from states another with `Blueprint(name, __name__,
+ * url_prefix=...)`. The library serves a route under the blueprint's
+ * prefix, then the `Api`'s, then whatever the namespace and the route
+ * say.
+ */
+export interface MountObjectPrefix {
+  /** Keyword stating a prefix on the mount object's own construction (flask-restx's `Api(prefix=...)`). */
+  prefixKeyword?: string;
+  /** The object handed to that construction which states a prefix of its own. */
+  carrier?: MountObjectCarrier;
+}
+
+/**
+ * An object handed to the mount object's constructor, one hop further
+ * out, with a prefix of its own (the Flask blueprint behind an
+ * `Api`). Naming it here is what lets the adapter tell that object
+ * apart from the plain app that sits in the same argument position and
+ * has no prefix at all.
+ */
+export interface MountObjectCarrier {
+  /** Modules the carrier's constructor is imported from (Flask's `flask`). */
+  importModule: string[];
+  /** Constructor building the carrier, as its library exports it (Flask's `Blueprint`). */
+  constructorName: string;
+  /** Position of the carrier among the mount object's constructor arguments. */
+  argumentIndex: number;
+  /** Keyword stating the carrier's prefix, at its construction and at its registration alike (Flask's `url_prefix`). */
+  prefixKeyword: string;
+  /**
+   * Method handing the carrier to an already-built mount object
+   * (flask-restx's `init_app`, the application-factory spelling of
+   * `Api(blueprint)`). Unset means the constructor argument is the
+   * only way in.
+   */
+  handoffMethodName?: string;
+  /**
+   * Method registering the carrier somewhere else (Flask's
+   * `register_blueprint`). The adapter reads it only to abstain: a
+   * registration restating the prefix, putting the carrier inside
+   * another carrier, or happening twice moves the served path
+   * somewhere the carrier's own construction no longer says.
+   */
+  registerMethodName: string;
 }
 
 /** What a literal prefix at the mount call does to the one the constructor stated. */
@@ -214,3 +282,6 @@ export type PrefixTrailingSlash = "kept" | "trimmed";
 
 /** What a library makes of a prefix written as a value it takes as no value at all. */
 export type NoValuePrefix = "unstated" | "unreadable";
+
+/** What a library serves for a path with repeated slashes in it. */
+export type PathRepeatedSlashes = "kept" | "merged";

@@ -195,8 +195,47 @@ export type FlaskNamespaceSpec =
       secondResources: FlaskResourceSpec[];
     };
 
+/**
+ * How a prefix is written at a site the library concatenates as given,
+ * rather than stripping a trailing slash off first: `Api(prefix=...)`
+ * and `Blueprint(name, __name__, url_prefix=...)`. A trailing slash
+ * there really does serve a doubled slash, which is why the literal
+ * spelling carries the flag.
+ */
+export type FlaskWrittenPrefix =
+  | { type: "literal"; trailingSlash: boolean }
+  /** No keyword at all. */
+  | { type: "absent" }
+  /** A falsy value, which the library drops the same way it drops a keyword nobody wrote. */
+  | { type: "noValue"; written: FlaskNoValue }
+  /** A module constant rather than a literal. */
+  | { type: "computed" };
+
+/**
+ * What the app's `Api` is built on, which is where a blueprint prefix
+ * enters the served path. "app" is the shape with no blueprint at all;
+ * the rest hang the `Api` off a blueprint, either registered plainly
+ * or registered somewhere that moves its routes off the prefix its own
+ * construction stated.
+ */
+export type FlaskApiMount =
+  /** `Api(app)`, an app carrying no prefix of its own. */
+  | { type: "app" }
+  /** `Api(bp)` with `bp = Blueprint(...)`, registered straight onto the app. */
+  | { type: "blueprint"; prefix: FlaskWrittenPrefix }
+  /** `Api()` then `api.init_app(bp)`, the application-factory spelling of the same thing. */
+  | { type: "blueprintHandedOver"; prefix: FlaskWrittenPrefix }
+  /** `app.register_blueprint(bp, url_prefix="/reg")`, which serves the routes off the blueprint's own prefix. */
+  | { type: "blueprintRegisteredElsewhere" }
+  /** `outer.register_blueprint(bp)`, one hop past what the prefix reading follows. */
+  | { type: "blueprintNested" };
+
 export interface FlaskProgramSpec {
   importStyle: FlaskImportStyle;
+  /** What the `Api` is built on, and the blueprint prefix that comes with it. */
+  apiMount: FlaskApiMount;
+  /** `Api(..., prefix=...)`, which the library serves behind the blueprint's prefix and in front of every namespace path. */
+  apiPrefix: FlaskWrittenPrefix;
   /** Resources decorated through the app's own `Api` or the project wrapper, with no namespace of their own. */
   resources: FlaskResourceSpec[];
   /** Resources declared on a namespace, one module per namespace, mounted from main.py. */
@@ -821,7 +860,12 @@ function flaskResourceLines(
  * everywhere.
  */
 function canonicalFlaskPath(path: string): string {
-  return path.replace(/<(?:\w+(?:\(.*?\))?:)?(\w+)>/g, "{$1}");
+  // A prefix written with a trailing slash leaves the rule carrying a
+  // repeated slash, and Werkzeug answers that at the merged path and
+  // redirects the written one.
+  return path
+    .replace(/<(?:\w+(?:\(.*?\))?:)?(\w+)>/g, "{$1}")
+    .replace(/\/{2,}/g, "/");
 }
 
 interface FlaskRenderState {
@@ -838,7 +882,13 @@ interface RenderFlaskResourcesOptions {
   prefix: string;
   /** Whether a literal-path resource here is one the pack claims a path for. */
   claimable: boolean;
-  /** Declares the first resource with an empty route path, which serves the prefix itself. Ignored when the prefix is empty, since the app refuses a rule with no path at all. */
+  /**
+   * Declares the first resource with an empty route path, which serves
+   * the namespace's own path. Only set where the namespace states a
+   * path: with nothing of its own the rule would come out as the Api's
+   * own root, which the library answers 404 at, or as no path at all,
+   * which the app refuses to register.
+   */
   emptyFirstPath?: boolean;
   /** Overrides where the app serves these, for resources served nowhere. */
   servedPathsOf?: (served: string) => string[];
@@ -851,8 +901,7 @@ function renderFlaskResources(options: RenderFlaskResourcesOptions): string[] {
     const ri = options.state.resourceIndex;
     options.state.resourceIndex += 1;
 
-    const empty =
-      index === 0 && options.emptyFirstPath === true && options.prefix !== "";
+    const empty = index === 0 && options.emptyFirstPath === true;
     // An empty route path states no parameter, so the methods must
     // take none either: a handler asking for one the rule never binds
     // is a program that answers 500, not a program under test.
@@ -1059,10 +1108,17 @@ function mountSiteRenderings(
   };
 }
 
+/** What the `Api` a namespace mounts onto contributes to every path behind it. */
+interface ApiPrefixContext {
+  prefix: string;
+  readable: boolean;
+}
+
 function namespaceRenderers(
   k: number,
   state: FlaskRenderState,
   apiVariable: string,
+  api: ApiPrefixContext,
 ): DispatchTable<FlaskNamespaceSpec, NamespaceRendering> {
   const file = (lines: string[]) => ({
     path: `namespaces/ns${k}.py`,
@@ -1083,11 +1139,10 @@ function namespaceRenderers(
       // mount that states nothing leaves the namespace where its
       // constructor put it.
       const prefix = mount.overridePrefix ?? path.prefix;
-      // The composed path is readable only when every end is: an
-      // override the pack declines to follow, or a registration it
-      // cannot follow to a namespace, costs the namespace's own
-      // readable path too.
-      const claimable = path.readable && mount.readable && site.readable;
+      // Any one end the pack declines to follow costs the namespace's
+      // own readable path too.
+      const claimable =
+        path.readable && mount.readable && site.readable && api.readable;
       return {
         file: file([
           ...path.prelude,
@@ -1098,9 +1153,9 @@ function namespaceRenderers(
             resources: namespace.resources,
             state,
             routeDecorator: "ns.route",
-            prefix,
+            prefix: `${api.prefix}${prefix}`,
             claimable,
-            emptyFirstPath: namespace.emptyPathResource,
+            emptyFirstPath: namespace.emptyPathResource && prefix !== "",
           }),
         ]),
         mainImport,
@@ -1140,7 +1195,7 @@ function namespaceRenderers(
           resources: namespace.resources,
           state,
           routeDecorator: "ns.route",
-          prefix: `/t${k}`,
+          prefix: `${api.prefix}/t${k}`,
           claimable: false,
         }),
       ]),
@@ -1175,7 +1230,7 @@ function namespaceRenderers(
           resources: namespace.secondResources,
           state,
           routeDecorator: "ns.route",
-          prefix: `/rb${k}`,
+          prefix: `${api.prefix}/rb${k}`,
           claimable: false,
         }),
       ]),
@@ -1204,6 +1259,161 @@ function registerFunctionLines(mounts: string[]): string[] {
   ];
 }
 
+/** What one written prefix contributes, and whether the pack reads it. */
+interface WrittenPrefixRendering {
+  /** The keyword arguments the call carries for this prefix: one, or none where the source writes none. */
+  arguments: string[];
+  /** A module constant the call reads its prefix from, for the non-literal shape. */
+  prelude: string[];
+  /** What the library puts in front of every path behind this site. */
+  prefix: string;
+  readable: boolean;
+}
+
+function writtenPrefixRenderings(
+  keyword: string,
+  literal: string,
+  constantName: string,
+  computed: string,
+): DispatchTable<FlaskWrittenPrefix, WrittenPrefixRendering> {
+  return {
+    literal: (spec) => {
+      // The library concatenates this one as written, so a trailing
+      // slash serves a doubled one rather than being stripped.
+      const written = `${literal}${spec.trailingSlash ? "/" : ""}`;
+      return {
+        arguments: [`${keyword}="${written}"`],
+        prelude: [],
+        prefix: written,
+        readable: true,
+      };
+    },
+    absent: () => ({ arguments: [], prelude: [], prefix: "", readable: true }),
+    noValue: (spec) => ({
+      arguments: [`${keyword}=${FLASK_NO_VALUE_SOURCE[spec.written]}`],
+      prelude: [],
+      prefix: "",
+      readable: true,
+    }),
+    computed: () => ({
+      arguments: [`${keyword}=${constantName}`],
+      prelude: [`${constantName} = "${computed}"`, ""],
+      prefix: computed,
+      readable: false,
+    }),
+  };
+}
+
+const blueprintPrefixRenderings = writtenPrefixRenderings(
+  "url_prefix",
+  "/bp",
+  "BP_PREFIX",
+  "/cbp",
+);
+
+const apiPrefixRenderings = writtenPrefixRenderings(
+  "prefix",
+  "/ap",
+  "API_PREFIX",
+  "/cap",
+);
+
+/** How main.py builds the app and its `Api`, and what that puts in front of every route the program serves. */
+interface ApiRendering {
+  /** Whether main.py imports Flask's `Blueprint` alongside `Flask`. */
+  usesBlueprint: boolean;
+  /** Lines building the app, any blueprint, and the `Api`, ahead of every resource. */
+  setupLines: string[];
+  /** Lines registering the blueprint, placed after every namespace mount. */
+  registerLines: string[];
+  prefix: string;
+  readable: boolean;
+}
+
+function apiMountRenderings(
+  apiVariable: string,
+  apiPrefix: WrittenPrefixRendering,
+): DispatchTable<FlaskApiMount, ApiRendering> {
+  const built = (on: string[]) =>
+    `${apiVariable} = Api(${[...on, ...apiPrefix.arguments, "doc=False"].join(", ")})`;
+  const blueprint = (name: string, prefixArguments: string[]) =>
+    `${name} = Blueprint("${name}", __name__${prefixArguments.map((argument) => `, ${argument}`).join("")})`;
+  const onBlueprint = (options: {
+    prefix: FlaskWrittenPrefix;
+    setupExtra?: string[];
+    registerLines: string[];
+    prefixOverride?: string;
+    readable: boolean;
+  }): ApiRendering => {
+    const rendered = dispatchByType(blueprintPrefixRenderings, options.prefix);
+    return {
+      usesBlueprint: true,
+      setupLines: [
+        ...rendered.prelude,
+        ...apiPrefix.prelude,
+        "app = Flask(__name__)",
+        blueprint("bp", rendered.arguments),
+        ...(options.setupExtra ?? [built(["bp"])]),
+      ],
+      registerLines: options.registerLines,
+      prefix: `${options.prefixOverride ?? rendered.prefix}${apiPrefix.prefix}`,
+      readable: options.readable && rendered.readable && apiPrefix.readable,
+    };
+  };
+
+  return {
+    app: () => ({
+      usesBlueprint: false,
+      setupLines: [
+        ...apiPrefix.prelude,
+        "app = Flask(__name__)",
+        built(["app"]),
+      ],
+      registerLines: [],
+      prefix: apiPrefix.prefix,
+      readable: apiPrefix.readable,
+    }),
+    blueprint: (mount) =>
+      onBlueprint({
+        prefix: mount.prefix,
+        registerLines: ["app.register_blueprint(bp)"],
+        readable: true,
+      }),
+    blueprintHandedOver: (mount) =>
+      onBlueprint({
+        prefix: mount.prefix,
+        setupExtra: [built([]), `${apiVariable}.init_app(bp)`],
+        registerLines: ["app.register_blueprint(bp)"],
+        readable: true,
+      }),
+    // The registration states a prefix of its own, so the blueprint's
+    // routes are served somewhere its construction never said.
+    blueprintRegisteredElsewhere: () =>
+      onBlueprint({
+        prefix: { type: "literal", trailingSlash: false },
+        registerLines: ['app.register_blueprint(bp, url_prefix="/reg")'],
+        prefixOverride: "/reg",
+        readable: false,
+      }),
+    // A blueprint registered inside another sits one hop past what the
+    // prefix reading follows.
+    blueprintNested: () =>
+      onBlueprint({
+        prefix: { type: "literal", trailingSlash: false },
+        setupExtra: [
+          blueprint("outer", ['url_prefix="/outer"']),
+          built(["bp"]),
+        ],
+        registerLines: [
+          "outer.register_blueprint(bp)",
+          "app.register_blueprint(outer)",
+        ],
+        prefixOverride: "/outer/bp",
+        readable: false,
+      }),
+  };
+}
+
 const FLASK_ROUTE_DECORATORS: Record<FlaskImportStyle, string> = {
   direct: "api.route",
   wrapper: "route",
@@ -1224,20 +1434,27 @@ function renderFlaskProgram(
   const state: FlaskRenderState = { resourceIndex: 0, intents: [] };
   const routeDecorator = FLASK_ROUTE_DECORATORS[spec.importStyle];
   const apiVariable = FLASK_API_VARIABLES[spec.importStyle];
+  const api = dispatchByType(
+    apiMountRenderings(
+      apiVariable,
+      dispatchByType(apiPrefixRenderings, spec.apiPrefix),
+    ),
+    spec.apiMount,
+  );
 
   // Resources with no namespace of their own hang on whatever the
-  // import style gives them, and are served at the paths their
-  // decorators write.
+  // import style gives them, and are served under whatever the Api
+  // carries plus the paths their decorators write.
   const resourceLines = renderFlaskResources({
     resources: spec.resources,
     state,
     routeDecorator,
-    prefix: "",
-    claimable: true,
+    prefix: api.prefix,
+    claimable: api.readable,
   });
 
   const namespaces = spec.namespaces.map((namespace, k) =>
-    dispatchByType(namespaceRenderers(k, state, apiVariable), namespace),
+    dispatchByType(namespaceRenderers(k, state, apiVariable, api), namespace),
   );
   const namespaceImports = namespaces.map((rendering) =>
     rendering.mainImport.replace("PACKAGE", packageName),
@@ -1261,16 +1478,18 @@ function renderFlaskProgram(
 
   if (spec.importStyle === "direct") {
     const mainLines = [
-      "from flask import Flask",
+      api.usesBlueprint
+        ? "from flask import Blueprint, Flask"
+        : "from flask import Flask",
       "from flask_restx import Api, Resource",
       ...namespaceImports,
       "",
-      "app = Flask(__name__)",
-      "api = Api(app, doc=False)",
+      ...api.setupLines,
       "",
       "",
       ...resourceLines,
       ...namespaceMounts,
+      ...api.registerLines,
       "",
     ];
     return {
@@ -1317,17 +1536,19 @@ function renderFlaskProgram(
   ];
 
   const mainLines = [
-    "from flask import Flask",
+    api.usesBlueprint
+      ? "from flask import Blueprint, Flask"
+      : "from flask import Flask",
     "from flask_restx import Api",
     "",
     `from ${packageName}.routes import resources as _resources`,
     `from ${packageName}.wrappers.restx import api as resource_namespace`,
     ...namespaceImports,
     "",
-    "app = Flask(__name__)",
-    "restx_api = Api(app, doc=False)",
-    "restx_api.add_namespace(resource_namespace)",
+    ...api.setupLines,
+    `${apiVariable}.add_namespace(resource_namespace)`,
     ...namespaceMounts,
+    ...api.registerLines,
     "",
   ];
 
