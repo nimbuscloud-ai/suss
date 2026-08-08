@@ -11,18 +11,36 @@ import { parsePython } from "./parser.js";
 import { bindModule } from "./scope.js";
 
 describe("unitKey", () => {
-  it("joins the file path with the byte range", () => {
-    expect(unitKey("myapp/routes/todos.py", { start: 10, end: 42 })).toBe(
-      "myapp/routes/todos.py:10-42",
+  it("joins the file path, the lines, and the name", () => {
+    expect(
+      unitKey("myapp/routes/todos.py", { start: 10, end: 42 }, "list_todos"),
+    ).toBe("myapp/routes/todos.py:10-42#list_todos");
+  });
+
+  it("tells two units on one line apart", () => {
+    // The range is lines, so two units that share a line share it.
+    // Without the name in the key they are one key, and `entry` is a
+    // set, so the second one disappears from it.
+    const range = { start: 4, end: 4 };
+    expect(unitKey("routes.py", range, "get")).not.toBe(
+      unitKey("routes.py", range, "post"),
     );
   });
 });
 
 describe("emitEntryFact", () => {
-  it("adds one entry tuple keyed by file and range", () => {
+  it("adds one entry tuple keyed by file, lines, and name", () => {
     const db = new Database();
-    emitEntryFact(db, "myapp/routes/todos.py", { start: 0, end: 10 });
-    expect(db.facts("entry")).toEqual([["myapp/routes/todos.py:0-10"]]);
+    emitEntryFact(db, "myapp/routes/todos.py", { start: 1, end: 10 }, "todos");
+    expect(db.facts("entry")).toEqual([["myapp/routes/todos.py:1-10#todos"]]);
+  });
+
+  it("keeps both units when two share a line", () => {
+    const db = new Database();
+    const range = { start: 4, end: 4 };
+    emitEntryFact(db, "routes.py", range, "get");
+    emitEntryFact(db, "routes.py", range, "post");
+    expect(db.facts("entry")).toHaveLength(2);
   });
 });
 

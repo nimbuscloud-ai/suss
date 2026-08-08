@@ -14,8 +14,20 @@ export interface Range {
   end: number;
 }
 
+/**
+ * The lines a node spans, counting from one.
+ *
+ * A summary's `location.range` is a line number everywhere else in the
+ * IR: the TypeScript adapter fills it from `getStartLineNumber`, and
+ * `suss inspect` prints it as "line N". tree-sitter counts bytes and
+ * rows instead, and handing back the byte offset put `line 348` on a
+ * 12-line file.
+ */
 export function rangeOf(node: RbNode): Range {
-  return { start: node.startIndex, end: node.endIndex };
+  return {
+    start: node.startPosition.row + 1,
+    end: node.endPosition.row + 1,
+  };
 }
 
 export function field(node: RbNode, name: string): RbNode | null {

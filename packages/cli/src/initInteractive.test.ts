@@ -106,6 +106,22 @@ describe("suss init, guided", () => {
     expect(output()).toContain("No packs to suggest");
   });
 
+  it("names the language it found when nothing in the project names a pack", async () => {
+    // A directory of Python with no requirements file beside it. There
+    // is nothing to suggest, and being told only that nothing matched
+    // leaves a person unable to tell whether suss saw the Python at
+    // all.
+    write("app/main.py", "def handler():\n    return {}\n");
+
+    const code = await initInteractive({ dir });
+
+    expect(code).toBe(0);
+    expect(output()).toContain(
+      "There is Python code here and suss could not tell which packs read it",
+    );
+    expect(output()).toContain("Name one yourself with -f");
+  });
+
   it("says what it could not read, rather than reporting a project with nothing in it", async () => {
     // A legacy Python project whose setup.py computes its dependency
     // list has no pack to suggest and one thing worth saying. The

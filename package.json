@@ -41,6 +41,7 @@
     "pretest": "node scripts/assertOwnWorkspace.mjs",
     "test": "turbo test --concurrency=3",
     "test:coverage": "turbo test:coverage --concurrency=3",
+    "test:acceptance": "npm run -w @suss/acceptance test",
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
     "format": "biome format --write .",

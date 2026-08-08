@@ -169,6 +169,28 @@ describe("runCli — top-level dispatch", () => {
     expect(exit).toBe(1);
     expect(io.stderr).toContain("nope");
   });
+
+  it("turns a flag typed without its value into a sentence", async () => {
+    // Somebody who typed --flow and forgot the request in quotes. Node
+    // throws a TypeError, and printing that as-is buries a typo under
+    // ten frames of node internals.
+    const { exit, io } = await capture(() =>
+      runCli(["inspect", "--flow", "--dir", tmpDir]),
+    );
+
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("--flow");
+    expect(io.stderr).toContain("Run `suss --help` for the flags.");
+    expect(io.stderr).not.toContain("    at ");
+  });
+
+  it("lets a throw that is not the person's mistake keep its stack", async () => {
+    // A summary file that parses as JSON but is not an array is the
+    // person's mistake and reads as a sentence. A directory in place
+    // of a file is not: the read throws EISDIR, which is suss failing
+    // to check something, and the stack is where to start looking.
+    await expect(runCli(["inspect", tmpDir])).rejects.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------

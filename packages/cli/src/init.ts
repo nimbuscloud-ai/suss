@@ -844,10 +844,10 @@ function unreadLines(report: InitReport): string[] {
  * place. Not knowing which packs apply is worth saying; suggesting
  * nothing and looking confident is not.
  */
-function unnamedLanguageLines(report: InitReport): string[] {
+export function unnamedLanguages(report: InitReport): Language[] {
   const languages = report.languages ?? [];
   const covered = new Set(report.suggestions.map(languageOf));
-  const uncovered = languages.filter(
+  return languages.filter(
     (language) =>
       !covered.has(language) &&
       // A stray script in another language is not a project in that
@@ -856,15 +856,22 @@ function unnamedLanguageLines(report: InitReport): string[] {
       (languages.length === 1 ||
         projectFilesOf(report.root, language).length > 0),
   );
+}
+
+/** What `unnamedLanguages` says, in the printed report. */
+export function unnamedLanguageSentence(language: Language): string {
+  return `There is ${LANGUAGE_LABEL[language]} code here and suss could not tell which packs read it.`;
+}
+
+function unnamedLanguageLines(report: InitReport): string[] {
+  const uncovered = unnamedLanguages(report);
   if (uncovered.length === 0) {
     return [];
   }
 
   const lines = [""];
   for (const language of uncovered) {
-    lines.push(
-      `  ${yellow("!")} There is ${LANGUAGE_LABEL[language]} code here and suss could not tell which packs read it.`,
-    );
+    lines.push(`  ${yellow("!")} ${unnamedLanguageSentence(language)}`);
   }
   lines.push(
     dim("    Name one yourself with -f, and `suss --help` lists them all."),

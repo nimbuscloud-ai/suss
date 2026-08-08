@@ -10,17 +10,30 @@
 
 import type { Database } from "@suss/datalog";
 
+/**
+ * What names one discovered unit for the rest of a run.
+ *
+ * The name is part of the key because the range is lines, and two
+ * units can share a line: `field :id, ID; field :name, String` is one
+ * line and two units. Keying on the range alone made those one key,
+ * and the `entry` relation is a set, so the second unit vanished from
+ * it. This is the same thing `summaryIdentity.ts` does when two
+ * summaries claim one id: what tells them apart is what they are
+ * called.
+ */
 export function unitKey(
   filePath: string,
   range: { start: number; end: number },
+  name: string,
 ): string {
-  return `${filePath}:${range.start}-${range.end}`;
+  return `${filePath}:${range.start}-${range.end}#${name}`;
 }
 
 export function emitEntryFact(
   db: Database,
   filePath: string,
   range: { start: number; end: number },
+  name: string,
 ): void {
-  db.add("entry", [unitKey(filePath, range)]);
+  db.add("entry", [unitKey(filePath, range, name)]);
 }

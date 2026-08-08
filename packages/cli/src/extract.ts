@@ -25,6 +25,7 @@ import {
 } from "./gitSubmodules.js";
 import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
+import { UsageError } from "./usageError.js";
 
 import type { PythonPack } from "@suss/adapter-python";
 import type { RubyPack } from "@suss/adapter-ruby";
@@ -51,17 +52,7 @@ import type { Language } from "./language.js";
  */
 type PackFactory = (...args: never[]) => PatternPack;
 
-/**
- * Something the person running the command can fix by typing something
- * else. The dispatch prints the sentence and stops; a stack trace above
- * a message about a missing flag helps nobody.
- */
-export class UsageError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "UsageError";
-  }
-}
+export { UsageError };
 
 /**
  * Build the pack, and turn anything it objects to into a sentence
@@ -369,7 +360,7 @@ async function loadPackFactory(spec: string): Promise<LoadedFactory> {
     }
   }
 
-  throw new Error(
+  throw new UsageError(
     [
       `Unknown pack: "${name}".`,
       `Tried to import ${candidates.map((c) => `"${c}"`).join(" and ")}.`,

@@ -14,11 +14,12 @@ import { parseArgs } from "node:util";
 import { check, checkDir } from "./check.js";
 import { contract } from "./contract.js";
 import { corroborate } from "./corroborateCommand.js";
-import { extract, UsageError } from "./extract.js";
+import { extract } from "./extract.js";
 import { inspectFlow } from "./flow.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
+import { UsageError } from "./usageError.js";
 
 import type { ContractSource } from "./contract.js";
 import type { ExtractOptions } from "./extract.js";
@@ -125,10 +126,54 @@ Exit codes:
  * process.exit and never throws for user-visible errors (those go to
  * stderr and yield a non-zero exit code instead).
  *
- * Unhandled exceptions thrown by the underlying subcommands DO propagate
- * — the entry point converts them to "Error: <message>" + exit 1.
+ * A subcommand that throws a UsageError is reporting something the
+ * person can fix by typing something else, so its message is printed
+ * on its own and the run exits 1. Every other throw propagates, and
+ * the entry point turns it into "Error: <message>" plus a stack, which
+ * is what a bug in suss deserves.
  */
 export async function runCli(args: string[]): Promise<number> {
+  try {
+    return await dispatch(args);
+  } catch (err) {
+    // Anything a person can fix by typing something else is a
+    // sentence. Every other throw keeps its stack, because that one is
+    // a bug in suss and the stack says where.
+    const sentence = asSentence(err);
+    if (sentence === null) {
+      throw err;
+    }
+
+    process.stderr.write(`${sentence}\n`);
+    return 1;
+  }
+}
+
+/**
+ * What to print for a throw a person caused, or null when the throw is
+ * a bug in suss.
+ *
+ * Node's own argument parser counts. `suss inspect --flow --dir
+ * summaries/` is somebody who forgot to type the request in quotes,
+ * and node reports it as a TypeError, which unhandled reaches them as
+ * ten frames of node internals for what is a typo. Its message is
+ * already the right sentence, so it only needs the frames taken off
+ * and a pointer to the flags.
+ */
+function asSentence(err: unknown): string | null {
+  if (err instanceof UsageError) {
+    return err.message;
+  }
+
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === "string" && code.startsWith("ERR_PARSE_ARGS_")) {
+    return `${(err as Error).message}\nRun \`suss --help\` for the flags.`;
+  }
+
+  return null;
+}
+
+async function dispatch(args: string[]): Promise<number> {
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
     process.stdout.write(`${USAGE}\n`);
     return 0;
@@ -262,17 +307,7 @@ async function runExtract(args: string[]): Promise<number> {
     ...(values["fail-on-pack-error"] === true ? { failOnPackError: true } : {}),
   };
 
-  try {
-    await extract(options);
-  } catch (err) {
-    // Anything a person can fix by typing something else is a sentence,
-    // not a stack trace.
-    if (!(err instanceof UsageError)) {
-      throw err;
-    }
-    process.stderr.write(`${err.message}\n`);
-    return 1;
-  }
+  await extract(options);
 
   return process.exitCode === 1 ? 1 : 0;
 }

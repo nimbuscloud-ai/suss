@@ -92,7 +92,7 @@ export async function extractPythonProject(
       // built for a different kind of reading.
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
-      emitEntryFact(db, file, raw.identity.range);
+      emitEntryFact(db, file, raw.identity.range, raw.identity.name);
     }
 
     emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });

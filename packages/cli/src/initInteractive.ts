@@ -19,7 +19,12 @@ import path from "node:path";
 
 import * as p from "@clack/prompts";
 
-import { formatInitReport, inspectProject } from "./init.js";
+import {
+  formatInitReport,
+  inspectProject,
+  unnamedLanguageSentence,
+  unnamedLanguages,
+} from "./init.js";
 import { run } from "./processRun.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
@@ -71,6 +76,7 @@ export async function initInteractive(
       "No packs to suggest",
     );
     reportUnread(targets);
+    reportUnnamedLanguages(targets);
     p.outro("Nothing to set up.");
     return 0;
   }
@@ -129,8 +135,18 @@ function findTargets(root: string): Target[] {
     .filter((target) => worthReporting(target.report));
 }
 
+/**
+ * Whether this package gives init anything to say. Packs to suggest is
+ * the usual reason, a manifest suss could not read is the second, and
+ * source in a language nothing here matched is the third: a directory
+ * of Python with no requirements file beside it produces no
+ * suggestions and no unread manifest, and dropping it means a person
+ * is told nothing matched without being told suss saw the Python.
+ */
 const worthReporting = (report: InitReport): boolean =>
-  report.suggestions.length > 0 || (report.unread ?? []).length > 0;
+  report.suggestions.length > 0 ||
+  (report.unread ?? []).length > 0 ||
+  unnamedLanguages(report).length > 0;
 
 /** Say what suss could not read, before anything is installed or run. */
 function reportUnread(targets: Target[]): void {
@@ -143,6 +159,25 @@ function reportUnread(targets: Target[]): void {
       p.log.warn(`${where}: ${entry.reason}`);
     }
   }
+}
+
+/** Say which language's code is here that nothing matched a pack to. */
+function reportUnnamedLanguages(targets: Target[]): void {
+  const uncovered = targets.flatMap((target) =>
+    unnamedLanguages(target.report),
+  );
+  if (uncovered.length === 0) {
+    return;
+  }
+
+  for (const language of new Set(uncovered)) {
+    p.log.warn(unnamedLanguageSentence(language));
+  }
+
+  p.note(
+    "Name one yourself with -f, and `suss --help` lists them all.",
+    "Reading it anyway",
+  );
 }
 
 function printable(root: string, targets: Target[]): string {
