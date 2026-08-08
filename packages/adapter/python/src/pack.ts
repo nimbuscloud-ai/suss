@@ -29,6 +29,14 @@ export interface RouteConventions {
   /** Set it only when the library itself binds an annotated local class to the request body. */
   annotatedClassIsRequestBody?: boolean;
   /**
+   * Callables the library uses to inject a parameter rather than read it
+   * off the request. FastAPI's `Depends` and `Security` are these: the
+   * server supplies the value and the client sends nothing, so a
+   * parameter defaulted to one of them is no part of the request however
+   * its annotation reads.
+   */
+  injectedParameterCallees?: string[];
+  /**
    * What the library serves when a composed path ends up with repeated
    * slashes in it. Werkzeug serves the merged path and redirects
    * the written one, so "merged" is what Flask needs; "kept" is the

@@ -68,10 +68,10 @@ describe("read a FastAPI service", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
     expect(inspect.stdout).toContain(
-      "GET /api/items/{item_id}  (fastapi handler | line 20",
+      "GET /api/items/{item_id}  (fastapi handler | line 32",
     );
     expect(inspect.stdout).toContain(
-      "POST /api/items  (fastapi handler | line 25",
+      "POST /api/items  (fastapi handler | line 37",
     );
   });
 

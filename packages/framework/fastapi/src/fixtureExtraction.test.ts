@@ -112,6 +112,11 @@ describe("extraction over fixtures/python-fastapi", () => {
       (i) => i.type === "parameter" && i.name === "payload",
     );
     expect(payload?.type === "parameter" && payload.role).toBe("requestBody");
+
+    const injected = createItem?.inputs.find(
+      (input) => input.type === "parameter" && input.name === "user",
+    );
+    expect(injected?.type === "parameter" && injected.role).toBe(null);
   });
 
   it("keeps the runtime-built path discovered by name, with no path and a stated gap", async () => {

@@ -22,6 +22,7 @@ describe("fastapiFramework", () => {
         },
         pathParamSyntax: "braces",
         annotatedClassIsRequestBody: true,
+        injectedParameterCallees: ["Depends", "Security"],
         defaultStatusCode: 200,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",

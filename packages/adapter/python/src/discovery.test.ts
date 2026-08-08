@@ -75,6 +75,16 @@ const fastapiLike: PythonPack = {
   ],
 };
 
+const fastapiWithInjection: PythonPack = {
+  ...fastapiLike,
+  discovery: [
+    {
+      ...fastapiLike.discovery[0],
+      injectedParameterCallees: ["Depends", "Security"],
+    } as PythonPack["discovery"][number],
+  ],
+};
+
 async function unitsOf(source: string, packs: PythonPack[]) {
   const tree = await parsePython(source);
   const binding = bindModule(tree.rootNode);
@@ -405,6 +415,74 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
         typeText: "TodoResponse",
       },
     ]);
+  });
+
+  it("gives no role to a parameter the library injects, however its annotation reads", async () => {
+    const injected = [
+      "from typing import Annotated",
+      "",
+      "from fastapi import Depends, FastAPI, Security",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      "class User:",
+      "    pass",
+      "",
+      "",
+      "class OrderCreate:",
+      "    pass",
+      "",
+      "",
+      "def get_user() -> User:",
+      "    pass",
+      "",
+      "",
+      '@app.post("/orders")',
+      "def create_order(",
+      "    body: OrderCreate,",
+      "    current_user: User = Depends(get_user),",
+      "    annotated_user: Annotated[User, Depends(get_user)] = None,",
+      '    scoped: User = Security(get_user, scopes=["admin"]),',
+      "):",
+      "    pass",
+      "",
+    ].join("\n");
+
+    const units = await unitsOf(injected, [fastapiWithInjection]);
+    const createOrder = units.find((u) => u.identity.name === "create_order");
+    expect(createOrder?.parameters?.map((p) => [p.name, p.role])).toEqual([
+      ["body", "requestBody"],
+      ["current_user", null],
+      ["annotated_user", null],
+      ["scoped", null],
+    ]);
+  });
+
+  it("still reads an injected parameter as a request body for a pack that declares no injectors", async () => {
+    const injected = [
+      "from fastapi import Depends, FastAPI",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      "class User:",
+      "    pass",
+      "",
+      "",
+      "def get_user() -> User:",
+      "    pass",
+      "",
+      "",
+      '@app.post("/orders")',
+      "def create_order(current_user: User = Depends(get_user)):",
+      "    pass",
+      "",
+    ].join("\n");
+
+    const units = await unitsOf(injected, [fastapiLike]);
+    const createOrder = units.find((u) => u.identity.name === "create_order");
+    expect(createOrder?.parameters?.[0]?.role).toBe("requestBody");
   });
 
   it("reads Starlette's typed converters and drops the converter from the canonical path", async () => {
