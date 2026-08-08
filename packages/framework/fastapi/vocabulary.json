@@ -5,6 +5,8 @@
   "prefix": "FastAPI: the path-prefix keyword on APIRouter(...) and include_router(...)",
   "response_model": "FastAPI: route-decorator keyword naming the declared response body model",
   "status_code": "FastAPI: route-decorator keyword naming the declared response status",
+  "Depends": "FastAPI: the callable that declares a parameter the framework resolves and passes in, rather than reads off the request",
+  "Security": "FastAPI: Depends with scopes, declared the same way and injected the same way",
   "decoratedFunctionRoute": "suss: PythonDiscoveryPattern variant tag, defined in @suss/adapter-python",
   "braces": "suss: path-template syntax name, defined in @suss/adapter-python; selects the {name} reader for FastAPI's Starlette-style paths"
 }

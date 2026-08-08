@@ -56,6 +56,9 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         verbAttributeNames: VERB_ATTRIBUTE_NAMES,
         pathParamSyntax: "braces",
         annotatedClassIsRequestBody: true,
+        // FastAPI resolves both of these itself and calls the handler with
+        // the result, so a parameter defaulted to one is never sent.
+        injectedParameterCallees: ["Depends", "Security"],
         // FastAPI returns 200 for a route that declares no status.
         defaultStatusCode: 200,
         responseModelKeyword: "response_model",

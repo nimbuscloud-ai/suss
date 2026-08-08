@@ -282,6 +282,7 @@ function classRouteUnits(
           routePath,
           requestBodyFromAnnotatedClass:
             pattern.annotatedClassIsRequestBody === true,
+          injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
           definitionNode: maybeMethod,
           enclosingScope: classScope,
           module,
@@ -498,6 +499,7 @@ function functionRouteUnits(
       ),
       requestBodyFromAnnotatedClass:
         pattern.annotatedClassIsRequestBody === true,
+      injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
       definitionNode: functionNode,
       enclosingScope: module.moduleScope,
       module,
@@ -522,6 +524,8 @@ interface BuildRouteUnitOptions {
   /** The boundary binding only gets a path when this came back written. */
   routePath: Reading<PathTemplateReading>;
   requestBodyFromAnnotatedClass: boolean;
+  /** Names the pack says the library injects with, so those parameters claim no role. */
+  injectedCallees: ReadonlySet<string>;
   definitionNode: PyNode;
   enclosingScope: Scope;
   module: ModuleBinding;
@@ -615,6 +619,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     method,
     routePath,
     requestBodyFromAnnotatedClass,
+    injectedCallees,
     definitionNode,
     enclosingScope,
     module,
@@ -632,6 +637,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     ctx,
     template?.paramNames ?? null,
     requestBodyFromAnnotatedClass,
+    injectedCallees,
     skipReceiverParam,
   );
 
@@ -745,6 +751,7 @@ function readParameters(
   ctx: ReturnType<typeof createAnnotationContext>,
   pathParamNames: ReadonlySet<string> | null,
   requestBodyFromAnnotatedClass: boolean,
+  injectedCallees: ReadonlySet<string>,
   skipReceiverParam: boolean,
 ): RawParameter[] {
   const parametersNode = field(definitionNode, "parameters");
@@ -768,6 +775,7 @@ function readParameters(
       ctx,
       pathParamNames,
       requestBodyFromAnnotatedClass,
+      injectedCallees,
       position,
     );
     if (parsed !== null) {
@@ -791,6 +799,7 @@ function readParameter(
   ctx: ReturnType<typeof createAnnotationContext>,
   pathParamNames: ReadonlySet<string> | null,
   requestBodyFromAnnotatedClass: boolean,
+  injectedCallees: ReadonlySet<string>,
   position: number,
 ): RawParameter | null {
   const info = parameterNameAndType(param);
@@ -800,12 +809,9 @@ function readParameter(
   const { name, typeNode } = info;
   const shape =
     typeNode !== null ? annotationToShape(typeNode, scope, ctx) : null;
-  const role = roleOf(
-    name,
-    shape,
-    pathParamNames,
-    requestBodyFromAnnotatedClass,
-  );
+  const role = isInjectedParameter(param, injectedCallees)
+    ? null
+    : roleOf(name, shape, pathParamNames, requestBodyFromAnnotatedClass);
   return {
     name,
     position,
@@ -841,6 +847,68 @@ function roleOf(
   }
 
   return "queryParams";
+}
+
+/** The callee's own name, for `Depends(...)` and for `fastapi.Depends(...)` alike. */
+function calleeName(call: PyNode): string | null {
+  const callee = field(call, "function");
+  if (callee === null) {
+    return null;
+  }
+  if (callee.type === "identifier") {
+    return callee.text;
+  }
+  if (callee.type === "attribute") {
+    return field(callee, "attribute")?.text ?? null;
+  }
+  return null;
+}
+
+/**
+ * Whether the library supplies this parameter itself. The value is written
+ * either as the default (`user: User = Depends(get_user)`) or inside an
+ * `Annotated[...]` annotation, which is the spelling FastAPI's own docs
+ * moved to, and both mean the client sends nothing.
+ */
+function isInjectedParameter(
+  param: PyNode,
+  injectedCallees: ReadonlySet<string>,
+): boolean {
+  if (injectedCallees.size === 0) {
+    return false;
+  }
+
+  const callsAnInjector = (node: PyNode | null): boolean => {
+    if (node === null) {
+      return false;
+    }
+    const name = calleeName(node);
+    return node.type === "call" && name !== null && injectedCallees.has(name);
+  };
+
+  if (callsAnInjector(field(param, "value"))) {
+    return true;
+  }
+
+  // `Annotated[User, Depends(get_user)]` wraps the call in a generic type
+  // and a type parameter, so the search has to go down rather than read
+  // the annotation's own children.
+  const containsInjectorCall = (
+    node: PyNode | null,
+    depth: number,
+  ): boolean => {
+    if (node === null || depth > 6) {
+      return false;
+    }
+    if (callsAnInjector(node)) {
+      return true;
+    }
+    return node.namedChildren.some((child) =>
+      containsInjectorCall(child, depth + 1),
+    );
+  };
+
+  return containsInjectorCall(field(param, "type"), 0);
 }
 
 function parameterNameAndType(
