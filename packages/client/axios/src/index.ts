@@ -1,4 +1,4 @@
-// @suss/client-axios — PatternPack for the axios HTTP client
+// @suss/client-axios: PatternPack for the axios HTTP client
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
@@ -86,12 +86,12 @@ function discoveryForVerb(
       // A bare specifier gates the way "axios" above does: cheap and
       // exact, since two files spelling a package name the same way
       // mean the same package. A path-shaped module ("./apiClient")
-      // names a location relative to wherever it's written, and the
+      // points at a location relative to wherever it's written, and the
       // pre-filter only ever reads a file's own import text before
       // anything is parsed, so it has no way to tell "./apiClient"
       // and a consumer's "../apiClient" apart from string text alone.
       // Narrowing on that string would exclude the consumer roughly
-      // as often as include it, so a path-shaped factory carries no
+      // as often as include it, so a path-shaped factory gives no
       // gate at all and every file is walked; the discovery layer
       // resolves the module correctly once it's reading a file's
       // imports against a parsed project.
@@ -104,7 +104,7 @@ function discoveryForVerb(
   return patterns;
 }
 
-/** A relative or absolute specifier names a location, not a package. */
+/** A relative or absolute specifier points at a location rather than a package. */
 function isPathShapedSpecifier(specifier: string): boolean {
   return specifier.startsWith(".") || specifier.startsWith("/");
 }
@@ -139,7 +139,7 @@ export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
     },
 
     responseSemantics: [
-      // axios returns AxiosResponse — body lives on .data, not .body or .json()
+      // axios returns AxiosResponse: body lives on .data, not .body or .json()
       { name: "data", access: "property", semantics: { type: "body" } },
       { name: "status", access: "property", semantics: { type: "statusCode" } },
       { name: "headers", access: "property", semantics: { type: "headers" } },

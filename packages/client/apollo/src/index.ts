@@ -1,4 +1,4 @@
-// @suss/client-apollo — PatternPack for @apollo/client.
+// @suss/client-apollo: PatternPack for @apollo/client.
 //
 // Each `useQuery` / `useMutation` / `useSubscription` hook call and each
 // imperative `client.query` / `client.mutate` / `client.subscribe` call
@@ -17,7 +17,7 @@
 // the `TypedDocumentNode<Result, Vars>` type arguments when it isn't,
 // and from the call shape (hook / method) as the final fallback. A
 // document that stays unresolvable surfaces on the summary as
-// `metadata.graphql.unresolvedDocument` — the boundary is still emitted.
+// `metadata.graphql.unresolvedDocument`: the boundary is still emitted.
 //
 // Operation-header `$variables` become summary inputs with role
 // "variable"; the `variables: { ... }` call option isn't read on its
@@ -26,7 +26,7 @@
 // Pairs with provider-side summaries (Apollo resolvers, AppSync
 // resolvers) when the pairing layer grows operation→resolver
 // selection-set mapping. Until then, graphql-operation bindings land
-// in `unmatched` rather than pairing automatically — surfacing the
+// in `unmatched` rather than pairing automatically, surfacing the
 // consumer boundary, not joining it.
 
 import type { PatternPack } from "@suss/extractor";
@@ -59,7 +59,7 @@ export function apolloClientPack(): PatternPack {
     languages: ["typescript", "javascript"],
     // Apollo Client sits over HTTP (or WebSocket for subscriptions;
     // subscriptions reported separately via operationType but the
-    // transport tag stays "http" for v0 — the Apollo HttpLink is the
+    // transport tag stays "http" for v0, the Apollo HttpLink is the
     // default path).
     protocol: "http",
 
@@ -89,10 +89,10 @@ export function apolloClientPack(): PatternPack {
         },
         requiresImport: ["@apollo/client"],
       },
-      // Imperative client — covers server-side data fetching,
+      // Imperative client: covers server-side data fetching,
       // Next.js getServerSideProps, Node scripts, anywhere calling
       // `client.query(...)` / `client.mutate(...)` directly rather
-      // than via a hook. The client identifier can be any name —
+      // than via a hook. The client identifier can be any name,
       // we gate on the `ApolloClient` constructor being imported
       // so random `.query()` method calls in unrelated code don't
       // light up.
@@ -138,7 +138,7 @@ export function apolloClientPack(): PatternPack {
     ],
 
     inputMapping: {
-      // Apollo hooks take no positional params we track — the surface
+      // Apollo hooks take no positional params we track, the surface
       // inputs are the operation-header `$variables`, which the adapter
       // reads from the resolved document and stamps onto the summary
       // directly (role "variable"), independent of this mapping.

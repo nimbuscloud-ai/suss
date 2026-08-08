@@ -1,4 +1,4 @@
-// Glossary of symbolic terms that appear in docs prose — inline-code
+// Glossary of symbolic terms that appear in docs prose, inline-code
 // occurrences (`BehavioralSummary`, `BoundaryBinding`, …) get auto-linked
 // to their canonical definition in the reference pages via
 // plugins/glossary-link.ts.
@@ -10,7 +10,7 @@
 // spaces turned into hyphens).
 
 export const glossary: Record<string, string> = {
-  // IR types — /ir-reference
+  // IR types: /ir-reference
   BehavioralSummary: "/ir-reference#behavioralsummary",
   CodeUnitKind: "/ir-reference#codeunitkind",
   SourceLocation: "/ir-reference#sourcelocation-and-codeunitidentity",
@@ -28,10 +28,10 @@ export const glossary: Record<string, string> = {
   Finding: "/ir-reference#finding",
   RawCodeStructure: "/ir-reference#rawcodestructure",
 
-  // Boundary-semantics concepts — /boundary-semantics
+  // Boundary-semantics concepts: /boundary-semantics
   BoundarySemantics: "/boundary-semantics",
 
-  // Pack pattern types — /reference/pack-patterns
+  // Pack pattern types: /reference/pack-patterns
   PatternPack: "/reference/pack-patterns#the-patternpack-interface",
   DiscoveryMatch: "/reference/pack-patterns#discoverymatch-variants",
   BindingExtraction: "/reference/pack-patterns#bindingextraction",

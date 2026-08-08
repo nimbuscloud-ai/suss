@@ -1,4 +1,4 @@
-// noTsconfigProject.ts — read a project that has no tsconfig.
+// noTsconfigProject.ts: read a project that has no tsconfig.
 //
 // Many JavaScript codebases have no tsconfig. The compiler options
 // below are the minimum the parser needs to read modern source. Nothing

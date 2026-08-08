@@ -1,5 +1,3 @@
-// extract.ts — `suss extract` command implementation
-
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -40,30 +38,11 @@ import type { PatternPack } from "@suss/extractor";
 import type { Submodule } from "./gitSubmodules.js";
 import type { Language } from "./language.js";
 
-// ---------------------------------------------------------------------------
-// Framework pack resolution
-// ---------------------------------------------------------------------------
-
-/**
- * A pack factory takes the options its own package documents, or none.
- * Each pack types its own, so the CLI holds them only as "some
- * options", hands over whatever the config file said, and lets the
- * pack decide what is valid.
- */
+/** Each pack types its own options, so the CLI keeps them untyped. */
 type PackFactory = (...args: never[]) => PatternPack;
 
 export { UsageError };
 
-/**
- * Build the pack, and turn anything it objects to into a sentence
- * naming the flag that fixes it.
- *
- * A pack that cannot work without a value only this project knows (the
- * directory a class is looked up under, say) throws when it is handed
- * nothing, which is the pack stating its own requirement. What it
- * cannot know is how the person in front of it supplies one, so that
- * half is added here.
- */
 function callPackFactory<T>(
   factory: PackFactory,
   options: unknown,
@@ -93,16 +72,9 @@ function instantiatePack(
     name,
   );
 
-  // The extraction cache keys on the pack's version stamp, so anything
-  // that changes what a pack reads has to reach the stamp. Two of those
-  // things are invisible to the pack itself: the config it was handed,
-  // and its own code. Almost no pack declares a version, and nothing
-  // checks that an author bumped one, so a pack edit would otherwise
-  // keep serving summaries the previous code produced.
-  //
-  // The config the stamp sees is the file's own content, without the
-  // directory it was read from: moving a checkout changes that
-  // directory and changes nothing about what the pack reads.
+  // The extraction cache keys on this stamp. A pack's code and config
+  // change what it reads without reaching its declared version; the
+  // config's directory does not, so `digest` never sees it.
   const stamp = [
     pack.version ?? "unset",
     packCodeHash(specifier),
@@ -113,16 +85,7 @@ function instantiatePack(
 
 const packCodeHashes = new Map<string, string>();
 
-/**
- * Content hash of the file a pack was loaded from. Resolution happens
- * from the CLI, which is the package that depends on the packs, and the
- * answer is kept for the rest of the process so a run naming a dozen
- * packs reads each file once.
- *
- * Empty when the specifier does not resolve to a file on disk, which is
- * what a host that bundles its packs looks like. Such a pack falls back
- * to whatever version it declares.
- */
+/** Empty when the specifier resolves to no file, as when a host bundles it. */
 function packCodeHash(specifier: string): string {
   const cached = packCodeHashes.get(specifier);
   if (cached !== undefined) {
@@ -135,15 +98,9 @@ function packCodeHash(specifier: string): string {
 }
 
 /**
- * The file the pack was imported from. `import.meta.resolve` answers
- * under the same conditions the import used, so a package shipping both
- * an ESM and a CommonJS build gives back the one that ran.
- *
- * A specifier it cannot place yields no file, and the pack falls back to
- * whatever version it declares. Resolving such a specifier some other
- * way would be worse than not resolving it: `createRequire` answers with
- * the CommonJS build, and a stable hash of a file the run never loaded
- * reads as a working cache key while invalidating on nothing.
+ * `import.meta.resolve` resolves under the same conditions the import
+ * itself did. Do not fall back to `createRequire`: it would hash a
+ * build the run never loaded.
  */
 function resolvePackFile(specifier: string): string[] {
   try {
@@ -153,10 +110,7 @@ function resolvePackFile(specifier: string): string[] {
   }
 }
 
-/**
- * Short content hash of a pack's config, stable across key order so
- * reformatting the file does not throw away a valid cache entry.
- */
+/** Stable across key order, so reformatting a config keeps the cache entry. */
 function digest(options: unknown): string {
   return createHash("sha256")
     .update(canonicalize(options))
@@ -182,61 +136,36 @@ function canonicalize(value: unknown): string {
 }
 
 /**
- * The pack names `-f` accepts, each mapped to the package that supplies
- * it. Every `@suss/framework-*` the CLI depends on belongs here under
- * its suffix; a test asserts that, because a pack left out still loads
- * through the dynamic fallback below but never appears in the list the
- * error message prints, so nobody finds out it exists.
+ * A pack left out still loads through the dynamic fallback below, but
+ * never appears in the list the error message prints, so a test asserts
+ * every `@suss/framework-*` the CLI depends on is here.
  */
 export const BUILTIN_FRAMEWORKS: Record<string, string> = {
-  // HTTP framework packs (providers).
   "ts-rest": "@suss/framework-ts-rest",
   "react-router": "@suss/framework-react-router",
   express: "@suss/framework-express",
   fastify: "@suss/framework-fastify",
   hono: "@suss/framework-hono",
-  // Next.js route handlers, whose route comes from where the file sits.
   nextjs: "@suss/framework-nextjs",
-  // React components + event handlers + useEffect bodies.
   react: "@suss/framework-react",
-  // GraphQL code-first resolver discovery (Apollo Server).
   apollo: "@suss/framework-apollo",
-  // GraphQL resolver discovery via NestJS decorators.
   "nestjs-graphql": "@suss/framework-nestjs-graphql",
-  // REST controller discovery via NestJS decorators.
   "nestjs-rest": "@suss/framework-nestjs-rest",
-  // AWS Lambda HTTP handlers, paired to SAM/CFN-declared routes.
   "aws-lambda": "@suss/framework-aws-lambda",
-  // Storage access, emitted as interactions per read / write.
   prisma: "@suss/framework-prisma",
   drizzle: "@suss/framework-drizzle",
-  // Message producers.
   "aws-sqs": "@suss/framework-aws-sqs",
   "aws-eventbridge": "@suss/framework-aws-eventbridge",
-  // HTTP client packs (consumers).
   fetch: "@suss/client-web",
   axios: "@suss/client-axios",
-  // GraphQL consumer hooks / imperative client calls.
   "apollo-client": "@suss/client-apollo",
-  // JS runtime packs.
   node: "@suss/runtime-node",
-  // Python route packs, read by the Python adapter.
   fastapi: "@suss/framework-fastapi",
   "flask-restx": "@suss/framework-flask-restx",
-  // Ruby GraphQL field packs, read by the Ruby adapter.
   "graphql-ruby": "@suss/framework-graphql-ruby",
 };
 
-/**
- * The language a pack reads, for every pack that reads something other
- * than TypeScript. A pack missing from here reads TypeScript, which
- * covers both the rest of the built-in list and any pack somebody
- * publishes for the CLI to import by name.
- *
- * A pack is written against one language's adapter, so naming one in a
- * run of another language cannot work, and the run says which one it
- * belongs to rather than coming back empty.
- */
+/** Packs that read something other than TypeScript. */
 const PACK_LANGUAGE: Record<string, Language> = {
   fastapi: "python",
   "flask-restx": "python",
@@ -248,14 +177,6 @@ export function languageOfPack(name: string): Language {
   return PACK_LANGUAGE[name] ?? "typescript";
 }
 
-/**
- * Split `-f aws-sqs=packs/sqs.json` into the pack name and the options
- * the file holds. A plain `-f aws-sqs` carries no options.
- *
- * Configuration is per pack because what it says is per pack: a pack
- * that reads a project's own dispatcher needs to be told which one,
- * and no other pack can act on that.
- */
 export function parseFrameworkSpec(spec: string): {
   name: string;
   options?: unknown;
@@ -289,20 +210,11 @@ export function parseFrameworkSpec(spec: string): {
 }
 
 /**
- * The options as the pack receives them: what the file said, plus where
- * the file was.
- *
- * A pack option naming a directory is written relative to something,
- * and the only thing whoever wrote the file can be sure of is the file
- * itself. Resolving against the working directory instead means the
- * same config works from the project root and silently resolves to
- * nothing from anywhere else, which is the shape of bug nobody
- * notices: every field reads as unwired rather than failing.
- *
- * So the directory travels with the options and each pack resolves its
- * own paths against it, since only the pack knows which of its options
- * are paths. It stays out of the cache key, because where a checkout
- * sits says nothing about what a pack reads.
+ * A pack option that gives a path is written relative to its own config
+ * file, and only the pack knows which of its options are paths, so the
+ * directory goes along with them. Resolving against the working
+ * directory instead fails silently: every field then looks unwired
+ * rather than like an error.
  */
 function optionsForFactory(options: unknown, configFile?: string): unknown {
   if (
@@ -319,12 +231,11 @@ function optionsForFactory(options: unknown, configFile?: string): unknown {
   };
 }
 
-/** A pack's factory, with what the spec said to hand it. */
 interface LoadedFactory {
   name: string;
   /** What the config file said, exactly, which is what the cache key sees. */
   options: unknown;
-  /** The same options with the config file's own directory alongside them. */
+  /** The same options, plus the config file's own directory. */
   handedOver: unknown;
   factory: PackFactory;
   specifier: string;
@@ -346,10 +257,6 @@ async function loadPackFactory(spec: string): Promise<LoadedFactory> {
     };
   }
 
-  // A name the record does not carry is taken for a package to import.
-  // Someone shipping a pack should not have to wait for the CLI to list
-  // it, and a name that already looks like a package is used as written
-  // so a pack outside the family prefix can be named at all.
   const candidates = looksLikeAPackage(name)
     ? [name]
     : [`@suss/framework-${name}`, `@suss/${name}`];
@@ -369,11 +276,6 @@ async function loadPackFactory(spec: string): Promise<LoadedFactory> {
   );
 }
 
-/**
- * Refuse a pack written for another language's adapter. Handing a
- * Python pack to the TypeScript adapter finds nothing, and nothing is
- * the answer a person spends an afternoon on.
- */
 function assertPackLanguage(name: string, language: Language): void {
   const belongs = languageOfPack(name);
   if (belongs === language) {
@@ -393,11 +295,7 @@ export async function resolveFramework(spec: string): Promise<PatternPack> {
   return instantiatePack(loaded, loaded.specifier, loaded.name);
 }
 
-/**
- * A pack the Python adapter reads. Nothing is stamped with a version
- * here the way a TypeScript pack is: that stamp is the extraction
- * cache's key, and the Python and Ruby adapters keep no cache.
- */
+/** No version stamp: the stamp keys a cache the Python adapter does not keep. */
 export async function resolvePythonPack(spec: string): Promise<PythonPack> {
   const loaded = await loadPackFactory(spec);
   assertPackLanguage(loaded.name, "python");
@@ -408,7 +306,6 @@ export async function resolvePythonPack(spec: string): Promise<PythonPack> {
   );
 }
 
-/** A pack the Ruby adapter reads. */
 export async function resolveRubyPack(spec: string): Promise<RubyPack> {
   const loaded = await loadPackFactory(spec);
   assertPackLanguage(loaded.name, "ruby");
@@ -419,7 +316,7 @@ export async function resolveRubyPack(spec: string): Promise<RubyPack> {
   );
 }
 
-/** A scoped name or a path names the package itself, not a short name. */
+/** A scoped name or a path is the package itself, not a short name. */
 const looksLikeAPackage = (name: string): boolean =>
   name.startsWith("@") || name.includes("/");
 
@@ -433,75 +330,47 @@ async function importPack(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Extract command
-// ---------------------------------------------------------------------------
-
 export interface ExtractOptions {
   /**
-   * Path to the tsconfig covering the code to read. Optional. Without
-   * one, the nearest tsconfig or jsconfig above the working directory
-   * is used, and the directory itself is read when there is none.
+   * Path to the tsconfig covering the code to read. Without one, the
+   * nearest tsconfig or jsconfig above the working directory is used,
+   * and the directory itself when there is none.
    */
   tsconfig?: string;
   /** Directory to read when no tsconfig is given. Defaults to cwd. */
   dir?: string;
-  /**
-   * Which language's adapter reads this project. Left out, suss works
-   * it out from what the directory holds, and says so when it cannot.
-   */
+  /** Leave it out and suss works it out from what is in the directory. */
   lang?: Language;
   frameworks: string[];
   files?: string[];
   output?: string;
   /**
    * What to do with gaps. `permissive` (default) and `strict` record the
-   * same gaps in the summary; extraction itself does not differ. `strict`
-   * also fails the run (sets a non-zero exit code) when any summary came
-   * out carrying a gap, which is what CI wants: a gap nobody looked at is
-   * worse than a run that stopped to say so. `silent` skips gap detection
-   * entirely, recording none.
+   * same gaps; `strict` also exits non-zero when any were recorded.
+   * `silent` skips gap detection and records none.
    */
   gaps?: "strict" | "permissive" | "silent";
   /** Print the per-phase wall-clock breakdown to stderr. */
   timing?: boolean;
   /**
-   * Print where datalog evaluation spent the run: time and tuples per
-   * rule, tuples per relation, rounds to fixpoint. Off by default, since
+   * Print where datalog evaluation spent the run. Off by default, since
    * collecting it costs a timestamp per rule attempt.
    */
   datalogProfile?: boolean;
-  /**
-   * Skip the on-disk extraction cache for this run. Mostly useful
-   * for debugging when cache invalidation isn't keeping up with
-   * intentional changes — normal runs benefit from the cache.
-   */
+  /** Skip the on-disk extraction cache for this run. */
   noCache?: boolean;
   /**
    * Print the extraction funnel even when the run produced summaries.
    * A run that produced nothing prints it either way.
    */
   explain?: boolean;
-  /**
-   * Exit non-zero when the run produces no summaries. Off by default,
-   * since a project may legitimately have no boundaries. Worth turning
-   * on in CI, where a silent zero looks identical to a passing check.
-   */
+  /** Exit non-zero when the run produces no summaries. */
   failOnEmpty?: boolean;
-  /**
-   * Exit non-zero when a pack threw while it was reading. Off by
-   * default, because one bad file in a large tree should not stop a run
-   * that is otherwise working; on in CI, where a count that quietly
-   * came out short is worse than a failure.
-   */
+  /** Exit non-zero when a pack threw while it was reading. */
   failOnPackError?: boolean;
 }
 
-/**
- * Where to read the code from. A tsconfig carries the project's own
- * module resolution and path aliases, so it wins when one exists;
- * otherwise the directory is walked directly.
- */
+/** A tsconfig wins when one exists, because it has the path aliases. */
 export type Source =
   | { kind: "tsconfig"; path: string; root: string }
   | { kind: "directory"; root: string };
@@ -527,7 +396,6 @@ export function resolveSource(
   return { kind: "directory", root };
 }
 
-/** What one language's run of the extract pipeline came back with. */
 interface LanguageRun {
   summaries: BehavioralSummary[];
   /** The directory summary paths are written relative to. */
@@ -543,23 +411,12 @@ interface LanguageRunOptions {
   options: ExtractOptions;
   /** The directory the command was pointed at. */
   root: string;
-  /**
-   * The submodules of the repository this directory belongs to, read
-   * once for the whole run. Every language cares: a submodule holds
-   * code this project imports, and one nobody checked out is a hole in
-   * whatever the run produced.
-   */
   submodules: readonly Submodule[];
 }
 
 /**
- * The files a non-TypeScript run reads: the ones named on the command
- * line, or every source file under the directory that belongs to this
- * project.
- *
- * A file somebody asked for by name is read whatever repository it
- * sits in; that is the person saying which files they mean. A walk of
- * the directory is suss choosing, and it chooses this project's own.
+ * A file given on the command line is read whichever repository it is
+ * in. A walk of the directory takes only this project's own files.
  */
 function filesToRead(
   { options, root }: LanguageRunOptions,
@@ -582,10 +439,6 @@ async function runTypeScript(
   const extractorOptions =
     options.gaps !== undefined ? { gapHandling: options.gaps } : undefined;
 
-  // Wall-clock breakdown of the extract pipeline. `--timing` swaps the
-  // one-line summary for the per-phase view. The cost of always-on
-  // instrumentation is one `performance.now()` per phase entry, well
-  // under the noise floor of extracting a project.
   let timingReport: TimingReport | null = null;
   let cacheDiagnostic: CacheDiagnostic | null = null;
   let extractionReport: ExtractionReport | null = null;
@@ -629,10 +482,8 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const packs = await Promise.all(
     runOptions.options.frameworks.map(resolvePythonPack),
   );
-  // A service that imports its shared framework from a submodule
-  // resolves those imports only if the submodule is a root too, and the
-  // decorator a pack matches on is usually defined in exactly that
-  // framework.
+  // A submodule has to be a root of its own, or imports into the shared
+  // framework inside it do not resolve.
   const submodules = runOptions.submodules;
   const files = filesToRead(runOptions, findPythonFiles, submodules);
   const roots = [
@@ -642,10 +493,6 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
       .map((submodule) => submodule.directory),
   ];
 
-  // `--gaps` reaches the Python adapter too: on top of what it records
-  // on a summary, strict is what turns a route the readers cannot
-  // build at all back into an error that stops the run, rather than
-  // one abstaining route.
   const { summaries } = await extractPythonProject({
     files,
     packs,
@@ -661,20 +508,15 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const packs = await Promise.all(
     runOptions.options.frameworks.map(resolveRubyPack),
   );
-  // findRubyFiles walks the same way findPythonFiles does, skipping a
-  // directory named .git without noticing the repository it marks, so
-  // the same filter applies.
+  // findRubyFiles skips any directory called .git, but it does not
+  // notice that the .git directory means there is a separate repository
+  // there.
   const files = filesToRead(runOptions, findRubyFiles, runOptions.submodules);
   const { summaries } = await extractRubyProject({ files, packs });
   return languageRun(summaries, runOptions.root, files.length);
 }
 
-/**
- * What the Python and Ruby adapters come back with. Neither keeps a
- * cache, times its own phases, or builds the funnel the TypeScript
- * adapter does, so those are absent rather than zeroed: a timing
- * breakdown of nothing would read as a run that took no time.
- */
+/** Null rather than zero, so a breakdown of nothing does not look instant. */
 function languageRun(
   summaries: BehavioralSummary[],
   root: string,
@@ -699,14 +541,6 @@ const RUN_BY_LANGUAGE: Record<
   ruby: runRuby,
 };
 
-/**
- * Which language's adapter reads this run, from what the person said or
- * from what the directory holds.
- *
- * A pack named with -f settles it too: nobody asks for a Ruby pack over
- * a TypeScript project, and a directory of Ruby with a Gemfile nowhere
- * near it would otherwise be unreadable for no good reason.
- */
 export function languageOfRun(options: ExtractOptions): Language {
   if (options.lang !== undefined) {
     return options.lang;
@@ -721,11 +555,8 @@ export function languageOfRun(options: ExtractOptions): Language {
     return only;
   }
 
-  // Source resolution walks up for the nearest tsconfig and reads the
-  // directory as TypeScript when it finds one. Language resolution has
-  // to be told about the same tsconfig, or the two disagree about the
-  // same directory and a subdirectory of a TypeScript monorepo with one
-  // stray script in it stops being readable at all.
+  // resolveSource reads a directory as TypeScript when there is a
+  // tsconfig above it, so detection has to see that same tsconfig.
   const root = path.resolve(options.dir ?? process.cwd());
   const detected = languageOfProject(root, {
     coveredByTsconfig: findNearestTsconfig(root) !== null,
@@ -736,7 +567,6 @@ export function languageOfRun(options: ExtractOptions): Language {
   return detected.language;
 }
 
-/** The language of the pack a -f spec names, config path and all. */
 function specLanguage(spec: string): Language {
   const separator = spec.indexOf("=");
   return languageOfPack(separator === -1 ? spec : spec.slice(0, separator));
@@ -754,10 +584,6 @@ export async function extract(
   const language = languageOfRun(options);
   const root = path.resolve(options.dir ?? process.cwd());
 
-  // A submodule holds code this project imports, so one nobody checked
-  // out is a hole in whatever the run produces: the imports into it
-  // resolve to nothing and the boundaries behind them go missing. Read
-  // once here, because that is true of all three languages.
   const submodules = readSubmodules(root);
   const missingSubmodules = submodules
     .filter((submodule) => !submodule.checkedOut)
@@ -774,17 +600,12 @@ export async function extract(
   const run = profiled === null ? await runExtraction() : profiled.result;
   const { summaries, timingReport, cacheDiagnostic, extractionReport } = run;
 
-  // Make file paths relative to the project root so summaries are portable.
-  // Absolute paths leak filesystem structure and break on other machines.
-  // Stamp the format version at the same time: an artifact that says
-  // which format it speaks is one a future reader never has to guess at.
   const projectRoot = run.root;
   for (const summary of summaries) {
     summary.location.file = path.relative(projectRoot, summary.location.file);
     summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
   }
 
-  // Output
   if (options.output !== undefined) {
     const outPath = path.resolve(options.output);
     await writeJson({ value: summaries, indent: 2, file: outPath });
@@ -794,9 +615,6 @@ export async function extract(
       report: extractionReport,
       missingSubmodules,
     });
-    // An empty run gets its own line. "Wrote 0 summaries" announces an
-    // empty file as if it were an accomplishment, and the funnel that
-    // follows explains what actually happened.
     process.stderr.write(
       summaries.length === 0
         ? `No summaries to write${formatTimingTotal(timingReport)}.\n`
@@ -816,21 +634,14 @@ export async function extract(
     process.stderr.write(formatCacheDiagnostic(cacheDiagnostic));
   }
 
-  // A run that found nothing is the failure worth explaining. Print the
-  // funnel unprompted in that case, since the user has no other way to
-  // tell "this project has no boundaries" from "the packs never got to
-  // look at it". `--explain` prints it either way.
   if (extractionReport !== null) {
     const report = extractionReport as ExtractionReport;
     if (options.explain === true || report.summaries === 0) {
       process.stderr.write(formatExtractionReport(report));
     }
 
-    // A run that produced plenty can still have one pack in it that
-    // produced nothing, and that pack is invisible in a total. What
-    // the person running this can act on prints whenever it fires;
-    // what only a pack's author can fix waits for `--explain`. Neither
-    // changes the exit code.
+    // What the person running this can act on always prints; what only
+    // a pack's author can fix waits for `--explain`.
     process.stderr.write(
       formatPackHealth(
         evaluatePackHealth(report),
@@ -838,9 +649,6 @@ export async function extract(
       ),
     );
 
-    // Pack health always says a pack threw. This is the caller asking
-    // for that to stop the build, which is what CI wants: a count that
-    // quietly came out short is worse than a run that failed.
     const threw = report.packs.filter((p) => p.failures.length > 0);
     if (options.failOnPackError === true && threw.length > 0) {
       process.stderr.write(
@@ -850,9 +658,6 @@ export async function extract(
     }
   }
 
-  // The Python and Ruby adapters build no funnel, so a run of theirs
-  // that came back with nothing would otherwise print an empty file and
-  // no account of itself.
   if (extractionReport === null && summaries.length === 0) {
     process.stderr.write(
       formatEmptyLanguageRun(language, run.filesRead, options.frameworks),
@@ -893,45 +698,19 @@ export async function extract(
   return summaries;
 }
 
-/**
- * What went wrong and what to do about it, per stage. Written to be
- * read by someone who has never opened this codebase: the cause names
- * what suss looked for and did not find, and the next step is
- * something they can act on without knowing how extraction works.
- *
- * Each entry reads the counts so it can be specific. "102 files import
- * @apollo/client and the package is missing" tells a user what to do;
- * "a gate specifier did not resolve" does not.
- */
 /** Enough unreadable files to see the pattern, not the whole list. */
 const UNREADABLE_FILES_SHOWN = 5;
 
-/**
- * Where a run records that it could not read part of the project.
- *
- * Sits beside the summaries under a name derived from theirs, so a job
- * that knows where the summaries went knows where to look. The
- * summaries file itself stays what every reader validates it as, a
- * bare array, which is why this is not a field on it.
- */
+/** A separate file beside the summaries, because every reader of the
+ * summaries validates them as a bare array. */
 export function incompletenessPathFor(summariesPath: string): string {
   const ext = path.extname(summariesPath);
   const base = summariesPath.slice(0, summariesPath.length - ext.length);
   return `${base}.incomplete${ext === "" ? ".json" : ext}`;
 }
 
-/**
- * Write down what the run could not read, or remove a note an earlier
- * run left. A stale file saying the last extract was incomplete is
- * worse than none: it fails a job that has since been fixed.
- *
- * A key per reason, because a job reading this wants to know which
- * kind of hole it is looking at. Re-exports suss could not follow are
- * a TypeScript answer and only a TypeScript run has them. A submodule
- * nobody checked out is every language's, and it is the same kind of
- * incompleteness: code this project imports is not on disk, so the
- * boundaries in it are missing from the counts and from the file.
- */
+/** A note left by an earlier run is deleted, because a stale one would
+ * fail a job that has since been fixed. */
 async function writeIncompleteness(args: {
   outPath: string;
   projectRoot: string;
@@ -995,13 +774,6 @@ const EMPTY_STAGE_COPY: Record<
   }),
 };
 
-/**
- * What a Python or Ruby run that found nothing has to say for itself.
- *
- * The file count separates the two things a person needs to tell apart:
- * suss never saw the code, or suss read the code and none of it matched
- * what these packs describe.
- */
 export function formatEmptyLanguageRun(
   language: Language,
   filesRead: number,
@@ -1037,13 +809,6 @@ function listOf(items: ReadonlyArray<string>): string {
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
 
-/**
- * Show where the summaries came from, or where the count reached zero.
- *
- * Leads with the outcome and the next step, then the numbers as
- * supporting evidence, because someone reading this wants to know what
- * to do before they want to know how many files were walked.
- */
 export function formatExtractionReport(report: ExtractionReport): string {
   const lines: string[] = [];
 
@@ -1070,10 +835,8 @@ export function formatExtractionReport(report: ExtractionReport): string {
         : `files ${pack.pack} looked at`;
     rows.push([pack.candidateFiles, imports]);
 
-    // A pack made only of recognisers finds no boundary of its own and
-    // writes no summary, so the discovery rows below would print three
-    // zeros and read as a broken pack. What it contributes is effects
-    // attached to units other packs found, which is what to show.
+    // A pack made only of recognisers discovers no boundary, so the
+    // rows below would print three zeros and look like a broken pack.
     if (!pack.discovers && pack.recognizes) {
       rows.push([
         pack.unitsInGatedFiles,
@@ -1096,9 +859,6 @@ export function formatExtractionReport(report: ExtractionReport): string {
     lines.push(`    ${String(count).padStart(width)}  ${label}`);
   }
 
-  // A file suss could not read the exports of leaves every count above
-  // it short by an unknown amount, so it is said plainly rather than
-  // left to look like a module that exports nothing.
   const unreadable = report.filesWithUnreadableExports;
   if (unreadable.length > 0) {
     lines.push("");
@@ -1113,9 +873,6 @@ export function formatExtractionReport(report: ExtractionReport): string {
     }
   }
 
-  // A dependency suss could not resolve while the pack still produced
-  // summaries is worth a note but not an alarm: packs that match on
-  // import text keep working, they only lose type information.
   const degraded = report.packs.filter(
     (p) => p.unresolvedGates.length > 0 && p.summariesProduced > 0,
   );
@@ -1130,7 +887,6 @@ export function formatExtractionReport(report: ExtractionReport): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** One-line cache diagnostic emitted under `--timing`. */
 export function formatCacheDiagnostic(diag: CacheDiagnostic): string {
   if (diag.kind === "hit") {
     return "  cache: hit (returned all summaries from manifest)\n";
@@ -1145,12 +901,6 @@ function formatTimingTotal(report: TimingReport | null): string {
   return ` in ${(report.totalMs / 1000).toFixed(2)}s`;
 }
 
-/**
- * Per-phase breakdown emitted under `--timing`. Sorted by wall time
- * descending (the timer's natural order). Indented under the
- * `Timing:` header so it reads as a sub-block of the extract
- * acknowledgment line.
- */
 function formatTimingBreakdown(report: TimingReport): string {
   const lines: string[] = ["Timing:"];
   for (const phase of report.phases) {

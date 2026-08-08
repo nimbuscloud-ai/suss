@@ -3,11 +3,11 @@
 // No resolution happens here. This pass records what the file
 // syntactically contains: functions, what variables are declared as,
 // what is imported and exported, which calls wrap which arguments.
-// The resolution store holds the rules that connect them.
+// The resolution store has the rules that connect them.
 //
 // Node identity is `absolutePath:start-end`. Start alone collides a
 // call with its callee. The extractor fills a side table from id back
-// to ts-morph Node so a resolved answer comes back as a Node the rest
+// to ts-morph Node, so a resolved value comes back as a Node the rest
 // of the adapter can use.
 
 import {
@@ -67,8 +67,8 @@ export function nodeId(node: Node): string {
  * Module key for an import or re-export target: the resolved file path
  * when the specifier points inside the project, otherwise the raw
  * specifier (a package name). Package keys join against nothing, which
- * is correct: a package has no facts, and the gate query treats
- * reaching a package key as its answer.
+ * is correct: a package has no facts, and reaching a package key is
+ * what the gate query is looking for.
  */
 function moduleKeyOf(
   declaration: Node & {
@@ -84,12 +84,12 @@ function moduleKeyOf(
 }
 
 /**
- * Every module name a callee's package answers to, or an empty list
- * when it was not imported. `Sentry.wrapHandler` reports the package
- * behind `Sentry`.
+ * Every module name a callee's package goes by, or an empty list when
+ * it was not imported. `Sentry.wrapHandler` reports the package behind
+ * `Sentry`.
  *
- * A pack that declares a wrapper transparent names the library it comes
- * from, and this is what checks the claim. Matching the import
+ * A pack that declares a wrapper transparent says which library it comes
+ * from, and this is what checks that claim. Matching the import
  * specifier verbatim is not enough: the same package arrives as a
  * subpath (`pkg/esm`), through a barrel in the project that re-exports
  * it, or through `import x = require(...)`. So the specifier, the
@@ -112,7 +112,7 @@ function importOriginsOf(callee: Node): string[] {
   const origins = new Set<string>();
   for (const declaration of symbol.getDeclarations()) {
     const specifier = importSpecifierOf(declaration);
-    // A relative specifier names a file, not a package, so only the
+    // A relative specifier points at a file rather than a package, so only the
     // package the callee turns out to live in can speak for it.
     if (specifier !== null && !specifier.startsWith(".")) {
       origins.add(specifier);
@@ -125,7 +125,7 @@ function importOriginsOf(callee: Node): string[] {
   // wrapHandler, not about Sentry: a namespace import of a barrel
   // resolves to the barrel, while the member resolves into the package
   // that declared it. Asking about the member is what keeps everything
-  // else the barrel re-exports out of the answer.
+  // else the barrel re-exports out of the result.
   const named = Node.isPropertyAccessExpression(callee)
     ? callee.getNameNode().getSymbol()
     : undefined;
@@ -192,8 +192,8 @@ function declaresAValue(declaration: Node): boolean {
 /**
  * The packages a file inside node_modules speaks for. Usually one.
  * Types published separately are the exception: a declaration in
- * `@types/foo` is how `foo` describes itself, and a pack names the
- * package people import, so both answer.
+ * `@types/foo` is how `foo` describes itself, and a pack refers to the
+ * package people import, so both have to be listed.
  */
 export function packagesDeclaring(filePath: string): string[] {
   const marker = "/node_modules/";
@@ -204,8 +204,8 @@ export function packagesDeclaring(filePath: string): string[] {
   const rest = filePath.slice(at + marker.length);
   // TypeScript ships its own lib files, which declare every global
   // there is, and a call to one of those says nothing about anybody's
-  // dependency. The compiler API sits in that same directory, so this
-  // names the lib files rather than the directory holding them.
+  // dependency. The compiler API is in that same directory, so match on
+  // the lib files rather than on the directory they are in.
   if (rest.startsWith("typescript/lib/lib.") && rest.endsWith(".d.ts")) {
     return [];
   }
@@ -216,8 +216,8 @@ export function packagesDeclaring(filePath: string): string[] {
 /**
  * "@types/foo" describes "foo", and "@types/scope__name" describes
  * "@scope/name". A double underscore is how a scope is spelled here and
- * also a legal character in a plain name, so both readings answer and
- * whichever a pack named will match.
+ * also a legal character in a plain name, so both spellings are listed
+ * and whichever a pack asked for will match.
  */
 function packagesDescribedByTypes(owner: string): string[] {
   if (!owner.startsWith("@types/")) {
@@ -293,11 +293,11 @@ export function emitValue(
   const id = nodeId(expression);
   table.byId.set(id, expression);
 
-  // A value can hold itself: `const routes = [{ handler: routes }]` walks
-  // array to object to the name back to the array. The facts for this
-  // expression are already going down, so the name refers back to it and
-  // no further, which is what the code says. Nothing is resolvable
-  // through such a name, so whatever asked gets no answer and says so.
+  // A value can contain itself: `const routes = [{ handler: routes }]`
+  // goes array to object to the name and back to the array. The facts
+  // for this expression are already being written, so the name refers
+  // back to it and no further, which is what the code says. Nothing
+  // resolves through such a name, and the caller is told so.
   if (table.seenValues.has(expression)) {
     return id;
   }
@@ -311,9 +311,9 @@ export function emitValue(
 
   if (Node.isPropertyAccessExpression(expression)) {
     // Both readings are emitted and whichever finds facts wins. The
-    // symbol route answers when the property resolves to a declaration,
-    // and the structural route answers when the object is a literal
-    // whose property holds a value.
+    // symbol route works when the property resolves to a declaration,
+    // and the structural route works when the object is a literal with a
+    // value under that property.
     fact(
       db,
       "readsProperty",
@@ -332,8 +332,8 @@ export function emitValue(
 
   if (Node.isElementAccessExpression(expression)) {
     // `routes[0]` and `routes["list"]` say the same thing as
-    // `routes.list`: the value the container holds under a name. A
-    // computed index names nothing the rules can join on, so it is left
+    // `routes.list`: the value the container has under a name. A
+    // computed index gives the rules nothing to join on, so it is left
     // as an expression that refers no further.
     const index = literalIndexOf(expression.getArgumentExpression());
     if (index !== null) {
@@ -351,8 +351,8 @@ export function emitValue(
   }
 
   if (Node.isArrayLiteralExpression(expression)) {
-    // An array holds its elements under their positions, which is what
-    // lets the property rule answer for `routes[0]` unchanged.
+    // An array has its elements under their positions, which is what
+    // lets the property rule cover `routes[0]` unchanged.
     fact(db, "objectValue", id);
     const elements = expression.getElements();
     for (let position = 0; position < elements.length; position++) {
@@ -386,7 +386,7 @@ export function emitValue(
           );
         }
       } else if (Node.isShorthandPropertyAssignment(property)) {
-        // `{ handler }` holds whatever the name refers to.
+        // `{ handler }` is whatever the name refers to.
         fact(
           db,
           "holdsProperty",
@@ -420,15 +420,15 @@ export function emitValue(
 }
 
 /**
- * What a declaration's name holds. A name written once holds its
- * initializer, and `binds` says so. A name written again holds
- * whatever the last write left there, and saying `binds` about the
- * initializer would hand every reader the value the name held before
- * the module finished.
+ * What a declaration's name comes down to. A name written once is its
+ * initializer, and `binds` says so. A name written again is whatever
+ * the last write left there, and saying `binds` about the initializer
+ * would give every reader the value the name had before the module
+ * finished.
  *
- * Which write that is comes from `writesToBinding`, which answers only
- * where control flow cannot change it. Where it has no answer, nothing
- * goes down, and a reader asking about the name gets nothing.
+ * Which write that is comes from `writesToBinding`, which only decides
+ * where control flow cannot change it. Where it cannot decide, nothing
+ * is written down and a reader asking about the name gets nothing.
  */
 function emitBindingValues(
   db: Database,
@@ -454,17 +454,17 @@ function emitBindingValues(
 }
 
 /**
- * What a name taken off a container by destructuring holds.
+ * What a name taken off a container by destructuring comes down to.
  *
  * `const { handler } = holder` reads a property off a container, which
  * is what `holder.handler` says, so it is written down the same way and
- * the property rule answers for both unchanged.
+ * the property rule covers both unchanged.
  *
  * A default (`const { handler = fallback } = holder`) is a second value
- * the name can hold, and the code says nothing about which one it will
- * be. Both go down. Where the container does hold the property and it
- * is a different function, two candidates reach the name and the store
- * answers with neither, which is the answer.
+ * the name could be, and the code says nothing about which one it will
+ * be, so both are written down. When the container does have the
+ * property and it is a different function, two candidates reach the
+ * name and the store returns neither, which is correct.
  *
  * Only an object pattern is written down. An array pattern binds by
  * position, and no recognizer asks about one yet.
@@ -517,10 +517,10 @@ function containerOfBindingPattern(
 
 /**
  * What a name refers to. `{ Panel }` writes one identifier where two
- * things meet: the property the object holds, and the local the value
- * comes from. Asking the name for its symbol answers with the property,
- * and following that arrives back where it started, so a shorthand is
- * asked for the local instead.
+ * things meet: the property on the object, and the local the value
+ * comes from. Asking the name for its symbol gives the property, and
+ * following that arrives back where it started, so for a shorthand ask
+ * for the local instead.
  */
 function referencedSymbol(nameNode: Node): TsSymbol | undefined {
   const parent = nameNode.getParent();
@@ -710,7 +710,7 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
  * What one node inside a function body says about that function.
  * Returns whether the walk should stop descending, which it does at a
  * nested function: that function is walked in its own right, and
- * `containsFn` is what carries its calls back up.
+ * `containsFn` is what brings its calls back up.
  *
  * A closure declared here runs as part of this function, so a wrapper
  * delegating to its parameter inside one still delegates.

@@ -1,10 +1,10 @@
-// requests.ts — deterministic request batteries for a generated program.
+// requests.ts: deterministic request batteries for a generated program.
 //
 // For each field a program observes, the battery tries: the field absent,
 // the empty string (falsy but present), a generic truthy value, and every
 // literal the program compares that field against. Small programs get the
 // full cross product; larger ones get a seeded-PRNG sample plus the
-// all-absent and all-present corners. Deterministic by construction —
+// all-absent and all-present corners. Deterministic by construction,
 // shrinking happens over programs, never over requests.
 
 import {
@@ -56,7 +56,7 @@ function buildRequest(
   return request;
 }
 
-/** mulberry32 — tiny deterministic PRNG; seeded from the program text. */
+/** mulberry32: tiny deterministic PRNG; seeded from the program text. */
 export function mulberry32(seed: number): () => number {
   let state = seed;
   return () => {

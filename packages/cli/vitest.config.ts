@@ -16,7 +16,7 @@ export default defineConfig({
       reporter: ["text", "json-summary"],
       include: ["src/**/*.ts"],
       // bin.ts is the side-effect entry point that wires runCli to
-      // process.exit — exercised in production but not in vitest because
+      // process.exit: exercised in production but not in vitest because
       // importing it would terminate the test process. The dispatch logic
       // is fully covered via runCli in run.ts.
       exclude: ["**/*.test.ts", "**/dist/**", "**/*.config.ts", "src/bin.ts"],

@@ -97,7 +97,7 @@ describe("readWorkspace", () => {
 
   it("falls back to the conventional directories when only turbo.json says so", () => {
     // turbo defers the package list to whatever package manager is in use,
-    // so its presence establishes a workspace but names nothing.
+    // so its presence establishes a workspace but declares nothing.
     write("package.json", JSON.stringify({ name: "root" }));
     write("turbo.json", JSON.stringify({ tasks: {} }));
     pkg("packages/core", "@acme/core");

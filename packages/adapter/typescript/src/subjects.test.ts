@@ -58,7 +58,7 @@ const sourceFile = loadFixture("fixture-subjects.ts");
 // Parameter → input
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — parameter identifier", () => {
+describe("resolveSubject: parameter identifier", () => {
   it("simple param resolves to input", () => {
     const cond = getFirstIfCondition(sourceFile, "paramSimple");
     const result = resolveSubject(cond);
@@ -66,7 +66,7 @@ describe("resolveSubject — parameter identifier", () => {
   });
 
   it("param.property resolves to derived(input, propertyAccess)", () => {
-    // req.user.id — outermost expression is elementAccess chain
+    // req.user.id: outermost expression is elementAccess chain
     const condition = getFirstIfCondition(sourceFile, "paramPropertyAccess");
     const result = resolveSubject(condition);
     expect(result).toEqual({
@@ -85,7 +85,7 @@ describe("resolveSubject — parameter identifier", () => {
 // Local variable from call → dependency
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — local variable from call", () => {
+describe("resolveSubject: local variable from call", () => {
   it("const user = db.findUser(id) → dependency", () => {
     const cond = getFirstIfCondition(sourceFile, "localFromCall");
     const result = resolveSubject(cond);
@@ -111,7 +111,7 @@ describe("resolveSubject — local variable from call", () => {
 // Destructured from await call → derived
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — destructured binding", () => {
+describe("resolveSubject: destructured binding", () => {
   it("const { user } = await db.findUser(id) → derived(dependency, destructured)", () => {
     const cond = getFirstIfCondition(sourceFile, "destructuredFromAwait");
     const result = resolveSubject(cond);
@@ -137,7 +137,7 @@ describe("resolveSubject — destructured binding", () => {
 // Element access → derived(indexAccess)
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — element access", () => {
+describe("resolveSubject: element access", () => {
   it("arr[0] → derived(input, indexAccess(0)) with a numeric index value", () => {
     const cond = getFirstIfCondition(sourceFile, "elementAccess");
     const result = resolveSubject(cond);
@@ -148,7 +148,7 @@ describe("resolveSubject — element access", () => {
     });
   });
 
-  it('obj["role"] → indexAccess("role") — literal value, not quoted source text', () => {
+  it('obj["role"] → indexAccess("role"): literal value, not quoted source text', () => {
     const cond = getFirstIfCondition(sourceFile, "elementAccessStringLiteral");
     const result = resolveSubject(cond);
     expect(result).toEqual({
@@ -161,7 +161,7 @@ describe("resolveSubject — element access", () => {
   it("obj[key] with a variable index → unresolved, never a fabricated static index", () => {
     // A dynamic index is not a static property read; encoding the
     // identifier text as the index would make `obj[key]` claim to be
-    // `obj["key"]` — a false condition downstream.
+    // `obj["key"]`: a false condition downstream.
     const cond = getFirstIfCondition(sourceFile, "elementAccessDynamic");
     const result = resolveSubject(cond);
     expect(result).toEqual({
@@ -175,7 +175,7 @@ describe("resolveSubject — element access", () => {
 // Literals
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — literals", () => {
+describe("resolveSubject: literals", () => {
   it("numeric literal 5 → { type: literal, value: 5 }", () => {
     const { right } = getBinaryExprParts(sourceFile, "numericLiteral");
     const result = resolveSubject(right);
@@ -252,7 +252,7 @@ describe("resolveSubject — literals", () => {
 // Deep property chain
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — deep property chain", () => {
+describe("resolveSubject: deep property chain", () => {
   it("req.body.user.id → nested derived chain", () => {
     const cond = getFirstIfCondition(sourceFile, "deepPropertyChain");
     const result = resolveSubject(cond);
@@ -276,7 +276,7 @@ describe("resolveSubject — deep property chain", () => {
 // Unresolved
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — unresolved", () => {
+describe("resolveSubject: unresolved", () => {
   it("arrow function expression → unresolved", () => {
     const project = createTestProject();
     const tmpFile = project.createSourceFile(
@@ -284,7 +284,7 @@ describe("resolveSubject — unresolved", () => {
       "export function f() { const fn = () => 1; if (fn()) return 1; }",
     );
     // Get the if condition expression: fn() is a CallExpression whose expression is fn (Identifier)
-    // fn is a local variable holding an arrow function (not a call init) → unresolved
+    // fn is a local variable set to an arrow function (not a call init) → unresolved
     const ifExpr = tmpFile
       .getFunctions()[0]
       .getDescendantsOfKind(SyntaxKind.IfStatement)[0]
@@ -319,7 +319,7 @@ describe("resolveSubject — unresolved", () => {
 // Parenthesized and as-expression (strip)
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — transparent nodes", () => {
+describe("resolveSubject: transparent nodes", () => {
   it("parenthesized expression resolves inner", () => {
     const cond = getFirstIfCondition(sourceFile, "parenthesized");
     const result = resolveSubject(cond);
@@ -331,7 +331,7 @@ describe("resolveSubject — transparent nodes", () => {
 // Deep dependency chains
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — deep dependency chain", () => {
+describe("resolveSubject: deep dependency chain", () => {
   it("services.db.users.findUser(id) → dependency with deep callee name", () => {
     const cond = getFirstIfCondition(sourceFile, "deepDependencyChain");
     const result = resolveSubject(cond);
@@ -343,7 +343,7 @@ describe("resolveSubject — deep dependency chain", () => {
   });
 });
 
-describe("resolveSubject — dependency then property access", () => {
+describe("resolveSubject: dependency then property access", () => {
   it("db.findUser(id) then .name → derived(dependency, propertyAccess)", () => {
     const cond = getFirstIfCondition(sourceFile, "dependencyThenProperty");
     const result = resolveSubject(cond);
@@ -364,7 +364,7 @@ describe("resolveSubject — dependency then property access", () => {
 // Intermediate variable resolution (Level 4)
 // ---------------------------------------------------------------------------
 
-describe("resolveSubject — intermediate variable assignments", () => {
+describe("resolveSubject: intermediate variable assignments", () => {
   it("const data = result.body; data.name → derived chain through intermediate", () => {
     const cond = getFirstIfCondition(sourceFile, "intermediatePropertyAccess");
     const result = resolveSubject(cond);

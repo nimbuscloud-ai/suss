@@ -1,10 +1,10 @@
-// moduleSurface.ts — recognize reads of module-loading globals that
+// moduleSurface.ts: recognize reads of module-loading globals that
 // aren't expressible as imports: `__dirname`, `__filename`,
 // `import.meta.url`. Each becomes a runtime-metadata read with the
 // callee's source text, so units depending on file location surface
 // the dependency without inventing structural shapes.
 //
-// Bare `require()` and `require.resolve()` aren't handled here —
+// Bare `require()` and `require.resolve()` aren't handled here,
 // they overlap with the import-resolution pipeline and are deferred
 // per the design doc.
 
@@ -71,7 +71,7 @@ export const importMetaRecognizer: AccessRecognizer = (access, _ctx) => {
  * extraction where the adapter walks expressions; we synthesize the
  * detection by piggybacking on the property-access recognizer when
  * the global is the receiver of a property access (`__dirname.length`)
- * — bare reads (`const dir = __dirname`) need a separate surface.
+ *, bare reads (`const dir = __dirname`) need a separate surface.
  *
  * For v0 we recognize both: as a property-access receiver (above) and
  * as a bare identifier reference via a complementary helper.
@@ -117,8 +117,8 @@ export function findBareFileLocationGlobals(
       Node.isArrowFunction(node) ||
       Node.isMethodDeclaration(node)
     ) {
-      // Walking nested functions is fine — they're separate units.
-      // Don't skip — caller decides scope.
+      // Walking nested functions is fine. They're separate units.
+      // Don't skip: caller decides scope.
     }
     if (!Node.isIdentifier(node)) {
       return;
@@ -128,7 +128,7 @@ export function findBareFileLocationGlobals(
       return;
     }
     // Skip when this identifier is the *property* part of a
-    // PropertyAccessExpression (e.g. `obj.__dirname` — different
+    // PropertyAccessExpression (e.g. `obj.__dirname`, different
     // meaning) or its declaration site.
     const parentNode = node.getParent();
     if (parentNode === undefined) {

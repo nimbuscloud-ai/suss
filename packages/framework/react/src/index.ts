@@ -1,24 +1,24 @@
-// @suss/framework-react — PatternPack for React function components.
+// @suss/framework-react: PatternPack for React function components.
 //
 // Discovers React function components (default-exported and named),
 // classifies JSX-returning terminals as `render` outputs, and
 // synthesizes sibling sub-units (event handlers + useEffect bodies)
 // via `subUnits`. React's runtime schedules those callbacks distinctly
-// from the render body — different inputs, different outputs,
-// different firing triggers — so each becomes its own
+// from the render body: different inputs, different outputs,
+// different firing triggers: so each becomes its own
 // BehavioralSummary sharing the component's identity prefix.
 //
 // Discovery layers:
-//   1. `namedExport(["default"])` — cheap data-driven path for the
+//   1. `namedExport(["default"])`: cheap data-driven path for the
 //      default-export case (anonymous defaults, `export default Cmp`).
-//   2. `discoverUnits` callback in componentExports.ts — named-export
+//   2. `discoverUnits` callback in componentExports.ts: named-export
 //      heuristic (PascalCase + JSX-return + .stories/.test exclusion).
 //      The conventions live in the React pack, not in the extractor.
 //
 // Deferred: class components, HOC-wrapped defaults, React Server
 // Component specifics, custom-hook-as-code-unit discovery (hooks are
-// already pickable via dep-call tracking; promoting them to
-// first-class summaries follows in a later phase).
+// already pickable via dep-call tracking; giving them summaries of
+// their own comes later).
 
 import { reactComponentExports } from "./componentExports.js";
 import { reactSubUnits } from "./subUnits.js";
@@ -29,13 +29,13 @@ export function reactFramework(): PatternPack {
   return {
     name: "react",
     languages: ["typescript", "javascript"],
-    // React doesn't have its own wire protocol — it's a framework
+    // React doesn't have its own wire protocol: it's a framework
     // running inside a JS runtime, and its boundaries
     // (component ↔ DOM, render ↔ handler, etc.) don't cross a
-    // network hop. `"in-process"` names that transport class and
+    // network hop. `"in-process"` is the name for that transport class and
     // will be shared with future in-process packs (custom hooks,
     // module-internal cross-unit work). Framework identity stays on
-    // `BoundaryBinding.framework` = "react" — that's what
+    // `BoundaryBinding.framework` = "react": that's what
     // distinguishes React-rendered boundaries from, say, a Preact
     // pack or an arbitrary TS function-call boundary.
     protocol: "in-process",
@@ -44,11 +44,10 @@ export function reactFramework(): PatternPack {
       {
         kind: "component",
         match: { type: "namedExport", names: ["default"] },
-        // Empty gate: under the modern JSX runtime, files can
-        // bare-export a component without an explicit `react`
-        // import. The named-export discovery walk is cheap (just
-        // looks at default exports), so paying the dispatch on
-        // every file beats false negatives on JSX-runtime files.
+        // Empty gate: under the current JSX runtime, a file can export a
+        // component with no explicit `react` import at all. The named-export
+        // walk only looks at default exports, so paying for the dispatch on
+        // every file is better than missing those files.
         requiresImport: [],
       },
     ],
@@ -72,7 +71,7 @@ export function reactFramework(): PatternPack {
         extraction: {},
       },
       {
-        // Components can throw — error boundaries up the tree handle
+        // Components can throw: error boundaries up the tree handle
         // it. Record the thrown type so cross-boundary checks have a
         // signal without resolving the specific exception.
         kind: "throw",

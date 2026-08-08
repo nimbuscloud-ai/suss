@@ -1,14 +1,14 @@
-// componentJudge.ts — adjudicate observed renders against summary claims.
+// componentJudge.ts: adjudicate observed renders against summary claims.
 //
 // Same two verdicts as the HTTP judge, different observable. A
 // transition's *conditions* are evaluated with the shared three-valued
 // interpreter (props env). Its *claim* is read from the output:
 // `return null` claims "renders nothing"; a `render` output claims a
-// `RenderNode` tree. Tree admissibility is deliberately conservative —
+// `RenderNode` tree. Tree admissibility is deliberately conservative,
 // it extracts only the *certain* facts a claim commits to (root tag,
 // element tags and text outside any conditional) and the *possible*
 // facts it allows (conditional branches), and abstains wherever the
-// claim contains expression nodes (verbatim source text — decision
+// claim contains expression nodes (verbatim source text, decision
 // #38's v0 shape). Abstention can neither falsify nor be falsified.
 
 import { evalConditions, type Tri } from "@suss/behavioral-ir";
@@ -67,9 +67,9 @@ interface ClaimFacts {
   certainTexts: Map<string, number>;
   /** Trimmed text values that could render. */
   possibleTexts: Map<string, number>;
-  /** Any expression node — its runtime contribution is unknowable. */
+  /** Any expression node: its runtime contribution is unknowable. */
   hasExpression: boolean;
-  /** Any conditional node — full confirmation impossible. */
+  /** Any conditional node: full confirmation impossible. */
   hasConditional: boolean;
 }
 
@@ -120,7 +120,7 @@ function collectClaimFacts(
     },
     conditional: (n) => {
       facts.hasConditional = true;
-      // Both branches are possible, neither is certain — the condition
+      // Both branches are possible, neither is certain, the condition
       // text is verbatim source (not a structured Predicate), so the
       // judge abstains on which branch fires.
       collectClaimFacts(n.whenTrue, facts, false);
@@ -190,7 +190,7 @@ export function treeAdmits(root: RenderNode, observed: ObservedNode): Tri {
     }
   }
 
-  // The observation must be explainable by the claim — but only when
+  // The observation must be explainable by the claim, but only when
   // the claim has no expression nodes (an expression could render
   // anything, so nothing observed is inexplicable).
   if (!claim.hasExpression) {
@@ -224,7 +224,7 @@ const claimAdmitsTable: DispatchTable<
     if (claim.root !== null) {
       return treeAdmits(claim.root, observed);
     }
-    // No structured tree — only the root component name is claimed.
+    // No structured tree: only the root component name is claimed.
     if (observed.type !== "element") {
       return "false";
     }

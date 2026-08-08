@@ -1,7 +1,9 @@
-// A pack's terminals describe the shapes it knows. A function that
-// returns something none of them match used to produce a summary with
-// no transitions and no gaps, which reads as a function that does
-// nothing rather than one nobody read.
+/**
+ * A pack's terminals only describe the return patterns it knows about.
+ * When a function returns something none of them match, the summary has
+ * to record the gap. Without one it looks like a function that does
+ * nothing, rather than one nothing managed to read.
+ */
 
 import { describe, expect, it } from "vitest";
 

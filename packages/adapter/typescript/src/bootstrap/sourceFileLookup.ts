@@ -1,4 +1,4 @@
-// sourceFileLookup.ts — O(1) path → SourceFile map for the
+// sourceFileLookup.ts: O(1) path → SourceFile map for the
 // post-extraction passes (rethrow enrichment, reachable closure,
 // wrapper expansion, sub-unit synthesis) that need to locate the
 // function a summary describes by its `summary.location` path and
@@ -12,8 +12,8 @@
 //
 // The same argument applies inside a file. Several summaries usually
 // describe functions in one source file, so `functionAt` indexes a
-// file's functions by line range on first ask and answers the rest
-// from the index.
+// file's functions by line range the first time it is asked, and reads
+// the rest out of that index.
 //
 // `summary.location.file` is the source file's absolute path during
 // extraction (the CLI rewrites it to a project-relative path AFTER
@@ -39,7 +39,7 @@ export interface SourceFileLookup {
   /**
    * Suffix lookup, mirroring `sf.getFilePath().endsWith(rel)`.
    * Linear in the number of source files in the worst case but
-   * each scan is over the cached list — no directory tree walk.
+   * each scan is over the cached list: no directory tree walk.
    */
   bySuffix(pathSuffix: string): SourceFile | null;
   /**

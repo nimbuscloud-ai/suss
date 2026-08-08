@@ -180,7 +180,7 @@ describe("checkSemanticBridging", () => {
       }),
     ]);
 
-    // Same fields, same types, no literals — nothing to distinguish
+    // Same fields, same types, no literals. Nothing to distinguish
     expect(checkSemanticBridging(p, c)).toEqual([]);
   });
 
@@ -349,7 +349,7 @@ describe("checkSemanticBridging", () => {
     ]);
 
     const findings = checkSemanticBridging(p, c);
-    // Consumer tests for "down" through .json() accessor — no finding for t-200-down
+    // Consumer tests for "down" through .json() accessor, no finding for t-200-down
     expect(findings.some((f) => f.provider.transitionId === "t-200-down")).toBe(
       false,
     );
@@ -357,7 +357,7 @@ describe("checkSemanticBridging", () => {
 
   it("emits no finding when consumer matches any distinguishing literal (not all)", () => {
     // Provider transition has both type and tier as distinguishing literals
-    // Consumer only tests for type — that's sufficient awareness
+    // Consumer only tests for type. That's sufficient awareness
     const p = provider("getUser", [
       transition("t-200-special", {
         output: response(
@@ -395,7 +395,7 @@ describe("checkSemanticBridging", () => {
     ]);
 
     const findings = checkSemanticBridging(p, c);
-    // Consumer tests type but not tier — still covers the sub-case
+    // Consumer tests type but not tier, still covers the sub-case
     expect(
       findings.some((f) => f.provider.transitionId === "t-200-special"),
     ).toBe(false);
@@ -478,7 +478,7 @@ describe("checkSemanticBridging", () => {
 
   it("detects field-presence discrimination when bodies differ structurally", () => {
     // Provider: one transition has deletedAt, the other doesn't.
-    // No literals differ — the structural difference is the discriminator.
+    // No literals differ: the structural difference is the discriminator.
     const p = provider("getUser", [
       transition("t-200-deleted", {
         output: response(
@@ -558,7 +558,7 @@ describe("checkSemanticBridging", () => {
 
   it("skips field-presence check when literal discrimination is available", () => {
     // Provider has both literal and field-presence differences.
-    // Literal discrimination takes priority — more specific signal.
+    // Literal discrimination takes priority, more specific signal.
     const p = provider("getUser", [
       transition("t-200-deleted", {
         output: response(

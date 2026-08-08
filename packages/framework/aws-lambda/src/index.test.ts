@@ -13,9 +13,9 @@ import type { AwsLambdaPackOptions } from "./index.js";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/aws-lambda");
 
-// The fixture handlers are built by a factory the fixture project owns.
-// Nothing names it: the adapter reads whatever call built the export,
-// and the project says only which property carries the subject.
+// The fixture handlers are built by a factory the fixture project owns. We do
+// not have to configure its name, because the adapter reads whatever call built
+// the export. The project only says which property contains the subject.
 const FIXTURE_SUBJECT_FACTORIES = [{ property: "subject" }];
 
 async function runAdapter(
@@ -98,7 +98,7 @@ function statusCodesOf(summary: BehavioralSummary): number[] {
 // Pack-shape structural checks
 // ---------------------------------------------------------------------------
 
-describe("awsLambdaFramework — pack shape", () => {
+describe("awsLambdaFramework: pack shape", () => {
   it("declares an HTTP pack with a template-driven discovery callback", () => {
     const pack = awsLambdaFramework();
     expect(pack.name).toBe("aws-lambda");
@@ -107,7 +107,7 @@ describe("awsLambdaFramework — pack shape", () => {
     expect(pack.discoverUnits).toBeDefined();
     // No import gate on purpose. Only a TypeScript handler imports the
     // handler types, to annotate its export, so gating on that import
-    // hid every JavaScript service. The template names the handlers, so
+    // hid every JavaScript service. The template says which handlers, so
     // it decides which files are candidates.
     expect(pack.requiresImport).toBeUndefined();
   });
@@ -115,7 +115,7 @@ describe("awsLambdaFramework — pack shape", () => {
   it("declares the envelope shape and names no helper", () => {
     const pack = awsLambdaFramework();
 
-    // A service names its own response helper, so this pack must not.
+    // A service supplies its own response helper, so this pack must not.
     // The adapter follows a returned call into the project and applies
     // the envelope declaration below to whatever it finds, which works
     // for `json`, `respond`, and any argument order.
@@ -131,9 +131,9 @@ describe("awsLambdaFramework — pack shape", () => {
   });
 
   it("lets a non-HTTP handler fall off the end, and holds a route to the envelope", () => {
-    // A queue consumer acks by not throwing, so falling through is a
-    // terminal there. An HTTP route that answers nothing is a bug, so
-    // the route list must not gain the same terminal.
+    // A queue consumer acknowledges by not throwing, so falling through is a
+    // terminal there. An HTTP route that returns nothing is a bug, so the route
+    // list must not pick up the same terminal.
     const fallthroughOf = (terminals: typeof HTTP_TERMINALS) =>
       terminals.filter((t) => t.match.type === "functionFallthrough");
     expect(fallthroughOf(NON_HTTP_TERMINALS)).toHaveLength(1);
@@ -142,10 +142,10 @@ describe("awsLambdaFramework — pack shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration — run the adapter against the fixture service
+// Integration: run the adapter against the fixture service
 // ---------------------------------------------------------------------------
 
-describe("awsLambdaFramework — extraction", () => {
+describe("awsLambdaFramework: extraction", () => {
   let summaries: BehavioralSummary[];
 
   beforeAll(async () => {
@@ -171,7 +171,7 @@ describe("awsLambdaFramework — extraction", () => {
   it("extracts a helper-mediated JSON envelope (json(...) → payload shape)", () => {
     const confirm = byRoute(summaries, "POST", "/tokens/{tokenId}/confirm");
     expect(confirm).toBeDefined();
-    // json({...}) defaults to 200; json({error}, 400) carries the status.
+    // json({...}) defaults to 200, and json({error}, 400) sets the status.
     expect(statusCodesOf(confirm as BehavioralSummary)).toEqual([200, 400]);
     const ok = (confirm as BehavioralSummary).transitions.find(
       (t) =>

@@ -1,13 +1,13 @@
 // The label a manifest reader stamps on the summaries it reads out of
-// one document, when the caller names none.
+// one document, when the caller gives none.
 //
 // The label is the document's identity everywhere downstream: the
 // reachability walk scopes its nodes by it, so two documents sharing a
 // label share one scope, and one stack's question gets answered from
 // another stack's rules. A basename is not enough for that, because a
 // repository full of services gives every one of them a template.yaml.
-// Where the file sits in its repository is, so that is what the label
-// says.
+// Where the file is within its repository does, so that is what the
+// label says.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -21,8 +21,8 @@ const URL_ORIGIN = /^https?:\/\//i;
  * directory, so both count.
  *
  * Nearest, not outermost, which is worth knowing: a repository vendored
- * inside another repository answers for its own files, so two of its
- * documents that sit at the same path within it collide again. A caller
+ * inside another repository is the repository for its own files, so two
+ * of its documents at the same path within it collide again. A caller
  * that reads across such a tree passes `source` and says what each
  * document is called.
  */
@@ -48,8 +48,8 @@ function withForwardSlashes(value: string): string {
 }
 
 /**
- * Where the document sits, relative to its repository. Outside a
- * repository the working directory answers, and a file above even that
+ * Where the document is, relative to its repository. Outside a
+ * repository the working directory takes that role, and a file above it
  * keeps its absolute path, which is unlovely but unique.
  */
 function documentPathLabel(origin: string): string {
@@ -69,7 +69,7 @@ function documentPathLabel(origin: string): string {
 
 /**
  * The provenance label for a document read from `origin`, which is
- * either a path on disk or the URL it was fetched from. `prefix` names
+ * either a path on disk or the URL it was fetched from. `prefix` gives
  * the reader, the way `cloudformation:template.yaml` always did.
  */
 export function documentSourceLabel(prefix: string, origin: string): string {

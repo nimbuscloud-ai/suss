@@ -1,4 +1,4 @@
-// typeShapes.ts — Translate a ts-morph Type into a TypeShape.
+// typeShapes.ts: Translate a ts-morph Type into a TypeShape.
 //
 // This is the type-checker fallback for `extractShape`: when a syntactic walk
 // of an expression can't decompose it (e.g. a bare identifier, a call, a
@@ -13,7 +13,7 @@
 //      remembering types we're already expanding on the current path.
 //
 //   2. Not every type is worth expanding. `Date`, `Buffer`, `RegExp`, DOM
-//      classes — their structural shape doesn't match how callers actually
+//      classes: their structural shape doesn't match how callers actually
 //      use them. We keep those as `ref` with the declared type name and stop.
 //      The same goes for every other type the project did not write: the
 //      name is what a reader wants, and the fields belong to the library.
@@ -31,13 +31,13 @@ import type { Node, SourceFile, Symbol as TsSymbol, Type } from "ts-morph";
 
 /**
  * Maximum recursion depth when expanding object properties. Beyond this we
- * collapse to an unnamed `ref` — the alternative is stack overflow on deep
+ * collapse to an unnamed `ref`: the alternative is stack overflow on deep
  * nominal types (React's `HTMLElement`, etc.).
  */
 const MAX_DEPTH = 6;
 
 /**
- * Named types that we intentionally do NOT expand — their structural shape
+ * Named types that we intentionally do NOT expand: their structural shape
  * doesn't help anyone reasoning about response bodies. Callers read them as
  * opaque references and trust the name.
  */
@@ -81,7 +81,7 @@ export function shapeFromNodeType(node: Node): TypeShape | null {
 
 /**
  * Convert an already-obtained `Type` at the given enclosing node into a
- * `TypeShape`. Exposed for callers that already hold a Type — same semantics
+ * `TypeShape`. Exposed for callers that already have a Type: same semantics
  * as `shapeFromNodeType` otherwise.
  */
 export function shapeFromType(type: Type, enclosing: Node): TypeShape | null {
@@ -100,7 +100,7 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   }
 
   // `never` is a no-throughput type. We model it as unknown rather than
-  // inventing a new variant — callers shouldn't be reasoning about
+  // inventing a new variant: callers shouldn't be reasoning about
   // unreachable values.
   if (type.isNever()) {
     return { type: "unknown" };
@@ -115,7 +115,7 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   }
 
   // Literal types come through before `isString`/`isNumber`/`isBoolean`
-  // (those also return true for literal types). Preserve the literal —
+  // (those also return true for literal types). Preserve the literal ,
   // consumers can widen to `text`/`number`/`boolean` by inspecting `value`.
   if (type.isStringLiteral()) {
     const v = type.getLiteralValue();
@@ -147,20 +147,20 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
     return { type: "boolean" };
   }
   if (type.isNumber()) {
-    // Plain `number` type — we can't tell integer vs float, so surface the
+    // Plain `number` type: we can't tell integer vs float, so surface the
     // wider `number` variant.
     return { type: "number" };
   }
 
-  // BigInt — no dedicated variant; surface as a named ref.
+  // BigInt: no dedicated variant; surface as a named ref.
   if (type.isBigInt() || type.isBigIntLiteral()) {
     return { type: "ref", name: "bigint" };
   }
 
   // Past this point every branch may recurse into typeToShape. The original
   // MAX_DEPTH guard lived only inside objectToShape, so cycles that go through
-  // unions or arrays — e.g. `type Json = string | number | Json[] | { [k: string]: Json }`
-  // — bypassed it and blew the stack. Gate every compound expansion centrally.
+  // unions or arrays: e.g. `type Json = string | number | Json[] | { [k: string]: Json }`
+  //: bypassed it and blew the stack. Gate every compound expansion centrally.
   if (ctx.depth >= MAX_DEPTH) {
     return refFromType(type, ctx);
   }
@@ -179,7 +179,7 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   }
 
   if (type.isIntersection()) {
-    // Intersections narrow a type — for records we want the merged property
+    // Intersections narrow a type: for records we want the merged property
     // set, so expand each operand and merge resulting records.
     return intersectionToShape(type, withSeen(ctx, compoundKey));
   }
@@ -210,14 +210,14 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
     return { type: "array", items: collapseVariants(items) };
   }
 
-  // Callable types (functions) — we don't carry signatures into TypeShape.
+  // Callable types (functions): we don't carry signatures into TypeShape.
   // Represent as a named ref so downstream can at least see "this is a
   // function type called X".
   if (type.getCallSignatures().length > 0) {
     return { type: "ref", name: "function" };
   }
 
-  // Opaque named types — Date, Promise, Error, Map, etc. We don't expand
+  // Opaque named types: Date, Promise, Error, Map, etc. We don't expand
   // their properties; callers read them as refs.
   const namedRef = opaqueNamedRef(type, ctx);
   if (namedRef !== null) {
@@ -239,7 +239,7 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
     return namedOnce(type, ctx) ?? objectToShape(type, ctx);
   }
 
-  // Enum types — each member is a string or number literal. Collect members
+  // Enum types: each member is a string or number literal. Collect members
   // and surface as a union of primitives.
   if (type.isEnum() || type.isEnumLiteral()) {
     return enumToShape(type, ctx);
@@ -306,7 +306,7 @@ function intersectionToShape(
   }
 
   // Otherwise surface the intersection as the widest single operand or a
-  // named ref — intersections between non-records don't have a clean TypeShape
+  // named ref: intersections between non-records don't have a clean TypeShape
   // equivalent.
   if (nonRecords.length === 1 && records.length === 0) {
     return nonRecords[0];
@@ -341,7 +341,7 @@ function objectToShape(type: Type, ctx: ConvertContext): TypeShape | null {
 
   // Dictionary types: an index signature (`{ [key: string]: T }`,
   // `Record<string, T>`) without named properties. The key set is open.
-  // If both a string and number index are present (rare — e.g. `Array`-like
+  // If both a string and number index are present (rare: e.g. `Array`-like
   // structural types), prefer the string index since JSON dictionaries are
   // string-keyed on the wire.
   const indexType = type.getStringIndexType() ?? type.getNumberIndexType();
@@ -370,7 +370,7 @@ function objectToShape(type: Type, ctx: ConvertContext): TypeShape | null {
 
   // Some "object" types have no enumerable properties AND no index signature
   // (e.g. empty object literal type `{}`, structural types we can't
-  // introspect). Emitting an empty record is misleading — it asserts
+  // introspect). Emitting an empty record is misleading: it asserts
   // "definitely no fields" when we really mean "we don't know." Surface as a
   // ref in that case.
   if (symbols.length === 0) {
@@ -387,7 +387,7 @@ function enumToShape(type: Type, ctx: ConvertContext): TypeShape {
   if (type.isUnion()) {
     return unionToShape(type, ctx) ?? { type: "unknown" };
   }
-  // Non-union enum literal — just a literal, already handled above. Defensive.
+  // Non-union enum literal: just a literal, already handled above. Defensive.
   return (
     typeToShape(type.getBaseTypeOfLiteralType(), descend(ctx)) ?? {
       type: "unknown",
@@ -417,7 +417,7 @@ function opaqueNamedRef(type: Type, ctx: ConvertContext): TypeShape | null {
  * is worth expanding.
  *
  * Anonymous types are expanded whatever file they were written in. The
- * compiler names a type literal or a mapped type `__type`, so `Partial<T>`
+ * compiler calls a type literal or a mapped type `__type`, so `Partial<T>`
  * and the object type behind a schema builder land here with no name to
  * report, and a `ref` would say less than their fields do.
  */
@@ -477,7 +477,7 @@ function isOutsideProject(file: SourceFile): boolean {
  *
  * A reader following the name finds it in the summary's table, and a
  * type mentioned twenty times costs one expansion rather than twenty.
- * Answers null when nothing is collecting definitions, or when the type
+ * Null when nothing is collecting definitions, or when the type
  * has no name to file it under, and the caller expands as before.
  */
 function namedOnce(type: Type, ctx: ConvertContext): TypeShape | null {
@@ -554,7 +554,7 @@ function refFromType(type: Type, ctx: ConvertContext): TypeShape {
   // are standing, and the same type reached from two files has to come
   // out the same. Reading it from nowhere qualifies an imported name
   // with the absolute path it came from, which is one machine's
-  // answer, so that qualifier comes back off.
+  // result, so that qualifier comes back off.
   return { type: "ref", name: withoutImportQualifiers(type.getText()) };
 }
 

@@ -148,7 +148,7 @@ describe("backfilling identity.id", () => {
     // A schemaVersion-2 artifact spelled identity in full; a missing
     // id there is the producer's own gap, not something the version-1
     // read path should paper over. Later versions changed other
-    // fields and inherit the same answer, so both are pinned.
+    // fields and behave the same way, so both are pinned.
     for (const schemaVersion of [2, SUMMARY_SCHEMA_VERSION]) {
       const parsed = parseSummary(v1Summary({ schemaVersion }));
       expect(parsed.identity.id).toBeUndefined();

@@ -11,10 +11,6 @@ import { reactRouterFramework } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
-// ---------------------------------------------------------------------------
-// Fixture project — adds fixtures/react-router/*.ts to an in-memory ts-morph project
-// ---------------------------------------------------------------------------
-
 const fixturesDir = path.resolve(
   __dirname,
   "../../../../fixtures/react-router",
@@ -31,7 +27,6 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
   return await adapter.extractAll();
 }
 
-/** The same, over the fixtures that declare routes in JSX. */
 async function runOverRouteDeclarations(): Promise<BehavioralSummary[]> {
   const project = createFixtureProject(fixturesDir, "*.tsx");
 
@@ -43,7 +38,6 @@ async function runOverRouteDeclarations(): Promise<BehavioralSummary[]> {
   return await adapter.extractAll();
 }
 
-/** A caller of one URL, to pair the discovered routes against. */
 function consumerOf(name: string, routePath: string): BehavioralSummary {
   return {
     kind: "client",
@@ -69,11 +63,7 @@ function consumerOf(name: string, routePath: string): BehavioralSummary {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Structural sanity checks
-// ---------------------------------------------------------------------------
-
-describe("reactRouterFramework — pack shape", () => {
+describe("reactRouterFramework: pack shape", () => {
   it("exposes loader/action/component discovery entries", () => {
     const pack = reactRouterFramework();
     expect(pack.name).toBe("react-router");
@@ -128,20 +118,15 @@ describe("reactRouterFramework — pack shape", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Integration — run the adapter against the react-router fixture
-// ---------------------------------------------------------------------------
-
-describe("reactRouterFramework — integration", () => {
-  // ts-morph project setup dominates — build the summaries once and reuse.
+describe("reactRouterFramework: integration", () => {
+  // ts-morph project setup dominates, so build the summaries once.
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
     summaries = await runAdapter();
   }, 90_000);
 
   it("discovers both loader and action kinds from named exports", () => {
-    // The fixture exports `loader` and `action`. No `default` export in this
-    // file, so we expect exactly those two code units.
+    // The fixture exports `loader` and `action`, and no `default`.
     expect(summaries).toHaveLength(2);
     const kinds = summaries.map((s) => s.kind).sort();
     expect(kinds).toEqual(["action", "loader"]);
@@ -161,12 +146,7 @@ describe("reactRouterFramework — integration", () => {
     const loader = summaries.find((s) => s.kind === "loader");
     expect(loader).toBeDefined();
 
-    // Three detected terminals:
-    //   1. json({ error: "not found" }, { status: 404 })  → response, 200 default
-    //   2. redirect("/users")                             → response, 302 default
-    //   3. json({ user })                                 → default response, 200
-    // json()/data() default to 200, redirect() defaults to 302 via
-    // the pack's defaultStatusCode extraction.
+    // json() and data() default to 200, redirect() to 302.
     expect(loader?.transitions).toHaveLength(3);
     const statuses = loader?.transitions.map((t) =>
       t.output.type === "response" && t.output.statusCode?.type === "literal"
@@ -181,7 +161,7 @@ describe("reactRouterFramework — integration", () => {
     ]);
   });
 
-  it("loader uses singleObjectParam mapping — params destructure is the sole input", () => {
+  it("loader uses singleObjectParam mapping: params destructure is the sole input", () => {
     const loader = summaries.find((s) => s.kind === "loader");
     expect(loader).toBeDefined();
     if (!loader) {
@@ -200,9 +180,6 @@ describe("reactRouterFramework — integration", () => {
     const action = summaries.find((s) => s.kind === "action");
     expect(action).toBeDefined();
 
-    // Two terminals:
-    //   1. json({ error: "name required" }, { status: 400 })  → response, null status
-    //   2. redirect(`/users/${params.id}`)                    → default response
     if (!action) {
       throw new Error("action summary missing");
     }
@@ -227,17 +204,11 @@ describe("reactRouterFramework — integration", () => {
   it("has no gaps when no contract reading is configured", () => {
     for (const s of summaries) {
       expect(s.gaps).toEqual([]);
-      // metadata carries only the derived effects closure (when the
-      // unit has effects), and no contract-reading metadata appears.
       const keys = Object.keys(s.metadata ?? {});
       expect(keys.filter((k) => k !== "effectsClosure")).toEqual([]);
     }
   });
 });
-
-// ---------------------------------------------------------------------------
-// Routes the app declares itself, in JSX and as route objects
-// ---------------------------------------------------------------------------
 
 describe("reactRouterFramework: declared route trees", () => {
   let routed: BehavioralSummary[];
@@ -316,9 +287,8 @@ describe("reactRouterFramework: declared route trees", () => {
     const paired = result.pairs
       .map((p) => `${p.consumer.identity.name}<->${p.provider.identity.name}`)
       .sort();
-    // /billing is answered by the layout and by the index route inside
-    // it, which is what the router renders there, so a caller of that
-    // URL pairs with both.
+    // The router renders both the layout and its index route at
+    // /billing, so a caller of that URL pairs with both.
     expect(paired).toEqual([
       "loadBilling<->Billing",
       "loadBilling<->Shell",
@@ -363,8 +333,7 @@ describe("a route array that holds itself", () => {
     }
 
     // Following the name back into the array it names would walk
-    // forever. The route that loops resolves to nothing, and the run
-    // still reads every route beside it.
+    // forever.
     expect(warnings.join("")).not.toContain("overflowed the call stack");
     expect(summaries.map((s) => s.identity.name)).toEqual(["Home"]);
   }, 60_000);

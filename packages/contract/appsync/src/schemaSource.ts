@@ -1,4 +1,4 @@
-// schemaSource.ts — Resolve an API's declared schema source to SDL text.
+// schemaSource.ts: Resolve an API's declared schema source to SDL text.
 //
 // Inline SDL is already text. A `DefinitionS3Location` / `SchemaUri`
 // pointing at a local file is loaded from disk via the SDL machinery in
@@ -23,7 +23,7 @@ export type ResolvedSchema =
     }
   | { status: "absent" };
 
-/** Schemes a static reader can't dereference — recorded, never fetched. */
+/** Schemes a static reader can't dereference, recorded, never fetched. */
 const REMOTE_SCHEME = /^(s3|https?):\/\//i;
 
 /**

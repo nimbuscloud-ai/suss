@@ -1,4 +1,4 @@
-// graphqlImperativeCall.ts — discover imperative GraphQL calls
+// graphqlImperativeCall.ts: discover imperative GraphQL calls
 // (`apolloClient.query({ query: gql\`...\` })`,
 // `apolloClient.mutate({ mutation: ... })`). Method-driven operation
 // type wins when the gql header is anonymous.
@@ -25,7 +25,7 @@ export function discoverGraphqlImperativeCalls(
   kind: string,
   resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
-  // Gate on the client identifier being imported — reduces false
+  // Gate on the client identifier being imported, reduces false
   // positives against any object with a `.query()` / `.mutate()`
   // method (common in query-builder libraries).
   const localName = resolveImportedLocalName(
@@ -82,9 +82,9 @@ export function discoverGraphqlImperativeCalls(
       resolveGraphqlDocument(docValue, resolution) ??
       unreadableDocument(docValue);
     // Method-driven operation type wins when the gql header is
-    // anonymous — `client.mutate({ mutation: gql\`...\` })` is a
+    // anonymous: `client.mutate({ mutation: gql\`...\` })` is a
     // mutation regardless of whether the doc says `mutation` or just
-    // `{ ... }` — and supplies the type when the document body isn't
+    // `{ ... }`: and supplies the type when the document body isn't
     // statically readable at all.
     const operationInfo = operationInfoFromResolution(
       document,
@@ -117,7 +117,7 @@ function imperativeConfigValue(prop: Node): Node | null {
     return prop.getInitializer() ?? null;
   }
   if (Node.isShorthandPropertyAssignment(prop)) {
-    // Walk to the outer binding via getValueSymbol — same fix as
+    // Walk to the outer binding via getValueSymbol, same fix as
     // in resolverMapObject, needed because ShorthandPropertyAssignment's
     // `getSymbol()` returns the shorthand-property's own symbol,
     // not the referenced value.

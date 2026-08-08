@@ -26,7 +26,6 @@ async function classesIn(source: string): Promise<ClassInfo[]> {
   return found;
 }
 
-/** The first top-level expression statement's node, for tests exercising a bare expression rather than a full class/module declaration. */
 async function firstExpression(source: string): Promise<RbNode> {
   const tree = await parseRuby(source);
   return must(tree.rootNode.namedChild(0));
@@ -91,12 +90,6 @@ describe("walkClasses: bodyNesting (Module.nesting)", () => {
     const [info] = await classesIn(
       "module Foo\n  class Types::CampaignType < Types::BaseObject\n  end\nend\n",
     );
-    // Module.nesting tracks lexical class/module keyword nesting, not
-    // the shape of the name used to open this one: "Foo" stays
-    // reachable through nesting inside this body exactly the way it
-    // would for a bare-named class, even though CampaignType's own
-    // qualified name is the compound path as written, not
-    // "Foo::Types::CampaignType".
     expect(info?.bodyNesting).toEqual(["Types::CampaignType", "Foo"]);
   });
 
@@ -135,10 +128,7 @@ describe("qualifyConstantRef", () => {
 });
 
 describe("shadowingClassFor", () => {
-  it("finds a project class shadowing a name at an outer nesting level", async () => {
-    // "String" sits at "Types", not inside "Types::CampaignType" (the
-    // innermost level), so a single-level qualification would miss it;
-    // the search has to walk the whole chain.
+  it("finds a project class shadowing a name at an outer nesting level, not only the innermost", async () => {
     const node = await firstExpression("String\n");
     const knownClasses = new Set(["Types::String", "Types::CampaignType"]);
     expect(
@@ -191,11 +181,8 @@ describe("graphqlTypeNameFromQualified: stripTypeSuffix", () => {
   });
 });
 
-// Exercises the `field` helper against a `superclass` wrapper node,
-// which scope.ts unwraps with `namedChild(0)` rather than a field name
-// (the wrapper node itself carries no fields per the grammar).
 describe("superclass wrapper shape", () => {
-  it("wraps exactly the expression after the '<'", async () => {
+  it("carries no fields of its own, so it is unwrapped by child position", async () => {
     const classNode = await firstExpression(
       "class Types::CampaignType < Types::BaseObject\nend\n",
     );

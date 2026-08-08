@@ -16,7 +16,7 @@
 import { declaredExports } from "./declaredSurface.mjs";
 
 /**
- * How many consumers may go unpaired while their provider sits in the
+ * How many consumers may go unpaired while their provider is in the
  * same run. Eight today, and every one of them has a cause written up
  * under `## Where the unmatched summaries come from` in the dogfooding
  * notes. What bounds this number is how well suss resolves, not how many
@@ -61,11 +61,11 @@ function missingProviders(packages) {
 }
 
 /**
- * Anything a pack recognised carries the package and export path a
+ * Anything a pack recognised has the package and export path a
  * pairing key is built from.
  *
  * The transitive closure is the one exception. A helper the closure
- * reaches sits inside a package rather than on its edge, so it has no
+ * reaches is inside a package rather than on its edge, so it has no
  * export path, cannot pair, and `pairSummaries` reports it as
  * unpairable. Every other summary came from a pack that matched a
  * boundary, and a boundary with no name on it is a pairing key that
@@ -102,7 +102,7 @@ function bindingsWithoutIdentity(packages) {
 /**
  * Nothing goes unpaired whose provider is sitting right there.
  *
- * A consumer names the package and export it called. When that export
+ * A consumer gives the package and export it called. When that export
  * has a provider summary in the same run and the two still do not pair,
  * resolution failed.
  */
@@ -122,7 +122,7 @@ function unpairedConsumers(pairing) {
 
 /**
  * Run every invariant over one dogfood run and return what failed,
- * grouped by which invariant caught it. `packages` carries the summaries
+ * grouped by which invariant caught it. `packages` has the summaries
  * each package produced; `pairing` is what `pairSummaries` returned for
  * all of them together.
  */

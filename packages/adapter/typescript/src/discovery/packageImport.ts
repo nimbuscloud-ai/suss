@@ -1,4 +1,4 @@
-// packageImport.ts (discovery handler) — emit one consumer-side unit
+// packageImport.ts (discovery handler), emit one consumer-side unit
 // per (enclosing function × consumed binding) for any call into a
 // targeted package. Pairs with packageExports-discovered providers.
 //
@@ -115,7 +115,7 @@ export function discoverPackageImports(
 
   // Walk variable declarations for bindings whose initializer is a
   // call/new (optionally awaited) of a tracked import. The returned
-  // table is scope-aware — `resolve(name, fromNode)` walks outward
+  // table is scope-aware: `resolve(name, fromNode)` walks outward
   // through enclosing function / file scopes, so two sibling
   // functions binding the same name to different factories do not
   // clobber each other.
@@ -128,7 +128,7 @@ export function discoverPackageImports(
 
   // Resolve the provenance of an arbitrary expression that appears
   // as the receiver in `<expr>.method(...)`. `fromNode` is the call
-  // site — used as the lookup origin for scope resolution. Returns
+  // site: used as the lookup origin for scope resolution. Returns
   // null when the receiver doesn't trace to a tracked import or
   // binding.
   function resolveReceiverProvenance(
@@ -199,7 +199,7 @@ export function discoverPackageImports(
   const results: DiscoveredUnit[] = [];
   // Dedup: one unit per (enclosing function × consumed exportPath).
   // Multiple call sites inside the same function targeting the same
-  // export collapse to a single unit — the consumer summary describes
+  // export collapse to a single unit, the consumer summary describes
   // the function's behaviour around the boundary, not each call.
   const seen = new Set<string>();
 

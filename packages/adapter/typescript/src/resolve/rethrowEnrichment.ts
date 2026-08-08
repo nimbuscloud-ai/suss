@@ -1,4 +1,4 @@
-// rethrowEnrichment.ts — populate rethrow provenance on throw terminals
+// rethrowEnrichment.ts: populate rethrow provenance on throw terminals
 //
 // A bare `throw err` inside a catch block has no constructor, no literal
 // message, no static exception type we can resolve at the throw site.
@@ -14,17 +14,17 @@
 // of exception types and messages those callees could produce.
 //
 // Scope decisions:
-//   * Transitive through rethrow chains — `A → B → C` where each hop
+//   * Transitive through rethrow chains: `A → B → C` where each hop
 //     re-throws resolves C's throw terminals all the way up to A. The
 //     fixpoint runs as datalog rules over facts built from the summary
-//     set: `contributes(u, s)` holds for a unit's own throw terminals
+//     set: `contributes(u, s)` is true for a unit's own throw terminals
 //     and, recursively, for whatever the callees inside its rethrow's
 //     try block contribute. Propagation through *plain* calls (an
 //     uncaught exception crossing a frame with no try at all) is the
 //     full may-throw analysis and stays a follow-up.
-//   * Same-project only — out-of-project callees (node_modules) have
+//   * Same-project only: out-of-project callees (node_modules) have
 //     no summaries to consult, so their contribution is absent.
-//   * Non-breaking — stamps `transition.metadata.rethrow`, never
+//   * Non-breaking: stamps `transition.metadata.rethrow`, never
 //     rewrites `output.exceptionType` / `output.message` on the
 //     transition itself. Readers opt in to the enrichment by reading
 //     metadata; the primary output fields retain their on-the-wire
@@ -53,8 +53,8 @@ interface RethrowSource {
 // ---------------------------------------------------------------------------
 
 // The propagation semantics, as rules: a unit contributes what its own
-// throw terminals say (exactly the old one-hop contract), and — the
-// transitive step — whatever the callees inside one of its rethrow
+// throw terminals say (exactly the old one-hop contract), and: the
+// transitive step: whatever the callees inside one of its rethrow
 // sites' try blocks contribute.
 const RETHROW_RULES = [
   rule(
@@ -89,7 +89,7 @@ export function enrichRethrows(
   const index = indexSummariesByFunctionLocation(summaries);
 
   // Build the source-file lookup once. Without this, every summary's
-  // locate-by-file path scans the project's full file list — turning
+  // locate-by-file path scans the project's full file list: turning
   // the pass into O(summaries × source files) just for the lookup.
   const lookup = createSourceFileLookup(project);
 
@@ -97,7 +97,7 @@ export function enrichRethrows(
   // relations this pass emits (`throwsDirect`, `contributes`, …) join
   // against `entry` / `calls` / `unitEffect` under one identity.
   // Summaries the closure never registered (or runs without the
-  // closure at all) fall back to the line-based key — every mint goes
+  // closure at all) fall back to the line-based key: every mint goes
   // through here, so this pass stays internally consistent either way.
   const keyFor = (summary: BehavioralSummary): string =>
     facts?.unitKeyBySummary.get(summary) ??
@@ -119,7 +119,7 @@ export function enrichRethrows(
 
   for (const summary of summaries) {
     // Re-throws live inside catch blocks, which bare-throw an
-    // identifier — only summaries with a `throw` transition can host
+    // identifier: only summaries with a `throw` transition can host
     // one or contribute sources. Skipping the rest cuts the per-summary
     // locate cost for a 10× majority with nothing to say.
     if (!summary.transitions.some((t) => t.output.type === "throw")) {
@@ -129,9 +129,9 @@ export function enrichRethrows(
     nameByUnit.set(unitKey, summary.identity.name);
 
     // Every throw terminal contributes what it textually says. Bare
-    // re-throws contribute their (null-ish) site facts too — keeping
+    // re-throws contribute their (null-ish) site facts too: keeping
     // the derived source set a strict superset of the old one-hop
-    // results — and additionally expand through their try block below.
+    // results: and additionally expand through their try block below.
     for (const transition of summary.transitions) {
       if (transition.output.type !== "throw") {
         continue;
@@ -212,7 +212,7 @@ export function enrichRethrows(
     if (sources.length === 0) {
       continue;
     }
-    // Stamp on metadata — additive, non-breaking, doesn't rewrite
+    // Stamp on metadata: additive, non-breaking, doesn't rewrite
     // `output.exceptionType` / `output.message` which stay as the
     // literal throw-site text ("err", null).
     target.transition.metadata = {
@@ -259,7 +259,7 @@ function indexSummariesByFunctionLocation(
  * Find the `throw <ident>` statement at the transition's location, if
  * that throw's expression is a bare identifier (the re-throw pattern).
  * Returns null for throw statements whose expression is a `new Ctor(...)`
- * or `fn(...)` — those already carried a message through the normal
+ * or `fn(...)`: those already carried a message through the normal
  * terminal extraction and aren't candidates for rethrow enrichment.
  */
 function findBareRethrow(
@@ -306,7 +306,7 @@ function enclosingTry(throwStmt: Node): Node | null {
       return sawCatchClause ? current : null;
     }
     // If we hit a function boundary before a try, the rethrow isn't
-    // inside a catch of an enclosing try — bail.
+    // inside a catch of an enclosing try: bail.
     if (
       Node.isFunctionDeclaration(current) ||
       Node.isFunctionExpression(current) ||
@@ -326,7 +326,7 @@ function enclosingTry(throwStmt: Node): Node | null {
 
 /**
  * The callee units invoked inside a try block, as summary-location
- * keys — the `siteCalls` fact set for one rethrow site. The rules
+ * keys: the `siteCalls` fact set for one rethrow site. The rules
  * expand each callee's transitive contributions from here.
  */
 function collectTryBodyCallees(

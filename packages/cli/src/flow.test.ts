@@ -1,11 +1,13 @@
-// flow.test.ts: what `suss inspect --flow` answers at the terminal.
-//
-// The worked example is the ALB fixture: a client asks for
-// GET https://shop.example.com/api/orders/123, and the answer has to
-// name every hop between the balancer and the handler. The rest of the
-// cases are the ones that go wrong in practice: nothing serves the
-// request, a hop nobody can settle, and two stacks that spell their
-// listener the same way.
+/**
+ * What `suss inspect --flow` prints at the terminal.
+ *
+ * The worked example is the ALB fixture: a client asks for
+ * GET https://shop.example.com/api/orders/123, and the answer has to
+ * list every hop between the balancer and the handler. The rest of the
+ * cases are the ones that go wrong in practice: nothing serves the
+ * request, a hop nobody can settle, and two stacks that spell their
+ * listener the same way.
+ */
 
 import fs from "node:fs";
 import os from "node:os";
@@ -312,7 +314,7 @@ describe("what the answer says when it is not settled", () => {
     ]);
 
     // The listener's default is reached only if the gated rule does not
-    // take the request, so the line that names the response has to say
+    // take the request, so the line that gives the response has to say
     // so on its own.
     expect(io.stdout).toContain("HttpListener may answer it itself: 404");
     expect(io.stdout).not.toContain("HttpListener answers it itself");

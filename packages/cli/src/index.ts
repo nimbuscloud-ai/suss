@@ -1,4 +1,4 @@
-// @suss/cli — public exports. The bin entry lives in bin.ts so importing
+// @suss/cli: public exports. The bin entry lives in bin.ts so importing
 // this module is side-effect free.
 
 export { check, checkDir } from "./check.js";

@@ -4,8 +4,8 @@
 // facts support. A caller asking "what does this one value resolve to"
 // reads a handful of those and pays for all of them. Profiles of the
 // resolution rules show the gap: a rule is attempted a hundred and fifty
-// times to win fourteen tuples, and the tuples nobody reads outnumber the
-// ones somebody does by more than ten to one.
+// times to produce fourteen tuples, and the tuples nobody reads outnumber
+// the ones somebody does by more than ten to one.
 //
 // The rewrite here is magic sets. Each derived relation gains a companion
 // relation saying which of its rows somebody is waiting on, every rule
@@ -14,21 +14,22 @@
 // `comesTo(y, z)` to answer `comesTo(x, z)` says so, and the engine
 // derives the inner pair because the outer one was asked for.
 //
-// The caller names the relations that have to come out complete. Every
-// other derived relation is filled in only as far as those need it, and a
+// The caller says which relations have to come out complete. Every other
+// derived relation is filled in only as far as those need it, and a
 // relation nothing asks for is not derived at all.
 //
-// Two properties this leans on. The rewritten program is positive, so it
-// stays inside the semi-naive resume that makes a store evaluating after
-// every wave of facts affordable. And demand is a fact like any other, so
-// asking a new question is a fact arriving, not a fresh fixpoint.
+// This depends on two properties. The rewritten program is positive, so
+// it stays inside the semi-naive resume that makes a store evaluating
+// after every wave of facts affordable. And demand is a fact like any
+// other, so asking a new question is a fact arriving, not a fresh
+// fixpoint.
 //
 // Demand being a fact is also what lets a caller take it back. A
 // database that keeps every question ever asked derives over all of them
 // each time a file's facts arrive, so the tenth question costs ten
-// questions and the thousandth costs a thousand. `demandDriven` names
-// the relations that hold nothing until somebody asks, and
-// `clearRelations` empties them once an answer has been read.
+// questions and the thousandth costs a thousand. `demandDriven` lists
+// the relations that stay empty until somebody asks, and
+// `clearRelations` empties them again once an answer has been read.
 
 import type { Literal, Rule, Term } from "./index.js";
 
@@ -75,7 +76,7 @@ export interface OnDemandRules {
 }
 
 /**
- * Rewrite `rules` so the relations named in `complete` still come out
+ * Rewrite `rules` so the relations listed in `complete` still come out
  * whole and everything else is derived only where those relations reach.
  *
  * Demand enters as ordinary facts. Give a complete relation a rule whose
@@ -84,7 +85,7 @@ export interface OnDemandRules {
  * fact into demand for one value's chain.
  *
  * Relations no complete relation reaches are dropped, so a caller reading
- * a relation it did not name gets nothing. Negation is rejected: a
+ * a relation it did not list gets nothing. Negation is rejected: a
  * demand-restricted relation is smaller than the one a negated literal
  * was written against, and a smaller relation makes `not p(x)` true where
  * it was false.
@@ -151,10 +152,9 @@ export function deriveOnDemand(
     variantsOf.set(relation, (variantsOf.get(relation) ?? 0) + 1);
   }
 
-  // A relation asked for one way keeps its name, which keeps a profile
-  // readable and lets a caller read a complete relation back under the
-  // name it wrote. An unadorned variant is the whole relation, so it
-  // keeps the name whatever else exists.
+  // A relation asked for only one way keeps its name, so a profile stays
+  // readable and a caller can read a complete relation back under the name
+  // it wrote. An unadorned variant is the whole relation, so it keeps it too.
   const nameOf = (relation: string, adornment: Adornment): string => {
     if (!anyBound(adornment) || variantsOf.get(relation) === 1) {
       return relation;
@@ -227,11 +227,11 @@ export function deriveOnDemand(
 
 /**
  * How each body literal is bound when the join reaches it, left to right,
- * or null where the literal names a relation no rule derives. Base
+ * or null where the literal refers to a relation no rule derives. Base
  * relations need no demand: their facts are all there already.
  *
- * Left to right because that is the order the evaluator joins in, so what
- * a rule binds by the time it reaches a literal is what this says.
+ * Left to right because that is the order the evaluator joins in, so this
+ * reports what a rule has bound by the time it reaches each literal.
  */
 function bodyAdornments(
   r: Rule,

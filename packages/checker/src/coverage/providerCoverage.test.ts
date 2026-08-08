@@ -179,7 +179,7 @@ describe("checkProviderCoverage — sub-case analysis", () => {
   };
 
   it("emits warnings when provider has multiple 200 transitions but consumer only has one branch", () => {
-    // Provider: returns 200 in two cases — active user (default) and deleted user
+    // Provider: returns 200 in two cases, active user (default) and deleted user
     const p = provider("getUser", [
       transition("t-200-deleted", {
         conditions: [userDeleted],

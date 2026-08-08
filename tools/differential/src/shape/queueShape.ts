@@ -3,7 +3,7 @@
 //
 // Nothing in a Lambda's source says which queue feeds it: the template
 // declares the event source, and the subject the consumer answers to
-// sits in whatever config object the service's own factory takes. So a
+// is in whatever config object the service's own factory takes. So a
 // program in this family is three things, and all three are generated:
 // the template, the handler, and the pack options that name the
 // factory's config property. The subject reaching the summary is what
@@ -34,7 +34,7 @@ export type ConsumerBuild =
   | "bareFunction";
 
 /**
- * How the project writes the pack option that finds the subject. All
+ * How the project writes the pack option that locates the subject. All
  * three describe the same factory, so all three should read the same
  * program the same way.
  */
@@ -55,8 +55,8 @@ const SUBJECT_PROPERTY = "subject";
 const FACTORY_NAME = "makeHandler";
 
 /**
- * The template names a handler by file path, so this family writes
- * files rather than holding them in memory. One directory per process
+ * The template points at a handler by file path, so this family writes
+ * files rather than keeping them in memory. One directory per process
  * keeps parallel test workers off each other's files.
  */
 export const queueProjectRoot = (): string =>
@@ -105,9 +105,9 @@ export function ${FACTORY_NAME}Flipped(
 }
 `;
 
-// The build the re-exporting consumer points at. The template names no
-// file but the consumer, so this one is only reached through that
-// re-export.
+// The build the re-exporting consumer points at. The consumer is the
+// only file the template mentions, so this one is reached only through
+// that re-export.
 const WORKER_SOURCE = `import { ${FACTORY_NAME} } from "./makeHandler.js";
 
 export const handler = ${FACTORY_NAME}(
@@ -122,11 +122,11 @@ const BODY = ["  async ({ parsed }) => {", "    void parsed;", "  },"];
 
 interface ConsumerRendering {
   source: string;
-  /** Where the config object sits in the factory's arguments. */
+  /** Which of the factory's arguments the config object is. */
   argIndex: number;
   /** The callee the factory is written as. */
   callee: string;
-  /** The subject the consumer answers, when it names one. */
+  /** The subject the consumer listens for, when it states one. */
   channel: string | null;
 }
 
@@ -293,16 +293,16 @@ const consumerRenderings: DispatchTable<
     callee: FACTORY_NAME,
     channel: SUBJECT,
   }),
-  // The consumer file the template names holds the export and the
-  // build sits next to it, which is how a service keeps its handlers
-  // one line each.
+  // The consumer file the template points at contains the export, and
+  // the build lives next to it, which is how a service keeps its
+  // handlers one line each.
   reexportedHandler: () => ({
     source: ['export { handler } from "./worker.js";', ""].join("\n"),
     argIndex: 0,
     callee: FACTORY_NAME,
     channel: SUBJECT,
   }),
-  // No factory, so the source names no subject and the consumer keeps
+  // No factory, so the source states no subject and the consumer keeps
   // whatever the template gives it.
   bareFunction: () => ({
     source: [
@@ -343,7 +343,7 @@ export interface RenderedQueueShape {
   files: Record<string, string>;
   /** The pack options the project ships alongside the program. */
   subjectFactories: SubjectFactory[];
-  /** The subject the program says this consumer answers. */
+  /** The subject the program says this consumer listens for. */
   channel: string | null;
   root: string;
 }

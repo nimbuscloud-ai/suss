@@ -1,4 +1,4 @@
-// terminals.test.ts — exhaustive tests for findTerminals (Task 2.3)
+// terminals.test.ts: exhaustive tests for findTerminals (Task 2.3)
 
 import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
@@ -87,10 +87,10 @@ function makeThrowPattern(constructorPattern?: string): TerminalPattern {
 }
 
 // ---------------------------------------------------------------------------
-// returnShape — match cases
+// returnShape: match cases
 // ---------------------------------------------------------------------------
 
-describe("returnShape — basic matching", () => {
+describe("returnShape: basic matching", () => {
   it("matches return { status: 200, body: data } with required ['status', 'body']", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -169,7 +169,7 @@ describe("returnShape — basic matching", () => {
 
   it("returnShape with unresolvable extraction (from: 'argument') falls back to the full returned object", () => {
     // React Router loaders declare `body: { from: "argument", position: 0 }`
-    // on their returnShape terminal — that source isn't valid for
+    // on their returnShape terminal: that source isn't valid for
     // returnShape (no call-arg list), so extraction used to produce null.
     // The sensible default is "the returned object IS the body."
     const project = createProject();
@@ -250,11 +250,11 @@ describe("returnShape — basic matching", () => {
 });
 
 // ---------------------------------------------------------------------------
-// returnShape — arrow expression body (implicit return)
+// returnShape: arrow expression body (implicit return)
 // ---------------------------------------------------------------------------
 
-describe("returnShape — arrow expression body", () => {
-  it("matches async () => ({ status: 200, body: {} }) — concise ts-rest form", () => {
+describe("returnShape: arrow expression body", () => {
+  it("matches async () => ({ status: 200, body: {} }): concise ts-rest form", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
@@ -312,7 +312,7 @@ describe("returnShape — arrow expression body", () => {
   });
 
   it("returnStatement pattern matches expression-body arrows (React event handler shape)", () => {
-    // `(v) => setValue(v)` — inline event handler, no block, no
+    // `(v) => setValue(v)`: inline event handler, no block, no
     // explicit return statement. The returnStatement matcher should
     // synthesise a return terminal from the expression body so the
     // summary isn't empty.
@@ -334,7 +334,7 @@ describe("returnShape — arrow expression body", () => {
   });
 
   it("jsxReturn pattern matches expression-body arrows returning JSX", () => {
-    // `() => <Foo />` — inline arrow returning JSX (common for tiny
+    // `() => <Foo />`: inline arrow returning JSX (common for tiny
     // components and render-prop callbacks).
     const project = createProject();
     const file = project.createSourceFile(
@@ -355,7 +355,7 @@ describe("returnShape — arrow expression body", () => {
     // When a pack's terminals include both returnShape and
     // returnStatement (some packs do for generality), an arrow like
     // `(args) => ({ status, body })` should produce exactly one
-    // terminal — the returnShape match on the inner object — not two.
+    // terminal: the returnShape match on the inner object: not two.
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
@@ -427,7 +427,7 @@ describe("returnShape — arrow expression body", () => {
 // ---------------------------------------------------------------------------
 
 describe("nested function boundary", () => {
-  it("finds res.json() inside a nested closure — it writes the parent's response param", () => {
+  it("finds res.json() inside a nested closure: it writes the parent's response param", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
@@ -447,7 +447,7 @@ describe("nested function boundary", () => {
     ]);
 
     // Descent: `res.json` on the handler's own `res` parameter is the
-    // handler's observable output regardless of the closure it sits in.
+    // handler's observable output whatever closure it is inside.
     // Both the nested call and the direct call are terminals; source
     // order puts the nested one first.
     expect(terminals).toHaveLength(2);
@@ -477,8 +477,8 @@ describe("nested function boundary", () => {
     ]);
 
     // The nested `res` shadows the parameter, so `res.json` inside the
-    // callback resolves to the callback's own param — not the handler's
-    // response channel — and is not a handler terminal.
+    // callback resolves to the callback's own param: not the handler's
+    // response channel: and is not a handler terminal.
     expect(terminals).toHaveLength(1);
     expect(terminals[0].terminal.body?.typeText).toBe("{ direct: true }");
   });
@@ -558,10 +558,10 @@ describe("nested function boundary", () => {
 });
 
 // ---------------------------------------------------------------------------
-// returnShape — non-match cases
+// returnShape: non-match cases
 // ---------------------------------------------------------------------------
 
-describe("returnShape — non-match cases", () => {
+describe("returnShape: non-match cases", () => {
   it("does NOT match when required property 'body' is missing", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -639,10 +639,10 @@ describe("returnShape — non-match cases", () => {
 });
 
 // ---------------------------------------------------------------------------
-// parameterMethodCall — match cases
+// parameterMethodCall: match cases
 // ---------------------------------------------------------------------------
 
-describe("parameterMethodCall — matching", () => {
+describe("parameterMethodCall: matching", () => {
   it("matches res.json(data) with ['json'] at param 1", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -780,10 +780,10 @@ describe("parameterMethodCall — matching", () => {
 });
 
 // ---------------------------------------------------------------------------
-// parameterMethodCall — non-match cases
+// parameterMethodCall: non-match cases
 // ---------------------------------------------------------------------------
 
-describe("parameterMethodCall — non-match cases", () => {
+describe("parameterMethodCall: non-match cases", () => {
   it("does NOT match res.json(data) with ['status', 'json'] (chain too short)", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -875,10 +875,10 @@ describe("parameterMethodCall — non-match cases", () => {
 });
 
 // ---------------------------------------------------------------------------
-// throwExpression — match cases
+// throwExpression: match cases
 // ---------------------------------------------------------------------------
 
-describe("throwExpression — matching", () => {
+describe("throwExpression: matching", () => {
   it("matches throw new Error('msg') with no constructorPattern", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -899,7 +899,7 @@ describe("throwExpression — matching", () => {
   });
 
   it("captures a literal message from the first string arg regardless of position", () => {
-    // `new HttpError(404, "not found")` — message is the second arg.
+    // `new HttpError(404, "not found")`: message is the second arg.
     // The extractor should still surface it, since the dominant shape
     // in the wild is `new Ctor(code, message)` not just `new Error(message)`.
     const project = createProject();
@@ -941,8 +941,8 @@ describe("throwExpression — matching", () => {
   });
 
   it("leaves message null when no static string is present", () => {
-    // `throw err` — bare identifier, no callArgs.
-    // `throw new Error(someVariable)` — no static string.
+    // `throw err`: bare identifier, no callArgs.
+    // `throw new Error(someVariable)`: no static string.
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
@@ -1052,10 +1052,10 @@ describe("throwExpression — matching", () => {
 });
 
 // ---------------------------------------------------------------------------
-// throwExpression — non-match cases
+// throwExpression: non-match cases
 // ---------------------------------------------------------------------------
 
-describe("throwExpression — non-match cases", () => {
+describe("throwExpression: non-match cases", () => {
   it("does NOT match throw new Error() with constructorPattern 'widgetError'", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -1093,10 +1093,10 @@ describe("throwExpression — non-match cases", () => {
 });
 
 // ---------------------------------------------------------------------------
-// returnShape — ternary branches
+// returnShape: ternary branches
 // ---------------------------------------------------------------------------
 
-describe("returnShape — ternary return branches", () => {
+describe("returnShape: ternary return branches", () => {
   it("matches both branches of return x ? {...} : {...}", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -1304,7 +1304,7 @@ describe("returnShape — ternary return branches", () => {
 });
 
 // ---------------------------------------------------------------------------
-// functionCall — matching
+// functionCall: matching
 // ---------------------------------------------------------------------------
 
 describe("functionCall on an imported object", () => {
@@ -1450,7 +1450,7 @@ describe("functionCall on an imported object", () => {
   });
 });
 
-describe("functionCall — matching", () => {
+describe("functionCall: matching", () => {
   it("matches json(data) call and extracts body", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -1564,7 +1564,7 @@ describe("functionCall — matching", () => {
     };
     const terminals = findTerminals(func, [pattern]);
 
-    // res.json() callee is PropertyAccessExpression, not Identifier — should not match
+    // res.json() callee is PropertyAccessExpression, not Identifier: should not match
     expect(terminals).toHaveLength(0);
   });
 
@@ -1631,10 +1631,10 @@ describe("functionCall — matching", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Multiple patterns together — realistic handler
+// Multiple patterns together: realistic handler
 // ---------------------------------------------------------------------------
 
-describe("multiple patterns — Express handler with two calls", () => {
+describe("multiple patterns: Express handler with two calls", () => {
   it("finds both res.status(400).json() and res.status(200).json() calls", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -1682,7 +1682,7 @@ describe("multiple patterns — Express handler with two calls", () => {
 // Realistic ts-rest handler (from real app pattern)
 // ---------------------------------------------------------------------------
 
-describe("realistic ts-rest handler — multiple returns", () => {
+describe("realistic ts-rest handler: multiple returns", () => {
   it("finds all 3 returns in a try/catch handler", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -1774,10 +1774,10 @@ describe("location tracking", () => {
 });
 
 // ---------------------------------------------------------------------------
-// extraction — from: "constructor" maps exception type to status code
+// extraction: from: "constructor" maps exception type to status code
 // ---------------------------------------------------------------------------
 
-describe("extraction — from: 'constructor'", () => {
+describe("extraction: from: 'constructor'", () => {
   it("resolves a bare constructor name via full-text match", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -1942,7 +1942,7 @@ describe("extraction — from: 'constructor'", () => {
 
   it("is ignored for non-throw matchers (returnShape, parameterMethodCall, functionCall)", () => {
     // Sanity check: 'constructor' only meaningfully fires for throws, since
-    // other matchers don't carry an exception type. A pack that mis-configures
+    // other matchers have no exception type. A pack that mis-configures
     // this should get null, not spurious status codes.
     const project = createProject();
     const file = project.createSourceFile(
@@ -1973,10 +1973,10 @@ describe("extraction — from: 'constructor'", () => {
 });
 
 // ---------------------------------------------------------------------------
-// extraction — from: "argumentConstructor" peeks into wrapped new-expressions
+// extraction: from: "argumentConstructor" peeks into wrapped new-expressions
 // ---------------------------------------------------------------------------
 
-describe("extraction — from: 'argumentConstructor'", () => {
+describe("extraction: from: 'argumentConstructor'", () => {
   it("resolves a wrapped `throw wrap(new X.Y())` via the arg's constructor name", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -2146,7 +2146,7 @@ describe("extraction edge cases", () => {
   });
 });
 
-describe("findTerminals — JSON.stringify body unwrap", () => {
+describe("findTerminals: JSON.stringify body unwrap", () => {
   function makeEnvelopePattern(): TerminalPattern {
     return {
       kind: "response",

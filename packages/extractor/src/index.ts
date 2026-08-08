@@ -1,4 +1,14 @@
-// @suss/extractor — assembly engine
+/**
+ * The assembly engine: a `RawCodeStructure` from a language adapter goes in,
+ * a `BehavioralSummary` comes out. The package README explains where that step
+ * fits in the pipeline.
+ *
+ * Two things surprise people reading this file. First, `RawCodeStructure` and
+ * the raw types around it are the contract every adapter and pack implements,
+ * so a field added here is a change to that contract. Second, this is the only
+ * module allowed to turn a `Reading` into a claim on a summary; adapters hand
+ * readings over uncollapsed and the rule for collapsing them lives here.
+ */
 
 import { createHash } from "node:crypto";
 
@@ -90,18 +100,16 @@ export type {
 } from "./reading.js";
 
 // =============================================================================
-// RawCodeStructure — the interface between language adapters and the engine
+// RawCodeStructure: what a language adapter hands the engine
 // =============================================================================
 
 export interface RawParameter {
   name: string;
   position: number;
   /**
-   * What the parameter carries, in the library's own vocabulary.
-   * Null when the adapter could not read which it is, the same thing
-   * a null path on a binding says: a reader that hands over null and
-   * a reason states less than one that guesses, and only the second
-   * can be wrong. Say why in `readings`.
+   * What the parameter is for, in the library's own vocabulary. When the
+   * adapter could not tell, this is null rather than a guess, and the reason
+   * goes in `readings`.
    */
   role: string | null;
   typeText: string | null;
@@ -130,39 +138,18 @@ export interface RawTerminal {
   body: { typeText: string | null; shape: TypeShape | null } | null;
   exceptionType: string | null;
   message: string | null;
-  /** For render terminals: the component being rendered */
   component: string | null;
-  /**
-   * For render terminals (JSX / component-tree output): the nested
-   * render tree if the pack's extractor can produce one. Flows
-   * through to `Output.render.root`. Absent when the extractor sees
-   * only the root element name or opted out of tree extraction.
-   */
+  /** Null when the pack read only the root element name, not the tree under it. */
   renderTree: RenderNode | null;
-  /** For delegate terminals: where control is passed */
   delegateTarget: string | null;
-  /** For emit terminals: the event/channel name */
   emitEvent: string | null;
   location: { start: number; end: number };
 }
 
 /**
- * A structured capture of an invocation argument. Literal values
- * (string, number, boolean), object/array literals, template literals,
- * identifier references, and nested call expressions are all captured
- * as structured variants so readers can see *what* was passed even when
- * the runtime value isn't statically resolvable. `null` is reserved for
- * the rare case where the argument shape doesn't match any variant
- * (type assertions with computed operands, arithmetic, etc.) — the
- * caller still knows how many arguments the call had.
- *
- * Useful for recognising literal-string discriminators like
- * `findings.push({ kind: "scenarioCoverageGap" })` or
- * `dispatch({ type: "USER_LOGGED_IN" })` at the summary level, and for
- * preserving argument *shape* (`{ userId, count }`, `getUser(id)`) so
- * downstream consumers (AI agents, error-taxonomy tooling,
- * release-note generators) can reason about composition without
- * re-reading source.
+ * An invocation argument as the adapter read it. An argument that fits none of
+ * these variants, arithmetic for instance, comes through as null instead of
+ * being dropped, so a reader still knows how many arguments the call had.
  */
 export type EffectArg =
   | { kind: "string"; value: string }
@@ -170,31 +157,13 @@ export type EffectArg =
   | { kind: "boolean"; value: boolean }
   | { kind: "object"; fields: Record<string, EffectArg> }
   | { kind: "array"; items: EffectArg[] }
-  /**
-   * Template literal with interpolation (`` `Error: ${e.message}` ``).
-   * The resolved runtime value is unknown, but the source text is
-   * preserved so readers can see which variables compose it — useful
-   * for log messages, computed keys, and dedup-style key builders.
-   */
   | { kind: "template"; sourceText: string }
   /**
-   * Identifier reference — a bare variable (`userId`), a property-access
-   * chain (`user.profile.email`, `process.env.DATABASE_URL`), or an
-   * element-access chain (`config["host"]`). `name` holds the full
-   * source text so readers can tell which binding flowed into the call
-   * without inferring it from context. Identifiers that resolve to a
-   * module-level `const` with a simple initializer (literal, process.env
-   * access, etc.) are inlined to the initializer's EffectArg form so
-   * closure-over-constants doesn't hide the actual value at call sites.
+   * A bare variable or a whole access chain, written out as it appears. An
+   * identifier bound to a module-level const with a simple initializer is
+   * replaced by that initializer, so a constant does not hide the value.
    */
   | { kind: "identifier"; name: string }
-  /**
-   * Nested call expression passed as an argument — `log(formatError(e))`,
-   * `enqueue(buildPayload(ctx))`, inline composition. `callee` is the
-   * source text of the call target; `args` recurses with bounded depth,
-   * so `formatError(e)` reads as `{ callee: "formatError", args: [...] }`
-   * rather than an opaque null.
-   */
   | { kind: "call"; callee: string; args: EffectArg[] }
   | null;
 
@@ -209,13 +178,7 @@ export type RawEffect =
       callee: string;
       args: EffectArg[];
       async: boolean;
-      /**
-       * Ancestor if/switch/ternary conditions that gate reaching this
-       * call. Populated for calls nested inside conditional blocks or
-       * loop bodies; empty for top-level (always-fires) calls.
-       * Converts to `Effect.preconditions: Predicate[]` in the IR —
-       * same RawCondition → Predicate pipeline transitions use.
-       */
+      /** Empty means the call always fires, not that nobody looked. */
       preconditions?: RawCondition[];
     }
   | { type: "emission"; event: string }
@@ -226,49 +189,28 @@ export interface RawBranch {
   terminal: RawTerminal;
   effects: RawEffect[];
   /**
-   * Pre-typed `Effect`s emitted by `PatternPack.invocationRecognizers`.
-   * Bypass the `RawEffect → Effect` conversion that `effects` runs
-   * through — recognizers have full structural knowledge of what
-   * they're emitting (e.g. `interaction(class: "storage-access")` with
-   * binding identity + per-class fields/selector)
-   * and there's no narrower extractor-side representation worth
-   * round-tripping through. Concatenated with converted `effects` at
-   * `assembleSummary` time.
+   * Effects a recognizer built itself, already in IR form, so these skip the
+   * `RawEffect` conversion that `effects` goes through.
    */
   extraEffects?: Effect[];
   location: { start: number; end: number };
   isDefault: boolean;
-  /**
-   * Shape of upstream data the code unit reads within this branch.
-   * Populated by the adapter for client/consumer code units: after
-   * branching on a response status, the consumer accesses fields on
-   * the response body — those accesses are collected into a TypeShape.
-   * The extractor copies this through to Transition.expectedInput.
-   */
+  /** The fields a consumer reads off a response inside this branch. */
   expectedInput?: TypeShape | null;
   /**
-   * The status this branch's response answers with, as the adapter read
-   * it, alongside the default the pack declares for a source that
-   * states none. Set instead of `terminal.statusCode` by an adapter
-   * that reads through `Reading`: this module is then the only code
-   * that turns the reading into a claim, so a status nobody wrote can
-   * only become one by a pack declaring it. An adapter that still
-   * collapses its own readings leaves this unset and fills
-   * `terminal.statusCode` as before.
+   * An adapter that passes its reading along uncollapsed sets this instead of
+   * `terminal.statusCode`. A status nobody wrote then becomes a claim only
+   * where a pack declared the default.
    */
   statusCodeReading?: DefaultedReading<number>;
   /**
-   * The shape this branch's response body carries, as the adapter read
-   * it. Set instead of `terminal.body.shape`, on the same terms as
-   * `statusCodeReading`: the reading crosses into this module and the
-   * fixed rule turns it into a claim, a pack-declared default, or a
-   * gap. `terminal.body.typeText` is untouched, so a pack that names a
-   * type in text and reads its shape can do both.
+   * Set instead of `terminal.body.shape`, on the same terms.
+   * `terminal.body.typeText` is left alone, so a pack that gives the type as
+   * text and also reads its structure can do both.
    */
   bodyShapeReading?: DefaultedReading<TypeShape>;
 }
 
-/** The values an outcome names, so a read through one is not missed. */
 function valuesOfOutput(output: Transition["output"]): ValueRef[] {
   if (output.type === "response" && output.statusCode !== null) {
     return [output.statusCode];
@@ -288,67 +230,40 @@ export interface RawDeclaredContract {
   framework: string;
   responses: Array<{
     statusCode: number;
-    /**
-     * Structured body schema the contract declares for this status code.
-     * Populated when the adapter can statically resolve the response schema
-     * (e.g. `c.type<T>()`'s type argument). Null when the contract exists
-     * but no body was declared or the schema form isn't yet supported.
-     */
+    /** Null means either the contract declared no body or suss could not read
+     * the schema form, and nothing here tells the two apart. */
     body?: TypeShape | null;
   }>;
   params?: Record<string, { type: string; required: boolean }>;
   /**
-   * Relationship between this declared contract and the `transitions[]`
-   * on the same summary:
-   *
-   *   - "derived": both are extracted from the same source data, so
-   *     comparing them against each other is tautological. Example: an
-   *     OpenAPI stub's contract and its transitions both come from the
-   *     operation's `responses` block. The cross-boundary checker
-   *     skips per-summary contract-consistency for these.
-   *
-   *   - "independent": the contract is a separate statement from the
-   *     transitions. Example: a ts-rest handler whose router declares
-   *     `responses` and whose implementation is a separate function;
-   *     a CFN stub whose `MethodResponses` and integration config are
-   *     independent template fields. Contract-consistency comparison
-   *     is meaningful.
-   *
-   * Defaults to "independent" when a pack doesn't say — safer to
-   * surface a spurious-but-investigable finding than to silently drop
-   * a real one.
+   * "derived" means the contract and the transitions both come from the same
+   * source, so comparing them proves nothing and the checker skips it. A pack
+   * that says nothing gets "independent", which risks a spurious finding
+   * rather than dropping a valid one.
    */
   provenance?: "derived" | "independent";
 }
 
 /**
- * What sits where a unit's body should be.
+ * What the adapter found where a unit's body should be. Downstream this is the
+ * difference between a summary that says nothing because there was nothing to
+ * say and one that says nothing because nobody could read the body.
  *
- *   - "absent": there is no body behind this declaration (an overload
- *     signature, an ambient declaration, an abstract method), so the
- *     pack read nothing about what the unit does.
- *   - "empty": a body with nothing in it. A summary that says nothing
- *     about it has described it completely.
- *   - "statements": a body with work in it, including a concise
- *     arrow's expression. A summary that says nothing about it has
- *     described none of it.
- *   - "elsewhere": the unit's body is not in what this run read. A
- *     route registered with a handler the caller supplies announces a
- *     boundary and names no function to look in, and the boundary is
- *     worth reporting with nothing behind it.
+ * "absent" is a declaration with no body at all, such as an overload
+ * signature. "empty" is a body with nothing in it, which an empty summary
+ * describes completely. "statements" is a body with work in it, which an empty
+ * summary describes none of. "elsewhere" is a body this run did not read: a
+ * route registered with a handler the caller supplies points at no function to
+ * go look in.
  */
 export type BodyContent = "absent" | "empty" | "statements" | "elsewhere";
 
 export interface RawCodeStructure {
-  /**
-   * The types this unit's shapes name rather than spell out. Carried
-   * onto the summary as `definitions`, so a reader following a name has
-   * somewhere to look.
-   */
+  /** Types the unit's shapes refer to by name instead of spelling out, so a
+   * reader who follows one of those names has somewhere to look. */
   definitions?: Record<string, TypeShape> | null;
   identity: {
     name: string;
-    /** See the IR's CodeUnitIdentity: "label" names coined for the reader. */
     nameKind?: "binding" | "label";
     kind: CodeUnitKind;
     file: string;
@@ -356,112 +271,48 @@ export interface RawCodeStructure {
     exportName: string | null;
     exportPath: string[] | null;
   };
-  /**
-   * Three-layer boundary description (`transport`, `semantics`,
-   * `recognition`). See `@suss/behavioral-ir`'s `BoundaryBinding`.
-   * Null when the unit participates in no cross-unit boundary —
-   * helpers, pure utilities, and anything the adapter can't place.
-   */
+  /** Null when the unit is not on any cross-unit boundary, which is the
+   * ordinary case for helpers and pure utilities. */
   boundaryBinding: BoundaryBinding | null;
-  /** The thing that gets deployed and runs this code, when known. */
   deployableUnit?: DeployableUnit;
   parameters: RawParameter[];
   branches: RawBranch[];
-  /**
-   * Return statements in the body that none of the pack's terminals
-   * matched. A handler shaped in a way the pack does not describe still
-   * returns something, and saying nothing about it reads the same as
-   * saying it does nothing.
-   */
+  /** Return statements no terminal in the pack matched. Leave this at zero and
+   * a handler the pack cannot describe looks like one that returns nothing. */
   unmatchedReturns?: number;
   /**
-   * What the adapter found where the unit's body should be. A summary
-   * with nothing in it means one of two different things, and only the
-   * adapter can say which: a body nobody could read, or a body with
-   * nothing in it to read. Adapters that do not say leave this unset,
-   * and everything downstream treats the summary as it did before.
+   * Only the adapter can tell a body nobody could read from a body with
+   * nothing in it, and an empty summary looks the same either way.
    */
   bodyContent?: BodyContent;
   dependencyCalls: RawDependencyCall[];
   declaredContract: RawDeclaredContract | null;
-  /**
-   * Names of pack-declared response properties whose semantics is `body`.
-   * For client units this records the accessor a consumer uses to reach the
-   * body (e.g. ["data"] for axios, ["body","json","text"] for fetch). Carried
-   * through to `summary.metadata.http.bodyAccessors` so the cross-boundary
-   * checker can unwrap consumer expectedInput correctly without knowing each
-   * pack. Flat here because this is the adapter→extractor plumbing contract;
-   * nesting under `http` happens when the summary is assembled.
-   */
+  /** The property a consumer goes through to get at the body, `data` for
+   * axios say, so the checker can unwrap it without knowing each pack. */
   bodyAccessors?: string[];
-  /**
-   * Names of pack-declared response properties whose semantics is
-   * `statusCode`. Same shape as `bodyAccessors` but for the status side —
-   * lets the checker recognise pack-specific names (e.g. fetch's `status`,
-   * axios's `status`, hypothetical `responseStatus`) when matching consumer
-   * branch conditions to provider transitions. Carried through to
-   * `summary.metadata.http.statusAccessors`.
-   */
+  /** The same, for the status: `status` for fetch and for axios. */
   statusAccessors?: string[];
-  /**
-   * Raw GraphQL document source attached to consumer-side graphql
-   * summaries (the inner text of a `useQuery(gql\`...\`)` call).
-   * Assembled into `summary.metadata.graphql.document` for the
-   * checker's pairing layer to parse. Deliberately untouched here —
-   * the extractor has no dependency on graphql-js; parsing happens
-   * at check time.
-   */
+  /** Left exactly as written, because the extractor does not depend on
+   * graphql-js. The parsing happens at check time. */
   graphqlDocument?: string;
-  /**
-   * Raw GraphQL schema SDL attached to provider-side resolver
-   * summaries. For schema-first stubs (AppSync), the SDL IS the
-   * schema. For code-first frameworks (Apollo Server), the SDL
-   * comes from the `typeDefs` config option when statically
-   * resolvable. Surfaced as `summary.metadata.graphql.schemaSdl`
-   * so the checker can use the return-type field set when pairing
-   * nested consumer selections.
-   */
   graphqlSchemaSdl?: string;
-  /**
-   * Declared contract derived from the SDL field for this resolver.
-   * Surfaced as `summary.metadata.graphql.declaredContract` so
-   * `checkGraphqlContractAgreement` can pair it against other
-   * sources declaring a contract for the same boundary.
-   *
-   * The extractor doesn't derive this — adapters that have the SDL
-   * AND know the (typeName, fieldName) of the resolver populate it.
-   * Today: the TS adapter does this for Apollo-style resolverMap
-   * discovery. NestJS GraphQL (decorator-based) is a follow-up.
-   */
+  /** The extractor cannot derive this. An adapter that has the SDL and knows
+   * which field the resolver serves fills it in. */
   graphqlDeclaredContract?: GraphqlDeclaredContract;
-  /**
-   * Set on a consumer-side GraphQL summary whose document reference was
-   * recognized (an imported `TypedDocumentNode` from graphql-codegen,
-   * say) but whose body couldn't be read statically. Surfaced as
-   * `summary.metadata.graphql.unresolvedDocument` so the unreadable
-   * document is accounted for rather than silently dropped. `reference`
-   * is the identifier passed to the hook / imperative call; `reason`
-   * explains what defeated static resolution.
-   */
+  /** Set when a document reference was recognized but its body could not be
+   * read, so an unreadable document is accounted for instead of dropped. */
   graphqlUnresolvedDocument?: { reference: string; reason: string };
   /**
-   * Set when the source does not state part of the boundary this unit
-   * sits on. The binding still goes out with that part left empty, so
-   * the unit pairs with nothing rather than with whatever a guess named,
-   * and this sentence tells a reader which part is missing and why.
-   *
-   * A statement about the reading rather than about the code, so it
-   * lands as an `unreadOutcome` gap and no checker holds it against the
-   * unit.
+   * Which part of the boundary the source does not state, and why. The binding
+   * still goes out with that part empty, so the unit pairs with nothing rather
+   * than with whatever a guess would have supplied. It comes out as an
+   * `unreadOutcome` gap, so no checker counts it against the unit.
    */
   unreadBinding?: string;
   /**
-   * Readings the adapter took and handed over without collapsing. This
-   * module states the reason on any that came back unreadable or
-   * ambiguous, as an `unreadOutcome` gap, the same channel
-   * `unreadBinding` sentences land on, so a reader sees one kind of
-   * sentence however the adapter reported it. A written or absent
-   * reading says nothing here: what a written reading found is already
+   * Readings the adapter passed along without collapsing. This module writes
+   * the reason for any that came back unreadable or ambiguous. Written and
+   * absent readings contribute nothing here, since what they found is already
    * on the summary.
    */
   readings?: readonly Reading<unknown>[];
@@ -477,25 +328,19 @@ export interface ExtractorOptions {
 
 const DEFAULT_OPTIONS: ExtractorOptions = { gapHandling: "permissive" };
 
-// =============================================================================
-// Transition identity
-//
-// Transition IDs must survive branch reordering and the addition of unrelated
-// branches — otherwise `diffSummaries` devolves into "everything changed"
-// every time a handler is reshuffled.
-//
-// Identity is built from stable, content-addressable signals:
-//   - the enclosing function name,
-//   - the terminal kind (response / throw / return / ...),
-//   - the status code (literal value, dynamic source text, or "none"),
-//   - a short hash of the condition chain's source texts.
-//
-// Reordering branches leaves IDs intact. Editing a branch's body (without
-// changing its guards or status) also leaves the ID intact, so diffSummaries
-// correctly reports a "changed" transition rather than add+remove. Changing
-// any signal — status code, condition text, terminal kind — mints a new ID.
-// =============================================================================
-
+/**
+ * The id for one branch's transition, built so that editing a handler does not
+ * churn it. Reordering branches, or adding an unrelated one, must leave the
+ * existing ids alone, otherwise `diffSummaries` reports "everything changed"
+ * every time somebody shuffles a handler around.
+ *
+ * The id combines the enclosing function name, the terminal kind, the status
+ * code (a literal value, the source text of a dynamic one, or "none"), and a
+ * short hash of the condition chain's source texts. Editing a branch's body
+ * without touching its guards or its status leaves the id alone, so a diff
+ * reports one changed transition instead of an add plus a remove. Change any
+ * of those signals and you get a new id.
+ */
 export function makeTransitionId(
   functionName: string,
   branch: RawBranch,
@@ -509,8 +354,7 @@ export function makeTransitionId(
         ? String(terminal.statusCode.value)
         : `dyn:${terminal.statusCode.sourceText}`;
 
-  // Order-preserving join: short-circuit semantics make condition order
-  // part of a branch's identity.
+  // Short-circuiting makes condition order part of a branch's identity.
   const conditionSig = branch.conditions
     .map((c) => `${c.polarity}:${c.sourceText}`)
     .join(";");
@@ -523,24 +367,18 @@ export function makeTransitionId(
   return `${functionName}:${terminal.kind}:${statusKey}:${conditionHash}`;
 }
 
-// =============================================================================
-// Core assembly function
-// =============================================================================
-
-// =============================================================================
-// Collapsing a reading
-//
-// The one place a `Reading` becomes a summary field, and the rule is
-// fixed. Written becomes a claim. Absent takes a default only when the
-// pack declared that default as data, so the value is library-defined
-// and sits where review reads it. Unreadable and ambiguous claim
-// nothing and state their reason as a gap.
-//
-// None of this is exported. A reader composes readings with the
-// combinators in reading.ts, and gets at a value it can claim only by
-// handing the reading over.
-// =============================================================================
-
+/**
+ * What follows is the one place a `Reading` turns into a field on a summary,
+ * and the rule is fixed. A written reading becomes a claim. An absent one
+ * takes a default only where the pack declared that default as data, so the
+ * value is library-defined and shows up somewhere review will see it.
+ * Unreadable and ambiguous readings claim nothing and report their reason as
+ * a gap instead.
+ *
+ * None of this is exported. Callers compose readings with the combinators in
+ * reading.ts, and the only way to get a value they can claim is to hand the
+ * reading over to this module.
+ */
 type ReadingCollapse<T, R> = {
   [K in Reading<T>["kind"]]: (reading: Extract<Reading<T>, { kind: K }>) => R;
 };
@@ -553,10 +391,8 @@ function collapseReading<T, R>(
 }
 
 /**
- * The value a reading lets a summary claim: what the source wrote, or
- * the default the pack declared when the source wrote nothing. A
- * reading nobody could resolve claims nothing, and `unreadReasonOf`
- * says why.
+ * What the source wrote, or the pack's declared default when it wrote
+ * nothing. A reading nobody could resolve claims nothing.
  */
 function claimedValue<T>(defaulted: DefaultedReading<T>): T | null {
   const table: ReadingCollapse<T, T | null> = {
@@ -568,10 +404,8 @@ function claimedValue<T>(defaulted: DefaultedReading<T>): T | null {
   return collapseReading(table, defaulted.reading);
 }
 
-/**
- * Why a reading became no claim, in the sentence a gap carries, or null
- * when it became one.
- */
+/** Why a reading did not become a claim, in the sentence the gap will use.
+ * Null when it did become one. */
 function unreadReasonOf(reading: Reading<unknown>): string | null {
   const table: ReadingCollapse<unknown, string | null> = {
     written: () => null,
@@ -582,7 +416,6 @@ function unreadReasonOf(reading: Reading<unknown>): string | null {
   return collapseReading(table, reading);
 }
 
-/** The terminal's response body with a shape the adapter handed over as a reading collapsed onto it. */
 function bodyWithClaimedShape(
   terminal: RawTerminal,
   reading: DefaultedReading<TypeShape>,
@@ -594,10 +427,8 @@ function bodyWithClaimedShape(
 }
 
 /**
- * The branch as this module reads it. Readings the adapter handed over
- * are collapsed onto the terminal here, before anything else looks at
- * the branch, so the transition's identity and its output agree about
- * what it answers with.
+ * Collapse the readings before anything else looks at the branch, so the
+ * transition's id and its output agree about what the branch returns.
  */
 function branchWithCollapsedReadings(branch: RawBranch): RawBranch {
   const { statusCodeReading, bodyShapeReading } = branch;
@@ -624,7 +455,8 @@ function branchWithCollapsedReadings(branch: RawBranch): RawBranch {
   };
 }
 
-/** Every reading a branch handed over for this module to collapse, in the order their sentences read. */
+/** Ordered so that the gap sentences they produce come out in a sensible
+ * order. */
 function readingsOfBranch(branch: RawBranch): Reading<unknown>[] {
   return [
     ...(branch.bodyShapeReading !== undefined
@@ -636,11 +468,6 @@ function readingsOfBranch(branch: RawBranch): Reading<unknown>[] {
   ];
 }
 
-/**
- * Every sentence this unit's readings leave behind: what the adapter
- * stated outright as `unreadBinding`, and the reason on each reading it
- * handed over that nobody could resolve.
- */
 function unreadSentences(raw: RawCodeStructure): string[] {
   const handedOver: Reading<unknown>[] = [
     ...(raw.readings ?? []),
@@ -661,7 +488,6 @@ export function assembleSummary(
 ): BehavioralSummary {
   const transitions: Transition[] = raw.branches.map((rawBranch) => {
     const branch = branchWithCollapsedReadings(rawBranch);
-    // Conditions with structured: null become opaque predicates — never silently dropped.
     const conditions: Predicate[] = branch.conditions.map(
       rawConditionToPredicate,
     );
@@ -723,14 +549,8 @@ export function assembleSummary(
   };
 }
 
-/**
- * Assemble summary-level metadata, namespaced by semantics family.
- * `metadata.http.*` for REST shapes (declared contracts, body/status
- * accessors); `metadata.graphql.*` for GraphQL shapes (operation
- * documents, eventually per-variable type info). See
- * `docs/boundary-semantics.md` for the broader model — each semantics
- * gets its own metadata key space so they can evolve independently.
- */
+/** Each semantics family gets its own key space under `metadata`, so HTTP and
+ * GraphQL can grow their metadata independently of each other. */
 function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
   let metadata: Record<string, unknown> = {};
   const http = buildHttpMetadataValue(raw);
@@ -747,12 +567,9 @@ function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
 function buildHttpMetadataValue(raw: RawCodeStructure): HttpMetadata | null {
   const http: HttpMetadata = {};
   if (raw.declaredContract !== null) {
-    // The raw contract's own `provenance` is optional (packs that don't
-    // derive it from the same source as `transitions[]` may leave it
-    // unset); the schema default only applies inside `withHttpMetadata`'s
-    // parse, so it's spelled out here too to keep this object's static
-    // type aligned with what the parse will actually produce. `params`
-    // isn't part of the http namespace: no pack populates it today.
+    // The schema's default only kicks in inside `withHttpMetadata`'s parse, so
+    // spelling it out here keeps this object's static type matching what the
+    // parse will produce.
     http.declaredContract = {
       framework: raw.declaredContract.framework,
       responses: raw.declaredContract.responses,
@@ -792,15 +609,10 @@ function buildGraphqlMetadataValue(
 // =============================================================================
 
 /**
- * Whether comparing this unit's declared statuses against the ones it
- * produces would say anything about it. The declared contract holds
- * HTTP statuses, so the boundary it describes has to be one that
- * answers with them; a subscriber that declares a message shape would
- * otherwise be told which of its statuses the handler never produced.
- *
- * A unit with no binding keeps the comparison. Whoever filled in the
- * contract said the unit has declared responses, and nothing here says
- * they are not HTTP ones.
+ * A declared contract lists HTTP statuses, so comparing it against what a unit
+ * produces only means something on an HTTP boundary. Without this, a
+ * subscriber that declares a message structure gets told which of its statuses
+ * the handler never produced. A unit with no binding keeps the comparison.
  */
 function answersWithHttpResponses(raw: RawCodeStructure): boolean {
   if (raw.boundaryBinding === null || raw.boundaryBinding === undefined) {
@@ -820,14 +632,11 @@ export function detectGaps(
 
   const gaps: Gap[] = [];
 
-  // A function that returns something the pack could not describe. The
-  // summary would otherwise carry no transition and no gap, which reads
-  // as a function that does nothing rather than one nobody read.
+  // Without this the summary comes out with no transition and no gap, which
+  // looks like a function that does nothing rather than one nobody read.
   if (raw.unmatchedReturns !== undefined && raw.unmatchedReturns > 0) {
     const count = raw.unmatchedReturns;
     gaps.push({
-      // Not a contract violation: the handler may be answering
-      // correctly, in a shape nobody taught the pack.
       type: "unreadOutcome",
       conditions: [],
       consequence: "unknown",
@@ -874,7 +683,6 @@ export function detectGaps(
       raw.declaredContract.responses.map((r) => r.statusCode),
     );
 
-    // Declared but never produced
     for (const declared of declaredStatuses) {
       if (!producedStatuses.has(declared)) {
         gaps.push({
@@ -886,7 +694,6 @@ export function detectGaps(
       }
     }
 
-    // Produced but never declared — contract violation
     for (const produced of producedStatuses) {
       if (!declaredStatuses.has(produced)) {
         gaps.push({
@@ -906,12 +713,8 @@ export function detectGaps(
 // Confidence
 // =============================================================================
 
-/**
- * True when the summary's silence comes from what the pack could read
- * rather than from a unit that does nothing. Either there was no body
- * behind the declaration, or there was a body with work in it and
- * nothing in that work matched a shape the pack looks for.
- */
+/** True when a summary says nothing because of what the pack could read, not
+ * because the unit does nothing. */
 function bodyWentUnread(raw: RawCodeStructure): boolean {
   if (raw.bodyContent === "absent" || raw.bodyContent === "elsewhere") {
     return true;
@@ -919,12 +722,8 @@ function bodyWentUnread(raw: RawCodeStructure): boolean {
   return raw.bodyContent === "statements" && raw.branches.length === 0;
 }
 
-/**
- * Why a summary with nothing in it has nothing in it, in a sentence, or
- * null when the summary is not that shape. A reader looking at an empty
- * summary cannot tell a unit nobody read from a unit that does nothing,
- * and the transitions alone will never tell them.
- */
+/** Why an empty summary is empty, in a sentence, or null when the summary is
+ * not empty. The transitions on their own will never tell a reader this. */
 function describeUnreadBody(raw: RawCodeStructure): string | null {
   if (!bodyWentUnread(raw)) {
     return null;
@@ -935,8 +734,7 @@ function describeUnreadBody(raw: RawCodeStructure): string | null {
   if (raw.bodyContent === "elsewhere") {
     return "The handler on this boundary comes from outside the code that registers it, so nothing about what it does was read here";
   }
-  // Unmatched returns already say this, in more detail, about the same
-  // body.
+  // Unmatched returns already say this, in more detail.
   if ((raw.unmatchedReturns ?? 0) > 0) {
     return null;
   }
@@ -944,18 +742,13 @@ function describeUnreadBody(raw: RawCodeStructure): string | null {
 }
 
 export function assessConfidence(raw: RawCodeStructure): ConfidenceInfo {
-  // A return nobody could read is the plainest reason not to trust a
-  // summary, and it says so directly. Counting conditions cannot see
-  // it: a function whose returns all went unread has no conditions
-  // either, and zero opaque out of zero used to come out as certain.
+  // The condition ratio further down cannot catch either of these cases. A
+  // function whose returns all went unread has no conditions either, and zero
+  // opaque out of zero would come out as high confidence.
   if ((raw.unmatchedReturns ?? 0) > 0) {
     return { source: "inferred_static", level: "low" };
   }
 
-  // The same arithmetic, one level up. A summary with no transitions
-  // agrees with nothing it read, and reporting that as agreement is how
-  // a unit nobody could read came out indistinguishable from a unit
-  // that does nothing.
   if (bodyWentUnread(raw)) {
     return { source: "inferred_static", level: "low" };
   }
@@ -1012,11 +805,8 @@ const terminalConverters: Record<
     return { type: "response", statusCode, body, headers: {} };
   },
   throw: (t) => {
-    // When the framework pack extracts a status code from the thrown value
-    // (e.g., Express error middleware converting `throw new HttpError(404)`
-    // to a 404 response), the throw is behaviorally a response — the client
-    // sees an HTTP status code, not an exception. Convert to a response
-    // output so the checker counts it as a produced status.
+    // A throw the pack got a status off becomes a response, because the client
+    // sees a status code and the checker should count it as produced.
     if (t.statusCode) {
       const statusCode: ValueRef =
         t.statusCode.type === "literal"
@@ -1059,12 +849,8 @@ export function terminalToOutput(terminal: RawTerminal): Output {
   return terminalConverters[terminal.kind](terminal);
 }
 
-/**
- * Convert a RawCondition (adapter-level, carries structured Predicate
- * when available or source-text fallback) to the IR's Predicate shape.
- * Mirrors the conversion used for transition conditions — opaque fallback
- * when structured is null, negation wrapper when polarity is negative.
- */
+/** A condition the adapter left unstructured becomes an opaque predicate
+ * rather than being dropped, so the branch keeps its guard. */
 function rawConditionToPredicate(c: RawCondition): Predicate {
   const pred: Predicate =
     c.structured !== null
@@ -1104,8 +890,6 @@ const effectConverters: EffectConverters = {
 };
 
 export function effectToIR(effect: RawEffect): Effect {
-  // Narrow then dispatch — the Extract<...> in EffectConverters ensures
-  // each converter receives its exact variant.
   return (effectConverters[effect.type] as (e: RawEffect) => Effect)(effect);
 }
 

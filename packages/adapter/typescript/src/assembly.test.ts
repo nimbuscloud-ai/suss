@@ -1,4 +1,4 @@
-// assembly.test.ts — Tests for extractRawBranches (Task 2.5)
+// assembly.test.ts: Tests for extractRawBranches (Task 2.5)
 
 import { describe, expect, it } from "vitest";
 
@@ -97,7 +97,7 @@ const reactRouterTerminals: TerminalPattern[] = [
 // ts-rest style
 // ---------------------------------------------------------------------------
 
-describe("ts-rest style — returnShape", () => {
+describe("ts-rest style: returnShape", () => {
   it("extracts a single unconditional branch as default", () => {
     const project = createProject();
     const fn = getExportedFunction(
@@ -153,7 +153,7 @@ describe("ts-rest style — returnShape", () => {
     expect(b404?.conditions[0].structured).not.toBeNull();
     expect(b404?.conditions[0].structured?.type).toBe("truthinessCheck");
 
-    // Second branch: 200 — has early return condition (negative polarity)
+    // Second branch: 200: has early return condition (negative polarity)
     const b200 = branches.find(
       (b) =>
         b.terminal.statusCode?.type === "literal" &&
@@ -203,7 +203,7 @@ describe("ts-rest style — returnShape", () => {
     `,
     );
 
-    // Arrow expression body — get the arrow function from the variable
+    // Arrow expression body: get the arrow function from the variable
     const varDecl = file.getVariableDeclarations()[0];
     const arrowFn = varDecl.getInitializerOrThrow() as FunctionRoot;
 
@@ -222,7 +222,7 @@ describe("ts-rest style — returnShape", () => {
 // Express style
 // ---------------------------------------------------------------------------
 
-describe("Express style — parameterMethodCall", () => {
+describe("Express style: parameterMethodCall", () => {
   it("extracts res.status(N).json(body) terminal", () => {
     const project = createProject();
     const fn = getExportedFunction(
@@ -323,7 +323,7 @@ describe("Express style — parameterMethodCall", () => {
 // React Router style
 // ---------------------------------------------------------------------------
 
-describe("React Router style — returnShape + throwExpression", () => {
+describe("React Router style: returnShape + throwExpression", () => {
   it("extracts return and throw terminals", () => {
     const project = createProject();
     const fn = getExportedFunction(
@@ -548,9 +548,9 @@ describe("nested conditions", () => {
     );
 
     // Three branches: the nested 200, plus one 403 branch per path that
-    // reaches the fallthrough — [¬authenticated] and
+    // reaches the fallthrough: [¬authenticated] and
     // [authenticated, ¬admin]. (The legacy collectors produced a single
-    // over-constrained 403 branch claiming ¬authenticated ∧ ¬admin —
+    // over-constrained 403 branch claiming ¬authenticated ∧ ¬admin ,
     // the documented nested-guard soundness gap, closed by the CFG
     // path engine.)
     const branches = extractRawBranches(fn, tsRestTerminals).branches;
@@ -821,7 +821,7 @@ describe("try/catch + nested conditions", () => {
         b.terminal.statusCode.value === 500,
     );
     expect(b500).toBeDefined();
-    // catch condition only — the inner if's guard is an early return within catch
+    // catch condition only: the inner if's guard is an early return within catch
     const catchConditions = b500?.conditions.filter(
       (c) => c.source === "catchBlock",
     );
@@ -1120,7 +1120,7 @@ describe("edge cases", () => {
       },
     ];
     const branches = extractRawBranches(fn, patterns).branches;
-    // Only one terminal — the explicit return — because it covers the
+    // Only one terminal: the explicit return: because it covers the
     // default path. Fall-through suppressed.
     expect(branches).toHaveLength(1);
   });
@@ -1128,7 +1128,7 @@ describe("edge cases", () => {
   it("invocation effects skip calls whose line matches a matched terminal", () => {
     // Express-style: `res.json(body)` at the end is the terminal.
     // Its expression-statement-ness would otherwise make it an
-    // invocation effect too — the deduplication keeps it out.
+    // invocation effect too: the deduplication keeps it out.
     const project = createProject();
     const fn = getExportedFunction(
       project,
@@ -1166,7 +1166,7 @@ describe("edge cases", () => {
 
   it("captures ancestor-if preconditions on nested invocation effects", () => {
     // Canonical pattern: accumulator function walks a collection,
-    // conditionally pushes findings. Each push should carry the
+    // conditionally pushes findings. Each push should record the
     // if-condition that gates it.
     const project = createProject();
     const fn = getExportedFunction(
@@ -1203,7 +1203,7 @@ describe("edge cases", () => {
       'item.result === "nomatch"',
     );
     expect(first.preconditions?.[0].polarity).toBe("positive");
-    // Second push fires in the else-if — negated nomatch AND positive unknown
+    // Second push fires in the else-if: negated nomatch AND positive unknown
     expect(second.preconditions).toBeDefined();
     expect(second.preconditions?.length).toBe(2);
     expect(second.preconditions?.[0].sourceText).toBe(
@@ -1289,7 +1289,7 @@ describe("edge cases", () => {
 
   it("captures identifier and property-access args as structured references", () => {
     // Property-access chains like `input.message` are references to
-    // bindings — preserve the source text so readers can tell which
+    // bindings: preserve the source text so readers can tell which
     // value flowed into the call, not just that *something* did.
     const project = createProject();
     const fn = getExportedFunction(
@@ -1425,7 +1425,7 @@ describe("edge cases", () => {
 
   it("does NOT inline when the module-level initializer has a default / fallback", () => {
     // `const QUEUE_URL = process.env.QUEUE_URL ?? "fallback"` is a binary
-    // expression, not a pure read — extractArg doesn't structurally
+    // expression, not a pure read: extractArg doesn't structurally
     // capture `??` (opaque at v1), so inlining bails and the identifier
     // stays as its bare source-text name.
     const project = createProject();
@@ -1451,11 +1451,11 @@ describe("edge cases", () => {
     if (effect === undefined || effect.type !== "invocation") {
       throw new Error("expected invocation effect");
     }
-    // Identifier falls through to its bare name — not the initializer.
+    // Identifier falls through to its bare name: not the initializer.
     expect(effect.args).toEqual([{ kind: "identifier", name: "QUEUE_URL" }]);
   });
 
-  it("does NOT inline locally-scoped consts — only module-level bindings", () => {
+  it("does NOT inline locally-scoped consts: only module-level bindings", () => {
     // A `const` inside a function body is already part of its own
     // summary's behaviour; inlining it here would leak local state
     // into the calling summary. Only file-scope bindings collapse.
@@ -1487,7 +1487,7 @@ describe("edge cases", () => {
 
   it("preserves object shape with named fields even when values are opaque", () => {
     // `{ userId, count }` (shorthand) + fully-opaque field values
-    // should still read as an object with `userId` and `count` keys —
+    // should still read as an object with `userId` and `count` keys ,
     // the shape is information the caller deliberately wrote down.
     const project = createProject();
     const fn = getExportedFunction(
@@ -1680,7 +1680,7 @@ describe("edge cases", () => {
   });
 
   it("does not capture call expressions in argument positions", () => {
-    // `foo(bar())` — bar is an argument to foo, not a composition
+    // `foo(bar())`: bar is an argument to foo, not a composition
     // sibling. The expression-statement-level foo call IS captured;
     // the nested bar should not be double-captured.
     const project = createProject();

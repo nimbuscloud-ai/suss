@@ -1,10 +1,10 @@
-// generators.ts — fast-check arbitraries over the handler-program DSL.
+// generators.ts: fast-check arbitraries over the handler-program DSL.
 //
 // Tiers mirror the extraction algorithm's soundness boundary. The
 // sound tier's differential property must hold. Nested guards and
 // loop guards were gap-tier constructs (documented soundness gaps,
 // rediscovered mechanically by inverted milestone properties) until
-// the CFG path engine closed both — they are now part of the sound
+// the CFG path engine closed both. They are now part of the sound
 // tier, and the former milestones assert the constructs stay sound.
 
 import fc from "fast-check";
@@ -363,7 +363,7 @@ export function arbHandlerProgram(
 }
 
 /**
- * A program guaranteed to contain at least one gap-tier construct —
+ * A program guaranteed to contain at least one gap-tier construct,
  * used by the rediscovery milestones so they don't depend on oneof
  * probabilities to hit the interesting arm.
  */

@@ -1,23 +1,17 @@
-// gitSubmodules.ts: the directories of a project that are checked out
-// from somewhere else.
-//
-// A service whose shared framework lives in a submodule imports code
-// that is on disk but under its own repository. Both halves of suss care
-// about that. Extraction cares because the decorator a pack matches on
-// is defined in the submodule, so an import that does not resolve into
-// it leaves every route in the service unrecognized. Discovery cares
-// because a nested repository looks like somebody else's project and
-// walking into it looks like a mistake.
-//
-// .gitmodules settles it. The enclosing repository lists each submodule
-// by path, so a nested .git that the list names is part of this project
-// and one it does not name is a separate project sitting inside this
-// tree, which suss reads as source but never treats as its own roots.
-//
-// A submodule nobody checked out is a directory with nothing in it. The
-// imports into it will not resolve and the summaries that depended on
-// them will quietly not exist, so it is worth a sentence rather than a
-// shorter run.
+/**
+ * The directories of a project that are checked out from somewhere else.
+ *
+ * A service whose shared framework lives in a submodule imports code
+ * that is on disk but belongs to another repository. Extraction cares
+ * because the decorator a pack matches on is defined in the submodule,
+ * so an import that does not resolve into it leaves every route in the
+ * service unrecognized. Discovery cares because a nested repository
+ * looks like somebody else's project, and walking into it looks like a
+ * mistake.
+ *
+ * .gitmodules settles which is which. The package README explains why a
+ * submodule and a vendored nested repository get opposite treatment.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -28,19 +22,17 @@ export interface Submodule {
   /** The path as .gitmodules writes it, relative to the repository root. */
   declaredPath: string;
   /**
-   * Whether the directory holds anything. A submodule nobody ran
-   * `git submodule update --init` for exists and is empty.
+   * False when the directory is empty, which is what you get when
+   * nobody has run `git submodule update --init`.
    */
   checkedOut: boolean;
 }
 
 /**
- * Every submodule of the repository this directory belongs to.
- *
- * The search walks up, because .gitmodules sits at the repository root
- * and the directory suss was pointed at is often a service inside it.
- * A submodule outside the directory being read still counts: that is
- * where a shared framework usually sits.
+ * The search walks up, because .gitmodules lives at the repository root
+ * and suss is usually pointed at one service inside it. Submodules
+ * outside that service still count, since a shared framework is
+ * normally one of them.
  */
 export function readSubmodules(from: string): Submodule[] {
   const repositoryRoot = findGitmodules(path.resolve(from));
@@ -59,18 +51,11 @@ export function readSubmodules(from: string): Submodule[] {
 }
 
 /**
- * The files of this project, with anything living in a repository of
- * its own dropped.
- *
- * A vendored snapshot checked out inside the tree is somebody else's
- * code: extracting its routes reports another project's boundaries as
- * this one's, and there is nobody here who can act on them. A submodule
- * is the opposite, and .gitmodules is what tells the two apart, so a
- * declared one stays.
- *
- * The adapters' own walks skip a directory named .git and nothing else,
- * so the repository a .git marks is invisible to them. Filtering here
- * keeps each language's own skip list where it belongs.
+ * The files of this project, minus anything that belongs to a
+ * repository of its own. The filtering happens here rather than in each
+ * adapter's walk, because those walks skip any directory called .git
+ * but do not notice that a .git directory means there is a separate
+ * repository there.
  */
 export function filesOutsideNestedRepositories(
   files: readonly string[],
@@ -110,17 +95,12 @@ export function filesOutsideNestedRepositories(
   );
 }
 
-/** The submodules of this project that suss can actually read. */
 export function checkedOutSubmodules(from: string): string[] {
   return readSubmodules(from)
     .filter((submodule) => submodule.checkedOut)
     .map((submodule) => submodule.directory);
 }
 
-/**
- * What to say about a submodule with nothing in it, or nothing when
- * every one of them is checked out.
- */
 export function formatMissingSubmodules(submodules: Submodule[]): string {
   const missing = submodules.filter((submodule) => !submodule.checkedOut);
   if (missing.length === 0) {
@@ -136,7 +116,6 @@ export function formatMissingSubmodules(submodules: Submodule[]): string {
   ].join("\n");
 }
 
-/** The `path` of every `[submodule]` section, in the order they appear. */
 function declaredPaths(contents: string): string[] {
   const found: string[] = [];
   let insideSubmodule = false;
@@ -157,12 +136,7 @@ function declaredPaths(contents: string): string[] {
   return found;
 }
 
-/**
- * The repository root above this directory, when it declares
- * submodules. The walk stops at the first directory holding a .git,
- * since that is the repository this project belongs to and anything
- * above it is somebody else's checkout.
- */
+/** The walk stops at the first .git: anything above is another checkout. */
 function findGitmodules(from: string): string | null {
   let current = from;
   for (;;) {

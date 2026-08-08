@@ -1,16 +1,20 @@
-// schemas.ts — zod schemas for the behavioral summary IR.
-//
-// Single source of truth: the TypeScript types in `index.ts` are derived
-// from these schemas via `z.infer`, and the JSON Schema published to
-// `schema/behavioral-summary.schema.json` is generated from them at build
-// time via `z.toJSONSchema`. Hand-edit only this file.
+/**
+ * The zod schemas for the behavioral summary IR, and the one place any
+ * of it is written by hand.
+ *
+ * Everything else is generated from what is here. The TypeScript types
+ * exported from `index.ts` come from these schemas through `z.infer`,
+ * and the JSON Schema the package publishes is generated at build time
+ * through `z.toJSONSchema`. Edit a schema here and both follow; edit
+ * either of those directly and the next build throws it away.
+ *
+ * The primitives shared with the other suss IRs come from
+ * `@suss/ir-core`, and the schemas below build on them. What this
+ * package exports is the types plus the parse functions, not these.
+ */
 
 import { z } from "zod";
 
-// Primitives shared across suss IRs live in @suss/ir-core; the
-// behavioural schemas below build on them (BoundaryBinding on identity,
-// TypeShape on outputs, etc.). Imported for internal use only — the
-// public type surface is re-exported from this package's index.
 import {
   BoundaryBindingSchema,
   ConfidenceInfoSchema,
@@ -35,28 +39,15 @@ export const CodeUnitKindSchema = z.enum([
   "client",
   "worker",
   /**
-   * A function exposed through a TypeScript package's public export
-   * surface — i.e. reachable from the package's `package.json` entry
-   * points (`main` / `module` / `types` / `exports`). Provider side of
-   * an in-process `function-call` boundary: downstream callers
-   * consuming `import { fn } from "pkg"` are paired against these.
+   * A function reachable from a package's `package.json` entry points,
+   * the provider side of an in-process `function-call` boundary.
    */
   "library",
-  /**
-   * A function that calls into another package's public export surface
-   * — the consumer side of an in-process `function-call` boundary.
-   * Produced by the `packageImport` discovery variant, one unit per
-   * enclosing function that invokes an imported binding. Pairs with
-   * `library`-kind provider summaries by `package + exportPath`.
-   */
+  /** The consumer side, one unit per function that calls into a package. */
   "caller",
   /**
-   * What a module does when it is first imported, rather than what any
-   * function in it does when called. One per source file, produced when
-   * the module's top-level statements carry behavior a pack recognized
-   * — most often a service reading its configuration once at load.
-   * Consumer side: it reads channels other units declare, and offers
-   * none of its own.
+   * What a module does when it is first imported, one per source file.
+   * Always a consumer: it reads channels other units declare.
    */
   "module-init",
 ]);
@@ -83,214 +74,46 @@ export const FindingKindSchema = z.enum([
   "providerContractViolation",
   "consumerContractViolation",
   "lowConfidence",
-  /**
-   * Two or more providers at the same boundary declare contracts that
-   * disagree — e.g. OpenAPI spec says statuses {200, 400, 404} but the
-   * CFN template's MethodResponses says {200, 400, 404, _500}. Emitted
-   * by checkContractAgreement; attribution lists every contributing
-   * source in `Finding.sources`.
-   */
+  /** Two providers at one boundary declare contracts that disagree. */
   "contractDisagreement",
-  /**
-   * A REST consumer call targets a (method, path) combination
-   * the provider doesn't expose. Today the pairing layer just
-   * leaves both summaries unmatched, which silently obscures
-   * what's likely a typo or stale endpoint reference.
-   * Severity: error. Reserved in v0 taxonomy; emitter ships
-   * when the pairing layer adds a "consumer with no provider"
-   * surfaced finding distinct from "unmatched / no boundary
-   * binding." Distinct from `boundaryFieldUnknown` because the
-   * mismatch is at the boundary identity level, not at field level.
-   */
+  /** A REST consumer calls a method and path no provider exposes. */
   "restMethodOnUnknownPath",
-  /**
-   * Provider requires authentication (Bearer / API key / OAuth)
-   * and consumer's call doesn't send it, sends a different
-   * scheme, or lacks the required scope. Severity: error.
-   * Reserved in v0 taxonomy; needs auth-policy modeling on
-   * both sides — the OpenAPI security schemes and the
-   * client-side header / interceptor patterns. Future work.
-   * Distinct from the generic boundary kinds — auth policies are
-   * boundary-level not field-level.
-   */
+  /** The provider requires authentication the consumer's call lacks. */
   "authPolicyMismatch",
-  /**
-   * A component has a conditional branch that depends on a prop,
-   * and no declared scenario (Storybook story, fixture, etc.)
-   * exercises that branch. Emitted by the component/story
-   * agreement check — a genuine behavioral gap: the component
-   * has logic that no story tests, so changes to that branch
-   * can regress silently.
-   */
+  /** No declared scenario exercises a branch a component takes on a prop. */
   "scenarioCoverageGap",
-  /**
-   * suss could not tell which code a runtime runs, so it paired
-   * that runtime's env-var contract against none. Emitted by
-   * checkRuntimeConfig as info — a heads-up that verification was
-   * skipped, not a defect in the code itself. Two ways to get
-   * here. A provider declares no codeScope (or one we couldn't
-   * resolve to source files), commonly raw CloudFormation that
-   * uses S3-built artifacts without a `Metadata.SussCodeScope`
-   * annotation. Or several providers declare a directory holding
-   * the same source file and the code there names no deployable
-   * unit, so nothing distinguishes them.
-   */
+  /** No code could be matched to a runtime, so nothing paired against its contract. */
   "runtimeScopeUnknown",
-  /**
-   * Code treats `process.env.X` as definitely-required (e.g.
-   * `if (!process.env.X) throw …` or unconditional read), but
-   * the runtime contract doesn't mark it as required (no
-   * deployment-side validation, no documented requirement).
-   * Severity: warning. Reserved in v0 taxonomy; emitter waits
-   * for the runtime contract to grow a "required" attribute on
-   * env-var entries (currently the contract is just the name
-   * list). Distinct from the generic kinds — this is about
-   * contract-side metadata (the var IS declared, just not marked
-   * required), not about a field/shape disagreement.
-   */
+  /** Code requires an env var the runtime contract does not mark required. */
   "envVarRequiredButUnmarked",
-  /**
-   * Generic — consumer references a field that the provider's
-   * contract doesn't declare. Subsumes the per-domain kinds that
-   * shipped earlier (storageReadFieldUnknown, storageWriteFieldUnknown,
-   * envVarUnprovided, graphqlFieldNotImplemented,
-   * graphqlSelectionFieldUnknown, scenarioArgUnknown).
-   *
-   * The boundary's `binding.semantics.name` carries the domain
-   * context (storage-relational, runtime-config, graphql-resolver,
-   * function-call, …); the optional `Finding.aspect` distinguishes
-   * read vs write vs construct, which matters for severity and
-   * remediation. Emitted by every per-domain checker that pairs
-   * consumer field references against provider field declarations.
-   */
+  /** The consumer uses a field the provider's contract does not declare. */
   "boundaryFieldUnknown",
-  /**
-   * Generic — provider declares a field that no consumer in the
-   * analysed scope references. Subsumes storageFieldUnused,
-   * storageWriteOnlyField, envVarUnused.
-   *
-   * `Finding.aspect` distinguishes "no consumer reads or writes" (no
-   * aspect) from "no consumer reads, but writers exist" (aspect:
-   * "read") — the latter is the write-only case. Default severity is
-   * warning (dead config, not user-visible failure).
-   */
+  /** An `aspect` of "read" means the field has writers but no reader. */
   "boundaryFieldUnused",
-  /**
-   * Generic — both sides declare a field but disagree on its shape
-   * (type, nullability, content-type, etc.). The `aspect` field
-   * names which side discovered the disagreement (read / write /
-   * send / receive / construct / selector). Severity is per-emitter;
-   * some cases are runtime errors (write-side type mismatch on a
-   * typed column) while others are silent coercions (read-side
-   * env-var-as-number).
-   *
-   * Subsumes the per-domain shape-mismatch kinds earlier versions
-   * reserved: storageTypeMismatch, storageNullableViolation,
-   * storageSelectorIndexMismatch, envVarTypeCoercionMissing,
-   * graphqlVariableTypeMismatch, requestBodyShapeMismatch,
-   * componentPropTypeMismatch, contentTypeMismatch.
-   */
+  /** Both sides declare the field and disagree about its type. */
   "boundaryShapeMismatch",
-  /**
-   * Generic — provider declares a field as required and the consumer
-   * doesn't supply it. The `aspect` field names which payload (send /
-   * construct, typically). Subsumes earlier per-domain reserved kinds:
-   * requiredHeaderMissing, requiredQueryParamMissing,
-   * componentRequiredPropMissing, graphqlRequiredArgMissing.
-   *
-   * Severity defaults to error — at runtime the provider rejects the
-   * request, returns a 4xx, or the component fails to render.
-   */
+  /** The provider requires a field the consumer does not supply. */
   "boundaryFieldRequired",
-  /**
-   * Generic — value supplied for a field violates a value-level
-   * constraint declared by the provider (enum membership, declared
-   * length, etc.). Distinct from `boundaryShapeMismatch` because the
-   * value's TYPE is correct; only the value itself violates the
-   * constraint. Subsumes earlier per-domain reserved kinds:
-   * storageLengthConstraintViolation, storageEnumConstraintViolation,
-   * graphqlEnumValueUnknown. Severity per-emitter.
-   */
+  /** The value has the declared type and breaks an enum or length rule. */
   "boundaryConstraintViolation",
-  /**
-   * Code sends a message to a queue / topic that no provider in the
-   * analysed scope declares. Severity: WARNING (not error) — common
-   * false-positive sources are multi-repo deployments (queue is
-   * declared in another stack) and work-in-progress before infra is
-   * wired up. The high-value message-bus finding is body-shape
-   * mismatch (producer body vs consumer expected shape); that's
-   * future work. Emitted by checkMessageBus.
-   */
+  /** Code sends to a queue or topic no provider in scope declares. */
   "messageBusProducerOrphan",
-  /**
-   * A consumer Lambda is wired to receive from a channel but no code
-   * in the project sends to that channel. Could be dead infra, or
-   * the producer lives in a different repo we don't analyse.
-   * Severity: warning.
-   */
+  /** A consumer receives from a channel nothing in the project sends to. */
   "messageBusConsumerOrphan",
-  /**
-   * A queue / topic is declared in infrastructure but neither
-   * produced to nor consumed from anywhere in the project. Likely
-   * orphan resource left over from a removed feature. Severity:
-   * warning.
-   */
+  /** A declared queue or topic nothing produces to or consumes from. */
   "messageBusUnused",
-  /**
-   * A pack identifies a boundary it doesn't know how to
-   * summarise — a WebSocket subscription handler, an SSE stream
-   * producer, a gRPC streaming method, etc. Severity: info. The
-   * pack should still emit a stub-shaped summary marking the
-   * boundary's existence; this finding alerts users that the
-   * extracted summary won't pair against consumers because the
-   * semantics aren't modelled. Reserved in v0 taxonomy; emitter
-   * ships when a pack first encounters a boundary it can't
-   * fully describe.
-   */
+  /** A pack marked a boundary it cannot summarise, so nothing will pair. */
   "unsupportedSemantics",
-  /**
-   * A pairing pass refused to emit substantive findings because
-   * too many predicates on the relevant transitions are opaque
-   * (the extractor couldn't decompose them; preconditions /
-   * branches show as raw source text). Severity: info. Distinct
-   * from `lowConfidence`, which is per-summary; this is per-pair
-   * — pairing produced no signal because the inputs were too
-   * murky to reason over. Reserved in v0 taxonomy; emitter
-   * ships when a pairing pass adds an explicit "I bailed"
-   * disclosure.
-   */
+  /** Too many predicates were opaque to pair on. Reported per pair, unlike `lowConfidence`. */
   "opaquePredicateBlocking",
-  // Intent vs code findings are NOT behavioural Finding kinds — intent
-  // is a separate citizen with its own one-sided coverage finding
-  // (`IntentFinding` in @suss/intent-ir, emitted by @suss/checker-intent).
-  // Keeping intent kinds out of this enum keeps the behavioural IR free
-  // of intent concepts.
 ]);
 
 export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);
 
 /**
- * Names which "side" of a field a generic boundary finding concerns.
- * Lets `boundaryFieldUnknown` / `boundaryFieldUnused` /
- * `boundaryShapeMismatch` carry the read-vs-write-vs-construct
- * distinction without requiring a separate kind per direction.
- *
- * - `read`: consumer reads the field (e.g. `process.env.X`, Prisma
- *   `select: { X: true }`, GraphQL selection set)
- * - `write`: consumer writes the field (e.g. Prisma `data: { X: 1 }`)
- * - `send`: consumer sends a field on an outbound payload (request
- *   body, message body, GraphQL variable)
- * - `receive`: consumer reads a field from an inbound payload
- *   (response body field, message body field after parse)
- * - `construct`: scenario / fixture sets a field as input to its
- *   target (Storybook story passing a prop)
- * - `selector`: field appears in a query selector (Prisma `where`,
- *   index lookup) — distinct from data-side aspects since selector
- *   constraints differ
- *
- * Optional on findings; absent means the aspect is irrelevant or
- * the finding spans multiple aspects (e.g. `boundaryFieldUnused` with
- * no aspect = "no consumer reads OR writes this field at all").
+ * Which side of a field a boundary finding concerns. `send` and `receive`
+ * are a payload's two directions; `construct` is a scenario setting an
+ * input; `selector` is a query's `where` rather than its data.
  */
 export const BoundaryAspectSchema = z.enum([
   "read",
@@ -302,28 +125,16 @@ export const BoundaryAspectSchema = z.enum([
 ]);
 
 export const CodeUnitIdentitySchema = z.object({
-  /**
-   * What to call this summary when something else refers to it.
-   *
-   * A name is not enough: one repository had 408 summaries sharing a
-   * name with another, so anything matching on names was guessing.
-   * This is the workspace, the file, and the export path, which is
-   * unique across everything one run can see.
-   */
+  /** Workspace, file, and export path. Names alone collide by the hundreds. */
   id: z.string().optional(),
   name: z.string(),
   /**
-   * How the name came to be. "binding" means other code can call the
-   * unit by this name; "label" means discovery coined it for the
-   * reader, the way a route handler is named after its registration
-   * verb. A label never stands in for a callable binding. Absent in
-   * artifacts written before the field existed, which all named
-   * bindings.
+   * "binding" means other code can call the unit by this name. "label"
+   * means discovery coined it, and it never stands in for a binding.
    */
   nameKind: z.enum(["binding", "label"]).optional(),
   exportPath: z.array(z.string()).nullable(),
   boundaryBinding: BoundaryBindingSchema.nullable(),
-  /** The thing that gets deployed and runs this unit, when known. */
   deployableUnit: DeployableUnitSchema.optional(),
 });
 
@@ -347,14 +158,8 @@ export const DerivationSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-// ---------------------------------------------------------------------------
-// Recursive shapes — ValueRef, Predicate, TypeShape
-// ---------------------------------------------------------------------------
-//
-// zod v4 handles recursion via `z.lazy()` with an explicit type annotation.
-// The recursive structures below cross-reference each other (Predicate
-// contains ValueRef; TypeShape contains TypeShape; Output contains
-// ValueRef and TypeShape).
+// These types are hand-written rather than inferred because zod v4
+// needs an explicit annotation on a `z.lazy()` to close the recursion.
 
 export interface ValueRef {
   type: "input" | "dependency" | "derived" | "literal" | "state" | "unresolved";
@@ -369,8 +174,6 @@ export interface Derivation {
     | "indexAccess";
 }
 
-// Forward type declarations for recursive schemas. The zod schemas below
-// produce types compatible with these.
 type ValueRefT =
   | { type: "input"; inputRef: string; path: string[] }
   | { type: "dependency"; name: string; accessChain: string[] }
@@ -480,7 +283,7 @@ export const PredicateSchema: z.ZodType<PredicateT> = z.lazy(() =>
 );
 
 // ---------------------------------------------------------------------------
-// Render tree — component-style output (React JSX, Vue templates, etc.)
+// Render tree
 // ---------------------------------------------------------------------------
 
 type RenderNodeT =
@@ -488,18 +291,8 @@ type RenderNodeT =
       type: "element";
       tag: string;
       /**
-       * Raw JSX attributes on the opening element, keyed by name and
-       * mapped to the *source text* of the attribute's value. String-
-       * literal attributes include their surrounding quotes (`type="button"`
-       * → `"\"button\""`); expression-valued attributes include the full
-       * expression (`onClick` → `"() => setCount(count + 1)"`); boolean
-       * shorthand attributes (`<input disabled>`) map to the empty
-       * string. No interpretation happens here — consumers that care
-       * about event semantics (React's `onX` convention, Storybook's
-       * `play` function targets) apply their own naming rules to
-       * resolve handler summary identities. Omitted when the element
-       * has no attributes (keeps tree output terse for text-heavy
-       * templates).
+       * Attribute values as source text, quotes included. A boolean
+       * shorthand such as `<input disabled>` maps to the empty string.
        */
       attrs?: Record<string, string> | undefined;
       children: RenderNodeT[];
@@ -507,23 +300,9 @@ type RenderNodeT =
   | { type: "text"; value: string }
   | { type: "expression"; sourceText: string }
   | {
-      // Inline JSX conditionals: `{cond && <X/>}`, `{cond ? <A/> : <B/>}`,
-      // `{cond ? <A/> : null}`. The `condition` carries the test
-      // expression's source text verbatim — downstream consumers that
-      // want a structured predicate can re-parse it, but preserving the
-      // text means the summary stays legible without binding to the
-      // current predicate decomposer.
-      //
-      // `whenTrue` is the branch rendered when the condition is truthy.
-      // `whenFalse` is the branch rendered when falsy; null means the
-      // conditional has no else (the `cond && <X/>` case) or the else
-      // is explicitly `null` in source. Both alternatives render
-      // nothing when absent — React treats `null`, `false`, and
-      // `undefined` children as empty. Deliberately avoiding `then` /
-      // `else` to sidestep the thenable-lookalike footgun: any object
-      // with a `then` property can trip loose duck-typing checks in
-      // older libraries, and the ESTree `consequent` / `alternate`
-      // vocabulary needs parser-author context to read.
+      // A null `whenFalse` covers both `{cond && <X/>}` and an else
+      // written as `null`; React renders nothing either way. They are
+      // not called `then`/`else`: a `then` property makes a thenable.
       type: "conditional";
       condition: string;
       whenTrue: RenderNodeT;
@@ -559,13 +338,9 @@ export const InputSchema = z.discriminatedUnion("type", [
     name: z.string(),
     position: z.number(),
     /**
-     * What the parameter carries (a path parameter, a query
-     * parameter, the request body), as the library's own vocabulary
-     * names it. Null when nobody could read which it is: a role
-     * follows from something else the reader has to have read first,
-     * and where a route's path went unread, every parameter would
-     * otherwise take the weakest guess and claim it. A summary that
-     * says null carries a gap saying why.
+     * What the parameter is for, in the library's own vocabulary. Null
+     * when nobody could tell which role it has, rather than guessing;
+     * the summary then includes a gap explaining why.
      */
     role: z.string().nullable(),
     shape: TypeShapeSchema.nullable(),
@@ -605,15 +380,7 @@ export const OutputSchema = z.discriminatedUnion("type", [
     type: z.literal("render"),
     component: z.string(),
     props: z.record(z.string(), z.unknown()).optional(),
-    /**
-     * Optional full rendered-tree shape. Packs that understand their
-     * source language's render form (JSX, Vue templates, Svelte
-     * markup) populate this so cross-boundary checking can compare
-     * structural output against stubbed contracts (snapshots,
-     * Storybook stories, Figma variants). Consumers that only care
-     * about the root element read `component`; those that want the
-     * full tree read `root`.
-     */
+    /** The full rendered tree, when the pack understands the render form. */
     root: RenderNodeSchema.optional(),
   }),
   z.object({
@@ -639,26 +406,14 @@ export const EffectSchema = z.discriminatedUnion("type", [
     type: z.literal("invocation"),
     callee: z.string(),
     /**
-     * The summary this call reaches, by its id, when exactly one
-     * summary in the run answers to the name.
-     *
-     * `callee` is the text somebody wrote, and a repository can hold
-     * many functions called `processRecord`. Following a call meant
-     * matching that text and hoping, which is why a call graph built
-     * from these came out mostly empty. Absent when nothing matched,
-     * or when more than one did: a guess is worse than a gap.
+     * The summary this call reaches, set only when exactly one summary in
+     * the run matches `callee`. Absent when several did, since a guess
+     * is worse than a gap.
      */
     summary: z.string().optional(),
     args: z.array(z.unknown()),
     async: z.boolean(),
-    /**
-     * Ancestor conditions that gate reaching this call within its
-     * enclosing transition — populated for calls nested inside
-     * conditional blocks (`if (result === "nomatch") findings.push(...)`)
-     * or loop bodies. Absent for unconditional, always-fires calls.
-     * Same shape as Transition.conditions: opaque fallback when the
-     * source condition couldn't be decomposed structurally.
-     */
+    /** Absent for a call that always fires within its transition. */
     preconditions: z.array(PredicateSchema).optional(),
   }),
   z.object({
@@ -672,47 +427,18 @@ export const EffectSchema = z.discriminatedUnion("type", [
     newValue: z.unknown().optional(),
   }),
   /**
-   * Outbound boundary interaction — code at line N talks to something
-   * across a boundary. Discriminated by `interaction.class` so each
-   * class carries the typed structural fields appropriate to its
-   * operation shape (storage columns, service-call payload +
-   * response, message body, env-var name).
-   *
-   * Class taxonomy (v0): storage-access, service-call, message-send,
-   * config-read. Each maps 1:1 to a `binding.semantics.name`
-   * (storage-relational, rest, message-bus, runtime-config) — that
-   * convention is not enforced by the IR but every shipped recognizer
-   * follows it.
-   *
-   * Subsumes what was previously a separate `storageAccess` Effect
-   * variant. `interaction(class: "storage-access")` carries all the
-   * same data: `binding.semantics` (StorageRelationalSemantics)
-   * holds the (storageSystem, scope, table) identity, and
-   * `interaction.{kind, fields, selector, operation}` holds the
-   * operation details.
+   * Code talking to something across a boundary. Every shipped recognizer
+   * keeps `interaction.class` matching `binding.semantics.name`, though
+   * the IR does not enforce it.
    */
   z.object({
     type: z.literal("interaction"),
-    /** Boundary identity — drives pairing against provider summaries. */
     binding: BoundaryBindingSchema,
-    /** Source-text of the call expression for inspect rendering. */
+    /** Source text of the call expression, for inspect rendering. */
     callee: z.string().optional(),
-    /**
-     * Correlation id when one call site emits multiple effects (e.g.
-     * a Prisma nested select that touches User AND Order — two
-     * effects sharing a groupId reflect "these came from one query").
-     */
+    /** All the effects from one call site share this id. */
     groupId: z.string().optional(),
-    /**
-     * Same shape as invocation.preconditions — ancestor conditions
-     * that gate reaching this interaction within its transition.
-     */
     preconditions: z.array(PredicateSchema).optional(),
-    /**
-     * Per-class operation shape. The discriminator is `class`; each
-     * variant carries the typed fields appropriate to its operation.
-     * Adding a class is a strictly additive IR change.
-     */
     interaction: z.discriminatedUnion("class", [
       z.object({
         class: z.literal("storage-access"),
@@ -733,21 +459,9 @@ export const EffectSchema = z.discriminatedUnion("type", [
         routingKey: z.string().optional(),
       }),
       /**
-       * Consumer-side body extraction from a message. Sister to
-       * `message-send`: producer-side records what shape goes IN to
-       * the queue / topic, consumer-side records what shape comes OUT.
-       * Pairs against `message-send` by channel — the channel is
-       * usually carried on the enclosing handler's CFN-declared
-       * event-source mapping (consumer-side recognizers leave the
-       * channel implicit because the SQS / Kafka handler signature
-       * doesn't name it; the checker joins via the consumer summary's
-       * `binding.semantics.channel`).
-       *
-       * `body` is the EffectArg-shaped extraction of the parsed
-       * message — typically the destructured field set after
-       * `JSON.parse(record.body)`, an `as Type` cast, or both.
-       * Compared against the producer's `body` to detect field-name
-       * or shape mismatches.
+       * The fields a consumer pulls out of a message, with no channel,
+       * since a handler signature does not say which one it is for. The
+       * checker uses the enclosing summary's `binding.semantics.channel`.
        */
       z.object({
         class: z.literal("message-receive"),
@@ -759,21 +473,10 @@ export const EffectSchema = z.discriminatedUnion("type", [
         defaulted: z.boolean(),
       }),
       /**
-       * Runtime scheduling primitive — `setImmediate(fn)`,
-       * `setTimeout(fn, ms)`, `queueMicrotask(fn)`, etc. The callback
-       * `fn` is recorded separately (as a sub-unit when the analyzer
-       * can resolve it to a literal function expression, or via the
-       * `callbackRef` opaque marker when not).
-       *
-       * `via` names the scheduling API; `hasDelay` records whether a
-       * delay argument was supplied at the call site (without
-       * modeling its value — temporal semantics are out of v0 scope).
-       *
-       * Schedule effects don't pair against contracted boundaries —
-       * scheduling isn't a contract — so the enclosing
-       * Effect.binding carries a `function-call` semantics with the
-       * scheduling pack as `recognition`. The interaction exists for
-       * dataflow / inspect rendering, not for cross-unit pairing.
+       * A scheduled callback. Nothing pairs against these, so the
+       * enclosing binding uses `function-call` semantics and the
+       * interaction is there for dataflow and inspect rendering.
+       * `hasDelay` says a delay argument was passed, not what it was.
        */
       z.object({
         class: z.literal("schedule"),
@@ -813,13 +516,9 @@ export const TransitionSchema = z.object({
 
 export const GapSchema = z.object({
   /**
-   * "unhandledCase": the unit meets a case and does nothing useful with
-   * it, which is a statement about the code.
-   *
-   * "unreadOutcome": part of what the unit produces was not described,
-   * because no pack terminal matched it, which is a statement about the
-   * reading rather than the code. A checker should not hold this
-   * against the handler.
+   * "unhandledCase" is a statement about the code. "unreadOutcome"
+   * means no pack terminal matched part of what the unit produces, so a
+   * checker should not count that against the handler.
    */
   type: z.enum(["unhandledCase", "unreadOutcome"]),
   conditions: z.array(PredicateSchema),
@@ -833,12 +532,7 @@ export const GapSchema = z.object({
 });
 
 export const BehavioralSummarySchema = z.object({
-  /**
-   * The summary format version the writer spoke. Absent means 1, the
-   * 0.3.x format, which the parse entry points normalize before
-   * validation. `SUMMARY_SCHEMA_VERSION` is the version this build
-   * writes.
-   */
+  /** Absent means version 1, which parse entry points normalize first. */
   schemaVersion: z.number().optional(),
   kind: CodeUnitKindSchema,
   location: SourceLocationSchema,
@@ -847,19 +541,9 @@ export const BehavioralSummarySchema = z.object({
   transitions: z.array(TransitionSchema),
   gaps: z.array(GapSchema),
   confidence: ConfidenceInfoSchema,
-  /**
-   * The types this summary refers to but does not spell out, each
-   * written once and keyed the way `typeDefinitionKey` builds a key out
-   * of a ref.
-   */
+  /** Keyed the way `typeDefinitionKey` builds a key out of a ref. */
   definitions: z.record(z.string(), TypeShapeSchema).optional(),
-  /**
-   * What this unit reads out of what it was given, once each.
-   *
-   * A reader asking "what does this handler use" had to walk the
-   * derivation nodes inside every condition and value to find out. The
-   * summary says it.
-   */
+  /** What this unit reads out of the values it was given, once each. */
   inputReads: z
     .array(z.object({ input: z.string(), path: z.array(z.string()) }))
     .optional(),
@@ -879,24 +563,15 @@ export const FindingSideSchema = z.object({
 });
 
 export const FindingSuppressionSchema = z.object({
-  /** Human-written explanation from the .sussignore rule. Required. */
+  /** The .sussignore rule's own explanation. */
   reason: z.string(),
   /**
-   * What happened to this finding:
-   *   - "mark": still shown and returned; excluded from exit-code
-   *     threshold calculations. Default.
-   *   - "downgrade": severity dropped one level (error -> warning ->
-   *     info); still counted toward exit code at the downgraded level.
-   *   - "hide": filtered from output and exit code entirely. The
-   *     `suppressed` annotation survives only for downstream JSON
-   *     consumers that want to see what was silenced.
+   * "mark" still shows the finding but drops it from the exit code.
+   * "downgrade" drops the severity one level and still counts it there.
+   * "hide" keeps it out of both, and survives only in the JSON output.
    */
   effect: z.enum(["mark", "downgrade", "hide"]),
-  /**
-   * Original severity before downgrade, preserved so downstream tools
-   * can distinguish "this was always info" from "this was downgraded
-   * from error to info." Present only when effect is "downgrade".
-   */
+  /** The severity before a downgrade. Present only for "downgrade". */
   originalSeverity: FindingSeveritySchema.optional(),
 });
 
@@ -907,30 +582,12 @@ export const FindingSchema = z.object({
   consumer: FindingSideSchema,
   description: z.string(),
   severity: FindingSeveritySchema,
-  /**
-   * For generic boundary findings (`boundaryFieldUnknown`,
-   * `boundaryFieldUnused`, `boundaryShapeMismatch`), names which
-   * side of the field the finding concerns — read / write / send /
-   * receive / construct / selector. See `BoundaryAspectSchema` for
-   * the per-value semantics. Absent on findings where the aspect
-   * is irrelevant (most non-generic kinds) or where the finding
-   * spans multiple aspects.
-   */
   aspect: BoundaryAspectSchema.optional(),
   /**
-   * Present only when two or more identical findings (same kind,
-   * boundary, description, consumer) from different providers were
-   * collapsed by the checker's dedup pass. Each entry is a
-   * `${file}::${name}` identifier matching FindingSide.summary.
-   * Single-source findings leave this unset. The `provider` field
-   * above still points at one representative contributor.
+   * Every provider that contributed, when identical findings from several
+   * of them were collapsed into one. `provider` above is one of them.
    */
   sources: z.array(z.string()).optional(),
-  /**
-   * Present only when a .sussignore rule matched this finding. The
-   * `effect` tells downstream tools how the finding was handled;
-   * `reason` is the rule's human-written justification.
-   */
   suppressed: FindingSuppressionSchema.optional(),
 });
 

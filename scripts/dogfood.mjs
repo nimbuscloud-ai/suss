@@ -1,4 +1,4 @@
-// Dogfood script — run suss's adapter against every `@suss/*` package
+// Dogfood script: run suss's adapter against every `@suss/*` package
 // and produce per-package API contracts.
 //
 // What this does:
@@ -16,7 +16,7 @@
 //      and out of every tarball.
 //   4. Unions all summaries, runs the checker's `pairSummaries`, and
 //      reports paired provider↔consumer edges plus unmatched
-//      providers/consumers — the cross-package dependency graph as
+//      providers/consumers: the cross-package dependency graph as
 //      structured data.
 //   5. Writes a consolidated roll-up to `scripts/dogfood-report.json`,
 //      and the per-package counts to `scripts/dogfood-baseline.json`.
@@ -124,7 +124,7 @@ let totalConsumers = 0;
 let totalPackagesWithExports = 0;
 const sussPackageNames = packages.map((p) => p.packageJson.name);
 // Also track sub-paths we know about so `@suss/behavioral-ir/schemas`
-// consumers pair correctly — the import-site matches the module
+// consumers pair correctly: the import-site matches the module
 // specifier exactly.
 const sussImportTargets = new Set(sussPackageNames);
 sussImportTargets.add("@suss/behavioral-ir/schemas");

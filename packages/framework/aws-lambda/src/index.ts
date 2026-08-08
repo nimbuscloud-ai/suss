@@ -1,23 +1,23 @@
-// @suss/framework-aws-lambda — PatternPack for AWS Lambda HTTP handlers.
+// @suss/framework-aws-lambda: the PatternPack for AWS Lambda HTTP handlers.
 //
 // The template declares the routing (SAM `Events: { HttpApi | Api }`),
 // the code declares the behavior (what the handler returns). This
 // pack extracts the code side and binds it to the same REST identity the
-// declared route carries, so the two pair by `(method, normalizedPath)`.
+// declared route has, so the two pair by `(method, normalizedPath)`.
 //
 // Discovery is template-driven (see `discovery.ts`): handlers are found
 // by resolving each Serverless::Function's `Handler` back to a source
 // file + export, not by an in-code registration call.
 //
-// The pack declares one response shape: an object carrying
-// `statusCode`, where `body` is `JSON.stringify(x)`, since the shape of
-// `x` is what pairs with a declared body.
+// The pack declares one response shape: an object with a `statusCode`, where
+// `body` is `JSON.stringify(x)`, since the shape of `x` is what pairs with a
+// declared body.
 //
 // Most handlers build that object in a helper rather than at the return
 // site, and the helper belongs to the service, so this pack does not try
 // to name it. The adapter follows a returned call into the project and
 // applies the same declaration to the object it finds there, reading the
-// helper's parameters to see which argument carries which field. A
+// helper's parameters to see which argument supplies which field. A
 // service writing `json(status, payload)` and one writing
 // `json(payload, status)` both come out right, as does one that calls
 // the helper `respond`.
@@ -45,10 +45,10 @@ export interface AwsLambdaPackOptions {
    * message-bus binding on that subject instead of the fallback.
    *
    * The adapter follows the export back to the call that built it, so
-   * an entry says which property carries the subject and nothing else:
-   * `{ "property": "subject" }`. AWS declares no such factory and
-   * nothing here names one, so a service that does not use this shape
-   * is unaffected.
+   * an entry only has to say which property contains the subject:
+   * `{ "property": "subject" }`. AWS declares no such factory and nothing here
+   * assumes one, so a service that does not write its consumers this way is
+   * unaffected.
    */
   subjectFactories?: SubjectFactory[];
 }
@@ -88,12 +88,12 @@ export function awsLambdaFramework(
     // nothing.
     //
     // The SAM template is the gate instead, and a better one, because it
-    // names the handlers outright. `discoverUnits` looks each file up in
+    // says which handlers outright. `discoverUnits` looks each file up in
     // the template reachable from it, and a directory with no template
     // resolves to null once and stays memoized.
 
-    // Route units extract against these. Non-HTTP accounting units carry
-    // their own wider list, attached per unit by the discovery callback.
+    // Route units extract against these. Non-HTTP accounting units get their
+    // own wider list, attached per unit by the discovery callback.
     terminals: HTTP_TERMINALS,
 
     // Lambda's handler signature is `(event, context, callback?)`. The

@@ -344,7 +344,7 @@ describe("check CLI command", () => {
   });
 
   it("human output annotates sub-`high` confidence alongside the finding", () => {
-    // Confidence is informational only — the checker's severity logic
+    // Confidence is informational only: the checker's severity logic
     // doesn't look at it. The renderer surfaces it so reviewers can weigh
     // findings themselves.
     const prov = provider("getUser", [
@@ -402,7 +402,7 @@ describe("check CLI command", () => {
   });
 
   // ---------------------------------------------------------------------
-  // .sussignore — suppression
+  // .sussignore: suppression
   // ---------------------------------------------------------------------
 
   function writeDeadBranchScenario() {
@@ -699,7 +699,7 @@ describe("check CLI command", () => {
 });
 
 // ---------------------------------------------------------------------------
-// checkDir — automatic boundary pairing
+// checkDir: automatic boundary pairing
 // ---------------------------------------------------------------------------
 
 function providerWithRoute(
@@ -821,9 +821,8 @@ describe("checkDir", () => {
 
   it("says when two files claim the same boundary", () => {
     // suss tells HTTP boundaries apart by method and path alone, so two
-    // services that both serve GET /users read as one. Whoever calls
-    // either gets compared against both, which is worth saying out loud
-    // rather than reporting findings from the wrong API in silence.
+    // services that both serve GET /users look like one, and whoever
+    // calls either gets compared against both.
     for (const service of ["svc-a", "svc-b"]) {
       fs.writeFileSync(
         path.join(tmpDir, `${service}.json`),
@@ -902,7 +901,7 @@ describe("checkDir", () => {
         // Code produces 200 but not the declared 404.
         expect(kinds).toContain("uncoveredOutcome");
         expect(result.hasErrors).toBe(true);
-        // The intent was paired and compared — coverage accounting.
+        // The intent was paired and compared: coverage accounting.
         expect(result.intent?.checked).toHaveLength(1);
         expect(result.intent?.unchecked).toHaveLength(0);
 
@@ -917,7 +916,7 @@ describe("checkDir", () => {
         );
         expect(lenient.hasErrors).toBe(false);
 
-        // JSON output carries the intent pass alongside behavioural findings.
+        // JSON output includes the intent pass alongside behavioural findings.
         const asJson = checkDir({ dir: tmpDir, intent: intentDir, json: true });
         expect((asJson.intent?.findings ?? []).length).toBeGreaterThan(0);
 
@@ -984,7 +983,7 @@ describe("checkDir", () => {
           intent: intentDir,
           sussignore,
         });
-        // The finding is still reported, annotated — but mark excludes
+        // The finding is still reported, annotated: but mark excludes
         // it from gating, so the run passes.
         expect(result.intent?.findings[0].suppressed).toEqual({
           reason: "404 path ships next sprint",
@@ -1075,7 +1074,7 @@ describe("checkDir", () => {
             title: "Missing id",
             when: "the id is omitted",
             expect: "the caller is told the id is required",
-            // no link — a valid pending state
+            // no link: a valid pending state
           },
           {
             title: "Soft-deleted user",
@@ -1101,7 +1100,7 @@ describe("checkDir", () => {
           resolved: 1,
           unlinked: 1,
         });
-        // The dangling link is a warning — it gates at --fail-on warning
+        // The dangling link is a warning: it gates at --fail-on warning
         // but not at the default error threshold.
         expect(result.hasErrors).toBe(false);
         expect(
@@ -1305,7 +1304,7 @@ describe("--fail-on threshold", () => {
     fs.writeFileSync(path.join(tmpDir, name), JSON.stringify(data));
   }
 
-  it("failOn: none — never triggers hasErrors even with error findings", () => {
+  it("failOn: none: never triggers hasErrors even with error findings", () => {
     const p = provider("test", [
       transition("p1", { statusCode: 200 }),
       transition("p2", { statusCode: 500 }),
@@ -1326,7 +1325,7 @@ describe("--fail-on threshold", () => {
     expect(result.findings.length).toBeGreaterThan(0);
   });
 
-  it("failOn: warning — triggers on warning-severity findings", () => {
+  it("failOn: warning: triggers on warning-severity findings", () => {
     const p = provider("test", [
       transition("p1", { statusCode: 200 }),
       transition("p2", { statusCode: 200 }),

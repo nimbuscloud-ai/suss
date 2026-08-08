@@ -1,5 +1,7 @@
-// A pack that finds units by where a file sits, and what the adapter
-// does with a file that sits somewhere else.
+/**
+ * A pack that finds units by where a file is, and what the adapter does
+ * with a file that is somewhere else.
+ */
 
 import { describe, expect, it } from "vitest";
 
@@ -102,7 +104,7 @@ describe("discoverFileConventions", () => {
 describe("a route the file cannot supply", () => {
   it("leaves a unit unbound when its file sits outside the root", async () => {
     // The pattern still matches, since a project can keep an app
-    // directory anywhere, but the convention names a different root.
+    // directory anywhere, but the convention points at a different root.
     const pack = packFinding(ROUTE_FILES, {
       method: { type: "fromExportName" },
       path: { type: "fromFilename", root: "pages" },
@@ -117,7 +119,7 @@ describe("a route the file cannot supply", () => {
   it("leaves a unit unbound when nothing says which method it answers", async () => {
     const pack = packFinding(ROUTE_FILES, {
       // A method read off a registration call, which a file-routed unit
-      // does not have.
+      // never has.
       method: { type: "fromRegistration", position: "methodName" },
       path: { type: "fromFilename", root: "app" },
     });

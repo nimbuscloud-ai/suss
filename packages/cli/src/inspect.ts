@@ -1,4 +1,4 @@
-// inspect.ts — `suss inspect` command implementation
+// inspect.ts: `suss inspect` command implementation
 //
 // Renders behavioral summaries as human-readable descriptions.
 // Lead with what the code DOES (output), follow with WHEN (conditions).
@@ -42,13 +42,12 @@ import type {
 // switch statement so that adding a new variant to the IR becomes a type
 // error here at definition time, not a silent default-case fallback at
 // runtime. dispatchByType is the one place we cast back to the union type
-// — the caller only sees a typed result.
+//: the caller only sees a typed result.
 
 // ---------------------------------------------------------------------------
 // Body shape rendering
 // ---------------------------------------------------------------------------
 
-/** Summaries with their named types spelled out, when the reader asked. */
 function spelledOutIfAsked(
   summaries: BehavioralSummary[],
   types: boolean | undefined,
@@ -58,7 +57,6 @@ function spelledOutIfAsked(
     : summaries;
 }
 
-/** A path as somebody would say it: the last two parts, no more. */
 function shortPath(file: string): string {
   const parts = file.split("/").filter((p) => p.length > 0);
   return parts.slice(-2).join("/");
@@ -107,9 +105,9 @@ function formatBodyShape(shape: TypeShape | null | undefined): string {
 
 /**
  * Collapse runs of whitespace (including newlines) to a single space
- * and trim. Source-text fields captured from the TypeScript AST —
+ * and trim. Source-text fields captured from the TypeScript AST ,
  * opaque predicates, unresolved ValueRefs, dependency names that span
- * multi-line call expressions — carry the original formatting. Without
+ * multi-line call expressions: keep the original formatting. Without
  * normalization those newlines break the tree prefix on every
  * continuation line.
  */
@@ -175,7 +173,7 @@ const REF_FORMATTERS: DispatchTable<ValueRef, string> = {
   },
   derived: (v) => {
     const deriv = formatDerivation(v.derivation);
-    // Index access reads `foo[0]`, not `foo.[0]` — the leading dot we
+    // Index access reads `foo[0]`, not `foo.[0]`: the leading dot we
     // prefix for propertyAccess / destructured / methodCall / awaited
     // isn't part of the bracket syntax. Other derivations still use
     // `.` as the separator.
@@ -203,7 +201,7 @@ function formatDerivation(d: Derivation): string {
 }
 
 // ---------------------------------------------------------------------------
-// Transition rendering — output-first
+// Transition rendering: output-first
 // ---------------------------------------------------------------------------
 
 const OUTPUT_FORMATTERS: DispatchTable<Output, string> = {
@@ -251,7 +249,7 @@ function formatRenderAttrs(attrs: Record<string, string> | undefined): string {
   const joined = parts.join(" ");
   // Cap the per-tag attr string so attr-heavy elements don't dominate
   // the line. The full attrs remain in the IR for consumers that need
-  // them — this is inspect's readability heuristic.
+  // them: this is inspect's readability heuristic.
   const MAX_ATTR_WIDTH = 60;
   if (joined.length > MAX_ATTR_WIDTH) {
     return ` ${parts.slice(0, 2).join(" ")} ...`;
@@ -260,7 +258,7 @@ function formatRenderAttrs(attrs: Record<string, string> | undefined): string {
 }
 
 /**
- * Does the root render node carry more than a single bare self-closing
+ * Does the root render node have more than a single bare self-closing
  * element? Used to decide whether the inline `render <Foo />` form is
  * lossless or whether the subtree expansion is needed to preserve
  * per-branch differentiation (children, attrs, conditionals, text).
@@ -278,7 +276,7 @@ function hasRenderedContent(root: RenderNode): boolean {
 /**
  * Walk a render tree into indented lines. Elements render as
  * JSX-style open tags (`<Tag attrs>` ... `</Tag>`), leaf elements
- * collapse to self-closing (`<Leaf />`). Conditional nodes carry their
+ * collapse to self-closing (`<Leaf />`). A conditional node keeps its
  * condition's source text verbatim, ternary branches indent under it.
  */
 function formatRenderNode(node: RenderNode, indent: string): string[] {
@@ -323,7 +321,7 @@ function formatRenderNode(node: RenderNode, indent: string): string[] {
 // decided the branch.
 //
 // `renderTransitions` folds the transitions back into a decision tree, then
-// renders the tree as nested `if` / `elif` / `else` — shared prefix appears
+// renders the tree as nested `if` / `elif` / `else`: shared prefix appears
 // once, elif collapses a one-predicate else-branch onto the same indent,
 // nested ifs indent further. Falls back to leaf output lines only at the
 // branches.
@@ -348,14 +346,14 @@ interface RenderCtx {
    * callee as a known follow target and decide whether to render the
    * `→` reference bare (same file) or path-qualified (cross-file, so
    * readers know which file-group to scroll to). Collisions under a
-   * given name map to the first summary encountered — ambiguous names
+   * given name map to the first summary encountered: ambiguous names
    * are already path-qualified at the header level via
    * `ambiguousNames`, so the bare-name fallback here is safe.
    */
   fileByName: Map<string, string>;
   /**
-   * Every loaded summary that carries an `identity.id`, keyed by that
-   * id. An invocation effect whose `summary` field names one of these
+   * Every loaded summary that has an `identity.id`, keyed by that
+   * id. An invocation effect whose `summary` field points at one of these
    * ids resolves through this map instead of by matching `callee`
    * text against `fileByName`, since that field is an actual call fact
    * the extractor already worked out, not a name a reader hopes is
@@ -367,11 +365,11 @@ interface RenderCtx {
    * that were spawned by a specific callee in the parent's body,
    * ordered by the source index the pack recorded. Example: for a
    * React component `ContainerVersionView` with three `useEffect(...)`
-   * calls, this carries
+   * calls, this contains
    * `{ "ContainerVersionView" → { "useEffect" → ["...effect#0", "...effect#1", "...effect#2"] } }`.
    * When rendering the parent's effect list, a `+ useEffect` line is
    * replaced by a reference to the spawned sub-unit so the reader
-   * isn't told "this called useEffect" three times — they're told
+   * isn't told "this called useEffect" three times: they're told
    * "this spawned `effect#0`, `effect#1`, `effect#2`," each of which
    * has its own summary immediately below.
    */
@@ -413,7 +411,7 @@ function perSummary(
 
 /**
  * Summary names whose identity is generic enough that the path-free
- * header carries zero information — routing conventions dominated by
+ * header says nothing at all: routing conventions dominated by
  * React Router / Remix / Express / default-exporting files. When the
  * name is one of these, prefix it with the relative file path (minus
  * extension) so a reader skimming inspect output can distinguish
@@ -433,7 +431,7 @@ function qualifyGenericName(
 ): string {
   const name = summary.identity.name;
   // Qualify when the name is a known convention *or* collides with
-  // another summary in the file — both cases leave the bare name
+  // another summary in the file: both cases leave the bare name
   // ambiguous to a reader skimming the output.
   if (!GENERIC_NAMES.has(name) && !ambiguousNames.has(name)) {
     return name;
@@ -453,9 +451,9 @@ type TreeNode =
     };
 
 function predicateEqual(a: Predicate, b: Predicate): boolean {
-  // Structural equality via JSON — predicates are plain zod-shaped data and
+  // Structural equality via JSON: predicates are plain zod-shaped data and
   // the schemas fix key order, so round-tripping is stable. Good enough for
-  // display-time tree building; not a load-bearing invariant.
+  // display-time tree building, and nothing else depends on it.
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -529,7 +527,7 @@ function insertIntoTree(
   }
   if (!predicateEqual(node.predicate, pred)) {
     // Predicate shape mismatch at this depth. The transitions don't line up
-    // into a clean decision tree — fall back to treating the incoming
+    // into a clean decision tree: fall back to treating the incoming
     // condition as a fresh branch in the else slot.
     return {
       ...node,
@@ -580,10 +578,10 @@ function renderLeaf(
   ctx: PerSummaryRenderCtx,
 ): string[] {
   const lines: string[] = [];
-  // When a render terminal carries a full subtree, emit `-> render`
+  // When a render terminal has a full subtree under it, emit `-> render`
   // on the terminal line and expand the tree below it. Two branches
   // that share a root component but differ in children or attrs stay
-  // distinguishable — which the `render <Component />` collapsed form
+  // distinguishable: which the `render <Component />` collapsed form
   // couldn't express.
   if (
     leaf.output.type === "render" &&
@@ -610,7 +608,7 @@ function renderLeaf(
   // Effects, rendered as compact cross-references. Each effect is one
   // line at the same indent as the terminal, prefixed `+ `. When an
   // effect's callee resolves to a summary in the same file, append a
-  // `→` marker to signal "this has its own summary nearby — follow
+  // `→` marker to signal "this has its own summary nearby: follow
   // it for detail." No arg expansion in the default view; the idea
   // is a navigable index, not an inline function body.
   for (const effect of leaf.effects) {
@@ -624,13 +622,13 @@ function renderLeaf(
 
 /**
  * Short, reference-style effect rendering. Only invocation effects
- * surface by default — mutation/emission/stateChange are folded in
+ * surface by default: mutation/emission/stateChange are folded in
  * too, but invocation is the dominant case and the one readers care
  * about for "what did this handler call."
  */
 function renderEffect(effect: Effect, ctx: PerSummaryRenderCtx): string | null {
   if (effect.type === "invocation") {
-    // Normalize the callee text — extractors that capture a raw
+    // Normalize the callee text: extractors that capture a raw
     // multi-line source region (`arr\n  .filter(...)\n  .join`) would
     // otherwise emit newlines that break the tree pipe on every
     // continuation. Same treatment as the other source-text render
@@ -638,7 +636,7 @@ function renderEffect(effect: Effect, ctx: PerSummaryRenderCtx): string | null {
     const callee = normalizeSourceText(effect.callee);
     // Check whether this callee spawned a sub-unit for the current
     // parent summary. If so, render the sub-unit reference instead
-    // of the raw callee — `+ ComponentName.effect#0 →` is more
+    // of the raw callee: `+ ComponentName.effect#0 →` is more
     // informative than `+ useEffect` three times in a row when the
     // sub-unit summaries are right below.
     const spawned = consumeSpawnedSubUnit(ctx, callee);
@@ -646,7 +644,7 @@ function renderEffect(effect: Effect, ctx: PerSummaryRenderCtx): string | null {
       return `+ ${spawned} →`;
     }
     // Trust the id the extractor already resolved this call to over a
-    // name guess: `effect.summary` names one specific summary, where
+    // name guess: `effect.summary` points at one specific summary, where
     // `callee` text can coincide with any number of them across a run.
     // Falls back to the name match only when no id was recorded, which
     // covers both an artifact predating that resolution and a call the
@@ -871,7 +869,7 @@ interface SummaryLayout {
   readonly bodyPrefix: string;
   /**
    * When true, the summary is rendered under a file-group header and
-   * the file path provides disambiguation context — bare `loader` /
+   * the file path provides disambiguation context: bare `loader` /
    * `Index` is unambiguous within a file. When false (standalone),
    * generic / colliding names get path-qualified so they don't read
    * as interchangeable.
@@ -894,7 +892,7 @@ function renderSummary(
   const lines: string[] = [];
 
   // Single header line: `<name> (<recognition> <kind> | line N [| confidence])`.
-  // Collapsed from the old two-line form — file path lives in the
+  // Collapsed from the old two-line form: file path lives in the
   // file-group header one level up, so repeating it here is noise.
   const headerName = summaryHeaderName(summary, ctx, layout);
   const metadata = summaryMetadata(summary);
@@ -902,7 +900,6 @@ function renderSummary(
 
   const bodyLines: string[] = [];
 
-  // Contract line
   const contract = readHttpMetadata(summary)?.declaredContract;
   let declaredStatuses: Set<number> | null = null;
   if (contract !== undefined) {
@@ -913,14 +910,13 @@ function renderSummary(
     bodyLines.push(`  Contract: ${statuses.join(", ")}`);
   }
 
-  // Transitions
   if (summary.transitions.length > 0) {
     bodyLines.push(
       ...renderTransitions(summary.transitions, declaredStatuses, perCtx),
     );
   }
 
-  // Effects closure — everything this boundary transitively touches,
+  // Effects closure: everything this boundary transitively touches,
   // stamped by the adapter's boundary-effects pass on entry summaries.
   // `(via callees)` marks effects inherited from deeper in the call
   // chain rather than the boundary's own body.
@@ -936,7 +932,6 @@ function renderSummary(
     }
   }
 
-  // Gaps
   if (summary.gaps.length > 0) {
     bodyLines.push("");
     for (const gap of summary.gaps) {
@@ -951,11 +946,6 @@ function renderSummary(
   return lines.join("\n");
 }
 
-/**
- * The left side of the collapsed header: endpoint for REST, identity
- * target for function-call callers/library, qualified bare name
- * otherwise.
- */
 function summaryHeaderName(
   summary: BehavioralSummary,
   ctx: RenderCtx,
@@ -1015,10 +1005,6 @@ function summaryHeaderName(
   return bareName(summary, ctx, layout);
 }
 
-/**
- * The summary's own name, qualified by file only when the file is not
- * already visible in a group header above it.
- */
 function bareName(
   summary: BehavioralSummary,
   ctx: RenderCtx,
@@ -1033,7 +1019,7 @@ function bareName(
 /**
  * The parenthesized right side of the header. React `useEffect`
  * sub-units (`metadata.react.kind === "effect"`) surface as
- * `react useEffect` instead of the bland `react handler` — both are
+ * `react useEffect` instead of the bland `react handler`: both are
  * `kind: "handler"` summaries, but readers of inspect want to
  * distinguish "event handler" from "effect body".
  */
@@ -1061,7 +1047,7 @@ function unitKindLabel(summary: BehavioralSummary): string {
 }
 
 /**
- * Render a useEffect's deps suffix. Three cases carry different
+ * Render a useEffect's deps suffix. Three cases mean different
  * scheduling meaning and should be distinguishable at a glance:
  *   - `null` (deps argument absent): body runs after every render
  *   - `[]` (empty array): body runs once on mount
@@ -1089,7 +1075,7 @@ function formatEffectDeps(deps: string[] | null | undefined): string {
 export interface InspectOptions {
   file: string;
   /**
-   * Spell out the types a summary names rather than naming them.
+   * Spell out the types a summary refers to rather than naming them.
    *
    * Naming is the default because a boundary answering with a `User`
    * is what a reader wants to see, and printing every field of every
@@ -1110,7 +1096,7 @@ export interface DiffOptions {
 }
 
 /**
- * A single summary's body can run long — 80+ lines for large branch
+ * A single summary's body can run long: 80+ lines for large branch
  * trees. By the time the reader has scrolled past the initial file
  * header, they no longer know which file the current body belongs to.
  * Every N body lines, re-emit a compact continuation marker under
@@ -1157,7 +1143,7 @@ export function inspect(options: InspectOptions): void {
 
   // Group by file; within each file, order by line number. File insertion
   // order (first time a file is seen in the summary list) is preserved as
-  // the between-group order — usually meaningful since extractors walk
+  // the between-group order: usually meaningful since extractors walk
   // files in some natural sequence. Each group renders under its file
   // header with elbow / body-prefix tree decoration.
   const byFile = new Map<string, BehavioralSummary[]>();
@@ -1193,7 +1179,7 @@ export function inspect(options: InspectOptions): void {
       );
       // Blank line between siblings. The pipe continues through the
       // spacer so the visual tree stays unbroken; the last summary
-      // doesn't get one — the next iteration either starts a new file
+      // doesn't get one: the next iteration either starts a new file
       // group (with its own spacing) or ends the output.
       if (!isLast) {
         process.stdout.write("│\n");
@@ -1207,21 +1193,21 @@ export function inspect(options: InspectOptions): void {
 }
 
 function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
-  // Every summary name in the file — inspect's `→` follow-reference
+  // Every summary name in the file: inspect's `→` follow-reference
   // marker uses this to flag effects whose callee is itself summarized.
   // Includes the full identity name and the last dotted segment so
   // `Form.onSubmit` and `onSubmit` both resolve. Parallel `fileByName`
-  // carries where each name lives so cross-file refs can be path-
+  // records where each name lives so cross-file refs can be path-
   // qualified in the effect render.
   const fileByName = new Map<string, string>();
   for (const s of summaries) {
-    // A label names the unit for the reader; nothing calls it, so a
+    // A label is there for the reader; nothing calls it, so a
     // callee matching one is a coincidence and gets no follow marker.
     if (s.identity.nameKind === "label") {
       continue;
     }
 
-    // First write wins on collisions — ambiguous names are already
+    // First write wins on collisions: ambiguous names are already
     // qualified at the header level via `ambiguousNames`, so the
     // `fileByName` lookup on a colliding bare name only needs to
     // succeed often enough to mark it as summarized somewhere.
@@ -1248,7 +1234,7 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     }
   }
 
-  // Identity names that appear on more than one summary — those need
+  // Identity names that appear on more than one summary: those need
   // file-path qualification in the header so `Index` at _app._index.tsx
   // vs `Index` at _app.tsx don't render indistinguishably.
   const nameCounts = new Map<string, number>();
@@ -1265,7 +1251,7 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
   // Spawner index: detect sub-units whose metadata records a parent
   // and spawning callee + source index, group by parent, order by
   // index. Today this is React-shaped only (`metadata.react.kind ===
-  // "effect"` with `component` + `index`); the shape is generic —
+  // "effect"` with `component` + `index`); the shape is generic ,
   // any pack that emits sub-units with parent + spawner + index
   // metadata benefits from the same rendering.
   const spawnerIndex = new Map<string, Map<string, string[]>>();
@@ -1333,10 +1319,6 @@ function summaryKey(s: BehavioralSummary): string {
   return `${s.kind}::${s.identity.name}`;
 }
 
-/**
- * The boundary's own label for the diff's unpaired lists, or null
- * when the summary has no binding or the binding names nothing.
- */
 function bindingLabel(s: BehavioralSummary): string | null {
   const binding = s.identity.boundaryBinding;
   if (binding === null) {
@@ -1469,7 +1451,7 @@ export function inspectDiff(options: DiffOptions): void {
 }
 
 // ---------------------------------------------------------------------------
-// Dir command — boundary pair overview
+// Dir command: boundary pair overview
 // ---------------------------------------------------------------------------
 
 export function readSummariesFromDir(dir: string): BehavioralSummary[] {

@@ -37,7 +37,7 @@ const expressMatch: RegistrationMatch = {
   registrationChain: [".get", ".post", ".put"],
 };
 
-describe("discoverRegistrationCalls — handler discovery", () => {
+describe("discoverRegistrationCalls: handler discovery", () => {
   it("finds an express last-arg handler and lifts (method, path) into routeInfo", () => {
     const sf = sourceFile(`
       import { Router } from "express";
@@ -522,7 +522,7 @@ describe("discoverMountEdges", () => {
 
   it("records nothing for an inline router the subjects map never named", () => {
     // Router() written directly at the call, with no variable
-    // holding it, is not in registrationSubjectsOf's map: nothing
+    // set to it, is not in registrationSubjectsOf's map: nothing
     // else in the file could ever ask "is this router mounted"
     // about a node with no name to look it up by, so the mount
     // scan does not track it either.
@@ -616,7 +616,7 @@ describe("joinMountedPath", () => {
     // engine's path normalizer already strips a trailing slash off
     // any path before comparing two, the same treatment a route
     // written as "/api/orders" (no mount) gets, so this still pairs
-    // with "GET /api/orders" even though the composed string carries
+    // with "GET /api/orders" even though the composed string has
     // the trailing slash.
     expect(joinMountedPath("/api/orders", "/")).toBe("/api/orders/");
   });

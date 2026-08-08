@@ -1,15 +1,17 @@
-// @suss/manifest-aws — parse CloudFormation / SAM templates into plain
-// data. The shared facts layer for AWS deploy manifests.
-//
-// Two kinds of consumer read the same template with different roles:
-// contract readers (@suss/contract-cloudformation, @suss/contract-appsync)
-// treat it as a SPECIFICATION — declared routes, platform-injected
-// transitions, queue wirings — while manifest-driven framework packs
-// (@suss/framework-aws-lambda) treat it as a DISCOVERY INDEX — which
-// source export is a handler, which route it serves. Keeping the parse
-// here keeps those two witnesses independent: this package answers only
-// "what does the template say", never what it means. It exports no IR
-// and must not depend on any @suss package.
+/**
+ * @suss/manifest-aws parses CloudFormation and SAM templates into plain
+ * data. It is the shared facts layer for AWS deploy manifests.
+ *
+ * Two kinds of consumer read the same template for different reasons.
+ * Contract readers (@suss/contract-cloudformation, @suss/contract-appsync)
+ * read it as a SPECIFICATION: the routes it declares, the transitions the
+ * platform injects, the queue wirings. Manifest-driven framework packs
+ * (@suss/framework-aws-lambda) read it as a DISCOVERY INDEX: which source
+ * export is a handler, and which route that handler serves. Parsing in one
+ * place keeps those two witnesses independent, because this package reports
+ * only what the template says and never what it means. It exports no IR and
+ * must not depend on any @suss package.
+ */
 
 export {
   type AppSyncResolverBinding,

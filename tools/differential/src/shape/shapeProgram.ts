@@ -3,7 +3,7 @@
 //
 // The handler DSL (../program.ts) varies what happens *inside* a unit.
 // This one varies everything around it: the syntax the function is
-// written in, the binding that holds it, the path a value takes from
+// written in, the binding it is assigned to, the path a value takes from
 // that binding to the registration site, and the shape of what the
 // function hands back. Extraction has to arrive at the same summary
 // however the source spells it, so a shape is rendered twice, once as
@@ -15,7 +15,6 @@ import { renderBodyLines } from "../program.js";
 
 import type { HandlerProgram, TerminalRenderer } from "../program.js";
 
-/** How the function itself is written. */
 export type FunctionForm =
   | "declaration"
   | "functionExpression"
@@ -25,7 +24,6 @@ export type FunctionForm =
   | "asyncDeclaration"
   | "overloaded";
 
-/** How the name that holds the function is formed. */
 export type BindingForm =
   | "const"
   | "letOnce"
@@ -109,7 +107,8 @@ export interface ShapeSyntax {
 // Constraints, which combinations mean anything
 // ---------------------------------------------------------------------------
 
-/** Forms whose function is a statement, so the binding only re-names it. */
+/** Forms whose function is a statement, so the binding only gives it
+ * another name. */
 const DECLARED_FORMS = new Set<FunctionForm>([
   "declaration",
   "asyncDeclaration",
@@ -163,7 +162,6 @@ function bodyLines(spec: ShapeSpec, syntax: ShapeSyntax): string[] {
 const indentBy = (lines: string[], by: string): string[] =>
   lines.map((line) => `${by}${line}`);
 
-/** The single expression a concise arrow's body is. */
 function conciseExpression(spec: ShapeSpec, syntax: ShapeSyntax): string {
   const final = spec.body.final;
   if (final.type !== "respond") {
@@ -175,7 +173,6 @@ function conciseExpression(spec: ShapeSpec, syntax: ShapeSyntax): string {
 interface FunctionText {
   /** Statements that must precede the binding (declarations, overloads). */
   statements: string[];
-  /** The expression that evaluates to the function, when there is one. */
   expression: string | null;
 }
 

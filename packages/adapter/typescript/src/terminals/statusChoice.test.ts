@@ -1,6 +1,7 @@
-// A status written as a choice answers with both of its arms, and it
-// answers the same way whether the choice sits in the call or in a
-// binding the call reads.
+/**
+ * A status written as a choice produces both of its arms, and it does so
+ * whether the choice is inside the call or in a variable the call reads.
+ */
 
 import { describe, expect, it } from "vitest";
 
@@ -111,7 +112,8 @@ describe("a status written as a choice", () => {
       ].join("\n"),
     );
 
-    // Half an answer would put one status on a boundary that has two.
+    // Reporting only one arm would put one status on a boundary that
+    // has two.
     expect(outcomes).toEqual(["unresolved under 0"]);
   });
 
@@ -127,7 +129,7 @@ describe("a status written as a choice", () => {
       ].join("\n"),
     );
 
-    // Each arm carries the guard it got past as well as its own test.
+    // Each arm keeps the guard it got past as well as its own test.
     expect(outcomes).toEqual(["400 under 1", "202 under 2", "200 under 2"]);
   });
 });

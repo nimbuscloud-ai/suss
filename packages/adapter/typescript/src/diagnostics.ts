@@ -1,4 +1,4 @@
-// diagnostics.ts — the extraction funnel.
+// diagnostics.ts: the extraction funnel.
 //
 // "Why did this run produce nothing" is always "at which stage did the
 // count reach zero", so the report is a funnel: files in the tsconfig,
@@ -8,7 +8,7 @@
 // second copy of its logic, and a second copy drifting from the first
 // is what made an entire pack family extract nothing in silence.
 //
-// The gate-resolution row is the one that earns its keep. "No file
+// The gate-resolution row is the one worth having. "No file
 // imports @apollo/client" and "files import it but the specifier does
 // not resolve" are different problems with different fixes, and
 // without the check they look identical from outside: zero summaries,
@@ -31,18 +31,18 @@ export interface PackFunnel {
   /**
    * What the pack calls this build of itself, or null when it declares
    * nothing. The cache keys on it, so a pack that never changes its
-   * stamp can answer a later run with an earlier build's results.
+   * stamp can serve a later run with an earlier build's results.
    */
   version: string | null;
   /**
-   * Whether the pack looks for units of its own at all. A pack made
-   * only of recognisers contributes effects to units other packs found,
-   * so discovering nothing is how it always behaves and says nothing
-   * about whether it is working.
+   * Whether the pack looks for units of its own at all. A pack made only
+   * of recognisers contributes effects to units other packs found, so it
+   * always discovers nothing, and that tells you nothing about whether
+   * it is working.
    */
   discovers: boolean;
   /**
-   * Whether the pack carries recognisers. Those fire inside units other
+   * Whether the pack has any recognisers. Those fire inside units other
    * packs discovered, so a pack made only of them contributes effects
    * and never a summary.
    */
@@ -68,8 +68,8 @@ export interface PackFunnel {
    * Unit bodies any pack walked in the files this pack's gate selected.
    *
    * This is what a recogniser pack had the chance to fire on. Its own
-   * discovery count says nothing, since it discovers nothing by design,
-   * and its candidate-file count says nothing either, because a
+   * discovery count tells you nothing, since it discovers nothing by
+   * design, and neither does its candidate-file count, because a
    * recogniser only runs where some pack found a unit to walk.
    */
   unitsInGatedFiles: number;
@@ -78,7 +78,7 @@ export interface PackFunnel {
   /**
    * Units this pack kept. A unit an earlier pack already claimed is
    * dropped here, so a pack can discover plenty and keep none when it
-   * sits behind a pack that recognises the same code.
+   * comes after a pack that recognises the same code.
    */
   unitsClaimed: number;
   /**
@@ -90,19 +90,19 @@ export interface PackFunnel {
   selfCollisions: number;
   /** Summaries built from those units. */
   summariesProduced: number;
-  /** Summaries in the finished run that name this pack as what recognised them. */
+  /** Summaries in the finished run that credit this pack for finding them. */
   summariesBound: number;
   /**
    * Bound summaries on the provider side of their boundary.
    *
-   * Transitions say what a unit does with a request, which is a
-   * question only a provider answers. A consumer records what it reads
-   * back from the response instead, and that lives on the summary's
-   * metadata. Measuring a client pack against transitions would report
-   * every working one as extracting nothing.
+   * Transitions say what a unit does with a request, which only a
+   * provider can say. A consumer records what it reads back from the
+   * response instead, and that goes on the summary's metadata. Measuring
+   * a client pack against transitions would report every working one as
+   * having extracted nothing.
    */
   providerSummaries: number;
-  /** Provider summaries carrying at least one transition. */
+  /** Provider summaries with at least one transition. */
   summariesWithBehavior: number;
   /**
    * Where one of this pack's hooks threw. Every count above is a floor
@@ -122,9 +122,9 @@ export interface ExtractionReport {
    * Files whose exports the checker could not follow, so the run read
    * them as exporting nothing.
    *
-   * Without this the artifact cannot tell the two apart: a module
-   * whose barrel chain outran the call stack and a module that
-   * genuinely exports nothing both produce no summaries and exit 0.
+   * Without this the artifact cannot tell the two apart: a module whose
+   * barrel chain outran the call stack and a module that really does
+   * export nothing both produce no summaries and exit 0.
    * Anything reachable only through these files is missing, and every
    * count below is a floor while this is non-empty.
    */
@@ -146,13 +146,13 @@ export type EmptyStage =
 /**
  * A pack's hook throwing on one file.
  *
- * The run carries on with the other files, so every count for that pack
+ * The run continues with the other files, so every count for that pack
  * afterwards is a floor rather than a total. Somebody reading those
- * counts has to be told, or a pack that broke reads the same as a pack
+ * counts has to be told, or a pack that broke looks the same as a pack
  * that looked and found nothing.
  */
 export interface PackFailure {
-  /** The hook that threw, named as a pack author would know it. */
+  /** The hook that threw, called what a pack author would call it. */
   hook: string;
   /** The file the pack was reading. */
   file: string;
@@ -183,9 +183,9 @@ const emptyTally = (): PackTally => ({
 });
 
 /**
- * Write down that a pack's hook threw, and say it in one sentence a
- * caller can print. Both callers want the same wording, and a failure
- * that only reached stderr left the counts looking like an empty pack.
+ * Record that a pack's hook threw, and phrase it in one sentence a caller
+ * can print. Both callers want the same wording, and a failure that only
+ * reached stderr left the counts looking like an empty pack.
  */
 export function recordPackFailure(
   tally: PackTally | undefined,
@@ -214,9 +214,9 @@ export function createPackTallies(
 }
 
 /**
- * The deepest directory holding every file, or undefined when the
+ * The deepest directory that contains every file, or undefined when the
  * paths share no absolute root. Stands in for the project root when no
- * tsconfig names one, since resolution from anywhere inside the tree
+ * tsconfig gives one, since resolution from anywhere inside the tree
  * finds the same `node_modules`.
  */
 export function commonDirectoryOf(
@@ -252,14 +252,13 @@ const DEFAULT_RESOLUTION: ts.CompilerOptions = {
 /**
  * Where module resolution should be anchored, and under which options.
  *
- * A tsconfig answers both. Without one there is still a directory the
- * walked files sit under, and resolving from there against bundler
+ * A tsconfig settles both. Without one there is still a directory the
+ * walked files are under, and resolving from there against bundler
  * defaults finds an installed dependency the same way the packs do.
  * Getting this right without a tsconfig matters more than it sounds:
- * `--dir` runs are exactly the ones aimed at projects that may not
- * have their dependencies installed, and a resolution check that
- * quietly answers "all fine" there turns every such run into a false
- * report of a broken pack.
+ * `--dir` runs are aimed at exactly the projects that may not have their
+ * dependencies installed, and a resolution check that quietly says "all
+ * fine" there turns every such run into a false report of a broken pack.
  */
 function resolutionContext(args: {
   tsConfigFilePath: string | undefined;
@@ -340,8 +339,8 @@ export function unresolvedGatesFor(
  * it, because the summaries a pack is responsible for are not all built
  * where the pack is in scope: wrapper expansion and sub-unit synthesis
  * both add summaries after the discovery loop has moved on. Every
- * summary carries the name of what recognised it, so grouping on that
- * attributes each one to the pack that owns it however late it arrived.
+ * summary records what recognised it, so grouping on that gets each one
+ * back to the pack that owns it however late it arrived.
  */
 interface SummaryCounts {
   bound: number;

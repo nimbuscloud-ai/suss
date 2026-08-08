@@ -1,15 +1,15 @@
-// descent.ts — language-structural rules for the unit-body walkers.
+// descent.ts: language-structural rules for the unit-body walkers.
 //
 // A code unit's body is walked by several passes (recognizer dispatch,
 // invocation-effect capture, terminal discovery). Each pass runs a
-// ts-morph `forEachDescendant` from the unit root and has to answer the
+// ts-morph `forEachDescendant` from the unit root and has to settle the
 // same question at every nested function it reaches: descend into it, or
 // treat it as a hard stop?
 //
 // This is ECMAScript knowledge, not runtime or framework knowledge, so
 // it lives in the adapter (see docs/architecture.md, "Adapter vs pack
 // ownership"). A nested `FunctionExpression` / `ArrowFunction` is
-// lexical scope — a Promise executor, a `.then` callback, an
+// lexical scope: a Promise executor, a `.then` callback, an
 // `array.forEach` body, an IIFE. The behavior inside it (calls, config
 // reads, response writes) is behavior of the enclosing unit, so the
 // walker descends and recognizers fire there as if the code were inline.
@@ -39,7 +39,7 @@ export const NO_BARRIERS: DescentBarriers = new Set<Node>();
  * Should a body walker treat `node` as a hard stop (skip its subtree)
  * rather than descend through it?
  *
- * `func` (the unit root) is never a stop — its own body is always
+ * `func` (the unit root) is never a stop: its own body is always
  * walked. For any other node:
  *   - `FunctionDeclaration` / `MethodDeclaration` → stop (named units of
  *     record, summarized elsewhere).
@@ -114,7 +114,7 @@ export function crossesNestedFunctionScope(node: Node, func: Node): boolean {
 /**
  * Does this node return for itself rather than for whatever encloses
  * it? An accessor and a constructor do, the same way a callback does,
- * so a getter inside a returned object answers for the getter.
+ * so a getter inside a returned object returns for the getter.
  */
 export function startsItsOwnScope(node: Node): boolean {
   return (

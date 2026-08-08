@@ -171,7 +171,7 @@ describe("checkComponentStoryAgreement — coverage gap", () => {
       ],
     );
     // Story provides a non-null user but omits any null variant.
-    // Wait — the story DOES provide `user`. The gap would be if it
+    // Wait: the story DOES provide `user`. The gap would be if it
     // DIDN'T. Let's have the story omit `user` entirely.
     const story = makeStory("Empty", "UserCard", {});
     const findings = checkComponentStoryAgreement([component, story]);
@@ -236,7 +236,7 @@ describe("checkComponentStoryAgreement — coverage gap", () => {
     const component = makeComponent(
       "Widget",
       [{ name: "user" }],
-      // Opaque predicate — source text includes a reserved-word token
+      // Opaque predicate: source text includes a reserved-word token
       // (`null`) and an identifier (`user`). The reserved-word filter
       // means `null` must not register as a gating prop; only `user`
       // should.

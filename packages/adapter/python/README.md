@@ -12,34 +12,40 @@ v0 (this slice) does nothing with the path engine. A route either has no transit
 
 This package depends on `@suss/extractor` (for `RawCodeStructure` and `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (`@suss/framework-flask-restx`, `@suss/framework-fastapi`) use its `PythonPack` contract. Nothing in this package knows what any particular library calls its decorators.
 
+## Path templates
+
+A pack declares which syntax its library uses for path parameters, under `pathParamSyntax`. The adapter understands two. `"braces"` covers `{name}` and `{name:converter}`, which is what FastAPI uses via Starlette. `"flaskConverters"` covers `<name>`, `<converter:name>`, and `<converter(arguments):name>`, which is what flask-restx uses via Werkzeug. In both cases the adapter rewrites the path into the IR's plain-brace form and treats the parameters in the template as path parameters.
+
+If a pack declares nothing, it gets paths exactly as written and no parameter is treated as a path parameter. If a pack declares a syntax the adapter has no reader for, its routes are still discovered, but they come out with no path and a recorded gap. Packs written against 0.3 assumed brace parsing applied to every path, so those packs now have to declare `"braces"` explicitly.
+
 ## How a prefix is read
 
 A mounted route's path comes from prefixes written at up to four places: the object the mount is called on, whatever that object was built from, the router's constructor, and the call that mounts it. All four go through one reader, and a given spelling means the same thing at every one of them. We got this wrong three times by fixing one place or one spelling at a time, so the whole grid is written out here.
 
-Every cell is what the library itself does, read off its source and confirmed against a running app (`url_map` for flask-restx, the route table for FastAPI).
+Every cell describes what the library itself does. We read that off the library's source and then confirmed it against a running app, using `url_map` for flask-restx and the route table for FastAPI.
 
 **At the constructor** (`Namespace(path=...)`, `APIRouter(prefix=...)`):
 
-| Written | flask-restx serves | FastAPI serves | The reader says |
-| --- | --- | --- | --- |
-| nothing | `/` + the namespace's name | the route path, no prefix | unstated |
-| `"/orders"` | `/orders` + the route path | `/orders` + the route path | stated |
-| `"/orders/"` | `/orders` + the route path | the app does not start | stated, trailing slashes trimmed where the pack says so |
-| `"/"` | the route path, no prefix | the app does not start | stated, and trimming leaves nothing |
-| `""` | `/` + the namespace's name | the route path, no prefix | unstated where the pack says a no-value prefix is unstated, otherwise stated |
-| `None`, `False`, `0` | `/` + the namespace's name | the app does not start | unstated where the pack says so, otherwise unreadable |
-| a name or a call | whatever it evaluates to | whatever it evaluates to | unreadable |
+| Written              | flask-restx serves         | FastAPI serves             | What suss records                                                            |
+| -------------------- | -------------------------- | -------------------------- | ---------------------------------------------------------------------------- |
+| nothing              | `/` + the namespace's name | the route path, no prefix  | unstated                                                                     |
+| `"/orders"`          | `/orders` + the route path | `/orders` + the route path | stated                                                                       |
+| `"/orders/"`         | `/orders` + the route path | the app does not start     | stated, trailing slashes trimmed where the pack says so                      |
+| `"/"`                | the route path, no prefix  | the app does not start     | stated, and trimming leaves nothing                                          |
+| `""`                 | `/` + the namespace's name | the route path, no prefix  | unstated where the pack says a no-value prefix is unstated, otherwise stated |
+| `None`, `False`, `0` | `/` + the namespace's name | the app does not start     | unstated where the pack says so, otherwise unreadable                        |
+| a name or a call     | whatever it evaluates to   | whatever it evaluates to   | unreadable                                                                   |
 
 **At the mount** (`add_namespace(ns, path=...)`, `include_router(router, prefix=...)`):
 
-| Written | flask-restx serves | FastAPI serves | The reader says |
-| --- | --- | --- | --- |
-| nothing | where the constructor put it | the constructor's prefix + the route path | unstated |
-| `"/api"` | `/api` + the route path, replacing the constructor's | `/api` + the constructor's prefix + the route path | stated |
-| `"/api/"` | `/api/` + the route path, kept as written | the app does not start | stated |
-| `""` | where the constructor put it | the constructor's prefix + the route path | unstated where the pack says so, otherwise stated |
-| `None`, `False`, `0` | where the constructor put it | the app does not start | unstated where the pack says so, otherwise unreadable |
-| a name or a call | whatever it evaluates to | whatever it evaluates to | unreadable |
+| Written              | flask-restx serves                                   | FastAPI serves                                     | What suss records                                     |
+| -------------------- | ---------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------- |
+| nothing              | where the constructor put it                         | the constructor's prefix + the route path          | unstated                                              |
+| `"/api"`             | `/api` + the route path, replacing the constructor's | `/api` + the constructor's prefix + the route path | stated                                                |
+| `"/api/"`            | `/api/` + the route path, kept as written            | the app does not start                             | stated                                                |
+| `""`                 | where the constructor put it                         | the constructor's prefix + the route path          | unstated where the pack says so, otherwise stated     |
+| `None`, `False`, `0` | where the constructor put it                         | the app does not start                             | unstated where the pack says so, otherwise unreadable |
+| a name or a call     | whatever it evaluates to                             | whatever it evaluates to                           | unreadable                                            |
 
 The two libraries differ on one property, and the pack says which way each one goes. flask-restx checks whether the path is truthy, so all four no-value spellings mean the same thing as writing nothing, at both places. FastAPI wants a string, so an empty string is an ordinary prefix that happens to add nothing, and the other three stop the app from starting.
 

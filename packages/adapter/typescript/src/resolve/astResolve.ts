@@ -1,4 +1,4 @@
-// astResolve.ts — Walk the AST to resolve terminal expressions to their
+// astResolve.ts: Walk the AST to resolve terminal expressions to their
 // defining value.
 //
 // The type checker is our fallback for identifiers, property access, and
@@ -6,10 +6,10 @@
 // "ok"` becomes `string` when read). When the user wrote an actual literal
 // somewhere, we'd rather preserve it. This module walks back from a
 // reference to the declaration and re-enters `extractShape` on the value
-// expression — which lets literal narrowness survive across variable
+// expression: which lets literal narrowness survive across variable
 // bindings, property lookups, and single-return functions.
 //
-// Returning `null` means "I can't say anything useful" — callers fall
+// Returning `null` means "I can't say anything useful": callers fall
 // through to `shapeFromNodeType` for the type-checker view.
 
 import { Node, SyntaxKind } from "ts-morph";
@@ -35,7 +35,7 @@ import type {
 const MAX_HOPS = 8;
 
 /**
- * Shared seen-set scoped to one top-level `extractShape` call. Carries node
+ * Shared seen-set scoped to one top-level `extractShape` call. Records node
  * positions (source path + start offset) to detect cycles like `const a = a`.
  */
 interface ResolveContext {
@@ -48,7 +48,7 @@ export type ShapeExtractor = (node: Node) => TypeShape | null;
 /**
  * Attempt to resolve `node` to a `TypeShape` by walking AST declarations.
  * Handles identifiers, property access chains, and calls. Returns `null`
- * when the AST alone can't decide — callers should fall back to the type
+ * when the AST alone can't decide: callers should fall back to the type
  * checker.
  */
 export function resolveNodeFromAst(
@@ -95,7 +95,7 @@ function resolve(
   // `await fn()`: the resolved value's shape equals the call's return
   // shape. AST-level resolution into the function's body preserves
   // literal narrowness that would otherwise widen through the type
-  // checker. Only peel when the operand is a CallExpression — for
+  // checker. Only peel when the operand is a CallExpression: for
   // identifier / property-access operands the declaration-site type
   // (`Promise<T>`) differs from the resolved type (`T`), and the
   // type-checker fallback in `extractShape` handles those correctly on
@@ -117,7 +117,7 @@ function resolveIdentifier(
   ctx: ResolveContext,
 ): TypeShape | null {
   // Walk to the defining declarations. For imports, ts-morph follows across
-  // source files for free — that's what makes this pass worthwhile in a
+  // source files for free: that's what makes this pass worthwhile in a
   // monorepo.
   const definitions = safeGetDefinitions(id);
   for (const def of definitions) {
@@ -209,7 +209,7 @@ function shapeFromDeclaration(
     if (!init) {
       return null;
     }
-    // Only walk into initializers that are syntactically "informative" —
+    // Only walk into initializers that are syntactically "informative" ,
     // i.e. something the AST can tell us that the type checker would widen.
     // For calls, awaits, and `new` expressions, the declaration-site type
     // is often *wider* than the use-site type (e.g. `const user = await
@@ -223,7 +223,7 @@ function shapeFromDeclaration(
   }
 
   if (Node.isBindingElement(decl)) {
-    // `const { id } = user` — treat the name as a property of the binding
+    // `const { id } = user`: treat the name as a property of the binding
     // source. Walk: find the enclosing VariableDeclaration's initializer and
     // read the property.
     const varDecl = decl.getFirstAncestorByKind(SyntaxKind.VariableDeclaration);
@@ -279,7 +279,7 @@ function readProperty(shape: TypeShape, name: string): TypeShape | null {
     if (prop !== undefined) {
       return prop;
     }
-    // Spreads might contribute — we can't read through them at the AST
+    // Spreads might contribute: we can't read through them at the AST
     // level. Fall through.
     return null;
   }
@@ -288,7 +288,7 @@ function readProperty(shape: TypeShape, name: string): TypeShape | null {
   }
   if (shape.type === "union") {
     // Read the property from every variant; collapse the results. A variant
-    // that lacks the property contributes nothing (we're optimistic — this
+    // that lacks the property contributes nothing (we're optimistic: this
     // is the "reachable shapes" read, not a safety check).
     const picked: TypeShape[] = [];
     for (const variant of shape.variants) {
@@ -324,8 +324,8 @@ function dedupe(shapes: TypeShape[]): TypeShape[] {
 /**
  * Peek at an initializer to decide whether walking back to it gives us
  * information the type checker at the use site would have lost. "Informative"
- * here means the initializer syntactically carries narrower info than its
- * declared type would imply — literals, object/array literals, ternaries,
+ * here means the initializer is syntactically narrower than its
+ * declared type would imply: literals, object/array literals, ternaries,
  * other identifiers we might be able to chase through, etc. Everything else
  * (calls, awaits, `new`) tends to bind wider types that use-site flow
  * narrowing would have tightened; we defer those to the type checker.

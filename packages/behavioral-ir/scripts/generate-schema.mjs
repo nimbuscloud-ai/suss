@@ -3,7 +3,7 @@
 // Regenerates schema/behavioral-summary.schema.json from the zod schemas
 // in src/schemas.ts. Run as `npm run schema:generate` (and as part of
 // `npm run build` via the postbuild hook). The committed JSON Schema is
-// the published, language-agnostic export — non-TS tools (Python, Go,
+// the published, language-agnostic export, non-TS tools (Python, Go,
 // other languages) can read summaries by validating against it without
 // installing zod.
 
@@ -27,7 +27,7 @@ const wrapped = {
   $id: "https://suss.dev/schemas/behavioral-summary.schema.json",
   title: "BehavioralSummaryArray",
   description:
-    "Array of behavioral summaries — see https://github.com/nimbuscloud-ai/suss/blob/main/docs/behavioral-summary-format.md",
+    "Array of behavioral summaries, see https://github.com/nimbuscloud-ai/suss/blob/main/docs/behavioral-summary-format.md",
   ...jsonSchema,
 };
 

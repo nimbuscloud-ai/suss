@@ -1,19 +1,15 @@
-// scope.ts: the lexical binder.
-//
-// Builds module, class, and function scopes over one file's parse
-// tree and records how each name in each scope came to be bound
-// (import, assignment, def, parameter, or a `global`/`nonlocal`
-// redirect to another scope). This is the "modest resolver" the
-// roadmap calls for: it never has to be complete, because an
-// unresolved name is a legal answer everywhere it's read. What it has
-// to avoid is being wrong.
-//
-// v0 only binds names written directly in a body's own statement
-// list. A definition or import nested inside an `if` / `try` / `with`
-// block is not found, the same way the roadmap's resolver stays
-// deliberately narrow: routes declared unconditionally at module or
-// class level (the shape the measured corpus showed) resolve; the
-// rest degrades to unresolved rather than to a guess.
+/**
+ * The lexical binder. It builds module, class, and function scopes over one
+ * file's parse tree and records how each name in each scope came to be bound,
+ * whether that was an import, an assignment, a def, a parameter, or a `global`
+ * or `nonlocal` redirect to another scope.
+ *
+ * It never has to be complete, because "I could not resolve this name" is a
+ * legal answer everywhere a name is read. What it has to avoid is being wrong.
+ * So it only binds names written directly in a body's own statement list. A
+ * definition or import nested inside an `if`, `try`, or `with` block is not
+ * found, and a read of it comes back unresolved rather than as a guess.
+ */
 
 import {
   bodyStatements,
@@ -36,12 +32,8 @@ export interface Scope {
 }
 
 /**
- * How a name in a scope came to be bound. `importedName` types.
- *
- * `relativeLevel` is 0 for an absolute import (`from a.b import c`)
- * and the dot count for a relative one (`from . import c` is 1,
- * `from ..pkg import c` is 2), matching Python's own relative-import
- * syntax. `module` is the dotted path after the dots, empty string for
+ * `relativeLevel` is 0 for an absolute import and the dot count for a
+ * relative one. `module` is the dotted path after the dots, empty for
  * a bare `from . import c`.
  */
 export type Binding =
@@ -55,13 +47,7 @@ export type Binding =
   | { kind: "classDef"; node: PyNode }
   | { kind: "functionDef"; node: PyNode }
   | { kind: "parameter" }
-  /**
-   * `value` is the assignment's right-hand side, when it has one
-   * (`x: int` alone has none). Kept so a decorator's base object
-   * (`app` in `app = FastAPI()`) can be traced one hop to what
-   * constructed it, the same kind of single-hop tracing the axios
-   * pack's `factoryMethods` option covers on the TypeScript side.
-   */
+  /** The right-hand side, when there is one, so we can trace a decorator's base object one hop back to whatever constructed it. */
   | { kind: "assignment"; value: PyNode | null }
   /** `global x` inside a function: reads of `x` in this scope resolve in the module scope instead. */
   | { kind: "global" }
@@ -70,15 +56,9 @@ export type Binding =
 
 export interface ModuleBinding {
   moduleScope: Scope;
-  /** Scope introduced by a class_definition / function_definition / the module node, keyed by that node's id. */
+  /** The scope a class_definition, a function_definition, or the module node opens, keyed by that node's id. */
   scopeFor: Map<number, Scope>;
-  /**
-   * Modules named by a `from X import *` in this file, per the
-   * open-import relation the language-adapters proposal adds: a
-   * wildcard import's names aren't enumerable statically, so they're
-   * recorded as a fact for a resolution rule to consult lazily
-   * instead of being expanded here.
-   */
+  /** The modules a `from X import *` pulls in. We cannot list what a wildcard brings in, so nothing expands them here. */
   openImports: string[];
 }
 
@@ -102,12 +82,10 @@ interface BinderContext {
 }
 
 /**
- * Record a name's binding, unless a `global` or `nonlocal` already
- * claims that name in this scope. `global x` or `nonlocal x` can
- * appear before or after the statement that would otherwise rebind
- * `x` locally (`global count` then `count = count + 1` is the ordinary
- * order), and every one of those later assignments still has to
- * redirect to the scope the declaration named, not shadow it.
+ * A `global` or `nonlocal` that already claimed the name wins. It can be written
+ * before or after the assignment that would otherwise rebind the name locally,
+ * and either way the assignment goes to the scope the declaration points at
+ * rather than shadowing it.
  */
 function bindName(scope: Scope, name: string, binding: Binding): void {
   const existing = scope.bindings.get(name);
@@ -145,10 +123,6 @@ const STATEMENT_BINDERS: Record<
 
 function bindStatement(stmt: PyNode, scope: Scope, ctx: BinderContext): void {
   const binder = STATEMENT_BINDERS[stmt.type];
-  // Every other statement shape (if/for/try/with/while, bare
-  // expressions, …) introduces no name at this body's level for v0's
-  // purposes, or nests a body v0 doesn't descend into. See the module
-  // doc comment.
   binder?.(stmt, scope, ctx);
 }
 
@@ -168,11 +142,7 @@ function bindImportStatement(stmt: PyNode, scope: Scope): void {
       continue;
     }
     if (nameNode.type === "dotted_name") {
-      // `import a.b.c` binds the top-level package name `a` in the
-      // enclosing scope; `a.b` and `a.b.c` are reached through it,
-      // not bound directly. Module resolution (moduleResolver.ts)
-      // handles the dotted path itself when a decorator or annotation
-      // is written as `a.b.c.something`.
+      // `import a.b.c` binds only the top-level package name `a`.
       const first = nameNode.namedChild(0);
       if (first !== null) {
         bindName(scope, first.text, {
@@ -318,9 +288,8 @@ function parameterName(param: PyNode): string | null {
       "dictionary_splat_pattern",
     )
   ) {
-    // typed_parameter's own name is an unnamed identifier child (its
-    // one field is `type`); splat patterns wrap the identifier the
-    // same way.
+    // A typed_parameter's name is an unnamed identifier child, since its only
+    // field is `type`. Splat patterns wrap it the same way.
     const inner = param.namedChildren.find(
       (child) => child !== null && child.type === "identifier",
     );
@@ -367,11 +336,8 @@ function bindExpressionStatement(stmt: PyNode, scope: Scope): void {
   if (left === null) {
     return;
   }
-  // Simple `name = value` and annotated `name: Type = value` / `name:
-  // Type` both have an identifier `left`. Tuple/list unpacking targets
-  // (`a, b = ...`) are left unbound in v0: nothing downstream reads a
-  // destructured module- or class-level binding today, and binding
-  // only the simple case keeps a wrong guess off the table.
+  // An unpacking target such as `a, b = ...` has no identifier on the left, so
+  // we leave it unbound.
   if (left.type === "identifier") {
     bindName(scope, left.text, {
       kind: "assignment",
@@ -396,10 +362,6 @@ function bindNonlocalStatement(stmt: PyNode, scope: Scope): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Resolution
-// ---------------------------------------------------------------------------
-
 function moduleScopeOf(scope: Scope): Scope {
   let current = scope;
   while (current.parent !== null) {
@@ -409,13 +371,10 @@ function moduleScopeOf(scope: Scope): Scope {
 }
 
 /**
- * Resolve a name from the given scope outward, honoring Python's own
- * scoping rule that a class body's namespace does not chain into an
- * enclosing scope for a *nested* function's lookups: a class scope's
- * own bindings only answer when the search starts there directly.
- *
- * `global` and `nonlocal` markers redirect the answer to the scope
- * they name rather than answering with the marker itself.
+ * Python does not put a class body's namespace on the lookup chain of a function
+ * nested inside it, so a class scope's own bindings only count when the search
+ * starts there. A `global` or `nonlocal` marker sends the lookup to the scope it
+ * points at.
  */
 export function resolveName(scope: Scope, name: string): Binding | null {
   let current: Scope | null = scope;

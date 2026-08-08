@@ -1,4 +1,4 @@
-// contract.ts — Contract reading for ts-rest style frameworks (Task 2.5b)
+// contract.ts: Contract reading for ts-rest style frameworks (Task 2.5b)
 //
 // Given a DiscoveredUnit that was registered via s.router(contract, { handlers }),
 // trace back to the contract definition and extract declared responses.
@@ -15,7 +15,7 @@ import type { ContractPattern, RawDeclaredContract } from "@suss/extractor";
 import type { DiscoveredUnit } from "./discovery/index.js";
 
 // ---------------------------------------------------------------------------
-// Result type — includes both contract data and extracted binding
+// Result type: includes both contract data and extracted binding
 // ---------------------------------------------------------------------------
 
 export interface ContractReadResult {
@@ -31,7 +31,7 @@ export interface ContractReadResult {
  * Extract a `TypeShape` from a response-schema expression like
  * `c.type<{ id: string }>()`. Pulls the first type argument of the call and
  * runs it through the shared shape extractor. Returns null for unsupported
- * forms (zod schemas, raw references, missing type arguments) — the contract
+ * forms (zod schemas, raw references, missing type arguments): the contract
  * entry still records the status code, just without a body shape.
  */
 function extractDeclaredBody(node: Node | undefined): TypeShape | null {
@@ -131,12 +131,11 @@ function findRouterCall(unit: DiscoveredUnit): {
  *     (usually another identifier bound to `subContract.router({ ... })`).
  */
 function resolveContractObject(contractArg: Node): Node | null {
-  // If it's already an object literal, return it
   if (Node.isObjectLiteralExpression(contractArg)) {
     return contractArg;
   }
 
-  // Composed contracts: `apiContract.internal` — resolve the base to its
+  // Composed contracts: `apiContract.internal`: resolve the base to its
   // routes literal, then pick the property whose name matches the access.
   // The property's value is typically another identifier bound to a
   // sub-contract (`internal: internalApi`); recursion handles the chain.
@@ -171,7 +170,6 @@ function resolveContractObject(contractArg: Node): Node | null {
     return null;
   }
 
-  // Follow the identifier to its declaration
   if (!Node.isIdentifier(contractArg)) {
     return null;
   }
@@ -188,7 +186,6 @@ function resolveContractObject(contractArg: Node): Node | null {
 
   const decl = decls[0];
 
-  // Handle import specifier → follow to the source file's export
   if (Node.isImportSpecifier(decl)) {
     const importDecl = decl.getImportDeclaration();
     const sourceFile = importDecl.getModuleSpecifierSourceFile();
@@ -229,7 +226,6 @@ function unwrapContractInit(init: Node | undefined): Node | null {
     return null;
   }
 
-  // Direct object literal
   if (Node.isObjectLiteralExpression(init)) {
     return init;
   }
@@ -272,7 +268,6 @@ function extractEndpointContract(
 
     const propName = prop.getName();
 
-    // Extract method
     if (propName === "method") {
       const val = prop.getInitializer();
       if (val !== undefined && Node.isStringLiteral(val)) {
@@ -280,7 +275,6 @@ function extractEndpointContract(
       }
     }
 
-    // Extract path
     if (propName === "path") {
       const val = prop.getInitializer();
       if (val !== undefined && Node.isStringLiteral(val)) {
@@ -288,7 +282,6 @@ function extractEndpointContract(
       }
     }
 
-    // Extract responses
     if (propName === pattern.responseExtraction.property) {
       const val = prop.getInitializer();
       if (val !== undefined && Node.isObjectLiteralExpression(val)) {
@@ -327,7 +320,7 @@ function extractEndpointContract(
   // Contract-reading packs (ts-rest, ts-rest clients) read a contract
   // that is authored *separately* from the handler implementation the
   // same summary's transitions come from. That makes them "independent"
-  // observations — comparing transitions against this contract is
+  // observations: comparing transitions against this contract is
   // meaningful (the implementation can drift from the declaration).
   return {
     declaredContract: { framework, responses, provenance: "independent" },
@@ -336,7 +329,7 @@ function extractEndpointContract(
 }
 
 // ---------------------------------------------------------------------------
-// Main exported function — provider side
+// Main exported function: provider side
 // ---------------------------------------------------------------------------
 
 /**

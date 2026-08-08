@@ -22,8 +22,8 @@ import {
   variable as v,
 } from "./index.js";
 
-// A fixed schema keeps generated rules meaningful. Two base relations
-// the rules read, and three derived ones they write.
+// A fixed schema keeps generated rules meaningful. There are two base
+// relations the rules read from, and three derived ones they write to.
 const BASE = ["edge", "flag"] as const;
 const DERIVED = ["p", "q", "r"] as const;
 
@@ -140,7 +140,7 @@ const arbFacts: fc.Arbitrary<Array<[string, Tuple]>> = fc.array(
   { minLength: 1, maxLength: 12 },
 );
 
-/** Every derived relation's contents, sorted, so two runs compare. */
+/** Every derived relation's contents, sorted, so two runs can be compared. */
 function model(db: Database): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const name of DERIVED) {
@@ -206,11 +206,9 @@ describe("evaluate holds up under random rule sets", () => {
   });
 
   it("answers for the facts a database holds, whatever ran before", () => {
-    // Running a second rule set over a database has to give the same
-    // result as running it over a database that merely holds the same
-    // facts. Anything carried over from the earlier run is a bug.
-    // Positive rules only: with negation the second run takes back what
-    // the first derived, which the reference database has no reason to.
+    // Anything left over from the earlier run is a bug. Positive rules
+    // only: with negation the second run retracts what the first derived,
+    // and the fresh database it is compared against has nothing to retract.
     fc.assert(
       fc.property(
         arbPositiveRules,

@@ -1,5 +1,3 @@
-// run.test.ts — argv-dispatch tests for the runCli surface.
-
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,10 +17,6 @@ const repoRoot = path.resolve(
 );
 const pythonFixture = path.join(repoRoot, "fixtures", "python-webapp");
 const rubyFixture = path.join(repoRoot, "fixtures", "ruby-graphql");
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 interface CapturedIO {
   stdout: string;
@@ -141,11 +135,7 @@ function writeJson(name: string, data: unknown): string {
   return file;
 }
 
-// ---------------------------------------------------------------------------
-// Top-level dispatch
-// ---------------------------------------------------------------------------
-
-describe("runCli — top-level dispatch", () => {
+describe("runCli top-level dispatch", () => {
   it("prints USAGE and exits 0 when no args are given", async () => {
     const { exit, io } = await capture(() => runCli([]));
     expect(exit).toBe(0);
@@ -171,9 +161,6 @@ describe("runCli — top-level dispatch", () => {
   });
 
   it("turns a flag typed without its value into a sentence", async () => {
-    // Somebody who typed --flow and forgot the request in quotes. Node
-    // throws a TypeError, and printing that as-is buries a typo under
-    // ten frames of node internals.
     const { exit, io } = await capture(() =>
       runCli(["inspect", "--flow", "--dir", tmpDir]),
     );
@@ -185,23 +172,12 @@ describe("runCli — top-level dispatch", () => {
   });
 
   it("lets a throw that is not the person's mistake keep its stack", async () => {
-    // A summary file that parses as JSON but is not an array is the
-    // person's mistake and reads as a sentence. A directory in place
-    // of a file is not: the read throws EISDIR, which is suss failing
-    // to check something, and the stack is where to start looking.
+    // Reading a directory in place of a file throws EISDIR.
     await expect(runCli(["inspect", tmpDir])).rejects.toThrow();
   });
 });
 
-// ---------------------------------------------------------------------------
-// Help text against the parsers
-// ---------------------------------------------------------------------------
-
-/**
- * The long flags an "Options (<command>):" block of the help text lists.
- * Only the first column counts, so a flag mentioned in a description does
- * not read as a flag of its own.
- */
+/** Only the first column counts, so a flag named in a description is skipped. */
 function documentedFlags(section: string): string[] {
   const lines = USAGE.split("\n");
   const start = lines.indexOf(`Options (${section}):`);
@@ -220,11 +196,7 @@ function documentedFlags(section: string): string[] {
   return flags;
 }
 
-/**
- * Whether running the command with this flag got past argument parsing.
- * A flag the parser does not know throws before the command runs; one it
- * knows either runs or complains about something else.
- */
+/** Whether the command got past argument parsing with this flag. */
 async function parserAccepts(argv: string[]): Promise<boolean> {
   try {
     await capture(() => runCli(argv));
@@ -234,7 +206,7 @@ async function parserAccepts(argv: string[]): Promise<boolean> {
   }
 }
 
-describe("runCli — help text", () => {
+describe("runCli help text", () => {
   it("lists only extract flags the extract parser takes", async () => {
     for (const flag of documentedFlags("extract")) {
       const accepted = await parserAccepts([
@@ -270,11 +242,7 @@ describe("runCli — help text", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// extract
-// ---------------------------------------------------------------------------
-
-describe("runCli — extract", () => {
+describe("runCli extract", () => {
   it("rejects a --project path that does not exist", async () => {
     const { exit, io } = await capture(() =>
       runCli(["extract", "-p", "/nope/tsconfig.json", "-f", "axios"]),
@@ -349,10 +317,6 @@ describe("runCli — extract", () => {
   });
 
   it("gives a summary an id when the files are named one by one", async () => {
-    // Naming the files is a different route into the same run, and an
-    // artifact from it has to be as usable as one from reading the
-    // directory: an effect points at the unit it reaches by id, so a
-    // summary with none sends a reader back to matching on names.
     const srcDir = path.join(tmpDir, "src");
     fs.mkdirSync(srcDir, { recursive: true });
     const source = path.join(srcDir, "consumer.ts");
@@ -432,10 +396,8 @@ describe("runCli — extract", () => {
   });
 
   it("keeps reading a subdirectory of a TypeScript monorepo as TypeScript", async () => {
-    // A stray script beside the source is not a change of language.
-    // Source resolution walks up for the root tsconfig and reads this
-    // as TypeScript, so language resolution has to agree, or the run
-    // fails with a pack that reads the wrong language.
+    // Source resolution walks up to the root tsconfig, so language
+    // resolution has to agree with it.
     fs.writeFileSync(
       path.join(tmpDir, "tsconfig.json"),
       JSON.stringify({ compilerOptions: { strict: true } }),
@@ -461,9 +423,7 @@ describe("runCli — extract", () => {
     expect(io.stderr).not.toContain("could not tell what language");
   });
 
-  it("reads a directory that names a Python project of its own as Python", async () => {
-    // The other half of the same rule: a tsconfig above does not
-    // overrule a pyproject written right here.
+  it("reads a directory with its own pyproject as Python, whatever tsconfig sits above it", async () => {
     fs.writeFileSync(path.join(tmpDir, "tsconfig.json"), "{}");
     const service = path.join(tmpDir, "services", "orders");
     fs.mkdirSync(service, { recursive: true });
@@ -501,11 +461,7 @@ describe("runCli — extract", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// inspect
-// ---------------------------------------------------------------------------
-
-describe("runCli — inspect", () => {
+describe("runCli inspect", () => {
   it("inspects a summaries file via positional path", async () => {
     const file = writeJson("summaries.json", [minimalSummary]);
     const { exit, io } = await capture(() => runCli(["inspect", file]));
@@ -527,7 +483,7 @@ describe("runCli — inspect", () => {
     expect(io.stderr).toContain("--diff");
   });
 
-  it("inspect --diff renders identical files cleanly", async () => {
+  it("inspect --diff renders two identical files without failing", async () => {
     const a = writeJson("a.json", [minimalSummary]);
     const b = writeJson("b.json", [minimalSummary]);
     const { exit, io } = await capture(() =>
@@ -555,11 +511,7 @@ describe("runCli — inspect", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// check
-// ---------------------------------------------------------------------------
-
-describe("runCli — check", () => {
+describe("runCli check", () => {
   it("requires two positional files (or --dir)", async () => {
     const { exit, io } = await capture(() => runCli(["check"]));
     expect(exit).toBe(1);
@@ -582,7 +534,7 @@ describe("runCli — check", () => {
   });
 
   it("returns 1 when the checker reports any error finding", async () => {
-    // Provider declares 200 + 500; consumer only handles 200 → unhandled 500
+    // The provider declares 200 and 500, and the consumer handles only 200.
     const provider = writeJson("provider.json", [
       {
         ...minimalSummary,
@@ -662,8 +614,7 @@ describe("runCli — check", () => {
   });
 
   it("--no-suppressions ignores an auto-discovered .sussignore", async () => {
-    // A rule that would hide the finding sits in cwd; --no-suppressions
-    // must report it anyway. Runs in the check --dir path.
+    // The working directory has a rule in it that would hide the finding.
     writeJson("provider.json", [
       {
         ...minimalSummary,
@@ -693,11 +644,7 @@ describe("runCli — check", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// contract
-// ---------------------------------------------------------------------------
-
-describe("runCli — contract", () => {
+describe("runCli contract", () => {
   const inlineSpec = {
     openapi: "3.0.3",
     info: { title: "users-api", version: "1.0" },

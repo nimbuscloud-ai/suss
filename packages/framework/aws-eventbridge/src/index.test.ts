@@ -102,9 +102,9 @@ function recognizeAll(
 }
 
 /**
- * EffectArg builder for tests — mirrors the adapter's extractArgs
- * enough for the EventBridge recognizer's needs (object / array /
- * string / identifier / new(...) / call shapes).
+ * An EffectArg builder for tests, mirroring the adapter's extractArgs closely
+ * enough for what the EventBridge recognizer needs: object, array, string,
+ * identifier, `new (...)`, and call forms.
  */
 function extractArgsForTest(call: CallExpression): EffectArg[] {
   return call.getArguments().map((arg) => extractArgForTest(arg));
@@ -176,7 +176,7 @@ function channelOf(
   return sem.name === "message-bus" ? sem.channel : raise("not message-bus");
 }
 
-describe("eventbridge recognizer — happy path", () => {
+describe("eventbridge recognizer: happy path", () => {
   it("emits one message-send per entry keyed on bus#detailType (env-derived bus)", () => {
     const file = makeProject(`
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
@@ -344,7 +344,7 @@ describe("eventbridge recognizer — happy path", () => {
   });
 });
 
-describe("eventbridge recognizer — skip cases", () => {
+describe("eventbridge recognizer: skip cases", () => {
   it("records an entry whose detail type is worked out at runtime", () => {
     const file = makeProject(`
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";

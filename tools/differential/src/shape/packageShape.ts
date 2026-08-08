@@ -17,7 +17,6 @@ import path from "node:path";
 
 import { type DispatchTable, dispatchByType } from "../dispatch.js";
 
-/** How the package publishes the function. */
 export type PublishRoute =
   | "namedFunction"
   | "exportedArrow"
@@ -27,7 +26,6 @@ export type PublishRoute =
   | "subPathExport"
   | "mainOnly";
 
-/** How the calling package reaches it. */
 export type ImportForm =
   | "namedImport"
   | "aliasedImport"
@@ -68,7 +66,7 @@ interface ProviderRendering {
   /** Relative path to content, under the provider directory. */
   files: Record<string, string>;
   packageJson: Record<string, unknown>;
-  /** The export path the binding should carry. */
+  /** The export path the binding should have. */
   exportPath: string[];
   /** The sub-path a caller imports from. */
   importSpecifier: string;
@@ -135,7 +133,7 @@ const providerRenderings: DispatchTable<
     importSpecifier: PACKAGE_NAME,
   }),
   // A second entry point, which is how a package publishes something
-  // its root does not carry.
+  // its root does not export.
   subPathExport: () => ({
     files: {
       "src/index.ts": "export const version = 1;\n",
@@ -220,7 +218,7 @@ export interface RenderedPackageShape {
   files: Record<string, string>;
   /** Absolute path to the manifest the provider side is read through. */
   packageJsonPath: string;
-  /** What the provider's binding should carry. */
+  /** What the provider's binding should say. */
   exportPath: string[];
   /** The module specifier the consumer side is tracked through. */
   importSpecifier: string;

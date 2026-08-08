@@ -1,4 +1,4 @@
-// shared.ts — types shared between every terminal matcher.
+// shared.ts: types shared between every terminal matcher.
 
 import { Node } from "ts-morph";
 
@@ -12,28 +12,27 @@ export interface FoundTerminal {
    * of an arrow that returns without writing `return`. Absent when the
    * terminal is not a return at all, as a throw is not.
    *
-   * The matcher is the only thing that knows, because `node` is
-   * wherever the matcher stopped looking, which differs by matcher.
-   * Anything downstream that guessed instead got it wrong.
+   * Only the matcher knows this, because `node` is wherever that
+   * matcher stopped looking, which differs from matcher to matcher.
+   * Anything downstream that tried to guess got it wrong.
    */
   source?: Node;
   /**
-   * A test that also has to hold for this terminal to be the one that
+   * A test that also has to be true for this terminal to be the one that
    * fires, on top of whatever the path to it required.
    *
-   * One call site answers with more than one status when the status is
-   * written as a choice, and the arms are told apart by nothing else:
-   * they share a node, so the path engine gives them the same
-   * conditions.
+   * One call site produces more than one status when the status is
+   * written as a choice, and nothing else tells the arms apart: they
+   * share a node, so the path engine gives them the same conditions.
    */
   whenAlso?: RawCondition;
 }
 
 /**
- * The value inside the wrappers that carry it along without changing
- * what it is: parentheses, an await, a cast. `await json(payload)` and
- * `json(payload)` produce the same response, so a matcher looking at
- * the call has to see through the await to find it.
+ * The value inside the wrappers that pass it along unchanged:
+ * parentheses, an await, a cast. `await json(payload)` and
+ * `json(payload)` produce the same response, so a matcher looking at the
+ * call has to see through the await to find it.
  */
 export function unwrapValue(node: Node): Node {
   let current: Node = node;
@@ -50,14 +49,14 @@ export function unwrapValue(node: Node): Node {
 }
 
 /**
- * The return a value leaves through, or null when the value does not
- * leave the function. A concise arrow answers with its body, since that
- * is what it returns without writing `return`.
+ * The return a value leaves the function through, or null when it does
+ * not leave. For a concise arrow this is the body, since that is what
+ * the arrow returns without writing `return`.
  *
- * The walk passes through everything that carries a value along without
- * changing where it goes: parentheses, casts, an await, either branch of
- * a ternary. It stops at anything else, so a value assigned to a
- * variable or passed to a call is not in return position.
+ * The walk passes through everything that hands a value along unchanged:
+ * parentheses, casts, an await, either branch of a ternary. It stops at
+ * anything else, so a value assigned to a variable or passed to a call
+ * is not in return position.
  */
 export function returnPositionOf(value: Node): Node | null {
   let current: Node = value;

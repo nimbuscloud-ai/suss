@@ -1,10 +1,17 @@
-// rest.ts: the REST protocol as a boundary.
-//
-// One route, identified by an HTTP method and a path. The method can
-// be `"*"` for a handler that answers every method, or null when the
-// source never named one; the path is null when unnamed. The empty
-// string is invalid everywhere: a field that means something when
-// blank hides that meaning from every reader.
+/**
+ * The REST protocol as a boundary.
+ *
+ * A boundary here is one route, identified by an HTTP method and a
+ * path. The method can be `"*"` for a handler that responds to every
+ * method, or null when the source never says which method. The path is
+ * null when the source never gives one. An empty string is invalid
+ * everywhere: a field that means something when it is blank hides that
+ * meaning from every reader.
+ *
+ * `normalizePath`, `methodsAgree`, and `routePathAdmits` are exported
+ * because more than one checker compares paths and methods, and they
+ * all have to do it the same way.
+ */
 
 import { z } from "zod";
 
@@ -13,18 +20,18 @@ import { defineBoundarySemantics } from "./definition.js";
 export const RestSemanticsSchema = z.object({
   name: z.literal("rest"),
   /**
-   * Uppercase HTTP method ("GET", "POST", …), `"*"` for a handler
-   * that answers every method, or null when this source does not name
-   * one.
+   * Uppercase HTTP method ("GET", "POST", …), `"*"` for a handler that
+   * responds to every method, or null when this source does not say
+   * which method.
    */
   method: z.string().min(1).nullable(),
-  /** Normalized route path ("/users/{id}"), or null when this source does not name one. */
+  /** Normalized route path ("/users/{id}"), or null when this source does not give one. */
   path: z.string().min(1).nullable(),
   /**
    * Status codes the producing source explicitly declared (OpenAPI
-   * responses, CFN MethodResponses, ts-rest router statuses). Kept here
-   * so the pairing layer can still see them without unwrapping metadata.
-   * Empty / absent for inferred sources.
+   * responses, CFN MethodResponses, ts-rest router statuses). They are
+   * kept here so the pairing layer can see them without unwrapping any
+   * metadata. Absent, or empty, for a source that was inferred.
    */
   declaredResponses: z.array(z.number()).optional(),
 });
@@ -56,13 +63,13 @@ export function normalizePath(path: string): string {
 }
 
 /**
- * Whether two REST methods name the same thing. Equal methods agree,
- * and `"*"` agrees with any named method, because a handler that
- * answers every method answers this one. A null method is unnamed and
- * agrees with nothing; there is no claim to agree with.
+ * Whether two REST methods mean the same thing. Equal methods agree,
+ * and `"*"` agrees with any stated method, because a handler that
+ * responds to every method responds to this one. A null method was never
+ * stated, so it agrees with nothing: there is no claim to agree with.
  *
- * The sibling of `busesAgree`: no method vocabulary is listed here,
- * so a wildcard pairs with whatever methods consumers write.
+ * This is the counterpart of `busesAgree`. No list of methods appears
+ * here, so a wildcard pairs with whatever methods consumers write.
  */
 export function methodsAgree(a: string | null, b: string | null): boolean {
   if (a === null || b === null) {
@@ -72,10 +79,10 @@ export function methodsAgree(a: string | null, b: string | null): boolean {
 }
 
 /**
- * A normalized route path as a matcher for concrete request paths.
- * `{param}` stands for exactly one path segment; `*` crosses segment
- * boundaries and may be empty, which is how Express 4 reads a bare
- * star. Everything else compares literally, on the normalized
+ * Turn a normalized route path into a matcher for concrete request
+ * paths. `{param}` stands for exactly one path segment, and `*` crosses
+ * segment boundaries and can be empty, which is how Express 4 reads a
+ * bare star. Everything else compares literally, on the normalized
  * (static-lowercased, trailing-slash-stripped) forms of both sides.
  */
 function routePathRegex(pattern: string): RegExp {
@@ -113,7 +120,7 @@ export const restSemantics = defineBoundarySemantics({
     /** A request goes out, a status and a body come back. */
     exchangesHttpResponses: true,
     reportsUnpairedItself: false,
-    /** `"METHOD /normalized/path"`; null when either half is unnamed. */
+    /** `"METHOD /normalized/path"`, or null when either half is missing. */
     identityKey(semantics) {
       if (semantics.method === null || semantics.path === null) {
         return null;
@@ -121,11 +128,11 @@ export const restSemantics = defineBoundarySemantics({
       return `${semantics.method.toUpperCase()} ${normalizePath(semantics.path)}`;
     },
     /**
-     * The bucket carries only the path, so a `"*"` route lands with
-     * the consumers that each name a method and `methodsAgree`
-     * settles it in-bucket. The identity key stays what a reader sees
-     * and a suppression names ("GET /users", "* /users"); this key
-     * exists so pairing can group what a reader still tells apart.
+     * The bucket has only the path in it, so a `"*"` route lands with
+     * the consumers that each specify a method, and `methodsAgree`
+     * settles it inside the bucket. The identity key stays what a reader
+     * sees and a suppression targets ("GET /users", "* /users"), and
+     * this key groups what a reader still tells apart.
      */
     pairingKey(semantics) {
       if (semantics.method === null || semantics.path === null) {
@@ -137,9 +144,9 @@ export const restSemantics = defineBoundarySemantics({
       return methodsAgree(a.method, b.method);
     },
     /**
-     * What the identity key says, with one unnamed half still
-     * readable: ANY where no method was stated, ? where no path was.
-     * Null when neither half was stated; there is nothing to show.
+     * What the identity key says, with a missing half still readable:
+     * ANY when no method was stated, and ? when no path was. Null when
+     * neither was stated, because then there is nothing to show.
      */
     displayLabel(semantics) {
       if (semantics.method === null && semantics.path === null) {
@@ -152,11 +159,11 @@ export const restSemantics = defineBoundarySemantics({
       return `${method} ${path}`;
     },
     /**
-     * A route with both halves named answers by its own match: the
-     * method through `methodsAgree` (so an `"*"` route answers every
-     * method) and the path through `routePathAdmits`. A route missing
-     * either half might still be the one that answers, and nothing
-     * here can settle it, so it abstains rather than refusing.
+     * A route with both halves stated decides for itself: the method
+     * through `methodsAgree` (so a `"*"` route matches every method),
+     * and the path through `routePathAdmits`. A route missing either
+     * half might still be the one that handles the request, and nothing
+     * here can settle that, so it abstains instead of refusing.
      */
     servesRequest(semantics, method, path) {
       if (semantics.method === null || semantics.path === null) {

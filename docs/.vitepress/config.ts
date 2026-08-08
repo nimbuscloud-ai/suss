@@ -13,9 +13,9 @@ const docsRoot = path.resolve(
   "..",
 );
 
-// VitePress config — the site reads straight from docs/*.md, so
+// VitePress config: the site reads straight from docs/*.md, so
 // every existing markdown file is already a routeable page. The
-// sidebar below is the editorial grouping — it orders what's
+// sidebar below is the editorial grouping. It orders what's
 // "start here" vs "reference" vs "internals" rather than dumping
 // every file in a flat list.
 
@@ -25,7 +25,7 @@ export default defineConfig({
     "Static behavioral analysis for TypeScript, Python and Ruby. Extract, compare, and publish summaries of what your code does.",
   // GitHub Pages serves from /<repo>/, so assets + links resolve
   // relative to that prefix. Easiest toggle for local dev is
-  // SUSS_DOCS_BASE — unset for root serving, set to "/suss/" for
+  // SUSS_DOCS_BASE: unset for root serving, set to "/suss/" for
   // project-pages deploy.
   base: process.env.SUSS_DOCS_BASE ?? "/suss/",
   cleanUrls: true,
@@ -43,7 +43,7 @@ export default defineConfig({
   ],
 
   themeConfig: {
-    // Top-level nav stays small on purpose — most of the site
+    // Top-level nav stays small on purpose, most of the site
     // lives in the sidebar.
     nav: [
       { text: "Tutorial", link: "/tutorial/get-started" },
@@ -57,11 +57,11 @@ export default defineConfig({
     ],
 
     // Sidebar organized along Diátaxis lines:
-    //   Tutorial   — learn by doing (one concrete walkthrough)
-    //   How-to     — task recipes for users who know what they need
-    //   Reference  — dry, complete factual information (CLI, findings, IR)
-    //   Explanation — why the tool is shaped this way
-    //   Internal   — ADR log, style guide, roadmaps (de-emphasized at the bottom)
+    //   Tutorial: learn by doing (one concrete walkthrough)
+    //   How-to: task recipes for users who know what they need
+    //   Reference: dry, complete factual information (CLI, findings, IR)
+    //   Explanation: why the tool is shaped this way
+    //   Internal: ADR log, style guide, roadmaps (de-emphasized at the bottom)
     //
     // See diataxis.fr for the framework; mixing modes on one page is
     // the most common docs anti-pattern and this structure keeps them
@@ -123,7 +123,7 @@ export default defineConfig({
         ],
       },
       {
-        // Contributor / maintainer material — how the pieces are built,
+        // Contributor / maintainer material, how the pieces are built,
         // not what a user needs to run suss.
         text: "Internals",
         collapsed: true,
@@ -189,12 +189,12 @@ export default defineConfig({
   //
   // The three custom plugins below add cross-doc wiring the source
   // markdown shouldn't have to maintain by hand:
-  //   1. glossaryLinkPlugin — auto-link inline-code IR types
+  //   1. glossaryLinkPlugin: auto-link inline-code IR types
   //      (`BoundaryBinding`, `Transition`, …) to their reference section.
-  //   2. sourceFileLinkPlugin — auto-link inline-code repo paths
+  //   2. sourceFileLinkPlugin: auto-link inline-code repo paths
   //      (`packages/behavioral-ir/src/schemas.ts`, `scripts/dogfood.mjs`) to
   //      the corresponding GitHub blob/tree URL.
-  //   3. pageTitleLinkPlugin — rewrite placeholder-style internal
+  //   3. pageTitleLinkPlugin: rewrite placeholder-style internal
   //      markdown link text (`[some-page.md](some-page.md)`) to use
   //      the target page's h1 / frontmatter title.
   markdown: {
@@ -211,7 +211,7 @@ export default defineConfig({
   },
 
   // The existing docs cross-link to source files via relative
-  // paths like `../packages/framework/ts-rest/` — those render
+  // paths like `../packages/framework/ts-rest/`: those render
   // fine on GitHub but produce 404s on the site. Skip the link
   // check for paths that escape the docs root; anything inside
   // the docs tree still gets validated.

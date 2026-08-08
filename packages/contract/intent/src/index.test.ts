@@ -1,4 +1,4 @@
-// index.test.ts — @suss/contract-intent unit tests.
+// index.test.ts: @suss/contract-intent unit tests.
 
 import fs from "node:fs";
 import os from "node:os";

@@ -1,4 +1,4 @@
-// @suss/differential — differential fuzzer for extraction fidelity.
+// @suss/differential: differential fuzzer for extraction fidelity.
 //
 // Internal tool (never published). Generates handler-shaped programs,
 // runs the real extraction pipeline over them, executes the same body

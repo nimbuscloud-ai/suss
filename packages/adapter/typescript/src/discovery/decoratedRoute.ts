@@ -1,4 +1,4 @@
-// decoratedRoute.ts — discover NestJS-style decorator-driven REST
+// decoratedRoute.ts: discover NestJS-style decorator-driven REST
 // controllers (`@Controller("path")` class with `@Get` / `@Post` /
 // `@Put` / `@Patch` / `@Delete` methods). Emits units with `routeInfo`
 // that the adapter turns into a REST binding directly.
@@ -17,7 +17,7 @@ import type { DiscoveredUnit } from "./shared.js";
  * as a path string. Empty arg list yields the empty string (NestJS
  * behaviour: `@Controller()` mounts at root). Non-string args (a
  * route options object, a path-array, etc.) yield the empty string
- * too — the caller falls back to whatever it can extract elsewhere.
+ * too: the caller falls back to whatever it can extract elsewhere.
  */
 function resolveRoutePathArg(decorator: Node): string {
   if (!Node.isDecorator(decorator)) {

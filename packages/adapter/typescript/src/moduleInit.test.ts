@@ -1,5 +1,7 @@
-// What a module does when it loads is behavior no unit body contains,
-// and the walk that finds it has to stop where the module stops running.
+/**
+ * What a module does when it loads is behavior no unit body contains,
+ * and the walk that finds it has to stop where the module stops running.
+ */
 
 import { Node, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
@@ -14,9 +16,9 @@ import type { AccessRecognizer } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 
 /**
- * Stands in for the node pack's env recognizer. The adapter dispatches
+ * A stand-in for the node pack's env recognizer. The adapter dispatches
  * to whatever a pack supplies, so the test supplies its own rather than
- * depending on a pack to say where the walk goes.
+ * leaning on a real pack to decide where the walk goes.
  */
 const configReadRecognizer: AccessRecognizer = (access) => {
   const node = access as Node;

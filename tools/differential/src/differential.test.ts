@@ -1,11 +1,11 @@
-// differential.test.ts — the differential fuzzer's properties.
+// differential.test.ts: the differential fuzzer's properties.
 //
 // The sound tier (see generators.ts) must hold: any counterexample is
 // an undocumented extraction bug; shrink output lands in
 // corpus.test.ts. Nested guards and loop guards were gap-tier
 // constructs with *inverted* milestone properties (the fuzzer was
 // required to keep rediscovering each documented gap) until the CFG
-// path engine closed both — the former milestones below now assert
+// path engine closed both, the former milestones below now assert
 // the promoted constructs stay sound, with generators that force the
 // once-broken shapes into every program.
 //
@@ -60,7 +60,7 @@ function formatFailure(result: DifferentialResult): string {
 }
 
 // The sound tier runs against every wired target: same DSL, same
-// interpreter, same adjudicator — only the pack, the terminal syntax,
+// interpreter, same adjudicator: only the pack, the terminal syntax,
 // and the response stub vary. A second framework passing here is the
 // evidence the harness generalizes across the existing setups rather
 // than encoding Express-isms.

@@ -106,7 +106,7 @@ describe("checkRuntimeConfig", () => {
   it("emits envVarUnprovided when code reads an env var the runtime doesn't supply", () => {
     const runtime = makeRuntimeProvider({
       instanceName: "checkout",
-      envVars: ["STRIPE_KEY"], // typo — code reads STRIPE_API_KEY
+      envVars: ["STRIPE_KEY"], // typo: code reads STRIPE_API_KEY
       codeScope: { kind: "codeUri", path: "src/checkout/" },
     });
     const code = makeCodeSummary({
@@ -184,8 +184,8 @@ describe("checkRuntimeConfig", () => {
       envReads: ["A"],
     });
     const findings = checkRuntimeConfig([runtime, code]);
-    // The neighbour is out of scope, so its read cannot answer for A and
-    // A reads as declared but never used.
+    // The neighbour is out of scope, so its read cannot count for A, and
+    // A comes out as declared but never used.
     expect(findings.map((f) => f.kind)).toEqual(["boundaryFieldUnused"]);
   });
 
@@ -445,8 +445,8 @@ describe("checkRuntimeConfig", () => {
     });
 
     it("runs a helper in both units its module is deployed as", () => {
-      // A module holding two handlers is deployed twice, so the helper
-      // beside them runs in each and answers to both contracts.
+      // A module with two handlers is deployed twice, so the helper
+      // beside them runs in each and is bound by both contracts.
       const findings = checkRuntimeConfig([
         ...twoRuntimes(),
         makeCodeSummary({

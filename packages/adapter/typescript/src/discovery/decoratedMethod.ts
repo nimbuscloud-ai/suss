@@ -1,4 +1,4 @@
-// decoratedMethod.ts — discover NestJS-style decorator-driven
+// decoratedMethod.ts: discover NestJS-style decorator-driven
 // resolvers / handlers (`@Resolver()` class with `@Query` / `@Mutation`
 // / `@ResolveField` / `@Subscription` methods).
 
@@ -12,15 +12,15 @@ import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 /**
- * The type whose field this method answers, or the empty string when
+ * The type whose field this method implements, or the empty string when
  * the source does not say.
  *
- * A class decorator naming a type answers for every method under it.
- * Without one, the answer is the pack's own: a decorator that puts its
+ * A class decorator that gives a type covers every method under it.
+ * Without one, the pack's own default applies: a decorator that puts its
  * field on a root operation type is in the pack's map, and one that
  * needs the class to name a type is not. The second kind, on a class
  * that names none, has nowhere left to read the type from, and null
- * carries that through to a binding nothing pairs with.
+ * takes that through to a binding nothing pairs with.
  */
 function resolverTypeName(args: {
   classTypeName: string | null;
@@ -35,7 +35,7 @@ function resolverTypeName(args: {
  * returning a class identifier. Walk the AST to recover the class
  * name. Returns null for shapes the adapter doesn't know how to
  * resolve (`@Resolver(() => "Foo")`, `@Resolver(forwardRef(() => Foo))`,
- * etc.) — the caller falls back to a decorator-driven default.
+ * etc.): the caller falls back to a decorator-driven default.
  */
 function resolveResolverClassTypeName(decoratorArg: Node): string | null {
   if (Node.isArrowFunction(decoratorArg)) {
@@ -93,10 +93,10 @@ export function discoverDecoratedMethods(
   resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   // Gate on at least one method decorator (e.g. `@Query`, `@Mutation`)
-  // being imported from one of the pack-declared modules — that's the
+  // being imported from one of the pack-declared modules: that's the
   // signal that this file is operating in the target framework's
   // semantics.
-  // Method decorators stay strict to avoid false positives — without
+  // Method decorators stay strict to avoid false positives: without
   // an import from the framework module, this file isn't a target.
   const acceptedModules = Array.isArray(match.importModule)
     ? match.importModule

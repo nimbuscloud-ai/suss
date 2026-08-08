@@ -72,7 +72,8 @@ const CONTAINS_UNRESOLVED: PredicateTests = {
   call: (p) => p.args.some(valueRefContainsUnresolved),
   compound: (p) => p.operands.some(predicateContainsUnresolved),
   negation: (p) => predicateContainsUnresolved(p.operand),
-  // Opaque holds source text, so nothing inside it is a value reference.
+  // Opaque contains source text, so nothing inside it is a value
+  // reference.
   opaque: () => false,
 };
 

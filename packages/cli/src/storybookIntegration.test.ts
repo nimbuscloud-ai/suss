@@ -1,4 +1,4 @@
-// storybook-integration.test.ts — end-to-end check: extract React
+// storybook-integration.test.ts: end-to-end check: extract React
 // component summaries, generate Storybook stub summaries, pair them
 // via `checkAll`, assert the cross-shape findings that result.
 //
@@ -48,7 +48,7 @@ describe("React + Storybook integration", () => {
   it("flags a story arg that the component doesn't declare as an input", async () => {
     // Button.tsx declares `{ label }` as its only prop. Button.stories.tsx's
     // `Disabled` story passes `disabled: true`, which the component
-    // doesn't accept — the cross-shape check should flag it.
+    // doesn't accept: the cross-shape check should flag it.
     const summaries = await runPipeline();
     const { findings } = checkAll(summaries);
 
@@ -78,11 +78,11 @@ describe("React + Storybook integration", () => {
   });
 
   it("flags a coverage gap: UserCard has a conditional branch on `user` but only one story supplies it", async () => {
-    // UserCard's inferred summary has two transitions — an early
+    // UserCard's inferred summary has two transitions, an early
     // return when `!user`, and a default render. UserCard.stories.tsx
     // only ships a `Loaded` story that passes a user object, so the
     // null-user branch has no declared scenario exercising it.
-    // Wait — the story DOES pass `user`, so `user` IS covered. The
+    // Wait: the story DOES pass `user`, so `user` IS covered. The
     // finding fires when a prop gating a conditional branch is
     // NEVER mentioned by any story. For a richer check (coverage of
     // each branch's value space), see the deferred Phase 4 work.
@@ -100,7 +100,7 @@ describe("React + Storybook integration", () => {
         f.description.includes('"user"'),
     );
     // UserCard.stories.tsx's Loaded story passes `user`, so the
-    // prop IS covered — no gap finding for `user`.
+    // prop IS covered: no gap finding for `user`.
     expect(userCardGaps).toEqual([]);
   });
 });

@@ -4,7 +4,6 @@ import { classifyDecorator } from "./decorators.js";
 import { parsePython } from "./parser.js";
 import { bindModule } from "./scope.js";
 
-/** The first decorator on the module's first (decorated) statement. */
 async function firstDecorator(source: string) {
   const tree = await parsePython(source);
   const binding = bindModule(tree.rootNode);

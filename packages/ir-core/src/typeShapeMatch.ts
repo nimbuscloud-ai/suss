@@ -1,29 +1,37 @@
-// typeShapeMatch.ts — structural comparison of two TypeShapes.
-//
-// A shared primitive: both the behavioural checker (provider body vs
-// declared contract) and the intent checker (code body vs declared
-// intent) compare TypeShapes, and they must reach the same verdict for
-// the same pair. Keeping the comparison here — next to the TypeShape it
-// operates on — means neither checker owns it and they can't drift.
+/**
+ * Comparing two TypeShapes structurally.
+ *
+ * Both checkers do this. The behavioural checker compares a provider
+ * body against a declared contract, and the intent checker compares a
+ * code body against declared intent, and the two have to reach the same
+ * verdict for the same pair. The comparison is here, next to the
+ * TypeShape it works on, so neither checker owns it and the two cannot
+ * drift apart.
+ *
+ * The comparison is asymmetric, and the answer has three values rather
+ * than two. `unknown` is what keeps a shape nobody can see into from
+ * being reported as agreement.
+ */
 
 import type { TypeShape } from "./schemas.js";
 
 /**
- * Three-valued comparison result:
- *   - "match"   — `actual` satisfies `declared`
- *   - "nomatch" — a concrete, verifiable incompatibility exists
- *   - "unknown" — uncertainty that would mask a real mismatch (spreads,
- *                 refs, unknown shapes)
+ * A comparison result with three values:
+ *   - "match": `actual` satisfies `declared`
+ *   - "nomatch": there is a concrete, verifiable incompatibility
+ *   - "unknown": uncertainty that would otherwise mask a mismatch
+ *                (spreads, refs, unknown shapes)
  */
 export type MatchResult = "match" | "nomatch" | "unknown";
 
 /**
- * Compare an actual body shape against a declared body shape and report
- * whether the actual satisfies the declared.
+ * Compare an actual body against a declared body and say whether the
+ * actual satisfies the declared.
  *
- * Semantics are asymmetric: `actual` is the produced value (a response
- * body, a return value) and `declared` is the contract it must conform
- * to. `unknown` is a soft signal; callers decide whether to surface it.
+ * The two sides are not interchangeable. `actual` is the value that gets
+ * produced (a response body, a return value), and `declared` is the
+ * contract it has to conform to. `unknown` is a soft signal, and the
+ * caller decides whether to show it.
  */
 export function bodyShapesMatch(
   actual: TypeShape,
@@ -33,13 +41,9 @@ export function bodyShapesMatch(
     return "unknown";
   }
 
-  // A ref carries a name and no structure. Two refs naming the same
-  // declaration are the same type, and that is the one case this can
-  // decide. Two `User`s from different files are the drift
-  // cross-repository checking exists to catch, and a ref with no file
-  // behind it is a name the language or a dependency owns, which says
-  // nothing about whether two of them agree. Both stay undecided,
-  // because answering "match" would hide a difference.
+  // A ref has a name and no structure, so two refs to the same
+  // declaration are the same type and that is the one case decidable
+  // here. Everything else stays unknown, or a difference would be hidden.
   if (actual.type === "ref" && declared.type === "ref") {
     const sameDeclaration =
       actual.from !== undefined &&
@@ -168,9 +172,8 @@ export function bodyShapesMatch(
   }
 
   // Every TypeShape variant is handled above, so `declared` is `never`
-  // here. This fallthrough only guards a future variant added without a
-  // matching branch — genuinely unreachable today, so excluded from
-  // coverage rather than chased with an impossible test.
+  // here. This only guards a variant added later with no branch of its
+  // own, so it is excluded from coverage instead of tested.
   /* v8 ignore next */
   return "nomatch";
 }

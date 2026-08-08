@@ -14,7 +14,7 @@ import {
 
 const tempDirs: string[] = [];
 
-/** Write a directory of templates and answer the root's path. */
+/** Write a directory of templates and return the root's path. */
 function writeTemplates(files: Record<string, string>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cfn-nested-"));
   tempDirs.push(dir);

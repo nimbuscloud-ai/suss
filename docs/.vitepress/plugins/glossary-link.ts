@@ -5,7 +5,7 @@
 //
 // Matched contexts:
 //   - inline code exactly matching a key: `BoundaryBinding`
-//   - inline code with member access: `BoundaryBinding.protocol` — the
+//   - inline code with member access: `BoundaryBinding.protocol`, the
 //     entire span becomes a link to `BoundaryBinding`'s section
 //   - bold text matching a key: **Transition** (seen in the architecture
 //     doc's vocabulary section)
@@ -42,7 +42,7 @@ export function glossaryLinkPlugin(
         continue;
       }
 
-      // Skip the inline block belonging to a heading — linking a heading's
+      // Skip the inline block belonging to a heading, linking a heading's
       // own anchor would create a nested <h2><a>…</a></h2> that competes
       // with VitePress's anchor plugin.
       const prev = state.tokens[i - 1];
@@ -116,7 +116,7 @@ function linkifyChildren(
       continue;
     }
 
-    // Case 2: bold text (**Transition**) — expect `strong_open`, `text`,
+    // Case 2: bold text (**Transition**), expect `strong_open`, `text`,
     // `strong_close` as a triplet. Link the whole triplet.
     if (
       child.type === "strong_open" &&

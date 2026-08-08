@@ -2,7 +2,7 @@
 //
 // Samples program specs for both Python packs, renders and extracts
 // each one, runs the whole batch under python3 (the CI image's or the
-// developer's own; the shipped package never carries an interpreter),
+// developer's own; the shipped package never includes an interpreter),
 // and adjudicates claims against what each app actually served. The
 // run fails on any falseClaim, uncovered, or harness failure, and it
 // prints the abstention rate either way: abstaining is never

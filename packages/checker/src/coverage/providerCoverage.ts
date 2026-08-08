@@ -73,7 +73,7 @@ export function checkProviderCoverage(
       continue;
     }
 
-    // Status is covered — track for sub-case analysis
+    // Status is covered: track for sub-case analysis
     if (!providerByStatus.has(status)) {
       providerByStatus.set(status, []);
     }
@@ -112,7 +112,7 @@ export function checkProviderCoverage(
 
       if (conditionalProviderTransitions.length > 0) {
         // Provider has N conditional sub-cases for this status, consumer
-        // doesn't distinguish — emit a warning per unmatched sub-case
+        // doesn't distinguish: emit a warning per unmatched sub-case
         for (const pt of conditionalProviderTransitions) {
           findings.push({
             kind: "unhandledProviderCase",
@@ -127,7 +127,7 @@ export function checkProviderCoverage(
       continue;
     }
 
-    // Consumer has non-status predicates — try to match each provider
+    // Consumer has non-status predicates, try to match each provider
     // transition against consumer branches
     for (const pt of providerTransitions) {
       if (pt.isDefault || pt.conditions.length === 0) {
@@ -147,7 +147,7 @@ export function checkProviderCoverage(
       );
 
       if (!matched) {
-        // Check for opaque/unresolved — if either side is opaque, lowConfidence
+        // Check for opaque/unresolved: if either side is opaque, lowConfidence
         const hasOpaque = ptNonStatus.some((provPred) =>
           consumerNonStatusPredicates.some(
             (consPred) => predicatesMatch(provPred, consPred) === "unknown",
@@ -164,7 +164,7 @@ export function checkProviderCoverage(
             severity: "info",
           });
         }
-        // If predicates are fully structured but don't match, that's expected —
+        // If predicates are fully structured but don't match, that's expected,
         // provider conditions are about server-side values, consumer conditions
         // are about response fields. We don't emit a finding for this case;
         // cross-boundary body comparison (checkBodyCompatibility) handles the

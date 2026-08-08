@@ -63,12 +63,12 @@ describe("corroborateSummary", () => {
     const inScope = await corroborateSummary(summary, project, { runs: 10 });
     expect(inScope).toBe(true);
 
-    // Guard transitions execute before any dependency is touched — the
+    // Guard transitions execute before any dependency is touched, the
     // harness observes their claimed statuses directly.
     expect(corroborationOf(summary, 400)?.outcome).toBe("observed");
     expect(corroborationOf(summary, 403)?.outcome).toBe("observed");
 
-    // The 200 path touches `db` (not defined in the sandbox) — the
+    // The 200 path touches `db` (not defined in the sandbox), the
     // ReferenceError marks it dependency-gated rather than refuted.
     const success = corroborationOf(summary, 200);
     expect(success?.outcome).toBe("untested");
@@ -113,7 +113,7 @@ describe("corroborateSummary — execution edges", () => {
     const { summary, project } = await extractHandler();
     // Doctor the 400 guard into an unconditional 200 claim over a
     // body that will throw a non-ReferenceError once the guard is
-    // bypassed by sampling `id` present — the vm run errors, no
+    // bypassed by sampling `id` present, the vm run errors, no
     // verdict lands, and the claim stays honest.
     project.createSourceFile(
       "/gen/throwing.ts",
@@ -270,7 +270,7 @@ export default router;
     if (mixed === undefined) {
       throw new Error("mixed handler not extracted");
     }
-    // Synthetic 302 claim gated on `go` — executing it drives the
+    // Synthetic 302 claim gated on `go`, executing it drives the
     // redirect stub; the sendStatus guard drives that stub on its own
     // extracted transition when one exists.
     mixed.transitions.push({
@@ -320,7 +320,7 @@ export default router;
       isDefault: false,
     });
     // The synthetic claim is UNSOUND on purpose (it omits the a/b
-    // guard), so any verdict is acceptable — the point is exercising
+    // guard), so any verdict is acceptable, the point is exercising
     // the redirect stub and the compound/negation/propertyExists
     // fact-collection arms. It must produce SOME verdict.
     await corroborateSummary(mixed, project, { runs: 5, attempts: 200 });

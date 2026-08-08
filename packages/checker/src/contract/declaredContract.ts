@@ -1,4 +1,4 @@
-// declared-contract.ts — shared helpers for reading the HTTP-scoped
+// declared-contract.ts: shared helpers for reading the HTTP-scoped
 // metadata a summary may carry: the declared response contract, the
 // body accessors a consumer uses (axios `.data`, fetch `.body`), and
 // the status-code accessors it uses (almost always `.status` today).
@@ -74,7 +74,7 @@ export function bodyAccessorsFor(consumer: BehavioralSummary): string[] {
  * shape read off the consumer compares against the shape the provider
  * returns rather than against the client library's wrapper.
  *
- * A shape that carries none of the consumer's accessors is already the
+ * A shape with none of the consumer's accessors on it is already the
  * body, so it comes back untouched.
  */
 export function unwrapBodyField(

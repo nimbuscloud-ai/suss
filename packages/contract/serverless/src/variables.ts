@@ -1,22 +1,22 @@
 // variables.ts: the Serverless Framework's `${...}` variable syntax,
-// resolved as far as the document itself can answer.
+// resolved as far as the document itself can settle it.
 //
-// `${self:...}` names a path inside the same document, so it resolves
-// here. Every other source (`env:`, `opt:`, `cf:`, `ssm:`, `param:`,
-// `file(...)`, and whatever a plugin registers) names a value that
-// arrives at deploy time, so the reference is kept as a symbolic
-// token instead of being resolved, guessed, or dropped. The token is
-// the reference text as written, minus the wrapper: `env:AUDIT_QUEUE_ARN`
-// tells a reader which question to ask of the environment, where null
-// would only say "named at deploy time".
+// `${self:...}` points at a path inside the same document, so it
+// resolves here. Every other source (`env:`, `opt:`, `cf:`, `ssm:`,
+// `param:`, `file(...)`, and whatever a plugin registers) points at a
+// value that arrives at deploy time, so the reference is kept as a
+// symbolic token rather than resolved, guessed, or dropped. The token
+// is the reference text as written, minus the wrapper:
+// `env:AUDIT_QUEUE_ARN` tells a reader which question to ask of the
+// environment, where null would only say "decided at deploy time".
 //
 // A fallback (`${opt:region, 'us-east-1'}`) is applied only for a
-// `self:` reference, where both sides are stated by the document. For
-// a deploy-time source the fallback is what the framework uses when
-// the CLI supplies nothing, and which way an invocation went is not a
-// fact this file states, so the reference stays symbolic.
+// `self:` reference, where the document states both sides. For a
+// deploy-time source the fallback is what the framework uses when the
+// CLI supplies nothing, and which way an invocation went is not a fact
+// this file can state, so the reference stays symbolic.
 
-/** One string-typed value after variable resolution. */
+/** A symbolic token is the reference text as written, minus the wrapper. */
 export type ResolvedString =
   | { kind: "resolved"; value: string }
   | { kind: "symbolic"; token: string };
@@ -28,47 +28,21 @@ export type ResolvedValue =
 
 const REFERENCE = /\$\{([^{}]*)\}/g;
 
-/**
- * Resolves `${...}` references against one parsed serverless.yml
- * document. Stateless apart from the document it closes over.
- */
+/** Resolves `${...}` references against one parsed serverless.yml document. */
 export interface VariableResolver {
-  /**
-   * Resolve a schema position that holds a scalar. A string with no
-   * references resolves to itself; a string that is exactly one
-   * `${self:...}` reference resolves to whatever the path holds,
-   * object or scalar; anything the document cannot answer comes back
-   * symbolic with its token.
-   */
+  /** A whole `${self:...}` reference resolves to whatever is at that
+   * path, object or scalar. */
   resolveValue(raw: unknown): ResolvedValue;
-  /**
-   * `resolveValue` narrowed to string positions (a handler, a path, an
-   * ARN). A whole-value reference that resolves to a number or boolean
-   * is stringified the way the framework would substitute it; one that
-   * resolves to an object or array is symbolic, since no string was
-   * stated.
-   */
+  /** A whole reference resolving to an object or array is symbolic, since no string was stated. */
   resolveString(raw: string): ResolvedString;
-  /**
-   * Resolve every string inside a CloudFormation subtree, in place.
-   * The framework resolves its variables across the whole document
-   * before it compiles anything, the `resources:` block included, so a
-   * property written `${self:custom.tableName}` is a name by the time
-   * CloudFormation sees it.
-   *
-   * One reference is left exactly as written: one whose source is not
-   * the framework's. `Fn::Sub` writes `${AWS::Region}` in the same
-   * syntax, and rewriting that would turn an intrinsic the document
-   * meant into a token nothing answers.
-   */
+  /** A reference to anything the framework does not define is left
+   * exactly as written. */
   resolveTemplateTree(value: unknown): unknown;
 }
 
 /**
  * The variable sources the framework's own schema defines. A reference
- * naming one of these is the framework's to resolve, whether or not
- * this reader can; a reference naming anything else belongs to whatever
- * else reads the string.
+ * to anything else belongs to whatever else reads the string.
  */
 const FRAMEWORK_SOURCES = [
   "self",
@@ -84,7 +58,6 @@ const FRAMEWORK_SOURCES = [
   "git",
 ];
 
-/** Whether a reference body names one of the framework's own sources. */
 function namesFrameworkSource(body: string): boolean {
   const source = body.trim().split(/[:(]/, 1)[0].trim();
 
@@ -121,11 +94,8 @@ export function createVariableResolver(
       return resolveReference(wholeReference, inProgress);
     }
 
-    // Several references, or a reference embedded in a longer string:
-    // substitute what resolves to a scalar. If anything is left over,
-    // the whole string is symbolic, with the leftovers still visible
-    // in the token, so nothing downstream mistakes a half-substituted
-    // ARN for a whole one.
+    // A half-substituted string stays symbolic, so nothing downstream
+    // mistakes a half-substituted ARN for a whole one.
     let anyUnresolved = false;
     const substituted = raw.replace(REFERENCE, (whole, body: string) => {
       const resolved = resolveReference(body, inProgress);
@@ -140,10 +110,8 @@ export function createVariableResolver(
       anyUnresolved = true;
       return whole;
     });
-    // A reference nested inside another one leaves text that still
-    // holds `${`: only the inner reference matched, so what came back
-    // is a half-built reference rather than a value the document
-    // states. The framework's own rules for nesting are not written
+    // Leftover `${` means a nested reference, where only the inner one
+    // matched. The framework's own rules for nesting are not written
     // down, so the whole thing stays symbolic.
     return anyUnresolved || substituted.includes("${")
       ? { kind: "symbolic", token: substituted }
@@ -161,7 +129,7 @@ export function createVariableResolver(
 
     const path = primary.slice("self:".length);
     if (inProgress.has(path)) {
-      // A cycle states nothing; keep the reference external.
+      // A cycle says nothing, so keep the reference external.
       return { kind: "symbolic", token: primary };
     }
     const target = documentPath(document, path);
@@ -182,10 +150,7 @@ export function createVariableResolver(
   }
 
   /**
-   * One string in a CloudFormation position. A reference the document
-   * answers becomes what it states; a reference to a source the
-   * framework defines but a deploy supplies keeps its token; a
-   * reference naming no framework source is left exactly as written,
+   * A reference to no framework source is left exactly as written,
    * because something other than the framework owns that syntax.
    */
   function resolveTemplateString(raw: string): unknown {
@@ -225,10 +190,7 @@ export function createVariableResolver(
   };
 }
 
-/**
- * The reference body when the string is exactly one `${...}` and
- * nothing else, or null when the reference is embedded in more text.
- */
+/** Null when the reference is embedded in more text. */
 function wholeReferenceBody(raw: string): string | null {
   const trimmed = raw.trim();
   const match = /^\$\{([^{}]*)\}$/.exec(trimmed);
@@ -236,11 +198,9 @@ function wholeReferenceBody(raw: string): string | null {
 }
 
 /**
- * Split a reference body on its first top-level comma: the reference
- * itself, and the fallback the author wrote after it, if any. Commas
- * inside quotes belong to the fallback text, but v0 only ever uses a
- * fallback that is one quoted literal or number, so the first split
- * point is enough.
+ * Splits on the first comma. A comma inside quotes belongs to the
+ * fallback text, but a fallback here is one quoted literal or number,
+ * so the first split point is enough.
  */
 function splitFallback(body: string): {
   primary: string;

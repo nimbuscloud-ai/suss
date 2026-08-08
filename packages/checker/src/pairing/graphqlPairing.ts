@@ -1,14 +1,14 @@
-// graphql-pairing.ts — Pair graphql-operation consumers with
+// graphql-pairing.ts: Pair graphql-operation consumers with
 // graphql-resolver providers by walking the operation's selection
 // set.
 //
 // Root-level selections pair by (rootTypeName, fieldName). When
-// the matched provider resolver carries an SDL (via
-// `metadata.graphql.schemaSdl` — AppSync stubs or Apollo
+// the matched provider resolver has an SDL (via
+// `metadata.graphql.schemaSdl`: AppSync stubs or Apollo
 // code-first servers with statically-resolvable `typeDefs`), the
 // pairing pass also walks the operation's NESTED selections on
 // the resolved return type and flags any that the schema doesn't
-// declare. That's the `graphqlSelectionFieldUnknown` finding —
+// declare. That's the `graphqlSelectionFieldUnknown` finding,
 // the second half of "what can go wrong across a GraphQL
 // boundary" alongside the root-field not-implemented finding.
 //
@@ -43,7 +43,7 @@ interface OperationDoc {
   /**
    * Root-level selections. Each entry captures the field name plus
    * any nested sub-selections (recursively). Only FIELD selections
-   * count for v0 — fragments pass through without interpretation.
+   * count for v0: fragments pass through without interpretation.
    */
   rootSelections: FieldSelection[];
 }
@@ -109,9 +109,9 @@ function pairOneOperation(
         consumer: operation,
         key: `gql:${key}`,
       });
-      // When the provider carries an SDL, walk nested selections
+      // When the provider has an SDL, walk nested selections
       // against the declared field set. The same SDL text cached
-      // once per pass — a monolithic schema from 50 resolvers
+      // once per pass: a monolithic schema from 50 resolvers
       // parses once, not 50 times.
       if (selection.nested.length > 0) {
         const schema = resolverSchema(resolver, schemaCache);
@@ -135,7 +135,7 @@ function pairOneOperation(
  * provider's SDL, then recursively walk each nested selection. Each
  * selection name that isn't a field on the resolved object type
  * emits `graphqlSelectionFieldUnknown`. List / non-null / scalar
- * return types stop the walk — you can't select fields on a scalar.
+ * return types stop the walk. You can't select fields on a scalar.
  */
 function walkNestedSelections(
   operation: BehavioralSummary,
@@ -156,7 +156,7 @@ function walkNestedSelections(
   const returnTypeName = unwrapToNamedType(fieldType);
   const returnType = schema.objectTypes.get(returnTypeName);
   if (returnType === undefined) {
-    // Scalar / enum / union / interface — v0 doesn't descend.
+    // Scalar / enum / union / interface, v0 doesn't descend.
     return;
   }
   for (const child of selection.nested) {
@@ -293,7 +293,7 @@ function fieldSelectionsFrom(
 ): FieldSelection[] {
   const out: FieldSelection[] = [];
   for (const selection of selections) {
-    // Only direct Field selections count — fragments / inline
+    // Only direct Field selections count, fragments / inline
     // fragments pass through without interpretation (handling them
     // requires walking fragment definitions + type conditions,
     // which lands when a concrete use case arrives).
@@ -405,9 +405,9 @@ function fieldNotImplementedFinding(
     aspect: "read",
     boundary: binding,
     // Symmetric sides: the operation is both "provider" and
-    // "consumer" here — the finding is about the operation as a
+    // "consumer" here: the finding is about the operation as a
     // whole, not about a specific pair. A synthetic provider-less
-    // side carries the root type + field for discoverability.
+    // side records the root type + field for discoverability.
     provider: {
       summary: `${doc.rootTypeName}.${fieldName} (unresolved)`,
       location: operation.location,

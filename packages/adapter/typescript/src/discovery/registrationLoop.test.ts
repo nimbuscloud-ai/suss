@@ -78,7 +78,7 @@ describe("registrationLoop discovery", () => {
       const app: any = {};
       const routes = [{ method: "get", path: "/x", handler: unrelated }];
       for (const r of routes) {
-        // Body doesn't touch r — not a registration loop.
+        // Body doesn't touch r, not a registration loop.
         unrelated();
       }
     `);

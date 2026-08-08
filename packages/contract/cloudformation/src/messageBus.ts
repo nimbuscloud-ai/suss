@@ -14,7 +14,7 @@
 //                 it. Pairs against @suss/framework-aws-sqs producer
 //                 effects too.
 //
-//   EventBridge — provider + consumer per (bus, detailType) a rule
+//   EventBridge: provider + consumer per (bus, detailType) a rule
 //                 routes, plus schedule / unresolvable-pattern
 //                 accounting. Channel = `${bus}#${detailType}`. Pairs
 //                 against @suss/framework-aws-eventbridge producer
@@ -54,7 +54,7 @@
 //                 buildS3LambdaConsumerSummary / buildS3TopicBridgeConsumerSummary.
 //
 // Provider summaries (kind: library) describe "this channel exists;
-// messages cross it" — producers pair against them. Consumer summaries
+// messages cross it": producers pair against them. Consumer summaries
 // (kind: consumer) describe "this Lambda receives from channel X" and
 // share the channel identity so the pairing dispatcher joins producers
 // to consumers.
@@ -106,7 +106,7 @@ interface CloudFormationResource {
  *     detail-type from two buses) keeps the logical-id channel,
  *     because no one subject identifies what it carries.
  *
- * Producer effects on the consumer side are NOT emitted here — those
+ * Producer effects on the consumer side are NOT emitted here. Those
  * are recognized at extraction time by `@suss/framework-aws-sqs`.
  */
 export function buildMessageBusSummaries(
@@ -142,8 +142,8 @@ export function buildMessageBusSummaries(
 
   // 2. Consumer summaries: walk Lambdas (AWS::Serverless::Function or
   //    AWS::Lambda::Function with EventSourceMapping) and detect SQS and
-  //    SNS event sources. Both are declared the same way — a SAM Events
-  //    entry naming the resource the Lambda subscribes to — so they
+  //    SNS event sources. Both are declared the same way, a SAM Events
+  //    entry naming the resource the Lambda subscribes to, so they
   //    share this walk; only the target-property name and the summary
   //    builder differ.
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -265,7 +265,7 @@ export function buildMessageBusSummaries(
 
   // 5. SNS: one provider per AWS::SNS::Topic, plus a consumer per
   //    Protocol "lambda" subscription (standalone or inline). A
-  //    Protocol "sqs" subscription isn't a code consumer of its own —
+  //    Protocol "sqs" subscription isn't a code consumer of its own,
   //    it already fed queueSubjects above, the same way a queue-
   //    targeting EventBridge rule does, so the queue's own Lambda
   //    consumer(s) pick up the topic's channel there. Any other
@@ -538,8 +538,8 @@ function buildLambdaConsumerSummary(
  * on its Lambda consumer(s): either the (bus, detailType) an
  * EventBridge rule routes into the queue, or the channel of an SNS
  * topic a Protocol "sqs" subscription feeds it from. `eventBus` /
- * `detailType` are set only for the EventBridge case — an SNS topic's
- * channel already names the topic directly, nothing to decompose.
+ * `detailType` are set only for the EventBridge case, an SNS topic's
+ * channel already gives the topic directly, nothing to decompose.
  */
 interface RoutedSubject {
   /** `${eventBus}#${detailType}` for a rule, or the topic's own channel for an SNS subscription. */
@@ -667,7 +667,7 @@ function singleRoutedSubjectOf(
 //
 // CHANNEL SCHEME. One event bus multiplexes many event types; a rule
 // subscribes to a subset keyed by DetailType. So the channel carries
-// BOTH parts — `${bus}#${detailType}` — matching the producer scheme in
+// BOTH parts: `${bus}#${detailType}`, matching the producer scheme in
 // @suss/framework-aws-eventbridge:
 //
 //   - `bus` is the event bus CFN logical id when the rule's
@@ -694,7 +694,7 @@ function singleRoutedSubjectOf(
 // channel. Pattern subsumption is out of v0 scope.
 //
 // SCHEDULES. A scheduled rule (ScheduleExpression, or SAM Events
-// {Type: Schedule}) is time-triggered — no message, no producer. Its
+// {Type: Schedule}) is time-triggered, no message, no producer. Its
 // target Lambda emits a consumer summary flagged
 // `patternResolution = "schedule"` so the checker accounts for it
 // without flagging it as an orphaned consumer.
@@ -731,7 +731,7 @@ function buildEventBridgeSummaries(
   recognition: string,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
-  // Dedup provider summaries by channel — two rules can route the same
+  // Dedup provider summaries by channel, two rules can route the same
   // (bus, detailType), but the checker keys pairing on the channel Set,
   // so one provider per channel is enough.
   const emittedProviderChannels = new Set<string>();
@@ -769,7 +769,7 @@ function buildEventBridgeSummaries(
     }
     // Lambda targets get consumer summaries. A rule routing only to a
     // queue has none, but it still declares the subject crosses the
-    // bus, so its provider summary is emitted either way — otherwise
+    // bus, so its provider summary is emitted either way, otherwise
     // the producer that sends the subject reads as an orphan.
     const targets = readRuleTargets(rawTargets, resources);
     const eventBus = resolveEventBusToken(resource.Properties?.EventBusName);
@@ -1067,7 +1067,7 @@ function readRuleTargets(
 
 /** One AWS::SNS::Subscription, standalone or inline on its topic. */
 interface SnsSubscription {
-  /** CFN logical id of the topic this subscription is declared on — also the channel a Protocol "lambda" consumer binds to. */
+  /** CFN logical id of the topic this subscription is declared on, also the channel a Protocol "lambda" consumer binds to. */
   topicId: string;
   /**
    * Distinguishes this subscription from others reaching the same
@@ -1083,10 +1083,10 @@ interface SnsSubscription {
 
 /**
  * Every AWS::SNS::Subscription the template declares: standalone
- * resources (TopicArn names the topic) and entries inline on a Topic's
+ * resources (TopicArn points at the topic) and entries inline on a Topic's
  * own `Subscription` list (the owning Topic is implicit). The two
  * shapes are not the same. CFN's inline `Subscription` property type
- * carries only {Protocol, Endpoint}. FilterPolicy, and the rest of a
+ * has only {Protocol, Endpoint}. FilterPolicy, and the rest of a
  * subscription's attributes, exist only on the standalone
  * AWS::SNS::Subscription resource. An inline entry's `filterPolicy` is
  * always undefined here, so it always resolves to "exact". Future
@@ -1155,7 +1155,7 @@ interface SnsLambdaConsumerOpts {
   lambdaResource: CloudFormationResource;
   /** Distinguishes this subscription among others reaching the Lambda: a Subscription's logical id / synthesized label, or the SAM event name. */
   label: string;
-  /** CFN logical id of the topic — also the consumer's channel. */
+  /** CFN logical id of the topic, also the consumer's channel. */
   topicId: string;
   filterPolicy: unknown;
   sourceFile: string;
@@ -1169,7 +1169,7 @@ interface SnsLambdaConsumerOpts {
  * buildEventBridgeConsumerSummary's shape: shared codeScope
  * resolution, `${lambdaId}.${label}` identity naming (there's no
  * per-message subject to key on the way EventBridge's detailType does
- * — a subscription with no FilterPolicy receives the whole topic — so
+ *, a subscription with no FilterPolicy receives the whole topic, so
  * the label plays the differentiating role eventName plays for SQS).
  */
 function buildSnsLambdaConsumerSummary(
@@ -1222,7 +1222,7 @@ type FilterPolicyResolution =
  * FilterPolicy reduction (v0): absent means the subscription receives
  * every message the topic carries, the same shape as a rule with a
  * single exact detail-type. Present means v0 can't tell which messages
- * get through, so it's unresolvable — surfaced by the checker, never
+ * get through, so it's unresolvable, surfaced by the checker, never
  * silently dropped, mirroring how an EventPattern content filter is
  * unresolvable. Reducing a FilterPolicy to the subset of messages it
  * actually admits is out of v0 scope.

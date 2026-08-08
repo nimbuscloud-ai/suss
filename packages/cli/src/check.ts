@@ -37,7 +37,7 @@ import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 /**
  * Look up the summary-level confidence for a `Finding` side. The
  * checker stamps `side.summary` as `${file}::${name}`, which matches
- * the key we build here. Informational only — the checker does not
+ * the key we build here. Informational only: the checker does not
  * use confidence to decide anything; the human-output renderer
  * surfaces it so reviewers can weigh findings themselves.
  */
@@ -138,7 +138,7 @@ export function checkDir(
     );
   }
 
-  // .sussignore.json is auto-discovered from this same directory — it's
+  // .sussignore.json is auto-discovered from this same directory: it's
   // suppression config, not a summaries file, so exclude it from the walk.
   const files = fs
     .readdirSync(resolved)
@@ -152,8 +152,8 @@ export function checkDir(
   }
 
   const allSummaries: BehavioralSummary[] = [];
-  // Which file each summary came from, so a boundary drawing providers
-  // from two of them can be called out below.
+  // Which file each summary came from, so that a boundary with
+  // providers in two different files can be called out below.
   const sourceFile = new Map<BehavioralSummary, string>();
   for (const file of files) {
     for (const summary of readSummaries(path.join(resolved, file))) {
@@ -214,10 +214,10 @@ interface BoundaryCollision {
 /**
  * Boundaries that two different summary files both claim to provide.
  *
- * suss identifies an HTTP boundary by its method and path, with nothing
- * to say which service serves it, so two services that both expose
- * `GET /users` land on one key. Whoever calls either one then pairs
- * against both and gets findings from an API they never touch.
+ * suss identifies an HTTP boundary by its method and path, and records
+ * nothing about which service serves it, so two services that both
+ * expose `GET /users` end up on one key. Whoever calls either one then
+ * pairs against both and gets findings from an API they never touch.
  *
  * One file per service is the usual layout, so two files providing one
  * key is a good sign that this happened. Reporting it beats comparing
@@ -340,7 +340,7 @@ function renderIntentSection(intent: CheckIntentResult | undefined): string {
     );
   }
   for (const f of intent.findings) {
-    lines.push(`  [${f.severity}] ${f.boundary} — ${f.message}`);
+    lines.push(`  [${f.severity}] ${f.boundary}: ${f.message}`);
     if (f.suppressed !== undefined) {
       lines.push(
         `    suppressed (${f.suppressed.effect}): ${f.suppressed.reason}`,
@@ -348,7 +348,7 @@ function renderIntentSection(intent: CheckIntentResult | undefined): string {
     }
   }
   for (const u of intent.unchecked) {
-    lines.push(`  not checked: ${u.intent} — ${u.detail}`);
+    lines.push(`  not checked: ${u.intent}: ${u.detail}`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -405,9 +405,9 @@ function readSummaries(file: string): BehavioralSummary[] {
       `suss could not read ${resolved} as summaries. It should be the output of \`suss extract\` or \`suss contract\`. What did not fit:\n${formatParseIssues(result.error.issues)}`,
     );
   }
-  // Spelled out on the way in, so everything downstream reads
-  // structure. A summary writes a named type once and refers to it
-  // after that, and a comparison of two names is not a comparison.
+  // Types are spelled out on the way in, so everything downstream
+  // compares structure. A summary writes a named type once and refers
+  // to it after that, and comparing two names compares nothing.
   return result.data.map(summaryWithDefinitionsInlined);
 }
 
@@ -503,10 +503,10 @@ function formatSide(
  * A `.sussignore` rule that matches this finding and nothing else,
  * ready to paste.
  *
- * Naming the transition alone left the reader to write the rule, and
- * the side it sits on decides which discriminator to write it under. A
- * finding about a status the provider produces carries its id on the
- * provider side, and a rule keyed on `consumer.transitionId` would
+ * Printing the transition alone left the reader to write the rule, and
+ * which side the transition is on decides which discriminator the rule
+ * needs. A finding about a status the provider returns keeps its id on
+ * the provider side, so a rule keyed on `consumer.transitionId` would
  * never match it. Printing the whole rule takes that guesswork away.
  *
  * A finding with no transition on either side gets nothing: `kind` plus
@@ -534,7 +534,6 @@ function formatSuppressionRule(f: Finding): string[] {
   return lines;
 }
 
-/** Which side of a finding carries the transition it points at. */
 function findingTransitionSide(
   f: Finding,
 ): { name: "provider" | "consumer"; transitionId: string } | null {
@@ -559,11 +558,11 @@ function formatRoute(boundary: Finding["boundary"]): string {
 }
 
 /**
- * How many message sends cross a boundary the code names at runtime.
- * These are recorded and can never be checked, and the count keeps
- * them from reading as coverage. Counted per distinct send site so a
- * wrapper's summary and the summaries derived from it never report
- * one send twice.
+ * How many message sends cross a boundary whose name the code only
+ * works out at runtime. These get recorded but can never be checked,
+ * and printing the count stops them looking like coverage. Counted per
+ * distinct send site, so a wrapper's summary and the summaries derived
+ * from it never report one send twice.
  */
 function countRuntimeNamedCrossings(
   summaries: ReadonlyArray<BehavioralSummary>,
@@ -606,8 +605,8 @@ function renderDirHuman(
   const unnamed = unpairable.filter((u) => u.reason === "unnamedBoundary");
 
   // Lead with how much was actually compared. "No findings" on its own
-  // reads as a pass, and a run where nothing paired has checked nothing
-  // at all, which is the opposite of a pass.
+  // looks like a pass, and a run where nothing paired has checked
+  // nothing at all, which is the opposite of a pass.
   if (result.pairs.length > 0) {
     lines.push(
       `Compared ${result.pairs.length} boundar${result.pairs.length === 1 ? "y" : "ies"}:`,
@@ -653,11 +652,13 @@ function renderDirHuman(
     }
   }
 
-  // A boundary whose name the source never stated is worth a line per
-  // unit: something crossed it, and a reader deciding what to trust
-  // needs to know it went unchecked. "No name to pair on" covers both
-  // a value assigned at runtime and a binding whose identity fields a
-  // pack never fills.
+  /**
+   * A boundary the source never gave a name to gets a line per unit,
+   * because something crossed it and a reader deciding what to trust
+   * needs to know it went unchecked. "No name to pair on" covers both a
+   * value assigned at runtime and a binding whose identity fields a
+   * pack never filled in.
+   */
   if (unnamed.length > 0) {
     lines.push("");
     lines.push(

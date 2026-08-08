@@ -14,7 +14,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 // A SAM service written to a temp dir, exercising the edge branches the
 // main fixture doesn't: an ANY route mixed with a bindable one, an
-// ANY-only function, and a template that names an export the file
+// ANY-only function, and a template that asks for an export the file
 // doesn't provide.
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-lambda-"));
 
@@ -331,7 +331,7 @@ describe("awsLambdaDiscovery — fields on a non-root type", () => {
       .map((sem) => (sem as { typeName: string }).typeName);
 
     // Query.queued is an operation. User.profileState is a field that
-    // resolves while a parent does, and no operation names it.
+    // resolves while a parent does, and no operation refers to it.
     expect(fields).toEqual(["Query"]);
   });
 

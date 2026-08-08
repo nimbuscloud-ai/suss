@@ -105,7 +105,7 @@ describe("webFetchPack — fixtures", () => {
   it("summarizes the ALB fixture's client on the order path, not the absolute URL it calls", async () => {
     // fetchOrder.ts calls `fetch("https://shop.example.com/api/orders/123")`.
     // Only a summary keyed on /api/orders/123 can ever pair with the ECS
-    // service that answers it, since the provider side never names the
+    // service that serves it, since the provider side never gives the
     // scheme or host.
     const fixturesDir = path.resolve(__dirname, "../../../../fixtures/aws-alb");
     const project = createFixtureProject(fixturesDir, "src/client/*.ts");

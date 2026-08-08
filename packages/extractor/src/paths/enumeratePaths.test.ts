@@ -1,9 +1,10 @@
-// enumeratePaths.test.ts: direct coverage of the generic path engine
-// against hand-built StructuredStatement trees. No language adapter
-// involved: this pins the engine's own contract, what a lowering can
-// rely on, independent of what ts-morph or a future language's lowering
-// produces. packages/adapter/typescript/src/paths/pathConditions.test.ts
-// covers the same semantics end to end, through the TypeScript lowering.
+/**
+ * Direct coverage of the generic path engine against StructuredStatement
+ * trees built by hand. No language adapter is involved, so these tests pin
+ * down what a lowering can rely on, whatever ts-morph or some later
+ * language's lowering happens to produce. The TypeScript adapter's own
+ * pathConditions tests cover the same behaviour end to end.
+ */
 
 import { describe, expect, it } from "vitest";
 
@@ -24,11 +25,11 @@ import type {
 type S = StructuredStatement<string>;
 
 // ---------------------------------------------------------------------------
-// Fixture builders. Cond is `string` (a condition's display text, never
-// inspected by the engine); Terminal is `string` (an id this test picks).
-// exitKind on if/switch/loop/try is derived from the children the same
-// way a lowering's own deep scan would compute it, so fixtures stay
-// self-consistent without hand-tracking it at every call site.
+// Fixture builders. Cond is `string`, a condition's display text, which the
+// engine never looks inside. Terminal is `string` too, an id this test picks.
+// The exitKind on an if, switch, loop, or try comes from the children the same
+// way a lowering's own deep scan would work it out, so the fixtures stay
+// consistent without anyone tracking it by hand at every call site.
 // ---------------------------------------------------------------------------
 
 const cond = (sourceText: string): ConditionHandle<string> => ({
@@ -477,8 +478,8 @@ describe("enumerateStructuredPaths, switch", () => {
   });
 
   it("a break inside a nested loop belongs to that loop, not the switch clause", () => {
-    // The nested loop's own break doesn't need to be trailing in the
-    // switch clause that holds it. It never reaches the switch at all.
+    // The nested loop's own break does not have to be the last thing in the
+    // switch clause containing it. It never reaches the switch at all.
     const t0 = ret();
     const nestedLoop = mkLoop("for (const x of xs)", [brk()]);
     const statements = [
@@ -547,8 +548,8 @@ describe("enumerateStructuredPaths, switch", () => {
 
 describe("enumerateStructuredPaths, path budget", () => {
   it("degrades when the path count crosses the cap", () => {
-    // 9 sequential ifs whose arms both hold a (non-exit) terminal:
-    // doubles the frontier each time, 2^9 = 512 > 256.
+    // Nine ifs in a row, both arms of each containing a terminal that does
+    // not exit. That doubles the frontier every time: 2^9 = 512 > 256.
     let statements: S[] = [ret()];
     for (let i = 0; i < 9; i++) {
       const thenTerm = opq();

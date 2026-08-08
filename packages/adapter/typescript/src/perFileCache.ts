@@ -1,15 +1,15 @@
 import type { SourceFile } from "ts-morph";
 
 /**
- * An answer worked out from one file's parse, kept only for as long as
+ * A result worked out from one file's parse, kept only for as long as
  * that parse lasts.
  *
- * ts-morph hands back the same `SourceFile` wrapper when a file's text
- * is replaced, and it forgets every node the previous parse produced.
- * A cache keyed on the wrapper therefore answers a re-parsed file with
- * nodes that throw the moment anything touches them. The compiler's
- * own source file object is new per parse, so keying on it makes the
- * entry expire exactly when the nodes in it stop being usable.
+ * When a file's text is replaced, ts-morph reuses the same `SourceFile`
+ * wrapper and forgets every node the previous parse produced. A cache
+ * keyed on the wrapper would hand a re-parsed file nodes that throw the
+ * moment anything touches them. The compiler's own source file object is
+ * new on every parse, so keying on that makes each entry expire exactly
+ * when the nodes inside it stop working.
  */
 export interface PerFileCache<T> {
   get(sourceFile: SourceFile): T | undefined;

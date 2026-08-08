@@ -1,5 +1,6 @@
-// A summary that names its types has to check the same as one that
-// spells them out. Otherwise writing a type down once costs a finding.
+// A summary that refers to its types by name has to check the same as
+// one that spells them out. Otherwise writing a type down once and
+// reusing it costs you a finding.
 
 import { describe, expect, it } from "vitest";
 
@@ -60,8 +61,8 @@ function summary(over: {
 }
 
 // The key is what the producer builds out of the type itself, and the
-// ref carries it. A name alone would not do: every instantiation of one
-// generic reports the same name.
+// ref includes it. A name alone would not do, since every instantiation
+// of one generic reports the same name.
 const USER_KEY = "User@abc123def456";
 const NAMED: TypeShape = {
   type: "ref",

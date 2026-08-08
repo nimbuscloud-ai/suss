@@ -1,4 +1,4 @@
-// @suss/contract-aws-apigateway — Generate behavioral summaries for AWS
+// @suss/contract-aws-apigateway: Generate behavioral summaries for AWS
 // API Gateway (REST + HTTP API) given normalized configuration.
 //
 // Manifest readers (CFN, CDK, Terraform) are responsible for parsing

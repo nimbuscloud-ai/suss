@@ -1,9 +1,3 @@
-// Tests for the funnel the CLI prints when an extract finds nothing.
-//
-// The point of that output is that someone who has never opened this
-// repo can tell which stage the count died at and what to do, so each
-// stage's wording is worth asserting rather than only its existence.
-
 import { describe, expect, it } from "vitest";
 
 import { formatExtractionReport, incompletenessPathFor } from "./extract.js";
@@ -52,7 +46,6 @@ describe("formatExtractionReport", () => {
     expect(output).toContain("Where these came from");
     expect(output).toContain("files in the tsconfig");
     expect(output).toContain("boundaries recognized by express");
-    // Nothing went wrong, so nothing should read as a problem.
     expect(output).not.toContain("Where it stopped");
   });
 
@@ -93,17 +86,13 @@ describe("formatExtractionReport", () => {
       }),
     );
 
-    // The count and the package name are what make this actionable.
     expect(output).toContain("102 files import @apollo/client");
     expect(output).toContain("not installed here");
     expect(output).toContain("Install this project's dependencies");
   });
 
   // A project that does not use a package has that package missing from
-  // node_modules too, so an unresolved gate on its own is evidence of
-  // nothing. `firstEmptyStage` requires a candidate file before it
-  // blames resolution; this is the copy that choice selects, and the
-  // advice it must not give.
+  // node_modules too, so an unresolved gate on its own is evidence of nothing.
   it("does not blame a missing package when no file asked for it", () => {
     const output = formatExtractionReport(
       report({
@@ -127,10 +116,8 @@ describe("formatExtractionReport", () => {
     expect(output).not.toContain("Install this project's dependencies");
   });
 
-  // A recogniser pack finds no boundary and writes no summary, so the
-  // discovery rows would print three zeros against its name and read as
-  // a pack that had failed. What it did is attach effects to units
-  // other packs found.
+  // A recogniser pack attaches effects to units other packs found, so its
+  // discovery rows are all zero.
   it("shows what a recogniser pack contributed", () => {
     const output = formatExtractionReport(
       report({
@@ -158,7 +145,6 @@ describe("formatExtractionReport", () => {
 
     expect(output).toContain("7  unit bodies prisma could look inside");
     expect(output).toContain("3  effects prisma recognized");
-    // The rows that would read as a broken pack stay out.
     expect(output).not.toContain("boundaries recognized by prisma");
     expect(output).not.toContain("summaries from prisma");
   });
@@ -208,9 +194,7 @@ describe("formatExtractionReport", () => {
   });
 
   it("notes a missing dependency without calling it a failure", () => {
-    // A pack matching on import text works without the package
-    // installed. Saying "not installed?" on a run that produced
-    // summaries would read as a problem when nothing went wrong.
+    // A pack matching on import text works without the package installed.
     const output = formatExtractionReport(
       report({
         packs: [

@@ -1,4 +1,4 @@
-// @suss/adapter-typescript — Phase 2 exports
+// @suss/adapter-typescript: Phase 2 exports
 
 export {
   createTypeScriptAdapter,
@@ -15,13 +15,12 @@ export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery/index.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
 // The store behind the recognizer context's `resolveWrittenValue`.
-// Exported so a pack's test harness can hand recognizers the same
+// Exported so a pack's test harness can give recognizers the same
 // resolution the adapter threads through at extraction time.
 export { ResolutionStore } from "./facts/store.js";
-// Reading a module's exports and following an import to what it names
-// are the adapter's to do, not each pack's: both walk re-export chains
-// that overflow the checker when asked about naively, and the handling
-// belongs in one place.
+// Reading a module's exports and following an import to its source are
+// the adapter's job rather than each pack's: both walk re-export chains
+// that overflow the checker when asked naively.
 export {
   exportedDeclarationsOf,
   resolveAliasedSymbol,

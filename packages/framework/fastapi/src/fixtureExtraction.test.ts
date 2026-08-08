@@ -1,17 +1,3 @@
-// fixtureExtraction.test.ts: the acceptance test for the FastAPI pack
-// (docs/internal/proposals/language-adapters.md, slice 3).
-//
-// Extracts over fixtures/python-fastapi, a small invented fixture
-// (sourced from nothing private): plain routes on the app, a prefixed
-// router the app mounts under a second prefix (the path a consumer
-// calls appears in no single file), and the two abstentions the pack
-// promises to keep loud, a route path built at runtime and a mount
-// whose prefix is computed. `pairSummaries` (the same pairing
-// @suss/checker runs for same-language boundaries) buckets the
-// extracted provider routes against hand-built consumer summaries by
-// method and path alone, so a composed router path pairs exactly like
-// a written-out one, and an abstained route pairs with nothing.
-
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -104,8 +90,8 @@ describe("extraction over fixtures/python-fastapi", () => {
       },
       recognition: "fastapi",
     });
-    // The route path itself is empty; the composed prefixes are the
-    // whole path.
+    // This route's own path is empty, so the composed prefixes are all
+    // of it.
     expect(bindingOf(summaries, "create_item")?.semantics).toEqual({
       name: "rest",
       method: "POST",
@@ -186,19 +172,14 @@ describe("extraction over fixtures/python-fastapi", () => {
       ].sort(),
     );
 
-    // The consumer with no matching route lands in unmatched, proving
-    // pairing does bucket rather than pass everything through.
     expect(result.unmatched.consumers.map((c) => c.identity.name)).toEqual([
       "getNothing",
     ]);
 
-    // The provider nobody calls (POST /orders) lands unmatched.
     expect(result.unmatched.providers.map((p) => p.identity.name)).toContain(
       "create_order",
     );
 
-    // The abstained routes carry no path, so they take no part in
-    // pairing at all rather than pairing with a guess.
     expect(
       result.unmatched.unpairable
         .map((u) => `${u.summary.identity.name}:${u.reason}`)

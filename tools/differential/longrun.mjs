@@ -1,8 +1,8 @@
-// longrun.mjs — exploratory fuzz session (not part of the test suite).
+// longrun.mjs: exploratory fuzz session (not part of the test suite).
 // Runs many random-seed rounds per tier and prints every shrunk
 // counterexample, for corpus curation. Usage:
 //   node longrun.mjs [tier] [numRuns] [rounds] [target]
-// Build first (`npx tsup`) — imports from dist.
+// Build first (`npx tsup`), imports from dist.
 import fc from "fast-check";
 
 import {

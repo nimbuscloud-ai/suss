@@ -1,12 +1,13 @@
-// arn.ts: resolve the references AWS manifests use to name a queue,
-// a topic, or a bucket, down to the channel string suss keys the
-// boundary on.
-//
-// Every manifest language that targets AWS writes the same three
-// shapes: a CFN intrinsic (`!Ref X`, `!GetAtt X.Arn`), a plain ARN
-// string, or a bare name. The CloudFormation reader and the Serverless
-// Framework reader both resolve them here, so a queue named two ways
-// in two manifest languages still lands on one channel.
+/**
+ * arn.ts resolves the references AWS manifests use to point at a queue, a
+ * topic, or a bucket, down to the channel string suss keys the boundary on.
+ *
+ * Every manifest language that targets AWS writes a reference one of three
+ * ways: as a CFN intrinsic (`!Ref X`, `!GetAtt X.Arn`), as a plain ARN
+ * string, or as a bare name. The CloudFormation reader and the Serverless
+ * Framework reader both resolve them here, so a queue written two different
+ * ways in two manifest languages still ends up on one channel.
+ */
 
 import { refTarget } from "./templateLoader.js";
 
@@ -14,12 +15,12 @@ import { refTarget } from "./templateLoader.js";
  * Resolve a reference (`!Ref X`, `!GetAtt X.Arn`, plain string ARN) to
  * the referenced resource's channel string. `service` is the ARN
  * segment a plain string is checked against (`"sqs"`, `"sns"`, `"s3"`),
- * so a queue ARN, a topic ARN, and a bucket ARN each resolve through
- * the same shape.
+ * so a queue ARN, a topic ARN, and a bucket ARN all resolve through the
+ * same code.
  *
  * Returns null when the reference is dynamic (a parameter, an import,
- * or an Fn::Join naming nothing this template declares); those need
- * cross-stack resolution that's out of scope for v0.
+ * or an Fn::Join that points at nothing this template declares); those
+ * need cross-stack resolution that's out of scope for v0.
  */
 export function resolveResourceChannel(
   value: unknown,
@@ -39,21 +40,18 @@ export function resolveResourceChannel(
 }
 
 /**
- * Parse an ARN structurally rather than matching it against a pattern,
- * and validate its shape against `service`. `arn:partition:service:
- * region:account-id:resource` splits on `:`; `resource` is rejoined
- * from whatever follows the account segment, since some ARN shapes
- * (an SNS subscription, say) append a further `:`-separated id.
+ * Parse an ARN by its segments rather than matching it against a
+ * pattern, and check it against `service`. It splits on `:` as
+ * `arn:partition:service:region:account-id:resource`, and `resource` is
+ * rejoined from everything after the account segment, because some ARNs
+ * (an SNS subscription, say) append another `:`-separated id.
  *
- * `"s3"` requires region and account BOTH empty
- * (`arn:aws:s3:::bucket-name` carries neither) and a non-empty
- * resource; an object ARN appends `/key` after the bucket name, which
- * is stripped since the bucket alone is the channel. Every other
- * service requires region, account, and resource all non-empty. A
- * value that doesn't validate returns null, so a malformed ARN (a
- * dropped region or account) falls through unresolved rather than
- * resolving to a bare name that can coincidentally collide with an
- * unrelated logical id.
+ * `"s3"` requires region and account BOTH empty and a non-empty
+ * resource, and an object ARN's trailing `/key` is stripped because the
+ * bucket alone is the channel. Every other service requires region,
+ * account, and resource all non-empty. A value that fails these checks
+ * returns null, so a malformed ARN stays unresolved instead of
+ * resolving to a bare name that could hit an unrelated logical id.
  */
 function resolveArnResource(value: string, service: string): string | null {
   const parts = value.split(":");

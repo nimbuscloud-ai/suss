@@ -43,7 +43,7 @@ function statusesOf(summary: BehavioralSummary): number[] {
   return codes.sort((a, b) => a - b);
 }
 
-describe("nextjsFramework — pack shape", () => {
+describe("nextjsFramework: pack shape", () => {
   it("finds route files by where they sit, not by an import", () => {
     const pack = nextjsFramework();
     expect(pack.name).toBe("nextjs");
@@ -54,7 +54,7 @@ describe("nextjsFramework — pack shape", () => {
   });
 });
 
-describe("nextjsFramework — extraction", () => {
+describe("nextjsFramework: extraction", () => {
   let summaries: BehavioralSummary[];
 
   beforeAll(async () => {
@@ -107,9 +107,9 @@ describe("nextjsFramework — extraction", () => {
     const legacy = summaries.find(
       (s) => routeOf(s) === "* /api/legacy",
     ) as BehavioralSummary;
-    // The path is right and the statuses are right. There is no
-    // method, because one export answers all of them, so this route
-    // does not pair with a caller.
+    // The path is right and the statuses are right. There is no method,
+    // because one export serves all of them, so this route does not pair with
+    // a caller.
     expect(statusesOf(legacy)).toEqual([200, 405]);
   });
 });

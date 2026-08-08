@@ -8,7 +8,7 @@
 //   node scripts/benchmark.mjs --json out.json     # also write the raw runs
 //
 // Every run passes `--no-cache` and `--datalog-profile`, and every
-// number carries the commit it came from. When two builds are compared
+// number records the commit it came from. When two builds are compared
 // the script alternates between them within each repeat, because a run
 // order that puts one build in the machine's quiet half hands it the
 // win. It refuses to print anything on a loaded machine.
@@ -340,7 +340,7 @@ function resolveTargetsDir() {
   if (fs.existsSync(local)) {
     return local;
   }
-  // A worktree does not carry the corpora, which sit untracked beside the
+  // A worktree does not contain the corpora, which are untracked beside the
   // main checkout.
   const commonDir = git([
     "rev-parse",

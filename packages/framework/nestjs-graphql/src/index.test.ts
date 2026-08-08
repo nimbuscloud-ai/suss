@@ -10,7 +10,7 @@ import { nestjsGraphqlFramework } from "./index.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
-// Fixture project — exercise NestJS resolver + operation + ResolveField shapes
+// Fixture project: exercise NestJS resolver + operation + ResolveField shapes
 // ---------------------------------------------------------------------------
 
 const fixturesDir = path.resolve(
@@ -23,7 +23,7 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
   // `@nestjs/graphql` isn't installed in the fixture; create a stub
   // module that exposes the decorator names as identity functions so
   // ts-morph's import resolution succeeds. Discovery only needs the
-  // decorator names + import module to match — runtime behaviour is
+  // decorator names + import module to match: runtime behaviour is
   // irrelevant to static analysis.
   project.createSourceFile(
     "node_modules/@nestjs/graphql/index.d.ts",
@@ -51,7 +51,7 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
 // Pack-shape sanity
 // ---------------------------------------------------------------------------
 
-describe("nestjsGraphqlFramework — pack shape", () => {
+describe("nestjsGraphqlFramework: pack shape", () => {
   it("declares the expected discovery, terminals, and inputMapping", () => {
     const pack = nestjsGraphqlFramework();
     expect(pack.name).toBe("nestjs-graphql");
@@ -77,8 +77,8 @@ describe("nestjsGraphqlFramework — pack shape", () => {
         Mutation: "Mutation",
         Subscription: "Subscription",
       });
-      // A field resolver takes its type from the class decorator's
-      // argument, so it has no answer of its own to give.
+      // A field resolver takes its type from the class decorator's argument,
+      // so it has nothing of its own to contribute here.
       expect(match.methodDecoratorTypeMap.ResolveField).toBeUndefined();
     }
   });
@@ -94,10 +94,10 @@ describe("nestjsGraphqlFramework — pack shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration — run the adapter against the resolver fixture
+// Integration: run the adapter against the resolver fixture
 // ---------------------------------------------------------------------------
 
-describe("nestjsGraphqlFramework — integration", () => {
+describe("nestjsGraphqlFramework: integration", () => {
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
     summaries = await runAdapter();
@@ -185,9 +185,9 @@ describe("nestjsGraphqlFramework — integration", () => {
     if (!sub) {
       throw new Error("subscription missing");
     }
-    // @Resolver(() => User) on the class wins over the decorator's own
-    // type name, so the subscription reads as "on User". The
-    // decorator answers only for a class that names nothing.
+    // @Resolver(() => User) on the class wins over the decorator's own type
+    // name, so the subscription comes out as "on User". The decorator only
+    // decides the type when the class decorator was given no argument.
     expect(sub.identity.boundaryBinding?.semantics).toMatchObject({
       name: "graphql-resolver",
       typeName: "User",

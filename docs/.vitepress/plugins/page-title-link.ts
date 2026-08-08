@@ -1,14 +1,14 @@
 // Prettify internal markdown links with the target page's title, and
 // auto-link bare inline-code references to markdown files.
 //
-// Behaviour 1 — link-text rewrite:
+// Behaviour 1: link-text rewrite:
 //   - [boundary-semantics.md](boundary-semantics.md) → [Boundary semantics](…)
 //   - [./packs](./packs) → [Packs](…)
 //   - [cross-boundary-checking](/cross-boundary-checking.md) → […](…)
-// Leaves intentional link text alone — `[see the semantics doc](…)`
+// Leaves intentional link text alone, `[see the semantics doc](…)`
 // doesn't match the filename pattern, so it's a no-op.
 //
-// Behaviour 2 — inline-code auto-link:
+// Behaviour 2: inline-code auto-link:
 //   - `docs/architecture.md` → <a href="/architecture">Architecture</a>
 //   - `boundary-semantics.md` → <a href="/boundary-semantics">Boundary semantics</a>
 // Triggers only when the code content resolves to a file inside docs/
@@ -125,7 +125,7 @@ function processChildren(
       nestedLinkDepth = Math.max(0, nestedLinkDepth - 1);
     }
 
-    // Behaviour 1 — rewrite link text when it's a placeholder (filename-as-text).
+    // Behaviour 1: rewrite link text when it's a placeholder (filename-as-text).
     if (
       nestedLinkDepth > 0 &&
       child.type === "link_open" &&
@@ -171,7 +171,7 @@ function processChildren(
       continue;
     }
 
-    // Behaviour 2 — auto-link inline-code doc references outside any
+    // Behaviour 2: auto-link inline-code doc references outside any
     // existing link.
     if (nestedLinkDepth === 0 && child.type === "code_inline") {
       const content = child.content;

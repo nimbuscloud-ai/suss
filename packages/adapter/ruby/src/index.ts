@@ -1,19 +1,20 @@
 // @suss/adapter-ruby: the Ruby language adapter.
 //
-// Layer 1 for Ruby, per docs/internal/facts-and-rules.md: discover
-// units, emit summaries in the shared IR, emit facts. Everything above
-// that layer (reachability, cross-boundary checking, the CLI) is
-// already language-independent and comes along unchanged once a
-// summary carries a `BoundaryBinding`, the same contract the Python and
-// TypeScript adapters meet.
+// This is Layer 1 for Ruby. It discovers units, emits summaries in the
+// shared IR, and emits facts. Everything above that layer, meaning
+// reachability, cross-boundary checking and the CLI, is already
+// independent of language and works unchanged as soon as a summary
+// comes with a `BoundaryBinding`. That is the same contract the Python
+// and TypeScript adapters meet.
 //
-// See docs/internal/proposals/language-adapters.md for what this slice
-// covers and what it deliberately doesn't: a class-DSL field pattern
-// only, no route-file macro expansion, no path-engine lowering (so a
-// field's transitions are always empty), no `require` resolution beyond
-// class/module nesting. Which library's DSL is being read is entirely
-// the pack's statement: every call name, keyword, scalar, and naming
-// convention arrives through `GraphqlObjectFields` (see pack.ts).
+// This slice reads a class-based field DSL and nothing else. It does
+// not expand route-file macros, it does no path-engine lowering, so a
+// field's transitions are always empty, and it resolves no `require`
+// beyond class and module nesting.
+//
+// Which library's DSL gets read is entirely up to the pack. Every call
+// name, keyword, scalar and naming convention arrives through
+// `GraphqlObjectFields`.
 
 export {
   ancestryOf,
@@ -21,10 +22,7 @@ export {
   methodInAncestry,
   reachDefinition,
 } from "./ancestry.js";
-export {
-  resolveConstantFile,
-  underscoreConstantPath,
-} from "./constantPath.js";
+export { resolveConstantFile, underscoreConstantPath } from "./constantPath.js";
 export {
   createFileCache,
   type DiscoveryOptions,

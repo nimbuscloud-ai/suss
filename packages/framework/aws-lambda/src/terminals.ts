@@ -1,23 +1,25 @@
-// terminals.ts holds the terminal lists this pack extracts against.
-//
-// Two lists because the pack discovers two kinds of unit. Route units
-// answer HTTP, so they get the envelope shapes and nothing else: a
-// return the envelope does not describe stays an unread return, which
-// is the signal that a handler answered in a shape nobody taught the
-// pack. Non-HTTP units (SQS / Schedule / SNS handlers, surfaced as
-// `recognized-not-http`) answer whatever their trigger accepts, so
-// there is no envelope to hold them to; those additionally read any
-// returned object outright.
+/**
+ * The terminal lists this pack extracts against.
+ *
+ * There are two of them because the pack discovers two kinds of unit. A route
+ * unit responds over HTTP, so it gets the envelope patterns and nothing else. A
+ * return the envelope does not describe stays an unread return, which is how we
+ * find out that a handler returned something nobody taught the pack about.
+ *
+ * A non-HTTP unit (an SQS, Schedule, or SNS handler, reported as
+ * `recognized-not-http`) can return whatever its trigger accepts, and there is
+ * no envelope to check it against, so those additionally read any returned
+ * object as it stands.
+ */
 
 import type { TerminalPattern } from "@suss/extractor";
 
 /** What an HTTP route unit can produce. */
 export const HTTP_TERMINALS: TerminalPattern[] = [
   {
-    // `return { statusCode, body, headers? }`, written at the return
-    // site or built by a helper the adapter follows into. `body`
-    // holds the serialized payload, so unwrap `JSON.stringify(x)` to
-    // the shape of `x`.
+    // `return { statusCode, body, headers? }`, written at the return site or
+    // built by a helper the adapter follows into. `body` contains the
+    // serialized payload, so unwrap `JSON.stringify(x)` to the shape of `x`.
     kind: "response",
     match: { type: "returnShape", requiredProperties: ["statusCode"] },
     extraction: {
@@ -26,10 +28,9 @@ export const HTTP_TERMINALS: TerminalPattern[] = [
     },
   },
   {
-    // `return { batchItemFailures }`, which is how a consumer tells
-    // Lambda which records to retry and which to drop. Lambda
-    // defines the shape, so this pack can name it, the same way it
-    // names the HTTP envelope above.
+    // `return { batchItemFailures }`, which is how a consumer tells Lambda
+    // which records to retry and which to drop. Lambda defines this shape, so
+    // the pack can match on it, the same way it matches the envelope above.
     kind: "return",
     match: {
       type: "returnShape",
@@ -49,9 +50,9 @@ export const HTTP_TERMINALS: TerminalPattern[] = [
 
 /**
  * What a non-HTTP unit can produce: everything above, plus any object
- * the handler returns. A scheduled job answers its invoker with an
- * arbitrary summary object, and no envelope constrains it, so the
- * shape written at the return site is the output worth reading.
+ * the handler returns. A scheduled job hands its invoker back some arbitrary
+ * summary object, with no envelope constraining it, so what is written at the
+ * return site is the output worth reading.
  *
  * The named shapes stay first because the matcher takes the first
  * pattern that fits a node, so anything they described before is
@@ -73,11 +74,10 @@ export const NON_HTTP_TERMINALS: TerminalPattern[] = [
     extraction: {},
   },
   {
-    // A queue consumer answers by not throwing: it processes the batch
-    // and falls off the end, and Lambda takes the absence of an error
-    // as the ack. Without this the handler has no terminal at all, so
-    // it carries no transition, and everything it does — the queue it
-    // writes to, the table it reads — goes with it.
+    // A queue consumer acknowledges a batch by not throwing: it processes the
+    // records, falls off the end, and Lambda reads the absence of an error as
+    // the ack. Without this the handler has no terminal, so it gets no
+    // transition, and everything it does goes with it.
     kind: "return",
     match: { type: "functionFallthrough" },
     extraction: {},

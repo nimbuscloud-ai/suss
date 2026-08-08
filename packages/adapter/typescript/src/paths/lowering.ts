@@ -193,7 +193,7 @@ function buildStructured(
 
 /**
  * Case-group lowering: merge TypeScript's stacked empty-bodied labels
- * onto the clause that finally carries a body, matching the legacy
+ * onto the clause that finally has a body, matching the legacy
  * collector's synthetic condition text exactly so transition IDs stay
  * stable. A default clause anywhere but last is a shape the enumeration
  * declines, checked here against the raw clause order. An empty
@@ -330,7 +330,7 @@ export interface LoweredFunctionBody {
  * Lower a function's block body and associate every caller-given
  * terminal with the statement that encloses it in the lowered tree.
  * Throws `UnmodeledFlow("terminal outside the statement flow")` when a
- * terminal sits outside anything the lowering walked, a defensive
+ * terminal is outside anything the lowering walked, a defensive
  * case, since every caller-given terminal is expected to live inside
  * the body it was found in.
  */

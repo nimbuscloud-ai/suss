@@ -38,8 +38,6 @@ describe("loadCloudFormationTemplate", () => {
       ].join("\n"),
     );
 
-    // Every one of these used to parse correctly and warn while doing
-    // it, once per occurrence, which buried the rest of the output.
     const warnings: unknown[] = [];
     const wasEmit = process.emitWarning;
     process.emitWarning = ((...args: unknown[]) => {
@@ -54,7 +52,6 @@ describe("loadCloudFormationTemplate", () => {
     }
 
     expect(warnings).toEqual([]);
-    // A list-form GetAtt names the same thing as the dotted form.
     expect(props.Role).toEqual({ "Fn::GetAtt": ["FnRole", "Arn"] });
     expect(props.When).toEqual(["IsProd", "prod-table", "dev-table"]);
     expect(props.Same).toEqual([{ Ref: "Stage" }, "prod"]);
@@ -77,7 +74,6 @@ describe("loadCloudFormationTemplate", () => {
     const props = template.Resources?.Fn?.Properties as Record<string, unknown>;
     expect(props.Role).toEqual({ "Fn::GetAtt": ["FnRole", "Arn"] });
     expect(props.Queue).toEqual({ Ref: "OrdersQueue" });
-    // Unhandled-value intrinsics collapse to their raw scalar.
     expect(props.Name).toBe("svc-${AWS::Region}");
   });
 
@@ -93,10 +89,7 @@ describe("loadCloudFormationTemplate", () => {
     expect(props.X).toEqual({ "Fn::GetAtt": ["Solo"] });
   });
 
-  it("keeps a nested stack's attribute whole", () => {
-    // Only the first dot separates the logical id from the attribute.
-    // A nested stack's output is read as NestedStack.Outputs.QueueUrl,
-    // and cutting it at every dot loses which output was named.
+  it("splits !GetAtt on the first dot only, keeping a nested stack's output name whole", () => {
     const file = writeTemp(
       "template.yaml",
       [

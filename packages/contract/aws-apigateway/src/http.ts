@@ -1,4 +1,4 @@
-// http.ts — Convert a normalized HttpApiConfig (API Gateway v2) into
+// http.ts: Convert a normalized HttpApiConfig (API Gateway v2) into
 // BehavioralSummary[]. The mechanics are mostly the same as REST: the
 // same platform contracts produce the same status codes. Differences:
 // authorizer set is restricted, throttling lives at API/stage level

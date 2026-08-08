@@ -1,4 +1,4 @@
-// factoryTracking.ts — walk variable declarations to discover bindings
+// factoryTracking.ts: walk variable declarations to discover bindings
 // whose values trace back to a tracked import. Used by packageImport
 // discovery to attribute method calls on factory results / class
 // instances to the originating export.
@@ -16,7 +16,7 @@
 //
 // Bindings are scoped to their enclosing function (or to the source
 // file at top level). `resolve(name, fromNode)` walks outward through
-// enclosing scopes — a binding declared in `outer` is visible from
+// enclosing scopes: a binding declared in `outer` is visible from
 // `inner` when looked up from inside `inner`'s body (closure capture).
 //
 // Out of scope: array destructuring, nested destructuring, default
@@ -88,7 +88,7 @@ export function trackFactoryBindings(
 
   // getVariableDeclarations() returns only top-level declarations.
   // Use the descendant variant to pick up bindings inside function
-  // bodies — the realistic location for factory-result vars.
+  // bodies: the realistic location for factory-result vars.
   for (const varDecl of sourceFile.getDescendantsOfKind(
     SyntaxKind.VariableDeclaration,
   )) {
@@ -129,7 +129,7 @@ export function trackFactoryBindings(
     }
     if (Node.isObjectBindingPattern(nameNode)) {
       for (const elem of nameNode.getElements()) {
-        // Skip rest elements (`const { ...rest } = ...`) — provenance
+        // Skip rest elements (`const { ...rest } = ...`), provenance
         // of a rest object isn't expressible as a single exportPath.
         if (elem.getDotDotDotToken() !== undefined) {
           continue;
@@ -144,7 +144,7 @@ export function trackFactoryBindings(
         });
       }
     }
-    // ArrayBindingPattern intentionally not handled — out of v0 scope.
+    // ArrayBindingPattern intentionally not handled, out of v0 scope.
   }
 
   return {

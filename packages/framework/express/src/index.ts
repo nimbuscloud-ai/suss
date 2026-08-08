@@ -1,4 +1,4 @@
-// @suss/framework-express — PatternPack for Express
+// @suss/framework-express: PatternPack for Express
 
 import { httpRouteDiscovery } from "@suss/extractor";
 
@@ -38,7 +38,7 @@ export function expressFramework(): PatternPack {
         },
       },
       {
-        // res.json(body) — implicit 200
+        // res.json(body): implicit 200
         kind: "response",
         match: {
           type: "parameterMethodCall",
@@ -64,7 +64,7 @@ export function expressFramework(): PatternPack {
         },
       },
       {
-        // res.send(body) — implicit 200
+        // res.send(body): implicit 200
         kind: "response",
         match: {
           type: "parameterMethodCall",
@@ -77,7 +77,7 @@ export function expressFramework(): PatternPack {
         },
       },
       {
-        // res.sendStatus(N) — sends status code with status text as body
+        // res.sendStatus(N): sends status code with status text as body
         kind: "response",
         match: {
           type: "parameterMethodCall",

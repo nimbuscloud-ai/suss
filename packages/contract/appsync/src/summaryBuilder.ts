@@ -1,4 +1,4 @@
-// summaryBuilder.ts — Assemble BehavioralSummary objects from the
+// summaryBuilder.ts: Assemble BehavioralSummary objects from the
 // normalized AppSync model (raw AWS::AppSync::* and SAM
 // AWS::Serverless::GraphQLApi converge here).
 //
@@ -6,7 +6,7 @@
 // observable behavior is gated by its SDL field declaration. One summary
 // is emitted per (TypeName, FieldName) declared by a resolver. Dangling
 // resolvers (no SDL declaration for the target field) still produce a
-// summary — they're a boundary AppSync would fail at deploy time, and
+// summary: they're a boundary AppSync would fail at deploy time, and
 // surfacing them beats silently dropping. Lambda data-source attribution
 // rides on each summary so it can later correlate to handler code.
 
@@ -148,7 +148,7 @@ function buildMetadata(
   };
   // Surface the resolved SDL so the checker can resolve nested
   // selections against this resolver's return type. Repeated across
-  // every resolver from the same API by design — each summary travels
+  // every resolver from the same API by design, each summary travels
   // independently; keeping the SDL on-hand is simpler than
   // cross-summary schema lookup, and the checker caches parses per-SDL.
   if (schemaSdl === null) {
@@ -274,7 +274,7 @@ function buildInputs(field: FieldInfo | null): Input[] {
  *      resolver parsing.
  *
  * When the schema doesn't declare the field, the success transition
- * falls back to a `ref: unknown` return — we still model the boundary,
+ * falls back to a `ref: unknown` return. We still model the boundary,
  * just without shape detail.
  */
 function buildTransitions(

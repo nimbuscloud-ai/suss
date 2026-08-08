@@ -1,4 +1,4 @@
-// index.test.ts — CLI tests (Task 4.1)
+// index.test.ts: CLI tests (Task 4.1)
 
 import fs from "node:fs";
 import os from "node:os";
@@ -40,7 +40,7 @@ function createTempTsConfig(fixtureDir: string): string {
 /**
  * Strip volatile fields (absolute filesystem path, content-addressable hashes)
  * so deep-equal assertions aren't brittle across machines. The transition ID
- * format is `${name}:${kind}:${statusKey}:${sha1-prefix}` — we keep the
+ * format is `${name}:${kind}:${statusKey}:${sha1-prefix}`: we keep the
  * stable prefix and drop the hash.
  */
 function normalize(summary: BehavioralSummary): BehavioralSummary {
@@ -58,14 +58,14 @@ function normalize(summary: BehavioralSummary): BehavioralSummary {
 }
 
 // ---------------------------------------------------------------------------
-// extract — ts-rest fixtures
+// extract: ts-rest fixtures
 // ---------------------------------------------------------------------------
 
-describe("extract — ts-rest", () => {
+describe("extract: ts-rest", () => {
   const fixtureDir = path.join(FIXTURES_ROOT, "ts-rest");
   const tsconfigPath = createTempTsConfig(fixtureDir);
 
-  // ts-morph setup dominates the per-test time — run extract once.
+  // ts-morph setup dominates the per-test time: run extract once.
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
     summaries = await extract({
@@ -176,7 +176,7 @@ describe("extract — ts-rest", () => {
       true,
     ]);
 
-    // Conditions: full chain for the 200 default branch — negations of each
+    // Conditions: full chain for the 200 default branch: negations of each
     // prior guard's predicate.
     const defaultBranch = getUser.transitions[3];
     expect(defaultBranch.conditions).toHaveLength(3);
@@ -241,7 +241,7 @@ describe("extract — ts-rest", () => {
       false,
       true,
     ]);
-    // No gaps — contract declares exactly 201 and 400, both produced.
+    // No gaps: contract declares exactly 201 and 400, both produced.
     expect(createUser.gaps).toEqual([]);
   });
 
@@ -359,7 +359,7 @@ describe("extract, --gaps modes", () => {
     }
 
     // The cache key folds gapHandling in, so two strict runs against
-    // the same tsconfig share an entry: the second call answers from
+    // the same tsconfig share an entry: the second call is served from
     // the manifest the first one wrote, gaps and all, and still fails.
     expect(stderrChunks.join("")).toContain("cache: hit");
     expect(second.map(normalize)).toEqual(first.map(normalize));
@@ -369,10 +369,10 @@ describe("extract, --gaps modes", () => {
 });
 
 // ---------------------------------------------------------------------------
-// extract — express fixtures
+// extract: express fixtures
 // ---------------------------------------------------------------------------
 
-describe("extract — express", () => {
+describe("extract: express", () => {
   const fixtureDir = path.join(FIXTURES_ROOT, "express");
   const tsconfigPath = createTempTsConfig(fixtureDir);
 
@@ -440,10 +440,10 @@ describe("extract — express", () => {
     ]);
 
     // Four response transitions, last two implicit-200 (no status on res.json()).
-    // The admin branch spreads `user` — `user` has a declared type (id, name,
+    // The admin branch spreads `user`: `user` has a declared type (id, name,
     // role), so the spread resolves via the type checker and its fields
     // inline alongside the explicit `admin: true`. The final branch is a
-    // bare identifier (`res.json(user)`) — same type resolution flattens it
+    // bare identifier (`res.json(user)`): same type resolution flattens it
     // into a full record.
     expect(main.transitions.map((t) => t.output)).toEqual([
       {
@@ -552,10 +552,10 @@ describe("extract — express", () => {
 });
 
 // ---------------------------------------------------------------------------
-// extract — react-router fixtures
+// extract: react-router fixtures
 // ---------------------------------------------------------------------------
 
-describe("extract — react-router", () => {
+describe("extract: react-router", () => {
   const fixtureDir = path.join(FIXTURES_ROOT, "react-router");
   const tsconfigPath = createTempTsConfig(fixtureDir);
 
@@ -580,7 +580,7 @@ describe("extract — react-router", () => {
     }
   });
 
-  it("loader has full expected shape — three response transitions with default status codes", () => {
+  it("loader has full expected shape: three response transitions with default status codes", () => {
     const loader = summaries.find((s) => s.kind === "loader");
     if (loader === undefined) {
       expect.unreachable("loader not found");
@@ -662,7 +662,7 @@ describe("extract — react-router", () => {
     }
   });
 
-  it("action has full expected shape — two response transitions", () => {
+  it("action has full expected shape: two response transitions", () => {
     const action = summaries.find((s) => s.kind === "action");
     if (action === undefined) {
       expect.unreachable("action not found");
@@ -680,7 +680,7 @@ describe("extract — react-router", () => {
         },
         headers: {},
       },
-      // Final redirect defaults to 302 — body is null.
+      // Final redirect defaults to 302: body is null.
       {
         type: "response",
         statusCode: { type: "literal", value: 302 },
@@ -693,10 +693,10 @@ describe("extract — react-router", () => {
 });
 
 // ---------------------------------------------------------------------------
-// extract — error cases
+// extract: error cases
 // ---------------------------------------------------------------------------
 
-describe("extract — errors", () => {
+describe("extract: errors", () => {
   it("throws on missing tsconfig", async () => {
     await expect(
       extract({
@@ -897,10 +897,10 @@ describe("inspect", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Consumer extraction — fetch
+// Consumer extraction: fetch
 // ---------------------------------------------------------------------------
 
-describe("consumer extraction — fetch", () => {
+describe("consumer extraction: fetch", () => {
   it(
     "discovers consumer functions from fetch fixture",
     { timeout: 90_000 },
@@ -998,7 +998,7 @@ describe("end-to-end: extract provider + consumer, then check", () => {
 // End-to-end: semantic bridging (the motivating example)
 // ---------------------------------------------------------------------------
 
-describe("end-to-end: semantic bridging — soft-delete motivating example", () => {
+describe("end-to-end: semantic bridging: soft-delete motivating example", () => {
   it(
     "detects that consumer ignores provider's distinguishing body.status literal",
     { timeout: 90_000 },

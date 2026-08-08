@@ -11,7 +11,7 @@ import {
   variable as v,
 } from "./index.js";
 
-/** Transitive closure over a path graph, the shape resolution rules take. */
+/** Transitive closure over a path graph, the same form the resolution rules use. */
 const REACHES = [
   rule("reaches", [v("a"), v("b")], [lit("edge", v("a"), v("b"))]),
   rule(
@@ -93,7 +93,7 @@ describe("evaluation profiling", () => {
       const out = evaluate(db, REACHES);
       const spinUntil = performance.now() + 20;
       while (performance.now() < spinUntil) {
-        // Work outside the engine, which wall time counts and datalog does not.
+        // Work outside the engine: wall time counts it, datalog time does not.
       }
       return out;
     });

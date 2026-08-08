@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// checkPackVocabulary.mjs — a pack may only name identifiers its own
+// checkPackVocabulary.mjs: a pack may only name identifiers its own
 // library defines.
 //
 // A pack that hardcodes a name some particular codebase chose gives
@@ -136,7 +136,7 @@ function keysOfIdentifierMap(node) {
 }
 
 /**
- * Every identifier a file names, with the line it names it on. The
+ * Every identifier a file mentions, with the line it appears on. The
  * pack scan reads both string literals and identifier-keyed map keys;
  * the adapter scan reads literals only, because an adapter's own
  * property names are its code structure, not a claim about a library.

@@ -11,7 +11,7 @@ import { tsRestFramework } from "./index.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
-// Fixture project — adds fixtures/ts-rest/*.ts to an in-memory ts-morph project
+// Fixture project: adds fixtures/ts-rest/*.ts to an in-memory ts-morph project
 // ---------------------------------------------------------------------------
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/ts-rest");
@@ -61,11 +61,11 @@ describe("tsRestFramework — pack shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration — run the adapter against the ts-rest fixture
+// Integration: run the adapter against the ts-rest fixture
 // ---------------------------------------------------------------------------
 
 describe("tsRestFramework — integration", () => {
-  // ts-morph project setup dominates — build the summaries once and reuse.
+  // ts-morph project setup dominates, build the summaries once and reuse.
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
     summaries = await runAdapter();
@@ -198,7 +198,7 @@ describe("tsRestFramework — integration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Composed contracts — `s.router(apiContract.internal, { ... })`
+// Composed contracts: `s.router(apiContract.internal, { ... })`
 // ---------------------------------------------------------------------------
 //
 // Real-world ts-rest servers compose a top-level contract from sub-namespaces

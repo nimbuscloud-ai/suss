@@ -1,9 +1,12 @@
-// project.ts: the adapter's whole contract, per facts-and-rules.md and
-// the roadmap: discover units, emit summaries in the shared IR, emit
-// facts. Parses every given file, runs discovery over it, hands each
-// discovered unit to `@suss/extractor`'s `assembleSummary` (the same
-// assembly Layer 3 the Python and TypeScript adapters use), and emits
-// this run's facts into one shared `Database`.
+// project.ts: the adapter's whole contract, which is to discover units,
+// emit summaries in the shared IR, and emit facts.
+//
+// It parses every file it is given, runs discovery over each one, hands
+// each discovered unit to `@suss/extractor`'s `assembleSummary`, and
+// emits this run's facts into one shared `Database`. That assembly
+// layer is the same one the Python and TypeScript adapters use, so gap
+// detection and confidence scoring are one implementation all three
+// languages share.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -22,7 +25,7 @@ export interface ExtractRubyOptions {
   /** Absolute paths of the files to parse and extract. */
   files: string[];
   packs: RubyPack[];
-  /** When set, `location.file` on each summary is relativized against this, mirroring `suss extract`'s repo-relative paths. */
+  /** When set, `location.file` on each summary is relativized against this. */
   workspaceRoot?: string;
 }
 
@@ -36,10 +39,8 @@ export async function extractRubyProject(
 ): Promise<ExtractRubyResult> {
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
-  // One cache for the whole run: a class referenced from a field
-  // through a wiring keyword parses once, whether it's also one of
-  // `options.files` or reached only through the constant-to-path
-  // convention.
+  // One cache for the whole run, so a class that shows up both as an input file
+  // and through a wiring keyword only gets parsed once.
   const cache = createFileCache(
     (source) => parseRuby(source).then((tree) => tree.rootNode),
     (absPath) =>
@@ -51,10 +52,8 @@ export async function extractRubyProject(
     if (root === null) {
       continue;
     }
-    // Facts key on the filesystem path throughout, since they're an
-    // internal join surface rather than user-facing text. The
-    // summary's own `location.file` is what a project's workspace
-    // convention gets to shorten.
+    // Facts keep the full filesystem path, because they are joined against
+    // internally. Only the summary's `location.file` gets shortened.
     const displayPath =
       options.workspaceRoot !== undefined
         ? path.relative(options.workspaceRoot, file)
@@ -67,12 +66,9 @@ export async function extractRubyProject(
     });
     for (const raw of rawUnits) {
       const summary = assembleSummary(raw, { gapHandling: "permissive" });
-      // A field carries the method behind it, and nothing traced
-      // through that method: v0 does no path-engine work, per the
-      // language-adapters proposal. So confidence is pinned low here
-      // rather than left to a heuristic built for a transition-bearing
-      // summary, the same convention the Python adapter's v0 slice
-      // follows.
+      // `assembleSummary` scores confidence on the assumption that a unit's
+      // branches came from tracing its body. Nothing here traces a body, so
+      // that score would be meaningless and we set confidence directly.
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
@@ -84,7 +80,7 @@ export async function extractRubyProject(
 
 const SKIPPED_DIRECTORIES = new Set(["vendor", "node_modules", "tmp", ".git"]);
 
-/** Every `.rb` file under `root`, depth-first, skipping the usual non-source directories. Convenience for callers extracting a whole project rather than a hand-picked file list. */
+/** Every `.rb` file under `root`, depth-first, skipping the usual non-source directories. */
 export function findRubyFiles(root: string): string[] {
   const found: string[] = [];
   const walk = (dir: string): void => {

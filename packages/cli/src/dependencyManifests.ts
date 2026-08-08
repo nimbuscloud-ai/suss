@@ -1,18 +1,18 @@
-// dependencyManifests.ts: the libraries a Python or Ruby project says
-// it depends on, and the places suss looked and could not tell.
-//
-// package.json answers this question in one line of JSON.parse. The
-// other two ecosystems do not. A requirements file has a grammar
-// (extras, version specifiers, environment markers, URL installs, and
-// includes pointing at further files), pyproject spells the same list
-// three ways depending on which tool wrote it, and setup.py and Gemfile
-// are programs that compute their answer rather than stating it.
-//
-// So every reader here answers in two parts: the names it read, and the
-// files or lines it could not read, with why. A project whose manifest
-// suss cannot read is a project suss cannot suggest packs for, and
-// saying that is the whole point. Suggesting nothing looks the same as
-// finding nothing.
+/**
+ * The libraries a Python or Ruby project says it depends on, and the
+ * places suss looked and could not tell.
+ *
+ * For package.json this is one call to JSON.parse. The other two
+ * ecosystems are harder: requirements files have a whole grammar,
+ * pyproject spells the same list three ways depending on which tool
+ * wrote it, and setup.py and Gemfile are programs that compute their
+ * dependencies rather than listing them. The README has a table of
+ * what each format takes to read.
+ *
+ * So each reader returns two things, the names it managed to read and
+ * the files it could not, because coming back with no suggestions looks
+ * exactly like finding nothing to suggest.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -29,15 +29,13 @@ import {
 import type { Reading } from "@suss/extractor";
 import type { Requirement } from "pip-requirements-js";
 
-/** A library a project depends on, and the file that said so. */
 export interface DeclaredDependency {
   /** Normalized library name: lower case, with `_` and `.` written as `-`. */
   name: string;
-  /** The manifest that named it, relative to the project root. */
+  /** The manifest that listed it, relative to the project root. */
   where: string;
 }
 
-/** Somewhere suss looked for dependencies and could not read one. */
 export interface UnreadDependencies {
   /** The file, relative to the project root. */
   where: string;
@@ -50,10 +48,7 @@ export interface DeclaredDependencies {
   unread: UnreadDependencies[];
 }
 
-/**
- * PEP 503 normalization, which is what makes `Flask-RESTX`,
- * `flask_restx`, and `flask.restx` one library rather than three.
- */
+/** PEP 503 normalization. */
 export function normalizePythonName(name: string): string {
   return name.toLowerCase().replace(/[-_.]+/g, "-");
 }
@@ -67,11 +62,6 @@ function merge(parts: DeclaredDependencies[]): DeclaredDependencies {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Python
-// ---------------------------------------------------------------------------
-
-/** Requirements files as they are actually named in the wild. */
 const REQUIREMENTS_FILES = [
   "requirements.txt",
   "requirements.in",
@@ -79,11 +69,6 @@ const REQUIREMENTS_FILES = [
   "requirements-test.txt",
 ];
 
-/**
- * What every Python packaging file in this project says, read in the
- * order the files are common: requirements files first, then pyproject,
- * then the declarative and program-shaped stragglers.
- */
 export function readPythonDependencies(root: string): DeclaredDependencies {
   const parts: DeclaredDependencies[] = [];
 
@@ -133,15 +118,7 @@ export function readPythonDependencies(root: string): DeclaredDependencies {
   return merge(parts);
 }
 
-/**
- * One requirements file, and any file it includes with `-r` or `-c`.
- *
- * The parser reads the whole file at once and refuses all of it when
- * one line is outside the grammar, which a bare VCS URL or a pip
- * setting like `--index-url` is. So a file that will not parse whole is
- * read a line at a time: the lines that state a library still count,
- * and the ones that do not are reported rather than dropped.
- */
+/** Follows `-r` and `-c` includes. */
 function readRequirementsFile(
   root: string,
   file: string,
@@ -173,7 +150,6 @@ function readRequirementsFile(
   return merge(parts);
 }
 
-/** One logical line of a requirements file. */
 function readRequirementLine(
   root: string,
   file: string,
@@ -186,9 +162,7 @@ function readRequirementLine(
     return empty();
   }
 
-  // An editable install points at a directory whose own pyproject or
-  // setup.py states the libraries, so the name is not on this line to
-  // be read.
+  // An editable install points at a directory, not at a library.
   if (text.startsWith("-e ") || text.startsWith("--editable ")) {
     return {
       named: [],
@@ -205,8 +179,7 @@ function readRequirementLine(
   try {
     requirement = parsePipRequirementsLine(text);
   } catch {
-    // A pip setting states no library and hides nothing, so it is not
-    // worth reporting; anything else on a line suss cannot parse is.
+    // A pip setting is not a library, so skipping it hides nothing.
     if (text.startsWith("-")) {
       return empty();
     }
@@ -241,7 +214,6 @@ interface RequirementContext<T extends Requirement = Requirement> {
   visited: Set<string>;
 }
 
-/** Follow an include, or report it when the file it names is missing. */
 function followInclude(
   context: RequirementContext<
     Extract<Requirement, { type: "RequirementsFile" | "ConstraintsFile" }>
@@ -274,8 +246,7 @@ const READ_REQUIREMENT_TABLE: ReadRequirementTable = {
     named: [{ name: normalizePythonName(requirement.name), where }],
     unread: [],
   }),
-  // `name @ https://...` states the library name before the URL, which
-  // is all suss needs.
+  // `name @ https://...` gives the library name before the URL.
   ProjectURL: ({ requirement, where }) => ({
     named: [{ name: normalizePythonName(requirement.name), where }],
     unread: [],
@@ -323,11 +294,7 @@ function tableAt(value: unknown, ...keys: string[]): TomlTable | null {
     : null;
 }
 
-/**
- * pyproject states dependencies in whichever spelling the tool that
- * wrote it uses, so all three are read: the standard `project`
- * dependencies, and Poetry's own two tables.
- */
+/** pyproject spells dependencies three ways: standard, and Poetry's two. */
 function readPyproject(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
   let parsed: unknown;
@@ -363,8 +330,8 @@ function readPyproject(root: string, file: string): DeclaredDependencies {
     }
   }
 
-  // A project whose dependencies are computed at build time states
-  // that, so suss can say it looked rather than say there were none.
+  // Dependencies marked dynamic are computed at build time, so suss
+  // reports that it looked rather than that there were none.
   const dynamic = project?.dynamic;
   if (Array.isArray(dynamic) && dynamic.includes("dependencies")) {
     unread.push({
@@ -380,7 +347,7 @@ function readPyproject(root: string, file: string): DeclaredDependencies {
       continue;
     }
     for (const key of Object.keys(poetry)) {
-      // Poetry states the interpreter itself in the same table.
+      // Poetry lists the interpreter in the same table as the libraries.
       if (key === "python") {
         continue;
       }
@@ -419,12 +386,8 @@ function readPipfile(root: string, file: string): DeclaredDependencies {
 }
 
 /**
- * setup.cfg is setup.py's declarative sibling, and mostly its
- * `install_requires` is a list of requirement lines. setuptools also
- * lets it point somewhere else, at a file (`file: requirements.txt`) or
- * at an attribute of the package itself (`attr: mypkg.__requires__`),
- * and then the list is no more written here than a computed one in
- * setup.py is.
+ * setup.cfg's `install_requires`, which is usually requirement lines
+ * but may point at a file or a package attribute instead.
  */
 function readSetupCfg(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
@@ -468,10 +431,8 @@ function readSetupCfg(root: string, file: string): DeclaredDependencies {
 }
 
 /**
- * setup.py is a program. Where it hands `install_requires` a list
- * written out in the file, that list is as good as a manifest; where it
- * hands it anything else, the answer exists only once Python has run,
- * and suss says so rather than reporting an empty list.
+ * setup.py is a program, so only an `install_requires` list written out
+ * in the file can be read.
  */
 function readSetupPy(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
@@ -508,10 +469,6 @@ function readSetupPy(root: string, file: string): DeclaredDependencies {
   return read(reading);
 }
 
-/**
- * The requirement strings `install_requires` is handed, when they are
- * written out rather than computed.
- */
 export function readInstallRequires(source: string): Reading<string[]> {
   const keyword = source.match(/install_requires\s*=/);
   if (keyword?.index === undefined) {
@@ -542,8 +499,8 @@ export function readInstallRequires(source: string): Reading<string[]> {
   const strings = [...inside.matchAll(/["']([^"']*)["']/g)].map(
     (match) => match[1] ?? "",
   );
-  // Anything in the list other than the strings themselves means part
-  // of it is computed, and the part suss can see is not the whole.
+  // A non-string element means part of the list is computed, so what
+  // suss can see here is not the whole list.
   const leftover = inside
     .replace(/["'][^"']*["']/g, "")
     .replace(/[\s,]/g, "")
@@ -561,7 +518,6 @@ export function readInstallRequires(source: string): Reading<string[]> {
   });
 }
 
-/** The library a PEP 508 requirement string names, when it names one. */
 function nameOfRequirement(requirement: string): string | null {
   try {
     const parsed = parsePipRequirementsLine(requirement.trim());
@@ -574,18 +530,7 @@ function nameOfRequirement(requirement: string): string | null {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Ruby
-// ---------------------------------------------------------------------------
-
-/**
- * What a Ruby project says it depends on.
- *
- * A Gemfile is Ruby, and its gem list can be built by a loop, a
- * conditional, or a call into another file, so suss reads Gemfile.lock,
- * which bundler writes out and which states the same direct
- * dependencies as data. A project with no lock file gets told that.
- */
+/** Read from Gemfile.lock: the Gemfile itself is a program. */
 export function readRubyDependencies(root: string): DeclaredDependencies {
   const lock = path.join(root, "Gemfile.lock");
   if (fs.existsSync(lock)) {
@@ -608,12 +553,8 @@ export function readRubyDependencies(root: string): DeclaredDependencies {
   return empty();
 }
 
-/**
- * The gems a lock file names as this project's own, which is what its
- * DEPENDENCIES section holds. The GEM section below it lists everything
- * those gems pulled in as well, and suggesting a pack for a library
- * this project never asked for would be a worse answer.
- */
+/** DEPENDENCIES only, because the GEM section below it also contains
+ * transitive gems the project never asked for. */
 function readGemfileLock(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
   const contents = fs.readFileSync(file, "utf8");

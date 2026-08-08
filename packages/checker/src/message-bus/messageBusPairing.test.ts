@@ -1,10 +1,3 @@
-// Unit tests for the body-shape pairing pass in checkMessageBus.
-//
-// Wiring-finding paths (orphan / unused) are exercised by the
-// CLI's awsSqsIntegration end-to-end test against the real fixture;
-// these tests focus on the body-shape branches with hand-built
-// summaries so the coverage threshold doesn't drift on us silently.
-
 import { describe, expect, it } from "vitest";
 
 import { checkAll } from "../index.js";
@@ -27,7 +20,6 @@ function consumerSummary(opts: {
   name: string;
   channel: string;
   codeScopePath: string;
-  /** Queue logical id kept in metadata when the channel is a subject. */
   queue?: string;
 }): BehavioralSummary {
   return {
@@ -66,7 +58,7 @@ function consumerSummary(opts: {
 function producerSummary(opts: {
   name: string;
   filePath: string;
-  /** Null models a send whose queue the code names at runtime. */
+  /** Null is a send whose queue the code only works out at runtime. */
   channel: string | null;
   bodyFields?: string[] | null;
   messageBus?: "sqs" | "eventbridge";
@@ -132,8 +124,6 @@ function consumerCodeSummary(opts: {
       semantics: {
         name: "message-bus",
         messageBus: "sqs",
-        // The queue a handler drains is stated by the event-source
-        // mapping, so the receive effect does not name it.
         channel: null,
       },
       recognition: "@suss/framework-aws-sqs",
@@ -260,7 +250,7 @@ describe("body-shape pairing", () => {
         name: "OrderProducer",
         filePath: "src/order-producer/index.ts",
         channel: "OrdersQueue",
-        bodyFields: null, // opaque — `JSON.stringify(event.order)` style
+        bodyFields: null, // opaque: `JSON.stringify(event.order)` style
       }),
       consumerSummary({
         name: "OrderConsumer",
@@ -334,10 +324,6 @@ describe("body-shape pairing", () => {
     ).toEqual([]);
   });
 });
-
-// ---------------------------------------------------------------------------
-// EventBridge pairing
-// ---------------------------------------------------------------------------
 
 function eventBridgeProducer(opts: {
   name: string;
@@ -515,10 +501,7 @@ describe("eventbridge pairing", () => {
     ).toEqual([]);
   });
 
-  it("keeps a detail-type that carries a hash of its own", () => {
-    // The bus and the detail-type are separated by the first hash.
-    // A later one belongs to the detail-type and stays there, or the
-    // producer resolves to a channel the rule never declared.
+  it("splits an EventBridge channel on the first hash, keeping a detail-type that carries a hash of its own", () => {
     const summaries = [
       eventBridgeProvider("OrderEventBus#Order#Placed"),
       eventBridgeConsumer({
@@ -547,9 +530,7 @@ describe("eventbridge pairing", () => {
     ).toEqual([]);
   });
 
-  it("leaves a hash inside an SQS queue name alone", () => {
-    // Only EventBridge writes two things into one channel. Everywhere
-    // else the whole channel is the queue's identity, hash and all.
+  it("leaves a hash inside an SQS queue name alone, since only EventBridge splits a channel", () => {
     const summaries = [
       consumerSummary({
         name: "OrdersQueue",
@@ -577,7 +558,7 @@ describe("eventbridge pairing", () => {
     ).toEqual([]);
   });
 
-  it("flags an orphan producer when the env-derived bus can't chain-collapse", () => {
+  it("flags an orphan producer when no runtime-config provider resolves the env var naming the bus", () => {
     const summaries = [
       eventBridgeProvider("OrderEventBus#OrderPlaced"),
       eventBridgeProducer({
@@ -585,7 +566,6 @@ describe("eventbridge pairing", () => {
         filePath: "src/order-producer/index.ts",
         channel: "ORDER_EVENT_BUS_NAME#OrderPlaced",
       }),
-      // No runtime-config provider → env var stays unresolved.
     ];
     const findings = checkMessageBus(summaries);
     const orphan = findings.find((f) => f.kind === "messageBusProducerOrphan");
@@ -613,7 +593,7 @@ describe("eventbridge pairing", () => {
     }
   });
 
-  it("surfaces an unresolvable rule as unsupportedSemantics (info), not an orphan", () => {
+  it("surfaces an unresolvable rule as unsupportedSemantics (info) and reports no consumer orphan for it", () => {
     const summaries = [
       eventBridgeConsumer({
         name: "AuditConsumer.OnAnyOrderChange",
@@ -633,7 +613,6 @@ describe("eventbridge pairing", () => {
     expect(unresolvable?.description).toContain(
       "AuditConsumer.OnAnyOrderChange",
     );
-    // Not double-reported as a consumer orphan.
     expect(
       findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
     ).toEqual([]);
@@ -719,7 +698,7 @@ describe("sns pairing", () => {
     }
   });
 
-  it("surfaces a FilterPolicy subscription as unsupportedSemantics naming the subscription, not an EventBridge rule", () => {
+  it("surfaces a FilterPolicy subscription as unsupportedSemantics naming the subscription rather than an EventBridge rule, and reports no consumer orphan for it", () => {
     const summaries = [
       snsConsumer({
         name: "OrderProcessor.ToOrderProcessor",
@@ -738,7 +717,6 @@ describe("sns pairing", () => {
     expect(unresolvable?.description).toContain("SNS subscription");
     expect(unresolvable?.description).toContain("ToOrderProcessor");
     expect(unresolvable?.description).not.toContain("EventBridge rule");
-    // Not double-reported as a consumer orphan.
     expect(
       findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
     ).toEqual([]);
@@ -807,7 +785,7 @@ describe("s3 pairing", () => {
     }
   });
 
-  it("surfaces a Filter notification as unsupportedSemantics naming the notification, not an EventBridge rule", () => {
+  it("surfaces a Filter notification as unsupportedSemantics naming the notification rather than an EventBridge rule, and reports no consumer orphan for it", () => {
     const summaries = [
       s3Consumer({
         name: "ImageProcessor.Uploads.LambdaConfiguration0",
@@ -826,7 +804,6 @@ describe("s3 pairing", () => {
     expect(unresolvable?.description).toContain("S3 notification");
     expect(unresolvable?.description).toContain("Uploads.LambdaConfiguration0");
     expect(unresolvable?.description).not.toContain("EventBridge rule");
-    // Not double-reported as a consumer orphan.
     expect(
       findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
     ).toEqual([]);
@@ -850,11 +827,6 @@ describe("s3 pairing", () => {
   });
 });
 
-/**
- * A code unit the aws-lambda pack bound to the subject its handler
- * factory names: a handler-kind summary carrying a message-bus binding
- * rather than a declared subscription.
- */
 function codeReceiver(opts: {
   name: string;
   filePath: string;
@@ -973,10 +945,7 @@ describe("subject-channelled consumers", () => {
     ).toHaveLength(0);
   });
 
-  it("does not orphan a producer whose subject a consumer answers", () => {
-    // A wrapper names the subject and the template names the queue, so
-    // no provider carries the subject as its channel. The handler bound
-    // to that subject is what says the channel exists.
+  it("does not orphan a producer whose subject a consumer answers, even though no provider declares that subject", () => {
     const summaries = [
       queueProvider("OrdersQueue"),
       producerSummary({
@@ -1140,11 +1109,7 @@ describe("subject-channelled consumers", () => {
   });
 });
 
-describe("sends whose queue the code names at runtime", () => {
-  // The recognizer records such a send with a null channel. There is
-  // no name to pair on, so the checker must neither call the send an
-  // orphan nor let it stand in for a producer on some named channel.
-
+describe("sends whose queue the code names at runtime, recorded with a null channel", () => {
   it("does not orphan a send with no channel", () => {
     const summaries = [
       queueProvider("OrdersQueue"),
@@ -1160,9 +1125,6 @@ describe("sends whose queue the code names at runtime", () => {
     ).toHaveLength(0);
   });
 
-  // This held before the fix as well (an empty subject matched no named
-  // one). It pins that the fix stays narrow: an unnamed send must not
-  // widen into a producer for every declared queue.
   it("counts unnamed sends into the unused caveat only on the queue's own technology", () => {
     const summaries = [
       queueProvider("OrdersQueue"),
@@ -1198,11 +1160,6 @@ describe("sends whose queue the code names at runtime", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Integration with checkAll
-// ---------------------------------------------------------------------------
-
-/** A code handler bound to a channel: the side that answers. */
 function handlerSummary(name: string, channel: string): BehavioralSummary {
   return {
     kind: "handler",
@@ -1269,9 +1226,6 @@ describe("checkAll, message-bus pairing integration", () => {
   });
 
   it("leaves every judgement about an unpaired channel to checkMessageBus", () => {
-    // A declared queue nobody sends to or drains. `messageBusUnused`
-    // says so, with a severity. The unmatched list must not say it a
-    // second time in weaker words.
     const queue = consumerSummary({
       name: "OrdersQueue",
       channel: "OrdersQueue",

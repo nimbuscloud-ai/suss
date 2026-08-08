@@ -14,7 +14,7 @@ const raise = (msg: string): never => {
 };
 
 // ---------------------------------------------------------------------------
-// Fixture project — loads fixtures/react/*.tsx in memory
+// Fixture project: loads fixtures/react/*.tsx in memory
 // ---------------------------------------------------------------------------
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/react");
@@ -34,7 +34,7 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
 // Pack-shape structural checks
 // ---------------------------------------------------------------------------
 
-describe("reactFramework — pack shape", () => {
+describe("reactFramework: pack shape", () => {
   it("exposes component discovery via the default export", () => {
     const pack = reactFramework();
     expect(pack.name).toBe("react");
@@ -63,10 +63,10 @@ describe("reactFramework — pack shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration — run the adapter against the JSX fixtures
+// Integration: run the adapter against the JSX fixtures
 // ---------------------------------------------------------------------------
 
-describe("reactFramework — integration", () => {
+describe("reactFramework: integration", () => {
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
     summaries = await runAdapter();
@@ -175,7 +175,7 @@ describe("reactFramework — integration", () => {
     const out = button.transitions[0].output;
     expect(out.type).toBe("render");
     // <button type="button">...</button> is a regular (not self-closing)
-    // JSX element — exercised to confirm getTagNameNode works across
+    // JSX element: exercised to confirm getTagNameNode works across
     // both shapes.
     if (out.type === "render") {
       expect(out.component).toBe("button");
@@ -202,7 +202,7 @@ describe("reactFramework — integration", () => {
       throw new Error("expected element root");
     }
     expect(root.tag).toBe("div");
-    // `<div>{user.name}</div>` — one dynamic expression child carrying
+    // `<div>{user.name}</div>`: one dynamic expression child carrying
     // the original source text.
     expect(root.children).toHaveLength(1);
     expect(root.children[0]).toEqual({
@@ -495,7 +495,7 @@ describe("reactFramework — integration", () => {
       raise("effect summary not found");
     expect(effect?.kind).toBe("handler");
     expect(effect?.identity.boundaryBinding?.recognition).toBe("react");
-    // React uses the "in-process" transport class — no network hop.
+    // React uses the "in-process" transport class: no network hop.
     expect(effect?.identity.boundaryBinding?.transport).toBe("in-process");
   });
 
@@ -513,7 +513,7 @@ describe("reactFramework — integration", () => {
 
   it("Counter's onClick handler has a default transition (fall-through)", () => {
     // Counter's onClick body does side-effect work and falls off the
-    // end — no explicit return. Without the fall-through opt-in, this
+    // end: no explicit return. Without the fall-through opt-in, this
     // would show up with `transitions: []`.
     const handler =
       summaries.find((s) => s.identity.name === "Counter.button.onClick") ??
@@ -574,7 +574,7 @@ describe("reactFramework — integration", () => {
       throw new Error("expected button element");
     }
     expect(button.attrs).toBeDefined();
-    // String-literal attribute keeps its quotes — raw source text.
+    // String-literal attribute keeps its quotes: raw source text.
     expect(button.attrs?.type).toBe('"button"');
     // Expression attribute keeps the full expression source text, so
     // downstream matchers can resolve it to a handler summary name
@@ -587,7 +587,7 @@ describe("reactFramework — integration", () => {
     const userCard =
       summaries.find((s) => s.identity.name === "UserCard") ??
       raise("userCard summary not found");
-    // UserCard returns `<div>{user.name}</div>` — no attrs.
+    // UserCard returns `<div>{user.name}</div>`: no attrs.
     const renderTxn = userCard.transitions[1];
     const out = renderTxn.output;
     if (out.type !== "render") {
@@ -614,9 +614,9 @@ describe("reactFramework — integration", () => {
       throw new Error("expected element root");
     }
     expect(root.tag).toBe("form");
-    // Named identifier reference — the React pack's naming rule
-    // maps this to `Form.handleSubmit` via subUnits; here we verify
-    // the tree carries the raw identifier for consumers to resolve.
+    // A named identifier reference. The React pack's naming rule maps this to
+    // `Form.handleSubmit` through subUnits. Here we check that the tree keeps
+    // the raw identifier for consumers to resolve.
     expect(root.attrs?.onSubmit).toBe("handleSubmit");
   });
 

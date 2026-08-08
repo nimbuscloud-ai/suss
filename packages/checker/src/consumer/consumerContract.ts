@@ -1,4 +1,4 @@
-// consumer-contract.ts — Level 3: Consumer inferred vs declared contract
+// consumer-contract.ts: Level 3: Consumer inferred vs declared contract
 //
 // Checks whether the consumer depends on fields that the declared contract
 // doesn't guarantee. If the consumer reads `body.role` but the declared

@@ -1,16 +1,15 @@
-// What a unit reads out of what it was given.
-//
-// A summary said this already, in a way nobody could use. An input
-// reference carried an empty `path` in every one of the 5,565 that suss
-// produces reading itself, and what a handler actually reached for was
-// spelled out somewhere else, as `derived` nodes nested one inside the
-// next. Somebody asking "what does this read" wrote a recursive
-// renderer by hand, and somebody querying the obvious field got nothing
-// back and concluded the answer was missing.
-//
-// So the summary answers the question instead of leaving it to be
-// reconstructed. Everything a unit reaches for through its inputs, once
-// each, in the order a reader would say them.
+/**
+ * What a unit reads out of what it was given.
+ *
+ * A summary already describes this, but only as a chain of `derived` nodes
+ * nested one inside the next, which anyone who wants the list has to walk
+ * themselves. The `path` on an input reference is empty, so querying the
+ * field that looks like the answer gives nothing back.
+ *
+ * This module flattens that into the list directly: everything a unit reaches
+ * for through its inputs, once each, in the order somebody would say them out
+ * loud. It goes on the summary as `inputReads`.
+ */
 
 import type { Predicate, ValueRef } from "@suss/behavioral-ir";
 
@@ -26,10 +25,10 @@ export interface InputRead {
  * Everything a unit reads out of its inputs, once each.
  *
  * A read is a chain of derivations ending at an input, so the walk goes
- * down to the input and builds the path back up. A derivation this does
- * not have a name for, an element access or a call in the middle, ends
- * the path there: what was reached is still worth saying, and inventing
- * a name for how would be worse than stopping.
+ * down to the input and builds the path back up. A derivation with no name
+ * to give, an element access or a call in the middle, ends
+ * the path there. What was reached is still worth reporting, and inventing
+ * a name for how it was reached would be worse than stopping.
  */
 export function inputReadsOf(args: {
   conditions: Predicate[][];
@@ -61,7 +60,7 @@ export function inputReadsOf(args: {
   );
 }
 
-/** The read a value stands for, or null when it does not come from an input. */
+/** The read this value represents, or null when it does not come from an input. */
 function readOf(value: ValueRef, depth = 0): InputRead | null {
   if (depth > 12) {
     return null;
@@ -82,7 +81,7 @@ function readOf(value: ValueRef, depth = 0): InputRead | null {
     : { input: inner.input, path: [...inner.path, step] };
 }
 
-/** What one derivation adds to a path, or null when it adds no name. */
+/** What one derivation adds to a path, or null when it has no name to add. */
 function stepOf(derivation: {
   type: string;
   [key: string]: unknown;

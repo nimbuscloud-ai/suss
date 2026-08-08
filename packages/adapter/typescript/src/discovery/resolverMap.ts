@@ -1,13 +1,13 @@
-// resolverMap.ts (discovery handler) — GraphQL code-first resolvers
+// resolverMap.ts (discovery handler): GraphQL code-first resolvers
 // (Apollo Server, GraphQL Yoga, …). Finds `new ApolloServer({
 // resolvers })` constructions and emits one unit per `Type.field`
 // resolver function.
 //
 // The map, the per-type object, the function under a field and the
-// schema are each asked of the fact layer, so a resolver map assembled
-// across modules reads the same as one written at the construction. A
-// spread in either object is the same question again, asked of the name
-// being spread.
+// schema each go through the fact layer, so a resolver map assembled
+// across several modules comes out the same as one written inline at the
+// construction. A spread in either object is the same question again,
+// asked about the name being spread.
 
 import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 
@@ -59,7 +59,6 @@ export function discoverResolverMaps(
     }
     const config = args[0];
 
-    // Find the resolvers property on the config object.
     const resolversProp = config.getProperty(mapProperty);
     if (resolversProp === undefined) {
       return;
@@ -112,12 +111,12 @@ export function discoverResolverMaps(
 }
 
 /**
- * The object literal holding `Type.field` functions, given the property
- * that names the resolver map on the config object.
+ * The object literal of `Type.field` functions, given the config
+ * object's resolver-map property.
  *
- * The map is written inline, handed over by name, or built in another
- * module and imported, and the fact layer follows all three without any
- * of them being written down here.
+ * The map is written inline, passed by name, or built in another module
+ * and imported. The fact layer follows all three, so none of them have
+ * to be handled here.
  */
 function resolverMapObject(
   prop: Node,
@@ -128,10 +127,10 @@ function resolverMapObject(
 }
 
 /**
- * The SDL the `typeDefs` property of an ApolloServer config states.
+ * The SDL under the `typeDefs` property of an ApolloServer config.
  *
  * A schema composed at run time (`mergeTypeDefs([...])`, an array of
- * sources) has no written form to read, and the answer is null. The
+ * sources) has no written form to read, so this returns null. The
  * checker's selection pairing treats a missing SDL as nothing to
  * validate against rather than as an empty schema.
  */
@@ -151,9 +150,9 @@ function extractTypeDefsSdl(
 }
 
 /**
- * The SDL a value carries. A name is followed to the expression it is
- * written as, which is the same question the GraphQL recognizers ask
- * about a document held in a constant.
+ * The SDL a value comes down to. A name is followed to the expression it
+ * was assigned, which is the same question the GraphQL recognizers ask
+ * about a document kept in a constant.
  */
 function schemaSdlOf(
   expr: Node,
@@ -170,7 +169,7 @@ function schemaSdlOf(
   return resolved === null ? null : writtenSdl(resolved);
 }
 
-/** The SDL an expression written out here states, when it states one. */
+/** The SDL an expression written out here gives, when it gives one. */
 function writtenSdl(expr: Node): string | null {
   if (
     Node.isStringLiteral(expr) ||
@@ -186,7 +185,7 @@ function writtenSdl(expr: Node): string | null {
     if (Node.isIdentifier(tag) && tag.getText() === "gql") {
       const template = expr.getTemplate();
       // Substitutions inside typeDefs are not legal SDL, so only a
-      // no-substitution template says anything readable.
+      // template without them can be read.
       if (Node.isNoSubstitutionTemplateLiteral(template)) {
         return template.getLiteralValue();
       }

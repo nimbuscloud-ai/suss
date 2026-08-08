@@ -1,4 +1,4 @@
-// moduleInit.ts — the summary for what a module does when it loads.
+// moduleInit.ts: the summary for what a module does when it loads.
 //
 // Every other unit in a summary set is a function somebody calls. A
 // module has behavior of its own before any of them run: the top-level
@@ -9,17 +9,17 @@
 //
 // The read belongs to the module rather than to any handler the module
 // happens to declare, so it gets a unit of its own: one per file, named
-// for the file, carrying no boundary of its own. Attributing it to each
+// after the file, with no boundary of its own. Attributing it to each
 // declared handler instead would report one read as several, and a file
-// that declares no handler at all — which is most of the files where
-// this shows up — would still report nothing.
+// that declares no handler at all, which is most of the files where this
+// shows up, would still report nothing.
 //
-// What that means for pairing: the summary carries no `deployableUnit`,
-// so `checkRuntimeConfig` scopes it by the declaring template's
-// `codeScope` path, the same way it scopes any code summary whose
-// deployable unit is unknown. A template that scopes a runtime to the
-// project root therefore sees every module's load-time reads, which is
-// what scoping a runtime to the project root says.
+// What that means for pairing: the summary has no `deployableUnit`, so
+// `checkRuntimeConfig` scopes it by the declaring template's `codeScope`
+// path, the same way it scopes any code summary whose deployable unit is
+// unknown. A template that scopes a runtime to the project root
+// therefore sees every module's load-time reads, which is what scoping a
+// runtime to the project root means.
 
 import { assembleSummary } from "@suss/extractor";
 
@@ -36,10 +36,10 @@ export function moduleInitName(sourceFile: SourceFile): string {
  * The summary for one module's load-time behavior, or null when
  * loading the module does nothing any pack recognized.
  *
- * The raw structure is one default branch whose terminal is `void`:
- * module initialization answers nobody, so there is no output to
- * describe and no condition to weigh, which leaves the effects as the
- * whole of what the summary says.
+ * The raw structure is one default branch whose terminal is `void`.
+ * Module initialization returns to nobody, so there is no output to
+ * describe and no condition to weigh, and the effects are the whole of
+ * what the summary says.
  */
 export function moduleInitSummary(
   sourceFile: SourceFile,

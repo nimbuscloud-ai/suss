@@ -1,4 +1,4 @@
-// filenameRoute.ts — turn the place a file sits into the route path it
+// filenameRoute.ts: turn where a file is into the route path it
 // serves, following the convention its pack declares.
 
 import type { BindingExtraction } from "@suss/extractor";
@@ -9,7 +9,7 @@ type FilenameRoute = Extract<
 >;
 
 /**
- * The route a file serves, or null when the file sits outside the root
+ * The route a file serves, or null when the file is outside the root
  * the pack named. Placeholders come out in `{name}` form, which the
  * checker's path comparison already treats as equal to `:name`.
  */
@@ -63,7 +63,7 @@ function segmentsBelowRoot(filePath: string, root: string): string[] | null {
   return null;
 }
 
-/** A flat route holds its whole path in one filename, split on dots. */
+/** A flat route writes its whole path in one filename, split on dots. */
 function splitSegment(segment: string, convention: FilenameRoute): string[] {
   return convention.flat === true ? segment.split(".") : [segment];
 }
@@ -81,7 +81,7 @@ function rewriteSegment(
   if (segment.length === 0) {
     return null;
   }
-  // Only the filename names the file's role. A directory called
+  // Only the filename decides the file's role. A directory called
   // `route` is a path segment like any other.
   if (isBasename && (convention.dropBasenames ?? []).includes(segment)) {
     return null;
@@ -94,7 +94,7 @@ function rewriteSegment(
 
 /**
  * A directory that organises files without appearing in the URL. Next
- * writes three of these: `(shop)` groups routes, `@modal` names a slot
+ * writes three of these: `(shop)` groups routes, `@modal` marks a slot
  * rendered alongside them, and a leading underscore keeps a directory
  * out of routing altogether.
  */

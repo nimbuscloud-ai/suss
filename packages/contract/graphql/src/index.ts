@@ -1,4 +1,4 @@
-// @suss/contract-graphql — generate resolver-kind behavioral summaries
+// @suss/contract-graphql: generate resolver-kind behavioral summaries
 // from a plain GraphQL SDL file.
 //
 // Each field on Query / Mutation / Subscription becomes one resolver
@@ -59,7 +59,7 @@ export interface GraphqlContractOptions {
   recognition?: string;
   /**
    * Transport to record on the boundary binding. Defaults to
-   * `"http-graphql"` — most GraphQL servers run over HTTPS.
+   * `"http-graphql"`: most GraphQL servers run over HTTPS.
    */
   transport?: string;
 }
@@ -114,7 +114,7 @@ export function graphqlSdlFileToSummaries(
 /**
  * Read an SDL file from disk and return its text, or `null` when the
  * file can't be read. Shared entry point for callers that need the raw
- * SDL rather than the derived summaries — e.g. @suss/contract-appsync
+ * SDL rather than the derived summaries, e.g. @suss/contract-appsync
  * resolving an external schema file referenced by a CloudFormation /
  * SAM template's `DefinitionS3Location` / `SchemaUri`. Reading fails
  * best-effort (missing file, permission error) so the caller can record
@@ -209,7 +209,7 @@ function buildResolverSummary(
     transitions: buildTransitions(ownerKey, field),
     gaps: [],
     confidence: { source: "derived", level: "high" },
-    // Declared contract — checker pairs against any other source
+    // Declared contract: checker pairs against any other source
     // declaring a contract for the same gql:Type.field key. Provenance
     // is "derived" because both this metadata and the summary's
     // transitions come from the same SDL field declaration;

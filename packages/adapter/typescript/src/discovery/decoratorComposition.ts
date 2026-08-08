@@ -1,5 +1,5 @@
 // decoratorComposition.ts: find the framework decorator a class
-// carries, including when the class carries a project decorator built
+// has on it, including when the class has a project decorator built
 // out of it.
 //
 // A codebase that wants every resolver to also set some metadata writes
@@ -9,7 +9,7 @@
 // under another name, which a project does when the framework's name
 // collides with one of its own.
 //
-// The fact layer answers which library names a decorator stands for, so
+// The fact layer says which library a decorator comes down to, so
 // a wrapper is recognized by what it does rather than by what it is
 // called.
 
@@ -19,7 +19,7 @@ import type { ClassDeclaration, Decorator } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
 /**
- * The framework decorator a class carries: which of `names` it stands
+ * The framework decorator on a class: which of `names` it comes down
  * for, and the arguments that decorator was given.
  *
  * The arguments matter as much as the match. A route prefix and a
@@ -40,7 +40,7 @@ export interface FrameworkDecorator {
  * to be one of them under another name, or reach one of them by calling
  * into `modules`.
  *
- * Answers null when the class carries no such decorator.
+ * Null when the class has no such decorator.
  */
 export function classDecoratorStandingFor(
   cls: ClassDeclaration,
@@ -94,9 +94,9 @@ export function classDecoratorStandingFor(
  * pairs with the wrong thing rather than one that is missing.
  *
  * So the class wins when it says anything, and the wrapper's own call
- * answers when it does not. A wrapper that forwards its own parameter,
+ * gives when it does not. A wrapper that forwards its own parameter,
  * as `(typeFunc) => Resolver(typeFunc)` does, states nothing either
- * way: whatever the class passed is the answer, and the class passed
+ * way: whatever the class passed is the result, and the class passed
  * nothing.
  */
 function frameworkArgs(
@@ -144,7 +144,7 @@ function statesAValue(arg: Node, wrapper: Node): boolean {
   );
 }
 
-/** Whether one node sits inside another. */
+/** Whether one node is inside another. */
 function isWithin(node: Node, container: Node): boolean {
   return (
     node.getSourceFile() === container.getSourceFile() &&
@@ -156,7 +156,7 @@ function isWithin(node: Node, container: Node): boolean {
 /**
  * What a decorator names, whether it is applied bare or called:
  * `@Resolver` and `@Resolver(() => User)` both name `Resolver`, and
- * `@ns.Resolver()` names the property read, since that is the
+ * `@ns.Resolver()` gives the property read, since that is the
  * expression the fact layer can follow.
  */
 function calleeOf(decorator: Decorator): Node {

@@ -1,4 +1,4 @@
-// packageExports.ts — resolve the reachable source files behind a
+// packageExports.ts: resolve the reachable source files behind a
 // package's public API.
 //
 // Reads a package.json, walks its `exports` / `main` / `module` /
@@ -13,7 +13,7 @@
 //   - Falls back to `types`, then `main`, then `module` when no
 //     `exports` field is set.
 //   - Replaces `dist/` → `src/` and `.d.ts` → `.ts` (or `.tsx`) to
-//     recover the pre-build source path — the uniform convention
+//     recover the pre-build source path, the uniform convention
 //     every `@suss/*` package follows. Packages that build
 //     elsewhere are expected to pass `srcRoot` explicitly.
 //   - Skips pattern exports (`./utils/*`), null-mapped exports
@@ -28,7 +28,7 @@ export interface ResolvedPackageExport {
   /** Name as written in package.json (e.g. `"@suss/behavioral-ir"`). */
   packageName: string;
   /**
-   * Sub-path key from the `exports` field — e.g. `"."` for root,
+   * Sub-path key from the `exports` field, e.g. `"."` for root,
    * `"./schemas"` for `@scope/pkg/schemas`. Stripped of the leading
    * `./` in the returned shape (kept as `"."` for root for clarity).
    */
@@ -63,7 +63,7 @@ interface PackageJson {
  * Resolve a package's publicly reachable source files.
  *
  * Supply `srcRoot` when the package's source lives somewhere other
- * than `src/` — otherwise the resolver applies the repo-wide
+ * than `src/`: otherwise the resolver applies the repo-wide
  * convention (dist → src, .d.ts → .ts).
  */
 export function resolvePackageExports(

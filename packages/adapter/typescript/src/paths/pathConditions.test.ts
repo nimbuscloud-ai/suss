@@ -1,4 +1,4 @@
-// pathConditions.test.ts — direct coverage of the CFG path engine.
+// pathConditions.test.ts: direct coverage of the CFG path engine.
 //
 // Pins the engine's semantics directly: sound shapes keep the exact
 // condition lists the legacy collectors produced before their
@@ -26,7 +26,7 @@ function getFunction(source: string): FunctionRoot {
   return fn;
 }
 
-/** All `return` statements in the unit — the test-double for terminals. */
+/** All `return` statements in the unit: the test-double for terminals. */
 function returnTerminals(fn: FunctionRoot): Node[] {
   return fn.getDescendantsOfKind(SyntaxKind.ReturnStatement);
 }
@@ -38,7 +38,7 @@ const sig = (infos: ConditionInfo[]): string =>
 const pathSigs = (paths: ConditionInfo[][] | undefined): string[] =>
   (paths ?? []).map(sig).sort();
 
-describe("computePathConditions — stable conditions on sound shapes", () => {
+describe("computePathConditions: stable conditions on sound shapes", () => {
   it("guard chain: guards accumulate as negated early returns", () => {
     const fn = getFunction(`
       export function handler(a: any, b: any) {
@@ -87,7 +87,7 @@ describe("computePathConditions — stable conditions on sound shapes", () => {
     ]);
   });
 
-  it("non-exit non-terminal ifs collapse — no path split, legacy parity", () => {
+  it("non-exit non-terminal ifs collapse: no path split, legacy parity", () => {
     const fn = getFunction(`
       export function handler(a: any, log: any) {
         if (a) {
@@ -130,7 +130,7 @@ describe("computePathConditions — stable conditions on sound shapes", () => {
   });
 });
 
-describe("computePathConditions — shapes the legacy collectors got wrong", () => {
+describe("computePathConditions: shapes the legacy collectors got wrong", () => {
   it("nested guard: the fallthrough gets one branch per real path", () => {
     const fn = getFunction(`
       export function handler(a: any, b: any) {
@@ -149,7 +149,7 @@ describe("computePathConditions — shapes the legacy collectors got wrong", () 
     expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
       "positive:explicit:a ∧ positive:explicit:b",
     ]);
-    // The fallthrough 200: [¬a] and [a, ¬b] — never ¬a ∧ ¬b.
+    // The fallthrough 200: [¬a] and [a, ¬b]: never ¬a ∧ ¬b.
     expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
       "negative:earlyReturn:a",
       "positive:explicit:a ∧ negative:earlyReturn:b",
@@ -273,7 +273,7 @@ describe("computePathConditions — shapes the legacy collectors got wrong", () 
   });
 });
 
-describe("computePathConditions — sound degradation on declined shapes", () => {
+describe("computePathConditions: sound degradation on declined shapes", () => {
   const declinedSources = [
     ["labeled", "outer: for (const k of a) { }\nreturn { status: 200 };"],
     [
@@ -331,7 +331,7 @@ describe("computePathConditions — sound degradation on declined shapes", () =>
         undefined,
     );
     const result = computePathConditions(fn, terminals);
-    // The if-arm's forEach return is the callback's, not the unit's —
+    // The if-arm's forEach return is the callback's, not the unit's ,
     // the if collapses and the final return stays unconditional.
     expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
       "<unconditional>",
@@ -339,7 +339,7 @@ describe("computePathConditions — sound degradation on declined shapes", () =>
   });
 
   it("degrades when the path budget is exceeded", () => {
-    // 9 sequential ifs whose arms both hold a (non-exit) terminal call
+    // 9 sequential ifs whose arms both contain a (non-exit) terminal call
     // double the frontier each: 2^9 = 512 > 256.
     const branchy = Array.from(
       { length: 9 },
@@ -363,7 +363,7 @@ describe("computePathConditions — sound degradation on declined shapes", () =>
   });
 });
 
-describe("computePathConditions — switch lowering", () => {
+describe("computePathConditions: switch lowering", () => {
   it("case groups carry the legacy-identical synthetic condition", () => {
     const fn = getFunction(`
       export function handler(kind: string) {
@@ -458,7 +458,7 @@ describe("computePathConditions — switch lowering", () => {
     );
   });
 
-  it("models loop breaks as path enders — the after-loop terminal stays clean", () => {
+  it("models loop breaks as path enders: the after-loop terminal stays clean", () => {
     const fn = getFunction(`
       export function handler(items: string[]) {
         for (const item of items) {
@@ -564,7 +564,7 @@ describe("computePathConditions, a terminal outside the given function", () => {
   });
 });
 
-describe("computePathConditions — try/catch", () => {
+describe("computePathConditions: try/catch", () => {
   it("catch terminals carry the legacy catch condition; rethrows too", () => {
     const fn = getFunction(`
       export function handler(load: () => { status: number }) {
@@ -938,11 +938,11 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
     // Legacy never looked inside a block for control-flow structure,
     // only for a break its descendant scan could find. The nested
     // switch inside the block owns its own break (switches are
-    // skipped by that scan), so the clause reads as one flat
+    // skipped by that scan), so the clause comes out as one flat
     // "kind === b" match, with no trace of the inner switch's own
     // "x" / default distinction. The whole block is one pass-through,
     // and since nothing inside it returns or throws, the negation
-    // reads as an ordinary explicit non-match, not an early return.
+    // comes out as an ordinary explicit non-match, not an early return.
     expect(paths).toEqual([
       'negative:explicit:req.query.kind === "b"',
       'positive:explicit:req.query.kind === "b"',

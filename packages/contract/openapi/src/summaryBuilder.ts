@@ -1,4 +1,4 @@
-// summary-builder.ts — Build BehavioralSummary objects from OpenAPI operations.
+// summary-builder.ts: Build BehavioralSummary objects from OpenAPI operations.
 
 import { restBinding, withHttpMetadata } from "@suss/behavioral-ir";
 
@@ -131,8 +131,8 @@ function buildDeclaredContract(
     }
     if (!/^\d{3}$/.test(code)) {
       // Range codes (1XX-5XX) can't be represented as a single
-      // statusCode in the declared-contract shape — skip. The
-      // transition carries the range via metadata.http.statusRange
+      // statusCode in the declared-contract shape, skip. The
+      // transition records the range via metadata.http.statusRange
       // and downstream checks can still reason about it there.
       continue;
     }
@@ -231,7 +231,7 @@ function buildTransitions(
     const body = bodyShape(response, ctx);
 
     if (code === "default") {
-      // Default response — emit as the default transition with no status
+      // Default response: emit as the default transition with no status
       // literal. The checker can match it against any unhandled status.
       transitions.push({
         id: stubTransitionId(op, "default"),
@@ -267,11 +267,11 @@ function buildTransitions(
     }
 
     // Range code ("2XX", "4XX", …). The IR statusCode field is either a
-    // literal ValueRef or null; there's no first-class "range" variant.
+    // literal ValueRef or null; there is no built-in "range" variant.
     // Emit a transition with statusCode: null and attach the range as
     // per-transition metadata under http.statusRange so consumers that
     // care (inspect, a future range-aware checker pass) can reason
-    // about it. The transition stays isDefault: false — it's a specific
+    // about it. The transition stays isDefault: false. It's a specific
     // bucket, not the catch-all "default" response.
     transitions.push({
       id: stubTransitionId(op, code),

@@ -1,29 +1,25 @@
-// A declared summary speaks for one deployable unit: the environment a
-// SAM function runs with, the queue an ECS task drains. Pairing it
-// against code needs an answer to "which code runs in this unit", and
-// three things can answer, in descending order of how much they know.
-//
-// The summary itself is the best answer. A pack that discovers a
-// handler under a template entry knows the unit it will be deployed as
-// and stamps it.
-//
-// The stamped summaries next to it in the same file are the next best.
-// A module is deployed whole, so a helper beside a discovered handler
-// runs wherever that handler runs, and wherever a second handler in the
-// module runs too. Packs discover the exported handler and leave the
-// rest of the module alone, and most of the code that reads
-// configuration sits in that rest.
-//
-// The template's source directory is the last answer, and it answers
-// only when it is the only directory that could. A monorepo service
-// builds every one of its functions from the service root, so one
-// directory covers all of them, and taking it as the answer would put
-// every file in every unit at once.
-//
-// Whichever of the first two speaks decides, wherever the declaring
-// side also names a unit. Where nothing on the code side names one, the
-// directory answers, unless several directories contain the file, in
-// which case none of them does.
+/**
+ * A declared summary describes one deployable unit: the environment a
+ * SAM function runs with, the queue an ECS task drains. Pairing it
+ * against code means working out which code runs in that unit, and
+ * three things can tell you, in descending order of how much they know.
+ *
+ * Best is the summary itself. A pack that discovers a handler under a
+ * template entry knows which unit it will be deployed as.
+ *
+ * Next best are the summaries beside it in the same file. A module is
+ * deployed whole, so a helper next to a discovered handler runs
+ * wherever that handler runs, and most of the code that reads
+ * configuration is in that rest of the module.
+ */
+
+/**
+ * Last comes the template's source directory, and only when it is the
+ * one directory that could contain the file. A monorepo service builds
+ * every function from the service root, so that directory covers all of
+ * them, and going by it would put every file in every unit at once.
+ * Where several directories contain the file, none of them decides.
+ */
 
 import { fileInCodeScope } from "@suss/ir-core";
 
@@ -34,7 +30,8 @@ export interface CodeScopeMetadata {
   path?: string;
 }
 
-/** The code scope a declaring summary carries, or the unknown marker when it names none. */
+/** The code scope on a declaring summary, or the unknown marker when it
+ * has none. */
 export function readCodeScope(summary: BehavioralSummary): CodeScopeMetadata {
   const raw = (summary.metadata?.codeScope ?? null) as CodeScopeMetadata | null;
   if (raw === null) {
@@ -44,20 +41,21 @@ export function readCodeScope(summary: BehavioralSummary): CodeScopeMetadata {
   return raw;
 }
 
-/** The units each file's code is deployed as, as its summaries name them. */
+/** The units each file's code is deployed as, according to its own
+ * summaries. */
 export type UnitsByFile = ReadonlyMap<string, DeployableUnit[]>;
 
 export interface UnitScope {
-  /** The unit the declaring side speaks for, when it names one. */
+  /** The unit the declaring side describes, when it gives one. */
   unit: DeployableUnit | undefined;
-  /** The source directory that answers when neither side names a unit. */
+  /** The source directory to fall back on when neither side gives a unit. */
   codeScope: string;
 }
 
 /**
- * Read the deployable unit off every summary that names one and group
- * the answers by file. A module holding two handlers is deployed as
- * both, so the file keeps both units and its helpers run in each.
+ * Read the deployable unit off every summary that has one and group the
+ * results by file. A module with two handlers is deployed as both, so
+ * the file keeps both units and its helpers run in each.
  */
 export function unitsByFile(summaries: BehavioralSummary[]): UnitsByFile {
   const byFile = new Map<string, DeployableUnit[]>();
@@ -77,13 +75,13 @@ export function unitsByFile(summaries: BehavioralSummary[]): UnitsByFile {
 }
 
 /**
- * The files two or more of these scopes' directories contain, among
- * code that names no unit of its own. Nothing distinguishes the scopes
- * for such a file, so a caller that would otherwise pair it against
- * every one of them pairs it against none and says why.
+ * The files that two or more of these scopes' directories contain,
+ * among code that gives no unit of its own. Nothing tells the scopes
+ * apart for such a file, so a caller that would otherwise pair it
+ * against every one of them pairs it against none and says why.
  *
- * Code that names a unit is never in here: the two units decide, and
- * the directories are not consulted.
+ * Code that gives a unit is never in here: the units decide, and the
+ * directories are not consulted.
  */
 export function contestedFiles(
   code: readonly BehavioralSummary[],
@@ -131,7 +129,7 @@ export function runsIn(
   return fileInCodeScope(code.location.file, scope.codeScope);
 }
 
-/** Whether two units name the same thing to deploy. */
+/** Whether two units refer to the same thing to deploy. */
 export function sameUnit(a: DeployableUnit, b: DeployableUnit): boolean {
   return (
     a.deploymentTarget === b.deploymentTarget &&

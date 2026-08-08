@@ -1,4 +1,4 @@
-// AWS SQS integration test — end-to-end producer→consumer pairing.
+// AWS SQS integration test, end-to-end producer→consumer pairing.
 //
 // Pipeline:
 //   1. Extract code summaries from fixtures/aws-sqs via the
@@ -17,7 +17,7 @@
 //   - OrphanQueue: producer in code, no consumer Lambda → orphan
 //     consumer (the consumer is missing). Producer's env-var
 //     ORPHAN_QUEUE_URL resolves to OrphanQueue via chain-collapse,
-//     so the producer pairs against the queue provider — no
+//     so the producer pairs against the queue provider, no
 //     producer-orphan finding.
 //   - NotificationsQueue: consumer Lambda + queue but no code
 //     produces → orphan consumer.

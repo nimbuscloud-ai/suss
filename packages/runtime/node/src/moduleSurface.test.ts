@@ -74,7 +74,7 @@ describe("module-surface recognizers", () => {
       .sort();
     // __dirname (bare) + __filename (bare). The property assignment
     // `{ __dirname: 1 }` uses the same identifier text but in a
-    // PropertyAssignment context — getNameNode of that property is
+    // PropertyAssignment context: getNameNode of that property is
     // the same identifier; we filter PropertyAccess receivers but
     // not PropertyAssignment names. Two bare refs is the expected
     // result; the property name matches as identifier text but

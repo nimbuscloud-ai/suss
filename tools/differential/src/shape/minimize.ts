@@ -158,7 +158,6 @@ const nestResolverCandidates = (spec: NestResolverSpec): NestResolverSpec[] => [
     : [{ ...spec, method: SIMPLEST_NEST_RESOLVER.method }]),
 ];
 
-/** The smallest Apollo resolver shape that still shows the finding. */
 export async function minimizeApolloResolverShape(
   spec: ApolloResolverSpec,
   target: string,
@@ -167,7 +166,6 @@ export async function minimizeApolloResolverShape(
   return reduce(spec, target, apolloCandidates, run);
 }
 
-/** The smallest NestJS resolver shape that still shows the finding. */
 export async function minimizeNestResolverShape(
   spec: NestResolverSpec,
   target: string,
@@ -185,7 +183,6 @@ const envCandidates = (spec: EnvShapeSpec): EnvShapeSpec[] => [
     : [{ ...spec, form: SIMPLEST_ENV_SHAPE.form }]),
 ];
 
-/** The smallest env shape that still shows the given finding. */
 export async function minimizeEnvShape(
   spec: EnvShapeSpec,
   target: string,
@@ -203,7 +200,6 @@ const queueCandidates = (spec: QueueShapeSpec): QueueShapeSpec[] => [
     : [{ ...spec, config: SIMPLEST_QUEUE_SHAPE.config }]),
 ];
 
-/** The smallest queue-consumer shape that still shows the finding. */
 export async function minimizeQueueShape(
   spec: QueueShapeSpec,
   target: string,
@@ -221,7 +217,6 @@ const packageCandidates = (spec: PackageShapeSpec): PackageShapeSpec[] => [
     : [{ ...spec, form: SIMPLEST_PACKAGE_SHAPE.form }]),
 ];
 
-/** The smallest package-boundary shape that still shows the finding. */
 export async function minimizePackageShape(
   spec: PackageShapeSpec,
   target: string,
@@ -230,7 +225,6 @@ export async function minimizePackageShape(
   return reduce(spec, target, packageCandidates, run);
 }
 
-/** The smallest shape that still shows the given finding. */
 export async function minimizeShape(
   spec: ShapeSpec,
   target: string,
@@ -239,7 +233,6 @@ export async function minimizeShape(
   return reduce(spec, target, shapeCandidates, run);
 }
 
-/** The smallest component shape that still shows the given finding. */
 export async function minimizeComponentShape(
   spec: ComponentShapeSpec,
   target: string,

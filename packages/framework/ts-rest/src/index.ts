@@ -1,4 +1,4 @@
-// @suss/framework-ts-rest — PatternPack for ts-rest
+// @suss/framework-ts-rest: PatternPack for ts-rest
 
 import type { PatternPack } from "@suss/extractor";
 

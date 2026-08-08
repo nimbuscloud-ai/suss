@@ -154,8 +154,8 @@ describe("pairGraphqlOperations", () => {
   });
 
   it("fans a consumer out over every matching provider (N×M)", () => {
-    // Two overlapping providers — e.g. Apollo resolver + AppSync stub
-    // both describing Query.pet — pair with the same consumer.
+    // Two overlapping providers: e.g. Apollo resolver + AppSync stub
+    // both describing Query.pet, pair with the same consumer.
     const apolloPet = resolver("Query", "pet", "apollo");
     const appsyncPet = resolver("Query", "pet", "appsync");
     const op = operation(
@@ -329,7 +329,7 @@ describe("pairGraphqlOperations — nested selections", () => {
       "query",
       // Selecting fields on a scalar is illegal in real GraphQL;
       // graphql-js parser accepts this for our regex-light flow.
-      // The walker must not emit findings for this shape — we
+      // The walker must not emit findings for this shape. We
       // don't know the type layout beyond "not an object".
       "query Now { timestamp }",
     );
@@ -361,7 +361,7 @@ describe("pairGraphqlOperations — nested selections", () => {
   });
 
   it("reuses parsed SDL across multiple operations (correctness-check)", () => {
-    // Not a perf assertion — just confirms a single cached SDL
+    // Not a perf assertion, just confirms a single cached SDL
     // produces consistent findings for many operations.
     const petResolver = resolver("Query", "pet", "apollo", {
       schemaSdl: petSchemaSdl,

@@ -1,11 +1,11 @@
-// @suss/intent-ir schema — the team-authored intent file format.
+// @suss/intent-ir schema: the team-authored intent file format.
 //
 // Two top-level shapes, discriminated by `kind`:
 //
-//   kind: boundary  — system intent. What a single boundary (a REST
+//   kind: boundary: system intent. What a single boundary (a REST
 //                     endpoint, or a function / package export) should
 //                     do: its outcomes, named by id.
-//   kind: prd       — outcome intent. Human scenarios (when / then)
+//   kind: prd: outcome intent. Human scenarios (when / then)
 //                     that reference system-intent outcomes by id.
 //
 // This is the *authoring* surface (what someone writes, or what a
@@ -24,7 +24,7 @@
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
-// Provenance — how this intent doc came to exist. Findings against
+// Provenance: how this intent doc came to exist. Findings against
 // `inferred` (not-yet-curated) intent are downgraded; curation moves it
 // to `inferred, curated` and findings fire at full severity.
 // ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ export const IntentSourceSchema = z
   .default("author");
 
 // ---------------------------------------------------------------------------
-// Body shapes — friendly authoring form (object with primitive-typed
+// Body shapes: friendly authoring form (object with primitive-typed
 // properties). Maps onto @suss/ir-core's TypeShape in ./summary.ts.
 // Nested objects / arrays / unions are deferred; they're additive.
 // ---------------------------------------------------------------------------
@@ -71,8 +71,8 @@ const ShapeSchema: z.ZodType<AuthoredShape> = z.lazy(() =>
 );
 
 // Top level accepts either a full shape (`type: array`, `type: object`,
-// a bare primitive) or the record shorthand — `properties:` with no
-// `type:` — which existing docs use.
+// a bare primitive) or the record shorthand, `properties:` with no
+// `type:`: which existing docs use.
 export const BodyShapeSchema = z.union([
   ShapeSchema,
   z.object({
@@ -82,7 +82,7 @@ export const BodyShapeSchema = z.union([
 ]);
 
 // ---------------------------------------------------------------------------
-// Boundary — REST or function-call, in @suss/ir-core's vocabulary.
+// Boundary: REST or function-call, in @suss/ir-core's vocabulary.
 // ---------------------------------------------------------------------------
 
 const RestBoundarySchema = z.object({
@@ -94,7 +94,7 @@ const RestBoundarySchema = z.object({
 
 // Deliberately permissive: a function-call boundary is pairable today
 // only when `package` + `exportPath` are set (see @suss/ir-core
-// boundaryKey), but module-level boundaries stay authorable — declared-
+// boundaryKey), but module-level boundaries stay authorable, declared-
 // ahead-of-capability intent is a valid pending state, same as an
 // unlinked PRD scenario. The checker reports such intent as unchecked
 // (unkeyableBoundary) rather than this schema rejecting it; don't
@@ -118,7 +118,7 @@ export const BoundarySchema = z.discriminatedUnion("semantics", [
 ]);
 
 // ---------------------------------------------------------------------------
-// Transition outcomes — exactly one of response / returns / throws.
+// Transition outcomes: exactly one of response / returns / throws.
 // ---------------------------------------------------------------------------
 
 const ResponseOutcomeSchema = z.object({
@@ -161,7 +161,7 @@ const BoundaryTransitionSchema = z
   );
 
 // ---------------------------------------------------------------------------
-// kind: boundary — system intent for one boundary.
+// kind: boundary: system intent for one boundary.
 // ---------------------------------------------------------------------------
 
 const BoundaryIntentSchema = z.object({
@@ -176,7 +176,7 @@ const BoundaryIntentSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// kind: prd — outcome intent (human scenarios).
+// kind: prd: outcome intent (human scenarios).
 // ---------------------------------------------------------------------------
 
 const PrdScenarioSchema = z.object({
@@ -190,11 +190,11 @@ const PrdScenarioSchema = z.object({
    * (`<intent-name>.<outcome-id>`). A scenario without `link` is a
    * valid pending-link state: fully human-readable, not yet machine-
    * linked. The link is filled in later by a facilitator (a person, a
-   * platform, or an LLM at authoring time) — never required to author.
+   * platform, or an LLM at authoring time), never required to author.
    *
    * (The human-readable parts are `when` / `expect`; the field is named
    * `link`, not `then`, because a data object with a `then` property is
-   * treated as a thenable by Promise resolution — a latent footgun.)
+   * treated as a thenable by Promise resolution, a latent footgun.)
    */
   link: z
     .union([z.string().min(1), z.array(z.string().min(1)).min(1)])

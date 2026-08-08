@@ -1,12 +1,15 @@
-// @suss/behavioral-ir — core types, schemas, and utilities for the
-// behavioral summary format.
-//
-// Schemas in `./schemas` are the single source of truth. Types here are
-// derived via `z.infer` so there is nothing to keep in sync by hand.
-// Schemas themselves are not part of the public API — consumers get the
-// types plus `parseSummary`/`parseSummaries` for runtime validation.
-// Anyone needing zod-level composition can import the schema module
-// directly via the package's internal path; that surface is not stable.
+/**
+ * @suss/behavioral-ir: the types, schemas, and helpers for the
+ * behavioral summary format.
+ *
+ * The schemas in `./schemas` are the source of truth. The types here
+ * come from them through `z.infer`, so there is nothing to keep in sync
+ * by hand. The schemas themselves are not public API. What a consumer
+ * gets is the types, plus `parseSummary` and `parseSummaries` for
+ * validating at runtime. If you need to compose at the zod level you
+ * can import the schema module by its internal path, but nothing
+ * promises that path will keep working.
+ */
 
 import { normalizeLegacySummary } from "./legacy.js";
 import {
@@ -161,20 +164,18 @@ export type Finding = z.infer<typeof FindingSchema>;
 // ---------------------------------------------------------------------------
 
 /**
- * Name a summary the way a finding refers to it.
+ * Refer to a summary the way a finding does.
  *
- * The string this returns is read back as well as printed: the checker
+ * The string that comes back gets read as well as printed: the checker
  * deduplicates findings by it, and a `.sussignore` rule matches against
- * it. Both sides therefore have to agree on the separator and on which
- * two fields go into it, which is why one function owns the format
- * rather than each caller writing the template literal out.
+ * it. Both sides have to agree on the separator and on which two fields
+ * go into it, so one function owns the format instead of every caller
+ * writing out the template literal.
  *
- * Deliberately file-and-name, not `identity.id`: a rule someone has
- * already written against this format has to keep matching, and an id
- * folds in the workspace, which changes the string for most projects
- * the moment a rule's author didn't ask for that. Code that wants to
- * follow a link precisely rather than print one has `identity.id` and
- * `effect.summary` to read directly.
+ * It is file-and-name rather than `identity.id` on purpose: a rule
+ * someone already wrote has to keep matching, and an id includes the
+ * workspace, which changes the string for most projects. Code following
+ * a link instead of printing one has `identity.id` and `effect.summary`.
  */
 export function summaryRef(summary: BehavioralSummary): string {
   return `${summary.location.file}::${summary.identity.name}`;

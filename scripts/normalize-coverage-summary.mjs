@@ -31,7 +31,7 @@ function packageRootFor(summaryPath) {
  * Turn one of vitest's absolute path keys into a path relative to the
  * package root.
  *
- * The key usually sits under this checkout, so stripping the package
+ * The key is usually under this checkout, so stripping the package
  * root off the front is enough. It does not when the file came out of a
  * turbo cache entry that another checkout wrote, because turbo keys its
  * cache on the source and restores whatever bytes that hash produced,

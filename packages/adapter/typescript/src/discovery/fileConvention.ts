@@ -1,4 +1,4 @@
-// fileConvention.ts — discover units in files whose place in the tree
+// fileConvention.ts: discover units in files whose place in the tree
 // says what they are, which is how Next.js describes a route handler.
 
 import picomatch from "picomatch";
@@ -28,7 +28,7 @@ function matcherFor(pattern: string): (path: string) => boolean {
     return existing;
   }
   // A file path is absolute, so any hidden directory above the project
-  // (a cache, a worktree, .next) sits in it. Without this the pattern
+  // (a cache, a worktree, .next) is inside it. Without this the pattern
   // matches nothing and the pack finds nothing, with no diagnostic.
   const compiled = picomatch(pattern, { dot: true });
   matchers.set(pattern, compiled);

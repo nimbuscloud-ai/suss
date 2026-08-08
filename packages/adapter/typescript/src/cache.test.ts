@@ -178,8 +178,8 @@ describe("createCacheLayer", () => {
         fakeSummary,
       ]);
       await tick();
-      // Reading it is the only thing that can move it back to the front
-      // of the eviction order, because a run that hits never writes.
+      // Reading it is the only way to move it back to the front of the
+      // eviction order, since a run that hits the cache never writes.
       expect(await cache.tryHit(oldest)).toEqual([fakeSummary]);
       await tick();
       await cache.write({ project, adapterPacksDigest: "test@3" }, [
@@ -303,10 +303,10 @@ describe("createCacheLayer", () => {
       const input = { project, adapterPacksDigest: "test@1" };
       await cache.write(input, [summaryA, summaryB]);
 
-      // Touching a.ts alone used to hand back b.ts's summary and leave
-      // the run to re-extract a.ts by itself. What a walk of a.ts finds
-      // is not what a walk of the whole project finds, so summaryA came
-      // back short or not at all.
+      // Touching a.ts alone used to give back b.ts's summary and then
+      // re-extract a.ts on its own. Walking a.ts by itself does not find
+      // what walking the whole project finds, so summaryA came back
+      // short or missing.
       await new Promise((r) => setTimeout(r, 20));
       await fs.writeFile(path.join(dir, "a.ts"), "export const a = 1;");
 

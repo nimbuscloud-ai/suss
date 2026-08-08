@@ -1,4 +1,4 @@
-// timing.ts — Lightweight phase-timing instrumentation.
+// timing.ts: Lightweight phase-timing instrumentation.
 //
 // Measures wall time spent in named phases of an adapter run so the
 // CLI can surface "extract took 17s, of which 11s was in the
@@ -24,14 +24,14 @@ export interface TimingReport {
 export interface Timer {
   /** Run `fn`, accumulate wall time under `label`, return its result. */
   time<T>(label: string, fn: () => T): T;
-  /** Async variant — same accumulation rule. */
+  /** Async variant: same accumulation rule. */
   timeAsync<T>(label: string, fn: () => Promise<T>): Promise<T>;
   /** Snapshot of all accumulated phases, ordered by total time descending. */
   report(): TimingReport;
 }
 
 /**
- * Build a fresh timer. Each adapter run gets its own — keeps
+ * Build a fresh timer. Each adapter run gets its own, keeps
  * concurrent extracts independent (irrelevant today, will matter if
  * we add a server mode).
  */

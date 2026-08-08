@@ -1,11 +1,14 @@
-// project.ts: the adapter's whole contract, per facts-and-rules.md and
-// the roadmap: discover units, emit summaries in the shared IR, emit
-// facts. Parses every given file, runs the lexical binder and
-// discovery over it, hands each discovered unit to `@suss/extractor`'s
-// `assembleSummary` (the same assembly Layer 3 the TypeScript adapter
-// uses, so gap detection and confidence scoring are the one
-// implementation both languages share), and emits this run's facts
+// project.ts: the adapter's whole contract, which is to discover units,
+// emit summaries in the shared IR, and emit facts.
+//
+// It parses every file it is given, runs the lexical binder and
+// discovery over each one, hands each discovered unit to
+// `@suss/extractor`'s `assembleSummary`, and emits this run's facts
 // into one shared `Database`.
+//
+// `assembleSummary` is the same assembly layer the TypeScript adapter
+// uses, so gap detection and confidence scoring are one implementation
+// that both languages share.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -28,17 +31,11 @@ export interface ExtractPythonOptions {
   /** Absolute paths of the files to parse and extract. */
   files: string[];
   packs: PythonPack[];
-  /** Directories an absolute import is resolved against; see moduleResolver.ts. */
+  /** Directories an absolute import is resolved against. */
   roots: string[];
-  /** When set, `location.file` on each summary is relativized against this, mirroring `suss extract`'s repo-relative paths. */
+  /** When set, `location.file` on each summary is relativized against this. */
   workspaceRoot?: string;
-  /**
-   * What to do with what nobody could read: "permissive" (the default)
-   * and "silent" say how much of it reaches a summary, and "strict"
-   * additionally lets a route the readers cannot turn into a unit stop
-   * the run, which is what a caller who wants every unit or none asks
-   * for.
-   */
+  /** As well as deciding how much of what nobody could read reaches a summary, "strict" lets a route that cannot be built stop the run. */
   gapHandling?: ExtractorOptions["gapHandling"];
 }
 
@@ -54,13 +51,12 @@ export async function extractPythonProject(
   const summaries: BehavioralSummary[] = [];
   const gapHandling = options.gapHandling ?? "permissive";
 
-  // Parse and bind everything first: a route's path can depend on a
-  // mount call in another file (a router constructed here, included
-  // there), so the router index has to see the whole project before
-  // any file's discovery runs.
-  // Facts key on the filesystem path throughout, since they're an
-  // internal join surface rather than user-facing text; a summary's
-  // `location.file` is what a workspace convention gets to shorten.
+  // Every file is parsed and bound before discovery runs on any of them,
+  // because the router index has to see a mount written in one file and the
+  // router it refers to constructed in another.
+  //
+  // Facts keep the full filesystem path, because they are joined against
+  // internally. Only a summary's `location.file` gets shortened.
   const displayPathOf = (file: string): string =>
     options.workspaceRoot !== undefined
       ? path.relative(options.workspaceRoot, file)
@@ -93,16 +89,9 @@ export async function extractPythonProject(
     });
     for (const raw of rawUnits) {
       const summary = assembleSummary(raw, { gapHandling });
-      // `assembleSummary`'s confidence heuristic reads the ratio of
-      // opaque to total conditions across a unit's branches, which
-      // assumes those branches came from tracing the body. v0 never
-      // does that (no path-engine work per the language-adapters
-      // proposal): a route's one transition, when it has one, states
-      // what a decorator keyword or an annotation declared, not what
-      // running the code would show. That is a declared, unverified
-      // claim regardless of how few or many conditions it carries, so
-      // confidence is pinned low here rather than left to a heuristic
-      // built for a different kind of reading.
+      // `assembleSummary` scores confidence on the assumption that a unit's
+      // branches came from tracing its body. Nothing here traces a body, so
+      // that score would be meaningless and we set confidence directly.
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
@@ -122,7 +111,7 @@ const SKIPPED_DIRECTORIES = new Set([
   ".git",
 ]);
 
-/** Every `.py` file under `root`, depth-first, skipping the usual non-source directories. Convenience for callers extracting a whole project rather than a hand-picked file list. */
+/** Every `.py` file under `root`, depth-first, skipping the usual non-source directories. */
 export function findPythonFiles(root: string): string[] {
   const found: string[] = [];
   const walk = (dir: string): void => {

@@ -1,16 +1,16 @@
-// discovery.ts: find decorated routes and turn each into a RawCodeStructure.
-//
-// v0 discovers unconditionally-declared, decorated module-level
-// functions and classes (see scope.ts's doc comment for the same
-// "unconditional" boundary the binder draws) and reads no further into
-// a unit's body: no path-engine work happens here, so a route's
-// summary carries `branches: []` (nothing declared about its response)
-// or exactly one branch describing what an annotation or a decorator
-// keyword already states (a FastAPI `response_model` / `status_code`,
-// or a return annotation). That is the existence-class shape the
-// language-adapters proposal calls for: enough to pair a route against
-// a caller by method and path, nothing claimed about behavior nobody
-// read.
+/**
+ * Finds decorated routes and turns each one into a `RawCodeStructure`.
+ *
+ * Only decorated module-level functions and classes that are declared
+ * unconditionally get discovered, the same boundary the binder in scope.ts
+ * draws. Nothing here reads into a unit's body, so a route's summary comes out
+ * with no branches at all, or with exactly one branch describing what an
+ * annotation or a decorator keyword already states, such as a FastAPI
+ * `response_model` or `status_code`, or a return annotation.
+ *
+ * That is enough to pair a route against a caller by method and path, and it
+ * claims nothing about behavior nobody read.
+ */
 
 import { dispatchByType, restBinding } from "@suss/behavioral-ir";
 import {
@@ -60,20 +60,9 @@ export interface DiscoveryOptions {
   packs: PythonPack[];
   /** Repo-relative or absolute path recorded on each summary's `location.file`. */
   filePath: string;
-  /**
-   * Cross-file router mounts, built once per project by
-   * `extractPythonProject` (see routers.ts). Without it, a pattern's
-   * `routerComposition` has nothing to consult and every route object
-   * reads as the app itself, paths as written.
-   */
+  /** Without it, every route object looks like the app itself and paths stand as written. */
   routerIndex?: RouterIndex;
-  /**
-   * What to do with a route whose unit cannot be built at all. Under
-   * the default, the route abstains with the reason and every other
-   * route still lands; under "strict", the error stands and the run
-   * stops on it. Same flag the extractor takes for gaps, so a caller
-   * asks for the stricter reading once.
-   */
+  /** Under "strict" a route whose unit cannot be built stops the run instead of abstaining. */
   gapHandling?: ExtractorOptions["gapHandling"];
 }
 
@@ -129,10 +118,6 @@ function unitsFor(
   if (!pattern.importModule.includes(decoratorModule)) {
     return [];
   }
-  // Each pattern variant owns its own shape of match (a class decorator
-  // naming a path plus method-name verbs, versus a function decorator
-  // whose own attribute name is the verb), so dispatch on the variant
-  // rather than an if-chain repeating `pattern.type ===`.
   const table: DispatchTable<PythonDiscoveryPattern, RawCodeStructure[]> = {
     decoratedClassRoute: (p) => {
       if (
@@ -175,13 +160,7 @@ function unitsFor(
   return dispatchByType(table, pattern);
 }
 
-/**
- * The path a route's decorator states, as its first positional string
- * argument. A decorator whose first argument is missing or is written
- * as anything but a string literal reads as unreadable rather than
- * absent: the library requires a path there, so what is missing is the
- * reading, not the path.
- */
+/** The library requires a path here, so a first argument nobody can read is unreadable rather than absent. */
 function readPathArgument(
   classification: DecoratorClassification,
 ): Reading<string> {
@@ -196,7 +175,6 @@ function readPathArgument(
   );
 }
 
-/** A path template read under one syntax: the path in the IR's canonical brace spelling, and the parameter names the template binds. */
 interface PathTemplateReading {
   path: string;
   paramNames: ReadonlySet<string>;
@@ -206,7 +184,7 @@ type PathTemplateReader = (path: string) => PathTemplateReading;
 
 const NO_PATH_PARAMS: ReadonlySet<string> = new Set();
 
-/** A reader that rewrites every match of `template` to the canonical `{name}` spelling, collecting the names, with the parameter name in the pattern's first capture group. */
+/** `template` has to capture the parameter name in its first group. */
 function templateReader(template: RegExp): PathTemplateReader {
   return (path) => {
     const names: string[] = [];
@@ -218,20 +196,7 @@ function templateReader(template: RegExp): PathTemplateReader {
   };
 }
 
-/**
- * One reader per template syntax a pack can declare (see
- * `RouteConventions.pathParamSyntax` in pack.ts). Both canonicalize to
- * the IR's bare-brace spelling, so a claim compares against a
- * consumer's path without a spelling mismatch.
- *
- * The braces grammar is Starlette's `PARAM_REGEX`: `{name}` with an
- * optional `:converter` after the name (`{item_id:int}`,
- * `{file_path:path}`), the converter dropped from the canonical
- * spelling. The Flask grammar is Werkzeug's `_part_re`: `<name>`,
- * `<converter:name>`, or `<converter(arguments):name>`, the arguments
- * matched lazily to the first closing parenthesis the way Werkzeug's
- * own pattern matches them.
- */
+/** `braces` follows Starlette's `PARAM_REGEX`, `flaskConverters` follows Werkzeug's `_part_re`. */
 const PATH_TEMPLATE_READERS: Record<string, PathTemplateReader> = {
   braces: templateReader(/\{([A-Za-z_]\w*)(?::[A-Za-z_]\w*)?\}/g),
   flaskConverters: templateReader(
@@ -239,12 +204,6 @@ const PATH_TEMPLATE_READERS: Record<string, PathTemplateReader> = {
   ),
 };
 
-/**
- * Run the pattern's declared template syntax over a literal path. No
- * declared syntax reads the path as written with no parameters; a
- * declared syntax this adapter has no reader for reads as unreadable
- * rather than guessing at a spelling it cannot parse.
- */
 function readPathTemplate(
   pattern: PythonDiscoveryPattern,
   path: string,
@@ -274,9 +233,8 @@ function classRouteUnits(
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RawCodeStructure[] {
-  // The path is the whole of what a class decorator says about this
-  // route, so a class whose decorator states none readable is not
-  // discovered at all rather than discovered with nothing on it.
+  // The path is all a class decorator says about the route, so if we cannot
+  // read one, the class is not discovered at all.
   const pathArgument = readPathArgument(classification);
   if (pathArgument.kind !== "written") {
     return [];
@@ -339,13 +297,7 @@ function classRouteUnits(
   return units;
 }
 
-/**
- * The path a route is served at: what its decorator states, with the
- * prefix of whatever it is declared on in front of it, spelled the way
- * the IR spells a path template. Each step reads further from what the
- * one before it found, so a step that cannot read hands its reason on
- * and the ones after it never run.
- */
+/** The path a route is served at, spelled the way the IR spells a path template. */
 function readRoutePath(
   pattern: PythonDiscoveryPattern,
   pathArgument: Reading<string>,
@@ -361,7 +313,6 @@ function readRoutePath(
   );
 }
 
-/** The decorator's own path with the router's prefix in front of it, when the route hangs on a router that composes one. */
 function composeRoutePath(
   pattern: PythonDiscoveryPattern,
   classification: DecoratorClassification,
@@ -402,12 +353,7 @@ function servedSpelling(pattern: PythonDiscoveryPattern, path: string): string {
   return REPEATED_SLASH_READERS[pattern.pathRepeatedSlashes ?? "kept"](path);
 }
 
-/**
- * The prefix the router a route is declared on puts in front of every
- * path on it. Absent when the decorator hangs on something that
- * composes no prefix: the app itself, an object this reading never saw
- * constructed, or a pack that declares no router mounting at all.
- */
+/** Absent when the decorator hangs on something that composes no prefix, the app itself included. */
 function readRouterPrefix(
   pattern: PythonDiscoveryPattern,
   classification: DecoratorClassification,
@@ -442,12 +388,7 @@ function readRouterPrefix(
   return absentReading;
 }
 
-/**
- * The status a route's decorator states under its pack's status
- * keyword. A keyword written as anything but a literal number reads as
- * unreadable: taking the library's default there would claim a status
- * the running app contradicts whenever that value is anything else.
- */
+/** If the status keyword is written as anything but a literal number, falling back to the library's default would claim a status the running app does not return. */
 function readStatusCode(
   pattern: DecoratedFunctionRoute,
   classification: DecoratorClassification,
@@ -471,7 +412,6 @@ function readStatusCode(
   );
 }
 
-/** A status reading alongside the default the pattern's library declares for a route that states none. */
 function defaultedStatus(
   reading: Reading<number>,
   pattern: PythonDiscoveryPattern,
@@ -484,12 +424,6 @@ function defaultedStatus(
   };
 }
 
-/**
- * The response body shape a route's decorator states under its pack's
- * response-model keyword. A keyword written as anything but a name
- * reads as unreadable, so a shape nobody could read does not pass for
- * a route that declares none.
- */
 function readResponseModel(
   pattern: DecoratedFunctionRoute,
   classification: DecoratorClassification,
@@ -506,9 +440,6 @@ function readResponseModel(
   }
 
   if (arg.kind === "identifier") {
-    // A response_model naming a class the binder can see resolves to
-    // its record shape; one it can't (imported from elsewhere, or not
-    // a class at all) stays an opaque ref by name.
     return writtenReading(
       shapeFromName(arg.name, module.moduleScope, ctx),
       classification.range,
@@ -521,7 +452,6 @@ function readResponseModel(
   );
 }
 
-/** The shape a function's return annotation states. */
 function readReturnAnnotation(
   definitionNode: PyNode,
   scope: Scope,
@@ -589,27 +519,25 @@ interface BuildRouteUnitOptions {
   name: string;
   exportPath: string[];
   method: string;
-  /** Where the route is served, as the readers left it. The binding names a path only when this came back written. */
+  /** The boundary binding only gets a path when this came back written. */
   routePath: Reading<PathTemplateReading>;
-  /** Whether the pattern declares an annotated-local-class parameter as the request body (see `RouteConventions` in pack.ts). */
   requestBodyFromAnnotatedClass: boolean;
   definitionNode: PyNode;
   enclosingScope: Scope;
   module: ModuleBinding;
   filePath: string;
   skipReceiverParam: boolean;
-  /** The shape the route's decorator declares for its response body, before the return annotation gets its say. */
+  /** What the decorator declares, before the return annotation gets a say. */
   responseShape: Reading<TypeShape>;
-  /** The status the route declares, with the default its library applies when it declares none. Handed to the extractor uncollapsed. */
+  /** Handed to the extractor uncollapsed, so it applies the library default itself. */
   statusCode: DefaultedReading<number>;
   definitionsCtx?: ReturnType<typeof createAnnotationContext>;
 }
 
 /**
- * The shape a route declares for its response body: what its decorator
- * states, and otherwise its return annotation. The annotation is read
- * only when the decorator did not answer, so a class the route never
- * declares does not land in `definitions` on the way past.
+ * The return annotation is only read when the decorator gave nothing back, so a
+ * class the route never declares does not get added to `definitions` as a side
+ * effect of looking.
  */
 function readResponseShape(
   declared: Reading<TypeShape>,
@@ -622,14 +550,7 @@ function readResponseShape(
   return firstWrittenReading([declared, readAnnotation()]);
 }
 
-/**
- * One route's unit, or, when building it threw, a unit saying what
- * stopped it. A route the readers cannot turn into a unit costs that
- * route and not the run: every other route in the file, and every
- * other file, still lands, and the reason reaches the summary as a
- * gap. A caller who would rather the run stop on it says so with
- * strict gap handling.
- */
+/** When a route cannot be turned into a unit, we lose that route rather than the whole run. */
 function routeUnitOrAbstention(
   unitOptions: BuildRouteUnitOptions,
   options: DiscoveryOptions,
@@ -645,17 +566,11 @@ function routeUnitOrAbstention(
   }
 }
 
-/** The empty string a builder refuses, as the null that means the source names nothing. */
 function nullIfEmpty(value: string): string | null {
   return value === "" ? null : value;
 }
 
-/**
- * What a route that could not be built leaves behind: its name and
- * where it is written, no path, and the reason nobody could build it.
- * Nothing here reads the route again, so whatever threw the first time
- * has nothing left to throw from.
- */
+/** Nothing in here reads the route again, so whatever threw the first time has nothing to throw from a second time. */
 function unbuiltRouteUnit(
   unitOptions: BuildRouteUnitOptions,
   error: unknown,
@@ -709,11 +624,6 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     definitionsCtx,
   } = options;
 
-  // The path template names which of the handler's parameters are path
-  // parameters, and that has to be settled before there is a summary
-  // field to fill, so this is read further from rather than claimed.
-  // Null carries through: no path read means no parameter can be told
-  // apart from another, and the roles say so instead of guessing.
   const template = valueToReadFurtherFrom(routePath);
   const ctx = definitionsCtx ?? createAnnotationContext(module.scopeFor);
   const parameters = readParameters(
@@ -729,10 +639,9 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     readReturnAnnotation(definitionNode, enclosingScope, ctx),
   );
 
-  // The route declares a response when it says anything at all about
-  // the body shape or the status, including something nobody could
-  // read. A route that says neither declares nothing, and the library's
-  // default status has nothing to apply to.
+  // A route that says nothing about the body shape and nothing about the
+  // status declares no response at all, so the library's default status has
+  // nothing to apply to.
   const branches: RawBranch[] = [];
   if (
     responseShape.reading.kind !== "absent" ||
@@ -742,9 +651,8 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       conditions: [],
       terminal: {
         kind: "response",
-        // What this branch answers with rides along as readings in
-        // `statusCodeReading` and `bodyShapeReading`, and the extractor
-        // is what turns either into a claim.
+        // These stay null here. The extractor fills them in from
+        // `statusCodeReading` and `bodyShapeReading` below.
         statusCode: null,
         body: { typeText: null, shape: null },
         exceptionType: null,
@@ -786,10 +694,6 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     bodyContent: bodyNode !== null ? bodyContentOf(bodyNode) : "statements",
     dependencyCalls: [],
     declaredContract: null,
-    // The chosen shape reading rides on the branch; what the choice
-    // passed over and could not read has no branch to ride on and is
-    // stated here, and so are the roles a path nobody read left
-    // unnamed.
     readings: [
       routePath,
       ...unreadRoleReadings(parameters, rangeOf(definitionNode)),
@@ -801,12 +705,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   };
 }
 
-/**
- * The one sentence a route says about roles nobody could read. Which
- * parameters a path names is the whole basis for telling one role
- * from another here, so a route whose path went unread has the same
- * thing to say about all of them, and says it once.
- */
+/** One sentence covers every parameter, because an unread path is the same reason for all of them. */
 function unreadRoleReadings(
   parameters: RawParameter[],
   range: SourceRange,
@@ -823,7 +722,7 @@ function unreadRoleReadings(
   ];
 }
 
-/** Whether a body holds only a docstring and/or a bare `pass`, or something more. v0 doesn't read past this: the distinction only feeds `bodyContent`, not what a transition claims. */
+/** Whether a body contains only a docstring and/or a bare `pass`, or something more. */
 function bodyContentOf(bodyNode: PyNode): BodyContent {
   for (const stmt of bodyStatements(bodyNode)) {
     if (stmt.type === "pass_statement") {
@@ -916,19 +815,9 @@ function readParameter(
 }
 
 /**
- * A parameter the path template names is a path parameter. A
- * parameter annotated with a locally-defined class (the only case
- * `annotationToShape` files under `def`, per `recordShapeRef`) is a
- * request body only when the pattern declares that convention (see
- * `RouteConventions` in pack.ts); a library without it leaves such a
- * parameter a query parameter, like everything else here.
- *
- * All of that rests on having read the path. When nobody could, a
- * null `pathParamNames` says so, and every parameter the request-body
- * convention does not answer for names no role at all. Calling those
- * query parameters would be the same confident guess a composed path
- * exists to remove: a path parameter reads as a query parameter, and
- * nothing in the summary says the reading is why.
+ * A null `pathParamNames` means nobody could read the path. A parameter that the
+ * request-body convention does not cover then gets no role at all, because
+ * calling it a query parameter could hide a path parameter behind a guess.
  */
 function roleOf(
   name: string,

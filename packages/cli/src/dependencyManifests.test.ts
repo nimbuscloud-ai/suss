@@ -148,8 +148,7 @@ describe("readPythonDependencies", () => {
   });
 
   it("says so when setup.cfg points install_requires at another file", () => {
-    // setuptools reads `file:` and `attr:` at build time, so the list
-    // is no more written here than a computed one in setup.py is.
+    // setuptools reads `file:` and `attr:` at build time.
     write(
       "setup.cfg",
       "[options]\ninstall_requires = file: requirements.txt\n",
@@ -179,8 +178,6 @@ describe("readPythonDependencies", () => {
   });
 
   it("says so when setup.py computes its list instead of writing one", () => {
-    // Returning nothing here would look identical to a project with no
-    // dependencies, which is the thing worth telling apart.
     write(
       "setup.py",
       "setup(name='svc', install_requires=read_requirements())\n",
@@ -240,8 +237,7 @@ describe("readRubyDependencies", () => {
         "   2.5.9",
       ].join("\n"),
     );
-    // rack is something graphql pulled in, not something this project
-    // asked for, so it is not evidence for a pack.
+    // rack is something graphql pulled in, not something this project asked for.
     expect(readRubyDependencies(dir).named.map((d) => d.name)).toEqual([
       "graphql",
     ]);

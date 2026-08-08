@@ -1,11 +1,12 @@
-// templateLoader.ts — parse a CloudFormation / SAM template file into a
-// plain object, resolving the intrinsic YAML shorthand tags CFN uses.
-//
-// This is the one place that owns "turn a template on disk into data".
-// Both the summary-generation paths in index.ts and the code-side
-// handler pairing in serverlessFunctions.ts read through it, so the
-// YAML/JSON parsing and the intrinsic-tag handling live here rather
-// than being duplicated per consumer.
+/**
+ * templateLoader.ts parses a CloudFormation or SAM template file into a
+ * plain object, resolving the shorthand YAML tags CFN uses for intrinsics.
+ *
+ * This is the one place that turns a template on disk into data. The
+ * summary-generation paths and the code-side handler pairing both read
+ * through it, so the YAML and JSON parsing, along with the handling of
+ * intrinsic tags, lives here instead of being repeated per consumer.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -23,7 +24,7 @@ export interface CloudFormationResource {
 export interface CloudFormationTemplate {
   /**
    * SAM `Globals` block. Section keys (`Function`, `Api`, `HttpApi`)
-   * hold defaults that individual resources inherit unless they
+   * contain defaults that individual resources inherit unless they
    * override the property themselves.
    */
   Globals?: Record<string, Record<string, unknown>>;
@@ -33,19 +34,21 @@ export interface CloudFormationTemplate {
 // ---------------------------------------------------------------------------
 // CloudFormation YAML intrinsic tags
 // ---------------------------------------------------------------------------
-//
-// CloudFormation YAML uses shorthand tags (`!Ref X`, `!GetAtt X.Y`,
-// `!Sub "..."`) that the default `yaml` schema doesn't know about. Without
-// a handler the parser would either error or leave them as opaque tagged
-// nodes. We register a small set covering the intrinsics that affect
-// resource references — anything else collapses to its raw scalar value
-// rather than failing the whole parse.
+
+/**
+ * CloudFormation YAML uses shorthand tags (`!Ref X`, `!GetAtt X.Y`,
+ * `!Sub "..."`) that the default `yaml` schema doesn't know about. Without a
+ * handler the parser would either error out or leave them as opaque tagged
+ * nodes. We register a small set covering the intrinsics that affect resource
+ * references, and anything else collapses to its raw scalar value instead of
+ * failing the whole parse.
+ */
 
 /**
  * Every node kind an intrinsic can be written as.
  *
- * `!If [cond, a, b]` is a sequence and `!Sub ["x", { A: 1 }]` holds a
- * map, and a tag registered for scalars only leaves those unresolved.
+ * `!If [cond, a, b]` is a sequence and `!Sub ["x", { A: 1 }]` contains a
+ * map, and a tag registered only for scalars leaves those unresolved.
  * The value still came through, but the parser warned once per
  * occurrence, which on a template of any size buried everything else
  * suss had to say.
@@ -55,8 +58,8 @@ const everyNodeKind = (
   resolve: (value: unknown) => unknown,
 ): CollectionTag[] => {
   // A collection tag is handed the parsed node rather than a plain
-  // value, so everything is read through `plainly` and each entry only
-  // has to think about JavaScript.
+  // value, so everything goes through `plainly` first and each entry
+  // only ever deals with ordinary JavaScript values.
   const forNode = (value: unknown): unknown => resolve(plainly(value));
   return [
     { tag, resolve: forNode },
@@ -75,11 +78,11 @@ const plainly = (value: unknown): unknown =>
     : value;
 
 /**
- * `!GetAtt Table.Arn` and `!GetAtt [Table, Arn]` name the same thing.
+ * `!GetAtt Table.Arn` and `!GetAtt [Table, Arn]` mean the same thing.
  *
  * Only the first dot separates the logical id from the attribute. The
- * attribute itself can hold dots, which is how a nested stack's
- * outputs are read: `!GetAtt NestedStack.Outputs.QueueUrl` names the
+ * attribute itself can contain dots, which is how a nested stack's
+ * outputs are read: `!GetAtt NestedStack.Outputs.QueueUrl` asks for the
  * attribute `Outputs.QueueUrl` on `NestedStack`.
  */
 const getAttParts = (value: unknown): string[] => {
@@ -117,13 +120,13 @@ export const CLOUDFORMATION_YAML_TAGS = [
 ];
 
 /**
- * Load a CloudFormation / SAM template from disk. Format is detected by
- * extension; `.json` parses as JSON, everything else (including
- * `.yaml` / `.yml` / `.template`) goes through the YAML parser with the
+ * Load a CloudFormation or SAM template from disk. The format comes from
+ * the extension: `.json` parses as JSON, and everything else (including
+ * `.yaml`, `.yml`, and `.template`) goes through the YAML parser with the
  * intrinsic tags registered.
  *
- * Throws when the file is missing or the parsed value isn't an object —
- * a malformed manifest is a load-time error, not a silent empty result.
+ * Throws when the file is missing or the parsed value isn't an object. A
+ * malformed manifest is a load-time error rather than an empty result.
  */
 export function loadCloudFormationTemplate(
   templatePath: string,
@@ -145,16 +148,16 @@ export function loadCloudFormationTemplate(
 }
 
 /**
- * CloudFormation references show up in four shapes after parsing:
+ * CloudFormation references come out of the parser in four forms:
  *   - { Ref: "LogicalId" }
  *   - { "Fn::GetAtt": ["LogicalId", "Attr"] }
  *   - { "Fn::GetAtt": "LogicalId.Attr" }, the full-form spelling of the
  *     `!GetAtt` short form, which templates written by hand still use
  *   - the bare logical id when the parser doesn't recognise the YAML tag
  *
- * Every CloudFormation property that names another resource accepts all
- * of them, so anything reading such a property should come through here
- * rather than matching one shape.
+ * Every CloudFormation property that points at another resource accepts
+ * all four, so anything reading such a property should go through here
+ * instead of matching a single form.
  */
 export function refTarget(value: unknown): string | null {
   if (typeof value === "string") {

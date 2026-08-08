@@ -1,10 +1,10 @@
-// preFilter.ts — gate per-file discovery dispatch by `requiresImport`.
+// preFilter.ts: gate per-file discovery dispatch by `requiresImport`.
 //
 // Most packs declare an `importGate`-style trigger on each
 // DiscoveryPattern: a list of module specifiers that must appear in
 // a file's imports for the pattern to be relevant. Files where NO
 // pattern of NO pack matches don't need their discovery dispatch
-// run at all — the AST walks would find nothing.
+// run at all: the AST walks would find nothing.
 //
 // On a monorepo with thousands of TS files where the active packs
 // only target one framework, this typically excludes the large
@@ -12,7 +12,7 @@
 //
 // Match semantics: `requiresImport: ["@foo/bar"]` matches imports
 // from `"@foo/bar"` AND `"@foo/bar/sub-path"`. Empty array (or
-// undefined) means "no gate" — the pattern applies to every file.
+// undefined) means "no gate": the pattern applies to every file.
 
 import { namesAnyPackage } from "../facts/moduleGraph.js";
 
@@ -25,7 +25,7 @@ import type { ResolutionStore } from "../facts/store.js";
  * least one applicable DiscoveryPattern. Files mapped to an empty
  * (or absent) pack list can be skipped entirely.
  *
- * Reads imports via ts-morph's already-parsed AST — fast, no
+ * Reads imports via ts-morph's already-parsed AST: fast, no
  * additional file I/O. Phase 3 (lazy file loading) swaps this for
  * a `ts.preProcessFile` token scan against unparsed file content.
  */
@@ -60,10 +60,10 @@ export function computePackApplicability(
 
   // The scan above misses a project-local barrel that re-exports the
   // gated package. The fact layer follows re-export chains, and it
-  // answers for a whole set of files in one pass, so the files the scan
-  // ruled out go to it together rather than one at a time. Files the
-  // scan already settled stay out of it: reading their import closure
-  // would be work for an answer nobody needs.
+  // covers a whole set of files in one pass, so the files the scan ruled
+  // out go to it together rather than one at a time. Files the scan
+  // already settled stay out of it, since reading their import closure
+  // would be work nobody needs.
   const reachingByPack = new Map<PatternPack, ReadonlySet<SourceFile>>();
   if (resolution !== undefined && gatedPacks.length > 0) {
     const answers = resolution.filesImportingTransitively(
@@ -101,7 +101,7 @@ export function computePackApplicability(
  * Whether a pack applies to every file (no import gate to filter by).
  *
  * Shared with the lazy bootstrap in `lazyProjectInit.ts`, which makes
- * the same gated/ungated decision one stage earlier — over unparsed
+ * the same gated/ungated decision one stage earlier: over unparsed
  * file content rather than over `SourceFile`s. The two stages must
  * agree: a pack the bootstrap treats as gated never gets its files
  * loaded, so a divergence here means silent zero-summary extraction.
@@ -115,7 +115,7 @@ export function packIsUngated(pack: PatternPack): boolean {
   }
   // Packs whose only mechanism is a recognizer or a `discoverUnits`
   // callback (no data-driven discovery patterns) without a pack-level
-  // gate fall through to "ungated" — they walk every file because they
+  // gate fall through to "ungated": they walk every file because they
   // have no per-pattern `requiresImport` to declare relevance through.
   // Truly universal recognizers like `@suss/runtime-node`'s
   // process-surface / env-var recognizers (process.* is always

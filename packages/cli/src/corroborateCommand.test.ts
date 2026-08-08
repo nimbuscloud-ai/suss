@@ -1,4 +1,4 @@
-// corroborateCommand.test.ts — the `suss corroborate` CLI surface.
+// corroborateCommand.test.ts: the `suss corroborate` CLI surface.
 //
 // The engine itself is covered in corroborate.test.ts; these tests
 // exercise the command shell: flag gating, extraction wiring, the

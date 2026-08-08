@@ -1,18 +1,18 @@
 // jsxElementRoute.ts (discovery handler): routes declared as JSX
 // elements, and the object-array form the same libraries accept.
 //
-// The pack names the route element, the path / element / index
+// The pack says which element is the route, the path / element / index
 // attributes, and any factory whose first argument is a route-object
 // array. This file only walks: it matches elements by resolving their
 // tag through the file's imports (so an aliased import reads the same
 // as a plain one), composes nested paths outermost-first, and resolves
-// the rendered component when the element attribute holds a single
+// the rendered component when the element attribute is a single
 // identifier.
 //
 // Abstention is a value here. A route whose path is not a string
 // literal, a spread standing in for routes declared elsewhere, and a
 // route object built by a call each produce a unit that claims no path
-// and carries a sentence saying what was not read. A route whose path
+// and includes a sentence saying what was not read. A route whose path
 // is readable but whose component is not stays discovered, as a
 // boundary with nothing behind it.
 
@@ -42,7 +42,6 @@ type JsxRouteMatch = Extract<
   { type: "jsxElementRoute" }
 >;
 
-/** A JSX node that can be a route declaration. */
 type RouteJsxNode = JsxElement | JsxSelfClosingElement;
 
 /**
@@ -198,7 +197,7 @@ function attributesOf(node: RouteJsxNode): JsxAttributeLike[] {
 
 /**
  * The value of a named JSX attribute, or null when the attribute is
- * not there. A bare attribute (`index` with nothing after it) answers
+ * not there. A bare attribute (`index` with nothing after it) gives
  * with the attribute node itself, which is how a boolean flag is
  * written.
  */
@@ -218,9 +217,9 @@ function attributeValueOf(node: RouteJsxNode, name: string): Node | null {
 }
 
 /**
- * The string a JSX attribute or object-property value holds, or null
+ * The string a JSX attribute or object-property value is, or null
  * for anything computed. `path="x"` and `path={"x"}` both read; a
- * template with substitutions, a variable, and a call all answer null.
+ * template with substitutions, a variable, and a call all give null.
  */
 function literalStringOf(value: Node): string | null {
   const unwrapped = Node.isJsxExpression(value)
@@ -302,7 +301,7 @@ function composedPrefixOf(
 
 /**
  * The prefix the routes under this one hang off. A literal segment
- * joins what it sits under, a route with no path of its own passes its
+ * joins what it is under, a route with no path of its own passes its
  * prefix through unchanged, and a path nobody can read leaves
  * everything below it with nowhere to hang.
  *
@@ -324,8 +323,8 @@ function prefixUnder(prefix: Prefix, own: OwnPath): Prefix {
 }
 
 /**
- * The full path a route answers, or the sentence saying why it claims
- * none. An index route answers the path it sits under; anything else
+ * The full path a route serves, or the sentence saying why it claims
+ * none. An index route serves the path it is under; anything else
  * joins its own segment onto it.
  */
 function resolvedPathOf(own: OwnPath, prefix: Prefix): ResolvedPath {
@@ -401,9 +400,9 @@ function unitForJsxRoute(
 
 /**
  * The unit one readable route produces. The component behind it is the
- * unit when a single identifier names it and the identifier resolves;
- * otherwise the route is a boundary announced here, and the reading
- * limit surfaces through the summary's own body-elsewhere gap.
+ * unit when a single identifier refers to it and that identifier
+ * resolves. Otherwise the route is a boundary announced here, and what
+ * we could not read shows up as the summary's body-elsewhere gap.
  */
 function routeUnit(
   at: Node,

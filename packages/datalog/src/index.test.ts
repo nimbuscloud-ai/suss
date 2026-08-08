@@ -23,7 +23,6 @@ describe("Database", () => {
     const db = new Database();
     expect(db.add("r", ["a", 1])).toBe(true);
     expect(db.add("r", ["a", 1])).toBe(false);
-    // "1" (string) and 1 (number) are different atoms.
     expect(db.add("r", ["a", "1"])).toBe(true);
     expect(db.size("r")).toBe(2);
     expect(db.has("r", ["a", 1])).toBe(true);
@@ -32,8 +31,6 @@ describe("Database", () => {
 
   it("keeps tuples apart when a value looks like the key encoding", () => {
     const db = new Database();
-    // Every pair here would collide under a scheme that joins the
-    // columns on some character and trusts values not to contain it.
     const pairs: [string | number, string][] = [
       ["a\u0000sb", "c"],
       ["a", "b\u0000sc"],
@@ -53,7 +50,7 @@ describe("Database", () => {
   });
 });
 
-describe("evaluate — positive rules", () => {
+describe("evaluate: positive rules", () => {
   it("computes transitive closure over a chain", () => {
     const db = new Database();
     db.add("edge", ["a", "b"]);
@@ -149,7 +146,7 @@ describe("evaluate — positive rules", () => {
   });
 });
 
-describe("evaluate — stratified negation", () => {
+describe("evaluate: stratified negation", () => {
   it("derives complements once the positive stratum is complete", () => {
     const db = new Database();
     db.add("node", ["a"]);
@@ -175,13 +172,12 @@ describe("evaluate — stratified negation", () => {
     expect(sorted(db.facts("unreachable"))).toEqual(["c"]);
   });
 
-  it("supports negation over base relations", () => {
+  it("stops throw propagation at a caller that handles the callee it calls", () => {
     const db = new Database();
     db.add("calls", ["a", "b"]);
     db.add("calls", ["b", "c"]);
     db.add("handles", ["a", "b"]);
 
-    // Throw propagation blocked by a handler on the edge.
     evaluate(db, [
       rule("mayThrow", [constant("c")], [lit("calls", V("_"), constant("c"))]),
       rule(
@@ -195,7 +191,6 @@ describe("evaluate — stratified negation", () => {
       ),
     ]);
 
-    // c throws; b propagates (no handler); a does NOT (handles a→b).
     expect(sorted(db.facts("mayThrow"))).toEqual(["b", "c"]);
   });
 
@@ -238,7 +233,7 @@ describe("stratify", () => {
   });
 });
 
-describe("evaluate — scale sanity", () => {
+describe("evaluate: scale sanity", () => {
   it("closes a 500-node chain promptly", () => {
     const db = new Database();
     for (let i = 0; i < 500; i++) {
@@ -256,8 +251,6 @@ describe("evaluate — scale sanity", () => {
     ]);
     const elapsed = performance.now() - start;
     expect(db.size("reachable")).toBe(501);
-    // Semi-naïve means linear rounds with per-round work proportional
-    // to the delta; a quadratic-blowup regression would take seconds.
     expect(elapsed).toBeLessThan(2_000);
   });
 });
@@ -294,7 +287,7 @@ describe("Database.lookup", () => {
   });
 });
 
-describe("evaluate — resuming a previous fixpoint", () => {
+describe("evaluate: resuming a previous fixpoint", () => {
   const CLOSURE = [
     rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),
     rule(
@@ -351,7 +344,6 @@ describe("evaluate — resuming a previous fixpoint", () => {
     db.add("edge", ["b", "c"]);
     evaluate(db, CLOSURE);
 
-    // A rule set the first pass never ran; resuming would miss it.
     evaluate(db, [
       rule("backward", [V("y"), V("x")], [lit("edge", V("x"), V("y"))]),
     ]);
@@ -372,8 +364,6 @@ describe("evaluate — resuming a previous fixpoint", () => {
     evaluate(db, SINKS);
     expect(sorted(db.facts("sink"))).toEqual(["b"]);
 
-    // "b" has an edge out of it now, so it is no longer a sink. A pass
-    // that only ever added facts would leave the old answer standing.
     db.add("edge", ["b", "c"]);
     evaluate(db, SINKS);
 
@@ -457,8 +447,6 @@ describe("Database.retract", () => {
     db.add("edge", ["b", "c"]);
     evaluate(db, rules);
 
-    // Retracting a derived fact behind evaluation's back would stay
-    // missing if the next call resumed from the old fixpoint.
     db.retract("path", [["a", "b"]]);
     evaluate(db, rules);
 
@@ -466,7 +454,7 @@ describe("Database.retract", () => {
   });
 });
 
-describe("evaluate — taking conclusions back", () => {
+describe("evaluate: taking conclusions back", () => {
   const BLOCKABLE = [
     rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
   ];
@@ -481,7 +469,6 @@ describe("evaluate — taking conclusions back", () => {
     db.retract("p", [["1"]]);
     evaluate(db, BLOCKABLE);
 
-    // q(1) has nothing holding it up now.
     expect(sorted(db.facts("q"))).toEqual(["2"]);
   });
 
@@ -491,8 +478,6 @@ describe("evaluate — taking conclusions back", () => {
     evaluate(db, BLOCKABLE);
     expect(sorted(db.facts("q"))).toEqual(["1"]);
 
-    // The caller now states q(1) themselves. Blocking p(1) afterwards
-    // takes the derivation away, but not the caller's own fact.
     db.add("q", ["1"]);
     db.add("blocked", ["1"]);
     evaluate(db, BLOCKABLE);
@@ -500,10 +485,7 @@ describe("evaluate — taking conclusions back", () => {
     expect(sorted(db.facts("q"))).toEqual(["1"]);
   });
 
-  it("still owns a fact two of its own rules derived", () => {
-    // Two rules with the same head reach q(1). The second derivation
-    // reports nothing new, which must not read as the caller claiming
-    // the fact, or nothing can take it back afterwards.
+  it("still owns a fact two of its own rules derived, so it can take it back", () => {
     const rules = [
       rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
       rule("q", [V("x")], [lit("s", V("x")), notLit("blocked", V("x"))]),
@@ -557,8 +539,6 @@ describe("evaluate — taking conclusions back", () => {
     evaluate(db, positive);
     expect(sorted(db.facts("r"))).toEqual(["1"]);
 
-    // A negated rule set running on the same database has no business
-    // touching what the positive one worked out.
     evaluate(db, BLOCKABLE);
 
     expect(sorted(db.facts("r"))).toEqual(["1"]);
@@ -568,8 +548,6 @@ describe("evaluate — taking conclusions back", () => {
 
 describe("tupleKey", () => {
   it("gives two different tuples two different keys", () => {
-    // Joined on a separator, "a" + "b|c" and "a|b" + "c" would be the
-    // same string and a lookup would answer with the wrong facts.
     expect(tupleKey(["a", "b|c"])).not.toBe(tupleKey(["a|b", "c"]));
   });
 
@@ -598,8 +576,6 @@ describe("tupleKey", () => {
   });
 
   it("refuses a string it did not write", () => {
-    // A key that does not parse means two encodings were joined, and
-    // every answer read out of it after that would be wrong.
     expect(() => tupleKeyParts("s3:ab")).toThrow("not a tuple key");
     expect(() => tupleKeyParts("nope")).toThrow("not a tuple key");
     expect(() => tupleKeyParts("x1:a")).toThrow("not a tuple key");

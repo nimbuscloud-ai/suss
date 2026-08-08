@@ -1,26 +1,16 @@
-// @suss/datalog — a small semi-naïve Datalog evaluator with stratified
-// negation.
-//
-// This is the rules engine behind suss's derived program facts. The
-// extraction pipeline accumulates analyses that are naturally fixpoint
-// problems — reachable closures, multi-hop wrapper resolution,
-// transitive throw propagation, origin chains. Expressed as rules over
-// base facts, they share one small, testable fixpoint core — and
-// because rule definitions are plain data, the same rules can later
-// run on a faster external engine (or be audited independently of any
-// engine at all).
-//
-// Design constraints, in order:
-//   1. Pure TypeScript, zero dependencies — the npm-shipped CLI cannot
-//      require a native binary.
-//   2. Rules are data (`Rule`), not code. No embedded DSL strings.
-//   3. Sound negation only: rules are stratified, and a negation cycle
-//      is a hard error at evaluation time, never a wrong answer.
-//
-// Scale honesty: joins are nested-loop with hash indexing on bound
-// positions. Fact sets in extraction are thousands of tuples, not
-// millions; if that changes, the rule data model is the stable seam
-// and the evaluator is the replaceable part.
+/**
+ * @suss/datalog, a small semi-naïve Datalog evaluator with stratified
+ * negation, and the rules engine behind suss's derived program facts:
+ * reachable closures, wrapper resolution, throw propagation, origin
+ * chains. Rules are plain data (`Rule`) rather than code, so the same
+ * rules can later run on a faster engine, or be read on their own.
+ *
+ * It is pure TypeScript with no dependencies, because the npm-shipped
+ * CLI cannot require a native binary. Negation is stratified, so a
+ * negation cycle throws at evaluation time rather than quietly giving a
+ * wrong answer. Joins are nested-loop with hash indexing on bound
+ * positions, which suits the thousands of tuples extraction produces.
+ */
 
 import {
   chargeEvaluation,
@@ -51,7 +41,7 @@ export type Term =
   | { type: "variable"; name: string }
   | { type: "constant"; value: Atom };
 
-/** Shorthand constructors — rules stay readable without a parser. */
+/** Shorthand constructors, so rules stay readable without a parser. */
 export const variable = (name: string): Term => ({ type: "variable", name });
 export const constant = (value: Atom): Term => ({ type: "constant", value });
 
@@ -99,7 +89,7 @@ const keyOf = (tuple: Tuple): string => tupleKey(tuple);
 interface Relation {
   keys: Set<string>;
   tuples: Tuple[];
-  /** Column position, to value, to the tuples holding that value. */
+  /** Column position, then value, then the tuples with that value. */
   indexes: Map<number, Map<string, Tuple[]>>;
 }
 
@@ -139,10 +129,9 @@ export class Database {
     const relation = this.relation(relationName);
     const key = keyOf(tuple);
     if (relation.keys.has(key)) {
-      // A caller asserting a fact evaluation had already worked out
-      // takes ownership of it, so taking conclusions back later must
-      // not take this one. Evaluation reaching the same fact by a
-      // second derivation is a different thing and changes nothing.
+      // The caller now owns a fact it asserted, even one evaluation had
+      // already derived, so retracting conclusions later must leave this
+      // one alone. A rule deriving the same fact twice changes nothing.
       if (!isDeriving(this)) {
         claimFact(this, relationName, key);
       }
@@ -168,13 +157,13 @@ export class Database {
   }
 
   /**
-   * The facts holding `value` at `column`. A join reaches for this
-   * instead of scanning the whole relation once one of its terms is
-   * already bound.
+   * The facts with `value` at `column`. Once one of a literal's terms
+   * is already bound, the join uses this instead of scanning the whole
+   * relation.
    *
    * A column is indexed the first time somebody asks for it and stays
-   * up to date after that, so a relation nobody joins on this way
-   * carries no index at all.
+   * up to date after that, so a relation nobody joins on this way never
+   * gets an index.
    */
   lookup(relationName: string, column: number, value: Atom): readonly Tuple[] {
     const relation = this.store.get(relationName);
@@ -198,9 +187,9 @@ export class Database {
   /**
    * Remove facts from a relation. Returns how many were actually there.
    *
-   * Evaluation uses this to take back what it derived last time when a
-   * rule set uses negation, where a new fact can invalidate an old
-   * conclusion. Callers rarely need it.
+   * When a rule set uses negation, a new fact can invalidate an old
+   * conclusion, so evaluation calls this to remove what it derived last
+   * time. Callers rarely need it.
    */
   retract(relationName: string, tuples: Iterable<Tuple>): number {
     const relation = this.store.get(relationName);
@@ -223,8 +212,8 @@ export class Database {
     relation.tuples = relation.tuples.filter(
       (tuple) => !going.has(keyOf(tuple)),
     );
-    // Cheaper to drop the indexes and let the next lookup rebuild them
-    // than to hunt through every bucket for the tuples that went.
+    // Dropping the indexes and letting the next lookup rebuild them is
+    // cheaper than hunting through every bucket for the removed tuples.
     relation.indexes.clear();
     forgetFacts(this, relationName, going);
     return going.size;
@@ -246,8 +235,9 @@ export class Database {
 /**
  * Assign each derived relation a stratum such that positive
  * dependencies never decrease the stratum and negative dependencies
- * strictly increase it. Iterates to fixpoint; a stratum exceeding the
- * relation count means a negation cycle — not stratifiable, hard error.
+ * strictly increase it. Iterates to fixpoint. A stratum above the
+ * relation count means there is a negation cycle, which cannot be
+ * stratified, so this throws.
  */
 export function stratify(rules: Rule[]): Rule[][] {
   const derived = new Set(rules.map((r) => r.head.relation));
@@ -264,7 +254,7 @@ export function stratify(rules: Rule[]): Rule[][] {
       const head = r.head.relation;
       for (const body of r.body) {
         if (!derived.has(body.relation)) {
-          continue; // base relation — always stratum 0
+          continue; // base relation, always stratum 0
         }
         const required =
           (stratum.get(body.relation) ?? 0) + (body.negated ? 1 : 0);
@@ -335,7 +325,7 @@ function groundNegated(literal: Literal, bindings: Bindings): Tuple {
     const bound = bindings.get(term.name);
     if (bound === undefined) {
       throw new Error(
-        `unbound variable "${term.name}" in negated literal "${literal.relation}" — ` +
+        `unbound variable "${term.name}" in negated literal "${literal.relation}": ` +
           "negated literals may only use variables bound by earlier positive literals",
       );
     }
@@ -406,10 +396,10 @@ function evaluateRule(
 }
 
 /**
- * The facts worth trying for a literal. When any of its terms is
+ * The facts worth trying for a literal. When one of its terms is
  * already fixed, either written as a constant or bound by an earlier
- * literal, the index on that column answers directly. Otherwise there
- * is nothing to narrow by and the join scans.
+ * literal, the index on that column gives those facts directly.
+ * Otherwise there is nothing to narrow by, so the join scans.
  */
 function boundSource(
   db: Database,
@@ -432,26 +422,24 @@ function boundSource(
 // ---------------------------------------------------------------------------
 
 /**
- * What a database already worked out, so a later call with the same
- * rules can carry on from there instead of starting over. Held to the
- * side rather than on Database, which stays a plain fact store.
- */
-/**
- * What one rule set has worked out about a database. Kept per rule
- * set: two rule sets sharing a database each answer for their own
- * conclusions, and neither takes the other's away.
+ * What one rule set has worked out about a database, so a later call
+ * with the same rules can pick up from there instead of starting over.
+ * Kept off to the side rather than on Database, which stays a plain
+ * fact store, and kept per rule set: two rule sets sharing a database
+ * are each responsible for their own conclusions, and neither removes
+ * the other's.
  */
 interface RuleSetState {
   /**
-   * How many facts each relation held when this rule set last
-   * finished, or null when facts have gone missing since and the next
+   * How many facts each relation had when this rule set last finished,
+   * or null when facts have been removed since, in which case the next
    * run has to start over.
    */
   marks: Map<string, number> | null;
   /**
    * Every fact this rule set derived, per relation, keyed so a caller
    * asserting the same fact can take it off the list. A tuple the
-   * caller had already added is never in here: `add` reported it as
+   * caller had already added never shows up here: `add` said it was
    * nothing new, so evaluation never claimed it.
    */
   derived: Map<string, Map<string, Tuple>>;
@@ -460,14 +448,14 @@ interface RuleSetState {
 const evaluated = new WeakMap<Database, Map<string, RuleSetState>>();
 
 /**
- * How many evaluate() calls a database is part-way through. A repeat
- * add from a rule is a second derivation of the same fact, not the
- * caller claiming it.
+ * How many evaluate() calls a database is part-way through. While one is
+ * running, a repeat add from a rule is a second derivation of the same
+ * fact rather than the caller claiming it.
  *
- * A count rather than a flag: rules are data and evaluate() calls no
- * caller code, so a nested run is unreachable today, but if one ever
- * appeared a flag would be cleared by the inner call and leave the
- * outer one treating its own derivations as caller facts.
+ * This counts rather than flags: rules are data and evaluate() calls no
+ * caller code, so nothing nests today, but if something ever did, the
+ * inner call would clear a flag and the outer call would then treat its
+ * own derivations as caller facts.
  */
 const deriving = new Map<Database, number>();
 
@@ -497,8 +485,8 @@ function claimFact(db: Database, relation: string, key: string): void {
 
 /**
  * Facts left the database, so no rule set can resume from its old
- * fixpoint. The ledger of what each derived survives, since a later
- * negated run still has to be able to take those facts back.
+ * fixpoint. Each rule set keeps its ledger of what it derived, since a
+ * later run with negation still has to be able to retract those facts.
  */
 function forgetFacts(db: Database, relation: string, keys: Set<string>): void {
   const states = evaluated.get(db);
@@ -522,11 +510,12 @@ const usesNegation = (rules: Rule[]): boolean =>
 /**
  * Whether the last fixpoint can be built on. Positive rules are
  * monotone: new facts can only bring new conclusions, and everything
- * derived before still holds, so a delta pass finishes the job.
+ * derived before is still true, so a delta pass finishes the job.
  *
  * Negation is not monotone. A new fact can make a negated literal stop
  * matching, which takes an old conclusion away, and a pass that only
- * adds can never do that. Those runs clear the board first instead.
+ * adds can never do that. So those runs start by clearing what they
+ * derived.
  */
 function canResume(rules: Rule[], state: RuleSetState): boolean {
   return !usesNegation(rules) && state.marks !== null;
@@ -591,8 +580,8 @@ export function evaluate(db: Database, rules: Rule[]): Database {
  * questions. Every relation `deriveOnDemand` restricts is derived under
  * a demand fact, so clearing the demand together with everything under
  * it costs one question's worth of derivation rather than every
- * question asked so far. The relations named as complete keep what they
- * hold, which is the answers a caller has already read.
+ * question asked so far. The relations listed as complete keep their
+ * contents, which are the answers a caller has already read.
  *
  * Any other rule set over the same database does start over, since a
  * relation it derived from may be one of these.
@@ -633,8 +622,8 @@ function shapeOf(rules: Rule[]): RuleSetShape {
   if (known !== undefined) {
     return known;
   }
-  // The relations a rule set derives name it well enough to tell two apart
-  // in a report, and stay readable in a way the rule JSON does not.
+  // Listing the relations a rule set derives is enough to tell two of them
+  // apart in a report, and it stays readable where the rule JSON does not.
   const derivedRelations = [...new Set(rules.map((r) => r.head.relation))];
   const shape: RuleSetShape = {
     signature: JSON.stringify(rules),
@@ -661,10 +650,9 @@ function runRules(db: Database, rules: Rule[]): Database {
   };
   states.set(signature, state);
 
-  // A rule set with negation has one right answer for the facts the
-  // database holds now, and an earlier run of these rules may have
-  // concluded things that answer does not include. Take those back and
-  // work it out again from the base facts.
+  // A rule set with negation has one right answer for the facts in the
+  // database right now, and an earlier run may have concluded things that
+  // answer leaves out. Retract those and work it out from the base facts.
   if (usesNegation(rules)) {
     for (const [relation, ledger] of state.derived) {
       db.retract(relation, ledger.values());
@@ -694,8 +682,8 @@ function runRules(db: Database, rules: Rule[]): Database {
     };
 
     // One rule against one delta. Profiling charges the rule here, where
-    // both the time and the tuples it won are in scope; the head relation's
-    // size before and after is what "this rule found something new" means.
+    // both the time and the new tuples are in scope. Comparing the head
+    // relation's size before and after is how we tell it found something.
     const runOneRule = (
       r: Rule,
       seed: Map<string, readonly Tuple[]>,
@@ -729,10 +717,9 @@ function runRules(db: Database, rules: Rule[]): Database {
         const positives = r.body.filter((l) => !l.negated);
         for (let i = 0; i < positives.length; i++) {
           const literal = positives[i];
-          // Within one evaluation base facts hold still, so only the
-          // relations this stratum derives can carry a new delta. The
-          // seed round of a resumed run is the exception: that delta is
-          // exactly the base facts the caller added since last time.
+          // Within one evaluation the base facts do not change, so only
+          // this stratum's own relations can have a new delta. A resumed
+          // run's seed delta is the exception: those are new base facts.
           if (derivedOnly && !derivedHere.has(literal.relation)) {
             continue;
           }

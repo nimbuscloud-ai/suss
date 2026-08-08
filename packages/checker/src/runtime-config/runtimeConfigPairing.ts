@@ -1,16 +1,16 @@
-// runtimeConfigPairing.ts — pair runtime-config provider summaries
+// runtimeConfigPairing.ts: pair runtime-config provider summaries
 // (CFN/SAM Lambda env-var declarations, ECS task definitions, etc.)
 // against code reads of `process.env.X` from source files within the
 // runtime's declared codeScope.
 //
 // Three findings:
-//   - envVarUnprovided   (error)   — code reads X, runtime doesn't supply
-//   - envVarUnused       (warning) — runtime supplies X, no code reads
-//   - runtimeScopeUnknown (info)   — we could not tell which code the
+//   - envVarUnprovided   (error)  : code reads X, runtime doesn't supply
+//   - envVarUnused       (warning): runtime supplies X, no code reads
+//   - runtimeScopeUnknown (info)  : we could not tell which code the
 //                                    runtime runs, so nothing was paired
 //
 // Soundness: a read pairs against the runtime it runs in, which the
-// deployable unit on each side says. Code that names no unit falls back
+// deployable unit on each side says. Code that gives no unit falls back
 // to the runtime's `metadata.codeScope.path`, and only where one
 // runtime's path contains it. A service that builds every function from
 // the same directory offers that path for all of them, so taking it
@@ -20,9 +20,9 @@
 // still counts as somebody reading the variable, so the pass does not
 // turn round and tell a runtime that nothing reads what it declares.
 //
-// The runtime-config boundary collapses two links of a chain — the
+// The runtime-config boundary collapses two links of a chain: the
 // CFN/SAM service ↔ runtime contract, and the runtime ↔ process
-// contract — because for pairing purposes the chain is transitive
+// contract: because for pairing purposes the chain is transitive
 // (template promises X → runtime gets X → process sees X). The
 // stub layer that builds these provider summaries is responsible for
 // folding in platform-injected vars (AWS_REGION, etc.) so the
@@ -145,7 +145,7 @@ export function checkRuntimeConfig(
     const provided = readProvidedEnvVars(runtime);
     const providedSet = new Set(provided);
 
-    // envVarUnprovided — one finding per (read site, var). Multiple
+    // envVarUnprovided: one finding per (read site, var). Multiple
     // reads of the same undeclared var across files emit multiple
     // findings; the deduper later collapses identical ones.
     for (const read of inScope) {
@@ -175,8 +175,8 @@ export function checkRuntimeConfig(
 
 /**
  * One finding per summary whose reads went unpaired because several
- * runtimes declare a directory holding its file. It says what could not
- * be told, and names nothing in the code as at fault.
+ * runtimes declare a directory that contains its file. It says what
+ * could not be worked out, and blames nothing in the code.
  */
 /**
  * Joins a document path to a variable name for a set key. The ASCII
@@ -210,7 +210,7 @@ function contestedFindings(
 }
 
 /**
- * envVarUnused — one finding per (runtime, var) declared but never
+ * envVarUnused: one finding per (runtime, var) declared but never
  * read. Two kinds of declaration are exempt. A var the platform
  * injects (AWS_REGION and the rest) is part of the runtime contract
  * whether or not code reads it. A var a document-level default
@@ -284,9 +284,9 @@ function readEnvVarSources(
 
 /**
  * Walk every transition's effects looking for `interaction(class:
- * "config-read")` records — the unified shape emitted by
+ * "config-read")` records: the unified shape emitted by
  * `@suss/runtime-node`'s env-var recognizer (and any future
- * config-source recognizer like dotenv). Each record carries the
+ * config-source recognizer like dotenv). Each record has the
  * env-var name directly; no arg-walking required.
  *
  * Falls back to scanning invocation effect args for the
@@ -481,8 +481,8 @@ function makeDocumentUnusedFinding(
 /**
  * Where the candidate runtimes were declared, for a reader who wants to
  * go and narrow one of them. A stack that embeds others spreads its
- * runtimes over more templates than anyone wants named in a sentence,
- * so past one it says how many.
+ * runtimes over more templates than anyone wants listed in a sentence,
+ * so past one it only says how many.
  */
 function whereDeclared(candidates: PlacedRuntime[]): string {
   const files = new Set(candidates.map((c) => c.runtime.location.file));
@@ -496,7 +496,7 @@ function makeContestedScopeFinding(
   candidates: PlacedRuntime[],
   code: BehavioralSummary,
 ): Finding {
-  // A finding needs a boundary and there are several, so it carries the
+  // A finding needs a boundary and there are several, so it uses the
   // first candidate's and counts the rest in its description.
   const representative = candidates[0];
   return {

@@ -1,7 +1,7 @@
-// compat.test.ts — the same service, written seven ways.
+// compat.test.ts: the same service, written seven ways.
 //
-// Before suss goes out, it has to hold up against the shapes a
-// TypeScript project actually takes: JavaScript as well as TypeScript,
+// Before suss goes out, it has to work against the forms a TypeScript
+// project actually takes: JavaScript as well as TypeScript,
 // CommonJS as well as ESM, a tsconfig that inherits from a base, the
 // "bundler" resolution every esbuild and Vite project uses, a helper
 // described by a sibling .d.ts, and a dependency that is not installed

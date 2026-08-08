@@ -1,13 +1,16 @@
-// messageBus.ts: a message bus (SQS, SNS, S3, EventBridge, BullMQ,
-// Kafka, NATS) as a boundary.
-//
-// Producers send to a channel, consumers receive from it. The channel
-// string is per-bus: SQS keys it on the single queue identity (CFN
-// logical id / env-var name); EventBridge carries a two-part identity,
-// the event bus AND the DetailType a rule matches, encoded as
-// `"<bus>#<detailType>"`, because one bus multiplexes many event types
-// and a rule subscribes to a subset. The split and the agreement rule
-// live in `channel.ts` next door.
+/**
+ * A message bus (SQS, SNS, S3, EventBridge, BullMQ, Kafka, NATS) as a
+ * boundary.
+ *
+ * Producers send to a channel and consumers receive from it. What goes
+ * in the channel string depends on the bus. SQS keys it on the one
+ * queue identity, either the CFN logical id or the env-var name.
+ * EventBridge needs two parts, the event bus and the DetailType a rule
+ * matches, written as `"<bus>#<detailType>"`, because one bus carries
+ * many event types and a rule subscribes to only some of them. How that
+ * string is split, and when two of them agree, is in `channel.ts` next
+ * door.
+ */
 
 import { z } from "zod";
 
@@ -26,10 +29,10 @@ export const MessageBusSemanticsSchema = z.object({
     "nats",
   ]),
   /**
-   * Stable channel identifier — CFN logical id, queue/topic name,
-   * subject pattern, `bus#detailType`. Null when this source does not
-   * name the channel: a send whose queue the code names at runtime,
-   * or a receive whose queue the event-source mapping states.
+   * Stable channel identifier: a CFN logical id, a queue or topic name,
+   * a subject pattern, or `bus#detailType`. Null when this source does
+   * not say which channel, as with a send whose queue the code picks at
+   * runtime, or a receive whose queue the event-source mapping states.
    */
   channel: z.string().min(1).nullable(),
 });
@@ -37,7 +40,7 @@ export const MessageBusSemanticsSchema = z.object({
 export type MessageBusSemantics = z.infer<typeof MessageBusSemanticsSchema>;
 
 /**
- * The bus technologies the schema names, derived from the enum so a
+ * The bus technologies the schema allows. It comes from the enum, so a
  * value added there cannot drift from a hand-written copy elsewhere.
  */
 export type MessageBusTechnology = MessageBusSemantics["messageBus"];
@@ -49,27 +52,23 @@ export const messageBusSemantics = defineBoundarySemantics({
     /** A message goes onto the channel and nothing comes back. */
     exchangesHttpResponses: false,
     /**
-     * `checkMessageBus` judges every channel, unused ones included, so
-     * the generic unmatched lists leave them alone.
+     * `checkMessageBus` looks at every channel, including the unused
+     * ones, so the generic unmatched lists leave them alone.
      */
     reportsUnpairedItself: true,
     /**
-     * `"bus:<messageBus> <subject>"`; null when the channel is null
-     * or its subject empty.
+     * `"bus:<messageBus> <subject>"`, or null when the channel is null
+     * or its subject is empty.
      *
-     * The key carries the subject and drops the bus, so a template
-     * that writes `default#order.placed` and a handler that writes
-     * `order.placed` land in one bucket, and `sidesAgree` compares
-     * the buses inside it; a side that cannot know its bus would
-     * otherwise be keyed away from the side that can.
+     * The key has the subject in it and leaves out the bus, so a
+     * template writing `default#order.placed` and a handler writing
+     * `order.placed` land in one bucket, where `sidesAgree` compares the
+     * buses. A side that cannot know its bus would otherwise be keyed
+     * away from the side that can.
      *
-     * The bus technology stays in the key the way the HTTP method
-     * stays in a REST key. A queue and an event router are different
-     * destinations even when they carry the same subject name.
-     *
-     * Subjects keep their case. Detail-types and queue logical ids
-     * are compared byte for byte by AWS, so folding case here would
-     * pair two channels that never reach each other.
+     * The bus technology stays in, because a queue and an event router
+     * are different destinations even with the same subject. Case stays
+     * too, because AWS compares detail-types and queue ids byte for byte.
      */
     identityKey(semantics) {
       if (semantics.channel === null) {
@@ -89,8 +88,8 @@ export const messageBusSemantics = defineBoundarySemantics({
     },
     /**
      * The whole channel, bus included, unlike the identity key, which
-     * carries the subject alone: someone reading a list of unmatched
-     * channels wants to see which bus each one named.
+     * has the subject alone. Someone reading a list of unmatched
+     * channels wants to see which bus each one was on.
      */
     displayLabel(semantics) {
       if (semantics.channel === null) {

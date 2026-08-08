@@ -1,4 +1,4 @@
-// graphqlHookCall.ts — discover GraphQL hook calls (Apollo Client's
+// graphqlHookCall.ts: discover GraphQL hook calls (Apollo Client's
 // useQuery / useMutation / useSubscription, urql equivalents). Each
 // matched call becomes a unit identified by its enclosing function
 // + the operation name.

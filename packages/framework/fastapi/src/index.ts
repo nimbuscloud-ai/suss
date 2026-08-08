@@ -3,38 +3,34 @@
 // FastAPI declares a route by decorating a function with a verb-named
 // method on the app or on a router (`@app.get(path)`,
 // `@router.post(path)`), where the decorator's own attribute name is
-// the HTTP verb. The app and router objects are local variables, not
-// imports, so the adapter recognizes them by construction: a call to
-// something imported from FastAPI's module, one assignment back
-// (`app = FastAPI()`, `router = APIRouter()`).
+// the HTTP verb. The app and router objects are local variables rather
+// than imports, so the adapter recognizes them by how they are built:
+// a call to something imported from FastAPI's module, one assignment
+// back (`app = FastAPI()`, `router = APIRouter()`).
 //
-// A route on a router is served under up to two prefixes the route
-// file never states: the router constructor's own
-// (`APIRouter(prefix="/items")`) and the one at the mount call
-// (`app.include_router(router, prefix="/api")`). `routerComposition`
-// names FastAPI's spelling of that mounting so the adapter can
-// compose both literal prefixes into the route path, one mount hop
-// deep. Anything past that reading (a computed prefix, a router
-// mounted through more than a single variable binding, a router
-// mounted onto another router) keeps the route discovered by name
-// with no path, and the summary says why.
+// A route on a router is served under up to two prefixes its own file
+// never writes: the router constructor's (`APIRouter(prefix="/items")`)
+// and the one at the mount call (`app.include_router(router,
+// prefix="/api")`). `routerComposition` gives FastAPI's spelling of
+// that mounting, so the adapter can compose both literal prefixes into
+// the route path, one mount hop deep. Anything past that reading, such
+// as a computed prefix, a router mounted through more than a single
+// variable binding, or a router mounted onto another router, keeps the
+// route discovered by name with no path, and the summary says why.
 //
-// v0 scope, per the language-adapters proposal's slice 3: discovery,
-// prefix composition, and declared-shape reading (`response_model`,
-// `status_code`, parameter and return annotations). Dependencies,
-// middleware, and mounted sub-apps are not read.
+// This slice covers discovery, prefix composition, and declared-shape
+// reading (`response_model`, `status_code`, parameter and return
+// annotations). It does not read dependencies, middleware, or mounted
+// sub-apps.
 
 import type { PythonPack } from "@suss/adapter-python";
 
 export interface FastapiPackOptions {
   /**
    * Modules a project's own wrapper re-exports FastAPI's constructors
-   * from (`from myapp.compat import APIRouter`). FastAPI's own module
-   * is always accepted; this adds the wrapper a project built around
-   * it. Supplied by whoever configures the pack for their project,
-   * not hardcoded here (see docs/internal/style.md on pack
-   * vocabulary): the name is the project's own choice, not something
-   * FastAPI defines.
+   * from. FastAPI's own module is always accepted. The wrapper's name
+   * is the project's own choice, so it is supplied by whoever
+   * configures the pack rather than hardcoded here.
    */
   wrapperModules?: string[];
 }
@@ -58,17 +54,9 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         type: "decoratedFunctionRoute",
         importModule: ["fastapi", ...(options.wrapperModules ?? [])],
         verbAttributeNames: VERB_ATTRIBUTE_NAMES,
-        // FastAPI paths spell a template parameter in Starlette's
-        // brace syntax (`/items/{item_id}`), and a parameter annotated
-        // with a Pydantic-style class is the request body; both are
-        // the library's own behavior, named here for the adapter's
-        // readers.
         pathParamSyntax: "braces",
         annotatedClassIsRequestBody: true,
-        // FastAPI answers a route that declares no status with 200, so
-        // a route with a declared response body and no `status_code`
-        // still states a status, and this is where that number comes
-        // from rather than the adapter.
+        // FastAPI returns 200 for a route that declares no status.
         defaultStatusCode: 200,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",

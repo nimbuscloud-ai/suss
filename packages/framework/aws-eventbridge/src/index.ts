@@ -1,4 +1,4 @@
-// @suss/framework-aws-eventbridge — recognize AWS EventBridge
+// @suss/framework-aws-eventbridge: recognize AWS EventBridge
 // producer-side calls in TypeScript and emit one
 // `interaction(class: "message-send")` effect per PutEvents entry.
 //
@@ -26,11 +26,11 @@
 //   }));
 //
 // AWS SDK v2 (`new AWS.EventBridge().putEvents(...).promise()`) is a
-// follow-up — the surface is similar but the call shape differs.
+// follow-up: the surface is similar but the call shape differs.
 //
 // A service that publishes through its own EventPublisher writes no
 // PutEventsCommand of its own, so this recognizer never fires on it.
-// Such a project names the publisher in the pack's `producers` option:
+// Such a project says which publisher in the pack's `producers` option:
 //
 //   { module: "@acme/async", receiver: "EventPublisher",
 //     method: "emit", subjectArg: 0, bodyArg: 1 }
@@ -41,11 +41,11 @@
 //
 // CHANNEL IDENTITY SCHEME
 // -----------------------
-// One event bus multiplexes many event types; a rule subscribes to a
-// subset keyed by DetailType. So a single (bus) identity — the way SQS
-// keys a queue — under-specifies the pairing: two producers writing
-// different DetailTypes to the same bus reach different consumers. The
-// channel therefore carries BOTH parts, encoded as:
+// One event bus multiplexes many event types, and a rule subscribes to a subset
+// of them keyed by DetailType. So keying on the bus alone, the way SQS keys a
+// queue, is not specific enough: two producers writing different DetailTypes to
+// the same bus reach different consumers. The channel therefore includes both
+// parts, encoded as:
 //
 //     channel = `${bus}#${detailType}`
 //
@@ -54,7 +54,7 @@
 //       * env-derived (`process.env.ORDER_EVENT_BUS_NAME`) → the env-var
 //         name ("ORDER_EVENT_BUS_NAME"). The checker's chain-collapse
 //         resolves it to the CFN EventBus logical id via the producer
-//         Lambda's Environment block — exactly the SQS QueueUrl → queue
+//         Lambda's Environment block: exactly the SQS QueueUrl → queue
 //         resolution, applied to the bus segment of the channel.
 //       * literal string → the literal bus name.
 //       * omitted → "default" (EventBridge routes to the account's
@@ -114,8 +114,8 @@ function eventBridgeRecognizer(call: unknown, ctx: unknown): Effect[] | null {
     isImportedFrom: (identifier: Node, expectedModule: string) => boolean;
     resolveWrittenValue?: (value: Node) => Node | null;
   };
-  // A host older than the resolution-threaded context answers null,
-  // and the pattern match runs on the raw shapes, as it always did.
+  // A host older than the resolution-threaded context returns null here, and
+  // the pattern match runs on the raw nodes, the way it always did.
   const resolveValue = recognizerCtx.resolveWrittenValue ?? (() => null);
 
   // Shape gate: callee must be PropertyAccess `<receiver>.send`.
@@ -128,7 +128,7 @@ function eventBridgeRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   }
 
   // The first arg must be `new <CommandClass>(...)`. Binding on the
-  // command class (not the receiver type) mirrors the SQS pack — the
+  // command class (not the receiver type) mirrors the SQS pack: the
   // command class identity is the discriminator, not the client type.
   const args = callNode.getArguments();
   if (args.length === 0) {
@@ -166,7 +166,7 @@ function eventBridgeRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   }
 
   // Navigate the extracted arg tree to the PutEvents Entries array. The
-  // `.send` call's single arg is the `new PutEventsCommand(input)` — a
+  // `.send` call's single arg is the `new PutEventsCommand(input)`: a
   // `call`-shaped EffectArg whose args[0] is the input object literal.
   const callArgs = recognizerCtx.extractArgs();
   const entries = readEntries(callArgs);
@@ -192,10 +192,10 @@ function eventBridgeRecognizer(call: unknown, ctx: unknown): Effect[] | null {
 }
 
 /**
- * The entry object literals as AST nodes, index-aligned with the
- * EffectArg entries. The AST is where an identity held in a const can
- * be resolved; the EffectArg tree only says "identifier". Null when
- * the Entries array is not written literally at the call.
+ * The entry object literals as AST nodes, lined up index for index with the
+ * EffectArg entries. The AST is the only place we can resolve an identity kept
+ * in a const, since the EffectArg tree only tells us "identifier". Null when the
+ * Entries array is not written out at the call.
  */
 function readAstEntries(command: Node): Node[] | null {
   if (!N.isNewExpression(command)) {
@@ -232,7 +232,7 @@ function astField(entry: Node | undefined, name: string): Node | null {
 }
 
 /**
- * The bus token a single expression names, with no resolution: a
+ * The bus token a single expression gives us, with no resolution: either a
  * non-empty string literal, or the env-var name in `process.env.X`.
  */
 function busTokenOf(expr: Node): string | null {
@@ -244,7 +244,7 @@ function busTokenOf(expr: Node): string | null {
   return match === null ? null : (match[1] ?? null);
 }
 
-/** The detail type a single expression names: a non-empty string literal. */
+/** The detail type a single expression gives us, meaning a non-empty string literal. */
 function detailTypeOf(expr: Node): string | null {
   if (!N.isStringLiteral(expr)) {
     return null;
@@ -254,9 +254,9 @@ function detailTypeOf(expr: Node): string | null {
 }
 
 /**
- * Read one identity half from the entry's AST, resolving a value the
- * call does not write literally. `const bus = "orders";` one import
- * away names the bus the same as writing it in the entry.
+ * Read one half of the identity from the entry's AST, resolving a value the
+ * call does not write out. A `const bus = "orders";` one import away gives us
+ * the bus, the same as writing it in the entry would.
  */
 function resolvedHalf(
   entry: Node | undefined,
@@ -280,7 +280,7 @@ function resolvedHalf(
  * Dig the `Entries` array of EffectArgs out of the `.send(new
  * PutEventsCommand({ Entries: [...] }))` argument shape. Returns null
  * when the shape isn't the expected command-object-with-Entries-array
- * (dynamic builders, spreads, missing Entries) — the call is still a
+ * (dynamic builders, spreads, missing Entries): the call is still a
  * PutEvents, but no entry can be paired.
  */
 function readEntries(callArgs: EffectArg[]): EffectArg[] | null {
@@ -318,12 +318,11 @@ function buildEntryEffect(
   }
   const fields = (entry as { fields: Record<string, EffectArg> }).fields;
 
-  // A put whose bus or detail type is named at runtime used to be
-  // dropped whole, so the event went unrecorded rather than being
-  // recorded without a name. A null channel says the code did not name
-  // one, and it pairs with nothing. The AST is asked first, with
-  // resolution, so a const-held name still names; the EffectArg
-  // readers answer when the entry is not written literally.
+  // A put whose bus or detail type is only known at runtime used to be dropped
+  // entirely, so the event went unrecorded rather than recorded without a name.
+  // A null channel says the code never gave us one, and it pairs with nothing.
+  // The AST is asked first, with resolution, so a name kept in a const still
+  // works. The EffectArg readers take over when the entry is not written out.
   const bus =
     fields.EventBusName === undefined
       ? readBusToken(undefined)
@@ -346,7 +345,7 @@ function buildEntryEffect(
 
   // Source scopes the event on the bus (part of an EventBridge rule's
   // match), but v0 keys pairing on DetailType only per scope guard, so
-  // Source rides as the routingKey for inspect rendering — not identity.
+  // Source rides as the routingKey for inspect rendering: not identity.
   const source = readLiteralString(fields.Source);
 
   return {
@@ -378,7 +377,7 @@ function readBusToken(arg: EffectArg | undefined): string | null {
     return "default";
   }
   if (isEffectArgOfKind(arg, "string")) {
-    // An empty literal names nothing, same as a value decided at
+    // An empty literal gives nothing, same as a value decided at
     // runtime.
     const value = (arg as { value: string }).value;
     return value === "" ? null : value;
@@ -397,7 +396,7 @@ function readBusToken(arg: EffectArg | undefined): string | null {
  */
 function readLiteralString(arg: EffectArg | undefined): string | null {
   if (isEffectArgOfKind(arg, "string")) {
-    // An empty literal names nothing, same as a value decided at
+    // An empty literal gives nothing, same as a value decided at
     // runtime.
     const value = (arg as { value: string }).value;
     return value === "" ? null : value;

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// preparePublish.mjs — put every workspace package into a publishable
+// preparePublish.mjs: put every workspace package into a publishable
 // state, and keep them there.
 //
-// Four things have to hold before `npm publish` does the right thing:
+// Four things have to be true before `npm publish` does the right thing:
 //
 //   1. No package carries `private: true`, which npm refuses to publish.
 //   2. Every package declares `publishConfig.access: "public"`, because a
@@ -20,7 +20,7 @@
 //      works against and npm will act on it. "^" is that claim: it is
 //      how the third-party peers here are already written, and it widens
 //      on its own as the version grows. Below 0.1.0 it widens to
-//      nothing — ^0.0.2 is >=0.0.2 <0.0.3, one version — which is the
+//      nothing: ^0.0.2 is >=0.0.2 <0.0.3, one version, which is the
 //      right reading of a set that has promised no stability yet.
 //
 // Run with --check to assert all four without writing, which is what
@@ -63,9 +63,9 @@ function prepare(manifest, { write }) {
     }
   }
 
-  // A dependency is resolved for the consumer, so it names the one
+  // A dependency is resolved for the consumer, so it gives the one
   // version this release was built against. A peer is resolved by the
-  // consumer, so it names the range this release works against.
+  // consumer, so it gives the range this release works against.
   for (const [field, want] of [
     ["dependencies", VERSION],
     ["peerDependencies", `^${VERSION}`],
@@ -95,7 +95,7 @@ const check = process.argv.includes("--check");
 const manifests = findManifests(PACKAGES_DIR);
 let problems = 0;
 
-// npm only ships a LICENSE that sits in the package directory, so every
+// npm only ships a LICENSE that is in the package directory, so every
 // package keeps a copy of the root one. They are committed rather than
 // written at publish time, so a fresh clone is already publishable and
 // --check has something to assert against in CI.

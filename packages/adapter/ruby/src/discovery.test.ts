@@ -10,7 +10,7 @@ import { parseRuby } from "./parser.js";
 
 import type { RubyPack } from "./pack.js";
 
-/** A file cache backed by an in-memory source map, for the tests below that never resolve a `mutation:` / `resolver:` reference and so never touch it. */
+/** For tests that never resolve a `mutation:` or `resolver:` reference, and so never read a file. */
 function inMemoryCache(files: Record<string, string> = {}) {
   return createFileCache(
     (source) => parseRuby(source).then((tree) => tree.rootNode),
@@ -18,7 +18,7 @@ function inMemoryCache(files: Record<string, string> = {}) {
   );
 }
 
-/** The cache `project.ts` builds in production: reads files off disk. Used by the one-hop tests below, since `resolveConstantFile` checks the filesystem before the cache is ever consulted. */
+/** The disk-reading cache the extraction entry point builds, needed by the one-hop tests below. */
 function diskCache() {
   return createFileCache(
     (source) => parseRuby(source).then((tree) => tree.rootNode),
@@ -134,7 +134,6 @@ describe("discoverUnits: object type fields", () => {
         "  field :name, Types::CampaignType, null: true\n" +
         "end\n",
     );
-    // One unit, not two conflicting ones for the same (typeName, fieldName).
     expect(units.map((u) => u.identity.name)).toEqual(["Campaign.name"]);
     expect(units[0]?.graphqlDeclaredContract?.returnType).toEqual({
       type: "ref",
@@ -155,22 +154,13 @@ describe("discoverUnits: object type fields", () => {
         "end\n",
     );
     const campaignId = units.find((u) => u.identity.name === "Campaign.id");
-    // Not { type: "text" }, the builtin ID scalar's shape: "Types::ID"
-    // shadows the builtin at the "Types" nesting level, so this reads
-    // as a ref to the project's own class instead.
     expect(campaignId?.graphqlDeclaredContract?.returnType).toEqual({
       type: "ref",
       name: "ID",
     });
   });
 
-  it("resolves the same shadow when the referencing class's own name is compound, not just bare", async () => {
-    // Module.nesting inside `Types::CampaignType`'s body still carries
-    // "Api" even though the class's own name is written compound: Ruby
-    // tracks lexical class/module keyword nesting regardless of the
-    // name's shape. A "String" class module-scoped under Api has to
-    // stay reachable from here the same way it would from a bare-named
-    // CampaignType nested inside `module Api`.
+  it("keeps the enclosing module on the nesting chain when the referencing class's own name is compound", async () => {
     const units = await discover(
       "module Api\n" +
         "  class String < Types::BaseObject\n" +
@@ -183,8 +173,6 @@ describe("discoverUnits: object type fields", () => {
         "end\n",
     );
     const campaignName = units.find((u) => u.identity.name === "Campaign.name");
-    // Not { type: "text" }, the builtin String scalar's shape:
-    // "Api::String" shadows the builtin at the "Api" nesting level.
     expect(campaignName?.graphqlDeclaredContract?.returnType).toEqual({
       type: "ref",
       name: "String",
@@ -192,10 +180,8 @@ describe("discoverUnits: object type fields", () => {
   });
 });
 
-// resolveConstantFile checks the filesystem before a lookup ever
-// reaches the file cache, so a one-hop test that expects a resolution
-// to succeed needs a file written to disk, the way project.ts's own
-// caller reads one.
+// `resolveConstantFile` checks the filesystem before a lookup ever reaches the
+// file cache, so these tests have to write their classes to disk.
 describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
   let tmpDir: string;
   let graphqlRoot: string;
@@ -361,8 +347,6 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       cache: diskCache(),
     });
 
-    // Both blocks' fields show up in the payload; the second block
-    // didn't discard what the first one declared.
     expect(units[0]?.graphqlDeclaredContract?.returnType).toEqual({
       type: "record",
       properties: {

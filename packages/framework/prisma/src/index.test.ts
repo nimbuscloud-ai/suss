@@ -22,7 +22,7 @@ const raise = (msg: string): never => {
 function makeProject(userSource: string): SourceFile {
   const project = createTestProject();
 
-  // Minimal @prisma/client surface — enough to give the symbol a
+  // Minimal @prisma/client surface: enough to give the symbol a
   // declaration in a file path containing "/@prisma/client/".
   project.createSourceFile(
     "node_modules/@prisma/client/index.d.ts",
@@ -79,9 +79,9 @@ function recognizeAll(sourceFile: SourceFile): Effect[] {
 }
 
 /**
- * Tiny EffectArg builder — mirrors the adapter's extractArg just
- * enough for the recognizer's needs (object literals + property
- * access + identifiers + booleans + strings).
+ * A small EffectArg builder, mirroring the adapter's extractArg closely enough
+ * for what the recognizer needs: object literals, property access, identifiers,
+ * booleans, and strings.
  */
 function extractArgsForTest(call: CallExpression): EffectArg[] {
   return call.getArguments().map((arg) => extractArgForTest(arg));
@@ -154,7 +154,7 @@ function storageEffectsOf(effects: Effect[]): Array<
   return out;
 }
 
-describe("prisma recognizer — happy path", () => {
+describe("prisma recognizer: happy path", () => {
   it("recognizes findUnique with explicit select", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
@@ -320,7 +320,7 @@ describe("prisma recognizer — happy path", () => {
   });
 });
 
-describe("prisma recognizer — rejection cases", () => {
+describe("prisma recognizer: rejection cases", () => {
   it("ignores calls on non-PrismaClient receivers", () => {
     const file = makeProject(`
       // Locally-defined type that LOOKS like Prisma but isn't from @prisma/client
@@ -357,7 +357,7 @@ describe("prisma recognizer — rejection cases", () => {
       import { PrismaClient } from "@prisma/client";
       const db = new PrismaClient();
       async function go() {
-        // Hypothetical short chain — doesn't match the shape
+        // Hypothetical short chain: doesn't match the shape
         return await (db as unknown as { findMany: () => Promise<unknown> }).findMany();
       }
     `);

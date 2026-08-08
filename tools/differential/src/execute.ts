@@ -1,4 +1,4 @@
-// execute.ts — run a generated handler in node:vm with a stub req/res.
+// execute.ts: run a generated handler in node:vm with a stub req/res.
 //
 // The stub res mirrors the Express surface the generators emit:
 // `status(n)` (chainable), `json(body)`, `send(body)`, `sendStatus(n)`.
@@ -22,7 +22,7 @@ export type ExecutionResult =
 
 /**
  * Builds the response stub the vm hands the handler as its second
- * parameter — target-specific (Express `res`, Fastify `reply`, …),
+ * parameter: target-specific (Express `res`, Fastify `reply`, …),
  * provided by the `FuzzTarget`.
  */
 export type ResponderFactory = (
@@ -41,7 +41,7 @@ function cloneRequest(request: GeneratedRequest): GeneratedRequest {
 /**
  * Execute `handlerSource` (an arrow-function expression) against a
  * request, with the target's response stub bound to the handler's
- * second parameter. Synchronous handlers only — the generators never
+ * second parameter. Synchronous handlers only, the generators never
  * emit `await`, and the harness would misreport a dangling promise.
  */
 export function executeHandler(

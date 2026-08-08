@@ -1,4 +1,4 @@
-// returns.ts — return-statement / return-shape / parameter-method-call
+// returns.ts: return-statement / return-shape / parameter-method-call
 // / function-call matchers. The four ways a synchronous control path
 // can produce a value-bearing terminal that isn't a throw or JSX render.
 
@@ -45,7 +45,6 @@ function unwrapMethodChain(
     return null;
   }
 
-  // Build from outermost → innermost, collecting the calls in order
   const collected: CallExpression[] = [];
   let current: CallExpression = call;
 
@@ -86,7 +85,6 @@ function unwrapMethodChain(
         return null;
       }
 
-      // Verify the parameter is at the expected position
       const params = func.getParameters() as ParameterDeclaration[];
       const idx = params.indexOf(decl as ParameterDeclaration);
       if (idx !== paramPos) {
@@ -105,8 +103,8 @@ function unwrapMethodChain(
 }
 
 /**
- * The value a return statement hands back, with the wrappers that carry
- * it along peeled off. `return await respond(200)` produces what
+ * The value a return statement gives back, with the wrappers that pass
+ * it along stripped off. `return await respond(200)` produces what
  * `return respond(200)` produces, and `return {...} as R` returns the
  * object. Null for a bare `return;`.
  */
@@ -121,7 +119,7 @@ function returnedValueOf(returnStatement: ReturnStatement): Node | null {
  * Returns a list because a return can produce more than one outcome. A
  * handler returning `json(...)` produces one per branch the helper can
  * take, which is how the IR expresses alternatives: separate
- * transitions, not one output holding a set of possibilities.
+ * transitions, rather than one output with a set of possibilities.
  */
 export function tryMatchReturnShape(
   node: Node,
@@ -202,9 +200,9 @@ export function tryMatchReturnShape(
  * Build one terminal from one returned object.
  *
  * `obj` is where the properties are read from, which may be inside a
- * helper. `anchor` is where it is reported, which is always the caller's
- * own return statement, so a finding points at the handler rather than
- * at a helper shared by fifty of them.
+ * helper. `anchor` is where it gets reported, which is always the
+ * caller's own return statement, so a finding points at the handler
+ * rather than at a helper shared by fifty of them.
  */
 function terminalFromReturnedObject(
   obj: ObjectLiteralExpression,
@@ -239,7 +237,7 @@ function terminalFromReturnedObject(
   const statusCode = extractStatusCode(ctx);
   // For a returnShape terminal, the returned object IS the body. `extractBody`
   // only knows how to pull from `ctx.calls` (parameterMethodCall) or
-  // `ctx.throwCallArgs` (throw) — neither applies here — so a pack that
+  // `ctx.throwCallArgs` (throw): neither applies here: so a pack that
   // specifies `body: { from: "argument", position: 0 }` gets null back, even
   // though the obvious answer is "use the whole returned object". Fall back
   // to the returned object's shape when `extractBody` came up empty and
@@ -251,9 +249,9 @@ function terminalFromReturnedObject(
 
   return {
     node: anchor,
-    // The anchor is the caller own return when a helper built the
-    // value, so it answers for provenance too. A value reached some
-    // other way leaves this unset and its caller supplies it.
+    // When a helper built the value, the anchor is the caller's own
+    // return, so it doubles as the provenance. A value reached any other
+    // way leaves this unset and its caller fills it in.
     ...(Node.isReturnStatement(anchor) ? { source: anchor } : {}),
     terminal: {
       kind: pattern.kind,
@@ -296,8 +294,8 @@ export function tryMatchParameterMethodCall(
 
   const { calls } = result;
 
-  // `res.json(body)` writes to the response and often stands alone as a
-  // statement, so it only claims a return when it sits in one.
+  // `res.json(body)` writes to the response and is often a statement on
+  // its own, so it only claims a return when it is inside one.
   const source = returnPositionOf(node);
 
   const ctx: ExtractionContext = {
@@ -345,8 +343,8 @@ export function tryMatchParameterMethodCall(
 }
 
 /**
- * The argument the pack reads the status out of, when it reads one out
- * of an argument at all. Nothing else knows which argument that is.
+ * Which argument the pack reads the status out of, when it reads one out
+ * of an argument at all. Only the pack knows which one that is.
  */
 function statusArgument(
   calls: CallExpression[],
@@ -369,7 +367,7 @@ function statusArgument(
  *
  * Returns false for free-function calls (`return findUser(id)`),
  * method calls on non-parameter receivers (`return await db.findById(id)`),
- * and constructor calls (`return new Error(...)`) — none of which the
+ * and constructor calls (`return new Error(...)`): none of which the
  * parameterMethodCall matcher would have caught, so excluding them here
  * would drop a legitimate value-bearing return.
  */
@@ -406,13 +404,12 @@ export function tryMatchReturnStatement(
   allPatterns: TerminalPattern[],
 ): FoundTerminal | null {
   const match = pattern.match.type === "returnStatement" ? pattern.match : null;
-  // Explicit `return expr;`
   if (Node.isReturnStatement(node)) {
     const expr = node.getExpression();
     // `excludeCallReturns` packs are using returnStatement to capture
     // value-producing returns (e.g. Fastify's bare `return user`). Skip
     // both `return;` (no value) and any return whose expression would
-    // already match one of the pack's parameterMethodCall patterns —
+    // already match one of the pack's parameterMethodCall patterns ,
     // matching it here as well would double-fire.
     if (match?.excludeCallReturns === true) {
       if (expr === undefined) {
@@ -424,7 +421,7 @@ export function tryMatchReturnStatement(
     }
     // Capture the shape of the returned expression. Without this,
     // every `return x;` surfaces as `-> return (default)` in inspect
-    // output regardless of what `x` is — opaque to downstream consumers
+    // output regardless of what `x` is: opaque to downstream consumers
     // that want to see the function's output. `extractShape` walks the
     // expression structurally first (object literals, conditional
     // expressions, identifiers resolved through AST) and falls back
@@ -444,7 +441,7 @@ export function tryMatchReturnStatement(
   // nested arrows now, but gates return-valued terminals to the unit's
   // own scope (see `NESTED_ESCAPING_MATCH_TYPES` in terminals/index.ts),
   // so this branch only fires for the arrow that IS the function being
-  // analysed — a nested `.then(res => res.json())` callback yields its
+  // analysed: a nested `.then(res => res.json())` callback yields its
   // own value, not the unit's.
   if (Node.isArrowFunction(node)) {
     const body = node.getBody();
@@ -468,7 +465,7 @@ function buildReturnTerminal(
 ): FoundTerminal {
   // Honour the pack's `defaultStatusCode` when one is declared. Used by
   // packs like Fastify whose returnStatement matcher emits `kind:
-  // "response"` — `return user` is a 200 response. Packs that emit
+  // "response"`: `return user` is a 200 response. Packs that emit
   // `kind: "return"` (clients) leave defaultStatusCode unset, so this
   // collapses to null for them.
   const statusCode: RawTerminal["statusCode"] =
@@ -491,8 +488,8 @@ function buildReturnTerminal(
     },
   };
   // The caller passes either the return statement or the body of a
-  // concise arrow, so the node this terminal sits on is also the return
-  // it came from.
+  // concise arrow, so the node this terminal is on is also the return it
+  // came from.
   return { node: locationNode, source: locationNode, terminal };
 }
 
@@ -502,8 +499,8 @@ function buildReturnTerminal(
  * gates discovery.
  *
  * Reads the file's import declarations rather than resolving the symbol,
- * which keeps it working against a project whose dependencies are not
- * installed. That case is common enough to matter: a checkout without an
+ * so it keeps working on a project whose dependencies are not installed.
+ * That case comes up often enough to matter: a checkout without an
  * `npm install` still has its imports written down.
  */
 function importedFromAny(
@@ -532,9 +529,9 @@ function importedFromAny(
 }
 
 /**
- * A terminal that says the call produced a response without claiming to
- * know which one. `dynamic` carries the source text, so a reader sees
- * the call that produced it.
+ * A terminal saying the call produced a response, without claiming to
+ * know which one. `dynamic` keeps the source text, so a reader can see
+ * the call it came from.
  */
 function unresolvedTerminal(
   kind: TerminalPattern["kind"],
@@ -558,10 +555,9 @@ function unresolvedTerminal(
 }
 
 /**
- * The name an import gate should be checked against: the callee itself
- * for `json(...)`, and the thing on the left for `NextResponse.json(...)`.
- * Null when the callee is neither, as for a call on a value the
- * expression built.
+ * The name to check an import gate against: the callee itself for
+ * `json(...)`, and the receiver for `NextResponse.json(...)`. Null when
+ * the callee is neither, as for a call on a value built in place.
  */
 function calleeSubject(callee: Node): Identifier | null {
   if (Node.isIdentifier(callee)) {
@@ -580,32 +576,32 @@ export function tryMatchFunctionCall(
   match: Extract<TerminalPattern["match"], { type: "functionCall" }>,
 ): FoundTerminal | null {
   // `new Response(body, init)` builds a response the same way
-  // `Response.json(body, init)` does, and a pack naming `Response`
-  // means the same thing either way.
+  // `Response.json(body, init)` does, so a pack that declares `Response`
+  // means both.
   if (!Node.isCallExpression(node) && !Node.isNewExpression(node)) {
     return null;
   }
-  // `throw new Response(...)` is a throw, and a pack naming `Response`
-  // is describing what a handler answers with. Without this the same
-  // statement produces a throw and a response.
+  // `throw new Response(...)` is a throw, and a pack that declares
+  // `Response` is describing what a handler replies with. Without this
+  // the same statement produces both a throw and a response.
   if (Node.isNewExpression(node) && returnPositionOf(node) === null) {
     return null;
   }
 
   const callee = node.getExpression();
-  // A pack names either a function, `json`, or a method on something it
-  // brought in, `NextResponse.json`. The written name has to match, and
-  // for the dotted form the import check applies to what it hangs off.
+  // A pack declares either a function (`json`) or a method on something
+  // it imported (`NextResponse.json`). The name has to match, and for
+  // the dotted form the import check applies to the receiver.
   const subject = calleeSubject(callee);
   if (subject === null || callee.getText() !== match.functionName) {
     return null;
   }
 
-  // A pack that names a function is describing a library's own calling
-  // convention, so the name has to have come from that library. Matching
-  // the bare name would claim any same-named function in the user's
-  // project, and `json` is a common name for a project's own response
-  // helper, whose argument order is its author's business.
+  // A pack that declares a function is describing a library's own
+  // calling convention, so the name has to have come from that library.
+  // Matching on the bare name would claim any function called the same
+  // thing in the user's project, and `json` is a common name for a
+  // project's own response helper, whose argument order is its own.
   if (
     match.requiresImport !== undefined &&
     match.requiresImport.length > 0 &&

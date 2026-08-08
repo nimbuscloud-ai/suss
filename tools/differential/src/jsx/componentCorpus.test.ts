@@ -1,4 +1,4 @@
-// componentCorpus.test.ts — pinned render-boundary counterexamples.
+// componentCorpus.test.ts: pinned render-boundary counterexamples.
 //
 // Same protocol as ../corpus.test.ts: every entry is a shrunk
 // counterexample pinned as a (program, props, verdict) triple. `gap:*`
@@ -7,11 +7,11 @@
 //
 // Corpus log:
 // - 2026-07-30: nested null-guard captured from the first JSX fuzz
-//   session — the outer `if` wrapping a guard was invisible to the
+//   session: the outer `if` wrapping a guard was invisible to the
 //   final render transition (same adapter machinery as the HTTP
 //   nested-guard entries), so the render claimed to be unconditional
 //   while execution returned null.
-// - 2026-07-30: flipped gap:* → fixed:* — the CFG path engine closed
+// - 2026-07-30: flipped gap:* → fixed:*, the CFG path engine closed
 //   the nested-guard gap; the entry now pins per-path conditions.
 
 import { describe, expect, it } from "vitest";
@@ -58,7 +58,7 @@ const CORPUS: ComponentCorpusEntry[] = [
     },
     expectations: [
       // Both guards fire → observed null; the render transition now
-      // carries its per-path conditions, which evaluate false here
+      // has its per-path conditions, which evaluate false here
       // (legacy claimed unconditional truth → falseClaim).
       { props: { user: "a" }, verdict: "clean" },
       { props: { user: "" }, verdict: "clean" },

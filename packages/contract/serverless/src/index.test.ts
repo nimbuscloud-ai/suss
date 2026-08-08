@@ -1,6 +1,3 @@
-// What the reader answers for the serverless fixture, and what it
-// answers for the shapes the fixture does not hold.
-
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -124,11 +121,9 @@ describe("the serverless fixture", () => {
     );
   });
 
-  it("resolves the resources block's variables the way the framework does", () => {
+  it("resolves what the resources block states and leaves the deploy-time part visible", () => {
     const queue = named(summariesFromFixture(), "OrdersQueue");
 
-    // The name the document answers is resolved; the part a deploy
-    // supplies stays visible rather than being reported as a name.
     expect(readMessageBusMetadata(queue)?.physicalName).toBe(
       "order-desk-audit-${opt:stage}",
     );
@@ -145,16 +140,13 @@ describe("the serverless fixture", () => {
     );
   });
 
-  it("says the manifest language that declared each boundary", () => {
+  it("says serverless for what it keys itself and apigateway for the routes", () => {
     const recognitions = new Set(
       summariesFromFixture().map(
         (s) => s.identity.boundaryBinding?.recognition,
       ),
     );
 
-    // The routes are API Gateway's own semantics whichever manifest
-    // language declared them; everything this reader keys itself is
-    // named for the document a person wrote.
     expect(recognitions).toEqual(new Set(["serverless", "apigateway"]));
   });
 });

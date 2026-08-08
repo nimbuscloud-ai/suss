@@ -2,7 +2,7 @@
 //
 // A NestJS handler is usually a method. A class that wants `this` bound
 // without writing a constructor writes the same handler as a property
-// holding an arrow, and the framework calls it the same way. Reading
+// set to an arrow, and the framework calls it the same way. Reading
 // only the methods loses the second spelling, so both discovery
 // handlers ask this instead.
 
@@ -18,12 +18,12 @@ import type {
 } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 
-/** A class member that carries one of the decorators asked about. */
+/** A class member with one of the decorators asked about. */
 export interface DecoratedCallable {
   /**
    * The function the member is: the method itself, or the arrow a
-   * property holds. Everything downstream reads a body and parameters
-   * off this, and both spellings answer those the same way.
+   * property is set to. Everything downstream reads a body and
+   * parameters off this, and both spellings give the same ones.
    */
   func: FunctionRoot;
   name: string;
@@ -33,8 +33,8 @@ export interface DecoratedCallable {
 }
 
 /**
- * The members of `cls` carrying one of `decoratorNames`, in source
- * order. The first name a member carries wins, which is what a class
+ * The members of `cls` decorated with one of `decoratorNames`, in
+ * source order. The first name on a member wins, which is what a class
  * that spells two route verbs on one member means anyway.
  */
 export function decoratedCallablesOf(
@@ -71,7 +71,7 @@ export function decoratedCallablesOf(
 }
 
 /**
- * The function a class member is, or null when the member holds
+ * The function a class member is, or null when the member is set to
  * something other than a function. A property initialised with a
  * config object is not a handler however it is decorated.
  */

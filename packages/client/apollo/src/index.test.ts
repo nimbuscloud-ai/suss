@@ -175,7 +175,7 @@ describe("apolloClientPack — integration", () => {
   });
 
   it("surfaces operation header variables as Input[] with role 'variable'", async () => {
-    // `GET_PET` is declared as `query GetPet($id: ID!) { ... }` —
+    // `GET_PET` is declared as `query GetPet($id: ID!) { ... }`,
     // the `$id: ID!` variable should show up as a summary input
     // with a non-null ref type. Same machinery powers future
     // resolver-arg pairing.
@@ -191,7 +191,7 @@ describe("apolloClientPack — integration", () => {
   });
 
   it("handles multi-variable mutations", async () => {
-    // `CreatePet` takes `$name: String!` — one required variable.
+    // `CreatePet` takes `$name: String!`, one required variable.
     const create = summaries.find(
       (s) => s.identity.name === "useCreatePet.CreatePet",
     );
@@ -258,7 +258,7 @@ describe("apolloClientPack — integration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Codegen client-preset — cross-module document resolution
+// Codegen client-preset: cross-module document resolution
 // ---------------------------------------------------------------------------
 
 describe("apolloClientPack — codegen client-preset", () => {
@@ -303,7 +303,7 @@ describe("apolloClientPack — codegen client-preset", () => {
     expect(first).toBeDefined();
     if (first?.type === "parameter") {
       expect(first.role).toBe("variable");
-      // Optional `$first: Int` — nullable ref, no `!` suffix.
+      // Optional `$first: Int`: nullable ref, no `!` suffix.
       expect(first.shape).toEqual({ type: "ref", name: "Int" });
     }
   });
@@ -319,7 +319,7 @@ describe("apolloClientPack — codegen client-preset", () => {
 
   it("falls back to TypedDocumentNode type arguments when the body isn't readable", async () => {
     // `AdoptPetDocument` is `buildDocument(...) as unknown as
-    // TypedDocumentNode<AdoptPetMutation, AdoptPetMutationVariables>` —
+    // TypedDocumentNode<AdoptPetMutation, AdoptPetMutationVariables>`,
     // the object body can't be read, so the header comes from the
     // result type argument's `<Name><Kind>` name.
     const adopt = summaries.find(
@@ -341,7 +341,7 @@ describe("apolloClientPack — codegen client-preset", () => {
     const graphqlMeta = adopt && readGraphqlMetadata(adopt);
     expect(graphqlMeta?.unresolvedDocument?.reference).toBe("AdoptPetDocument");
     expect(graphqlMeta?.unresolvedDocument?.reason).toContain("type arguments");
-    // No document body carried through — the checker's pairing layer
+    // No document body carried through, the checker's pairing layer
     // reads that field and degrades rather than parsing an empty doc.
     expect(graphqlMeta?.document).toBeUndefined();
   });

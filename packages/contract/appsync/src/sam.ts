@@ -1,19 +1,19 @@
-// sam.ts — Normalize the SAM shorthand AWS::Serverless::GraphQLApi into
+// sam.ts: Normalize the SAM shorthand AWS:Serverless:GraphQLApi into
 // the same AppSync model the raw AWS::AppSync::* walk produces.
 //
-// One AWS::Serverless::GraphQLApi resource carries what the SAM transform
+// One AWS::Serverless::GraphQLApi resource contains what the SAM transform
 // would otherwise expand into a GraphQLApi + GraphQLSchema + DataSources +
 // FunctionConfigurations + Resolvers. We read those inline blocks and emit
 // the same normalized records so both authoring shapes feed a single
 // summaryBuilder path.
 //
 //   Properties:
-//     Name                          — optional API name
-//     SchemaInline | SchemaUri      — SDL text or a path/URI to a .graphql file
-//     Auth.Type                     — authentication type
-//     DataSources.<Category>.<Name> — Lambdas carry FunctionArn; others typed
-//     Functions.<Name>              — Runtime/CodeUri + DataSource (pipeline steps)
-//     Resolvers.<Type>.<Field>      — Runtime/CodeUri + DataSource (UNIT) or
+//     Name: optional API name
+//     SchemaInline | SchemaUri: SDL text or a path/URI to a .graphql file
+//     Auth.Type: authentication type
+//     DataSources.<Category>.<Name>: Lambdas carry FunctionArn; others typed
+//     Functions.<Name>: Runtime/CodeUri + DataSource (pipeline steps)
+//     Resolvers.<Type>.<Field>: Runtime/CodeUri + DataSource (UNIT) or
 //                                     Pipeline: [functionName...] (PIPELINE)
 //
 // Synthesized logical IDs prefix the API's logical ID so cross-references

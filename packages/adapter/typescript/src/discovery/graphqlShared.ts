@@ -1,4 +1,4 @@
-// graphqlShared.ts — helpers shared by GraphQL discovery handlers
+// graphqlShared.ts: helpers shared by GraphQL discovery handlers
 // (resolverMap, graphqlHookCall, graphqlImperativeCall).
 //
 // Document-resolution and parse machinery lives here so each handler
@@ -28,13 +28,13 @@ import type { ResolutionStore } from "../facts/store.js";
  * client preset calls its generated function. Both appear as a tagged
  * template and as a plain call, and the generated module they come from
  * is named by the project rather than by a library, so a pack cannot
- * name the module the way it names a transparent wrapper's.
+ * say which module the way it says which module a transparent wrapper uses.
  */
 const DOCUMENT_TAGS = new Set(["gql", "graphql"]);
 
 /**
  * The one tag name taken at face value without checking where it came
- * from. `gql` names a GraphQL document across every client library and
+ * from. `gql` marks a GraphQL document across every client library and
  * almost nothing else, so a local function called `gql` whose argument
  * parses as GraphQL is a document by any reading. `graphql` is a common
  * enough name for a local helper that it has to come from an import to
@@ -52,7 +52,7 @@ const UNQUALIFIED_DOCUMENT_TAG = "gql";
  * parser anyway, and graphql-js is already a transitive dep of the
  * checker and stub-appsync.
  *
- * Returns null for any parse failure — the adapter keeps moving
+ * Returns null for any parse failure: the adapter keeps moving
  * rather than halting on a malformed query literal.
  */
 export function parseGraphqlOperation(source: string): {
@@ -110,7 +110,7 @@ function parseFirstOperationDefinition(
 /**
  * Reconstruct `User!`, `[ID!]!`, `[[Int]]` etc. as a single readable
  * type string from a parsed GraphQL type node. Matches the shape
- * stub-appsync uses for consistency — both packages feed
+ * stub-appsync uses for consistency: both packages feed
  * `ref:<printed-type>` into TypeShape, and keeping the printing rule
  * identical means a consumer's `$id: ID!` variable and a resolver's
  * `id: ID!` arg read as the same ref.
@@ -135,7 +135,7 @@ function innerTemplateText(template: Node): string {
   const raw = template.getText();
   // Template literals are always wrapped in backticks; substring
   // between them is the GraphQL document. For TemplateExpression
-  // with `${...}` substitutions we only need the head — interpolation
+  // with `${...}` substitutions we only need the head: interpolation
   // can't live inside the operation-header, so the leading portion
   // suffices for name extraction.
   if (raw.length >= 2 && raw.startsWith("`") && raw.endsWith("`")) {
@@ -180,7 +180,7 @@ export interface DocumentResolution {
  *       an inline tag call, which is how graphql-codegen's client
  *       preset is written.
  *   `useQuery(GET_USER)`
- *       a named constant holding either, in this module or in another
+ *       a named constant set to either, in this module or in another
  *       one, through any depth of aliasing and re-export barrels.
  *   `import GET_USER from "./q.graphql"`
  *       a `.graphql` / `.gql` file import.
@@ -228,7 +228,7 @@ export function resolveGraphqlDocument(
 }
 
 /**
- * The document text an expression carries when it is written out as a
+ * The document text an expression gives when it is written out as a
  * tag: `gql\`...\`` or `gql(\`...\`)`. Returns null for anything else,
  * including a tag call whose argument is built rather than written.
  */
@@ -260,9 +260,9 @@ function documentTextFromExpression(node: Node): string | null {
 }
 
 /**
- * Whether an expression names a GraphQL document tag. `import { gql as
- * apolloGql }` is a name the file chose, so the name the module exports
- * is what answers when there is one.
+ * Whether an expression is a GraphQL document tag. `import { gql as
+ * apolloGql }` is a name the file chose, so when there is an export name
+ * that is the one to check.
  */
 function isDocumentTag(tag: Node): boolean {
   if (!Node.isIdentifier(tag)) {
@@ -288,14 +288,14 @@ function isDocumentTag(tag: Node): boolean {
 
 /**
  * Ask the fact layer what expression the argument is written as, then
- * read the answer as a document. This is what covers a document held in
+ * read the result as a document. This is what covers a document kept in
  * a named constant: the syntactic walks above follow one variable
  * declaration, and production code puts the document behind an alias, a
- * re-export barrel, or a module the consumer only names.
+ * re-export barrel, or a module the consumer only imports from.
  *
- * The fact layer answers with an expression and no opinion about what
- * it is. Recognizing a tag call as a document is GraphQL's business, so
- * it happens here rather than in the rules.
+ * The fact layer gives back an expression and no opinion about what it
+ * is. Recognizing a tag call as a document is GraphQL's business, so it
+ * happens here rather than in the rules.
  */
 function resolveThroughFacts(
   arg: Node,
@@ -327,11 +327,11 @@ export interface ResolvedOperationInfo {
 
 /**
  * Turn a document resolution into the operation info a discovered unit
- * carries. A readable body is parsed for the full shape; an anonymous
+ * gets. A readable body is parsed for the full shape; an anonymous
  * operation (`gql\`{ ... }\``, which graphql-js parses as a query by
  * default) takes its type from the call shape (the hook or imperative
  * method). A header-only or unresolvable resolution falls back to the
- * call-shape type and carries the gap through. Returns null only when a
+ * call-shape type and takes the gap through with it. Returns null only when a
  * readable document fails to parse.
  */
 export function operationInfoFromResolution(
@@ -393,7 +393,7 @@ function singleLine(text: string): string {
  *
  * `getAliasedSymbol` resolves an import specifier to the exported
  * declaration in the defining module (the local symbol's declarations
- * are the ImportSpecifier, which carries no initializer); the fallback
+ * are the ImportSpecifier, which has no initializer); the fallback
  * to the local symbol covers same-module bindings that have no alias to
  * follow. This is the single cross-module resolution primitive the
  * GraphQL document resolvers share.
@@ -421,10 +421,10 @@ function importedVariableInitializers(identifier: Node): Node[] {
 
 /**
  * Resolve an argument to the inner source text of its gql-tagged
- * template literal — inline, const-bound (same or cross module), or
+ * template literal: inline, const-bound (same or cross module), or
  * imported from a `.graphql` / `.gql` file. Files that don't exist on
  * disk (common under `useInMemoryFileSystem` test projects) fall back
- * to null rather than throwing — discovery stays advisory, not punitive.
+ * to null rather than throwing: discovery stays advisory, not punitive.
  */
 export function resolveGqlTemplateText(arg: Node): string | null {
   const direct = documentTextFromExpression(arg);
@@ -439,7 +439,7 @@ export function resolveGqlTemplateText(arg: Node): string | null {
     return null;
   }
   // `.graphql` / `.gql` file import resolves against the local import
-  // declaration — the aliased symbol points at a synthetic module with
+  // declaration: the aliased symbol points at a synthetic module with
   // no readable initializer, so this branch reads the on-disk file.
   for (const decl of symbol.getDeclarations()) {
     if (Node.isImportClause(decl) || Node.isImportSpecifier(decl)) {
@@ -461,7 +461,7 @@ export function resolveGqlTemplateText(arg: Node): string | null {
 }
 
 /**
- * Resolve an argument that's a TypedDocumentNode reference — the
+ * Resolve an argument that's a TypedDocumentNode reference: the
  * dominant production shape produced by GraphQL Code Generator's
  * client-preset. The declaration looks like:
  *
@@ -530,8 +530,8 @@ function typedDocumentSourceOf(node: Node): string | null {
  *
  * Returns null when the argument isn't recognizable as a
  * TypedDocumentNode reference at all. When it IS recognizable, always
- * returns a resolution with `unresolved` set — the document body wasn't
- * read — carrying the header when the type argument was named.
+ * returns a resolution with `unresolved` set: the document body wasn't
+ * read: but with the header filled in when the type argument was given.
  */
 function resolveTypedDocumentHeader(arg: Node): DocumentResolution | null {
   if (!Node.isIdentifier(arg)) {
@@ -583,7 +583,7 @@ function resolveTypedDocumentHeader(arg: Node): DocumentResolution | null {
 /**
  * Walk an `as ...` cast chain and return the type arguments of the first
  * `TypedDocumentNode<...>` / `DocumentNode<...>` reference found, or null
- * when the chain carries no such cast.
+ * when the chain has no such cast.
  */
 function documentNodeCastTypeArgs(node: Node): Node[] | null {
   let current: Node = node;
@@ -662,7 +662,7 @@ function stripDocumentNodeCasts(node: Node): Node {
  * subtree to the corresponding plain JS value. Returns null on the
  * first node that can't be statically evaluated (computed property
  * names, function references, spread elements, identifier values).
- * The caller decides how to handle a partial parse — this helper is
+ * The caller decides how to handle a partial parse: this helper is
  * strict so a single unresolvable corner doesn't silently produce
  * a structurally-incomplete document.
  */

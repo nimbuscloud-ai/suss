@@ -1,19 +1,9 @@
-// A person points suss at a Ruby service and reads back its GraphQL
-// fields.
-//
-// graphql-ruby wires a field to a resolver class and looks that class
-// up by name under a directory the app chooses, so the directory is
-// the one thing the pack has to be told. It says so and stops rather
-// than reading half the schema, which is the sentence this journey
-// checks first.
-
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { copyOfFixture, runSuss, writePackConfig } from "../harness.js";
 
-/** Every field fixtures/ruby-graphql declares, as a boundary name. */
 const DECLARED_FIELDS = [
   "gql:Query.campaign",
   "gql:Mutation.campaignUpdate",
@@ -39,7 +29,6 @@ describe("read a graphql-ruby schema", () => {
     expect(extract.status).toBe(1);
     expect(extract.output).toContain("needs `root`");
     expect(extract.output).toContain("-f graphql-ruby=<config.json>");
-    // A sentence, not a stack.
     expect(extract.output).not.toContain("    at ");
   });
 
@@ -73,9 +62,6 @@ describe("read a graphql-ruby schema", () => {
   it("says which line each field is on, so a person can go there", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
-    // campaign_type.rb declares id, name and budget on lines 2, 3 and
-    // 4 of a 5-line file. The adapter recorded a byte offset here
-    // until #215, so this printed `line 48`, `line 77` and `line 111`.
     expect(inspect.stdout).toContain(
       "gql:Campaign.id  (graphql-ruby resolver | line 2",
     );
@@ -90,11 +76,9 @@ describe("read a graphql-ruby schema", () => {
     );
   });
 
-  it("names the file each field came from", () => {
+  it("names the file each field came from, relative to the directory it was pointed at", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
-    // Paths come out relative to the directory suss was pointed at, so
-    // the summaries file moves between machines without breaking.
     expect(inspect.stdout).toContain("app/graphql/types/query_type.rb");
     expect(inspect.stdout).toContain("app/graphql/types/campaign_type.rb");
     expect(inspect.stdout).not.toContain(project);

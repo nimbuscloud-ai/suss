@@ -1,11 +1,13 @@
-// @suss/ir-core — primitives shared across suss IRs.
-//
-// Types are derived from the schemas (single source of truth): each
-// boundary protocol's schema and behavior live in one module under
-// `./semantics`, and the rest in `./schemas`. The boundary-binding
-// constructors live here too so every package that produces an IR
-// object — pattern packs, contract readers, intent docs, tests — can
-// build a binding without depending on a specific IR.
+/**
+ * @suss/ir-core: primitives shared across suss IRs.
+ *
+ * The schemas are the single source of truth, and the types come from
+ * them. Each boundary protocol's schema and behavior are in one module
+ * under `./semantics`, and everything else is in `./schemas`. The
+ * boundary-binding constructors are here too, so that any package that
+ * produces an IR object (pattern packs, contract readers, intent docs,
+ * tests) can build a binding without depending on a specific IR.
+ */
 
 import type { z } from "zod";
 import type {
@@ -78,12 +80,13 @@ export type { StorageRelationalSemantics } from "./semantics/storageRelational.j
 // Shared comparison primitives
 // ---------------------------------------------------------------------------
 //
-// Pure operations over the primitives above that more than one checker
-// needs and must agree on. They live here so neither the behavioural
-// checker nor the intent checker owns them (and so the two can't drift).
+// These are pure operations over the primitives above that more than one
+// checker needs and that all of them have to agree on. They are here so
+// that neither checker, behavioural or intent, owns them and the two
+// cannot drift apart.
 
-// normalizeRuleBoundary lives in boundaryKey.ts too, but ships through
-// the suppressions surface below, beside the matcher that uses it.
+// normalizeRuleBoundary is defined in boundaryKey.ts too, but it is exported
+// below with the suppressions, next to the matcher that uses it.
 export {
   boundaryKey,
   boundaryLabel,
@@ -128,15 +131,15 @@ export { bodyShapesMatch, type MatchResult } from "./typeShapeMatch.js";
 // Boundary binding constructors
 // ---------------------------------------------------------------------------
 //
-// The only blessed constructors for the three-layer binding shape.
-// Direct `{ transport, semantics, recognition }` literals are fine too
-// but must keep the discipline.
+// These are the approved constructors for the three-layer binding structure.
+// You can also write a `{ transport, semantics, recognition }` literal
+// directly, but it has to follow the same rules.
 
 /**
- * A named identity part, or null when the source does not name one.
- * The empty string is refused loudly: it used to mean "unnamed" by
- * convention, three packs got the convention wrong three different
- * ways, and a throw at the builder puts the failure next to its cause.
+ * The identity part when the source gives one, or null when it does
+ * not. An empty string throws: it used to mean "unnamed" by convention,
+ * three packs got that convention wrong in three different ways, and
+ * throwing here puts the failure right next to what caused it.
  */
 function namedOrNull(value: string | null, field: string): string | null {
   if (value === "") {
@@ -148,10 +151,10 @@ function namedOrNull(value: string | null, field: string): string | null {
 }
 
 /**
- * Build a REST-semantics binding. `method` and `path` are null when
- * the source does not name them; `"*"` is the method wildcard for a
- * handler that answers every method. Pairing treats null as unnamed
- * (it pairs with nothing) and `"*"` as every concrete method.
+ * Build a REST-semantics binding. `method` and `path` are null when the
+ * source does not specify them. `"*"` is the method wildcard, for a
+ * handler that responds to every method. When pairing, null means
+ * unspecified and matches nothing, and `"*"` matches every concrete method.
  */
 export function restBinding(opts: {
   transport: string;
@@ -201,9 +204,9 @@ export function functionCallBinding(opts: {
 }
 
 /**
- * Build a function-call binding that identifies a public package export
- * — the provider side of a library boundary. Transport defaults to
- * `"in-process"` for typical TypeScript library consumption.
+ * Build a function-call binding that identifies a public package export,
+ * which is the provider side of a library boundary. Transport defaults
+ * to `"in-process"`, which is how a TypeScript library is usually used.
  */
 export function packageExportBinding(opts: {
   transport?: string;
@@ -226,7 +229,7 @@ export function packageExportBinding(opts: {
 export function graphqlResolverBinding(opts: {
   transport: string;
   recognition: string;
-  /** Null when the source never names the type the resolver attaches to. */
+  /** Null when the source never says which type the resolver attaches to. */
   typeName: string | null;
   fieldName: string;
 }): BoundaryBinding {
@@ -242,8 +245,8 @@ export function graphqlResolverBinding(opts: {
 }
 
 /**
- * Build a graphql-operation-semantics binding — the consumer side of a
- * GraphQL boundary. Anonymous operations leave `operationName` unset.
+ * Build a graphql-operation-semantics binding, which is the consumer side
+ * of a GraphQL boundary. Anonymous operations leave `operationName` unset.
  */
 export function graphqlOperationBinding(opts: {
   transport: string;
@@ -265,10 +268,10 @@ export function graphqlOperationBinding(opts: {
 }
 
 /**
- * Build a runtime-config binding — the provider side of a runtime
- * configuration channel (env vars on a Lambda / ECS task / container /
- * k8s pod). Transport is `"os"`: env vars are handed to the process by
- * the OS at startup regardless of the deployment medium.
+ * Build a runtime-config binding, the provider side of a runtime
+ * configuration channel (env vars on a Lambda, ECS task, container, or
+ * k8s pod). Transport is `"os"` because the OS hands env vars to the
+ * process at startup no matter what the deployment medium is.
  */
 export function runtimeConfigBinding(opts: {
   recognition: string;
@@ -287,10 +290,10 @@ export function runtimeConfigBinding(opts: {
 }
 
 /**
- * Build a storage-relational binding — the provider side of a
- * relational storage table. Transport carries the `storageSystem`
- * value so the layering stays informative without a separate
- * wire-protocol taxonomy.
+ * Build a storage-relational binding, the provider side of a relational
+ * storage table. Transport stores the `storageSystem` value, which keeps
+ * the layering informative without needing a separate wire-protocol
+ * taxonomy.
  */
 export function storageRelationalBinding(opts: {
   recognition: string;
@@ -311,13 +314,13 @@ export function storageRelationalBinding(opts: {
 }
 
 /**
- * Build a message-bus binding — the boundary between a producer that
+ * Build a message-bus binding, the boundary between a producer that
  * sends discrete messages and the consumer(s) that receive them.
  */
 export function messageBusBinding(opts: {
   recognition: string;
   messageBus: MessageBusTechnology;
-  /** Null when this source does not name the channel. */
+  /** Null when this source does not say which channel. */
   channel: string | null;
 }): BoundaryBinding {
   return {

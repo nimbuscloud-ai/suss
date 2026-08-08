@@ -1,14 +1,14 @@
-// shapes.ts — Extract structured TypeShape from expression nodes.
+// shapes.ts: Extract structured TypeShape from expression nodes.
 //
 // Three-pass strategy, in order:
 //
 //   1. **Syntactic decomposition.** Walk the AST. Object / array / primitive
-//      literals and wrapping expressions decompose directly — this preserves
+//      literals and wrapping expressions decompose directly: this preserves
 //      literal narrowness (`"success"` → `{ literal, value: "success" }`,
 //      not `text`).
 //
-//   2. **AST resolution.** For terminal nodes that aren't literals —
-//      bare identifiers, property access chains, call expressions — walk
+//   2. **AST resolution.** For terminal nodes that aren't literals ,
+//      bare identifiers, property access chains, call expressions: walk
 //      back to the declaration and recurse on the initializer or return
 //      expression. This lets us preserve literal narrowness even when the
 //      type checker would widen (e.g. `const status = "ok"` at a use site
@@ -46,7 +46,7 @@ import type { ArrayLiteralExpression, PropertyAssignment } from "ts-morph";
 // cycle-detection context. That makes the cross-extractor path unbounded
 // for self-referential call graphs (`function a() { return b(); }
 // function b() { return a(); }`). Cap the call stack here as a safety
-// net — past the limit, fall back to the type-checker path which has
+// net: past the limit, fall back to the type-checker path which has
 // its own depth/seen tracking.
 const MAX_EXTRACT_DEPTH = 64;
 let extractShapeDepth = 0;
@@ -54,7 +54,7 @@ let extractShapeDepth = 0;
 /**
  * Attempt to decompose `node` into a structured `TypeShape`. Returns `null`
  * only when the expression is syntactically unrecognized AND the type checker
- * cannot infer anything useful — callers then fall back to a source-text ref.
+ * cannot infer anything useful: callers then fall back to a source-text ref.
  */
 export function extractShape(node: Node): TypeShape | null {
   if (extractShapeDepth >= MAX_EXTRACT_DEPTH) {
@@ -114,7 +114,7 @@ function extractShapeInner(node: Node): TypeShape | null {
     return shapeFromArrayLiteral(unwrapped);
   }
 
-  // Primitive literals — preserve the exact value.
+  // Primitive literals: preserve the exact value.
   if (
     Node.isStringLiteral(unwrapped) ||
     Node.isNoSubstitutionTemplateLiteral(unwrapped)
@@ -123,7 +123,7 @@ function extractShapeInner(node: Node): TypeShape | null {
   }
 
   // Template expressions with substitutions can't be reduced to a single
-  // literal — surface as the widened primitive.
+  // literal: surface as the widened primitive.
   if (Node.isTemplateExpression(unwrapped)) {
     return { type: "text" };
   }
@@ -150,7 +150,7 @@ function extractShapeInner(node: Node): TypeShape | null {
         return numericLiteralShape(signed, raw);
       }
     }
-    // Any other prefix unary (!, ~, ++, --) — fall through.
+    // Any other prefix unary (!, ~, ++, --): fall through.
   }
 
   if (Node.isBigIntLiteral(unwrapped)) {
@@ -191,8 +191,8 @@ function extractShapeInner(node: Node): TypeShape | null {
     return collapseVariants(variants);
   }
 
-  // Everything else — identifiers, property access chains, call expressions,
-  // `new` expressions, tagged templates — try AST resolution first (which
+  // Everything else: identifiers, property access chains, call expressions,
+  // `new` expressions, tagged templates: try AST resolution first (which
   // preserves literal narrowness that the type checker would widen), then
   // fall back to the type checker.
   const astShape = resolveNodeFromAst(unwrapped, extractShape);
@@ -203,7 +203,7 @@ function extractShapeInner(node: Node): TypeShape | null {
 }
 
 /**
- * Build a numeric-literal `TypeShape`, carrying the raw source text so
+ * Build a numeric-literal `TypeShape`, keeping the raw source text so
  * consumers needing exact wire-format precision aren't tripped up by JS
  * `number` coercion losses (see "Serialization semantics" in the IR
  * reference).
@@ -250,7 +250,7 @@ function shapeFromObjectLiteral(obj: ObjectLiteralExpression): TypeShape {
     if (Node.isPropertyAssignment(prop)) {
       const name = propertyName(prop);
       if (name === null) {
-        // Computed property key we can't resolve — nothing we can record on
+        // Computed property key we can't resolve: nothing we can record on
         // the structured shape; skip rather than invent a name.
         continue;
       }
@@ -286,7 +286,7 @@ function shapeFromObjectLiteral(obj: ObjectLiteralExpression): TypeShape {
         for (const [k, v] of Object.entries(spreadShape.properties)) {
           properties[k] = v;
         }
-        // Carry nested unresolvable spreads upward — if `user` had its own
+        // Carry nested unresolvable spreads upward: if `user` had its own
         // unresolved spreads, they still contribute unknown fields to us.
         if (spreadShape.spreads) {
           unresolvedSpreads.push(...spreadShape.spreads);
@@ -296,7 +296,7 @@ function shapeFromObjectLiteral(obj: ObjectLiteralExpression): TypeShape {
       unresolvedSpreads.push({ sourceText: expr.getText() });
     }
 
-    // Method / accessor members don't fit TypeShape cleanly — records in
+    // Method / accessor members don't fit TypeShape cleanly: records in
     // this IR represent data, not behavior, so skip them.
   }
 
@@ -315,7 +315,7 @@ function propertyName(prop: PropertyAssignment): string | null {
   ) {
     return nameNode.getText().replace(/^["']|["']$/g, "");
   }
-  // Computed property name — skip, we can't emit a stable string for it.
+  // Computed property name: skip, we can't emit a stable string for it.
   return null;
 }
 

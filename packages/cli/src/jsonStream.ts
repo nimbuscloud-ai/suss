@@ -1,4 +1,4 @@
-// jsonStream.ts: write a JSON document without ever holding it as one
+// jsonStream.ts: write a JSON document without ever building it as one
 // string.
 //
 // V8 caps a single string at about 512MB. `JSON.stringify` of a whole
@@ -15,7 +15,7 @@ import path from "node:path";
 /**
  * Render a value no larger than this as one string. Anything bigger is
  * split into its elements or properties. The number is far below V8's
- * string cap on purpose: it also bounds how much text the writer holds
+ * string cap on purpose: it also bounds how much text the writer keeps
  * at once, so peak memory does not track document size.
  */
 const MAX_PIECE_CHARS = 4 * 1024 * 1024;
@@ -46,8 +46,8 @@ function unwrap(value: unknown): unknown {
 }
 
 /**
- * The whole rendering of `value`, or null when it is too large to hold
- * and the caller should split it.
+ * The whole rendering of `value`, or null when it is too large for one
+ * string and the caller should split it.
  */
 function renderWhole(value: unknown, indent: number): string | null {
   try {
@@ -80,7 +80,7 @@ function* piecesAt(
   const whole = renderWhole(value, indent);
   if (whole !== null) {
     // `JSON.stringify` renders a value as if it stood alone, so every
-    // line after the first needs the indentation of the depth it sits at.
+    // line after the first needs the indentation for its own depth.
     yield indent > 0 && depth > 0
       ? whole.replaceAll("\n", `\n${padding(indent, depth)}`)
       : whole;
@@ -209,7 +209,7 @@ function batched(sink: (text: string) => void | Promise<void>) {
   };
 }
 
-/** Somewhere to write text to, and whatever has to happen afterwards. */
+/** Somewhere to write text to, plus whatever has to happen afterwards. */
 interface Sink {
   write: (text: string) => void | Promise<void>;
   close: () => void;

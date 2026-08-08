@@ -6,7 +6,7 @@
 //
 // Two readers share this. The invariant asks whether every declared
 // export produced a summary. The dogfood count asks how many summaries
-// sit on that surface and how many sit behind it. A second definition of
+// are on that surface and how many are behind it. A second definition of
 // "public surface" would let the two disagree about the same package,
 // with the gate built on one of them and the invariant on the other.
 
@@ -18,7 +18,7 @@ import ts from "typescript";
 /**
  * Each export surface a manifest declares, as the sub-path it is reached
  * by and the declaration file that describes it. A sub-path export shows
- * up in a boundary key with its own segment, so `./schemas` carries the
+ * up in a boundary key with its own segment, so `./schemas` gets the
  * prefix `["schemas"]` and the root carries none.
  */
 function declaredEntryPoints(packageJson, dir) {
@@ -108,7 +108,7 @@ export function declaredExports(packageJson, dir) {
  * its prefixes is declared, which is how a method on a returned object
  * gets in: a caller who has `createTypeScriptAdapter` can call
  * `createTypeScriptAdapter.extractAll`, and consumers in this workspace
- * do. A path with no declared prefix sits behind the surface however
+ * do. A path with no declared prefix is behind the surface however
  * suss reached it.
  */
 function onDeclaredSurface(exportPath, declaredPaths) {

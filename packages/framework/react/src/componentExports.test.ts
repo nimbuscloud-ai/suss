@@ -10,7 +10,7 @@ import type {
 // reactComponentExports treats the source file opaquely (it only hands it
 // to ctx methods) and drives everything through the discovery context, so
 // a mock ctx exercises every branch without parsing real TSX. Each
-// exported function carries a `__jsx` flag the mock's hasJsxReturn reads.
+// exported function gets a `__jsx` flag that the mock's hasJsxReturn reads.
 
 type Exported = { name: string; func: FunctionRoot; isDefault: boolean };
 
@@ -62,13 +62,13 @@ describe("reactComponentExports", () => {
     const out = reactComponentExports(
       sf,
       mockCtx("src/mixed.tsx", [
-        // default export — handled by the data-driven namedExport(["default"])
+        // default export: handled by the data-driven namedExport(["default"])
         { name: "Page", func: fn(true), isDefault: true },
-        // lowercase — a render helper, not a component
+        // lowercase: a render helper, not a component
         { name: "renderRow", func: fn(true), isDefault: false },
-        // PascalCase but no JSX — a utility / hook-like function
+        // PascalCase but no JSX: a utility / hook-like function
         { name: "BuildConfig", func: fn(false), isDefault: false },
-        // empty name — defensive guard in startsWithUppercase
+        // empty name: defensive guard in startsWithUppercase
         { name: "", func: fn(true), isDefault: false },
         // the one real component
         { name: "Card", func: fn(true), isDefault: false },

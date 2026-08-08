@@ -1,9 +1,9 @@
-// component.test.ts — the render-boundary differential properties.
+// component.test.ts: the render-boundary differential properties.
 //
 // The sound tier (see componentGenerators.ts) must hold: every
 // generated construct is one the React pack models. The nested
 // null-guard was a gap-tier construct with an inverted rediscovery
-// milestone until the CFG path engine closed the nested-guard gap —
+// milestone until the CFG path engine closed the nested-guard gap,
 // its generator now runs as a regular sound property below.
 
 import fc from "fast-check";
@@ -171,7 +171,7 @@ describe("render claim admissibility", () => {
         },
       ],
     };
-    // Present or absent, the branch is admitted — but never confirmed.
+    // Present or absent, the branch is admitted, but never confirmed.
     expect(
       treeAdmits(claim, {
         type: "element",

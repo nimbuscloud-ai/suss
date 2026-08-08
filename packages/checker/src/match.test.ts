@@ -279,7 +279,7 @@ describe("predicatesMatch across every predicate kind", () => {
   }
 
   it("treats an opaque predicate as carrying nothing unresolved of its own", () => {
-    // Opaque holds source text, so there is no value reference inside it
+    // Opaque contains source text, so there is no value reference in it
     // to be unresolved. It is unknown because it is opaque, not because
     // of anything it contains.
     const opaque: Predicate = {

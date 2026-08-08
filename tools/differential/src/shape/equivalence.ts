@@ -5,8 +5,8 @@
 // factory. Whichever way it is written, the summary should say the same
 // thing. So the generator emits a pair, a variant and the plainest
 // spelling of the same behavior, and this compares the two summary
-// sets. Everything is compared except where a value names a position in
-// source, since the two programs are different text.
+// sets. Everything is compared except values that point at a position
+// in source, since the two programs are different text.
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -18,7 +18,7 @@ export interface SummaryDifference {
 }
 
 /**
- * Fields that say where something sits rather than what it does. A
+ * Fields that say where something is rather than what it does. A
  * summary's file, ranges, and transition ids differ between two
  * spellings by construction; an export path differs when the pair is a
  * named export against a default one.
@@ -106,8 +106,8 @@ export interface EquivalenceOptions {
   /**
    * Dotted paths whose disagreement is expected for this pair. An
    * export route that renames what it exports leaves two defensible
-   * answers for the summary's name, so that pair ignores the name and
-   * the naming invariant carries it instead.
+   * values for the summary's name, so that pair ignores the name and
+   * the naming invariant covers it instead.
    */
   ignorePaths?: string[];
 }

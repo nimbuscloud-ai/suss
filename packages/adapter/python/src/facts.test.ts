@@ -18,9 +18,6 @@ describe("unitKey", () => {
   });
 
   it("tells two units on one line apart", () => {
-    // The range is lines, so two units that share a line share it.
-    // Without the name in the key they are one key, and `entry` is a
-    // set, so the second one disappears from it.
     const range = { start: 4, end: 4 };
     expect(unitKey("routes.py", range, "get")).not.toBe(
       unitKey("routes.py", range, "post"),
@@ -144,7 +141,7 @@ describe("emitModuleImportFacts", () => {
     ]);
   });
 
-  it("records a relative import as outsideRoots when no configured root reaches it", async () => {
+  it("records even a one-dot relative import as outsideRoots when no configured root covers the importing file", async () => {
     write("myapp/routes/wrapper.py");
     const importingFile = write(
       "myapp/routes/todos.py",
@@ -154,9 +151,6 @@ describe("emitModuleImportFacts", () => {
     const module = bindModule(tree.rootNode);
 
     const db = new Database();
-    // No configured root covers the importing file at all, so even a
-    // one-dot relative import (which never walks past its own
-    // directory) has nothing to be judged inside of.
     emitModuleImportFacts(db, importingFile, module, {
       roots: [path.join(tmpDir, "unrelated")],
     });

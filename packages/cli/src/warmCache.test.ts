@@ -1,14 +1,16 @@
-// A second run answers with what the first one said.
-//
-// The extraction cache short-circuits before the summaries are named,
-// so a run served from it handed back ids of null, no workspace, and a
-// call graph with nothing in it. Every second run, and every CI job
-// that keeps a cache directory.
-//
-// This has to run the built binary. The cache turns itself off when the
-// adapter is loaded from source, so an in-process test never reaches
-// the path that broke, and a test written that way passes whether the
-// bug is there or not. It was.
+/**
+ * A second run gives back what the first one said.
+ *
+ * The extraction cache short-circuits before the summaries get their
+ * names, so a run served from it handed back ids of null, no workspace,
+ * and an empty call graph. That hits every second run, and every CI job
+ * that keeps a cache directory.
+ *
+ * This has to run the built binary. The cache turns itself off when the
+ * adapter is loaded from source, so an in-process test never reaches
+ * the path that broke, and a test written that way passes whether the
+ * bug is there or not. It was.
+ */
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";

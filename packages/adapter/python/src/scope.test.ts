@@ -182,9 +182,6 @@ describe("resolveName", () => {
     const functionScope = binding.scopeFor.get((funcNode as { id: number }).id);
     const resolved = resolveName(functionScope as never, "count");
     expect(resolved?.kind).toBe("assignment");
-    // Resolves to the module-level binding, not a function-local one:
-    // the function scope itself never gets its own "count" entry, only
-    // the `global` marker.
     expect(functionScope?.bindings.get("count")).toEqual({ kind: "global" });
   });
 

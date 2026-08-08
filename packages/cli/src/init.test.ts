@@ -76,9 +76,8 @@ describe("inspectProject", () => {
   });
 
   it("leaves a nested project's schemas to that project", () => {
-    // A directory with its own package.json is its own project. Claiming
-    // its schema here would report a sibling service's contract as this
-    // one's, which is what running init one directory too high produced.
+    // A directory with its own package.json is its own project, so claiming
+    // its schema here would report a sibling service's contract as this one's.
     writeManifest({ dependencies: {} });
     const nested = path.join(dir, "services", "other");
     fs.mkdirSync(nested, { recursive: true });

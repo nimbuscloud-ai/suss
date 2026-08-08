@@ -1,10 +1,3 @@
-// pythonProgram.test.ts: the renderer's own contract, held without an
-// interpreter. What the intents promise about a rendered program is
-// what the judge later leans on, so the promises are pinned here: one
-// intent per declared route, unique names, no two intents sharing a
-// served (method, path), and the expectation matching the shape's
-// documented tier.
-
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
@@ -17,7 +10,6 @@ import { renderPythonProgram } from "./pythonProgram.js";
 
 import type { FlaskResourceSpec, PythonProgramSpec } from "./pythonProgram.js";
 
-/** A one-GET resource, for cases where the resource itself is not what is under test. */
 function flaskResource(segment: string): FlaskResourceSpec {
   return {
     segment,
@@ -138,9 +130,6 @@ describe("renderPythonProgram", () => {
   });
 
   it("writes the typed and argument converter spellings while claiming the canonical brace path", () => {
-    // Starlette's {name:int} and Werkzeug's <int(min=0):name> are the
-    // sub-forms a reader without their grammar arms silently
-    // under-reads; these two intents keep the fuzzer generating them.
     const fastapiSpec: PythonProgramSpec = {
       framework: "fastapi",
       program: {
@@ -270,10 +259,6 @@ describe("renderPythonProgram", () => {
   });
 
   it("serves a namespace's resources under the path the namespace holds", () => {
-    // The namespace is written with a trailing slash and the library
-    // holds it without one, and the first resource is written with an
-    // empty path, which is the mount point itself. Both come back in
-    // the served paths the judge compares against the running app.
     const spec: PythonProgramSpec = {
       framework: "flask-restx",
       program: {
@@ -386,12 +371,12 @@ describe("renderPythonProgram", () => {
         intent.servedPaths,
       ]),
     ).toEqual([
-      // Served under a path the library derives from the namespace's
-      // name, which the pack declines to derive.
+      // The library derives this path from the namespace name, which the
+      // pack declines to derive.
       ["Alpha0.get", "abstain", ["/ns0/alpha0"]],
       // Never mounted, so never served at all.
       ["Beta1.get", "abstain", []],
-      // Both mounts land on one path; which one served it is not
+      // Both mounts land on one path, and which one served it is not
       // written down.
       ["Gamma2.get", "abstain", ["/t2/gamma2"]],
     ]);
@@ -457,11 +442,7 @@ describe("renderPythonProgram", () => {
   });
 
   it("renders every no-value spelling at both sites, and expects a claim wherever the library reads one", () => {
-    // The library asks whether the path is truthy and nothing else,
-    // so all four spellings mean no path at the constructor and no
-    // override at the mount. A namespace with a readable path keeps
-    // its claim through a falsy mount; one without a path has nothing
-    // to claim either way.
+    // The library asks whether the path is truthy and nothing else.
     const spec: PythonProgramSpec = {
       framework: "flask-restx",
       program: {
@@ -518,11 +499,10 @@ describe("renderPythonProgram", () => {
       // A falsy mount path is no override, so this keeps the path its
       // constructor stated.
       ["Alpha0.get", "claim", ["/ns0/alpha0"]],
-      // A falsy constructor path leaves the library deriving one from
-      // the name.
+      // A falsy constructor path leaves the library deriving one from the name.
       ["Beta1.get", "abstain", ["/ns1/beta1"]],
-      // A mount path nobody can read takes the namespace somewhere
-      // this reading cannot follow.
+      // A mount path nobody can read takes the namespace somewhere this
+      // reading cannot follow.
       ["Gamma2.get", "abstain", ["/mo2/gamma2"]],
     ]);
   });

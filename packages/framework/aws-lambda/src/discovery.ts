@@ -1,14 +1,14 @@
-// discovery.ts — the pack's `discoverUnits` callback.
+// discovery.ts: the pack's `discoverUnits` callback.
 //
-// AWS Lambda HTTP handlers aren't registered in code — the wiring lives
+// AWS Lambda HTTP handlers aren't registered in code: the wiring lives
 // in the SAM/CFN template's `Events` block. So discovery keys off the
 // template rather than an in-code registration call: for each source
 // file, find the handlers the reachable template declares against it and
 // emit one unit per HTTP route (carrying a REST binding via `routeInfo`).
 //
 // Non-HTTP event handlers (SQS/Schedule/SNS) are out of scope for HTTP
-// extraction — the message-bus pass in @suss/contract-cloudformation
-// owns SQS consumers — but they're surfaced as `recognized-not-http`
+// extraction: the message-bus pass in @suss/contract-cloudformation
+// owns SQS consumers: but they're surfaced as `recognized-not-http`
 // accounting units so a recognized handler is never silently dropped.
 // An SQS consumer built by a subject-naming handler factory also gets
 // a message-bus binding on that subject, so it pairs with producers.
@@ -63,8 +63,8 @@ function httpRouteUnits(
 }
 
 /**
- * The three root types are the operations a client can send, so a
- * handler behind one of their fields sits on a boundary, and
+ * The three root types are the operations a client can send, so a handler
+ * behind one of their fields is on a boundary, and
  * `resolverInfo` makes the adapter build the graphql-resolver binding
  * that pairs with those operations.
  *
@@ -117,17 +117,16 @@ function graphqlResolverUnits(
 /**
  * A handler with no bindable HTTP route (a dedicated SQS/Schedule/SNS
  * consumer, or one whose only route is ANY) still gets one accounting
- * unit — no `routeInfo`, so it falls back to a function-call binding and
- * pairs with nothing, but it appears in the summary set marked
- * `recognized-not-http` with the event types that reached it. When the
- * handler's factory config names the subject it consumes (`channel`
- * non-null), the unit carries a message-bus binding on that subject
- * instead of the fallback.
+ * unit. It gets no `routeInfo`, so it falls back to a function-call binding and
+ * pairs with nothing, but it does appear in the summary set marked
+ * `recognized-not-http`, with the event types that reached it. When the
+ * handler's factory config says which subject it consumes (`channel` is
+ * non-null), the unit gets a message-bus binding on that subject instead of the
+ * fallback.
  *
- * No HTTP envelope constrains what these answer with, so the unit
- * carries the wider terminal list and any returned object gets its
- * shape read. Route units keep the pack-level list, where a return
- * outside the envelope stays an unread return.
+ * No HTTP envelope constrains what these return, so the unit uses the wider
+ * terminal list and any returned object gets read. Route units keep the
+ * pack-level list, where a return outside the envelope stays an unread return.
  */
 function accountingUnit(
   entry: HandlerEntry,
@@ -157,18 +156,18 @@ function accountingUnit(
 }
 
 /**
- * A handler factory whose config names the subject the consumer
- * expects, as `myFactory({ subject: "widget.created" }, async
- * ({ parsed }) => ...)`. The subject is the channel a producer
- * publishes on, so it becomes the unit's message-bus binding.
+ * A handler factory whose config says which subject the consumer expects, as in
+ * `myFactory({ subject: "widget.created" }, async ({ parsed }) => ...)`. The
+ * subject is the channel a producer publishes on, so it becomes the unit's
+ * message-bus binding.
  *
- * AWS declares no such factory, so a project names its own. The queue
- * itself stays with the declared side (the message-bus pass in
- * @suss/contract-cloudformation reads the template's SQS wiring); what
- * the code adds is which subject this consumer answers to.
+ * AWS declares no such factory, so a project configures its own. The queue
+ * itself stays on the declared side, since the message-bus pass in
+ * @suss/contract-cloudformation reads the template's SQS wiring. What the code
+ * adds is which subject this consumer listens for.
  */
 export interface SubjectFactory {
-  /** Property on the factory's config object holding the subject. */
+  /** The property on the factory's config object that contains the subject. */
   property: string;
   /**
    * Factory functions the project builds its consumers with. Naming
@@ -178,17 +177,17 @@ export interface SubjectFactory {
    */
   callees?: string[];
   /**
-   * Argument position carrying the config object. Every object
-   * argument is read when this is left out.
+   * Which argument position the config object is in. When this is left out,
+   * every object argument is read.
    */
   argIndex?: number;
 }
 
 /**
- * The subject a handler's factory config names, when the template
- * routes SQS to it and the subject is a readable string. Anything
- * else (no configured factory, no factory call, computed subject)
- * answers null and the unit keeps its default binding.
+ * The subject a handler's factory config gives, when the template routes SQS to
+ * it and the subject is a readable string. Anything else, whether that is no
+ * configured factory, no factory call, or a computed subject, returns null and
+ * the unit keeps its default binding.
  */
 function subjectChannel(
   entry: HandlerEntry,
@@ -254,7 +253,7 @@ export function awsLambdaDiscovery(
     for (const entry of entries) {
       const func = exported.get(entry.exportName);
       if (func === undefined) {
-        // The template names an export this file doesn't provide (renamed
+        // The template asks for an export this file doesn't provide (renamed
         // handler, build artifact mismatch). Nothing to extract; the
         // declared route still exists on the contract side.
         continue;

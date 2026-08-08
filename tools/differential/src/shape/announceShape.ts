@@ -1,7 +1,7 @@
 // announceShape.ts: how a boundary says that it is one.
 //
 // Express hands a function to a call and React exports a name. NestJS
-// does neither: the class carries a decorator, the method carries
+// does neither: the class has a decorator, the method has
 // another, and the framework wires them. Codebases then wrap those
 // decorators in their own, which is the dimension this generates. A
 // project decorator that calls the framework's is still the framework's
@@ -9,7 +9,6 @@
 
 import { type DispatchTable, dispatchByType } from "../dispatch.js";
 
-/** How the controller announces the boundary to the framework. */
 export type Announcement =
   | "bareDecorator"
   | "aliasedImport"
@@ -17,7 +16,6 @@ export type Announcement =
   | "wrappedWithArgument"
   | "composedDecorator";
 
-/** How the handler is written inside the class. */
 export type MethodForm = "method" | "asyncMethod" | "arrowProperty";
 
 export interface AnnounceShapeSpec {

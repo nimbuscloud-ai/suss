@@ -1,6 +1,3 @@
-// Each event kind, in both spellings the framework accepts, and what
-// each one abstains on.
-
 import { describe, expect, it } from "vitest";
 
 import { EVENT_TRANSLATIONS } from "./events.js";
@@ -204,8 +201,6 @@ describe("schedule", () => {
   });
 
   it("stays a schedule even when the rate is stated at deploy time", () => {
-    // A schedule carries no message, so the rate is not what the
-    // boundary is keyed on; the wiring is still declared.
     expect(translate("schedule", { rate: { some: "map" } })).toEqual({
       kind: "event",
       event: { Type: "Schedule", Properties: {} },

@@ -1,16 +1,16 @@
 // Measuring where evaluation spends its time.
 //
-// Asking "which rule is expensive" needs numbers the engine is the only
-// thing positioned to give: a rule's cost is spread across joins that no
-// caller can see from outside. A CPU profile answers this at the level of
-// `unify` and `lookup`, which says how the engine works but not which rule
+// Asking "which rule is expensive" needs numbers only the engine can
+// give: a rule's cost is spread across joins that no caller can see
+// from outside. A CPU profile only gets down to `unify` and
+// `lookup`, which tells you how the engine works but not which rule
 // asked for the work.
 //
 // Nothing here runs unless a caller wraps its evaluation in
 // `profileEvaluation`. The engine checks whether any scope is open once
 // per rule attempt and once per round, never per tuple, and the
-// allocating part sits inside that branch, so an unprofiled run does the
-// work it did before.
+// allocation happens inside that branch, so an unprofiled run does the
+// same work it did before.
 
 /** What one rule cost, summed over every attempt across every round. */
 export interface RuleCost {
@@ -121,7 +121,7 @@ function addCost(
 
 /**
  * Charge `ms` and `derived` tuples to one rule. Called per rule attempt.
- * `ruleSet` names the rule set the rule belongs to, so the same relation
+ * `ruleSet` says which rule set the rule belongs to, so the same relation
  * derived by two rule sets does not blur into one line.
  */
 export function chargeRule(
@@ -219,8 +219,8 @@ export function profileEvaluation<T>(fn: () => T): {
 /**
  * The async twin, for callers whose extraction is a promise. The scope
  * stays open across every await inside `fn`, so anything else that
- * evaluates rules on the same thread meanwhile is charged here too. One
- * extraction at a time is the case this is built for.
+ * evaluates rules on the same thread meanwhile is charged here too. This
+ * is built for the case of one extraction at a time.
  */
 export async function profileEvaluationAsync<T>(
   fn: () => Promise<T>,

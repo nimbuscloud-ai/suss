@@ -11,7 +11,6 @@
 
 import { type DispatchTable, dispatchByType } from "../dispatch.js";
 
-/** Where in the module the read sits. */
 export type ReadSite =
   | "inBody"
   | "inGuard"
@@ -95,7 +94,7 @@ function siteRenderings(
     imports: [],
   });
   // A helper both helper sites share, so the two differ only in which
-  // file holds it.
+  // file it is in.
   const helperLines = [
     "export const readConfig = () => {",
     ...indentBy(read, "  "),

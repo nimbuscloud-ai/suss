@@ -1,8 +1,8 @@
-// componentExports.ts — React's named-component-export discovery.
+// componentExports.ts: React's named-component-export discovery.
 //
 // React doesn't have its own DiscoveryMatch variant; it ships this
 // callback for the `discoverUnits` hook. The pack-author conventions
-// live HERE, not in the extractor — PascalCase naming, JSX-return
+// live HERE, not in the extractor, PascalCase naming, JSX-return
 // detection, story-file exclusion. New frontend frameworks (Vue,
 // Solid) own their conventions the same way.
 
@@ -32,9 +32,9 @@ function startsWithUppercase(name: string): boolean {
  * three React conventions:
  *
  * 1. Skip files matching `.stories.tsx?` / `.test.tsx?` / `.spec.tsx?`
- *    — those export functions returning JSX too, but they're not
+ *. Those export functions returning JSX too, but they're not
  *    components.
- * 2. Skip the `default` export — the data-driven
+ * 2. Skip the `default` export, the data-driven
  *    `namedExport(["default"])` already handles it; emitting it again
  *    would produce duplicate units (the cross-pack dedup would catch
  *    them but at higher cost).

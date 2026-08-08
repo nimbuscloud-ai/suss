@@ -24,7 +24,7 @@ function restSemanticsOf(
 }
 
 // ---------------------------------------------------------------------------
-// Fixture-driven — covers the end-to-end path on a realistic template
+// Fixture-driven: covers the end-to-end path on a realistic template
 // ---------------------------------------------------------------------------
 
 describe("appsyncFileToSummaries — petstore fixture", () => {
@@ -108,7 +108,7 @@ describe("appsyncFileToSummaries — petstore fixture", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Hand-crafted inputs — exercise edge cases without a file on disk
+// Hand-crafted inputs: exercise edge cases without a file on disk
 // ---------------------------------------------------------------------------
 
 describe("appsyncToSummaries — template shape edge cases", () => {
@@ -160,7 +160,7 @@ describe("appsyncToSummaries — template shape edge cases", () => {
     expect(meta?.schemaMatched).toBe(false);
     // No inputs when the SDL didn't declare the field.
     expect(summaries[0].inputs).toEqual([]);
-    // The default transition still carries a return output — just
+    // The default transition still has a return output, just
     // with an `unknown` shape in place of the SDL-declared one.
     const defaultTxn = summaries[0].transitions.find((t) => t.isDefault);
     expect(defaultTxn?.output.type).toBe("return");
@@ -559,7 +559,7 @@ describe("appsyncToSummaries — template shape edge cases", () => {
 });
 
 // ---------------------------------------------------------------------------
-// External schema file — raw AppSync with DefinitionS3Location local path
+// External schema file: raw AppSync with DefinitionS3Location local path
 // ---------------------------------------------------------------------------
 
 interface AppsyncMeta {
@@ -646,7 +646,7 @@ describe("appsyncFileToSummaries, list-form intrinsics", () => {
 });
 
 // ---------------------------------------------------------------------------
-// SAM shorthand — AWS::Serverless::GraphQLApi
+// SAM shorthand: AWS:Serverless:GraphQLApi
 // ---------------------------------------------------------------------------
 
 describe("appsyncFileToSummaries — SAM AWS::Serverless::GraphQLApi", () => {
@@ -886,7 +886,7 @@ describe("appsyncToSummaries — SAM shape edge cases", () => {
 });
 
 // ---------------------------------------------------------------------------
-// File loader — JSON and YAML shapes from disk
+// File loader: JSON and YAML shapes from disk
 // ---------------------------------------------------------------------------
 
 describe("appsyncFileToSummaries — file loading", () => {

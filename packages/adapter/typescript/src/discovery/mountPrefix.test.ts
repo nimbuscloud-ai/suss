@@ -489,7 +489,7 @@ describe("mount prefix composition, end to end", () => {
 
   it("composes nothing across packs: an Express mount can't target a Hono app", async () => {
     // Both ordersRouter and honoApp resolve to something, and both
-    // sit at the same argument position, but only ordersRouter is
+    // are at the same argument position, but only ordersRouter is
     // one of Express's own registration subjects. honoApp belongs to
     // the Hono pack's own registry, which an Express .use never
     // checks, so it is not a mount target here whatever it resolves
@@ -526,7 +526,7 @@ describe("mount prefix composition, end to end", () => {
     // is itself mounted under "/v1" while app2 is not mounted
     // anywhere, so the two mounts resolve to "/v1/api" and "/api",
     // genuinely different paths. Picking either arbitrarily would be
-    // a wrong answer stated as a right one, so this composes nothing
+    // a wrong result presented as a right one, so this composes nothing
     // rather than guess which mount a request actually reaches
     // sharedRouter through.
     const project = createTestProject();

@@ -1,4 +1,4 @@
-// Worker for scripts/dogfood.mjs — runs the adapter for a single package
+// Worker for scripts/dogfood.mjs, runs the adapter for a single package
 // and posts back the summaries. One worker per @suss/* package, scheduled
 // by the parent with a CPU-core-sized concurrency cap.
 

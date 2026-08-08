@@ -1,4 +1,4 @@
-// componentExecute.ts — run a generated component in node:vm.
+// componentExecute.ts: run a generated component in node:vm.
 //
 // No React dependency: the TSX module is transpiled with the
 // TypeScript compiler (classic `jsx: React` emit → `React.createElement`

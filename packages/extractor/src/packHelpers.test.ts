@@ -44,9 +44,9 @@ describe("httpRouteDiscovery", () => {
       throw new Error("expected registrationCall match");
     }
     expect(patterns[0].match.registrationChain).toEqual(methods);
-    // The caller's array isn't retained by reference — packs are meant to be
+    // The caller's array is not kept by reference. Packs are meant to be
     // immutable data at runtime, so mutating the caller's input must not
-    // ripple into produced patterns.
+    // show up in the patterns that were already produced.
     methods.push(".trace");
     expect(patterns[0].match.registrationChain).toEqual([
       ".get",

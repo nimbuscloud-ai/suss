@@ -1,5 +1,3 @@
-// adapter.test.ts — Integration tests for createTypeScriptAdapter (Task 2.5b)
-
 import path from "node:path";
 
 import { type CallExpression, Project } from "ts-morph";
@@ -47,10 +45,6 @@ function restPathOf(
   const sem = binding?.semantics;
   return sem?.name === "rest" ? sem.path : null;
 }
-
-// ---------------------------------------------------------------------------
-// ts-rest framework pack (same as @suss/framework-ts-rest)
-// ---------------------------------------------------------------------------
 
 const tsRestPack: PatternPack = {
   name: "ts-rest",
@@ -104,10 +98,6 @@ const tsRestPack: PatternPack = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function fixturesDir() {
   return path.resolve(__dirname, "../../../../fixtures/ts-rest");
 }
@@ -121,10 +111,6 @@ function createFixtureProject(): Project {
   project.addSourceFilesAtPaths(path.join(fixturesDir(), "*.ts"));
   return project;
 }
-
-// ---------------------------------------------------------------------------
-// extractCodeStructure unit tests
-// ---------------------------------------------------------------------------
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -157,10 +143,7 @@ describe("extractCodeStructure", () => {
     expect(raw.identity.kind).toBe("handler");
   });
 
-  it("extracts parameters from an ArrayBindingPattern under allPositional", async () => {
-    // `([state, setState]) => ...` — common in callbacks that destructure
-    // tuple returns. Each bound name should surface as its own Input.
-    // Omitted-expression holes (`[, b]`) are skipped.
+  it("gives each name an ArrayBindingPattern binds its own input under allPositional, skipping holes", async () => {
     const project = createTestProject();
     const source = `
       export const handler = ([state, setState, , rest]: [string, (s: string) => void, number, unknown]) => {
@@ -231,7 +214,6 @@ describe("extractCodeStructure", () => {
 
     expect(raw.branches).toHaveLength(2);
 
-    // First branch: 404 with condition !user
     expect(raw.branches[0].terminal.kind).toBe("response");
     expect(raw.branches[0].terminal.statusCode).toEqual({
       type: "literal",
@@ -240,7 +222,6 @@ describe("extractCodeStructure", () => {
     expect(raw.branches[0].isDefault).toBe(false);
     expect(raw.branches[0].conditions.length).toBeGreaterThan(0);
 
-    // Second branch: 200 default
     expect(raw.branches[1].terminal.kind).toBe("response");
     expect(raw.branches[1].terminal.statusCode).toEqual({
       type: "literal",
@@ -395,7 +376,6 @@ describe("extractCodeStructure", () => {
     const units = discoverUnits(file, tsRestPack.discovery);
     const raw = extractCodeStructure(units[0], tsRestPack);
 
-    // Should find all 3 dep calls: top-level validate, nested db.findById, nested db.log
     expect(raw.dependencyCalls).toHaveLength(3);
     expect(raw.dependencyCalls.map((d) => d.name)).toEqual([
       "validate",
@@ -427,7 +407,6 @@ describe("extractCodeStructure", () => {
 
     expect(raw.branches).toHaveLength(2);
 
-    // Branch 1: 200 with condition "user" positive
     expect(raw.branches[0].terminal.statusCode).toEqual({
       type: "literal",
       value: 200,
@@ -435,7 +414,6 @@ describe("extractCodeStructure", () => {
     expect(raw.branches[0].conditions.length).toBeGreaterThan(0);
     expect(raw.branches[0].conditions[0].polarity).toBe("positive");
 
-    // Branch 2: 404 with condition "user" negative
     expect(raw.branches[1].terminal.statusCode).toEqual({
       type: "literal",
       value: 404,
@@ -467,10 +445,6 @@ describe("extractCodeStructure", () => {
     expect(raw.dependencyCalls[0].async).toBe(true);
   });
 });
-
-// ---------------------------------------------------------------------------
-// readContract unit tests
-// ---------------------------------------------------------------------------
 
 describe("readContract", () => {
   it("reads contract responses from same-file contract definition", async () => {
@@ -531,7 +505,6 @@ describe("readContract", () => {
     `;
     const file = project.createSourceFile("test.ts", source);
 
-    // Manually create a DiscoveredUnit that's NOT inside a router call
     const fn = file.getFunctions()[0];
     const result = readContract(
       { func: fn, kind: "handler", name: "standalone" },
@@ -571,7 +544,6 @@ describe("readContract", () => {
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("deleteUser");
 
-    // deleteUser has no matching contract entry
     const result = readContract(
       units[0],
       tsRestPack.contractReading ??
@@ -742,11 +714,7 @@ describe("readContract", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Full integration: createTypeScriptAdapter with fixture files
-// ---------------------------------------------------------------------------
-
-describe("createTypeScriptAdapter — ts-rest fixtures", () => {
+describe("createTypeScriptAdapter: ts-rest fixtures", () => {
   it("extracts summaries from fixture handler file", async () => {
     const project = createFixtureProject();
     const adapter = createTypeScriptAdapter({
@@ -764,7 +732,6 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 
     const summaries = await adapter.extractFromFiles([resolvedHandlerPath]);
 
-    // Should discover both getUser and createUser handlers
     expect(summaries).toHaveLength(2);
 
     const names = summaries.map((s) => s.identity.name).sort();
@@ -784,14 +751,8 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(getUser).toBeDefined();
     expect(getUser?.kind).toBe("handler");
 
-    // getUser has 4 transitions:
-    //   1. !params.id → 404
-    //   2. !user → 404
-    //   3. user.deletedAt → 404
-    //   4. default → 200
     expect(getUser?.transitions).toHaveLength(4);
 
-    // Check status codes
     const statusCodes = getUser?.transitions.map((t) => {
       if (
         t.output.type === "response" &&
@@ -803,10 +764,8 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     });
     expect(statusCodes).toEqual([404, 404, 404, 200]);
 
-    // Last transition should be default
     expect(getUser?.transitions[3].isDefault).toBe(true);
 
-    // First three should not be default
     expect(getUser?.transitions[0].isDefault).toBe(false);
     expect(getUser?.transitions[1].isDefault).toBe(false);
     expect(getUser?.transitions[2].isDefault).toBe(false);
@@ -824,7 +783,6 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 
     expect(getUser).toBeDefined();
 
-    // params should be extracted with role "pathParams"
     const paramsInput = getUser?.inputs.find(
       (i) => i.type === "parameter" && i.name === "params",
     );
@@ -847,7 +805,6 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 
     expect(getUser).toBeDefined();
 
-    // The contract declares 500 but the handler never produces it
     const gap500 = getUser?.gaps.find((g) => g.description.includes("500"));
     expect(gap500).toBeDefined();
     expect(gap500?.type).toBe("unhandledCase");
@@ -866,7 +823,6 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 
     expect(getUser).toBeDefined();
 
-    // The metadata should include the declaredContract under the HTTP namespace
     expect(getUser?.metadata).toBeDefined();
     if (getUser === undefined) {
       return;
@@ -901,9 +857,6 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     expect(createUser).toBeDefined();
     expect(createUser?.kind).toBe("handler");
 
-    // createUser has 2 transitions:
-    //   1. !body.name || !body.email → 400
-    //   2. default → 201
     expect(createUser?.transitions).toHaveLength(2);
 
     const statusCodes = createUser?.transitions.map((t) => {
@@ -937,7 +890,6 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
   it("extractAll skips declaration files", async () => {
     const project = createFixtureProject();
 
-    // Add a .d.ts file — should be skipped
     project.createSourceFile(
       "types.d.ts",
       "export interface Foo { bar: string }",
@@ -950,7 +902,6 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 
     const summaries = await adapter.extractAll();
 
-    // Should still only find handlers from handlers.ts
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual(["createUser", "getUser"]);
   });
@@ -969,45 +920,32 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
     if (getUser === undefined) {
       throw new Error("expected getUser summary");
     }
-    // None of the conditions should be opaque
     for (const t of getUser.transitions) {
       for (const c of t.conditions) {
         expect(c.type).not.toBe("opaque");
       }
     }
 
-    // Transition 0: the guard `if (!params.id)` — terminal is in the
-    // then-branch (positive polarity). parseConditionExpression folds
-    // the `!` into truthinessCheck.negated, so no wrapping negation node.
     const t0 = getUser.transitions[0];
     expect(t0.conditions).toHaveLength(1);
     expect(t0.conditions[0].type).toBe("truthinessCheck");
     if (t0.conditions[0].type === "truthinessCheck") {
       expect(t0.conditions[0].negated).toBe(true);
-      // params.id → derived(input(params), propertyAccess("id"))
       expect(t0.conditions[0].subject.type).toBe("derived");
     }
 
-    // Transition 1: `if (!user)` with prior early return for `!params.id`.
-    // The early return condition has polarity "negative" so assembleSummary
-    // wraps it in a negation node.
     const t1 = getUser?.transitions[1];
     expect(t1.conditions.length).toBeGreaterThanOrEqual(2);
-    // First condition: negation of the early return guard (!params.id)
     expect(t1.conditions[0].type).toBe("negation");
-    // Last condition: the !user truthinessCheck (positive polarity, negated folded in)
     const t1Last = t1.conditions[t1.conditions.length - 1];
     expect(t1Last.type).toBe("truthinessCheck");
     if (t1Last.type === "truthinessCheck") {
       expect(t1Last.negated).toBe(true);
-      // user should resolve to a dependency (db.findById)
       expect(t1Last.subject.type).toBe("dependency");
     }
 
-    // Transition 2: `if (user.deletedAt)` with two prior early return guards.
     const t2 = getUser?.transitions[2];
     expect(t2.conditions.length).toBeGreaterThanOrEqual(3);
-    // Last condition: truthinessCheck on user.deletedAt (positive polarity)
     const t2Last = t2.conditions[t2.conditions.length - 1];
     expect(t2Last.type).toBe("truthinessCheck");
     if (t2Last.type === "truthinessCheck") {
@@ -1036,10 +974,6 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
       throw new Error("expected createUser summary");
     }
 
-    // The first transition has a guard: !body.name || !body.email
-    // This is an early return, so its polarity is "negative".
-    // The condition expression itself is `!body.name || !body.email`.
-    // The negation of that compound expression is the actual predicate.
     const t0 = createUser.transitions[0];
     expect(t0.conditions.length).toBeGreaterThan(0);
   });
@@ -1078,7 +1012,6 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
 
     expect(summaries).toHaveLength(1);
 
-    // 400 is produced but not declared → reverse gap
     const reverseGap = summaries[0].gaps.find((g) =>
       g.description.includes("400"),
     );
@@ -1129,21 +1062,8 @@ describe("createTypeScriptAdapter — ts-rest fixtures", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Reachable-closure (transitive library discovery)
-// ---------------------------------------------------------------------------
-//
-// Every function reachable through a static call edge from a pack-discovered
-// unit becomes a `library` summary with `recognition: "reachable"`. Seeds:
-// pack discovery + wrapper expansion + sub-unit synthesis. Stops at
-// node_modules / declaration files / higher-order indirection.
-
-describe("createTypeScriptAdapter — cross-pack dedup", () => {
+describe("createTypeScriptAdapter: cross-pack dedup", () => {
   it("produces one summary per (function, kind) even when multiple packs discover the same unit", async () => {
-    // Two packs, both discovering the same default-exported function as
-    // a `component`. Before cross-pack dedup this produced two summaries
-    // at different `recognition` labels. First pack wins — user controls
-    // precedence via the frameworks[] order.
     const project = createTestProject();
     project.createSourceFile(
       "Button.tsx",
@@ -1183,7 +1103,7 @@ describe("createTypeScriptAdapter — cross-pack dedup", () => {
     expect(summaries[0].identity.boundaryBinding?.recognition).toBe("pack-a");
   });
 
-  it("respects framework order — first-listed wins", async () => {
+  it("respects framework order: first-listed wins", async () => {
     const project = createTestProject();
     project.createSourceFile(
       "Thing.tsx",
@@ -1220,7 +1140,7 @@ describe("createTypeScriptAdapter — cross-pack dedup", () => {
   });
 });
 
-describe("createTypeScriptAdapter — reachable closure", () => {
+describe("createTypeScriptAdapter: reachable closure", () => {
   it("discovers internal helpers transitively called from a handler", async () => {
     const project = createTestProject();
     project.createSourceFile(
@@ -1260,7 +1180,6 @@ describe("createTypeScriptAdapter — reachable closure", () => {
       summaries.map((s) => [s.identity.name, s]),
     );
 
-    // Handler discovered by the ts-rest pack, helpers reached via closure.
     expect(byName.getThing).toBeDefined();
     expect(byName.fetchFromDb).toBeDefined();
     expect(byName.formatResponse).toBeDefined();
@@ -1274,9 +1193,6 @@ describe("createTypeScriptAdapter — reachable closure", () => {
   });
 
   it("runs pack recognizers over a reached helper's body", async () => {
-    // A service keeps most of its work in functions the closure reaches
-    // rather than in the handler itself, so a recognizer that fires only
-    // on discovered units misses nearly every call a pack cares about.
     const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
@@ -1391,7 +1307,6 @@ describe("createTypeScriptAdapter — reachable closure", () => {
     const names = (await adapter.extractAll()).map((s) => s.identity.name);
     expect(names).toContain("outer");
     expect(names).toContain("inner");
-    // `unused` is never reached from a seed → no summary for it.
     expect(names).not.toContain("unused");
   });
 
@@ -1417,8 +1332,6 @@ describe("createTypeScriptAdapter — reachable closure", () => {
     });
 
     const summaries = await adapter.extractAll();
-    // Only the handler — db.findById is `declare const`, not a reachable
-    // function in our code.
     expect(summaries).toHaveLength(1);
     expect(summaries[0].identity.name).toBe("get");
   });
@@ -1478,26 +1391,13 @@ describe("createTypeScriptAdapter — reachable closure", () => {
     const names = (await adapter.extractAll())
       .map((s) => s.identity.name)
       .sort();
-    // Exactly one `shared` summary despite two reach paths.
     expect(names.filter((n) => n === "shared")).toHaveLength(1);
     expect(names).toEqual(["a", "b", "shared"]);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Rethrow enrichment — cross-summary error-taxonomy composition
-// ---------------------------------------------------------------------------
-//
-// `throw err` inside a catch block resolves to null message/exceptionType
-// at the throw site. The post-pass walks the enclosing try block's call
-// sites and collects those callees' throw-terminal messages into
-// `transition.metadata.rethrow.possibleSources`.
-
-describe("createTypeScriptAdapter — boundary effects closure", () => {
-  it("surfaces transitive effects on the entry summary", async () => {
-    // handler → orchestrate → persist; persist fires the invocation
-    // effect (audit.log). The closure derives it back onto the handler
-    // as metadata.effectsClosure with transitive: true.
+describe("createTypeScriptAdapter: boundary effects closure", () => {
+  it("surfaces an effect two calls deep on the entry summary, marked transitive", async () => {
     const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
@@ -1544,12 +1444,8 @@ describe("createTypeScriptAdapter — boundary effects closure", () => {
   });
 });
 
-describe("createTypeScriptAdapter — rethrow enrichment", () => {
+describe("createTypeScriptAdapter: rethrow enrichment", () => {
   it("populates rethrow.possibleSources from direct callees' throws", async () => {
-    // `wrapper` is reachable via closure and uses a bare rethrow over
-    // `loadUser`. The rethrow enrichment pass should walk the try
-    // block's call sites, find `loadUser` in the summary set, and
-    // attribute its two throw terminals to the rethrow.
     const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
@@ -1604,17 +1500,12 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     const messages = rethrowMeta?.possibleSources.map((s) => s.message).sort();
     expect(messages).toEqual(["id too short", "missing id"]);
 
-    // Every source attributes to `loadUser`.
     expect(
       rethrowMeta?.possibleSources.every((s) => s.via === "loadUser"),
     ).toBe(true);
   });
 
   it("resolves transitive rethrow chains (A → B → C)", async () => {
-    // `outer` re-throws over `middle`, which re-throws over `deepest`.
-    // The rules-based propagation resolves `deepest`'s literal throw
-    // message all the way up to `outer` — the shape the one-hop
-    // implementation explicitly deferred.
     const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
@@ -1669,8 +1560,6 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
       | undefined;
     expect(rethrowMeta).toBeDefined();
 
-    // The deep message surfaces at the outer rethrow, attributed to the
-    // immediate callee it flowed through.
     const deep = rethrowMeta?.possibleSources.find(
       (s) => s.message === "deep failure",
     );
@@ -1679,9 +1568,6 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
   });
 
   it("does NOT enrich throws that already carry a static message", async () => {
-    // `throw new Error("literal")` is not a rethrow candidate — its
-    // message is already captured from the constructor. Enrichment
-    // should leave it alone.
     const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
@@ -1719,11 +1605,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     expect(throwTransition?.metadata?.rethrow).toBeUndefined();
   });
 
-  it("unions throws from every call site in a single try body", async () => {
-    // `try { a(); b(); c(); } catch (e) { throw e; }` — any of a/b/c
-    // could have thrown, so the rethrow's possibleSources should be the
-    // union of all their throw terminals. `c` doesn't throw; its absence
-    // from the sources is a correctness check on its own.
+  it("unions throws from every call site in a single try body, leaving out a callee that never throws", async () => {
     const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
@@ -1779,9 +1661,6 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
   });
 
   it("enriches each rethrow independently when a function has multiple try-catches", async () => {
-    // Two separate try/catches, each wrapping a different callee —
-    // each rethrow should pick up only its own try body's throws, not
-    // a merged union across the function.
     const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
@@ -1824,8 +1703,6 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     );
     expect(throwTransitions).toHaveLength(2);
 
-    // Extract each rethrow's possibleSources, sorted by line so the
-    // first-throw / second-throw pairing is stable.
     const byLocation = [...(throwTransitions ?? [])].sort(
       (x, y) => x.location.start - y.location.start,
     );
@@ -1836,7 +1713,6 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
       | { possibleSources: Array<{ via: string; message: string | null }> }
       | undefined;
 
-    // Each rethrow enriches from its own try body only.
     expect(firstMeta?.possibleSources.map((s) => s.via)).toEqual(["a"]);
     expect(firstMeta?.possibleSources.map((s) => s.message)).toEqual(["a-err"]);
     expect(secondMeta?.possibleSources.map((s) => s.via)).toEqual(["b"]);
@@ -1845,11 +1721,7 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     ]);
   });
 
-  it("does NOT enrich rethrows outside a try-catch", async () => {
-    // `throw err` where `err` is just a parameter (no enclosing
-    // try-catch) isn't the pattern we're enriching. The enrichment
-    // walks the *try body's* call sites; without an enclosing try,
-    // there's nothing to walk.
+  it("does NOT enrich a throw of a parameter with no enclosing try-catch", async () => {
     const project = createTestProject();
     project.createSourceFile(
       "helpers.ts",
@@ -1887,10 +1759,6 @@ describe("createTypeScriptAdapter — rethrow enrichment", () => {
     expect(throwTransition?.metadata?.rethrow).toBeUndefined();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Consumer discovery + extraction
-// ---------------------------------------------------------------------------
 
 describe("consumer extraction", () => {
   const fetchPack: PatternPack = {
@@ -1985,12 +1853,6 @@ describe("consumer extraction", () => {
   });
 
   it("stamps a service-call interaction effect on the default branch (#180 unified-shape migration)", async () => {
-    // Verifies the additive migration: clientCall summaries continue
-    // to be produced as before AND now also carry a service-call
-    // interaction effect on their default-branch transition. This
-    // makes them discoverable via the unified pairing dispatcher
-    // (#174's interactionsByClass.get("service-call")) once a
-    // service-call finding generator lands.
     const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
@@ -2105,8 +1967,6 @@ describe("consumer extraction", () => {
       frameworks: [fetchPack],
     });
     const summaries = await adapter.extractAll();
-    // The scheme, host, and query string all drop: what's left is the
-    // path a server route can actually pair with.
     expect(restPathOf(summaries[0])).toBe("/api/orders/123");
   });
 
@@ -2151,10 +2011,6 @@ describe("consumer extraction", () => {
   });
 
   it("answers a null path, and survives, when an absolute URL names no path at all", async () => {
-    // myapp://host is a valid absolute URL whose pathname is "". An
-    // empty string is invalid everywhere in the IR, so this has to
-    // come out as a null path rather than crash the whole extraction
-    // run by handing restBinding an empty one.
     const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
@@ -2275,10 +2131,6 @@ describe("consumer extraction", () => {
     expect(restPathOf(summaries[0])).toBe("/api/x");
   });
 
-  // Where a template's origin ends decides all of these, and it is the
-  // first "/" after the "//" in every one. What sits before that slash
-  // is authority whether it is written out, substituted, split across
-  // both, a port, a bracketed address, or the scheme itself.
   const originShapes = [
     {
       what: "leaves the scheme to whatever loads the page",
@@ -2326,9 +2178,6 @@ describe("consumer extraction", () => {
       path: "/orders/{id}",
     },
     {
-      // No slash ever ends the authority, so every character of it is
-      // host and there is no path to claim. Saying nothing beats
-      // claiming a path with no leading slash, which pairs with nothing.
       what: "claims no path when the authority never ends",
       url: "https://example.com${suffix}",
       path: null,
@@ -2347,10 +2196,6 @@ describe("consumer extraction", () => {
     ].join("\n");
   }
 
-  // A literal the platform URL parser rejects outright still opens with
-  // a scheme, or with the "//" that leaves the scheme to the page. It is
-  // narrowed to a path by hand rather than throwing, and one that names
-  // no path at all claims none.
   it.each([
     { what: "a scheme with nothing after it", url: "https://" },
     { what: "an authority opener with nothing after it", url: "//" },
@@ -2509,8 +2354,6 @@ describe("consumer extraction", () => {
     });
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
-    // Non-literal URL: method extracted, path null (signals
-    // "unresolved" to the wrapper-expansion post-pass).
     expect(restPathOf(summaries[0])).toBeNull();
   });
 
@@ -2542,9 +2385,6 @@ describe("consumer extraction", () => {
     const s = summaries[0];
     expect(s.transitions.length).toBeGreaterThanOrEqual(2);
 
-    // Verify the checker can read the consumer's expected statuses.
-    // collectStatusLiterals walks conditions for comparison(subject, eq, literal)
-    // where subject ends in .status/.statusCode.
     const statusesPerTransition = s.transitions.map((t) => {
       const statuses: number[] = [];
       for (const c of t.conditions) {
@@ -2562,10 +2402,6 @@ describe("consumer extraction", () => {
     expect(allStatuses).toContain(200);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Response property semantics resolution
-// ---------------------------------------------------------------------------
 
 describe("response property semantics", () => {
   const fetchPackWithSemantics: PatternPack = {
@@ -2643,16 +2479,12 @@ describe("response property semantics", () => {
     expect(summaries).toHaveLength(1);
 
     const s = summaries[0];
-    // The ok-guarded branch should have a compound(and) comparison
-    // instead of a truthinessCheck on .ok
-    // At least one transition should have a compound(and) status range
     const compounds = s.transitions
       .flatMap((t) => t.conditions)
       .filter((c) => c.type === "compound" && c.op === "and");
     expect(compounds).toHaveLength(1);
 
     const compound = compounds[0];
-    // Verify the compound has gte(200) and lte(299)
     if (compound.type === "compound") {
       expect(compound.operands).toHaveLength(2);
       const [gte, lte] = compound.operands;
@@ -2692,7 +2524,6 @@ describe("response property semantics", () => {
     expect(summaries).toHaveLength(1);
 
     const s = summaries[0];
-    // The !ok guard branch should have a negation wrapping the range
     const negations = s.transitions
       .flatMap((t) => t.conditions)
       .filter((c) => c.type === "negation");
@@ -2731,7 +2562,6 @@ describe("response property semantics", () => {
     expect(summaries).toHaveLength(1);
 
     const s = summaries[0];
-    // The status === 404 condition should remain as a comparison
     const statusBranch = s.transitions.find((t) =>
       t.conditions.some(
         (c) =>
@@ -2768,7 +2598,6 @@ describe("response property semantics", () => {
     const summaries = await adapter.extractAll();
     expect(summaries).toHaveLength(1);
 
-    // Without semantics, .ok stays as a truthinessCheck
     const s = summaries[0];
     const hasTruthiness = s.transitions.some((t) =>
       t.conditions.some((c) => c.type === "truthinessCheck"),
@@ -2777,15 +2606,7 @@ describe("response property semantics", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// readContractForClientCall — consumer-side contract resolution
-// ---------------------------------------------------------------------------
-
 describe("client-side contract resolution via fromClientMethod", () => {
-  // Pack mirrors the ts-rest client side: clientCall discovery against
-  // initClient + bindingExtraction.fromClientMethod that walks back through
-  // the contract for method/path. Uses contractReading shape from the
-  // ts-rest pack so readContractForClientCall finds the contract object.
   const tsRestClientPack: PatternPack = {
     name: "ts-rest",
     protocol: "http",
@@ -2888,9 +2709,6 @@ describe("client-side contract resolution via fromClientMethod", () => {
     });
     const summaries = await adapter.extractAll();
     const consumer = summaries.find((s) => s.identity.name === "ping");
-    // Discovery still finds the function; the binding falls back to a
-    // rest-shaped entry naming no method or path because
-    // fromClientMethod can't resolve them from the contract.
     expect(consumer?.identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: null, path: null },
@@ -2899,14 +2717,7 @@ describe("client-side contract resolution via fromClientMethod", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Wrapper expansion (cross-function path resolution)
-// ---------------------------------------------------------------------------
-
 describe("wrapper expansion", () => {
-  // Pack mirrors the axios runtime pack — direct method-on-import discovery
-  // with literal-method bindings. We use it on an in-memory project so the
-  // tests don't require the real axios npm dep.
   const axiosLikePack: PatternPack = {
     name: "axios",
     protocol: "http",
@@ -2973,12 +2784,8 @@ describe("wrapper expansion", () => {
     });
     const summaries = await adapter.extractAll();
 
-    // The wrapper itself is one summary (no path), the caller is the second
-    // (synthesised with the literal/template-literal path from the call site).
     const wrapper = summaries.find((s) => s.identity.name === "getJson");
     expect(wrapper).toBeDefined();
-    // Wrapper: method extracted, path null (unresolved: the path is a
-    // parameter, not a literal).
     expect(restPathOf(wrapper)).toBeNull();
 
     const caller = summaries.find((s) => s.identity.name === "getPet");
@@ -3062,7 +2869,7 @@ describe("wrapper expansion", () => {
       import { getJson } from "./api";
 
       export async function getMystery(p: string) {
-        // Path is also a parameter in the caller — nothing literal to extract.
+        // Path is a parameter in the caller too, so nothing is literal.
         return getJson<unknown>(p);
       }
     `,
@@ -3083,9 +2890,6 @@ describe("wrapper expansion", () => {
   });
 
   it("resolves caller args even when the wrapper is a sibling export", async () => {
-    // Sibling export pattern: the wrapper is the directly-exported function,
-    // not bound to a variable. Exercises wrapperNameNode's
-    // FunctionDeclaration branch.
     const project = makeProject();
     project.createSourceFile(
       "api.ts",
@@ -3120,8 +2924,6 @@ describe("wrapper expansion", () => {
   });
 
   it("respects export-keyword boundary on enclosing function lookup", async () => {
-    // The caller is a non-exported function — verify wrapper expansion
-    // still tracks the call via ts-morph references.
     const project = makeProject();
     project.createSourceFile(
       "api.ts",
@@ -3157,7 +2959,7 @@ describe("wrapper expansion", () => {
     ).toBeDefined();
   });
 
-  it("populates expectedInput when the caller reads fields off the wrapper return", async () => {
+  it("populates expectedInput with every field the caller reads off the wrapper return, `status` included", async () => {
     const project = makeProject();
     project.createSourceFile(
       "api.ts",
@@ -3191,11 +2993,6 @@ describe("wrapper expansion", () => {
 
     const caller = summaries.find((s) => s.identity.name === "describePet");
     expect(caller).toBeDefined();
-    // The wrapper has already unwrapped the response — the caller's reads
-    // on the wrapper return value should appear directly as body fields,
-    // including `status` (which would have been filtered as a non-body
-    // property by the hardcoded fallback before responseSemantics: [] was
-    // set on the synthetic pack).
     const withInput = caller?.transitions.find(
       (t) => t.expectedInput?.type === "record",
     );
@@ -3208,17 +3005,6 @@ describe("wrapper expansion", () => {
     }
   });
 });
-
-// ---------------------------------------------------------------------------
-// Sub-unit synthesis plumbing (generic — pack.subUnits → summaries)
-// ---------------------------------------------------------------------------
-//
-// Framework-specific sub-unit behavior (React event handler discovery,
-// useEffect body analysis, etc.) is tested in @suss/framework-react's
-// integration suite. Here we only exercise the adapter's plumbing: a
-// pack that declares `subUnits` should have it called, returned units
-// should be piped through extraction + assembly, and inheritance of
-// parent metadata / boundary bindings should be correct.
 
 describe("subUnits plumbing", () => {
   function makeProject() {
@@ -3237,9 +3023,6 @@ describe("subUnits plumbing", () => {
     ],
     inputMapping: { type: "positionalParams", params: [] },
     subUnits: (parent) => {
-      // Return a single synthetic sub-unit using the parent's own
-      // function body — the adapter doesn't care what we return, only
-      // that the plumbing processes it.
       return [
         {
           func: parent.func,
@@ -3292,7 +3075,6 @@ describe("subUnits plumbing", () => {
 
     const parent = summaries.find((s) => s.identity.name === "subject");
     const sub = summaries.find((s) => s.identity.name === "subject.synthetic");
-    // Inherited binding: parent's framework / protocol propagate.
     expect(sub?.identity.boundaryBinding).toEqual(
       parent?.identity.boundaryBinding,
     );
@@ -3334,9 +3116,6 @@ describe("subUnits plumbing", () => {
     const summaries = await adapter.extractAll();
     const sub = summaries.find((s) => s.identity.name === "subject.synthetic");
     const outputTypes = new Set(sub?.transitions.map((t) => t.output.type));
-    // Body has one throw + one return — both should surface as
-    // transitions in the sub-unit because the default terminal set
-    // covers them.
     expect(outputTypes.has("throw")).toBe(true);
     expect(outputTypes.has("return")).toBe(true);
   });
@@ -3350,8 +3129,6 @@ describe("subUnits plumbing", () => {
           kind: "handler",
           name: `${parent.name}.custom`,
           terminals: [
-            // Intentionally include only `return` — any thrown values
-            // should NOT appear as throw terminals.
             {
               kind: "return",
               match: { type: "returnStatement" },
@@ -3382,9 +3159,7 @@ describe("subUnits plumbing", () => {
     const summaries = await adapter.extractAll();
     const sub = summaries.find((s) => s.identity.name === "subject.custom");
     expect(sub).toBeDefined();
-    // Only the `return` terminal is configured, so no throw transition.
     expect(sub?.transitions.some((t) => t.output.type === "throw")).toBe(false);
-    // The custom input mapping should surface the first param as role "first".
     const input = sub?.inputs[0];
     if (input !== undefined && input.type === "parameter") {
       expect(input.role).toBe("first");
@@ -3393,10 +3168,6 @@ describe("subUnits plumbing", () => {
     }
   });
 });
-
-// ---------------------------------------------------------------------------
-// Inline JSX conditional decomposition (Phase 1.4)
-// ---------------------------------------------------------------------------
 
 describe("inline JSX conditional decomposition", () => {
   const reactPack: PatternPack = {
@@ -3418,7 +3189,6 @@ describe("inline JSX conditional decomposition", () => {
   }
 
   function rootOf(summaries: ReturnType<typeof Array.prototype.at>) {
-    // placeholder — not used; see explicit root extraction in each test
     return summaries;
   }
   void rootOf; // silence unused-lint if we don't reach the helper path
@@ -3451,7 +3221,7 @@ describe("inline JSX conditional decomposition", () => {
     expect(root.children[0].type).toBe("expression");
   });
 
-  it("`{x || <Fallback/>}` stays opaque — `||` is not decomposed", async () => {
+  it("`{x || <Fallback/>}` stays opaque: `||` is not decomposed", async () => {
     const project = makeProject();
     project.createSourceFile(
       "/Or.tsx",
@@ -3676,15 +3446,6 @@ describe("inline JSX conditional decomposition", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Walker descent — docs/internal/proposals/adapter-ecmascript-spec.md
-//
-// Recognizers, effects, and escaping terminals fire inside nested
-// function expressions / arrows (Promise executors, `.then` callbacks)
-// as if the code were inline. Named nested declarations and pack-
-// declared sub-units remain hard stops.
-// ---------------------------------------------------------------------------
-
 const expressResPack: PatternPack = {
   name: "express",
   protocol: "http",
@@ -3732,8 +3493,6 @@ describe("walker descent", () => {
     const units = discoverUnits(file, expressResPack.discovery);
     const raw = extractCodeStructure(units[0], expressResPack);
 
-    // The terminal `res.json({ name })` lives inside the executor arrow;
-    // descent finds it because `res` is the handler's own parameter.
     const responseBranches = raw.branches.filter(
       (b) => b.terminal.kind === "response",
     );
@@ -3779,8 +3538,6 @@ describe("walker descent", () => {
     };
     const raw = extractCodeStructure(unit, expressResPack);
 
-    // Class-method body is walked exactly like a function body; the
-    // `res.json(...)` terminal inside the `.then` callback is found.
     const responseBranches = raw.branches.filter(
       (b) => b.terminal.kind === "response",
     );
@@ -3814,9 +3571,6 @@ describe("walker descent", () => {
     const units = discoverUnits(file, expressResPack.discovery);
     const raw = extractCodeStructure(units[0], expressResPack);
 
-    // `audit.record(...)` is a bare expression-statement call inside the
-    // `.then` callback; descent captures it as an invocation effect on
-    // the enclosing handler's default branch.
     const defaultBranch = raw.branches.find((b) => b.isDefault);
     const callees = (defaultBranch?.effects ?? []).flatMap((e) =>
       e.type === "invocation" ? [e.callee] : [],
@@ -3825,9 +3579,6 @@ describe("walker descent", () => {
   });
 
   it("stops descent at a pack-declared sub-unit boundary", () => {
-    // A pack whose subUnits hook claims the arrow argument of `defer(...)`.
-    // Its body must NOT be attributed to the parent — that behavior
-    // belongs to the sub-unit's own summary.
     const deferPack: PatternPack = {
       ...expressResPack,
       name: "defer-pack",
@@ -3878,10 +3629,7 @@ describe("walker descent", () => {
       const parentCallees = (parent?.transitions ?? []).flatMap((t) =>
         t.effects.flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
       );
-      // The deferred callback's `audit.record` belongs to the sub-unit,
-      // not the parent — the barrier stopped descent there.
       expect(parentCallees).not.toContain("audit.record");
-      // And the sub-unit summary captured it.
       const sub = summaries.find((s) => s.identity.name === "handleUser.defer");
       expect(sub).toBeDefined();
       const subCallees = (sub?.transitions ?? []).flatMap((t) =>
@@ -3891,12 +3639,6 @@ describe("walker descent", () => {
     });
   });
 });
-
-// ---------------------------------------------------------------------------
-// discoverUnits callback → REST binding + merged metadata (manifest-driven
-// packs like @suss/framework-aws-lambda that carry routeInfo/metadata on the
-// units they discover rather than a data-driven DiscoveryMatch).
-// ---------------------------------------------------------------------------
 
 describe("discoverUnits callback with routeInfo + metadata", () => {
   const manifestPack: PatternPack = {
@@ -3971,7 +3713,6 @@ describe("discoverUnits callback with routeInfo + metadata", () => {
     );
     expect(get).toBeDefined();
     expect(del).toBeDefined();
-    // The two routes on one handler body don't collapse in claim dedup.
     expect(summaries).toHaveLength(2);
   });
 

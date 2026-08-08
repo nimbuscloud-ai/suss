@@ -1,13 +1,13 @@
-// cfn.ts — CloudFormation template traversal for AppSync resources.
+// cfn.ts: CloudFormation template traversal for AppSync resources.
 //
 // Two authoring shapes converge on one normalized model:
 //
 //   Raw AWS::AppSync::* resources (this file):
-//     AWS::AppSync::GraphQLApi        — the API itself (auth config, name)
-//     AWS::AppSync::GraphQLSchema     — SDL (inline Definition or S3 location)
-//     AWS::AppSync::Resolver          — binds (TypeName, FieldName) → DataSource
-//     AWS::AppSync::FunctionConfiguration — pipeline sub-functions
-//     AWS::AppSync::DataSource        — where resolvers read from / write to
+//     AWS:AppSync:GraphQLApi: the API itself (auth config, name)
+//     AWS:AppSync:GraphQLSchema: SDL (inline Definition or S3 location)
+//     AWS:AppSync:Resolver: binds (TypeName, FieldName) → DataSource
+//     AWS:AppSync:FunctionConfiguration: pipeline sub-functions
+//     AWS:AppSync:DataSource: where resolvers read from / write to
 //
 //   SAM shorthand AWS::Serverless::GraphQLApi (sam.ts):
 //     one resource carries SchemaUri/SchemaInline + DataSources + Functions
@@ -63,7 +63,7 @@ export interface AppSyncResolver {
    * logical IDs the resolver dispatches through. Each entry pairs
    * with an `AppSyncFunction` in `AppSyncConfig.functions`.
    * Empty for UNIT resolvers (and for PIPELINE resolvers whose
-   * PipelineConfig we couldn't statically resolve — those still
+   * PipelineConfig we couldn't statically resolve. Those still
    * report `kind: "PIPELINE"` so downstream consumers can filter).
    */
   pipelineFunctionLogicalIds: string[];
@@ -112,7 +112,7 @@ export interface AppSyncConfig {
  * Walk a CloudFormation template and collect AppSync APIs, resolvers,
  * functions, and data sources from both the raw AWS::AppSync::* resources
  * and the SAM AWS::Serverless::GraphQLApi shorthand. Unknown / malformed
- * entries are skipped rather than thrown — a template can mix AppSync with
+ * entries are skipped rather than thrown, a template can mix AppSync with
  * unrelated resources, and a partial block shouldn't fail the whole read.
  */
 export function readAppSyncFromCfn(template: CfnTemplate): AppSyncConfig {
@@ -217,7 +217,7 @@ function collectResolvers(
 /**
  * Extract ordered FunctionConfiguration logical IDs from a PIPELINE
  * resolver's `PipelineConfig.Functions` array. Each entry is
- * typically `!GetAtt FunctionResource.FunctionId` — we collapse to
+ * typically `!GetAtt FunctionResource.FunctionId`. We collapse to
  * the logical-ID head. Non-resolvable entries (dynamic Fn::Sub,
  * ImportValue) fall out silently; the resolver still reports its
  * pipeline kind with an empty list.

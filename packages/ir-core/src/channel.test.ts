@@ -23,8 +23,8 @@ describe("parseChannel", () => {
   });
 
   it("splits on the first separator and keeps the rest", () => {
-    // A subject carrying its own separator is compared whole, rather
-    // than cut into pieces that pair with the wrong things.
+    // A subject that contains its own separator is compared whole,
+    // rather than cut into pieces that pair with the wrong things.
     expect(parseChannel("default#order#placed")).toEqual({
       bus: "default",
       subject: "order#placed",

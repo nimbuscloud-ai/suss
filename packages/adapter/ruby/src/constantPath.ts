@@ -1,32 +1,19 @@
-// constantPath.ts: named constant-to-path conventions.
-//
-// A Ruby codebase locates the file behind a constant by a naming
-// convention, not by a load graph a static reader could follow. Each
-// convention this adapter implements has a name, and a pack selects
-// one by that name; the algorithm stays here. One convention exists
-// today: `railsUnderscore`, Rails autoloading's (Zeitwerk's) rule. It
-// does not name a file directly; it names a directory structure a
-// constant path is expected to sit under, and loads whichever file
-// matches when the constant is first referenced. So this is not module
-// resolution the way moduleResolver.ts is on the Python side: it is one
-// deterministic path built from a constant's own name, checked once
-// against the configured root. A path that does not exist on disk is
-// unresolved; nothing here searches multiple roots or picks among
-// candidates.
+/**
+ * Finds the file behind a constant.
+ *
+ * A Ruby codebase locates that file by a naming convention rather than through a
+ * load graph a static reader could follow, so we build one path from the
+ * constant's own name and check it once against the configured root. Nothing
+ * here searches several roots or chooses between candidates.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
 
-/** A constant-to-path convention this adapter knows how to run. A pack selects one by name; the algorithm lives here. */
+/** A pack picks a convention by name, and the code for each one lives here. */
 export type ConstantPathConvention = "railsUnderscore";
 
-/**
- * The Rails/ActiveSupport `underscore` conversion: `Mutations::CampaignUpdate`
- * becomes `mutations/campaign_update`. Ported directly from
- * ActiveSupport's own implementation (`String#underscore`), since the
- * file-naming convention it defines is exactly what a constant path
- * maps to on disk.
- */
+/** Ported from ActiveSupport's own `String#underscore`, which is what Rails autoloading runs a constant path through. */
 export function underscoreConstantPath(qualifiedName: string): string {
   return qualifiedName
     .replaceAll("::", "/")
@@ -43,12 +30,7 @@ const PATH_CONVENTIONS: Record<
   railsUnderscore: underscoreConstantPath,
 };
 
-/**
- * The file a constant path names under the selected convention, rooted
- * at `root` (a pack's configured directory), or null when no file sits
- * there. The one check this makes; it does not fall back to another
- * root or another spelling.
- */
+/** Null when there is no file at that path. We do not fall back to another root or another spelling. */
 export function resolveConstantFile(
   root: string,
   qualifiedName: string,

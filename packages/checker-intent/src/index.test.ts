@@ -168,7 +168,7 @@ describe("checkIntentAgreement — REST", () => {
   });
 
   it("accepts a declared body when any same-status transition conforms", () => {
-    // Two 200 branches — one drifted, one conforming. Outcome↔transition
+    // Two 200 branches: one drifted, one conforming. Outcome↔transition
     // pairing is many-to-many: the declared body is satisfied by the
     // conforming branch regardless of transition order.
     const result = checkIntentAgreement(
@@ -220,7 +220,7 @@ describe("checkIntentAgreement — REST", () => {
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0].kind).toBe("unimplementedBoundary");
     expect(result.findings[0].code).toBeUndefined();
-    // The comparison ran — the intent is checked, with no implementations.
+    // The comparison ran: the intent is checked, with no implementations.
     expect(result.checked).toEqual([
       {
         kind: "boundary",
@@ -511,7 +511,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
     expect(result.findings.map((f) => f.kind)).toEqual([
       "danglingScenarioLink",
     ]);
-    // Resolved the intent but not the outcome — keyed on the real boundary
+    // Resolved the intent but not the outcome, keyed on the real boundary
     // so a narrow .sussignore rule can target it.
     expect(result.findings[0].boundary).toBe("GET /users/{id}");
     expect(result.findings[0].message).toContain(

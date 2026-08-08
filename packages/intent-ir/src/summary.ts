@@ -1,4 +1,4 @@
-// @suss/intent-ir summary — the normalised intent shape the checker
+// @suss/intent-ir summary: the normalised intent shape the checker
 // compares against derived behavioural summaries.
 //
 // The authoring schema (./schema.ts) is friendly to write; this is the
@@ -28,7 +28,7 @@ import type {
 // Normalised types
 // ---------------------------------------------------------------------------
 
-/** How a boundary outcome resolves — the cross-kind unification. */
+/** How a boundary outcome resolves, the cross-kind unification. */
 export type IntentOutcomeKind = "response" | "return" | "throw";
 
 export interface IntentOutcome {
@@ -206,7 +206,7 @@ function recordShape(authored: Record<string, AuthoredShape>): TypeShape {
 }
 
 // The friendly primitive vocabulary mapped onto IR TypeShapes. A Record
-// (rather than a switch) makes the mapping exhaustive by construction —
+// (rather than a switch) makes the mapping exhaustive by construction,
 // adding a PrimitiveTypeName without a shape here is a compile error.
 const PRIMITIVE_TYPE_SHAPES: Record<PrimitiveTypeName, TypeShape> = {
   string: { type: "text" },

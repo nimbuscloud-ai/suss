@@ -23,7 +23,7 @@ describe("createPerFileCache", () => {
       overwrite: true,
     });
     // The wrapper survives a re-parse and the nodes under it do not, so
-    // an answer that outlived the parse would be made of forgotten nodes.
+    // an entry that outlived the parse would be full of dead nodes.
     expect(after).toBe(before);
     expect(cache.get(after)).toBeUndefined();
   });

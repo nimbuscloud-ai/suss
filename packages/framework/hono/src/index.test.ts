@@ -43,7 +43,7 @@ describe("honoFramework", () => {
   });
 });
 
-describe("honoFramework — extraction", () => {
+describe("honoFramework: extraction", () => {
   let summaries: BehavioralSummary[];
 
   beforeAll(async () => {
@@ -131,8 +131,8 @@ describe("honoFramework \u2014 zod-openapi registration", () => {
     summaries = await adapter.extractAll();
   }, 90_000);
 
-  // The read route is registered through a cast, which the resolution
-  // store used to answer null for, losing the route entirely.
+  // The read route is registered through a cast, which the resolution store
+  // used to return null for, and the route was lost entirely.
   it("reads the route off the contract object the registration names", () => {
     const routes = summaries
       .map((s) => s.identity.boundaryBinding)

@@ -62,7 +62,7 @@ type ConditionTester = (
 /**
  * The condition fields this selector evaluates. Paths compare
  * case-sensitively, ALB's rule; hosts do not, DNS's rule. A request
- * that names no host cannot settle a host-header condition, so that
+ * that gives no host cannot settle a host-header condition, so that
  * condition abstains.
  */
 const CONDITION_TESTERS: Record<string, ConditionTester> = {

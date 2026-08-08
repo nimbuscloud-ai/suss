@@ -1,4 +1,4 @@
-// runtimeConfig.ts — extract runtime-configuration provider summaries
+// runtimeConfig.ts: extract runtime-configuration provider summaries
 // from CFN/SAM resources that declare an env-var contract.
 //
 // Recognized resource types and where their env vars live:
@@ -9,9 +9,9 @@
 //   AWS::ECS::TaskDefinition        Properties.ContainerDefinitions[*].Environment
 //                                   (one summary per container)
 //
-// Each summary carries `metadata.runtimeContract.envVars` (the FULL
+// Each summary has `metadata.runtimeContract.envVars` (the FULL
 // set the process sees, including platform-injected vars) and
-// `metadata.runtimeContract.envVarSources` (provenance per name —
+// `metadata.runtimeContract.envVarSources` (provenance per name,
 // "template", "globals" or "platform"). The pairing checker uses the
 // source distinction so platform-injected vars never fire
 // boundaryFieldUnused, and so a name the whole document supplies is
@@ -86,7 +86,7 @@ const PLATFORM_INJECTED: Record<
  * summary per Lambda / ECS task / etc. that declares an environment
  * block. Resources without an Environment property still emit a
  * summary so the checker can flag any env-var read scoped to them
- * as `boundaryFieldUnknown` (aspect: read) — declaring no vars is
+ * as `boundaryFieldUnknown` (aspect: read), declaring no vars is
  * itself a contract.
  */
 export function buildRuntimeConfigSummaries(
@@ -217,7 +217,7 @@ function buildSummary(opts: {
    * message-bus pairing (and any future cross-resource pairing) collapse
    * the env-var → resource chain at check time. Only populated for env
    * vars whose values are recognised CFN intrinsics (Ref, GetAtt). Plain
-   * string values produce no entry — they're "data," not "wiring."
+   * string values produce no entry. They're "data," not "wiring."
    */
   envVarTargets?: Record<string, { kind: "ref"; logicalId: string }>;
   codeScope: { kind: "codeUri" | "unknown"; path?: string };
@@ -250,7 +250,7 @@ function buildSummary(opts: {
     location: {
       file: opts.sourceFile,
       range: { start: 1, end: 1 },
-      // Runtime-config summaries don't have an export name — they're
+      // Runtime-config summaries don't have an export name. They're
       // synthesized from a CFN/SAM resource block, not exported from
       // any module. The schema's required-but-nullable contract reads
       // null as "no exportName applies."
@@ -296,7 +296,7 @@ function readEnvVariables(raw: unknown): string[] {
 /**
  * Inspect each Lambda env var value and extract the CFN logical id
  * it resolves to (when the value is `!Ref X` or `!GetAtt X.Attr`).
- * Plain string values are skipped — they're data, not wiring.
+ * Plain string values are skipped. They're data, not wiring.
  *
  * Used by message-bus pairing (and future cross-resource pairing
  * passes) to bridge env-var-named producer channels to CFN-resource-
@@ -356,7 +356,7 @@ function readCodeScope(resource: CloudFormationResource): {
   path?: string;
 } {
   // SAM authoring shape: Properties.CodeUri points at a directory
-  // (or a single file). Only string values are useful — Ref / Fn::Sub
+  // (or a single file). Only string values are useful, Ref / Fn:Sub
   // objects can't be statically resolved to a path.
   const codeUri = resource.Properties?.CodeUri;
   if (typeof codeUri === "string" && codeUri.length > 0) {

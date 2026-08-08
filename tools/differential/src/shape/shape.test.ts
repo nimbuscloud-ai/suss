@@ -318,7 +318,7 @@ describe("shape fuzzer, a response typed by a library type", () => {
 });
 
 // ---------------------------------------------------------------------------
-// How a boundary announces itself, where a class carries the decorator
+// How a boundary announces itself, where a class has the decorator
 // ---------------------------------------------------------------------------
 
 const NEST_PACK = nestjsRestFramework();

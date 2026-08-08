@@ -84,7 +84,7 @@ describe("parseConditionExpression — truthinessCheck", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Negation (!x) — flips negated on truthinessCheck
+// Negation (!x): flips negated on truthinessCheck
 // ---------------------------------------------------------------------------
 
 describe("parseConditionExpression — negation (!x)", () => {
@@ -633,7 +633,7 @@ describe("parseConditionExpression — unknown nodes return null", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Call inlining — resolving through local function bodies
+// Call inlining: resolving through local function bodies
 // ---------------------------------------------------------------------------
 
 describe("parseConditionExpression — call inlining", () => {
@@ -721,7 +721,7 @@ describe("parseConditionExpression — call inlining", () => {
   });
 
   it("does NOT inline declared-only functions (stays opaque call)", () => {
-    // isActive is `declare function` — no body to inline
+    // isActive is `declare function`, no body to inline
     const cond = getFirstIfCondition(sourceFile, "checkCallExpr");
     const result = parseConditionExpression(cond);
     expect(result).toEqual({

@@ -1,33 +1,32 @@
-// configuredCall.ts — read a method call on a receiver whose type a
-// pack's configuration names.
-//
-// Sibling of `discoveryContext.ts`'s `exportedCallConfigString`, for
-// invocation recognizers rather than discovery. A pack that recognizes
-// library calls by their command class can only see the libraries it
-// ships knowledge of. A project that sends every message through its
-// own wrapper writes no such call, so the pack sees nothing. This
-// helper lets the project describe the wrapper instead: which module
-// declares it, which type the receiver has, which method sends, and
-// which argument carries the subject and the body.
-//
-// What it reads is a shape the TypeScript language already gives us —
-// a call on a typed receiver — so it lives with the adapter. What the
-// call means on the bus is the pack's judgment, so the pack builds the
-// effect from what this returns.
+/**
+ * Reads a method call whose receiver has a type the project's config
+ * points at.
+ *
+ * A pack recognizes library calls by their command class, so it only
+ * sees the libraries it was built with. A project that sends every
+ * message through a wrapper of its own writes no such call, and the pack
+ * sees nothing. This lets the project describe the wrapper instead:
+ * which module declares it, which type the receiver has, which method
+ * does the sending, and which arguments the subject and body are in.
+ *
+ * A call on a typed receiver is something TypeScript already tells us,
+ * so reading it belongs to the adapter. What the call means on the bus
+ * is the pack's judgment, so the pack builds the effect from this.
+ */
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import type { EffectArg } from "@suss/extractor";
 
 /**
- * A call a project names as its own dispatcher.
+ * A call the project has declared to be its own dispatcher.
  *
- * `receiver` is the type name, not the variable: a service holds its
- * dispatcher in a field, a closure, or a constructor parameter, and
- * only the type is stable across those.
+ * `receiver` is the type name rather than the variable: a service keeps
+ * its dispatcher in a field, a closure or a constructor parameter, and
+ * the type is the only thing stable across all three.
  */
 export interface ConfiguredCallSpec {
-  /** Module the receiver's type is declared in. */
+  /** Module that declares the receiver's type. */
   module: string;
   /** Type name of the receiver, as exported from that module. */
   receiver: string;
@@ -36,15 +35,15 @@ export interface ConfiguredCallSpec {
   /** Argument index carrying the subject. */
   subjectArg: number;
   /**
-   * Argument index carrying the message body. Left out when the
-   * method takes no single body argument (a batch method takes a
-   * list of entries), and then the read carries no body.
+   * Which argument the message body is. Left out when the method has no
+   * single body argument, as a batch method taking a list of entries
+   * does, and then no body is reported.
    */
   bodyArg?: number;
 }
 
 export interface ConfiguredCallRead {
-  /** The subject the call names, always a string the source states. */
+  /** The subject the call sends to, always a literal string. */
   subject: string;
   /** The body argument's extracted shape, or null when none applies. */
   body: EffectArg | null;
@@ -59,13 +58,12 @@ export interface ConfiguredCallContext {
 }
 
 /**
- * Read `call` as the configured send, or answer null.
+ * Read `call` as the configured send, or return null.
  *
- * A subject that is not a string the source states (a variable built
- * at runtime, a template with substitutions, a computed key) answers
- * null, and the pack emits nothing. Naming a channel we cannot read
- * would pair a producer against the wrong consumer, which is worse
- * than not seeing the producer at all.
+ * A subject that is not a literal string (a value built at runtime, a
+ * template with substitutions, a computed key) returns null and the pack
+ * emits nothing. Guessing a channel we cannot read would pair a producer
+ * with the wrong consumer, which is worse than missing the producer.
  */
 export function readConfiguredCall(
   call: CallExpression,
@@ -103,9 +101,9 @@ export function readConfiguredCall(
 }
 
 /**
- * Whether the file imports the module the spec names. Sub-path
- * imports count, the way `requiresImport` counts them: a package
- * that publishes `@scope/pkg/sqs` is still that package.
+ * Whether the file imports the module the spec gives. Sub-path imports
+ * count, the same way `requiresImport` counts them: a package that
+ * publishes `@scope/pkg/sqs` is still that package.
  */
 function importsModule(sourceFile: SourceFile, module: string): boolean {
   for (const decl of sourceFile.getImportDeclarations()) {
@@ -118,16 +116,16 @@ function importsModule(sourceFile: SourceFile, module: string): boolean {
 }
 
 /**
- * The name of the receiver's type, or null when the checker cannot
- * name one. A JavaScript file, or a receiver the checker widens to
- * `any`, answers null and the call is left alone.
+ * The name of the receiver's type, or null when the checker has no name
+ * for it. A JavaScript file, or a receiver the checker widens to `any`,
+ * gives null and the call is left alone.
  */
 function receiverTypeName(receiver: Node): string | null {
   const symbol = receiver.getType().getSymbol();
   return symbol === undefined ? null : symbol.getName();
 }
 
-/** The value of a string-shaped argument, or null for anything else. */
+/** The value of a string-literal argument, or null for anything else. */
 function readStringArg(arg: EffectArg | undefined): string | null {
   if (arg === null || arg === undefined || typeof arg !== "object") {
     return null;

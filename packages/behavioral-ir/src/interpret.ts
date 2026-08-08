@@ -1,17 +1,17 @@
-// interpret.ts — a three-valued interpreter for the summary IR.
-//
-// Evaluates `Predicate` / `ValueRef` trees against a concrete
-// environment (a request, a props object, any record keyed by input
-// refs). The load-bearing rule is abstention: anything the IR marks
-// opaque, and any value the interpreter cannot concretely trace
-// (dependency results, unresolved references, method calls), evaluates
-// to `unknown` — never a guess. Predicates compose under Kleene
-// three-valued logic, so one unknown conjunct makes the conjunction
-// unknown rather than silently true or false.
-//
-// Consumers: the differential fuzzer (tools/differential) uses it to
-// adjudicate extracted claims against executions; `suss corroborate`
-// uses it as the oracle for generating claim-satisfying inputs.
+/**
+ * A three-valued interpreter for the summary IR.
+ *
+ * It evaluates `Predicate` and `ValueRef` trees against a concrete
+ * environment: a request, a props object, any record keyed by input
+ * refs. The rule everything else follows from is that it abstains.
+ * Anything the IR marks opaque, and any value it cannot trace to a
+ * concrete one (a dependency result, an unresolved reference, a method
+ * call), comes out `unknown` rather than guessed at. Predicates compose
+ * under Kleene three-valued logic, so one unknown conjunct makes the
+ * whole conjunction unknown instead of quietly true or false. The
+ * differential fuzzer uses this to judge extracted claims against
+ * executions, and `suss corroborate` uses it as its oracle.
+ */
 
 import { type DispatchTable, dispatchByType } from "@suss/ir-core";
 
@@ -27,7 +27,7 @@ const UNKNOWN: EvalValue = { type: "unknown" };
 
 /**
  * The concrete environment: values keyed by the summary's input
- * references (for a handler, the parameter names — e.g. `req`).
+ * references, which for a handler are the parameter names (`req`).
  */
 export type InterpretEnv = Record<string, unknown>;
 
@@ -40,8 +40,8 @@ function readProperty(base: EvalValue, property: string | number): EvalValue {
     return UNKNOWN;
   }
   const value = base.value;
-  // Reading off null/undefined/primitives would throw or box in JS;
-  // abstain rather than model those semantics.
+  // Reading a property off null or undefined throws in JS, and off a
+  // primitive it boxes. Abstain rather than model either of those.
   if (typeof value !== "object" || value === null) {
     return UNKNOWN;
   }
@@ -67,8 +67,8 @@ export function evalValueRef(ref: ValueRef, env: InterpretEnv): EvalValue {
         propertyAccess: (d) => readProperty(base, d.property),
         destructured: (d) => readProperty(base, d.field),
         indexAccess: (d) => readProperty(base, d.index),
-        // Method results and awaited values are runtime behavior the
-        // static summary can't see through — abstain.
+        // Method results and awaited values happen at runtime, and the
+        // static summary cannot see through them, so abstain.
         methodCall: () => UNKNOWN,
         awaited: () => UNKNOWN,
       };
@@ -123,8 +123,8 @@ function orderedComparison(
   compare: (a: number | string, b: number | string) => boolean,
 ): Comparator {
   return (left, right) => {
-    // Ordered comparison across mixed types drags in JS coercion —
-    // abstain unless both sides are the same primitive ordering type.
+    // Comparing across mixed types would drag in JS coercion, so
+    // abstain unless both sides are the same orderable primitive.
     if (typeof left === "number" && typeof right === "number") {
       return fromBoolean(compare(left, right));
     }
@@ -184,8 +184,8 @@ export function evalPredicate(predicate: Predicate, env: InterpretEnv): Tri {
     },
     typeCheck: (p) => {
       if (!TYPEOF_TYPES.has(p.expectedType)) {
-        // instanceof-style checks against class names — the concrete
-        // request env can't witness prototype chains; abstain.
+        // An instanceof-style check against a class name: the concrete
+        // env cannot see prototype chains, so abstain.
         return "unknown";
       }
       const subject = evalValueRef(p.subject, env);
@@ -213,10 +213,10 @@ export function evalPredicate(predicate: Predicate, env: InterpretEnv): Tri {
       return p.op === "and" ? triAnd(operands) : triOr(operands);
     },
     negation: (p) => negate(evalPredicate(p.operand, env)),
-    // A call's behavior isn't in the IR — abstain.
+    // The IR does not record what a call does, so abstain.
     call: () => "unknown",
-    // The constitution: opaque means "we preserved source text and
-    // declined to guess". The interpreter honors that.
+    // Opaque means the extractor kept the source text and declined to
+    // guess at it, and the interpreter respects that.
     opaque: () => "unknown",
   };
   return dispatchByType(table, predicate);

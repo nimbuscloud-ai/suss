@@ -1,11 +1,11 @@
-// @suss/framework-prisma — recognize Prisma client calls in TypeScript
+// @suss/framework-prisma: recognize Prisma client calls in TypeScript
 // and emit `interaction(class: "storage-access")` effects on the
 // transitions that contain them.
 //
 // Recognition is AST-based via ts-morph: walks the call's receiver
 // chain back to its root identifier, resolves that identifier's type
 // via the type checker, and verifies the type's symbol declaration is
-// in `@prisma/client` (or `.prisma/client` — Prisma's generated
+// in `@prisma/client` (or `.prisma/client`: Prisma's generated
 // client lives under `node_modules/.prisma/client/` for projects
 // using the standard generator output).
 //
@@ -25,7 +25,7 @@
 // for typed Prisma calls):
 //   read:   union of `select` keys + `include` keys; falls back to
 //           ["*"] (default-shape) when neither is present.
-//   write:  union of `data`, `create`, `update` keys (upsert carries
+//   write:  union of `data`, `create`, `update` keys (an upsert can pass
 //           both create and update). Falls back to ["*"] for shape-
 //           less writes (rare; createMany with a dynamic body).
 //   selector: keys of `where` (when present).
@@ -33,9 +33,9 @@
 // Out of scope for v0:
 //   - Nested select walking (a User select that includes Order should
 //     emit a second effect for Order; deferred to keep the MVP focused).
-//   - $queryRaw / $executeRaw — these bypass the typed client and
+//   - $queryRaw / $executeRaw: these bypass the typed client and
 //     need a raw-SQL recognizer.
-//   - findUniqueOrThrow / findFirstOrThrow (trivially addable).
+//   - findUniqueOrThrow and findFirstOrThrow, which would be easy to add.
 
 import {
   type CallExpression,
@@ -105,7 +105,7 @@ function recognizePrismaCall(
     extractArgs: () => EffectArg[];
   };
 
-  // Shape gate: callee must be `<receiver>.<delegate>.<method>` —
+  // Shape gate: callee must be `<receiver>.<delegate>.<method>` ,
   // a PropertyAccessExpression whose own expression is also a
   // PropertyAccessExpression.
   const calleeExpr = callNode.getExpression();
@@ -126,14 +126,14 @@ function recognizePrismaCall(
   // Verify the delegate's receiver is a PrismaClient. The delegate
   // expression is `<receiver>.<delegate>` (e.g. `prisma.user` or
   // `ctx.prisma.user`); its `.getExpression()` is the receiver
-  // (`prisma` / `ctx.prisma`). Check that receiver's TYPE — its
+  // (`prisma` / `ctx.prisma`). Check that receiver's TYPE: its
   // symbol declaration should live in `@prisma/client` /
   // `.prisma/client`.
   //
   // Checking the receiver's TYPE rather than its identifier symbol
   // covers both bare-instance receivers (`const db = new PrismaClient()`)
   // and wrapped-context receivers (`{ prisma: new PrismaClient() }.prisma`)
-  // — the receiver expression's type is PrismaClient in both shapes.
+  //: the receiver expression's type is PrismaClient in both shapes.
   const receiverExpr = delegateExpr.getExpression();
   if (!isPrismaClientReceiver(receiverExpr)) {
     return null;
@@ -177,7 +177,7 @@ function recognizePrismaCall(
 }
 
 /**
- * Verify an expression's TYPE resolves to a PrismaClient — i.e. its
+ * Verify an expression's TYPE resolves to a PrismaClient: i.e. its
  * symbol declaration lives in `@prisma/client` (the package's API
  * surface) or `.prisma/client` (the generated client output Prisma
  * puts at `node_modules/.prisma/client/` by default).
@@ -263,8 +263,8 @@ function extractFields(
     }
     return [...out];
   }
-  // Write: data | create | update — collect from all three since
-  // upsert can carry both create and update at the same time.
+  // Write: data, create, or update. Collect from all three, since an upsert
+  // can pass both create and update at the same time.
   const out = new Set<string>();
   for (const propName of ["data", "create", "update"]) {
     const prop = readObjectArg(optionsArg.fields[propName]);
@@ -294,9 +294,9 @@ function extractSelector(optionsArg: ObjectArg | null): string[] | null {
 }
 
 /**
- * Pack export. Carries one invocationRecognizer; no discovery
+ * Pack export. Has one invocationRecognizer; no discovery
  * patterns or terminals (Prisma calls aren't boundaries themselves
- * — they're effects on already-discovered handlers / services).
+ *: they're effects on already-discovered handlers / services).
  */
 export function prismaFramework(
   options: PrismaRecognizerOptions = {},
@@ -308,7 +308,7 @@ export function prismaFramework(
     discovery: [],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
-    // Skip files that don't import from @prisma/client — the
+    // Skip files that don't import from @prisma/client: the
     // recognizer's type-resolution check would reject them anyway.
     requiresImport: ["@prisma/client"],
     invocationRecognizers: [makeRecognizer(options)],

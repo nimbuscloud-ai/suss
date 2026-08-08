@@ -1,4 +1,4 @@
-// checkSelf.mjs — extract suss's own public export surface and run the
+// checkSelf.mjs: extract suss's own public export surface and run the
 // CLI check against the team-authored intent specs in `intent/`.
 //
 // This is suss dogfooding itself: the two checker packages' public
@@ -29,7 +29,7 @@ const intentDir = path.join(repoRoot, "intent");
 const summariesDir = path.join(repoRoot, ".self-check", "summaries");
 const suppressionsSrc = path.join(intentDir, "self.sussignore.yml");
 
-// Packages whose public export surface carries an authored intent spec.
+// Packages whose public export surface has an authored intent spec.
 const TARGETS = [
   { dir: "packages/checker", name: "@suss/checker", out: "checker.json" },
   {

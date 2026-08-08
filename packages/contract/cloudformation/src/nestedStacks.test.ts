@@ -18,7 +18,7 @@ const fixture = path.resolve(
 );
 
 function summariesFromFixture(): BehavioralSummary[] {
-  // The fixture names two children nothing here can open, on purpose.
+  // The fixture refers to two children nothing here can open, on purpose.
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
   try {
     return cloudFormationFileToSummaries(fixture);
@@ -62,7 +62,7 @@ describe("a template split across nested stacks", () => {
     );
 
     // Two children declare HandlerFunction, and the two contracts stay
-    // apart. The binding carries the same name as the unit, because a
+    // apart. The binding has the same name as the unit, because a
     // runtime-config boundary is keyed on the instance.
     expect(named).toHaveLength(2);
     for (const summary of named) {

@@ -4,18 +4,18 @@
 // Every event kind here maps onto the resource the framework compiles
 // it into, so the boundary a serverless.yml declares and the boundary
 // the same wiring declares in a SAM template come out as the same
-// summary: an httpApi event is an API Gateway v2 route, an http event
+// summary. An httpApi event is an API Gateway v2 route, an http event
 // is a REST route, sqs is an event-source mapping, sns is a topic
-// subscription, schedule and eventBridge are EventBridge rules.
+// subscription, and schedule and eventBridge are EventBridge rules.
 //
 // An event kind the framework defines but this reader does not
-// translate abstains by name: the reason travels back to the caller,
+// translate abstains by name. The reason travels back to the caller,
 // which reports it, so a wiring nobody read is never mistaken for a
 // wiring nobody wrote.
 
 import type { VariableResolver } from "./variables.js";
 
-/** A SAM `Events` entry: what the CloudFormation reader consumes. */
+/** A SAM `Events` entry, which is what the CloudFormation reader consumes. */
 export interface SamEvent {
   Type: string;
   Properties?: Record<string, unknown>;
@@ -31,11 +31,9 @@ interface EventContext {
 }
 
 /**
- * Read a scalar the schema says is a string, resolving `${...}`
- * references. Returns null when the value is absent or resolves to
- * something with no string in it; symbolic references come back as
- * their token so the caller can decide whether a token is usable in
- * that position.
+ * Null when the value is absent or contains no string. A symbolic
+ * reference comes back as its token, so the caller decides whether a
+ * token is usable in that position.
  */
 function readString(
   raw: unknown,
@@ -50,11 +48,6 @@ function readString(
     : { value: resolved.token, symbolic: true };
 }
 
-/**
- * An event written as a bare string (`httpApi: 'POST /orders'`) or as a
- * map (`httpApi: { method: POST, path: /orders }`). Both spellings are
- * the framework's own.
- */
 function asMap(raw: unknown): Record<string, unknown> | null {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     return null;
@@ -63,10 +56,8 @@ function asMap(raw: unknown): Record<string, unknown> | null {
 }
 
 /**
- * The method and path an http / httpApi event states, from either
- * spelling. The string form writes them separated by a space. A path
- * the framework accepts without a leading slash gets one, which is what
- * the framework does when it compiles the route.
+ * The method and path, from either spelling the framework accepts:
+ * `POST /orders`, or a map of `method` and `path`.
  */
 function readRoute(
   raw: unknown,
@@ -118,11 +109,8 @@ function withLeadingSlash(path: string): string {
 
 /**
  * The reference an event makes to a queue, a topic, or a bus. A
- * CloudFormation intrinsic passes through untouched, so the shared
- * resolver reads it the same way it reads one in a template. A
- * `${...}` reference the document cannot answer stays as its token,
- * which names the binding a deploy supplies rather than claiming the
- * event names nothing.
+ * non-string passes through untouched, so a CloudFormation intrinsic
+ * stays what the document wrote.
  */
 function readReference(raw: unknown, ctx: EventContext): unknown {
   if (typeof raw !== "string") {
@@ -198,11 +186,9 @@ const snsEvent = (raw: unknown, ctx: EventContext): EventTranslation => {
 };
 
 /**
- * A schedule fires on a clock, so the rate is not what the boundary is
- * keyed on; the wiring is declared whether or not the rate resolves.
- * What does change the wiring is `enabled: false`, which deploys the
- * rule switched off: nothing invokes the handler until someone turns
- * it on. SAM states the same thing as `Enabled`, so it travels.
+ * A schedule fires on a clock, so the wiring is declared whether or not
+ * the rate resolves. `enabled: false` deploys the rule switched off,
+ * which does carry through, as SAM's `Enabled`.
  */
 const scheduleEvent = (raw: unknown, ctx: EventContext): EventTranslation => {
   const map = asMap(raw);
@@ -224,10 +210,8 @@ const scheduleEvent = (raw: unknown, ctx: EventContext): EventTranslation => {
 };
 
 /**
- * An eventBridge event states either a pattern (a rule that routes
- * matching events) or a schedule (a rule that fires on a clock). The
- * framework accepts both on the one key, so which one it is decides
- * which SAM event this becomes.
+ * The framework accepts both a pattern and a schedule on the one key,
+ * so whichever one is written decides which SAM event this becomes.
  */
 const eventBridgeEvent = (
   raw: unknown,
@@ -262,12 +246,7 @@ const eventBridgeEvent = (
   };
 };
 
-/**
- * Every event kind this reader translates, keyed by the name the
- * framework's own schema gives it. A kind absent from this table is
- * one the framework defines and the reader does not read yet; the
- * caller names it rather than dropping it.
- */
+/** Keyed by the name the framework's own schema uses for each event kind. */
 export const EVENT_TRANSLATIONS: Record<
   string,
   (raw: unknown, ctx: EventContext) => EventTranslation

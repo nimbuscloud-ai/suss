@@ -1,27 +1,27 @@
-// component-story-agreement.ts — React-specific cross-shape check
+// component-story-agreement.ts: React-specific cross-shape check
 // comparing Storybook stub summaries against their inferred component
 // summaries.
 //
 // v0 deliberately focuses on findings TypeScript can't already give
 // the user for free. Arg-value type checking against declared prop
 // types is TS's job (CSF3's `satisfies Meta<typeof Component>` catches
-// it at compile time), so we don't emit those findings — they'd be
+// it at compile time), so we don't emit those findings. They'd be
 // noise.
 //
 // The behavioral findings worth emitting:
 //
-//   1. `scenarioArgUnknown` — a story references a prop the component
+//   1. `scenarioArgUnknown`: a story references a prop the component
 //      doesn't declare. Still useful for loose-TS configs, `.stories.js`
 //      files, or stories that predate a prop rename.
 //
-//   2. `scenarioCoverageGap` — the component has a conditional branch
+//   2. `scenarioCoverageGap`: the component has a conditional branch
 //      that depends on a prop, but no story exercises that branch.
 //      Genuine behavioral gap: the component's logic has a path
 //      nothing verifies.
 //
 // Richer comparisons (inferred render vs Storybook snapshot, inferred
 // handler vs Storybook play function) depend on Phase 2 extensions
-// (snapshot reader, play parsing) — they're the direction this file
+// (snapshot reader, play parsing). They're the direction this file
 // grows.
 
 import { functionCallBinding, summaryRef } from "@suss/behavioral-ir";

@@ -1,4 +1,4 @@
-// packageExports.ts (discovery handler) — emit one library-kind unit
+// packageExports.ts (discovery handler): emit one library-kind unit
 // per public-API export of the target package. Pairs with the
 // resolver in ../packageExports.ts which reads package.json.
 
@@ -19,9 +19,9 @@ import type { FunctionRoot } from "../conditions.js";
 
 // The handler fires once per (sourceFile × pattern) pair, so without a
 // cache we read each package.json many times over. This one lives as
-// long as the module, which outlives a run, so the key carries what the
+// long as the module, which outlives a run, so the key includes what the
 // file looked like when we read it: a rewritten package.json in a
-// watching process gets a new key rather than the old answer.
+// watching process gets a new key rather than the old entry.
 const packageExportsCache = new Map<
   string,
   ReturnType<typeof resolvePackageExports>
@@ -120,7 +120,7 @@ export function discoverPackageExports(
         }
         // Class declarations: surface public methods only. The class
         // itself isn't a FunctionRoot, so the existing buildUnit path
-        // doesn't apply — consumers calling `new Class()` without
+        // doesn't apply: consumers calling `new Class()` without
         // method calls won't pair against a provider for now (tracked
         // gap; would need a constructor-as-unit synthesis step).
         if (Node.isClassDeclaration(decl)) {

@@ -1,4 +1,4 @@
-// subUnitContext.ts — Primitives the TypeScript adapter exposes to
+// subUnitContext.ts: Primitives the TypeScript adapter exposes to
 // packs whose `subUnits` hook needs to walk the parent's AST.
 //
 // The PatternPack.subUnits signature in @suss/extractor takes `ctx:
@@ -7,12 +7,12 @@
 // the adapter context they're written against ("I expect the
 // TypeScript adapter"). The primitives here are enough to cover React
 // event-handler prop discovery and React/Node event-subscription call
-// discovery — both expressions of "runtime schedules user callbacks."
+// discovery: both expressions of "runtime schedules user callbacks."
 //
 // Keep primitives narrow: they do AST-shape inspection and return
 // either concrete JS types (string, string[]) or opaque AST handles
 // (FunctionRoot, Node). Packs don't manipulate ts-morph directly from
-// here — they receive handles and pass them back via the context.
+// here: they receive handles and pass them back via the context.
 
 import {
   type ArrayLiteralExpression,
@@ -30,7 +30,7 @@ import type { FunctionRoot } from "./conditions.js";
  * bodies and source text.
  *
  * All walks are scoped to the parent function and deliberately do NOT
- * recurse into nested function bodies — sub-units of nested functions
+ * recurse into nested function bodies, sub-units of nested functions
  * belong to those functions' summaries, not to the enclosing parent.
  */
 export interface TsSubUnitContext {
@@ -44,7 +44,7 @@ export interface TsSubUnitContext {
 
   /**
    * Yield every call expression matching `name` (bare identifier
-   * callee only — e.g. `useEffect(...)`, not `React.useEffect(...)`).
+   * callee only: e.g. `useEffect(...)`, not `React.useEffect(...)`).
    * Nested function bodies are skipped.
    */
   findCallExpressionsByName(
@@ -156,7 +156,7 @@ function findJsxAttributes(parent: FunctionRoot): TsJsxAttributeLocation[] {
           const inner = (initializer as JsxExpression).getExpression();
           valueExpression = inner ?? null;
         } else {
-          // String-literal-valued attributes (`type="button"`) —
+          // String-literal-valued attributes (`type="button"`),
           // rarely interesting for subUnits, but exposing the node
           // keeps the interface complete.
           valueExpression = initializer;
@@ -283,7 +283,7 @@ function readArrayLiteralText(node: Node | null): string[] | null {
       .getElements()
       .map((e) => e.getText());
   }
-  // Non-array deps argument — record the whole expression as a single
+  // Non-array deps argument: record the whole expression as a single
   // dep-text entry so provenance isn't lost.
   return [node.getText()];
 }

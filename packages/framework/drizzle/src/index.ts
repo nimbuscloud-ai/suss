@@ -1,10 +1,10 @@
-// @suss/framework-drizzle — recognize Drizzle ORM query-builder calls
+// @suss/framework-drizzle: recognize Drizzle ORM query-builder calls
 // in TypeScript and emit `interaction(class: "storage-access")` effects
 // on the transitions that contain them.
 //
 // Recognition is AST-based via ts-morph. Drizzle spells a query as a
 // method chain, so each supported shape has one ANCHOR call the
-// recognizer fires on — exactly once per chain — and the rest of the
+// recognizer fires on: exactly once per chain: and the rest of the
 // chain is read by walking up from the anchor:
 //
 //   db.select({...}).from(users).where(eq(users.id, id))   anchor: .from(t)
@@ -22,23 +22,22 @@
 // Table identity: the table argument is an identifier declared as
 // `pgTable("users", {...})` (or mysqlTable / sqliteTable). The
 // recognizer walks the identifier back to that declaration and takes
-// the FIRST STRING ARGUMENT — the real SQL table name — as the
+// the FIRST STRING ARGUMENT: the real SQL table name: as the
 // pairing channel. This intentionally differs from the Prisma pack's
 // PascalCase model channel: Drizzle's schema speaks SQL names, so its
 // summaries pair against SQL-flavored contracts. The two correspond
 // exactly through the schema: a Prisma model's physical table is its
-// model name unless `@@map` renames it, and contract-prisma carries
-// that rename as `storageContract.physicalTable`, which the checker
-// accepts as a pairing alias — both ORMs' accesses land on the same
-// schema provider with no name guessing. When the declaration
-// isn't resolvable, the identifier's own name is used — the honest
-// fallback, never a guess.
+// model name unless `@@map` renames it, and contract-prisma records that
+// rename as `storageContract.physicalTable`, which the checker accepts as a
+// pairing alias, so accesses from both ORMs land on the same schema provider
+// with no name guessing. When the declaration cannot be resolved, we use the
+// identifier's own name, which is what the source says rather than a guess.
 //
 // Out of scope for v0:
 //   - `db.execute(sql\`...\`)` raw SQL (needs a raw-SQL recognizer,
 //     same as Prisma's $queryRaw).
 //   - `alias(users, "u")` self-join aliases.
-//   - Join clauses (`.leftJoin(orders, ...)`) — the joined table isn't
+//   - Join clauses (`.leftJoin(orders, ...)`): the joined table isn't
 //     yet emitted as a second effect; deferred to keep v0 focused.
 
 import { type CallExpression, Node as N, type Node } from "ts-morph";
@@ -50,7 +49,7 @@ import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
 
 const QUERY_API_METHODS = new Set(["findMany", "findFirst"]);
 
-/** Schema-declaration callees whose first string argument names the table. */
+/** Schema-declaration callees whose first string argument gives the table's name. */
 const TABLE_FACTORIES = new Set(["pgTable", "mysqlTable", "sqliteTable"]);
 
 const CHAIN_WALK_LIMIT = 12;
@@ -128,8 +127,8 @@ function recognizeAnchor(call: CallExpression): RecognizedQuery | null {
 
 /**
  * `<db>.select({...}).from(users)` / `<db>.selectDistinct(...).from(t)`.
- * The anchor is the `.from(...)` call: it carries the table, and every
- * select chain has exactly one.
+ * The anchor is the `.from(...)` call, because that is where the table is
+ * named, and every select chain has exactly one of them.
  */
 function recognizeSelect(
   fromCall: CallExpression,
@@ -180,7 +179,7 @@ function recognizeSelect(
 }
 
 /**
- * `<db>.insert(t)` / `<db>.update(t)` / `<db>.delete(t)` — the anchor
+ * `<db>.insert(t)` / `<db>.update(t)` / `<db>.delete(t)`: the anchor
  * is the operation call itself; `.values(...)`, `.set(...)`, and
  * `.where(...)` are read from the chain above it.
  */
@@ -221,8 +220,8 @@ function recognizeMutation(
 
 /**
  * Relational query API: `<db>.query.<schemaExport>.findMany({...})`.
- * The table property is the schema export itself, so its declaration
- * carries the same `pgTable("...")` call the builder-path tables do.
+ * The table property is the schema export itself, so its declaration is the
+ * same `pgTable("...")` call the builder-path tables go through.
  */
 function recognizeQueryApi(
   call: CallExpression,
@@ -246,7 +245,7 @@ function recognizeQueryApi(
   const table = resolveTableName(receiver) ?? receiver.getName();
 
   // `columns: { id: true, email: true }` narrows the read set;
-  // `with: { orders: true }` pulls in relations — both are field
+  // `with: { orders: true }` pulls in relations: both are field
   // knowledge. Anything else reads the whole row.
   const optionsArg = call.getArguments()[0];
   const fields: string[] = [];
@@ -330,8 +329,8 @@ function isDrizzleReceiver(node: Node): boolean {
  * identifier (or `schema.users` property access) to its declaration
  * and read the first string argument of the `pgTable(...)` /
  * `mysqlTable(...)` / `sqliteTable(...)` initializer. Falls back to
- * the expression's trailing identifier name when the declaration
- * isn't resolvable — honest, never invented.
+ * the expression's trailing identifier name when the declaration cannot be
+ * resolved, which is what the source says rather than something invented.
  */
 function resolveTableName(tableExpr: Node): string {
   const fallback = N.isPropertyAccessExpression(tableExpr)
@@ -354,7 +353,7 @@ function resolveTableName(tableExpr: Node): string {
 }
 
 function tableNameFromDeclaration(decl: Node): string | null {
-  // Import specifiers point one hop further — follow to the aliased
+  // Import specifiers point one hop further: follow to the aliased
   // symbol's declarations once.
   if (N.isImportSpecifier(decl)) {
     const symbol = decl.getNameNode().getSymbol();
@@ -416,7 +415,7 @@ function objectProperty(obj: Node, name: string): Node | null {
   return null;
 }
 
-/** `.values({...})` — object keys; array of objects unions the keys. */
+/** `.values({...})`: object keys; array of objects unions the keys. */
 function valuesKeys(valuesCall: CallExpression | undefined): string[] {
   const arg = valuesCall?.getArguments()[0];
   if (arg === undefined) {
@@ -479,9 +478,9 @@ function selectorFromWhere(
 }
 
 /**
- * Pack export. Carries one invocationRecognizer; no discovery
+ * Pack export. Has one invocationRecognizer; no discovery
  * patterns or terminals (Drizzle calls aren't boundaries themselves
- * — they're effects on already-discovered handlers / services).
+ *: they're effects on already-discovered handlers / services).
  */
 export function drizzleFramework(
   options: DrizzleRecognizerOptions = {},
@@ -494,7 +493,7 @@ export function drizzleFramework(
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
     // Gate on drizzle-orm imports (matches subpaths like
-    // drizzle-orm/pg-core and driver entry points) — files without
+    // drizzle-orm/pg-core and driver entry points): files without
     // them can't type-check as Drizzle receivers anyway.
     requiresImport: ["drizzle-orm"],
     invocationRecognizers: [makeRecognizer(options)],

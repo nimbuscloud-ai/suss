@@ -1,4 +1,4 @@
-// namedExport.ts — discover code units exposed via specific named
+// namedExport.ts: discover code units exposed via specific named
 // (or default) exports. The bread-and-butter discovery for frameworks
 // that key off naming conventions (`loader`, `action` in React Router,
 // `handler` in serverless toolchains, etc.).
@@ -55,7 +55,7 @@ function resolveDefaultExportName(decl: Node, fn: FunctionRoot): string {
     }
   }
 
-  // `export default UserCard` — the declaration seen by the default-
+  // `export default UserCard`: the declaration seen by the default-
   // export symbol resolver is the VariableDeclaration or the
   // referenced function. If we landed on a named VariableDeclaration,
   // use that name.
@@ -66,8 +66,8 @@ function resolveDefaultExportName(decl: Node, fn: FunctionRoot): string {
     }
   }
 
-  // An arrow bound to a name carries that name, and asking the function
-  // itself is what keeps the answer the same whichever module the
+  // An arrow bound to a name takes that name, and asking the function
+  // itself is what keeps the result the same whichever module the
   // question came through. A barrel re-exporting the default of
   // `export const Panel = () => ...` would otherwise report `default`.
   const binding = fn.getParent();
@@ -135,10 +135,10 @@ export function discoverNamedExports(
       continue;
     }
 
-    // A name written again holds something else by the time anything
-    // imports it, so the binding is the question and the rules answer
-    // it. They come back with nothing when the writes cannot be
-    // ordered, and nothing is the right answer there.
+    // A name written again is set to something else by the time anything
+    // imports it, so ask the rules about the binding instead. They come
+    // back with nothing when the writes cannot be ordered, which is the
+    // right result there.
     if (isWrittenAgain(varDecl)) {
       const rewritten =
         resolution === undefined ? null : resolution.resolveCallable(varDecl);
@@ -173,10 +173,10 @@ export function discoverNamedExports(
     }
   }
 
-  // 3. export default function UserCard() {} — name "UserCard"
-  //    export default function() {}          — name "default"
-  //    export default UserCard               — name from the referenced binding
-  //    export default () => ...              — name "default"
+  // 3. export default function UserCard() {}: name "UserCard"
+  //    export default function() {}         : name "default"
+  //    export default UserCard              : name from the referenced binding
+  //    export default () => ...             : name "default"
   //
   // Prefer the function's own name when it has one. For components
   // especially, the function name is the component identity; losing
@@ -233,7 +233,7 @@ export function discoverNamedExports(
 /**
  * The units `export default` puts on the module's surface.
  *
- * A default export names its unit twice over: `default` is the route
+ * A default export identifies its unit twice over: `default` is the route
  * out of the module, and the expression written at it says what left.
  * The unit takes its name from the expression, so `export default
  * Panel` and `export default views.Panel` both report `Panel`, and only
@@ -266,7 +266,7 @@ function defaultExportUnits(
   }
 
   // No `export default <expression>`, so the default is a declaration
-  // carrying the modifier, or a name re-exported from another module.
+  // with the modifier on it, or a name re-exported from another module.
   const defaultExport = sourceFile.getDefaultExportSymbol();
   if (defaultExport === undefined) {
     return [];
@@ -284,8 +284,8 @@ function defaultExportUnits(
 /**
  * The function a value comes down to, asked only of names that could
  * still be one. Most default exports are objects, schemas or constants,
- * and asking about those walks a file's import closure for an answer
- * that was always going to be null.
+ * and asking about those walks a file's import closure to produce a
+ * null that was never in doubt.
  */
 function resolutionToFunctionRoot(
   resolution: ResolutionStore,

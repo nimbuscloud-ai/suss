@@ -1,8 +1,5 @@
-// Shared test construction: a fully-populated `graphqlObjectFields`
-// pattern carrying graphql-ruby's vocabulary, the same values the
-// shipped @suss/framework-graphql-ruby pack supplies. The adapter's own
-// source never names these; tests supply them here the way a pack
-// would, overriding only what each test exercises.
+// graphql-ruby's vocabulary, the same values the shipped pack supplies. None of
+// these strings appear anywhere in the adapter's own source.
 
 import type { GraphqlObjectFields, RubyPack } from "../pack.js";
 

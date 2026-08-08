@@ -58,7 +58,7 @@ const RSS_SAMPLE_MS = 100;
 
 // Dogfood normally takes a worker per core, which makes its peak RSS a
 // function of the machine rather than of the code: a 12-core laptop
-// holds three times as many concurrent extractions in memory as the
+// keeps three times as many concurrent extractions in memory as the
 // 4-core runner comparing against its baseline. Pinning the worker
 // count to the CI runner's class makes the peak comparable anywhere.
 const DOGFOOD_WORKERS = 4;

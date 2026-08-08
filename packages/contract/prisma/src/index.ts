@@ -1,4 +1,4 @@
-// @suss/contract-prisma — turn a Prisma schema into one
+// @suss/contract-prisma: turn a Prisma schema into one
 // `BehavioralSummary` per model with `storage-relational` semantics.
 //
 // Parses `schema.prisma` via `@mrleebo/prisma-ast` (a stable parser
@@ -9,9 +9,9 @@
 // Out of scope for v0:
 //   - MongoDB and other non-relational providers (skipped with a
 //     warning; needs storage-document semantics).
-//   - Composite types (Mongo) and views (Postgres) — emit nothing
+//   - Composite types (Mongo) and views (Postgres), emit nothing
 //     today; can be added later under the same boundary semantics.
-//   - Relations between models — relation fields aren't columns
+//   - Relations between models, relation fields aren't columns
 //     (the FK columns are; those ARE captured as scalars).
 
 import fs from "node:fs";
@@ -27,7 +27,7 @@ export interface PrismaSchemaToSummariesOptions {
   /** Override the source-file path recorded on each summary. */
   source?: string;
   /**
-   * Scope identifier — defaults to `"default"` for single-schema
+   * Scope identifier: defaults to `"default"` for single-schema
    * projects. Monorepos with multiple Prisma schemas should pass
    * distinct values per schema so pairings stay separate.
    */
@@ -129,7 +129,7 @@ export function prismaSchemaToSummaries(
   }
 
   if (storageSystem === null) {
-    // No relational datasource — schema is for MongoDB or another
+    // No relational datasource: schema is for MongoDB or another
     // non-relational target. Emit nothing; future phases handle
     // storage-document.
     return [];
@@ -280,7 +280,7 @@ function fieldToColumn(
     return null;
   }
   if (!isScalar && !isEnum) {
-    // Unknown type — could be Unsupported(...), an unsupported
+    // Unknown type: could be Unsupported(...), an unsupported
     // composite type, or a typo. Skip rather than guess.
     return null;
   }
@@ -307,7 +307,7 @@ function fieldToColumn(
 /**
  * The physical SQL table name from a model's `@@map("...")` block
  * attribute, or null when the model has none (in which case the
- * physical table IS the model name — Prisma's default). This is the
+ * physical table IS the model name, Prisma's default). This is the
  * cross-tool pairing bridge: code that speaks SQL names directly
  * (Drizzle's `pgTable("users")`, raw SQL) matches a mapped model
  * through this channel.
@@ -391,7 +391,7 @@ function readProviderString(ds: PrismaDatasource): string | null {
       continue;
     }
     if (typeof a.value === "string") {
-      // Parser keeps quotes — strip them.
+      // Parser keeps quotes: strip them.
       return a.value.replace(/^"|"$/g, "");
     }
   }

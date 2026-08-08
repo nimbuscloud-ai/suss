@@ -1,4 +1,4 @@
-// pairFrontendBackendIntegration.test.ts — the docs/tutorial/pair-frontend-backend
+// pairFrontendBackendIntegration.test.ts: the docs/tutorial/pair-frontend-backend
 // flow as an end-to-end check. An Express provider and a fetch consumer
 // share no types; the only joining artifact is the OpenAPI document. The
 // consumer reads the body in `.then` chain form
@@ -16,8 +16,8 @@
 //
 // The consumer is a data-loader that returns the parsed value. The
 // tutorial's inline `useEffect(() => { fetch(...).then(...) })` form, whose
-// callback returns nothing, produces no consumer transition to carry the
-// field access — terminal synthesis for void callbacks is a separate gap,
+// callback returns nothing, produces no consumer transition to record the
+// field access: terminal synthesis for void callbacks is a separate gap,
 // orthogonal to the field-flow this test exercises.
 
 import { describe, expect, it } from "vitest";

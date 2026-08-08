@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// checkStyle.mjs — the conventions Biome has no rule for.
+// checkStyle.mjs: the conventions Biome has no rule for.
 //
 // Biome covers formatting and most lint rules. Two conventions in
 // docs/internal/style.md it cannot express live here instead, so they

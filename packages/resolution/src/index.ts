@@ -79,7 +79,7 @@ export const RESOLUTION_RULES = [
     [lit("binds", v("x"), v("y")), lit("comesTo", v("y"), v("z"))],
   ),
 
-  // A name written more than once holds the value the last write left
+  // A name written more than once has the value the last write left
   // there, and `binds` says nothing about it. The adapter works out
   // which write that is, in its own language's terms, and stays quiet
   // when control flow decides. A name it stays quiet about comes to no
@@ -124,7 +124,7 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
-  // The object an expression stands for. A name arrives at one by
+  // The object an expression refers to. A name arrives at one by
   // following `comesTo` through aliases and imports. A factory call
   // arrives at one through what the function it calls returns; the
   // call itself is given no `comesTo`, since a factory call usually IS
@@ -253,7 +253,7 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
-  // Where a name comes from, when what it names lives outside the
+  // Where a name comes from, when what it refers to lives outside the
   // source being read. `comesTo` ends at something written out, so it
   // never reaches a library's own function, and a project's alias of a
   // library name has no answer at all. This follows the same aliases
@@ -350,7 +350,7 @@ export const RESOLUTION_RULES = [
 /**
  * The questions a caller asks, written as rules. Two facts say somebody
  * is asking: `wanted(x)` for what a value is, and `wantedOrigin(x)` for
- * where a name came from. Each answer relation holds the pairs for the
+ * where a name came from. Each answer relation contains the pairs for the
  * values somebody asked about, keyed by the value asked about, which is
  * the key the caller looks up by anyway.
  *

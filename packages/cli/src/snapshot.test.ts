@@ -1,4 +1,4 @@
-// snapshot.test.ts — Snapshot tests for human-readable CLI output
+// snapshot.test.ts: Snapshot tests for human-readable CLI output
 //
 // These tests pin the exact rendering of inspect, inspect --diff, and check
 // output so format changes are visible in diffs.
@@ -265,7 +265,7 @@ describe("inspect output snapshots", () => {
   });
 
   it("renders effects under each transition with follow-reference marker", () => {
-    // A handler whose body calls other functions — some of which are
+    // A handler whose body calls other functions, some of which are
     // themselves summarized in the same file (get the `→` marker),
     // others are external (no marker).
     const helperSummary: BehavioralSummary = {
@@ -321,7 +321,7 @@ describe("inspect output snapshots", () => {
           conditions: [],
           output: { type: "return", value: null },
           effects: [
-            // Intra-file summary — `formatPayload` should match and
+            // Intra-file summary: `formatPayload` should match and
             // get the `→` marker.
             {
               type: "invocation",
@@ -329,7 +329,7 @@ describe("inspect output snapshots", () => {
               args: [],
               async: false,
             },
-            // External — no summary, no marker.
+            // External: no summary, no marker.
             {
               type: "invocation",
               callee: "logger.info",
@@ -359,7 +359,7 @@ describe("inspect output snapshots", () => {
   });
 
   it("qualifies generic names (loader/action/default) with file path", () => {
-    // Two route files both exporting a `loader` — bare `loader` as a
+    // Two route files both exporting a `loader`, bare `loader` as a
     // header is ambiguous; inspect should prefix with the relative
     // file path (minus extension) so readers can tell them apart.
     const loaderA: BehavioralSummary = {
@@ -671,7 +671,7 @@ describe("inspect output snapshots", () => {
   it("expands render subtrees so branches sharing a root stay distinguishable", () => {
     // Two branches of the same component both render `<Container />`
     // but with different children. Inspect should surface the
-    // children — otherwise the branches look identical.
+    // children: otherwise the branches look identical.
     const component: BehavioralSummary = {
       kind: "component",
       location: {
@@ -1035,7 +1035,7 @@ describe("inspect --dir output snapshots", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Variant coverage — exercises individual TypeShape / Predicate / ValueRef /
+// Variant coverage: exercises individual TypeShape / Predicate / ValueRef /
 // Output / Derivation cases through the inspect renderer so the typed
 // dispatch maps don't silently drop coverage when new variants land.
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-// predicates.ts — Predicate parsing from ts-morph Expression nodes (Task 2.2)
+// predicates.ts: Predicate parsing from ts-morph Expression nodes (Task 2.2)
 
 import { type Expression, Node, SyntaxKind } from "ts-morph";
 
@@ -68,12 +68,11 @@ export function parseConditionExpression(
   expr: Expression,
   depth = 0,
 ): Predicate | null {
-  // ParenthesizedExpression: strip parentheses and recurse
   if (Node.isParenthesizedExpression(expr)) {
     return parseConditionExpression(expr.getExpression(), depth);
   }
 
-  // PrefixUnaryExpression: handles `!x` and `!!x`
+  // `!x` and `!!x`
   if (Node.isPrefixUnaryExpression(expr)) {
     if (expr.getOperatorToken() !== SyntaxKind.ExclamationToken) {
       return null;
@@ -92,21 +91,17 @@ export function parseConditionExpression(
       };
     }
 
-    // If inner is a truthinessCheck, flip negated
     if (inner.type === "truthinessCheck") {
       return { ...inner, negated: !inner.negated };
     }
 
-    // If inner is a nullCheck, flip negated
     if (inner.type === "nullCheck") {
       return { ...inner, negated: !inner.negated };
     }
 
-    // Otherwise wrap in a negation node
     return { type: "negation", operand: inner };
   }
 
-  // BinaryExpression
   if (Node.isBinaryExpression(expr)) {
     const left = expr.getLeft();
     const right = expr.getRight();
@@ -160,7 +155,6 @@ export function parseConditionExpression(
       }
     }
 
-    // Comparison / null-check operators
     const op = toComparisonOp(opText);
     if (op !== null) {
       // Null/undefined check detection for ==, !=, ===, !==
@@ -202,7 +196,6 @@ export function parseConditionExpression(
         };
       }
 
-      // Regular comparison
       const leftRef: ValueRef = resolveSubject(left);
       const rightRef: ValueRef = resolveSubject(right);
       return { type: "comparison", left: leftRef, op, right: rightRef };
@@ -211,7 +204,7 @@ export function parseConditionExpression(
     return null;
   }
 
-  // CallExpression: isActive(user) — try to inline, fall back to opaque
+  // CallExpression: isActive(user): try to inline, fall back to opaque
   if (Node.isCallExpression(expr)) {
     // Array.includes() expansion: [200, 201].includes(x) → x === 200 || x === 201
     const includesResult = tryExpandArrayIncludes(expr);
@@ -235,7 +228,6 @@ export function parseConditionExpression(
     };
   }
 
-  // Identifier → truthinessCheck
   if (Node.isIdentifier(expr)) {
     return {
       type: "truthinessCheck",
@@ -244,7 +236,6 @@ export function parseConditionExpression(
     };
   }
 
-  // PropertyAccessExpression → truthinessCheck
   if (Node.isPropertyAccessExpression(expr)) {
     return {
       type: "truthinessCheck",
@@ -253,7 +244,6 @@ export function parseConditionExpression(
     };
   }
 
-  // ElementAccessExpression → truthinessCheck
   if (Node.isElementAccessExpression(expr)) {
     return {
       type: "truthinessCheck",
@@ -262,7 +252,7 @@ export function parseConditionExpression(
     };
   }
 
-  // TypeOfExpression on its own (not in a binary comparison) — return null
+  // TypeOfExpression on its own (not in a binary comparison): return null
   if (Node.isTypeOfExpression(expr)) {
     return null;
   }
@@ -305,7 +295,6 @@ function tryExpandArrayIncludes(call: CallExpression): Predicate | null {
     return null;
   }
 
-  // All elements must be literals
   const literalValues: ValueRef[] = [];
   for (const el of elements) {
     const ref = resolveSubject(el as Expression);
@@ -366,13 +355,11 @@ function tryInlineCallPredicate(
     return null;
   }
 
-  // Parse the body expression as a predicate (in the callee's scope)
   const bodyPred = parseConditionExpression(bodyExpr as Expression, depth + 1);
   if (bodyPred === null) {
     return null;
   }
 
-  // Build substitution map: param name → argument ValueRef
   const callArgs = call.getArguments();
   const subs = new Map<string, ValueRef>();
   for (let i = 0; i < paramNames.length && i < callArgs.length; i++) {
@@ -436,7 +423,8 @@ const SUBSTITUTE_PREDICATE: PredicateSubstituters = {
     ...pred,
     args: pred.args.map((arg) => substituteValueRef(arg, subs)),
   }),
-  // Opaque holds source text, so there is nothing to substitute into.
+  // An opaque predicate is only source text, so there is nothing to
+  // substitute into.
   opaque: (pred) => pred,
 };
 

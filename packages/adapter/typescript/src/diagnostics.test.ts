@@ -47,7 +47,7 @@ const ungatedPack: PatternPack = {
 };
 
 /**
- * A summary carrying only what the funnel reads off it: which pack
+ * A summary with only what the funnel reads off it: which pack
  * recognised it, and whether it says anything.
  */
 function summaryFrom(

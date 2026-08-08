@@ -22,7 +22,7 @@ const raise = (msg: string): never => {
 function makeProject(userSource: string): SourceFile {
   const project = createTestProject();
 
-  // Minimal fake @aws-sdk/client-sqs surface — enough for the
+  // Minimal fake @aws-sdk/client-sqs surface: enough for the
   // recognizer to walk the import to its source.
   project.createSourceFile(
     "node_modules/@aws-sdk/client-sqs/index.d.ts",
@@ -40,7 +40,7 @@ export class SendMessageBatchCommand {
 `,
   );
 
-  // Minimal fake aws-lambda types — for the consumer-side
+  // Minimal fake aws-lambda types: for the consumer-side
   // messageReceiveRecognizer's import gate.
   project.createSourceFile(
     "node_modules/aws-lambda/index.d.ts",
@@ -97,7 +97,7 @@ const DISPATCHER_OPTIONS = {
  * Returns the flat list of emitted effects.
  *
  * Not using the adapter's runInvocationRecognizers here because that
- * would pull the adapter as a dependency for unit tests — these tests
+ * would pull the adapter as a dependency for unit tests: these tests
  * exercise the recognizer in isolation.
  */
 function recognizeAll(
@@ -131,9 +131,9 @@ function recognizeAll(
 }
 
 /**
- * Tiny EffectArg builder for tests — handles object/string/identifier/
- * new(...) shapes the recognizer reads. Mirrors the adapter's extractArgs
- * just enough for the SQS recognizer's needs.
+ * A small EffectArg builder for tests. It handles the object, string,
+ * identifier, and `new (...)` forms the recognizer reads, mirroring the
+ * adapter's extractArgs closely enough for the SQS recognizer.
  */
 function extractArgsForTest(call: CallExpression): EffectArg[] {
   return call.getArguments().map((arg) => extractArgForTest(arg));
@@ -226,7 +226,7 @@ export class SendMessageCommand {
   });
 });
 
-describe("sqs recognizer — happy path", () => {
+describe("sqs recognizer: happy path", () => {
   it("emits one message-send interaction for client.send(new SendMessageCommand({...}))", () => {
     const file = makeProject(`
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
@@ -361,7 +361,7 @@ describe("a send whose queue the code does not name", () => {
   });
 });
 
-describe("sqs recognizer — rejection cases", () => {
+describe("sqs recognizer: rejection cases", () => {
   it("ignores .send() with a non-SQS command class", () => {
     const file = makeProject(`
       class FakeCommand {
@@ -414,7 +414,7 @@ describe("sqs recognizer — rejection cases", () => {
         MessageBody: "y",
       });
       async function noop() {
-        // Constructed but not sent — no .send call.
+        // Constructed but not sent: no .send call.
         return command;
       }
     `);
@@ -534,7 +534,7 @@ describe("sqs message-receive recognizer", () => {
   });
 
   it("uses the destructured PROPERTY name not the local alias", () => {
-    // const { total: localAlias } — `total` is the property the
+    // const { total: localAlias }: `total` is the property the
     // recognizer should record (matching what producers write), not
     // `localAlias`.
     const file = makeProject(`

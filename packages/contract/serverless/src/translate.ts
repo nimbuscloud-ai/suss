@@ -2,25 +2,26 @@
 // CloudFormation resources it deploys.
 //
 // The framework compiles a serverless.yml into one CloudFormation
-// stack: each function becomes a Lambda, each event becomes the
+// stack. Each function becomes a Lambda, each event becomes the
 // resource that triggers it, and the `resources:` block is copied in
-// as written. So the reader states the same thing in SAM's shapes and
+// as written. So this reader states the same thing in SAM's shapes and
 // hands them to the CloudFormation reader, rather than growing a
 // second set of summary builders that would drift from it.
 //
-// Two things map onto SAM directly enough to be worth naming:
+// Two things map onto SAM closely enough to be worth spelling out:
 //
 //   provider.environment is SAM's `Globals.Function.Environment`. Both
-//   supply a default every function in the document inherits and the
-//   function's own block overrides, so the provenance a reader gets
-//   back ("globals") is already the right claim: a variable written
-//   once for the whole service says something about the service.
+//   supply a default that every function in the document inherits and
+//   that the function's own block overrides, so the provenance a
+//   reader gets back ("globals") is already the right claim: a
+//   variable written once for the whole service says something about
+//   the service.
 //
 //   provider.runtime and the service's code directory are SAM's
 //   `Globals.Function.Runtime` and `CodeUri`.
 //
 // A function's identity is the key it is written under. That key is
-// what a person names when they deploy, invoke, or tail the function,
+// what a person types when they deploy, invoke, or tail the function,
 // and it is what the framework builds its own logical id out of.
 
 import { EVENT_TRANSLATIONS, type SamEvent } from "./events.js";
@@ -33,13 +34,9 @@ import type {
 import type { ServerlessDocument } from "./document.js";
 import type { ResolvedValue } from "./variables.js";
 
-/**
- * A wiring the document declares that this reader did not translate,
- * named so the caller can report it. Reading stopped here; nothing
- * about the service is claimed either way.
- */
+/** A wiring the document declares that this reader did not translate. */
 export interface UnreadWiring {
-  /** Function key the event is declared under, or null for a service-level abstention. */
+  /** Null for a service-level abstention. */
   functionName: string | null;
   /** The event kind as the framework spells it, or the block name. */
   kind: string;
@@ -47,27 +44,19 @@ export interface UnreadWiring {
 }
 
 export interface TranslatedService {
-  /**
-   * The functions block as SAM resources, with provider defaults in a
-   * Globals section.
-   */
+  /** The functions block as SAM resources, with provider defaults in Globals. */
   functions: CloudFormationTemplate;
   /** The `resources:` block verbatim, or null when the document has none. */
   resources: CloudFormationTemplate | null;
   unread: UnreadWiring[];
 }
 
-/**
- * The synthetic logical ids the two implicit APIs get. The framework
- * creates one HTTP API and one REST API per service and attaches every
- * route to it; the CloudFormation reader already uses these two names
- * for an API whose routes name no API resource, so a route from either
- * manifest language lands on the same one.
- */
+// The CloudFormation reader already uses these two names for an API
+// whose routes point at no API resource, so a route from either
+// manifest language lands on the same one.
 const IMPLICIT_HTTP_API = "HttpApi";
 const IMPLICIT_REST_API = "RestApi";
 
-/** The event kinds that attach to the implicit APIs. */
 const IMPLICIT_API_FOR_EVENT: Record<string, string> = {
   HttpApi: IMPLICIT_HTTP_API,
   Api: IMPLICIT_REST_API,
@@ -172,14 +161,9 @@ export function translateService(
 }
 
 /**
- * The provider block as a SAM `Globals.Function` section: the runtime
- * every function inherits, the environment every function inherits,
- * and the directory the service's code is packaged from.
- *
- * The directory is the service root. The framework packages the whole
- * service into every function's artifact unless `package.individually`
- * narrows it per function, which this reader does not read; a service
- * that sets it gets a scope wider than what deploys.
+ * The provider block as a SAM `Globals.Function` section. `CodeUri` is
+ * the service root, since `package.individually` goes unread and would
+ * narrow it per function.
  */
 function providerGlobals(
   document: ServerlessDocument,
@@ -199,7 +183,7 @@ function providerGlobals(
   };
 }
 
-/** A resolved value when the document states a string, else null. */
+/** Null unless the document states a string. */
 function statedString(resolved: ResolvedValue): string | null {
   return resolved.kind === "resolved" && typeof resolved.value === "string"
     ? resolved.value
@@ -207,10 +191,9 @@ function statedString(resolved: ResolvedValue): string | null {
 }
 
 /**
- * An `environment` block with each value resolved as far as the
- * document states it. A value naming a deploy-time source keeps its
- * reference as a token: the variable is declared either way, and the
- * token says which binding would fill it in.
+ * Each value resolved as far as the document states it. A value that
+ * points at a deploy-time source keeps its reference as a token, since
+ * the variable is declared either way.
  */
 function environmentVariables(
   raw: unknown,
@@ -229,15 +212,9 @@ function environmentVariables(
 }
 
 /**
- * The `resources:` block as a CloudFormation template. The framework
- * copies these resources into the compiled stack, so the reader hands
- * them on rather than re-reading what CloudFormation means by them.
- *
- * Variables resolve first. The framework resolves its own variables
- * across the whole document before it compiles anything, so a property
- * written `${self:custom.tableName}` is a name by the time
- * CloudFormation sees it; handing the reference through as text would
- * report the reference itself as the property's value.
+ * The `resources:` block as a CloudFormation template. Variables
+ * resolve first, the way the framework resolves its own across the
+ * whole document before it compiles anything.
  */
 function rawResources(
   document: ServerlessDocument,

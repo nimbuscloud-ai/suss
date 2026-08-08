@@ -1,4 +1,4 @@
-// scheduling.ts — recognize Node scheduling primitives and emit
+// scheduling.ts: recognize Node scheduling primitives and emit
 // `interaction(class: "schedule")` effects + scheduled-callback sub-units.
 //
 // Recognized primitives:
@@ -14,7 +14,7 @@
 //   - The subUnits hook synthesizes one `scheduled-callback` sub-unit
 //     per call whose first argument resolves to a literal function
 //     expression. Identifier and opaque callbacks emit no sub-unit;
-//     the recognizer's effect carries an opaque callbackRef instead.
+//     the recognizer's effect records an opaque callbackRef instead.
 
 import {
   type CallExpression,
@@ -42,7 +42,7 @@ type ScheduleVia =
 interface SchedulingPrimitive {
   via: ScheduleVia;
   /**
-   * Whether the call carries a delay argument. `setTimeout` /
+   * Whether the call has a delay argument. `setTimeout` /
    * `setInterval` do; the others don't. Drives the `hasDelay` field
    * on the emitted effect.
    */
@@ -124,7 +124,7 @@ function describeCallback(arg: Node | undefined): {
     return { type: "identifier", name: arg.getText() };
   }
   // Property access (`obj.method`), call expression (`getHandler()`),
-  // any non-trivial expression — the analyzer can't resolve the
+  // any non-trivial expression: the analyzer can't resolve the
   // callback without runtime info.
   return { type: "opaque", reason: "non-literal-callback" };
 }
@@ -179,7 +179,7 @@ export const schedulingRecognizer: InvocationRecognizer = (call, _ctx) => {
 const SCHEDULED_CALLBACK_INPUT: InputMappingPattern = {
   type: "positionalParams",
   // Timer callbacks receive whatever `...args` were passed at the
-  // schedule site. v0 doesn't track these positions individually —
+  // schedule site. v0 doesn't track these positions individually,
   // packs that need argument-shape modeling can layer it on top.
   params: [],
 };
@@ -188,7 +188,7 @@ const SCHEDULED_CALLBACK_INPUT: InputMappingPattern = {
  * Walk the parent unit's body for scheduling calls whose first
  * argument is an inline function expression, and synthesize one
  * sub-unit per such callback. Identifier-referenced callbacks emit
- * no sub-unit (the recognizer's effect carries the identifier name
+ * no sub-unit (the recognizer's effect records the identifier name
  * for inspect rendering instead).
  *
  * Mirrors the contract React's pack uses for `useEffect` bodies.
@@ -202,7 +202,7 @@ export function nodeSchedulingSubUnits(
   const counters = new Map<ScheduleVia, number>();
 
   parentFunc.forEachDescendant((node, traversal) => {
-    // Skip nested function bodies — sub-units of nested fns belong
+    // Skip nested function bodies, sub-units of nested fns belong
     // to those fns' own summaries.
     if (
       node !== parentFunc &&

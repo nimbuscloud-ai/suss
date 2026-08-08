@@ -1,4 +1,4 @@
-// factorySurface.ts — surface the public callable surface of a
+// factorySurface.ts: surface the public callable surface of a
 // factory function or class declaration. Used by packageExports
 // discovery to emit one library unit per method on top of the
 // single unit for the export itself.
@@ -174,10 +174,10 @@ function collectFromObjectLiteral(
         out.push({ func: v as FunctionRoot, name });
       }
     }
-    // ShorthandPropertyAssignment (`{ project }`) — value is a local
+    // ShorthandPropertyAssignment (`{ project }`): value is a local
     // binding, not a callable property literal. Skip; tracking what
     // local resolves to a callable is out of v0 scope.
-    // SpreadAssignment (`{ ...other }`) — opaque source object.
-    // GetAccessor/SetAccessor — not callable in the method-call sense.
+    // SpreadAssignment (`{ ...other }`): opaque source object.
+    // GetAccessor/SetAccessor: not callable in the method-call sense.
   }
 }

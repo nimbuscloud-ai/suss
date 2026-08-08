@@ -1,10 +1,5 @@
-// A person runs `suss init` in a project they have not set up yet.
-//
-// What they need out of it is three things: that suss found the
-// project at all, that it named the language, and that the packs it
-// suggests are the ones that read this code. Piped, which is how it
-// runs here and how it runs in CI, init prints the commands rather
-// than asking.
+// Piped, which is how it runs here and how it runs in CI, init prints the
+// commands rather than asking.
 
 import { describe, expect, it } from "vitest";
 
@@ -28,8 +23,6 @@ describe("set up a Python project", () => {
   it("gives a command that says the language outright", () => {
     const init = runSuss(["init", project, "--plain"]);
 
-    // A pack reads one language, so a Python project gets a Python
-    // extract command, with --lang on it rather than left to guessing.
     expect(init.stdout).toContain("suss extract --lang python");
     expect(init.stdout).toContain("npm install --save-dev @suss/cli");
     expect(init.stdout).toContain("@suss/framework-fastapi");
@@ -82,10 +75,6 @@ describe("set up a project whose language nothing declares", () => {
 
     expect(init.status, init.stderr).toBe(0);
     expect(init.stdout).toContain("matched a pack");
-    // The directory holds nothing but .py files and no requirements
-    // file naming a library, so there is nothing to suggest. Saying
-    // only "nothing matched" leaves a person with a Python project
-    // and no idea suss even saw it was Python.
     expect(init.stdout).toContain(
       "There is Python code here and suss could not tell which packs read it",
     );

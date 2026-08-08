@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// checkDiagrams.mjs — catch diagram collisions before a reader does.
+// checkDiagrams.mjs: catch diagram collisions before a reader does.
 //
 // The diagrams in docs/ are hand-authored SVG, which buys layout control
 // and costs the guarantee that a label fits where it was put. Two

@@ -22,7 +22,6 @@ import {
 
 import type { TypeShape } from "@suss/behavioral-ir";
 
-// Minimal RawTerminal builder — every call site overrides only the fields it cares about.
 const makeTerminal = (overrides: Partial<RawTerminal>): RawTerminal => ({
   kind: "void",
   statusCode: null,
@@ -126,17 +125,10 @@ const twoPathRaw: RawCodeStructure = {
   declaredContract: null,
 };
 
-/**
- * A REST handler that answers 200 and nothing else, under a contract
- * that also declares 404. Whether the summary mentions the 404 is what
- * the gap comparison decides.
- */
 const restHandlerWithDeclaredStatuses: RawCodeStructure = {
   ...twoPathRaw,
   branches: [
     ...twoPathRaw.branches.slice(1),
-    // A branch that returns rather than answering. It produces no
-    // status, so it takes no part in the comparison.
     {
       conditions: [],
       terminal: makeTerminal({
@@ -154,7 +146,7 @@ const restHandlerWithDeclaredStatuses: RawCodeStructure = {
   },
 };
 
-describe("assembleSummary — optional metadata plumbing", () => {
+describe("assembleSummary: optional metadata plumbing", () => {
   it("threads expectedInput, accessors, graphql, and invocation preconditions through", () => {
     const raw: RawCodeStructure = {
       identity: {
@@ -247,7 +239,7 @@ describe("assembleSummary — optional metadata plumbing", () => {
     }
   });
 
-  it("passes declaredContract and unresolvedDocument through to graphql metadata", () => {
+  it("passes declaredContract and unresolvedDocument through to graphql metadata without reporting a status gap on a resolver", () => {
     const raw: RawCodeStructure = {
       identity: {
         name: "me",
@@ -273,8 +265,6 @@ describe("assembleSummary — optional metadata plumbing", () => {
           terminal: {
             kind: "response",
             statusCode: { type: "literal", value: 200 },
-            // Neither a structural shape nor a type name: the body
-            // converter's null fallback.
             body: { typeText: "", shape: null },
             exceptionType: null,
             message: null,
@@ -310,9 +300,6 @@ describe("assembleSummary — optional metadata plumbing", () => {
         },
       ],
       dependencyCalls: [],
-      // A declared contract on a resolver. Status codes describe the
-      // HTTP call that carried the GraphQL request, not the field this
-      // unit answers, so nothing here compares them.
       declaredContract: {
         framework: "test",
         responses: [{ statusCode: 200 }, { statusCode: 404 }],
@@ -352,10 +339,7 @@ describe("assembleSummary — optional metadata plumbing", () => {
     );
   });
 
-  it("compares the statuses when nothing named the boundary", () => {
-    // Whoever filled the contract in said the unit has declared
-    // responses. With no binding to say otherwise, they are read as
-    // HTTP ones.
+  it("reads declared responses as HTTP ones and compares them when nothing named the boundary", () => {
     const summary = assembleSummary({
       ...restHandlerWithDeclaredStatuses,
       boundaryBinding: null,
@@ -539,7 +523,7 @@ describe("assembleSummary", () => {
     expect(summary.confidence.level).toBe("high");
   });
 
-  it("wraps null-structured conditions as opaque predicates — never drops them", () => {
+  it("wraps null-structured conditions as opaque predicates: never drops them", () => {
     const raw: RawCodeStructure = {
       ...twoPathRaw,
       branches: [
@@ -558,7 +542,6 @@ describe("assembleSummary", () => {
       ],
     };
     const summary = assembleSummary(raw);
-    // The condition must appear in the transition as an opaque predicate, not be dropped
     expect(summary.transitions[0].conditions).toHaveLength(1);
     expect(summary.transitions[0].conditions[0].type).toBe("opaque");
   });
@@ -633,7 +616,6 @@ describe("assembleSummary", () => {
   });
 
   it("detects a gap when handler produces a status not declared in the contract", () => {
-    // twoPathRaw produces 200 and 404. Declare only 200 — the 404 is a contract violation.
     const raw: RawCodeStructure = {
       ...twoPathRaw,
       declaredContract: {
@@ -680,7 +662,6 @@ describe("assembleSummary", () => {
 });
 
 describe("makeTransitionId", () => {
-  // Minimal branch builder — callers supply only the fields that matter.
   const makeBranch = (overrides: Partial<RawBranch>): RawBranch => ({
     conditions: [],
     terminal: makeTerminal({ kind: "void" }),
@@ -690,7 +671,7 @@ describe("makeTransitionId", () => {
     ...overrides,
   });
 
-  it("is deterministic — same input, same ID", () => {
+  it("is deterministic: same input, same ID", () => {
     const branch = makeBranch({
       conditions: [
         {
@@ -710,9 +691,7 @@ describe("makeTransitionId", () => {
     );
   });
 
-  it("is stable under branch reordering — sibling branches do not affect each other's IDs", () => {
-    // The defining property: reshuffling the `branches` array does not
-    // change any individual branch's ID.
+  it("is stable under branch reordering: sibling branches do not affect each other's IDs", () => {
     const raw: RawCodeStructure = {
       ...twoPathRaw,
       branches: [twoPathRaw.branches[0], twoPathRaw.branches[1]],
@@ -851,9 +830,7 @@ describe("makeTransitionId", () => {
     );
   });
 
-  it("condition order is part of identity — short-circuit semantics differ", () => {
-    // `a && b` and `b && a` can have different evaluation side effects,
-    // so the IDs must differ.
+  it("condition order is part of identity: short-circuit semantics differ", () => {
     const ab = makeBranch({
       conditions: [
         {
@@ -907,7 +884,7 @@ describe("makeTransitionId", () => {
     expect(makeTransitionId("f", codeA)).not.toBe(makeTransitionId("f", codeB));
   });
 
-  it("function name is part of identity — same branch in two functions mints distinct IDs", () => {
+  it("function name is part of identity: same branch in two functions mints distinct IDs", () => {
     const branch = makeBranch({
       terminal: makeTerminal({
         kind: "response",
@@ -920,8 +897,6 @@ describe("makeTransitionId", () => {
   });
 
   it("relocating a branch (changing its location range) leaves the ID intact", () => {
-    // Identity is content-addressable — editing whitespace that shifts the
-    // branch's start/end offsets should not re-mint the ID.
     const original = makeBranch({
       conditions: [
         {
@@ -1004,8 +979,6 @@ describe("terminalToOutput", () => {
   });
 
   it("converts throw-with-status to a response output", () => {
-    // When a framework pack extracts a status code from a thrown value,
-    // the throw is behaviorally a response (the client sees HTTP status).
     const out = terminalToOutput(
       makeTerminal({
         kind: "throw",
@@ -1212,8 +1185,6 @@ describe("assessConfidence", () => {
   });
 
   it("returns 'low' when a return went unread", () => {
-    // Nothing about the conditions changed. What changed is that part
-    // of what the function produces was never described.
     expect(assessConfidence({ ...baseRaw, unmatchedReturns: 1 })).toEqual({
       source: "inferred_static",
       level: "low",
@@ -1221,8 +1192,6 @@ describe("assessConfidence", () => {
   });
 
   it("returns 'high' for a body with nothing in it", () => {
-    // A unit that does nothing is described completely by a summary
-    // that says nothing.
     expect(assessConfidence({ ...baseRaw, bodyContent: "empty" })).toEqual({
       source: "inferred_static",
       level: "high",
@@ -1482,9 +1451,7 @@ describe("detectGaps", () => {
     expect(detectGaps(raw, [], { gapHandling: "silent" })).toEqual([]);
   });
 
-  it("ignores dynamic status codes when matching declared responses", () => {
-    // Handler produces only a dynamic status code — none of the declared
-    // statuses are 'produced', so every declared response is reported as a gap.
+  it("reports every declared response as never produced when the handler produces only a dynamic status code", () => {
     const summary = assembleSummary(
       {
         ...twoPathRaw,
@@ -1507,7 +1474,6 @@ describe("detectGaps", () => {
       },
       { gapHandling: "strict" },
     );
-    // Both declared statuses become "never produced" gaps.
     const unproduced = summary.gaps.filter((g) =>
       g.description.includes("never produced"),
     );
@@ -1549,8 +1515,6 @@ describe("detectGaps", () => {
   });
 
   it("detects both undeclared-production AND unproduced-declaration simultaneously", () => {
-    // Declares 200, 500. Produces 200, 404.
-    // → 500 never produced, 404 not declared.
     const raw: RawCodeStructure = {
       ...twoPathRaw, // produces 404 and 200
       declaredContract: {
@@ -1577,11 +1541,7 @@ describe("detectGaps", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Multi-condition branch assembly
-// ---------------------------------------------------------------------------
-
-describe("assembleSummary — multi-condition branches", () => {
+describe("assembleSummary: multi-condition branches", () => {
   it("assembles a branch with 3+ conditions correctly", () => {
     const raw: RawCodeStructure = {
       ...twoPathRaw,
@@ -1645,11 +1605,8 @@ describe("assembleSummary — multi-condition branches", () => {
     const summary = assembleSummary(raw);
     const t = summary.transitions[0];
     expect(t.conditions).toHaveLength(3);
-    // earlyReturn: negative polarity → negation wrapper
     expect(t.conditions[0].type).toBe("negation");
-    // earlyThrow: negative polarity → negation wrapper
     expect(t.conditions[1].type).toBe("negation");
-    // explicit: positive polarity → unwrapped comparison
     expect(t.conditions[2].type).toBe("comparison");
   });
 
@@ -1686,7 +1643,6 @@ describe("assembleSummary — multi-condition branches", () => {
     };
     const summary = assembleSummary(raw);
     const t = summary.transitions[0];
-    // Negative polarity wraps the structured predicate in negation
     expect(t.conditions[0].type).toBe("negation");
     if (t.conditions[0].type === "negation") {
       expect(t.conditions[0].operand.type).toBe("truthinessCheck");
@@ -1736,11 +1692,7 @@ describe("assembleSummary — multi-condition branches", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Confidence scoring edge cases
-// ---------------------------------------------------------------------------
-
-describe("assessConfidence — boundary cases", () => {
+describe("assessConfidence: boundary cases", () => {
   const baseRaw: RawCodeStructure = {
     ...twoPathRaw,
     branches: [],
@@ -1780,7 +1732,6 @@ describe("assessConfidence — boundary cases", () => {
         },
       ],
     };
-    // ratio = 1/2 = 0.5, which is >= 0.5, so "low"
     expect(assessConfidence(raw).level).toBe("low");
   });
 
@@ -1832,7 +1783,6 @@ describe("assessConfidence — boundary cases", () => {
         },
       ],
     };
-    // 3 total conditions, 1 opaque → ratio = 1/3 ≈ 0.33 < 0.5 → "medium"
     expect(assessConfidence(raw).level).toBe("medium");
   });
 

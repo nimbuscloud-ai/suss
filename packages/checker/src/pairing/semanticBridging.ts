@@ -1,4 +1,4 @@
-// semantic-bridging.ts — Level 5: Match provider output body literals
+// semantic-bridging.ts: Level 5: Match provider output body literals
 // against consumer comparison predicates
 //
 // When a provider transition produces a body with literal field values
@@ -59,7 +59,7 @@ function collectBodyLiterals(
 
 /**
  * Given multiple provider transitions for the same status code, find
- * literal body fields that differ between transitions — these are the
+ * literal body fields that differ between transitions. These are the
  * values that distinguish one sub-case from another.
  *
  * A literal is "distinguishing" if at least one other transition for the
@@ -89,16 +89,16 @@ function findDistinguishingLiterals(
         continue;
       }
       if (sibling.output.type !== "response" || sibling.output.body === null) {
-        // Sibling has no body — this literal distinguishes
+        // Sibling has no body. This literal distinguishes
         return true;
       }
       const siblingValue = getValueAtPath(sibling.output.body, lit.path);
       if (siblingValue === undefined) {
-        // Sibling doesn't have this field — distinguishing
+        // Sibling doesn't have this field, distinguishing
         return true;
       }
       if (siblingValue.type !== "literal" || siblingValue.value !== lit.value) {
-        // Sibling has a different value — distinguishing
+        // Sibling has a different value, distinguishing
         return true;
       }
     }
@@ -162,7 +162,7 @@ function findDistinguishingFields(
 
 /**
  * Collect all field paths in a record shape (non-recursive into nested records
- * for now — top-level field presence is the most common discriminator).
+ * for now: top-level field presence is the most common discriminator).
  */
 function collectFieldPaths(
   shape: TypeShape,
@@ -364,7 +364,7 @@ function extractPropertyChainWithRoot(
       chain.unshift(current.derivation.property);
       current = current.from;
     } else {
-      // Non-property derivation (destructured, indexAccess, etc.) — bail
+      // Non-property derivation (destructured, indexAccess, etc.), bail
       return chain.length > 0 ? { chain, root: current } : null;
     }
   }
@@ -397,7 +397,6 @@ export function checkSemanticBridging(
     providerByStatus.get(status)?.push(pt);
   }
 
-  // Collect all body-field tests from consumer transitions
   const consumerFieldTests = collectConsumerFieldTests(consumer.transitions);
 
   for (const [status, providerTransitions] of providerByStatus) {

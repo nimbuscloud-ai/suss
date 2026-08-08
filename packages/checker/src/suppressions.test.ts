@@ -54,7 +54,7 @@ function rule(overrides: Partial<SuppressionRule> = {}): SuppressionRule {
 }
 
 // ---------------------------------------------------------------------------
-// validateRule — shape preconditions
+// validateRule: shape preconditions
 // ---------------------------------------------------------------------------
 
 describe("validateRule", () => {
@@ -106,7 +106,7 @@ describe("validateRule", () => {
 });
 
 // ---------------------------------------------------------------------------
-// applySuppressions — matching
+// applySuppressions: matching
 // ---------------------------------------------------------------------------
 
 describe("applySuppressions", () => {
@@ -353,7 +353,7 @@ describe("applySuppressions", () => {
 });
 
 // ---------------------------------------------------------------------------
-// countsForThreshold — exit-code logic
+// countsForThreshold: exit-code logic
 // ---------------------------------------------------------------------------
 
 describe("countsForThreshold", () => {

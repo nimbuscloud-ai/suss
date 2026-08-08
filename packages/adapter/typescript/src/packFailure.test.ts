@@ -1,6 +1,8 @@
-// A pack that broke and a pack that found nothing both report zero. The
-// difference has to reach whoever reads the numbers, because only one of
-// the two means the numbers are wrong.
+/**
+ * A pack that broke and a pack that found nothing both report zero. The
+ * difference has to reach whoever reads the numbers, because only one of
+ * the two means the numbers are wrong.
+ */
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -67,8 +69,7 @@ describe("a pack whose hook throws", () => {
       const broke = await reportFor(packThatThrows());
       const quiet = await reportFor(packThatFindsNothing());
 
-      // Both discovered nothing. Only one of them was asked and could
-      // not answer.
+      // Both discovered nothing. Only one of them was asked and threw.
       expect(broke.packs[0]?.unitsDiscovered).toBe(0);
       expect(quiet.packs[0]?.unitsDiscovered).toBe(0);
 
