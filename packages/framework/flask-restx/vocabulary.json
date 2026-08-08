@@ -1,6 +1,12 @@
 {
   "flask_restx": "flask-restx: the package route decorators are imported from",
   "route": "flask-restx: Namespace.route / Api.route, the class decorator naming a resource's path",
+  "Namespace": "flask-restx: the constructor for a mountable group of resources",
+  "add_namespace": "flask-restx: the Api method that mounts a namespace",
+  "path": "flask-restx: the path keyword on Namespace(...) and add_namespace(...)",
   "decoratedClassRoute": "suss: PythonDiscoveryPattern variant tag, defined in @suss/adapter-python",
-  "flaskConverters": "suss: path-template syntax name, defined in @suss/adapter-python; selects the <name> / <converter:name> reader for Flask-style paths"
+  "flaskConverters": "suss: path-template syntax name, defined in @suss/adapter-python; selects the <name> / <converter:name> reader for Flask-style paths",
+  "replaces": "suss: MountPrefixEffect value, defined in @suss/adapter-python; says a mount-call prefix swaps out the constructor's rather than going in front of it",
+  "trimmed": "suss: PrefixTrailingSlash value, defined in @suss/adapter-python; says the library drops trailing slashes off a namespace path before a route path joins it",
+  "unstated": "suss: NoValuePrefix value, defined in @suss/adapter-python; says the library reads a path written as an empty string, None, False or zero the way it reads no path at all"
 }

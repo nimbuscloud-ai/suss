@@ -558,7 +558,16 @@ export const InputSchema = z.discriminatedUnion("type", [
     type: z.literal("parameter"),
     name: z.string(),
     position: z.number(),
-    role: z.string(),
+    /**
+     * What the parameter carries (a path parameter, a query
+     * parameter, the request body), as the library's own vocabulary
+     * names it. Null when nobody could read which it is: a role
+     * follows from something else the reader has to have read first,
+     * and where a route's path went unread, every parameter would
+     * otherwise take the weakest guess and claim it. A summary that
+     * says null carries a gap saying why.
+     */
+    role: z.string().nullable(),
     shape: TypeShapeSchema.nullable(),
   }),
   z.object({

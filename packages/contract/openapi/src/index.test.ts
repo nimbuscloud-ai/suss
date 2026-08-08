@@ -211,7 +211,7 @@ describe("openApiToSummaries — basic mapping", () => {
 
     const byRole: Record<string, string[]> = {};
     for (const i of inputs) {
-      if (i.type !== "parameter") {
+      if (i.type !== "parameter" || i.role === null) {
         continue;
       }
       byRole[i.role] = byRole[i.role] ?? [];

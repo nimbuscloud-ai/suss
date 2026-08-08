@@ -3,8 +3,10 @@
 // Two shapes, because the two packs read Python differently. FastAPI
 // puts the path on a decorator and can carry two prefixes above it,
 // one from the router and one from the mount. flask-restx puts it on a
-// class decorator that most services re-export through a wrapper of
-// their own, which is the only thing the pack needs told.
+// class decorator, which a service reaches either through a wrapper of
+// its own, the one thing the pack needs told, or straight from the
+// library on a namespace that carries the first half of the path. The
+// flask-restx fixture has both, the way the measured service does.
 //
 // The bar is the one the production measurement failed: every route
 // recovered, and every path right. A pack that finds five routes and
@@ -32,12 +34,31 @@ const FASTAPI_ROUTES = [
 ];
 
 /** Every route fixtures/python-webapp declares through its own wrapper. */
-const FLASK_RESTX_ROUTES = [
+const WRAPPED_ROUTES = [
   "GET /todos",
   "POST /todos",
   "GET /users",
   "GET /orders/{order_id}",
   "DELETE /orders/{order_id}",
+];
+
+/** The files those wrapped routes are declared in, for a run that reads them and nothing else. */
+const WRAPPED_ROUTE_FILES = [
+  "myapp/routes/todos.py",
+  "myapp/routes/users.py",
+  "myapp/routes/orders.py",
+];
+
+/**
+ * Every route the same fixture declares on a namespace, importing
+ * flask-restx directly. The path is the namespace's own plus the one
+ * the resource's decorator writes, and neither is the whole path.
+ */
+const NAMESPACE_ROUTES = [
+  "GET /behaviors/{school_id}",
+  "GET /behaviors/{school_id}/{behavior_id}",
+  "GET /invoices",
+  "GET /invoices/{invoice_id}",
 ];
 
 describe("read a FastAPI service", () => {
@@ -108,19 +129,47 @@ describe("read a flask-restx service through its own wrapper", () => {
   const project = copyOfFixture("python-webapp");
   const summariesFile = path.join(project, "summaries", "code.json");
 
-  it("reads nothing until the wrapper module is named", () => {
+  it("reads nothing in the wrapped route files until the wrapper module is named", () => {
     const extract = runSuss(
-      ["extract", "--lang", "python", "-f", "flask-restx"],
+      [
+        "extract",
+        "--lang",
+        "python",
+        "-f",
+        "flask-restx",
+        "--files",
+        ...WRAPPED_ROUTE_FILES,
+      ],
       { cwd: project },
     );
 
     // Not an error: the pack read the files and recognized nothing in
-    // them. What matters is that it says so instead of printing an
-    // empty array and stopping.
+    // them, because every decorator in them comes from a module only
+    // this project knows about. What matters is that it says so
+    // instead of printing an empty array and stopping.
     expect(extract.output).toContain("recognized no boundaries");
   });
 
-  it("finds every route once it is", () => {
+  it("finds the routes declared on a namespace without being told anything", () => {
+    // The other half of the same service imports flask-restx itself,
+    // so nothing about it is this project's own choice and no
+    // configuration is involved.
+    const extract = runSuss(
+      ["extract", "--lang", "python", "-f", "flask-restx", "-o", "ns.json"],
+      { cwd: project },
+    );
+    expect(extract.status, extract.stderr).toBe(0);
+
+    const inspect = runSuss(["inspect", path.join(project, "ns.json")]);
+    for (const route of NAMESPACE_ROUTES) {
+      expect(inspect.stdout).toContain(route);
+    }
+    for (const route of WRAPPED_ROUTES) {
+      expect(inspect.stdout).not.toContain(route);
+    }
+  });
+
+  it("finds every route once the wrapper is named", () => {
     const config = writePackConfig(project, "flask-restx", {
       wrapperModules: ["myapp.wrappers.restx"],
     });
@@ -141,10 +190,23 @@ describe("read a flask-restx service through its own wrapper", () => {
 
     const inspect = runSuss(["inspect", summariesFile]);
     expect(inspect.status, inspect.stderr).toBe(0);
-    for (const route of FLASK_RESTX_ROUTES) {
+    for (const route of [...WRAPPED_ROUTES, ...NAMESPACE_ROUTES]) {
       expect(inspect.stdout).toContain(route);
     }
-    expect(inspect.stdout).toContain("5 summaries.");
+    expect(inspect.stdout).toContain("11 summaries.");
+  });
+
+  it("names no path for a route whose namespace is mounted twice", () => {
+    const inspect = runSuss(["inspect", summariesFile]);
+
+    // Which of the two mounts serves it is not written down anywhere,
+    // and a guessed path here would pair against a client calling it
+    // and report drift on a route nobody has.
+    expect(inspect.stdout).toContain("GET ?");
+    expect(inspect.stdout).toContain(
+      "The router this route is declared on is mounted more than once",
+    );
+    expect(inspect.stdout).not.toContain("/exports/{export_id}");
   });
 
   it("canonicalizes a Werkzeug converter into a path parameter", () => {

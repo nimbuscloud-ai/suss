@@ -96,7 +96,14 @@ export type {
 export interface RawParameter {
   name: string;
   position: number;
-  role: string;
+  /**
+   * What the parameter carries, in the library's own vocabulary.
+   * Null when the adapter could not read which it is, the same thing
+   * a null path on a binding says: a reader that hands over null and
+   * a reason states less than one that guesses, and only the second
+   * can be wrong. Say why in `readings`.
+   */
+  role: string | null;
   typeText: string | null;
 }
 

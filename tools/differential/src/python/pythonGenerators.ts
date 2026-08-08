@@ -15,6 +15,10 @@ import type {
   FastapiRouteSpec,
   FlaskImportStyle,
   FlaskMethodSpec,
+  FlaskNamespaceMountPath,
+  FlaskNamespacePath,
+  FlaskNamespaceSpec,
+  FlaskNoValue,
   FlaskProgramSpec,
   FlaskResourceSpec,
   PyStatusSpec,
@@ -183,6 +187,120 @@ const arbFlaskResource: fc.Arbitrary<FlaskResourceSpec> = fc
   })
   .map((resource) => resource);
 
+const arbFlaskResources = fc.array(arbFlaskResource, {
+  minLength: 1,
+  maxLength: 2,
+});
+
+/** Every spelling of a value the library reads as no value, drawn evenly, since it treats all four the same and the reader has to as well. */
+const arbNoValue: fc.Arbitrary<FlaskNoValue> = fc.constantFrom<FlaskNoValue>(
+  "empty",
+  "none",
+  "false",
+  "zero",
+);
+
+/**
+ * How a namespace states its path. The two literal spellings serve
+ * the same paths, since the library holds the path with trailing
+ * slashes stripped; the root spelling adds nothing at all; and the
+ * last two are the shapes the pack documents as abstentions.
+ */
+const arbFlaskNamespacePath: fc.Arbitrary<FlaskNamespacePath> = fc.oneof(
+  {
+    weight: 4,
+    arbitrary: fc.boolean().map(
+      (trailingSlash): FlaskNamespacePath => ({
+        type: "literal",
+        trailingSlash,
+      }),
+    ),
+  },
+  { weight: 1, arbitrary: fc.constant<FlaskNamespacePath>({ type: "root" }) },
+  { weight: 1, arbitrary: fc.constant<FlaskNamespacePath>({ type: "absent" }) },
+  {
+    weight: 2,
+    arbitrary: arbNoValue.map(
+      (written): FlaskNamespacePath => ({ type: "noValue", written }),
+    ),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.constant<FlaskNamespacePath>({ type: "computed" }),
+  },
+);
+
+/**
+ * How the mount states a path, if it states one. The falsy spellings
+ * are no override at all, which is a cell the pack reads rather than
+ * abstains over, so they belong here as much as the override does.
+ */
+const arbFlaskMountPath: fc.Arbitrary<FlaskNamespaceMountPath> = fc.oneof(
+  {
+    weight: 4,
+    arbitrary: fc.constant<FlaskNamespaceMountPath>({ type: "absent" }),
+  },
+  {
+    weight: 2,
+    arbitrary: fc.constant<FlaskNamespaceMountPath>({ type: "override" }),
+  },
+  {
+    weight: 2,
+    arbitrary: arbNoValue.map(
+      (written): FlaskNamespaceMountPath => ({ type: "noValue", written }),
+    ),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.constant<FlaskNamespaceMountPath>({ type: "computed" }),
+  },
+);
+
+const arbFlaskNamespace: fc.Arbitrary<FlaskNamespaceSpec> = fc.oneof(
+  {
+    weight: 5,
+    arbitrary: fc
+      .record({
+        path: arbFlaskNamespacePath,
+        mountPath: arbFlaskMountPath,
+        emptyPathResource: fc.boolean(),
+        resources: arbFlaskResources,
+      })
+      .map(
+        (namespace): FlaskNamespaceSpec => ({
+          type: "mounted",
+          ...namespace,
+        }),
+      ),
+  },
+  {
+    weight: 1,
+    arbitrary: arbFlaskResources.map(
+      (resources): FlaskNamespaceSpec => ({ type: "unmounted", resources }),
+    ),
+  },
+  {
+    weight: 1,
+    arbitrary: arbFlaskResources.map(
+      (resources): FlaskNamespaceSpec => ({ type: "mountedTwice", resources }),
+    ),
+  },
+  {
+    weight: 1,
+    arbitrary: fc
+      .record({
+        firstResources: arbFlaskResources,
+        secondResources: arbFlaskResources,
+      })
+      .map(
+        (namespace): FlaskNamespaceSpec => ({
+          type: "reassigned",
+          ...namespace,
+        }),
+      ),
+  },
+);
+
 export const arbFlaskProgramSpec: fc.Arbitrary<FlaskProgramSpec> = fc.record({
   importStyle: fc.constantFrom<FlaskImportStyle>(
     "direct",
@@ -190,6 +308,7 @@ export const arbFlaskProgramSpec: fc.Arbitrary<FlaskProgramSpec> = fc.record({
     "wrapperAliased",
   ),
   resources: fc.array(arbFlaskResource, { minLength: 1, maxLength: 3 }),
+  namespaces: fc.array(arbFlaskNamespace, { minLength: 0, maxLength: 2 }),
 });
 
 /** Both frameworks, drawn evenly, so one sampled stream covers the two packs. */

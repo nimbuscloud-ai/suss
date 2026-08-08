@@ -329,14 +329,14 @@ Adding a class is a strictly additive IR change. Each class maps 1:1 to a `bindi
 
 ```typescript
 type Input =
-  | { type: "parameter"; name: string; position: number; role: string; shape: TypeShape | null }
+  | { type: "parameter"; name: string; position: number; role: string | null; shape: TypeShape | null }
   | { type: "injection"; name: string; mechanism: string; shape: TypeShape | null }
   | { type: "hookReturn"; hook: string; destructuredFields: string[] }
   | { type: "contextValue"; context: string; accessedFields: string[] }
   | { type: "closure"; name: string };
 ```
 
-How inputs reach a code unit. Most of these are for React/Vue components; HTTP handlers typically only have `parameter` inputs. The `role` field on parameters carries framework-specific meaning (`"request"`, `"response"`, `"pathParams"`, `"requestBody"`, etc.), it's what `InputMappingPattern` in the framework pack sets.
+How inputs reach a code unit. Most of these are for React/Vue components; HTTP handlers typically only have `parameter` inputs. The `role` field on parameters carries framework-specific meaning (`"request"`, `"response"`, `"pathParams"`, `"requestBody"`, etc.), it's what `InputMappingPattern` in the framework pack sets. It is null when nobody could read which role a parameter has, the same thing a null `path` says on a binding: a role often follows from something else the reader has to have read first, and a route whose path went unread cannot tell a path parameter from a query parameter. A summary that says null carries a gap saying why.
 
 **`hookReturn`, `contextValue`, `closure`** are for components and hooks. A hook call like `const [user, setUser] = useUser()` produces a `hookReturn` input with `destructuredFields: ["user", "setUser"]`. The React pack discovers components, hooks, and event handlers and fills these in; see the `component` and `hook` entries under `CodeUnitKind`.
 

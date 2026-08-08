@@ -26,9 +26,10 @@ Each element describes one code unit, a handler, client call site, loader, actio
 Every summary carries `schemaVersion`. A summary without one is
 version 1, written by 0.3.x. The parsers in `@suss/behavioral-ir` read
 every version ever published, so an artifact never needs rewriting.
-Version 2 is current. It spells an unnamed identity field null,
-rejects the empty string there, and adds `"*"` as the REST method
-wildcard.
+Version 2 spells an unnamed identity field null, rejects the empty
+string there, and adds `"*"` as the REST method wildcard. Version 3 is
+current. It lets a parameter input's `role` be null, for a parameter
+whose role nobody could read.
 
 ## Core concept: transitions
 

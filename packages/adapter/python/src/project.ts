@@ -20,6 +20,7 @@ import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { ExtractorOptions } from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
 import type { BoundPythonFile } from "./routers.js";
 
@@ -31,6 +32,14 @@ export interface ExtractPythonOptions {
   roots: string[];
   /** When set, `location.file` on each summary is relativized against this, mirroring `suss extract`'s repo-relative paths. */
   workspaceRoot?: string;
+  /**
+   * What to do with what nobody could read: "permissive" (the default)
+   * and "silent" say how much of it reaches a summary, and "strict"
+   * additionally lets a route the readers cannot turn into a unit stop
+   * the run, which is what a caller who wants every unit or none asks
+   * for.
+   */
+  gapHandling?: ExtractorOptions["gapHandling"];
 }
 
 export interface ExtractPythonResult {
@@ -43,6 +52,7 @@ export async function extractPythonProject(
 ): Promise<ExtractPythonResult> {
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
+  const gapHandling = options.gapHandling ?? "permissive";
 
   // Parse and bind everything first: a route's path can depend on a
   // mount call in another file (a router constructed here, included
@@ -77,9 +87,10 @@ export async function extractPythonProject(
       packs: options.packs,
       filePath: displayPath,
       routerIndex,
+      gapHandling,
     });
     for (const raw of rawUnits) {
-      const summary = assembleSummary(raw, { gapHandling: "permissive" });
+      const summary = assembleSummary(raw, { gapHandling });
       // `assembleSummary`'s confidence heuristic reads the ratio of
       // opaque to total conditions across a unit's branches, which
       // assumes those branches came from tracing the body. v0 never

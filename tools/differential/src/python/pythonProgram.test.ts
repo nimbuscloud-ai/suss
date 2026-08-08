@@ -15,7 +15,20 @@ import {
 } from "./pythonGenerators.js";
 import { renderPythonProgram } from "./pythonProgram.js";
 
-import type { PythonProgramSpec } from "./pythonProgram.js";
+import type { FlaskResourceSpec, PythonProgramSpec } from "./pythonProgram.js";
+
+/** A one-GET resource, for cases where the resource itself is not what is under test. */
+function flaskResource(segment: string): FlaskResourceSpec {
+  return {
+    segment,
+    hasPathParam: false,
+    converterArgs: false,
+    pathComputed: false,
+    methods: [
+      { verb: "GET", annotated: false, returnStyle: "dict", tupleStatus: 201 },
+    ],
+  };
+}
 
 const SAMPLED: PythonProgramSpec[] = fc.sample(arbPythonProgramSpec, {
   numRuns: 300,
@@ -185,6 +198,7 @@ describe("renderPythonProgram", () => {
             ],
           },
         ],
+        namespaces: [],
       },
     };
     const flaskRendered = renderPythonProgram(flaskSpec, "app_8");
@@ -251,6 +265,194 @@ describe("renderPythonProgram", () => {
     expect(rendered.files["app_9/routers/r0.py"]).toContain(
       '@router.post("/items0", status_code=201, response_model=Model0)',
     );
+  });
+
+  it("serves a namespace's resources under the path the namespace holds", () => {
+    // The namespace is written with a trailing slash and the library
+    // holds it without one, and the first resource is written with an
+    // empty path, which is the mount point itself. Both come back in
+    // the served paths the judge compares against the running app.
+    const spec: PythonProgramSpec = {
+      framework: "flask-restx",
+      program: {
+        importStyle: "direct",
+        resources: [],
+        namespaces: [
+          {
+            type: "mounted",
+            path: { type: "literal", trailingSlash: true },
+            mountPath: { type: "absent" },
+            emptyPathResource: true,
+            resources: [
+              {
+                segment: "orders",
+                hasPathParam: false,
+                converterArgs: false,
+                pathComputed: false,
+                methods: [
+                  {
+                    verb: "GET",
+                    annotated: false,
+                    returnStyle: "dict",
+                    tupleStatus: 201,
+                  },
+                ],
+              },
+              {
+                segment: "items",
+                hasPathParam: true,
+                converterArgs: false,
+                pathComputed: false,
+                methods: [
+                  {
+                    verb: "GET",
+                    annotated: false,
+                    returnStyle: "dict",
+                    tupleStatus: 201,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const rendered = renderPythonProgram(spec, "app_10");
+    expect(rendered.files["app_10/namespaces/ns0.py"]).toContain(
+      'ns = Namespace("ns0", path="/ns0/")',
+    );
+    expect(rendered.files["app_10/namespaces/ns0.py"]).toContain(
+      '@ns.route("")',
+    );
+    expect(rendered.files["app_10/main.py"]).toContain(
+      "api.add_namespace(ns_0)",
+    );
+    expect(rendered.intents).toEqual([
+      {
+        name: "Orders0.get",
+        method: "GET",
+        servedPaths: ["/ns0"],
+        expectation: "claim",
+        requestBody: null,
+      },
+      {
+        name: "Items1.get",
+        method: "GET",
+        servedPaths: ["/ns0/items1/{items1_id}"],
+        expectation: "claim",
+        requestBody: null,
+      },
+    ]);
+  });
+
+  it("expects an abstention wherever the mount reading has one documented", () => {
+    const spec: PythonProgramSpec = {
+      framework: "flask-restx",
+      program: {
+        importStyle: "direct",
+        resources: [],
+        namespaces: [
+          {
+            type: "mounted",
+            path: { type: "absent" },
+            mountPath: { type: "absent" },
+            emptyPathResource: false,
+            resources: [flaskResource("alpha")],
+          },
+          {
+            type: "unmounted",
+            resources: [flaskResource("beta")],
+          },
+          {
+            type: "mountedTwice",
+            resources: [flaskResource("gamma")],
+          },
+        ],
+      },
+    };
+    const rendered = renderPythonProgram(spec, "app_11");
+    expect(
+      rendered.intents.map((intent) => [
+        intent.name,
+        intent.expectation,
+        intent.servedPaths,
+      ]),
+    ).toEqual([
+      // Served under a path the library derives from the namespace's
+      // name, which the pack declines to derive.
+      ["Alpha0.get", "abstain", ["/ns0/alpha0"]],
+      // Never mounted, so never served at all.
+      ["Beta1.get", "abstain", []],
+      // Both mounts land on one path; which one served it is not
+      // written down.
+      ["Gamma2.get", "abstain", ["/t2/gamma2"]],
+    ]);
+  });
+
+  it("renders every no-value spelling at both sites, and expects a claim wherever the library reads one", () => {
+    // The library asks whether the path is truthy and nothing else,
+    // so all four spellings mean no path at the constructor and no
+    // override at the mount. A namespace with a readable path keeps
+    // its claim through a falsy mount; one without a path has nothing
+    // to claim either way.
+    const spec: PythonProgramSpec = {
+      framework: "flask-restx",
+      program: {
+        importStyle: "direct",
+        resources: [],
+        namespaces: [
+          {
+            type: "mounted",
+            path: { type: "literal", trailingSlash: false },
+            mountPath: { type: "noValue", written: "none" },
+            emptyPathResource: false,
+            resources: [flaskResource("alpha")],
+          },
+          {
+            type: "mounted",
+            path: { type: "noValue", written: "false" },
+            mountPath: { type: "absent" },
+            emptyPathResource: false,
+            resources: [flaskResource("beta")],
+          },
+          {
+            type: "mounted",
+            path: { type: "literal", trailingSlash: false },
+            mountPath: { type: "computed" },
+            emptyPathResource: false,
+            resources: [flaskResource("gamma")],
+          },
+        ],
+      },
+    };
+    const rendered = renderPythonProgram(spec, "app_12");
+    expect(rendered.files["app_12/namespaces/ns0.py"]).toContain(
+      'ns = Namespace("ns0", path="/ns0")',
+    );
+    expect(rendered.files["app_12/main.py"]).toContain(
+      "api.add_namespace(ns_0, path=None)",
+    );
+    expect(rendered.files["app_12/namespaces/ns1.py"]).toContain(
+      'ns = Namespace("ns1", path=False)',
+    );
+    expect(rendered.files["app_12/main.py"]).toContain('OVERRIDE_2 = "/mo2"');
+    expect(
+      rendered.intents.map((intent) => [
+        intent.name,
+        intent.expectation,
+        intent.servedPaths,
+      ]),
+    ).toEqual([
+      // A falsy mount path is no override, so this keeps the path its
+      // constructor stated.
+      ["Alpha0.get", "claim", ["/ns0/alpha0"]],
+      // A falsy constructor path leaves the library deriving one from
+      // the name.
+      ["Beta1.get", "abstain", ["/ns1/beta1"]],
+      // A mount path nobody can read takes the namespace somewhere
+      // this reading cannot follow.
+      ["Gamma2.get", "abstain", ["/mo2/gamma2"]],
+    ]);
   });
 
   it("routes the flask wrapper arm through the wrapper module it names for the pack", () => {

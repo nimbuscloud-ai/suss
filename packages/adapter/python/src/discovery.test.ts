@@ -632,3 +632,57 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     ]);
   });
 });
+
+describe("a route the readers cannot turn into a unit", () => {
+  // An empty path argument is how a route sitting at its mount point
+  // is written, and the binding builder refuses an empty path. The
+  // route that cannot be built has to cost itself and nothing else.
+  const source = [
+    "from myapp.wrappers.restx import route",
+    "",
+    "",
+    '@route("")',
+    "class Root:",
+    "    def get(self):",
+    "        return []",
+    "",
+    "",
+    '@route("/todos")',
+    "class TodoList:",
+    "    def get(self):",
+    "        return []",
+    "",
+  ].join("\n");
+
+  it("keeps the route, names no path, and says what stopped it", async () => {
+    const units = await unitsOf(source, [flaskRestxLike]);
+    const root = units.find((u) => u.identity.name === "Root.get");
+    const semantics = root?.boundaryBinding?.semantics;
+    expect(semantics?.name === "rest" ? semantics.path : "kept").toBeNull();
+    expect(semantics?.name === "rest" ? semantics.method : null).toBe("GET");
+    expect(unreadTextOf(root)).toContain("could not be read into a unit");
+  });
+
+  it("lets every other route in the file through", async () => {
+    const units = await unitsOf(source, [flaskRestxLike]);
+    expect(units.map((u) => u.identity.name)).toEqual([
+      "Root.get",
+      "TodoList.get",
+    ]);
+    const todos = units.find((u) => u.identity.name === "TodoList.get");
+    const semantics = todos?.boundaryBinding?.semantics;
+    expect(semantics?.name === "rest" ? semantics.path : null).toBe("/todos");
+  });
+
+  it("lets the error stand when the caller asked for strict gap handling", async () => {
+    const tree = await parsePython(source);
+    const binding = bindModule(tree.rootNode);
+    expect(() =>
+      discoverUnits(tree.rootNode, binding, {
+        packs: [flaskRestxLike],
+        filePath: "myapp/routes/todos.py",
+        gapHandling: "strict",
+      }),
+    ).toThrow("empty string");
+  });
+});

@@ -62,25 +62,45 @@ npx suss inspect summaries/shop.json
 npx suss check --dir summaries/
 ```
 
-Over this repo's own `fixtures/python-webapp`, that prints:
+Over this repo's own `fixtures/python-webapp`, that starts:
 
 ```
+myapp/behaviors.py
+├─ GET /behaviors/{school_id}  (flask-restx handler | line 17 | confidence: low)
+│
+│      !! Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here
+│
+└─ GET /behaviors/{school_id}/{behavior_id}  (flask-restx handler | line 23 | confidence: low)
+
+       !! Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here
+
+myapp/exports.py
+└─ GET ?  (flask-restx handler | line 14 | confidence: low)
+
+       !! The router this route is declared on is mounted more than once, so the binding names no path and nothing pairs with it
+       !! Nothing read this route's path, so its parameters name no role and a path parameter here does not read as one
+       !! Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here
+
 myapp/fastapi_app.py
 ├─ GET /items/{item_id}  (fastapi handler | line 26 | confidence: low)
 │      -> 200 TodoResponse
 │
 └─ POST /items  (fastapi handler | line 31 | confidence: low)
        -> 201 TodoResponse
-
-myapp/routes/todos.py
-├─ GET /todos  (flask-restx handler | line 6 | confidence: low)
-│
-│      !! Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here
 ```
 
 The FastAPI routes carry the status and shape their decorators declare.
 The flask-restx ones carry the method and path, and say plainly that
-nothing was read from the body.
+nothing was read from the body. `/behaviors/{school_id}` is composed
+from the namespace the resource is declared on and the path its own
+decorator writes, neither of which is the whole path on its own.
+
+The route in `exports.py` shows the other answer. Its namespace is
+mounted twice, so which path it is served under is not written down
+anywhere, and the binding names none: `GET ?` pairs with nothing, and
+each line under it says what nobody could read. A parameter's role
+goes the same way, since which parameters a path names is what tells a
+path parameter from a query parameter.
 
 What the command reads, and from where:
 
@@ -177,6 +197,34 @@ string argument. Werkzeug converters are canonicalized, so
 `order_id` as a path parameter. A method with a return annotation gets
 one transition describing that shape under a 200. `@ns.marshal_with`
 and `@ns.expect` are not read yet.
+
+A route declared on a namespace is served under the namespace's own
+path, and the pack composes the two:
+
+```python
+from flask_restx import Namespace
+
+ns = Namespace("orders", path="/orders")
+
+@ns.route("/<int:order_id>")
+class OrderDetail:
+    def get(self, order_id): ...
+```
+
+with `api.add_namespace(ns)` somewhere in the files the run reads, that
+route reads as `/orders/{order_id}`. `@ns.route("")` is the namespace's
+path by itself, `/orders`, and a path written `"/orders/"` serves the
+same routes as `"/orders"`, because the library holds it that way.
+Parameters the namespace's path names are path parameters like any
+others.
+
+The composition wants the namespace constructed with a literal `path`
+and mounted once, through a variable, by an `add_namespace` that states
+no `path` of its own. Written any other way, the route is still
+discovered under its name, with no path and a recorded reason, so it
+pairs with nothing rather than with whatever a guessed path would have
+named. `@suss/adapter-python`'s README has the grid of what every
+spelling of a path means at each site, checked against a running app.
 
 ### What FastAPI reads
 

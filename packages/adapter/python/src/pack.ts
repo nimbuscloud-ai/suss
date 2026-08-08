@@ -62,6 +62,15 @@ export interface RouteConventions {
    * say what the status is.
    */
   defaultStatusCode?: number;
+  /**
+   * How a route declared on a sub-router composes its full path. Unset
+   * means the library has no router mounting, and a route's decorator
+   * path stands as written. Both route shapes can carry one: a library
+   * may hang its routes off a mounted object with a function decorator
+   * or with a class decorator, and where the mount prefix comes from is
+   * the same question either way.
+   */
+  routerComposition?: RouterComposition;
 }
 
 /**
@@ -121,12 +130,6 @@ export interface DecoratedFunctionRoute extends RouteConventions {
   responseModelKeyword?: string;
   /** Keyword argument on the decorator call naming a literal response status code (FastAPI's `status_code`). */
   statusCodeKeyword?: string;
-  /**
-   * How a route declared on a sub-router composes its full path.
-   * Unset means the library has no router mounting, and a route's
-   * decorator path stands as written.
-   */
-  routerComposition?: RouterComposition;
 }
 
 /**
@@ -152,4 +155,62 @@ export interface RouterComposition {
    * needs this split into two fields.
    */
   prefixKeyword: string;
+  /**
+   * What that keyword at the mount call does to the prefix the
+   * constructor stated. "prefixes" (the default) puts it in front, the
+   * way FastAPI's `include_router(router, prefix=...)` does. "replaces"
+   * swaps the constructor's prefix out, and a mount that states one
+   * abstains rather than composing: the reading would otherwise report
+   * a path the mount overrode. Composing a replacement is readable and
+   * a later change can do it; abstaining is what keeps the wrong path
+   * out in the meantime.
+   */
+  mountPrefixEffect?: MountPrefixEffect;
+  /**
+   * Whether the constructor has to state the prefix for the mounted
+   * path to be readable. Set it when the library serves a router that
+   * states no prefix under a path it derives from something else (a
+   * name, say), which this reading does not derive: such a router
+   * abstains instead of composing an empty prefix and reporting a path
+   * that is short by a segment. Unset means a router with no prefix
+   * really does add nothing to the path, which is FastAPI's behavior.
+   */
+  constructorPrefixRequired?: boolean;
+  /**
+   * What the library makes of a prefix keyword written with a value
+   * it takes as no value at all: Python's `None` or `False`, zero, or
+   * the empty string. "unstated" reads all four the way it reads a
+   * keyword nobody wrote, which is flask-restx's behavior at the
+   * constructor and at the mount alike, since it asks whether the
+   * path is truthy. "unreadable" is the default and abstains, which
+   * is what FastAPI needs: an empty string there is an ordinary
+   * prefix that adds nothing, and the other three stop the app from
+   * starting, so nothing about a served path can be read off them.
+   *
+   * One answer covers both sites on purpose. Reading the same
+   * spelling one way at the constructor and another at the mount is
+   * how this went wrong twice.
+   */
+  noValuePrefix?: NoValuePrefix;
+  /**
+   * What the library does with a trailing slash on the constructor's
+   * prefix before the route's own path is joined to it. "kept" (the
+   * default) joins the two as written, which is what FastAPI needs:
+   * it refuses a prefix ending in a slash at construction, so a kept
+   * one never reaches a served path. "trimmed" drops trailing slashes
+   * first, which is what flask-restx does, so a prefix written
+   * `"/orders/"` serves the same paths as `"/orders"` and a prefix
+   * written `"/"` adds nothing. Composing without this reports a
+   * doubled slash that the app never serves.
+   */
+  constructorPrefixTrailingSlash?: PrefixTrailingSlash;
 }
+
+/** What a literal prefix at the mount call does to the one the constructor stated. */
+export type MountPrefixEffect = "prefixes" | "replaces";
+
+/** What a library does with a trailing slash on a prefix before joining a path to it. */
+export type PrefixTrailingSlash = "kept" | "trimmed";
+
+/** What a library makes of a prefix written as a value it takes as no value at all. */
+export type NoValuePrefix = "unstated" | "unreadable";

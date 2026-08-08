@@ -22,6 +22,15 @@ describe("flaskRestxFramework", () => {
           options: "OPTIONS",
         },
         pathParamSyntax: "flaskConverters",
+        routerComposition: {
+          routerConstructorName: "Namespace",
+          includeMethodName: "add_namespace",
+          prefixKeyword: "path",
+          mountPrefixEffect: "replaces",
+          constructorPrefixRequired: true,
+          constructorPrefixTrailingSlash: "trimmed",
+          noValuePrefix: "unstated",
+        },
         defaultStatusCode: 200,
       },
     ]);

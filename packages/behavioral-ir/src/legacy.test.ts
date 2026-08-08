@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parseSummary, safeParseSummary } from "./index.js";
+import {
+  parseSummary,
+  SUMMARY_SCHEMA_VERSION,
+  safeParseSummary,
+} from "./index.js";
 
 function v1Summary(
   overrides: Record<string, unknown>,
@@ -82,7 +86,7 @@ describe("reading version-1 artifacts", () => {
     expect(semantics?.name === "rest" && semantics.path).toBeNull();
   });
 
-  it("rejects an empty identity field on a summary that claims the current version", () => {
+  it("rejects an empty identity field on a summary from the version that stopped allowing one", () => {
     const result = safeParseSummary(
       v1Summary({
         schemaVersion: 2,
@@ -140,12 +144,15 @@ describe("backfilling identity.id", () => {
     expect(parsed.identity.id).toBe("already-stamped");
   });
 
-  it("does not backfill a current-version summary a producer left without one", () => {
-    // A schemaVersion-2 artifact has spoken the current format in
-    // full; a missing id there is the producer's own gap, not
-    // something the version-1 read path should paper over.
-    const parsed = parseSummary(v1Summary({ schemaVersion: 2 }));
-    expect(parsed.identity.id).toBeUndefined();
+  it("does not backfill a summary from version 2 on that a producer left without one", () => {
+    // A schemaVersion-2 artifact spelled identity in full; a missing
+    // id there is the producer's own gap, not something the version-1
+    // read path should paper over. Later versions changed other
+    // fields and inherit the same answer, so both are pinned.
+    for (const schemaVersion of [2, SUMMARY_SCHEMA_VERSION]) {
+      const parsed = parseSummary(v1Summary({ schemaVersion }));
+      expect(parsed.identity.id).toBeUndefined();
+    }
   });
 
   it("leaves a summary with no file to build an id from unstamped, and validation rejects the shape on its own terms", () => {
